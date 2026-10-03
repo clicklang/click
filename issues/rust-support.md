@@ -290,8 +290,13 @@ tuple-field reads, indexed mutation with neighboring cells preserved, local
 array-borrow calls, byte-field coercions and empty fields have verified probes.
 One layout entry per field and bounded work at 4/1024/1,000,000 elements prevent
 extent-dependent flattening. The lock names `borrowed-scalar-array-fields-v1`;
-owned array-field construction, whole-field copies and assignment remain rejected
-pending compact region semantics. Next add that owned-array checkpoint,
+the owned uniform array-field checkpoint now adds construction, moves,
+whole-field replacement, extraction and snapshot independence with neighboring
+fields preserved. `compact-uniform-array-regions-v1` keeps complete byte authority,
+source initialization, types, extents, qualifiers and active loans checked.
+Lowered nodes and verification work remain bounded at 4/1024/1,000,000 elements;
+consumed record flags reject duplicate moves. General nonuniform snapshot copies
+and symbolic/heap region writes remain unsupported. Next add general snapshots,
 array/shared-element iteration and resolved custom operators for the unchanged checksum path, broaden iterator composition
 proofs, and cover borrowed loops. Stable observations and broader iterator parity remain gates.
 Establish stable source/proof observations and equivalent coverage before

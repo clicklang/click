@@ -1,4 +1,4 @@
-//! Fresh scalar-array initialization. Memory storage and retained derivations
+//! Scalar-array initialization and region writes. Storage and retained derivations
 //! are compact; authority, source initialization, and coercion remain checked.
 use super::*;
 
@@ -10,6 +10,7 @@ pub(super) fn execute(
     element_type: CType,
     count: u32,
     copy: bool,
+    fresh: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
@@ -154,16 +155,36 @@ pub(super) fn execute(
                     continue;
                 }
             }
-            let outcome = match state.memory.clone().initialize_scalar_array(
-                target,
-                element_type,
-                count,
-                value,
-                copy,
-            ) {
+            let memory = if fresh {
+                state.memory.clone().initialize_scalar_array(
+                    target,
+                    element_type,
+                    count,
+                    value,
+                    copy,
+                )
+            } else {
+                state.memory.clone().write_scalar_array_region(
+                    target,
+                    element_type,
+                    count,
+                    value,
+                    copy,
+                    false,
+                    &selected,
+                )
+            };
+            let outcome = match memory {
                 Ok(memory) => {
                     let mut next = state.clone();
                     next.set_memory(memory);
+                    if bytes != 0
+                        && let CExpressionOutcome::Value(value) = next.memory.load(target)
+                    {
+                        refresh_scalar_local_after_memory_store(
+                            &mut next, target, &value, &selected,
+                        );
+                    }
                     CStatementOutcome::Normal(next)
                 }
                 Err(error) => CStatementOutcome::RuntimeError(error),

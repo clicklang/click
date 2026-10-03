@@ -3216,12 +3216,14 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             element_type,
             count,
             copy,
+            fresh,
         } => CStatement::InitializeScalarArray {
             target: substitute_bitvector_variable_in_c_expression(target, from, to),
             source: substitute_bitvector_variable_in_c_expression(source, from, to),
             element_type: *element_type,
             count: *count,
             copy: *copy,
+            fresh: *fresh,
         },
         CStatement::Update {
             target,
@@ -6285,12 +6287,14 @@ fn substitute_pointer_variable_in_c_statement(
             element_type,
             count,
             copy,
+            fresh,
         } => CStatement::InitializeScalarArray {
             target: substitute_pointer_variable_in_c_expression(target, from, to),
             source: substitute_pointer_variable_in_c_expression(source, from, to),
             element_type: *element_type,
             count: *count,
             copy: *copy,
+            fresh: *fresh,
         },
         CStatement::Update {
             target,

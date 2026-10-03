@@ -282,11 +282,42 @@ indices, missing write authority, false results, invalid layouts and forged
 mutable borrows. Verification, profiling, auditing and expanded-certificate
 rechecking agree on the trial.
 
-Owned records containing arrays, whole-field copies and whole-field assignments
-remain rejected. They need compact region initialization and copying that preserve
-neighboring fields; the existing fresh whole-local array operation does not
-provide those semantics. Add that checkpoint and shared array iteration before
-claiming support for adler2's owned `U32X4` computation.
+The following checkpoint adds owned local records and uniform region copies.
+General nonuniform snapshots and shared array iteration remain requirements for
+adler2's owned `U32X4` computation.
+
+## Owned uniform array-field checkpoint
+
+[`owned-array-fields/owned.rs`](owned-array-fields/owned.rs) and its
+[sidecar](owned-array-fields/owned.click) prove nine contracts for repeated-array
+construction, whole-record moves, whole-field replacement, field extraction,
+snapshot independence, tuple fields, byte fields and empty fields. Replacement
+preserves both neighboring scalar fields. Copies retain the value read before
+any destination overwrite or later source mutation.
+
+`compact-uniform-array-regions-v1` binds these operations into the import lock.
+The existing fresh-array operation keeps its complete empty-local requirement.
+The region operation separately checks local storage, constant aligned offsets,
+full extents, element types, source initialization, mutable destination storage,
+read/write authority and active loans. It writes one typed run, forgetting only
+possibly overlapping cached values through the existing checked memory model.
+It grants no new memory authority. Array fields have no scalar placeholder;
+the actual constructor establishes their initialization before the record's
+checked live flag permits access. Moves consume that flag exactly once.
+
+Layout, lowered statement count and ordinary verification work remain bounded
+at lengths 4, 1024 and 1,000,000. Kernel regressions check adjacent bytes,
+overlapping copies, type/extent/alignment failures, incomplete authority,
+readonly storage, active view loans and addressed scalar-local bindings.
+Verification, profiling, auditing, expansion and expanded-certificate rechecking
+agree on the unchanged trial source.
+
+Compact copies still require a uniform initialized local source region. General
+nonuniform snapshot copies, borrowed symbolic or heap regions, union views and
+local-array reassignment remain outside this checkpoint. Explicit array literals
+use ordinary stores proportional to their source elements; copying such a
+nonuniform array fails closed. Add general snapshots before claiming parity for
+adler2's four independently computed lanes.
 
 ## Checksum arithmetic checkpoint
 

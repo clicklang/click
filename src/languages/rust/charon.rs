@@ -1215,6 +1215,126 @@ mod tests {
         .unwrap();
     }
 
+    const OWNED_ARRAY_ARTIFACT: &[u8] =
+        include_bytes!("../../../design/charon-trial/owned-array-fields/owned.ullbc");
+    const OWNED_ARRAY_SOURCE: &[u8] =
+        include_bytes!("../../../design/charon-trial/owned-array-fields/owned.rs");
+    #[test]
+    fn charon_owned_array_construction_and_moves_have_bounded_work_at_large_extents() {
+        let mut samples = Vec::new();
+        for length in [4, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut export = decode(OWNED_ARRAY_ARTIFACT, "owned.rs", OWNED_ARRAY_SOURCE).unwrap();
+            export.functions.retain(|f| f.name == "moved");
+            export.records.retain(|r| r.name == "Packet");
+            let record = &mut export.records[0];
+            let old_size = record.size;
+            // Grow the actual compiler-selected array field; preserve field
+            // order and shift only fields lying after that region.
+            let array_offset = record
+                .fields
+                .iter()
+                .find(|f| matches!(f.value_type, Type::Array { .. }))
+                .unwrap()
+                .offset;
+            let delta = (length - 4) * 4;
+            record.size = old_size + delta;
+            for field in &mut record.fields {
+                if let Type::Array { length: n, .. } = &mut field.value_type {
+                    *n = u64::from(length);
+                } else if field.offset >= array_offset + 16 {
+                    field.offset += delta;
+                }
+            }
+            let mir = export.functions[0].mir.as_mut().unwrap();
+            for local in &mut mir.locals {
+                match &mut local.value_type {
+                    Type::Array { length: n, .. } => *n = u64::from(length),
+                    Type::Reference { pointee, .. } => {
+                        if let Type::Array { length: n, .. } = pointee.as_mut() {
+                            *n = u64::from(length);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for statement in mir.blocks.iter_mut().flat_map(|b| &mut b.statements) {
+                if let S::Assign {
+                    value: E::Repeat { length: n, .. },
+                    ..
+                } = statement
+                {
+                    *n = u64::from(length);
+                }
+                if let S::Assign {
+                    value:
+                        E::Borrow {
+                            value_type: Type::Reference { pointee, .. },
+                            ..
+                        },
+                    ..
+                } = statement
+                    && let Type::Array { length: n, .. } = pointee.as_mut()
+                {
+                    *n = u64::from(length);
+                }
+            }
+            let (functions, layouts) = super::super::lowering::lower(&export).unwrap();
+            assert_eq!(
+                layouts["Packet"]
+                    .to_kernel_aggregate_layout()
+                    .fields()
+                    .len(),
+                3
+            );
+            fn nodes(statement: &crate::kernel::CStatement) -> usize {
+                match statement {
+                    crate::kernel::CStatement::Seq(a, b) => 1 + nodes(a) + nodes(b),
+                    _ => 1,
+                }
+            }
+            let shape = nodes(functions[0].to_kernel_function().body());
+            let prepared = super::super::import::prepared_for_test(export).unwrap();
+            let claim = format!(
+                "verifying \"owned.rs\"; uint32 moved(uint32 value, uint64 index) {{ requires index < {length}u64; ensures result == value; }} by {{ execute(); simp(); }}"
+            );
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                C0VerificationSession::new_program_prepared(&claim, &prepared)
+            });
+            result.unwrap();
+            samples.push((shape, work));
+        }
+        assert!(
+            samples
+                .iter()
+                .all(|sample| sample.0 == samples[0].0 && sample.1 <= samples[0].1 + 128),
+            "{samples:?}"
+        );
+    }
+    #[test]
+    fn charon_owned_array_move_cannot_reuse_consumed_record() {
+        let mut export = decode(OWNED_ARRAY_ARTIFACT, "owned.rs", OWNED_ARRAY_SOURCE).unwrap();
+        export.functions.retain(|f| f.name == "moved");
+        let block = export.functions[0]
+            .mir
+            .as_mut()
+            .unwrap()
+            .blocks
+            .iter_mut()
+            .find(|b| b.statements.iter().any(|s| matches!(s, S::Move { .. })))
+            .unwrap();
+        let index = block
+            .statements
+            .iter()
+            .position(|s| matches!(s, S::Move { .. }))
+            .unwrap();
+        block
+            .statements
+            .insert(index + 1, block.statements[index].clone());
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        assert!(C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; uint32 moved(uint32 value, uint64 index) { requires index < 4u64; ensures result == value; } by { execute(); simp(); }", &prepared).is_err());
+    }
+
     const FIELDS_ARTIFACT: &[u8] =
         include_bytes!("../../../design/charon-trial/array-fields/fields.ullbc");
     const FIELDS_SOURCE: &[u8] =

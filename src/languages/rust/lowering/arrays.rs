@@ -110,3 +110,47 @@ impl Context<'_> {
         Ok(c_seq(captures, stores))
     }
 }
+
+impl Context<'_> {
+    pub(super) fn assign_array_region(
+        &mut self,
+        target: CExpression,
+        element: CType,
+        length: u64,
+        value: &E,
+    ) -> Result<CStatement, String> {
+        let count = array_length(element, length)?;
+        match value {
+            E::Array { .. } => self.assign_array(target, element, length, value),
+            E::Repeat {
+                value,
+                length: source_length,
+            } => {
+                if *source_length != length {
+                    return Err("array repeat length disagrees with destination".into());
+                }
+                let value_type = match element {
+                    CType::UInt8 => Type::U8,
+                    CType::UInt32 => Type::U32,
+                    CType::Int32 => Type::I32,
+                    _ => unreachable!(),
+                };
+                let (prefix, value) = self.prepared_expr(value)?;
+                let (capture, name) = self.capture_operand(value, &value_type)?;
+                Ok(c_seq(
+                    c_seq(prefix, capture),
+                    c_write_scalar_array_region(target, c_variable(name), element, count, false),
+                ))
+            }
+            _ => {
+                let (source, source_length, source_element) = self.indexed_parts(value)?;
+                if source_length != c_uint64_literal(length) || source_element != element {
+                    return Err("array region copy disagrees with destination type".into());
+                }
+                Ok(c_write_scalar_array_region(
+                    target, source, element, count, true,
+                ))
+            }
+        }
+    }
+}

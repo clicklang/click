@@ -3820,33 +3820,67 @@ impl CMemory {
     /// Checked compact initialization of one fresh automatic scalar array.
     /// The caller has separately checked read/write authority and coercion.
     pub(in crate::kernel) fn initialize_scalar_array(
-        mut self,
+        self,
         base: &Pointer,
         element_type: CType,
         count: u32,
         value: CValue,
         copy: bool,
     ) -> Result<Self, CRuntimeError> {
+        self.write_scalar_array_region(
+            base,
+            element_type,
+            count,
+            value,
+            copy,
+            true,
+            &PureFactContext::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::kernel) fn write_scalar_array_region(
+        mut self,
+        base: &Pointer,
+        element_type: CType,
+        count: u32,
+        value: CValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CRuntimeError> {
         let bytes = count
             .checked_mul(element_type.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(CRuntimeError::TypeMismatch)?;
+        let valid_region = |pointer: &Pointer| {
+            pointer.block.starts_with("local:")
+                && pointer.offset.as_const().is_some_and(|offset| {
+                    offset >= 0
+                        && offset % i64::from(element_type.byte_width()) == 0
+                        && self
+                            .block_size(&pointer.block)
+                            .and_then(Bitvector32Term::as_const)
+                            .is_some_and(|size| offset + i64::from(bytes) <= i64::from(size))
+                })
+        };
         if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32)
-            || !base.block.starts_with("local:")
-            || base.offset != PointerOffsetTerm::Constant(0)
-            || self
-                .block_size(&base.block)
-                .and_then(Bitvector32Term::as_const)
-                != Some(bytes)
+            || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
-            || AliasCandidates::only_block(&base.block)
-                .entries(self.cells.concrete())
-                .next()
-                .is_some()
-            || self.cells.runs_in_block(&base.block).next().is_some()
+            || (fresh
+                && (base.offset != PointerOffsetTerm::Constant(0)
+                    || self
+                        .block_size(&base.block)
+                        .and_then(Bitvector32Term::as_const)
+                        != Some(bytes)
+                    || AliasCandidates::only_block(&base.block)
+                        .entries(self.cells.concrete())
+                        .next()
+                        .is_some()
+                    || self.cells.runs_in_block(&base.block).next().is_some()))
         {
             return Err(CRuntimeError::FunctionContract(
-                "scalar-array initialization requires fresh complete local storage".into(),
+                "scalar-array write requires a valid aligned local region; fresh initialization requires complete empty storage".into(),
             ));
         }
         let (mode, source) = if copy {
@@ -3854,50 +3888,39 @@ impl CMemory {
                 return Err(CRuntimeError::TypeMismatch);
             };
             let pointer = pointer.pointer();
-            if !pointer.block.starts_with("local:")
-                || pointer.offset != PointerOffsetTerm::Constant(0)
-                || self
-                    .block_size(&pointer.block)
-                    .and_then(Bitvector32Term::as_const)
-                    != Some(bytes)
+            if !valid_region(pointer)
+                || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_at(pointer, bytes))
+                || (fresh
+                    && (pointer.offset != PointerOffsetTerm::Constant(0)
+                        || self
+                            .block_size(&pointer.block)
+                            .and_then(Bitvector32Term::as_const)
+                            != Some(bytes)))
             {
                 return Err(CRuntimeError::FunctionContract(
-                    "scalar-array copy requires a complete initialized local source".into(),
+                    "scalar-array copy requires a valid aligned local source region".into(),
                 ));
             }
             if count == 0 {
-                return Ok(self.with_initialized_object(base, bytes));
+                return Ok(self);
             }
-            let uniform =
-                self.cells
-                    .runs_based_at(&pointer.block, &pointer.offset)
-                    .find_map(|run| {
-                        if self.cells.runs_in_block(&pointer.block).take(2).count() != 1
-                            || run.base() != pointer
-                            || run.count() != count
-                            || run.element_type() != element_type
-                            || run.element_width() != element_type.byte_width()
-                            || run.holes().count() != 0
-                            || AliasCandidates::only_block(&pointer.block)
-                                .entries(self.cells.concrete())
-                                .next()
-                                .is_some()
-                        {
-                            return None;
-                        }
-                        match run.value_mode() {
-                            RunValueMode::Constant(value) if value.c_type() == element_type => {
-                                Some(value.clone())
-                            }
-                            _ => None,
-                        }
-                    })
-                    .ok_or_else(|| {
-                        CRuntimeError::FunctionContract(
-                "compact scalar-array copies currently require a complete uniform source".into()
-            )
-                    })?;
+            let uniform = self.cells.runs_in_block(&pointer.block).find_map(|run| {
+                let first = run.slot_index(pointer)?;
+                let end = first.checked_add(count)?;
+                if end > run.count() || run.element_type() != element_type
+                    || run.element_width() != element_type.byte_width()
+                    || run.holes().intervals().iter().any(|(low, high)| *low < end && first < *high)
+                {
+                    return None;
+                }
+                match run.value_mode() {
+                    RunValueMode::Constant(value) if value.c_type() == element_type => Some(value.clone()),
+                    _ => None,
+                }
+            }).ok_or_else(|| CRuntimeError::FunctionContract(
+                "compact scalar-array copies currently require a uniform initialized source region".into()
+            ))?;
             (
                 RunValueMode::Constant(uniform),
                 crate::kernel::intern_c_memory(CMemory::new()),
@@ -3911,6 +3934,12 @@ impl CMemory {
                 crate::kernel::intern_c_memory(CMemory::new()),
             )
         };
+        if count == 0 {
+            return Ok(self);
+        }
+        if !fresh {
+            self = self.without_possible_aliasing_cells(base, bytes, assumptions);
+        }
         if count != 0 {
             let run = CellRun::new_with_mode(
                 base.clone(),

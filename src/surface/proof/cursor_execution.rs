@@ -3941,9 +3941,11 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             target,
             count,
             copy,
+            fresh,
             ..
         } => format!(
-            "initialize {} with {} scalar elements{}",
+            "{} {} with {} scalar elements{}",
+            if *fresh { "initialize" } else { "write" },
             describe_c_expression(target),
             count,
             if *copy {

@@ -1934,6 +1934,26 @@ pub fn c_initialize_scalar_array(
         element_type,
         count,
         copy,
+        fresh: true,
+    }
+}
+
+/// Write an embedded scalar-array region without changing adjacent bytes.
+/// This does not grant storage, initialization or memory authority.
+pub fn c_write_scalar_array_region(
+    target: CExpression,
+    source: CExpression,
+    element_type: CType,
+    count: u32,
+    copy: bool,
+) -> CStatement {
+    CStatement::InitializeScalarArray {
+        target,
+        source,
+        element_type,
+        count,
+        copy,
+        fresh: false,
     }
 }
 

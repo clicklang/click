@@ -3022,6 +3022,7 @@ fn execute_c_statement_leaf_paths(
             element_type,
             count,
             copy,
+            fresh,
         } => scalar_arrays::execute(
             state,
             target,
@@ -3029,6 +3030,7 @@ fn execute_c_statement_leaf_paths(
             *element_type,
             *count,
             *copy,
+            *fresh,
             assumptions,
             budget,
         )?,
@@ -4378,6 +4380,14 @@ fn begin_aggregate_construction(
         .expect("aggregate construction has a declared stack slot")
         .clone();
     for field in layout.fields() {
+        // Aggregate array fields have no scalar placeholder. Their actual
+        // constructor writes establish initialization before the value is live.
+        if matches!(
+            field.c_type(),
+            CType::Int32Array(_) | CType::UInt8Array(_) | CType::UInt32Array(_)
+        ) {
+            continue;
+        }
         let variable = budget.allocate_kernel_variable()?;
         let value = crate::kernel::functions::symbolic_call_result(field.c_type(), variable);
         state.set_memory(
