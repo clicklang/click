@@ -343,9 +343,52 @@ actual ULLBC artifact and all other checkpoint locks.
 
 This supports concrete aligned local regions containing represented `i32`,
 `u8` and `u32` values. Opaque load runs and symbolic-address cached writes are
-rejected. Symbolic/heap region writes, local-array reassignment, shared-element
-array iteration and resolved custom operators remain migration work before
+rejected. Symbolic/heap region writes, local-array reassignment and resolved
+custom operators remain migration work before
 claiming parity for the unchanged checksum implementation.
+
+## Shared scalar array iteration checkpoint
+
+[`array-iteration/iteration.rs`](array-iteration/iteration.rs) and its
+[sidecar](array-iteration/iteration.click) cover `for word in &words`, borrowed
+array parameters, `.iter()`, explicit `next()`, a partially consumed iterator
+moved into another local, repeated exhaustion, empty arrays, typed `u8`/`u32`
+reads and a signed `i32` read. The lock names
+`shared-scalar-array-iteration-v1`.
+
+The model validates the compiler-selected core `Iter<T>`, `Option<&T>`,
+inherent slice method and trait implementations, including concrete element
+types and fixed-array extents. It shares reference-origin validation, Option
+dispatch and CFG splitting with the exact-chunk model. A loop retains one
+pure remaining-length guard and both successful and exhausted `next` events.
+No processed-count variable is generated.
+
+For a source iterator named `iter`, `iter_cursor` is a typed shared pointer,
+`iter_remaining` counts elements, and `iter_live` tracks initialization and
+moves. Construction checks the memory-model byte extent before converting
+its length to `int32`. A successful call saves the old cursor in the typed
+Option payload, advances by one element and decrements remaining length.
+An exhausted call clears the Option tag while leaving cursor, remaining length
+and live state unchanged. A payload projection requires `Some`; stale payload
+storage cannot supply a reference after `None`. Moves transfer state and consume
+the source. Reads require the original storage's view authority, and yielded
+references retain their shared qualifier.
+
+Regressions reject forged identities/signatures, mismatched Option payloads,
+missing initialization, duplicate moves, missing read authority and false
+element-order claims. Deterministic lowering and first-read verification work
+remain bounded at 4/1024/1,000,000 elements; CFG splitting scales with protocol
+count. The loop contracts currently use bounded execution on small concrete
+extents; this scaling test covers a first read rather than a general reduction
+invariant. Ordinary verification, profile, audit, expansion and rechecking agree.
+Mutable, by-value and adapted iteration, iterator parameters/returns and general
+non-byte slice APIs remain outside this checkpoint.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/array-iteration/iteration.click
+cargo run --bin click -- verify design/charon-trial/array-iteration/iteration.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_shared_iteration_live_refresh_and_rejected_protocols)'
+```
 
 ## Checksum arithmetic checkpoint
 

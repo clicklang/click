@@ -2542,6 +2542,25 @@ mod tests {
     }
 
     #[test]
+    fn sign_bit_flip_on_either_comparison_side_rechecks() {
+        let bounds = [lt(constant(0), var(1)), le(var(1), constant(4))];
+        for constant_first in [false, true] {
+            let flipped = if constant_first {
+                Bitvector32Term::BitwiseXor(Box::new(constant(i32::MIN)), Box::new(var(1)))
+            } else {
+                Bitvector32Term::BitwiseXor(Box::new(var(1)), Box::new(constant(i32::MIN)))
+            };
+            for goal in [
+                le(constant(i32::MIN + 1), flipped.clone()),
+                le(flipped, constant(i32::MIN + 4)),
+            ] {
+                let plan = check_plan(&goal, &bounds);
+                assert!(plan.check(&goal, &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
     fn equality_from_bounds_through_a_pinned_constant_is_checked() {
         let goal = proposition(
             ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(var(2))),

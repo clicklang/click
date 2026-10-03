@@ -2,6 +2,7 @@ use super::schema::{Expression as E, Function, Record, RustExport, Statement as 
 mod arrays;
 mod chunks;
 mod moves;
+mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type};
 use std::collections::{BTreeMap, BTreeSet};
@@ -234,6 +235,9 @@ fn lower_function(
             .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
     }
     let mut cx = Context {
+        shared_array_iterators: BTreeMap::new(),
+        shared_array_options: BTreeMap::new(),
+        shared_scalar_slices: BTreeMap::new(),
         chunk_iterators: BTreeSet::new(),
         mir_chunk_iterators: BTreeSet::new(),
         chunk_options: BTreeSet::new(),
@@ -284,6 +288,9 @@ fn lower_function(
     )
 }
 struct Context<'a> {
+    shared_array_iterators: BTreeMap<String, CType>,
+    shared_array_options: BTreeMap<String, CType>,
+    shared_scalar_slices: BTreeMap<String, (String, CType)>,
     chunk_iterators: BTreeSet<String>,
     mir_chunk_iterators: BTreeSet<String>,
     chunk_options: BTreeSet<String>,
@@ -769,6 +776,16 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
+        if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
+            let (pointer, source_length, element) = self.indexed_parts(e)?;
+            if element != expected {
+                return Err("shared scalar slice assignment element mismatch".into());
+            }
+            return Ok(c_seq(
+                c_assign(name, pointer),
+                c_assign(length, source_length),
+            ));
+        }
         if self.local_arrays.contains(name) {
             let (length, element, _) = self.arrays[name];
             return self.assign_array(self.array_pointer(name)?, element, length, e);
@@ -899,6 +916,18 @@ impl Context<'_> {
     // The generated asserts are checked execution obligations, not assumptions.
     fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         match e {
+            E::SharedArrayOptionElement { option } => {
+                if !self.shared_array_options.contains_key(option) {
+                    return Err("unknown shared iterator Option".into());
+                }
+                Ok((
+                    c_assert(c_equal(
+                        c_variable(format!("{option}_some")),
+                        c_int32_literal(1),
+                    )),
+                    c_variable(format!("{option}_pointer")),
+                ))
+            }
             E::Call {
                 function,
                 arguments,
@@ -1170,6 +1199,14 @@ impl Context<'_> {
                 self.indexed_parts(place)
             }
             E::Deref { reference, .. } => self.indexed_parts(reference),
+            E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
+                let (length, element) = self.shared_scalar_slices[name].clone();
+                Ok((c_variable(name), c_variable(length), element))
+            }
+            E::ArrayToSlice {
+                array,
+                mutable: false,
+            } => self.indexed_parts(array),
             E::Local { name } if self.arrays.contains_key(name) => {
                 let (length, element, _) = self.arrays[name];
                 Ok((self.array_pointer(name)?, c_uint64_literal(length), element))
@@ -1294,6 +1331,16 @@ impl Context<'_> {
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
+            E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
+            E::SharedArrayOptionTag { option } => {
+                if !self.shared_array_options.contains_key(option) {
+                    return Err("unknown shared iterator Option".into());
+                }
+                Ok(c_variable(format!("{option}_some")))
+            }
+            E::SharedArrayOptionElement { .. } => {
+                Err("shared Option payload requires checked preparation".into())
+            }
             E::ChunkHasNext { iterator } => self.chunk_has_next(iterator),
             E::ChunkOptionTag { option } => {
                 if !self.chunk_options.contains(option) {

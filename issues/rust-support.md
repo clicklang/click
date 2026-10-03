@@ -301,8 +301,18 @@ computed lanes and sparse repeated storage, preserving values across source and
 destination mutation, record moves and field replacement. Complete typed
 coverage, snapshot-before-write ordering, ordinary proof-tool agreement and
 bounded work at 4/1024/1,000,000 elements are tested. Symbolic/heap region writes,
-opaque load runs and symbolic-address cached writes remain unsupported. Next add
-array/shared-element iteration and resolved custom operators for the unchanged checksum path, broaden iterator composition
+opaque load runs and symbolic-address cached writes remain unsupported. The
+`shared-scalar-array-iteration-v1` checkpoint now models stored `Iter<T>` and
+`Option<&T>` for shared `i32`, `u8` and `u32` arrays through the same checked
+reference-origin, Option and CFG dispatch machinery as exact chunks. Cursor,
+remaining element count and move/live state retain both successful and final
+exhausted transitions without generated processed counters. Borrowed and local
+loops, explicit next calls, partial moves, empty arrays, order, read authority
+and source preservation have probes; declaration/signature forgery, stale None
+payloads and consumed state are rejected. Lowering and first-read proof work
+remain bounded at 4/1024/1,000,000 elements. Mutable/by-value/adapted iteration,
+iterator parameters/returns and general scalar slices remain later work. Next
+add resolved custom operators for the unchanged checksum path, broaden iterator composition
 proofs, and cover borrowed loops. Stable observations and broader iterator parity remain gates.
 Establish stable source/proof observations and equivalent coverage before
 switching production imports. Preserve source metadata and a

@@ -1,6 +1,8 @@
 //! Opt-in, deliberately narrow ULLBC adapter. All bodies use the same CFG path.
 //! Charon owns Rust normalization; Click owns execution and checked authority.
 mod chunks;
+mod protocol;
+mod shared_arrays;
 
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
@@ -184,8 +186,19 @@ impl Adapter<'_> {
             a::TyKind::Ref(_, pointee, kind) if byte_slice(pointee) => Type::ByteSlice {
                 mutable: *kind == a::RefKind::Mut,
             },
-            a::TyKind::Ref(_, pointee, _) if matches!(pointee.kind(), a::TyKind::Slice(..)) => {
-                return Err(unsupported("slice elements other than u8"));
+            a::TyKind::Ref(_, pointee, kind) if matches!(pointee.kind(), a::TyKind::Slice(..)) => {
+                let a::TyKind::Slice(element, _) = pointee.kind() else {
+                    unreachable!()
+                };
+                let element = self.ty(element)?;
+                if *kind != a::RefKind::Shared || !matches!(element, Type::I32 | Type::U32) {
+                    return Err(unsupported(
+                        "slice elements outside shared scalar array iteration",
+                    ));
+                }
+                Type::SharedScalarSlice {
+                    element: Box::new(element),
+                }
             }
             a::TyKind::Ref(_, pointee, kind) => Type::Reference {
                 mutable: *kind == a::RefKind::Mut,
@@ -198,6 +211,16 @@ impl Adapter<'_> {
                     .ok_or_else(|| unsupported("symbolic array length"))?
                     as u64,
             },
+            a::TyKind::Adt(_) if self.shared_iterator_element(t, false).is_some() => {
+                Type::SharedArrayIterator {
+                    element: Box::new(self.ty(self.shared_iterator_element(t, false).unwrap())?),
+                }
+            }
+            a::TyKind::Adt(_) if self.shared_option_element(t, false).is_some() => {
+                Type::SharedArrayOption {
+                    element: Box::new(self.ty(self.shared_option_element(t, false).unwrap())?),
+                }
+            }
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
             a::TyKind::Adt(r) if r.id == a::TypeDeclId::UNIT => Type::Unit,
@@ -262,12 +285,15 @@ struct BodyAdapter<'a, 'b> {
     adapter: &'a Adapter<'b>,
     body: &'a u::ExprBody,
     names: BTreeMap<a::LocalId, String>,
-    chunk_refs: BTreeMap<a::LocalId, a::LocalId>,
-    chunk_discriminants: BTreeMap<a::LocalId, a::LocalId>,
+    iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
+    iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
     fn modeled_call(&self, t: &u::Terminator) -> Result<Option<S>, String> {
+        if let Some(statement) = self.shared_array_call(t)? {
+            return Ok(Some(statement));
+        }
         if let Some(statement) = self.chunk_call(t)? {
             return Ok(Some(statement));
         }
@@ -398,7 +424,7 @@ impl BodyAdapter<'_, '_> {
             .ok_or_else(|| unsupported("unknown local identity"))
     }
     fn place(&self, p: &a::Place) -> Result<E, String> {
-        if let Some(value) = self.chunk_projection(p)? {
+        if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
         }
         Ok(match &p.kind {
@@ -593,11 +619,21 @@ impl BodyAdapter<'_, '_> {
                 let mutable = matches!(destination.kind(), a::TyKind::Ref(_, _, a::RefKind::Mut));
                 if self.adapter.ty(source)? != self.adapter.ty(op.ty())?
                     || self.adapter.ty(destination)? != self.adapter.ty(ty)?
-                    || self.adapter.ty(element)? != Type::U8
-                    || self.adapter.ty(destination)? != (Type::ByteSlice { mutable })
+                    || !matches!(self.adapter.ty(element)?, Type::I32 | Type::U8 | Type::U32)
+                    || !(self.adapter.ty(destination)? == (Type::ByteSlice { mutable })
+                        || (!mutable
+                            && self.adapter.ty(destination)?
+                                == (Type::SharedScalarSlice {
+                                    element: Box::new(self.adapter.ty(element)?),
+                                })))
                     || (mutable && *source_kind != a::RefKind::Mut)
                     || length.as_usize_literal() != Some(extent)
-                    || extent > i32::MAX as u128
+                    || extent
+                        > i32::MAX as u128
+                            / match self.adapter.ty(element)? {
+                                Type::U8 => 1,
+                                _ => 4,
+                            }
                 {
                     return Err(unsupported("array unsize pointer/length/type mismatch"));
                 }
@@ -646,7 +682,7 @@ impl BodyAdapter<'_, '_> {
         })
     }
     fn statement(&self, s: &u::Statement) -> Result<Option<S>, String> {
-        if let Some(statement) = self.chunk_statement(s)? {
+        if let Some(statement) = self.iterator_statement(s)? {
             return Ok(statement);
         }
         Ok(match &s.kind {
@@ -707,7 +743,7 @@ impl BodyAdapter<'_, '_> {
         })
     }
     fn terminator(&self, t: &u::Terminator) -> Result<T, String> {
-        if let Some(terminator) = self.chunk_switch(t)? {
+        if let Some(terminator) = self.iterator_switch(t)? {
             return Ok(terminator);
         }
         Ok(match &t.kind {
@@ -1028,7 +1064,7 @@ pub(super) fn decode(
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
-        let (chunk_refs, chunk_discriminants) = chunks::bindings(&adapter, body)?;
+        let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
         let mut names = BTreeMap::new();
         let mut parameters = Vec::new();
         let mut locals = Vec::new();
@@ -1069,7 +1105,7 @@ pub(super) fn decode(
             names.insert(local.index, n.clone());
             let place = out::Place {
                 name: n,
-                value_type: if chunk_discriminants.contains_key(&local.index) {
+                value_type: if iterator_discriminants.contains_key(&local.index) {
                     Type::Bool
                 } else {
                     adapter.ty(&local.ty)?
@@ -1086,8 +1122,8 @@ pub(super) fn decode(
             adapter: &adapter,
             body,
             names,
-            chunk_refs,
-            chunk_discriminants,
+            iterator_refs,
+            iterator_discriminants,
         };
         let mut blocks = Vec::new();
         for block in &b.body.body {
@@ -1125,7 +1161,7 @@ pub(super) fn decode(
                 terminator,
             });
         }
-        chunks::split_next_branches(&mut blocks)?;
+        protocol::split_next_branches(&mut blocks)?;
         functions.push(out::Function {
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output)?,
@@ -1213,6 +1249,269 @@ mod tests {
             &prepared,
         )
         .unwrap();
+    }
+
+    const ITERATION_ARTIFACT: &[u8] =
+        include_bytes!("../../../design/charon-trial/array-iteration/iteration.ullbc");
+    const ITERATION_SOURCE: &[u8] =
+        include_bytes!("../../../design/charon-trial/array-iteration/iteration.rs");
+    const ITERATION_CLAIM: &str =
+        include_str!("../../../design/charon-trial/array-iteration/iteration.click");
+
+    #[test]
+    fn charon_shared_array_iteration_keeps_typed_state_and_both_next_edges() {
+        let export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
+        let mir = export
+            .functions
+            .iter()
+            .find(|f| f.name == "borrowed")
+            .unwrap()
+            .mir
+            .as_ref()
+            .unwrap();
+        assert!(mir.locals.iter().any(|l| matches!(&l.value_type, Type::SharedArrayIterator { element } if **element == Type::U32)));
+        assert_eq!(
+            mir.blocks
+                .iter()
+                .filter(|b| matches!(
+                    b.terminator,
+                    T::If {
+                        condition: E::SharedArrayHasNext { .. },
+                        ..
+                    }
+                ))
+                .count(),
+            1
+        );
+        assert_eq!(
+            mir.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .filter(|s| matches!(s, S::SharedArrayNext { .. }))
+                .count(),
+            2
+        );
+        assert!(
+            mir.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .any(|s| matches!(s, S::SharedArrayMove { .. }))
+        );
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        C0VerificationSession::new_program_prepared(ITERATION_CLAIM, &prepared).unwrap();
+    }
+
+    #[test]
+    fn charon_shared_iteration_rejects_forged_declarations_signatures_and_paths() {
+        for mutation in 0..8 {
+            let mut artifact: TrialArtifact = serde_json::from_slice(ITERATION_ARTIFACT).unwrap();
+            let callee =
+                artifact
+                    .data
+                    .translated
+                    .fun_decls
+                    .iter_mut()
+                    .find(|f| {
+                        f.item_meta.name.name.last().is_some_and(
+                            |p| matches!(p, a::PathElem::Ident(name, _) if name == "next"),
+                        )
+                    })
+                    .unwrap();
+            match mutation {
+                0 => callee.item_meta.is_local = true,
+                1 => callee.signature.is_unsafe = true,
+                2 => callee.signature.output = callee.signature.inputs[0].clone(),
+                3..=5 => {
+                    let a::FunSource::TraitImpl {
+                        trait_ref,
+                        impl_ref,
+                        ..
+                    } = &callee.src
+                    else {
+                        panic!()
+                    };
+                    match mutation {
+                        3 => {
+                            artifact.data.translated.trait_decls[trait_ref.id]
+                                .item_meta
+                                .diagnostic_item = Some("Lookalike".into())
+                        }
+                        4 => artifact.data.translated.trait_impls[impl_ref.id].is_negative = true,
+                        5 => {
+                            artifact.data.translated.trait_impls[impl_ref.id]
+                                .item_meta
+                                .name
+                                .name[0] =
+                                a::PathElem::Ident("impostor".into(), a::Disambiguator::ZERO);
+                            callee.item_meta.name.name[0] =
+                                a::PathElem::Ident("impostor".into(), a::Disambiguator::ZERO);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                6 => {
+                    artifact
+                        .data
+                        .translated
+                        .type_decls
+                        .iter_mut()
+                        .find(|t| t.item_meta.lang_item == Some(LangItem::Option))
+                        .unwrap()
+                        .item_meta
+                        .is_local = true
+                }
+                7 => callee.signature.inputs.clear(),
+                _ => unreachable!(),
+            }
+            assert!(
+                decode(
+                    &serde_json::to_vec(&artifact).unwrap(),
+                    "iteration.rs",
+                    ITERATION_SOURCE
+                )
+                .is_err(),
+                "mutation {mutation}"
+            );
+        }
+    }
+
+    #[test]
+    fn charon_shared_iteration_rejects_uninitialized_and_consumed_state() {
+        for duplicate in [false, true] {
+            let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
+            let name = if duplicate { "moved" } else { "signed" };
+            export.functions.retain(|f| f.name == name);
+            let mir = export.functions[0].mir.as_mut().unwrap();
+            if duplicate {
+                let block = mir
+                    .blocks
+                    .iter_mut()
+                    .find(|b| {
+                        b.statements
+                            .iter()
+                            .any(|s| matches!(s, S::SharedArrayMove { .. }))
+                    })
+                    .unwrap();
+                let index = block
+                    .statements
+                    .iter()
+                    .position(|s| matches!(s, S::SharedArrayMove { .. }))
+                    .unwrap();
+                block
+                    .statements
+                    .insert(index + 1, block.statements[index].clone());
+            } else {
+                for block in &mut mir.blocks {
+                    block
+                        .statements
+                        .retain(|s| !matches!(s, S::SharedArrayInitialize { .. }));
+                }
+            }
+            let prepared = super::super::import::prepared_for_test(export).unwrap();
+            let claim = if duplicate {
+                "verifying \"iteration.rs\"; uint32 moved(uint32 a, uint32 b) { ensures result == (a ^ b); } by { execute(); simp(); }"
+            } else {
+                "verifying \"iteration.rs\"; int32 signed(const int32* words) { views words[0..4]; ensures result == old(words[0]); } by { execute(); simp(); }"
+            };
+            assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
+        }
+    }
+
+    #[test]
+    fn charon_shared_iteration_none_cannot_yield_a_scalar_reference() {
+        let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
+        export.functions.retain(|f| f.name == "signed");
+        let f = &mut export.functions[0];
+        for local in f
+            .parameters
+            .iter_mut()
+            .chain(&mut f.mir.as_mut().unwrap().locals)
+        {
+            if let Type::Reference { pointee, .. } = &mut local.value_type
+                && let Type::Array { length, .. } = pointee.as_mut()
+            {
+                *length = 0;
+            }
+        }
+        let mir = f.mir.as_mut().unwrap();
+        let payload = mir
+            .blocks
+            .iter()
+            .flat_map(|b| &b.statements)
+            .find(|s| {
+                matches!(
+                    s,
+                    S::Assign {
+                        value: E::SharedArrayOptionElement { .. },
+                        ..
+                    }
+                )
+            })
+            .unwrap()
+            .clone();
+        let none_edge = mir
+            .blocks
+            .iter()
+            .find_map(|b| match b.terminator {
+                T::If {
+                    condition: E::SharedArrayHasNext { .. },
+                    else_target,
+                    ..
+                } => Some(else_target),
+                _ => None,
+            })
+            .unwrap();
+        let T::Goto { target: none } = mir.blocks[none_edge].terminator else {
+            panic!()
+        };
+        mir.blocks[none].statements.insert(0, payload);
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        assert!(C0VerificationSession::new_program_prepared("verifying \"iteration.rs\"; int32 signed(const int32* words) { ensures result == 0; } by { execute(); simp(); }", &prepared).is_err());
+    }
+
+    #[test]
+    fn charon_shared_iterator_lowering_and_first_read_work_are_independent_of_extent() {
+        fn resize(ty: &mut Type, n: u64) {
+            if let Type::Reference { pointee, .. } = ty {
+                resize(pointee, n);
+            }
+            if let Type::Array { length, .. } = ty {
+                *length = n;
+            }
+        }
+        let mut samples = Vec::new();
+        for length in [4, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
+            export.functions.retain(|f| f.name == "signed");
+            let f = &mut export.functions[0];
+            for local in f
+                .parameters
+                .iter_mut()
+                .chain(&mut f.mir.as_mut().unwrap().locals)
+            {
+                resize(&mut local.value_type, length);
+            }
+            let (prepared, lowering_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    super::super::import::prepared_for_test(export)
+                });
+            let prepared = prepared.unwrap();
+            let claim = format!(
+                "verifying \"iteration.rs\"; int32 signed(const int32* words) {{ views words[0..{length}]; ensures result == old(words[0]); }} by {{ execute(); simp(); }}"
+            );
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                C0VerificationSession::new_program_prepared(&claim, &prepared)
+            });
+            verified.unwrap();
+            samples.push((lowering_work, work));
+        }
+        assert!(
+            samples
+                .iter()
+                .all(|(lowering, proof)| *lowering == samples[0].0 && *proof <= samples[0].1 + 128),
+            "{samples:?}"
+        );
     }
 
     const OWNED_ARRAY_ARTIFACT: &[u8] =
@@ -1931,7 +2230,7 @@ mod tests {
             CHUNK_SOURCE,
         )
         .unwrap_err();
-        assert!(error.contains("chunk Option projection"), "{error}");
+        assert!(error.contains("iterator Option projection"), "{error}");
     }
 
     #[test]

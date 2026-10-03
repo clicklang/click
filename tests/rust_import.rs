@@ -235,6 +235,114 @@ fn charon_array_snapshots_live_refresh() {
     .unwrap();
 }
 
+const CHARON_ITERATION_SOURCE: &str =
+    include_str!("../design/charon-trial/array-iteration/iteration.rs");
+const CHARON_ITERATION_SIDECAR: &str =
+    include_str!("../design/charon-trial/array-iteration/iteration.click");
+fn charon_iteration_project() -> Project {
+    let p = Project::new(CHARON_ITERATION_SOURCE);
+    for (name, bytes) in [
+        ("iteration.rs", CHARON_ITERATION_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_ITERATION_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/array-iteration/iteration.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "iteration.ullbc",
+            include_bytes!("../design/charon-trial/array-iteration/iteration.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../design/charon-trial/array-iteration/iteration.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {
+    let p = charon_iteration_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ITERATION_SIDECAR, &prepared).unwrap();
+    for (before, after) in [
+        ("ensures result == 4u32;", "ensures result == 3u32;"),
+        (
+            "ensures result == ((a << 1u32) ^ b);",
+            "ensures result == ((b << 1u32) ^ a);",
+        ),
+        ("ensures result == (a ^ b);", "ensures result == a;"),
+        (
+            "ensures result == old(words[0]);",
+            "ensures result == old(words[1]);",
+        ),
+        ("views words[0..4];", "views words[1..4];"),
+    ] {
+        let invalid = CHARON_ITERATION_SIDECAR.replace(before, after);
+        assert_ne!(invalid, CHARON_ITERATION_SIDECAR);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_shared_iteration_cli_tools_recheck_expanded_certificates() {
+    let p = charon_iteration_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "borrowed.contract",
+        "moved.contract",
+        "ordered.contract",
+        "signed.contract",
+        "empty.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_shared_iteration_live_refresh_and_rejected_protocols() {
+    let p = charon_iteration_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_ITERATION_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for source in [
+        "pub fn bad(words: &mut [u32;4]) { for word in words.iter_mut() { *word = 0; } }",
+        "pub fn bad(words: [u32;4])->u32 { let mut x=0; for word in words { x ^= word; } x }",
+        "pub fn bad(words: &[u32;4])->u32 { let mut x=0; for word in words.iter().rev() { x ^= *word; } x }",
+        "pub fn bad(words: &[u32;4]) { for word in words { *word = 0; } }",
+    ] {
+        fs::write(p.root.join("iteration.rs"), source).unwrap();
+        let old_artifact = fs::read(p.root.join("iteration.ullbc")).unwrap();
+        let old_lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(!error.contains("panicked"), "{error}");
+        assert_eq!(
+            fs::read(p.root.join("iteration.ullbc")).unwrap(),
+            old_artifact
+        );
+        assert_eq!(
+            fs::read(p.root.join("borrow.click.import.json.lock")).unwrap(),
+            old_lock
+        );
+    }
+}
+
 const CHARON_FIELDS_SOURCE: &str = include_str!("../design/charon-trial/array-fields/fields.rs");
 const CHARON_FIELDS_SIDECAR: &str =
     include_str!("../design/charon-trial/array-fields/fields.click");

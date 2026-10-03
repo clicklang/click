@@ -2389,6 +2389,20 @@ fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
 }
 
 #[test]
+fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
+    for goal in ["1u32 <= ((uint32)x)", "((uint32)x) <= 4u32"] {
+        let source = format!(
+            "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ arithmetic() using {{ 0 < x; x <= 4; }} }} }}"
+        );
+        verify_c0_sources(&source, &[]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(&source, &[], "cast_bound.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        assert!(verify_c0_sources(&source.replace(goal, "5u32 <= ((uint32)x)"), &[]).is_err());
+    }
+}
+
+#[test]
 fn arithmetic_certificates_accept_checked_mixed_atoms_without_erasing_domains() {
     for (parameters, requirements, term) in [
         ("x: int32", "", "to_integer(x)"),

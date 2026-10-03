@@ -33,6 +33,9 @@ pub enum Type {
     // Named Charon-only shared-byte chunk protocol; not general external ADTs.
     ChunkIterator,
     ChunkOption,
+    SharedArrayIterator { element: Box<Type> },
+    SharedArrayOption { element: Box<Type> },
+    SharedScalarSlice { element: Box<Type> },
     I32,
     U8,
     U16,
@@ -86,6 +89,15 @@ pub enum Expression {
         value: Box<Self>,
         source_type: Type,
         value_type: Type,
+    },
+    SharedArrayHasNext {
+        iterator: String,
+    },
+    SharedArrayOptionElement {
+        option: String,
+    },
+    SharedArrayOptionTag {
+        option: String,
     },
     ChunkHasNext {
         iterator: String,
@@ -240,6 +252,18 @@ pub struct MirBlock {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirStatement {
+    SharedArrayInitialize {
+        target: String,
+        source: Expression,
+    },
+    SharedArrayMove {
+        target: String,
+        source: String,
+    },
+    SharedArrayNext {
+        iterator: String,
+        option: String,
+    },
     ChunkInitialize {
         target: String,
         slice: Expression,
