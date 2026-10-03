@@ -506,6 +506,15 @@ encoded names, as do spellings that are not valid sidecar identifiers
 Reachable overloads are supported; selecting an overloaded declaration directly
 still fails until a signature selector is available.
 
+Scalar interpretation is shared by the artifact validator, execution lowering,
+and proof-facing signatures. It distinguishes mutable and const qualification
+from the five supported value kinds: Boolean, int32, int64, uint32, and uint64.
+Integer literals use one checked parser in validation and lowering. Source
+aliases preserve provenance without changing the value kind. Reference and
+record-field restrictions remain specific to their positions in the profile.
+Explicit integral casts use one C++ conversion policy over the common kernel;
+the frontend does not re-infer promotions from source syntax.
+
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
 `%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked
 kernel. Clang's integral promotions and signed casts are explicit artifact

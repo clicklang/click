@@ -10,6 +10,7 @@ mod interface;
 mod lifetime;
 mod lowering;
 mod names;
+mod scalar;
 mod schema;
 mod validity;
 

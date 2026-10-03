@@ -1,4 +1,5 @@
 //! Contract-facing metadata prepared by the C++ frontend alongside execution.
+use super::scalar::{Scalar, ScalarKind};
 use super::{CppStatement, CppType, PreparedCppImport};
 use crate::kernel::CFunction;
 use crate::languages::PreparedExecution;
@@ -18,28 +19,15 @@ pub(super) fn prepare(
             .map(|field| {
                 crate::instrumentation::record_deterministic_work(1);
                 let value_type = match &field.value_type {
-                    CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        is_const: false,
-                        ..
-                    } => C0Type::Int32,
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        is_const: false,
-                        ..
-                    } => C0Type::Int64,
+                    value
+                        if Scalar::mutable_kind(value).is_some_and(|kind| {
+                            matches!(kind, ScalarKind::Int32 | ScalarKind::Int64)
+                        }) =>
+                    {
+                        Scalar::mutable_kind(value).unwrap().proof_type()
+                    }
                     CppType::Pointer { pointee }
-                        if matches!(
-                            pointee.as_ref(),
-                            CppType::Integer {
-                                bits: 32,
-                                signed: true,
-                                is_const: false,
-                                ..
-                            }
-                        ) =>
+                        if Scalar::is(pointee, ScalarKind::Int32, false) =>
                     {
                         C0Type::Int32Pointer
                     }
@@ -123,67 +111,29 @@ fn function_interface(
     source: &super::CppFunction,
     lowered: &crate::kernel::CFunction,
 ) -> Result<syntax::C0Function, String> {
-    let return_type = match source.return_type {
-        CppType::Void => C0Type::Void,
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        } => C0Type::Int32,
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: false,
-            ..
-        } => C0Type::Int64,
-        CppType::Integer {
-            bits: 32,
-            signed: false,
-            is_const: false,
-            ..
-        } => C0Type::UInt32,
-        CppType::Integer {
-            bits: 64,
-            signed: false,
-            is_const: false,
-            ..
-        } => C0Type::UInt64,
-        CppType::Boolean {
-            bits: 8,
-            is_const: false,
-        } => C0Type::Bool,
-        _ => {
-            return Err(format!(
-                "C++ declaration `{}` has an unsupported return type",
-                source.declaration_id
-            ));
-        }
+    let return_type = if source.return_type == CppType::Void {
+        C0Type::Void
+    } else {
+        Scalar::mutable_kind(&source.return_type)
+            .map(ScalarKind::proof_type)
+            .ok_or_else(|| {
+                format!(
+                    "C++ declaration `{}` has an unsupported return type",
+                    source.declaration_id
+                )
+            })?
     };
     let parameters = source
         .parameters
         .iter()
         .map(|parameter| {
             crate::instrumentation::record_deterministic_work(1);
+            if let Some(kind) = Scalar::mutable_kind(&parameter.value_type) {
+                return Ok(syntax::C0Parameter::new(kind.proof_type(), parameter.name.clone(), None));
+            }
             match &parameter.value_type {
-            CppType::Integer { bits, signed, is_const: false, .. } if *bits == 32 || *bits == 64 => Ok(syntax::C0Parameter::new(match (*bits, *signed) { (32,true) => C0Type::Int32, (64,true) => C0Type::Int64, (32,false) => C0Type::UInt32, _ => C0Type::UInt64 }, parameter.name.clone(), None)),
-            CppType::Boolean {
-                bits: 8,
-                is_const: false,
-            } => Ok(syntax::C0Parameter::new(
-                C0Type::Bool,
-                parameter.name.clone(),
-                None,
-            )),
             CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        ..
-                    }
-                ) =>
+                if Scalar::of(pointee).is_some_and(|scalar| scalar.kind == ScalarKind::Int32) =>
             {
                 let CppType::Integer { is_const, .. } = pointee.as_ref()
                 else {
@@ -197,15 +147,7 @@ fn function_interface(
                 .with_pointee_constant(*is_const))
             }
             CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        is_const: true,
-                        ..
-                    }
-                ) =>
+                if Scalar::is(pointee, ScalarKind::Int64, true) =>
             {
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int64Pointer,
@@ -227,16 +169,7 @@ fn function_interface(
                     Some(name.clone()),
                 ).with_pointee_constant(*is_const))
             }
-            CppType::Pointer { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        is_const: false,
-                        ..
-                    }
-                ) =>
+            CppType::Pointer { pointee } if Scalar::is(pointee, ScalarKind::Int32, false) =>
             {
                 Ok(syntax::C0Parameter::new(
                     C0Type::Int32Pointer,

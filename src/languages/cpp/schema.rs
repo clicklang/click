@@ -1,3 +1,4 @@
+use super::scalar::{Scalar, ScalarKind, same_scalar_type, same_unqualified_integer_type};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -2052,29 +2053,9 @@ impl CppExpression {
                 span,
             } => {
                 require_scalar_integer(value_type, "integer constant type")?;
-                let valid = match value_type {
-                    CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        ..
-                    } => value.parse::<i32>().is_ok(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        ..
-                    } => value.parse::<i64>().is_ok(),
-                    CppType::Integer {
-                        bits: 32,
-                        signed: false,
-                        ..
-                    } => value.parse::<u32>().is_ok(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: false,
-                        ..
-                    } => value.parse::<u64>().is_ok(),
-                    _ => false,
-                };
+                let valid = Scalar::mutable_kind(value_type)
+                    .and_then(|kind| kind.parse_literal(value))
+                    .is_some();
                 if !valid {
                     return Err(format!("unsupported C++ integer constant `{value}`"));
                 }
@@ -3394,41 +3375,34 @@ fn validate_member_reference<'a>(
 }
 
 fn require_int32(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const,
-            ..
-        } if allow_const || !is_const => Ok(()),
-        _ => Err(format!("{label} is outside the first C++ `int` slice")),
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Int32 && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!("{label} is outside the first C++ `int` slice"))
     }
 }
 
 fn require_signed_int64(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const,
-            ..
-        } if allow_const || !is_const => Ok(()),
-        _ => Err(format!(
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Int64 && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} is outside the supported C++ signed 64-bit slice"
-        )),
+        ))
     }
 }
 
 fn require_scalar_integer(value: &CppType, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 32 | 64,
-            is_const: false,
-            ..
-        } => Ok(()),
-        _ => Err(format!(
+    if Scalar::mutable_kind(value).is_some_and(ScalarKind::is_integer) {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} requires a mutable signed or unsigned 32/64-bit integer"
-        )),
+        ))
     }
 }
 
@@ -3441,64 +3415,12 @@ fn require_integral_scalar(value: &CppType, label: &str) -> Result<(), String> {
 }
 
 fn require_const_signed_int64(value: &CppType, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: true,
-            ..
-        } => Ok(()),
-        _ => Err(format!(
+    if Scalar::is(value, ScalarKind::Int64, true) {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} is outside the supported C++ `const` signed 64-bit slice"
-        )),
-    }
-}
-
-fn same_unqualified_integer_type(left: &CppType, right: &CppType) -> bool {
-    matches!(
-        (left, right),
-        (
-            CppType::Integer {
-                bits: left_bits,
-                signed: left_signed,
-                ..
-            },
-            CppType::Integer {
-                bits: right_bits,
-                signed: right_signed,
-                ..
-            }
-        ) if left_bits == right_bits && left_signed == right_signed
-    )
-}
-
-fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
-    match (left, right) {
-        (
-            CppType::Integer {
-                bits: left_bits,
-                signed: left_signed,
-                is_const: left_const,
-                ..
-            },
-            CppType::Integer {
-                bits: right_bits,
-                signed: right_signed,
-                is_const: right_const,
-                ..
-            },
-        ) => left_bits == right_bits && left_signed == right_signed && left_const == right_const,
-        (
-            CppType::Boolean {
-                bits: left_bits,
-                is_const: left_const,
-            },
-            CppType::Boolean {
-                bits: right_bits,
-                is_const: right_const,
-            },
-        ) => left_bits == right_bits && left_const == right_const,
-        _ => left == right,
+        ))
     }
 }
 
@@ -3546,9 +3468,12 @@ fn require_mutable_int32_pointer(value: &CppType, label: &str) -> Result<(), Str
 }
 
 fn require_bool(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Boolean { bits: 8, is_const } if allow_const || !is_const => Ok(()),
-        _ => Err(format!("{label} is outside the supported C++ `bool` slice")),
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Bool && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!("{label} is outside the supported C++ `bool` slice"))
     }
 }
 
