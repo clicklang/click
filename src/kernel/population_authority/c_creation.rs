@@ -1667,6 +1667,25 @@ impl CreationEvents {
                 },
             );
         }
+        // Locally established concrete batches use the same numerical custody
+        // as unit exchanges. A literal batch must not become indivisible
+        // symbolic custody just because its amount is greater than one.
+        if let Some(amount) = quantity.as_const().filter(|n| *n <= i32::MAX as u32)
+            && self
+                .governing_authority(description)
+                .is_some_and(|scope| !self.0.opaque_imports.contains_key(&scope))
+        {
+            return self.checked_member_exchange_with_context(
+                block,
+                description,
+                produce,
+                Some(assumptions),
+                amount,
+                MemberForm::Quantity {
+                    exclusive_body: false,
+                },
+            );
+        }
         // Concrete batches in opaque unary populations share the numerical
         // ledger with unit operations. Updating a batch is constant work, not
         // one exchange per unit, and may be followed by checked helper calls.
@@ -2188,12 +2207,26 @@ impl CreationEvents {
         if self.0.symbolic_batches.contains_key(&population) {
             return Err(CreationRefusal::InvalidQuantity);
         }
-        let authority = if produce {
-            self.0.authority.produce(self.0.invocation, population, 1)
+        let authority = if amount == 0 {
+            if !self
+                .0
+                .authority
+                .holder_owns_authority(self.0.invocation, population)
+            {
+                return Err(CreationRefusal::MissingAuthority);
+            }
+            self.0.authority.clone()
+        } else if produce {
+            self.0
+                .authority
+                .produce(self.0.invocation, population, amount)
+                .map_err(CreationRefusal::from)?
         } else {
-            self.0.authority.consume(self.0.invocation, population, 1)
-        }
-        .map_err(CreationRefusal::from)?;
+            self.0
+                .authority
+                .consume(self.0.invocation, population, amount)
+                .map_err(CreationRefusal::from)?
+        };
         let mut exact_members = self.0.exact_members.clone();
         if scope.population_arity().is_some() {
             let key = Self::exact_count_key(description);
@@ -2206,9 +2239,9 @@ impl CreationEvents {
             } else if exact_members.get(&scope_key).copied().unwrap_or(0) == 0 {
                 let prior = exact_members.get(&key).copied().unwrap_or(0);
                 let next = if produce {
-                    prior.checked_add(1)
+                    prior.checked_add(amount)
                 } else {
-                    prior.checked_sub(1)
+                    prior.checked_sub(amount)
                 }
                 .ok_or(CreationRefusal::MissingMembers)?;
                 exact_members.insert(key, next);

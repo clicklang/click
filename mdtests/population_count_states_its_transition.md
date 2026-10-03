@@ -10,18 +10,20 @@ void object_retain(int32* obj) {
 }
 ```
 
-```click
-abstract resource object_ref(obj: int32*);
+```click resource_semantics=authority
+resource object_ref(obj: int32*) {}
 
 verifying "population_count_states_its_transition.c";
 
 void object_retain(int32* obj) {
+    owns authority(object_ref(obj));
     owns object_ref(obj);
     requires count(object_ref(obj)) >= 1;
     requires count(object_ref(obj)) <= 1000;
     produces object_ref(obj);
     ensures count(object_ref(obj)) == old(count(object_ref(obj))) + 1;
 } by {
+    fold(object_ref(obj));
     execute();
     simp();
 }
