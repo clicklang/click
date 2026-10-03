@@ -3107,6 +3107,11 @@ pub enum ProofTactic {
     /// `name(args) { binder: instance }`: one application of a user-defined
     /// tactic's verified contract, with no C statement.
     UserTactic(CallBinderTransport),
+    /// A tactic Click adds to a script, never written in source: the end of
+    /// a user-defined tactic's proof steps its procedure's `return` and
+    /// closes its claims. It occupies no source position, so the tactics
+    /// the author wrote keep their source indices; indexing unwraps it.
+    Synthetic(Box<ProofTactic>),
     SmartExecute,
     ExecuteUntil(CodeRegionRef),
     UnfoldPredicate(String),
@@ -4854,6 +4859,7 @@ fn validate_certificate_proof(
 impl ProofTactic {
     pub fn class(&self) -> TacticClass {
         match self {
+            Self::Synthetic(inner) => inner.class(),
             Self::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
             Self::Step | Self::StepContract(_) | Self::StepCall(_) => {
                 TacticClass::Simple(SimpleTactic::StatementTransition)

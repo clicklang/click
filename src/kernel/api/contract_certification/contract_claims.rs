@@ -2405,6 +2405,7 @@ pub(crate) fn c_verified_function_contract_claims_with_checked_propositions(
                 key: claim.key().clone(),
                 load_equalities,
                 loop_semantics: contract_execution.loop_semantics,
+                applied_tactics: contract_execution.applied_tactics.clone(),
             })
         })
         .collect::<Option<Vec<_>>>();
@@ -2701,6 +2702,10 @@ pub fn c_verified_function_rule(
     Some(CVerifiedFunctionRule {
         function,
         loop_semantics,
+        applied_tactics: proofs
+            .iter()
+            .flat_map(|proof| proof.applied_tactics.iter().cloned())
+            .collect(),
     })
 }
 
@@ -2752,6 +2757,7 @@ pub(crate) fn c_recursive_function_contract_hypothesis(
         function,
         // A hypothesis certified nothing, so it says nothing about loops.
         loop_semantics: CLoopSemantics::Verify,
+        applied_tactics: Default::default(),
     })
 }
 

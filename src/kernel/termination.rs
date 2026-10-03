@@ -3857,6 +3857,13 @@ fn termination_call_graph<'a>(
         .iter()
         .map(|rule| (rule.function.name.clone(), &rule.function))
         .collect::<BTreeMap<_, _>>();
+    // A user-defined tactic's procedure runs no code, so its body has no
+    // calls; the tactics its certified proof applied are its call edges.
+    let applied_tactics = partial_rules
+        .iter()
+        .filter(|rule| !rule.applied_tactics.is_empty())
+        .map(|rule| (rule.function.name.clone(), &rule.applied_tactics))
+        .collect::<BTreeMap<_, _>>();
     charge_termination_work(partial_rules.len() + inline_bodies.len());
     let unruled_bodies = inline_bodies
         .iter()
@@ -3873,7 +3880,11 @@ fn termination_call_graph<'a>(
         let function = *functions
             .get(&name)
             .expect("every pending name was added with its function");
-        let found = termination_callees(function);
+        let mut found = termination_callees(function);
+        if let Some(tactics) = applied_tactics.get(&name) {
+            charge_termination_work(tactics.len());
+            found.extend(tactics.iter().cloned());
+        }
         for callee in &found {
             charge_termination_work(1);
             if functions.contains_key(callee) {
@@ -4525,6 +4536,28 @@ fn termination_rules_recording_function<'a>(
 
                 let plan = plans.get(name);
                 let recursive_measure = plan.and_then(|plan| plan.recursive_measure.clone());
+                // A recursion carried by a tactic application has no C call
+                // for a structural or parameter measure to read: the
+                // recursive edge lives in the certified proof, not the body.
+                // Only an expression measure answers for it, because its
+                // descent was owed, under the recursion anchor, at the very
+                // application that recursed.
+                if let Some(rule) = ruled.get(name.as_str())
+                    && rule
+                        .applied_tactics
+                        .iter()
+                        .any(|tactic| recursive_callees.contains(tactic))
+                    && !matches!(
+                        recursive_measure,
+                        None | Some(CFunctionTerminationMeasure::Expression(_))
+                    )
+                {
+                    return Err(error(format!(
+                        "`{name}` recurses through a tactic application, which only an expression \
+                         `decreases` measure can rank: its descent is owed at each application. \
+                         Rank `{name}` by an expression over its parameters or its binders' models"
+                    )));
+                }
                 let mut parameter_indices = BTreeMap::new();
                 let mut structural_requirement = None;
                 if recursive_callees.is_empty() {
@@ -5527,6 +5560,7 @@ mod local_descent_tests {
         CVerifiedFunctionRule {
             function: CFunction::new(CType::Void, name, Vec::new(), body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
         }
     }
 
@@ -5717,6 +5751,7 @@ mod local_descent_tests {
             }
             CVerifiedFunctionRule {
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+                applied_tactics: Default::default(),
                 function: CFunction::new(
                     CType::Void,
                     name,
@@ -5869,6 +5904,7 @@ mod local_descent_tests {
         CVerifiedFunctionRule {
             function: CFunction::new(CType::Void, name, parameters, body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
         }
     }
 
@@ -6056,6 +6092,7 @@ mod local_descent_tests {
     fn a_loop_certification_executed_to_its_exit_owes_no_measure() {
         let bare = |name: &str| CVerifiedFunctionRule {
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
             function: CFunction::new(
                 CType::Void,
                 name,
@@ -6226,6 +6263,7 @@ mod local_descent_tests {
             body = CStatement::Seq(Arc::new(body), Arc::new(guarded_call(argument)));
             [CVerifiedFunctionRule {
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+                applied_tactics: Default::default(),
                 function: CFunction::new(
                     CType::Void,
                     "countdown",
@@ -6367,6 +6405,7 @@ mod local_descent_tests {
         CVerifiedFunctionRule {
             function,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
         }
     }
 
@@ -6378,6 +6417,79 @@ mod local_descent_tests {
             )),
             loop_measures: BTreeMap::new(),
         }
+    }
+
+    /// A tactic rule: a procedure whose body runs no code, recursing only
+    /// through the applications its certified proof recorded.
+    fn tactic_rule(name: &str, measure: bool) -> CVerifiedFunctionRule {
+        let mut function = CFunction::new(
+            CType::Void,
+            name,
+            Vec::new(),
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        );
+        if measure {
+            function = function.with_recursion_measure(CRankingComponent::Pure {
+                source: "level(n)".to_string(),
+                expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
+            });
+        }
+        CVerifiedFunctionRule {
+            function,
+            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: BTreeSet::from([name.to_string()]),
+        }
+    }
+
+    /// A tactic's recursion is in its proof, not its body, so the recorded
+    /// application is its only recursive edge. With no measure it is refused
+    /// as unranked recursion, never accepted as a call-free function.
+    #[test]
+    fn a_tactic_recursing_through_its_applications_needs_a_measure() {
+        let rules = [tactic_rule("convert", false)];
+        let plan = c_termination_height_plan(&rules, &[]);
+        let verdicts = check(&rules, &[], &plan, &[]).expect("the plan checks");
+        assert!(terminating(&verdicts).is_empty());
+        assert!(matches!(
+            verdicts.refusals.get("convert"),
+            Some(CTerminationRefusal::UnmeasuredRecursion { .. })
+        ));
+    }
+
+    /// A parameter measure reads recursive calls in a body, and a tactic's
+    /// body has none; ranking its recursion that way would rank nothing.
+    #[test]
+    fn a_tactic_recursing_through_its_applications_refuses_a_parameter_measure() {
+        let rules = [tactic_rule("convert", false)];
+        let plan = c_termination_height_plan(&rules, &[]);
+        let error = check(
+            &rules,
+            &[CFunctionTerminationPlan {
+                function_name: "convert".to_string(),
+                recursive_measure: Some(CFunctionTerminationMeasure::NumericParameter(0)),
+                loop_measures: BTreeMap::new(),
+            }],
+            &plan,
+            &[],
+        )
+        .expect_err("a tactic's recursion has no body call for a parameter measure to read");
+        assert!(
+            error
+                .message
+                .contains("recurses through a tactic application"),
+            "{error:?}"
+        );
+    }
+
+    /// An expression measure's descent was owed at the recorded application
+    /// itself, so it ranks a tactic's recursion.
+    #[test]
+    fn a_tactic_recursing_through_its_applications_is_ranked_by_an_expression() {
+        let rules = [tactic_rule("convert", true)];
+        let plan = c_termination_height_plan(&rules, &[]);
+        let verdicts = check(&rules, &[expression_plan("convert")], &plan, &[])
+            .expect("the expression measure ranks the recorded recursion");
+        assert_eq!(terminating(&verdicts), BTreeSet::from(["convert"]));
     }
 
     /// The expression measure certifies direct self-recursion. Nothing about
@@ -6478,6 +6590,7 @@ mod local_descent_tests {
             function: CFunction::new(CType::Void, name, Vec::new(), body)
                 .with_recursion_measure(declared_component()),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
         }
     }
 
@@ -6678,6 +6791,7 @@ mod termination_scaling_tests {
         CVerifiedFunctionRule {
             function: CFunction::new(CType::Void, name, Vec::new(), calls_body(callees)),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            applied_tactics: Default::default(),
         }
     }
 

@@ -1954,6 +1954,9 @@ fn validate_pure_theorem_tactics(
 ) -> Result<(), ClickError> {
     for tactic in tactics {
         match tactic {
+            ProofTactic::Synthetic(inner) => {
+                validate_pure_theorem_tactics(theorem_name, std::slice::from_ref(inner))?;
+            }
             ProofTactic::UnfoldPredicate(_)
             | ProofTactic::UnfoldFunction(_)
             | ProofTactic::UnfoldFunctionUsing { .. }
@@ -2049,6 +2052,7 @@ fn validate_pure_theorem_tactics(
 
 pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
     match tactic {
+        ProofTactic::Synthetic(inner) => tactic_name(inner),
         ProofTactic::Mark(_) => "mark",
         ProofTactic::Step | ProofTactic::StepContract(_) | ProofTactic::StepCall(_) => "step",
         ProofTactic::UserTactic(_) => "tactic",

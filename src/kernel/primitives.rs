@@ -3470,6 +3470,11 @@ pub struct CVerifiedFunctionRule {
     /// `ApplyVerifiedRules` a loop with no verified loop rule ran to its
     /// exit on every certified path.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics this rule's certified proofs applied, by
+    /// name. A tactic's procedure runs no code, so its body has no calls;
+    /// these applications are its call edges, written by the kernel from the
+    /// checked traces, so the termination check may trust them.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 impl CVerifiedFunctionRule {
@@ -3842,6 +3847,9 @@ pub struct CVerifiedFunctionContractClaim {
     pub(super) load_equalities: Vec<super::CheckedLoadEquality>,
     /// The loop semantics of the certification this claim came from.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics the certification this claim came from
+    /// applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
@@ -9226,6 +9234,8 @@ pub struct CFunctionContractExecution {
     /// paths; under `Verify` an annotated loop may be summarized without
     /// ever exiting. The termination check reads this to know which.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics the certified proofs applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 /// A kernel-created record of one exact whole-function execution judgment.
@@ -9267,6 +9277,8 @@ pub struct CCheckedFunctionExecution {
     /// Original contract caller state when a kernel-checked proof entered C
     /// execution through a definitionally equal resource representation.
     pub(super) entry_representation_origin: Option<CState>,
+    /// The user-defined tactics this execution's proof applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
     /// Original checked input selection; later certification must not rebuild it.
     pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
@@ -9291,6 +9303,7 @@ impl CFunctionContractExecution {
             reuse_context_facts: Vec::new(),
             checked_call_events: Default::default(),
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         }
     }
 

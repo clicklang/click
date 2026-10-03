@@ -4612,6 +4612,7 @@ pub fn prove_checked_c_function_execution_with_environment(
         entry_representation_origin: None,
         boundary_transfer: None,
         checked_call_events: Default::default(),
+        applied_tactics: Default::default(),
     }
 }
 
@@ -6249,8 +6250,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         cases.push(alternatives);
     }
     let mut checked_call_events = crate::kernel::proof::CheckedCallEvents::default();
+    let mut applied_tactics = std::collections::BTreeSet::new();
     for artifact in checked_artifacts {
         checked_call_events.extend(&artifact.checked_call_events);
+        applied_tactics.extend(artifact.applied_tactics.iter().cloned());
     }
     CFunctionContractExecution {
         cases,
@@ -6260,6 +6263,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         reuse_context_facts,
         checked_call_events,
         loop_semantics: execution_semantics.loops,
+        applied_tactics,
     }
 }
 

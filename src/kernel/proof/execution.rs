@@ -121,6 +121,9 @@ pub(crate) enum CheckedExecutionEvent {
 /// context. Trace certification then only has to connect the states.
 #[derive(Clone)]
 pub(crate) struct CheckedTacticApplication {
+    /// The tactic whose rule was applied: one call edge of the proof that
+    /// applied it, for the termination check.
+    name: String,
     before_state: CState,
     pub(crate) after_state: CState,
     before_facts: ProofFacts,
@@ -152,6 +155,7 @@ impl CheckedTacticApplication {
             });
         Ok((
             Self {
+                name: name.to_string(),
                 before_state: before_state.clone(),
                 after_state: transition.state,
                 before_facts: before_facts.clone(),
@@ -5546,6 +5550,26 @@ fn register_recomputed_call_views(
     }
 }
 
+/// The tactics a retained trace applied, including in its branch arms.
+fn collect_applied_tactics(
+    events: &[CheckedExecutionEvent],
+    tactics: &mut std::collections::BTreeSet<String>,
+) {
+    for event in events {
+        match event {
+            CheckedExecutionEvent::TacticApplication(application) => {
+                tactics.insert(application.name.clone());
+            }
+            CheckedExecutionEvent::Branch(branch) => {
+                for arm in &branch.arms {
+                    collect_applied_tactics(&arm.events, tactics);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn collect_retained_call_events(
     events: &[CheckedExecutionEvent],
     call_events: &mut CheckedCallEvents,
@@ -6684,6 +6708,14 @@ impl ExecutionProofCore {
 
     pub(crate) fn checked_call_events(&self) -> CheckedCallEvents {
         self.checked_call_events.clone()
+    }
+
+    fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
+        let mut tactics = std::collections::BTreeSet::new();
+        for trace in &self.execution_evidence {
+            collect_applied_tactics(&trace.to_vec(), &mut tactics);
+        }
+        tactics
     }
 
     fn retained_call_events(&self) -> CheckedCallEvents {
@@ -8940,6 +8972,7 @@ impl ExecutionProofCore {
                 .flatten()
                 .and_then(|entry| entry.boundary_transfer.clone()),
             checked_call_events: self.retained_call_events(),
+            applied_tactics: self.retained_applied_tactics(),
         })
     }
 
