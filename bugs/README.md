@@ -29,3 +29,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Rust symbolic multiplication does not match its explicit safety precondition](rust-symbolic-multiplication-precondition-not-matched.md)
 - [Successive calls on local Rust array fields lose symbolic values](rust-successive-array-field-calls-lose-symbolic-values.md)
 - [A postcondition about a parameter named `result` cannot be certified](result-parameter-postconditions-cannot-be-certified.md)
+- [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
+- [Expanding a `loop` renders a match arm's pointer binder as `…`](loop-expansion-renders-arm-pointer-binders-unspellably.md)

@@ -17,6 +17,15 @@ correctness property is preservation of node identity and in-order order
 while links and colors change; a contract that consumes one well-formed
 tree and produces another cannot state that without an abstract model.
 
+## State, 2026-10-02
+
+**`__rb_insert` verifies end to end** on the unchanged Linux C
+(`examples/rbtree-insert/rbtree_insert.click`, in the example gate), with a
+restated contract that produces the fixed-up tree at its focus rather than at
+`root->rb_node`; see chunk 7. **`rb_insert_color` does not**: it calls the
+inline `__rb_insert`, whose contract Click never applies at a call site.
+Both need the owner's decision before chunk 7 can be called complete.
+
 ## Priorities, 2026-09-13
 
 Fix what slows the work before completing the example:
@@ -691,11 +700,53 @@ of them and the join. Counted work is 4.63, 5.86, and 6.94 million units, so
 the second step adds 1.08 million units but 9.1 seconds: the exit join over
 99 exits takes several seconds its work count does not show.
 
-**Chunk 7. Post-loop and `rb_insert_color`.** The body's end, the post-loop
-`is_rb_root(plug(ctx.model, sub.model)) == 1`, in-order preservation and
-parent consistency from the joined exits, and `rb_insert_color`'s own proof
-by `execute(); simp();`. `expect pass`, audit-clean; a negative that skips a
-recolour; the verify-time measurement over the completed body. Depends on 6.
+**Chunk 7. Post-loop: `__rb_insert` landed 2026-10-02; `rb_insert_color`
+is not proved.** The three early `break`s (root and black parent on both
+frames) now state the facts the rotation `break`s already did,
+`is_rb_root(plug(c.model, t.model)) == 1`, in-order preservation, and parent
+consistency, through `ctx_insert_root_exit` and
+`ctx_insert_black_parent_exit` (the root `break` refutes a framed context by
+unfolding it for `identity != 0`). All 99 exits state them identically, so
+they survive the exit join as ordinary facts, and the post-loop proof folds
+the loop's two binders into the result and closes with `step(); simp();`.
+No kernel change was needed for the proof.
+
+The contract changed. It produced `ctx_at(root->rb_node, root)` and
+`rb_at(root->rb_node)`, which no finite proof can reach: the fixup stops at a
+focus with any number of context frames above it, and folding them back to
+the root is one `fold` per frame, with no C loop to carry an invariant. It now
+produces `rb_tree_at(root)`, a resource over `RbFocus::At(focus, ctx_model,
+sub_model)` that owns `ctx_at(focus, root)` and `rb_at(focus)`, and states
+the three properties of `focus_tree(tree.model)`, which is
+`plug(ctx_model, sub_model)`. The footprint, `root->rb_node` included, and
+the whole-tree model are the same. This needs the owner's review: it is the
+bottom-up form of D4, and callers that want the root form face the same
+unbounded fold.
+
+`rb_insert_color` is not proved. Its only statement calls
+`static __always_inline __rb_insert`, and Click executes an inline helper's
+body at every call site and never applies its contract (documented in
+`docs/reference/language/c0.md`), so a proof would have to run the fixup loop
+again inline, without invariants. Executing that symbolic loop also runs
+away instead of failing promptly:
+`bugs/inline-helper-symbolic-loop-call-runs-away.md`. A call step's binder
+map on an inline helper was refused as if the call were missing; it is now
+refused by name (`mdtests/call_step_binder_map_on_inline_helper_rejected.md`).
+Proving `rb_insert_color` needs a decision about verified contracts of inline
+helpers, which this chunk does not make.
+
+`examples/rbtree-insert/rbtree_insert.click` is now the proof and passes in
+the example gate; the `.frontier` file is gone. `tests/examples.rs` keeps the
+C's SHA-256 pins and refuses the proof against an in-memory copy of the C
+whose root case skips `rb_set_parent_color(node, NULL, RB_BLACK)` (refused
+at the proof's claim that the colour bit is black). `click audit` now selects
+the same project root as `click verify`, so it can audit a sidecar that
+imports a sibling project's model. Verify time, release build, one run at a
+time, load average 2 to 4: 30.6 to 32.7 seconds wall, 5.1 GB peak, between
+15.5 and 16.0 million counted units; the chunk-6 frontier, on the same build,
+also counts between 15.5 and 16.0 million and took 32.4 seconds at load 0.4.
+The 6.94 million chunk 6 reported was on a tree without the loop-exit scaling
+pull request, which charges work that was not counted before.
 
 ### Traversals
 

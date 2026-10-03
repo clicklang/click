@@ -241,12 +241,9 @@ marker reused. It never treats an imported proof as selected. Precise
 dependency-level invalidation remains follow-up work.
 
 The former copied `mdtests/rb_insert_color.md` fixture is now
-`examples/rbtree-insert`. Its unchanged C and current proof attempt are in
-`rb_insert_color.c` and `rbtree_insert.frontier`; both use the single shared
-`examples/rbtree-model/rbtree_model.click`. The normal entry intentionally
-selects no insert claim, and a dedicated negative regression requires the
-frontier to continue failing at statement 23, so this conversion does not
-misstate C3 as complete.
+`examples/rbtree-insert`. Its unchanged C and the finished `__rb_insert` proof
+are in `rb_insert_color.c` and `rbtree_insert.click`, which imports the single
+shared `examples/rbtree-model/rbtree_model.click`.
 
 Regressions cover transitive generic algebraic/function/theorem/predicate/
 resource imports, imported-theorem and callee-contract assumptions, explicit
