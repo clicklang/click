@@ -6517,9 +6517,7 @@ impl<'a> Proof<'a> {
                 || (pure_source
                     && matches!(
                         tactic,
-                        ProofTactic::UnfoldFunction(_)
-                            | ProofTactic::Extract(_)
-                            | ProofTactic::ApplyTheorem(_)
+                        ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
                     )
                     && tactics.get(index + 1).is_some_and(|next| {
                         !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
