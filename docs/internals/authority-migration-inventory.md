@@ -14,6 +14,19 @@ Milestone 1 is complete: the full gate passed all 4,720 unit/integration and
 
 ## Discovery boundary
 
+The `authority_named_field_*` fixtures add local field-bearing families with
+exact and wildcard authority. Occurrences with equal arguments retain distinct
+identities and proof fields; aggregate/exact counts track local birth and
+consumption. Disjoint private bodies can be updated through preserving ordinary
+helper contracts while the caller's authority control remains closed.
+Negatives cover overlapping memory, duplicate helper inputs, missing authority
+for counts or lifecycle changes, late establishment, and premature retirement.
+Named-member helper creation/consumption with explicit authority, heterogeneous
+symbolic instance batches, and algebraic/list field descriptions remain outside
+the implemented boundary. Legacy field-count rejection fixtures remain controls. Milestone 2 is complete
+for this boundary: the full gate passed 4,723 unit/integration tests and 190
+fixture tests; all 48 new named-member expansion-audit sites passed.
+
 The `authority_wildcard_*` fixture group adds concrete, field-free
 `R(anchor, _, ...)` population scopes and aggregate count observations.
 The `authority_wildcard_helper_*` fixtures add ordinary borrow-and-return

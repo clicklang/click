@@ -5190,6 +5190,35 @@ fn execute_verified_function_applications_with_suspension(
                 after.fields = fields;
                 after
             };
+            if resource.role() == CResourceTransferRole::Produce
+                && let Some(events) = &caller_state.population_effects.creation
+            {
+                let description = ResourceDescription::from_instance(&after);
+                if events.tracks_population(&description) {
+                    let scope = events
+                        .governing_authority(&description)
+                        .expect("tracked named population");
+                    let authority = CResourceFact::own(CResource::PopulationAuthority(scope));
+                    if !transfer
+                        .callee_resources
+                        .satisfies_fact(&authority, &effective_assumptions)
+                    {
+                        return Ok(vec![CFunctionPath {
+                            outcome: CFunctionOutcome::RuntimeError(
+                                CRuntimeError::MissingResource {
+                                    resource: authority,
+                                },
+                            ),
+                            facts,
+                            obligations,
+                            loan_evidence: empty_checked_loan_evidence_sequence(),
+                        }]);
+                    }
+                    return Ok(vec![resource_call_failure(
+                        "helper creation of named population members requires checked authority effects; this boundary is not supported yet",
+                    )]);
+                }
+            }
             post_state.resources = match post_state
                 .resources
                 .clone()
@@ -19351,6 +19380,37 @@ fn prepare_contract_resource_transfer(
             checked
         })
         .collect();
+    // A preserving named helper may suspend and restore its private body,
+    // but consuming its occurrence is a population effect. Do not silently
+    // remove the resource while leaving its authority ledger unchanged.
+    if purpose.lends()
+        && let Some(events) = &caller_state.population_effects.creation
+    {
+        for checked in &checked_required_resources {
+            if checked.role != CResourceTransferRole::Consume {
+                continue;
+            }
+            let CResource::Instance(instance) = checked.fact.resource() else {
+                continue;
+            };
+            let description = ResourceDescription::from_instance(instance);
+            if !events.tracks_population(&description) {
+                continue;
+            }
+            let scope = events
+                .governing_authority(&description)
+                .expect("tracked named population");
+            let authority = CResourceFact::own(CResource::PopulationAuthority(scope));
+            if !required_resources.satisfies_fact(&authority, assumptions) {
+                return Ok(Err(CRuntimeError::MissingResource {
+                    resource: authority,
+                }));
+            }
+            return Ok(Err(CRuntimeError::FunctionContract(
+                "helper consumption of named population members requires checked authority effects; this boundary is not supported yet".into(),
+            )));
+        }
+    }
     let consumed_inputs = checked_required_resources
         .iter()
         .filter(|checked| checked.role == CResourceTransferRole::Consume)

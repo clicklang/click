@@ -321,65 +321,51 @@ memory framing; no C workaround or new syntax is used.
 A stack-object transfer bridge was unnecessary for these external-pointer C
 pipelines and remains outside the milestone. Additional symbolic subset or
 batch-splitting machinery stays driven by real consumers. The speculative
-cache repair remains removed. Milestone 2 is the next implementation work.
+cache repair remains removed. Milestones 1 and 2 are complete; milestone 3 is next.
 
-### Milestone 2: Finish member identity and proof fields (3–4 chunks)
+### Milestone 2: Finish member identity and proof fields — complete (four slices)
 
-**Wildcard checkpoint:** Field-bearing local families now support
-`authority(R(anchor, _, ...))`, aggregate counts, and exact counts. Each named
-instance keeps its own fields and ownership, including multiple instances at
-equal exact arguments. Private bodies can occupy disjoint cells selected by
-proof fields; overlapping bodies fail their ordinary memory ownership check.
-Validation: all 2,522 kernel/declaration tests, the seven named-field fixtures,
-and all 23 new wildcard/private-memory audit sites passed. Helper transport and
-private updates under a closed control remain the next slices.
+1. **Occurrence identity:** The existing resource context retains each named
+   instance's identity and proof fields. Population bookkeeping counts births
+   and consumption independently of field values, with checked certificate
+   successors. Equal arguments do not merge member states.
+2. **Local lifecycle and counts:** Existing `authority(...)`, `count(...)`,
+   `fold`, and `unfold` support local field-bearing exact and wildcard families.
+   Both aggregate and exact counts include independently owned occurrences.
+   Local creation and consumption require the governing authority.
+3. **Preserving helper transport:** Ordinary named `owns` inputs and explicit
+   field postconditions retain members across calls. A helper can unfold,
+   update, and restore private memory while the caller keeps its authority
+   control closed and retains another member. The same occurrence remains
+   reserved across the preserving call; this does not authorize counting.
+4. **Replacement negatives:** Checks reject overlapping private memory,
+   duplicate helper inputs, count observations without authority, unauthorized
+   lifecycle changes, late establishment, and retirement with live members.
+   Anonymous quantities cannot manufacture missing instance fields. Legacy
+   field-count rejection fixtures remain controls.
 
-**First kernel checkpoint:** A checked local authority can govern separately
-named unary members with proof fields. The existing resource context retains
-each occurrence identity and field values; the population ledger records only
-births and consumption. Certificate rechecking accepts exactly that checked
-ledger successor. Duplicate identities, altered field values, missing authority,
-repeat consumption, retirement with live members, and authority establishment
-after prior members are rejected. The following surface checkpoint connects the existing syntax.
-Validation: the independent named-member regression, all 2,514 kernel tests
-(including scaling tests), and the complete Markdown corpus passed through
-`scripts/check.sh`.
-
-**Local surface checkpoint:** Authority-mode module expansion admits a unary
-field-bearing resource type in `authority(...)` and `count(...)`. The local
-ledger retains its declared type schema, and count evaluation resolves that
-schema through an indexed lookup before checking actual authority ownership.
-Two named occurrences with equal arguments retain distinct proof fields; their
-count progresses from zero to two to one to zero under checked fold/unfold.
-Replacement negatives cover late establishment, live-member retirement, and
-consumption while the authority control stays closed. Legacy field-count and
-quantity rejections remain in place. Helper transport remains a separate checkpoint; the following wildcard slice
-extends this local surface. No new notation is introduced.
-Validation: all kernel and declaration-expansion tests (2,521), the complete
-Markdown corpus, the final four field-member fixtures, and all 10 positive
-expansion-audit sites passed. Anonymous quantities cannot manufacture named
-instances with missing fields; kernel cases reject unit, multi-unit, and
-symbolic quantity requests for these families.
-
-
-1. Define/check population occurrence identity independently of proof fields;
-   equal parameters must not merge distinct member states.
-2. Support count observations and real birth/consumption for individually
-   identified field-bearing members, including exact/wildcard boundaries.
-3. Support ordinary helper transport and member-only private updates. Prove an
-   identified-slot example while its authority-bearing control stays closed.
-4. If needed, finish replacement negatives for legacy field-based countability;
-   distinguish unsupported symbolic quantity syntax from family countability.
-
-**Exit gate:** Two disjoint field-bearing members preserve their identities and
+**Exit gate passed:** Two disjoint field-bearing members preserve identity and
 private state; exclusive-memory conflicts and unauthorized transitions fail.
-No new-model decision uses field presence to select countability. Do not require
-symbolic quantities of heterogeneous instances or general sums over fields.
+Field presence does not select authority-mode family countability. No new
+surface syntax or changes to existing C were needed. The full `scripts/check.sh`
+gate passed 4,723 unit/integration tests and 190 fixture tests; all 48 new
+named-member expansion-audit sites passed.
+
+**Explicit remaining boundaries:** Named-member creation/consumption through
+helpers with explicit authority still needs checked lifecycle effects. Calls
+cannot silently remove or add a tracked member without updating the ledger;
+unsupported transitions are rejected. Symbolic quantities of heterogeneous
+instances, algebraic/list field descriptions, and general sums over fields are
+not implemented. Local lifecycle operations and preserving helpers are supported.
+These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
+   Before migrating named-member lifecycle helpers, extend their checked
+   authority effects for explicit helper birth/consumption; milestone two
+   supports preserving transport and local lifecycle operations only.
 2. Migrate predicates, loops, current/old snapshots, and contract observation
    boundaries without permitting count facts to manufacture authority.
 3. Migrate sequential exact-two accounting and dependent helper groups.

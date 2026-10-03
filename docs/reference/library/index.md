@@ -121,11 +121,20 @@ values or ownership of individual members. Retirement requires zero members.
 A wildcard authority such as `authority(ticket(pool, _))` governs all exact
 arguments of that local family. Both aggregate and exact counts include separate
 occurrences with equal arguments. Private bodies remain exclusive even when
-instances share their family arguments. Helper transport is a separate migration
-checkpoint; symbolic quantities of heterogeneous named instances are not
-supported. Legacy mode retains its existing field-count restriction.
+instances share their family arguments.
+
+Preserving helpers take a named member through ordinary `owns` contracts and
+retain its proof fields through explicit postconditions. They can unfold and
+restore its private body while the caller keeps the authority control closed;
+the same population occurrence stays reserved across the preserving call. A
+member alone does not permit observing `count(...)`. Helper creation or
+consumption of named population members needs a checked authority-effect
+boundary and remains unsupported. Symbolic quantities of heterogeneous named
+instances are also unsupported. Legacy mode retains its field-count restriction.
 
 **Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
+
+**Verified use:** [`mdtests/authority_named_field_private_helper.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_private_helper.md).
 
 **Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
 
