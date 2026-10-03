@@ -3535,13 +3535,29 @@ fn verify_c0_sources_in_context(
     let assumed_unselected_names = unselected_function_names.clone().unwrap_or_default();
     if let Some(unselected) = unselected_function_names {
         for function_name in unselected {
+            // A `static` function's rule is keyed by its executing name,
+            // which a retained session's environment carries over from the
+            // run that verified it.
+            let executing_name = executing_function_name(&termination_kernel_names, &function_name);
             function_environment = function_environment
                 .without_verified_function_rule(&function_name)
+                .without_verified_function_rule(&executing_name)
                 .without_external_function_rule(&function_name);
         }
     }
     let partial_rules = function_environment.verified_function_rules();
-    let inline_bodies = function_environment.linked_functions();
+    // An unselected function is an assumption here, a `static inline` one
+    // too: its loops are ranked by the run that selects it, so its body is
+    // not analyzed without the loop rules only that run verifies.
+    let unselected_executing_names = assumed_unselected_names
+        .iter()
+        .map(|name| executing_function_name(&termination_kernel_names, name))
+        .collect::<BTreeSet<_>>();
+    let inline_bodies = function_environment
+        .linked_functions()
+        .into_iter()
+        .filter(|function| !unselected_executing_names.contains(function.name()))
+        .collect::<Vec<_>>();
     // Heights are a proposal the kernel checks at every call site. A callee
     // outside the verified set is an assumption, as its postconditions are:
     // an external contract always, and an unselected function because it owes
@@ -3574,22 +3590,47 @@ fn verify_c0_sources_in_context(
             "pthread_mutex_destroy".to_string(),
         ]);
     }
+    // A selected function may recurse only through a function this run
+    // assumes, so its declared measure ranks no edge here. That measure is
+    // judged by the run that selects the whole cycle; this run checks the
+    // selected function without it. Each retry drops one measure.
+    let mut run_plans = termination_plans.clone();
+    let verdicts = loop {
+        let verdicts = c_verified_function_termination_rules(
+            &partial_rules,
+            &run_plans,
+            &termination_loop_rules,
+            &inline_bodies,
+            &termination_heights,
+            &assumed_terminating,
+            &declared_diverging,
+            &diverging_contracts,
+        );
+        let Err(error) = &verdicts else {
+            break verdicts;
+        };
+        let retried = !unselected_executing_names.is_empty()
+            && error.is_superfluous_recursive_measure()
+            && error.function().is_some_and(|function| {
+                run_plans
+                    .iter_mut()
+                    .find(|plan| plan.function_name() == function)
+                    .is_some_and(|plan| {
+                        let had = plan.clone();
+                        plan.clear_recursive_measure();
+                        *plan != had
+                    })
+            });
+        if !retried {
+            break verdicts;
+        }
+    };
     let CTerminationVerdicts {
         rules: termination_rules,
         refusals: termination_refusals,
         unjustified_diverging,
         unsuitable_callbacks,
-    } = c_verified_function_termination_rules(
-        &partial_rules,
-        &termination_plans,
-        &termination_loop_rules,
-        &inline_bodies,
-        &termination_heights,
-        &assumed_terminating,
-        &declared_diverging,
-        &diverging_contracts,
-    )
-    .map_err(|error| {
+    } = verdicts.map_err(|error| {
         let located = ClickError::new(format!("could not certify C termination: {error}"));
         match error.function() {
             Some(function) => {

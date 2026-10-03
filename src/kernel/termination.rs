@@ -21,6 +21,7 @@ fn error(message: impl Into<String>) -> CTerminationError {
     CTerminationError {
         message: message.into(),
         function: None,
+        superfluous_recursive_measure: false,
     }
 }
 
@@ -4435,9 +4436,11 @@ fn termination_rules_recording_function<'a>(
                 let mut structural_requirement = None;
                 if recursive_callees.is_empty() {
                     if recursive_measure.is_some() {
-                        return Err(error(format!(
+                        let mut refused = error(format!(
                             "function-level `decreases` on nonrecursive function `{name}` has no recursive edge to rank"
-                        )));
+                        ));
+                        refused.superfluous_recursive_measure = true;
+                        return Err(refused);
                     }
                 } else if let Some(unmeasured) = std::iter::once(name)
                     .chain(recursive_callees.iter())

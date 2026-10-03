@@ -850,6 +850,46 @@ fn struct_array_element_expands_with_its_subscript() {
     assert!(!expanded.contains("(entries + "), "{expanded}");
 }
 
+/// Verifying one proof unit treats the functions it does not select as
+/// assumptions, and must not refuse the selected function's termination for
+/// what those functions would owe in a run that selects them. `even` ranks
+/// a recursion that runs through `odd`; `run` calls a `static inline`
+/// helper whose loop measure only the helper's own run verifies. Both used
+/// to be refused when verified alone, while the whole file verified.
+#[test]
+fn targeted_termination_assumes_unselected_callees() {
+    for (fixture, anchor) in [
+        (
+            "mdtests/c_decreases_mutual_recursion.md",
+            "int32 even(int32 n) {\n    ",
+        ),
+        (
+            "mdtests/inline_helper_ranked_loop.md",
+            "int32 run(int32 n) {\n    ",
+        ),
+    ] {
+        let (click_source, c_sources) = mdtest_sources(fixture);
+        let c_sources = c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let offset = click_source
+            .find(anchor)
+            .unwrap_or_else(|| panic!("`{fixture}` should contain `{anchor}`"))
+            + anchor.len();
+        let position = expansion::position_at_offset(&click_source, offset);
+        verify_c0_sources_at(&click_source, &c_sources, position.line, position.column)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+        // A retained session keeps the baseline's rules; the unselected
+        // helper's must not survive under its executing name.
+        let (session, _) = crate::surface::C0VerificationSession::new(&click_source, &c_sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+        session
+            .verify_at(&click_source, position.line, position.column)
+            .unwrap_or_else(|error| panic!("{fixture} in a session: {}", error.message()));
+    }
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

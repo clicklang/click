@@ -47,10 +47,25 @@ contributors follow the normal PR and review process.
    must be enabled; it is enabled on `clicklang/click`.
 5. Once GitHub confirms the request, continue with the next work without
    waiting for the check or merge to finish.
-6. On the next update, inspect the PR again. Update the same open PR and run
-   `gh pr merge <PR> --auto` again if needed: a push to a PR in the merge queue
-   takes it out of the queue until its checks pass again. If it merged, open a
-   new PR.
+6. On the next update, inspect the PR again. If it merged, open a new PR. If
+   it is open and not in the merge queue, push the new work to it and run
+   `gh pr merge <PR> --auto` again. Pushing to a PR that is already in the
+   queue does not remove it: the queue merges the head it was enqueued with,
+   and later commits are left behind on the branch. So first check the
+   queue entry:
+
+   ```sh
+   gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){mergeQueueEntry{id state}}}}'
+   ```
+
+   If its state is `QUEUED`, its final build has not started and nothing is
+   wasted by resetting it: remove it from the queue (the `dequeuePullRequest`
+   mutation with that entry `id`), push the new work, update the PR
+   description, run `gh pr merge <PR> --auto` again, and confirm the queued
+   head is the new one. If its build has started (`AWAITING_CHECKS` or
+   later), or the new work is a large change on its own, leave the PR alone
+   and deliver the new work in a new PR after it merges. After any PR merges,
+   check that every commit pushed to it reached `master`.
 7. If checks fail, a conflict appears, or GitHub removes the PR from the
    queue, resolve the problem, update the PR, and register the merge request
    again. Then continue with the next work.
