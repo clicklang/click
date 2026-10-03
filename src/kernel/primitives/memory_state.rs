@@ -1739,6 +1739,42 @@ impl CLocalEnvironment {
         std::sync::Arc::make_mut(&mut self.slots).insert(slot, name);
     }
 
+    /// Puts back a binding read from another environment with
+    /// [`Self::binding`].
+    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: CLocalBinding) {
+        self.insert_binding(name.to_string(), binding);
+    }
+
+    /// Makes an initialized scalar object uninitialized again, keeping its
+    /// slot, type and qualifiers, so a read of it is refused. Returns whether
+    /// the name held such an object.
+    pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
+        let Some(CLocalBinding::Object {
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+            ..
+        }) = self.bindings.get(name).cloned()
+        else {
+            return false;
+        };
+        self.insert_binding(
+            name.to_string(),
+            CLocalBinding::UninitializedObject {
+                c_type,
+                slot,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+            },
+        );
+        true
+    }
+
     /// Unbinds one name, as control leaving the scope that declared it does.
     ///
     /// The object's storage is retired separately; this removes the name that

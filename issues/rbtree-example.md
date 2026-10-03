@@ -679,9 +679,12 @@ frontier report is gone, and the loop rule itself is refused:
 resource ownership`, which `tests/examples.rs` now pins. The exits hold the
 same binders and bytes in different representations (the two binders in
 different fold orders, cells cached as concrete cells at some exits and as
-run slots at others), and the exit join compares them structurally; see
-`bugs/loop-exits-equal-up-to-representation-do-not-join.md`, which has three
-small reductions. Chunk 7 cannot start until that is fixed. Verify time of the
+run slots at others), and the exit join compared them structurally. That is
+fixed: the join now compares cells and merged resources, and joins the record
+of automatic storage the rotation exits' helper call leaves
+(`mdtests/loop_break_exit_after_a_call_with_a_local_joins.md`). The loop rule
+certifies, and `tests/examples.rs` pins the post-loop frontier, so chunk 7 can
+start. Verify time of the
 frontier, release build, user seconds, back to back at load average 8 to 10:
 15.0 with 67 `break`s, 18.3 with the first sixteen leaves here, 27.4 with all
 of them and the join. Counted work is 4.63, 5.86, and 6.94 million units, so
@@ -706,14 +709,15 @@ scalar variable targets, including the unchanged `rb_next` guard.
 model, on the verbatim body. Not finished (2026-10-02). `mdtests/rb_next.md`
 has the unchanged body with `RB_EMPTY_NODE` and the successor contract, runs
 the descent to its `return` and the ascent loop through its back edge and its
-three `break` exits, with `decreases t;` and `decreases c;`, and stops at the
-first claim after the ascent loop: what every exit stated about the frame's
-model is not available after the join (the "Loop exits" finding above,
-reduced in `mdtests/loop_break_exit_algebraic_equation_is_not_exported.md`).
-Behind it is `bugs/function-match-arm-rejects-contradiction-after-have.md`.
-Remaining once both close: the post-loop section (match the frame, fold the
-produced instances at `parent`), whose lemmas are already in the fixture and
-whose proof text has not been checked. The descent's postconditions are
+three `break` exits, with `decreases t;` and `decreases c;`. The exit join
+now keeps a fact every exit restates about the frame's merged model
+(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`), so the first
+claim after the loop holds, and the fixture stops at its last `simp()`,
+before the post-loop section. Next is
+`bugs/function-match-arm-rejects-contradiction-after-have.md`, which that
+section needs; then the section itself (match the frame, fold the produced
+instances at `parent`), whose lemmas are already in the fixture and whose
+proof text has not been checked. The descent's postconditions are
 certified only on a cut body, `mdtests/rb_next_descent.md`, which goes when
 `rb_next.md` passes. The parameter is declared without `const`
 (`mdtests/rb_next_const_signature.md`).

@@ -1640,6 +1640,25 @@ impl CellStore {
         }
     }
 
+    /// Whether the two stores hold exactly the same cells: the same pointers
+    /// with the same values, however each store represents them.
+    ///
+    /// `==` compares the concrete map and the run map, and those can differ
+    /// between two stores with one logical map: a path that wrote a run's
+    /// only slot and wrote the run's value back holds a concrete cell where
+    /// a path that never wrote it holds the live slot, because the first
+    /// path's store retired the run. A run is exactly its logical cells (the
+    /// module comment), so this is an equivalence of what a consumer reads
+    /// and nothing weaker. The work is [`Self::differing_cells`]': what the
+    /// two stores do not share.
+    pub(crate) fn same_cells_as(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        let differing = self.differing_cells(other);
+        differing.pointers.is_empty() && differing.run_slots.is_empty()
+    }
+
     /// See [`SnapshotMap::eq_relative_to`].
     pub(crate) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
         self.runs.eq_relative_to(&other.runs, &base.runs)
@@ -2602,6 +2621,111 @@ mod tests {
         assert!(forward_stored == backward_stored);
         assert!(forward_stored != forward);
         assert_eq!(forward_stored.differing_pointers(&backward), vec![written]);
+    }
+
+    /// `same_cells_as` is equality of the logical maps and nothing weaker:
+    /// it holds across the two representations of one set of cells, and
+    /// fails for a cell with another value, a cell one store lacks, and a
+    /// cell one store has extra.
+    #[test]
+    fn same_cells_as_compares_cells_and_not_their_representation() {
+        let global = PointerBlock::Concrete("cell-store-same-cells".to_string());
+        let seeded = run(constant(&global, 0), 4, 3, &source(6));
+        let mut store = CellStore::new();
+        let mut model = BTreeMap::new();
+        seed(&mut store, &mut model, seeded.clone());
+        let mut restored = store.clone();
+        for index in 0..3 {
+            restored.insert(
+                seeded.slot_pointer(index),
+                CValue::Int32(Bitvector32Term::Constant(index)),
+            );
+        }
+        for index in 0..3 {
+            restored.insert(seeded.slot_pointer(index), seeded.value(index));
+        }
+        // One set of cells, held as a run on one side and concretely on the
+        // other: structurally different, the same cells.
+        assert!(restored != store);
+        assert!(restored.same_cells_as(&store));
+        assert!(store.same_cells_as(&restored));
+
+        let mut other_value = restored.clone();
+        other_value.insert(
+            seeded.slot_pointer(1),
+            CValue::Int32(Bitvector32Term::Constant(41)),
+        );
+        assert!(!other_value.same_cells_as(&store));
+        assert!(!store.same_cells_as(&other_value));
+
+        let mut missing = restored.clone();
+        missing.remove(&seeded.slot_pointer(2));
+        assert!(!missing.same_cells_as(&store));
+        assert!(!store.same_cells_as(&missing));
+
+        let mut extra = restored.clone();
+        extra.insert(
+            constant(&global, 400),
+            CValue::Int32(Bitvector32Term::Constant(0)),
+        );
+        assert!(!extra.same_cells_as(&store));
+        assert!(!store.same_cells_as(&extra));
+    }
+
+    /// `CMemory::same_contents_as` looks through the cell cache's layout and
+    /// through nothing else. A block that is read-only on one side, a block
+    /// one side lacks, an ended automatic object, and a forget mark (a
+    /// snapshot identity: the marked memory is not known to be the one it
+    /// forgot from) each keep two memories with the same cells apart.
+    #[test]
+    fn same_contents_as_keeps_every_other_component_exact() {
+        let block = "cell-store-same-contents";
+        let global = PointerBlock::Concrete(block.to_string());
+        let seeded = run(constant(&global, 0), 4, 2, &source(7));
+        let mut cells = CellStore::new();
+        let mut model = BTreeMap::new();
+        seed(&mut cells, &mut model, seeded.clone());
+        let mut concrete = cells.clone();
+        // Writing every slot retires the run, so writing the run's values
+        // back leaves them as concrete cells.
+        for index in 0..2 {
+            concrete.insert(
+                seeded.slot_pointer(index),
+                CValue::Int32(Bitvector32Term::Constant(9)),
+            );
+        }
+        for index in 0..2 {
+            concrete.insert(seeded.slot_pointer(index), seeded.value(index));
+        }
+        let with_cells = |cells: &CellStore| {
+            let mut memory = CMemory::new().with_block(block, 8);
+            memory.cells = std::sync::Arc::new(cells.clone());
+            memory
+        };
+        let as_run = with_cells(&cells);
+        let as_cells = with_cells(&concrete);
+        assert!(as_run != as_cells);
+        assert!(as_run.same_contents_as(&as_cells));
+        assert!(as_cells.same_contents_as(&as_run));
+
+        let mut read_only = CMemory::new().with_read_only_block(block, 8);
+        read_only.cells = std::sync::Arc::new(concrete.clone());
+        assert!(!as_run.same_contents_as(&read_only));
+
+        let mut another_block = as_cells.clone().with_block("cell-store-same-contents-2", 4);
+        another_block.cells = std::sync::Arc::new(concrete.clone());
+        assert!(!as_run.same_contents_as(&another_block));
+
+        let mut ended = as_cells.clone();
+        std::sync::Arc::make_mut(&mut ended.forgotten)
+            .ended_local_blocks
+            .insert(PointerBlock::Concrete("local:lifetime:0:x".to_string()));
+        assert!(!as_run.same_contents_as(&ended));
+
+        let mut forgot = as_cells.clone();
+        forgot.mark_forgotten_from(&source(8));
+        assert!(!as_run.same_contents_as(&forgot));
+        assert!(!forgot.same_contents_as(&as_run));
     }
 
     /// A run whose every slot is written is retired, and a store holding a

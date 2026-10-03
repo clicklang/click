@@ -1,31 +1,18 @@
-# What every `break` exit states about a binder's model is not available after the loop
+# A fact one `break` exit does not state is not kept after the loop
 
-`inspect` leaves its `while (true)` by a `break` on every path, and every exit
-states the same thing in the same words: `x.model == old(x.model)`. One exit
-holds the instance at the arm's field-free constructor; the other two unfolded
-it, read its cell, and folded it back at a constructor that carries the arm's
-binding. The binder's model is therefore a different *term* at each exit,
-although each exit proved it is the entry model.
+The loop of
+[`loop_break_exit_keeps_a_fact_every_exit_restates.md`](loop_break_exit_keeps_a_fact_every_exit_restates.md),
+with one change: the `Cell::Black` exit folds its instance back and says
+nothing about how the model it folded relates to the entry model. The other
+two exits state `x.model == old(x.model)` exactly as before.
 
-The join gives a component the exits disagree about one fresh name and has each
-exit contribute, as its own disjunct, the equation pinning that name to what
-the exit held. What an exit stated about its own model is not restated about
-the fresh name, so the common claim is not a fact after the loop. Reading it
-off the exported disjunction with `cases`, as
-[`loop_break_exit_binder_model_join.md`](loop_break_exit_binder_model_join.md)
-reads a colour back, needs every disjunct spelled, and here two of them name a
-constructor whose field is an arm binding no proof after the loop can write.
-The claim every exit proved is out of reach.
+The join keeps a restated fact only when every exit restates it. Two exits out
+of three is not every exit, so the claim is not a fact after the loop and the
+contract's `ensures` is refused. That the claim happens to be true on the
+silent path is beside the point: the join passes along what each exit checked
+and proves nothing itself.
 
-This is the open "Loop exits" finding recorded in
-[`issues/rbtree-example.md`](../issues/rbtree-example.md), reduced. It is what
-stops the unchanged Linux `rb_next` after its ascent loop: every exit states
-`plug(c.model, t.model) == plug(old(c.model), old(t.model))`, and the function
-needs it to describe the node it returns ([`rb_next.md`](rb_next.md)). The
-fixture pins the refusal; it becomes a positive when the join restates each
-exit's facts about the names it introduces.
-
-```c filename=one_cell.c
+```c filename=one_cell_one_silent_exit.c
 struct node { int32 shade; };
 
 int32 inspect(struct node* p) {
@@ -41,7 +28,7 @@ int32 inspect(struct node* p) {
 ```
 
 ```click
-verifying "one_cell.c";
+verifying "one_cell_one_silent_exit.c";
 
 spec enum Cell {
     Missing,
@@ -111,19 +98,11 @@ int32 inspect(struct node* p) {
                     step();
                 },
                 Cell::Black(identity) => {
-                    have Cell::Black(identity) == old(x.model) by {
-                        rewrite(Cell::Black(identity) == x.model);
-                        assumption();
-                    }
                     unfold(x);
                     step();
                     step();
                     step();
                     let x = fold(cell_at(p), { model: Cell::Black(identity) });
-                    have x.model == old(x.model) by {
-                        rewrite(x.model == Cell::Black(identity));
-                        assumption();
-                    }
                     step();
                 },
             }

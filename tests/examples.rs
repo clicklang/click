@@ -200,15 +200,12 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
     // Every path of the loop body ends: the uncle-red `continue`s on every
     // frame combination, and the black-uncle rotation `break`s of all four
     // (case 3 on the outer frames, case 2 then case 3 on the inner ones).
-    // The loop rule then refuses to join the exits, which hold the same
-    // bytes in different memory representations
-    // (bugs/loop-exits-equal-up-to-representation-do-not-join.md). The
-    // exits' differing fold orders already join by what they hold.
+    // The loop rule certifies: the exits join whatever fold order, cell-cache
+    // layout and record of automatic storage each left. The proof stops at
+    // the post-loop section, which is still the sidecar's bare `simp()`.
     let message = error.message();
     assert!(
-        message.contains(
-            "loop exits reach different states, so they have no common successor: memory)"
-        ),
+        message.contains("the frontier is at statement 74, `return void`"),
         "unexpected insert frontier: {message}"
     );
 }

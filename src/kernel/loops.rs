@@ -2862,37 +2862,47 @@ fn join_loop_exit_paths(
         .fold(exits[0].loan_evidence.clone(), |sequence, exit| {
             concat_checked_loan_evidence(&sequence, &exit.loan_evidence)
         });
-    let shared = first_facts
-        .iter()
-        .filter(|fact| {
-            exits[1..].iter().all(|exit| {
-                exit.stated
-                    .iter()
-                    .any(|other| other.proposition() == fact.proposition())
-            })
-        })
-        .cloned()
+    // Each exit's facts are indexed once and the first exit's are looked up
+    // in every index, so the common prefix costs the exits' facts and a
+    // logarithmic lookup each, not every fact against every other exit's.
+    crate::instrumentation::record_deterministic_work(
+        exits
+            .iter()
+            .map(|exit| exit.stated.len() + exit.disjunct.len())
+            .sum(),
+    );
+    let in_every_exit = positions_in_every_set(
+        first_facts.iter().map(ExecutionPureFact::proposition),
+        exits[1..]
+            .iter()
+            .map(|exit| exit.stated.iter().map(ExecutionPureFact::proposition)),
+    );
+    let shared = in_every_exit
+        .into_iter()
+        .map(|position| first_facts[position].clone())
         .collect::<Vec<_>>();
+    let shared_propositions = shared
+        .iter()
+        .map(ExecutionPureFact::proposition)
+        .collect::<BTreeSet<_>>();
     let own_facts = exits
         .iter()
         .map(|exit| {
             exit.disjunct
                 .iter()
-                .filter(|proposition| {
-                    !shared
-                        .iter()
-                        .any(|common| common.proposition() == *proposition)
-                })
+                .filter(|proposition| !shared_propositions.contains(proposition))
                 .cloned()
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    drop(shared_propositions);
     // Short-circuit paths refine one another: the second conjunct's exit also
     // states the first conjunct true, which the first exit states false. A
     // conjunct another disjunct contradicts is dropped, which only weakens
     // that disjunct and so keeps the disjunction true, and turns
     // `!a | (a & !b)` into the `!a | !b` a proof can name.
     let mut facts = shared;
+    facts.extend(facts_every_exit_restates(&exits, &facts));
     if let Some(disjunction) = guard_path_disjunction(&own_facts) {
         facts.push(ExecutionPureFact::new(disjunction));
     }
@@ -2907,6 +2917,76 @@ fn join_loop_exit_paths(
     Some((facts, obligations, loan_evidence))
 }
 
+/// The facts every exit states about the successor's merged binder names.
+///
+/// Where the exits hold a binder at different values, the join gives the
+/// successor one fresh name for it, and each exit's [`LoopExitFacts::restated`]
+/// is that exit's own facts with its value for the binder replaced by that
+/// name. On each exit path the fresh name equals the exit's value (that is
+/// the equation the exit contributes to the disjunction), so a restated fact
+/// holds on the path that stated the original. A proposition that every exit
+/// restates identically therefore holds on every path into the successor,
+/// and is kept as an ordinary fact. Nothing is kept that some exit did not
+/// state: an exit that restates nothing empties the result.
+///
+/// Identity is of kernel propositions, so two exits that spell a fact with
+/// the same words about different symbols (an arm binding of each exit's own
+/// arm, say) do not agree, and a name only one exit has cannot survive.
+///
+/// Nothing is searched or re-proved: each kept fact was checked where its
+/// exit stated it. Each exit's restated facts are indexed once and the first
+/// exit's are looked up in each index, so the work is the restated facts
+/// times a logarithmic lookup, not exits squared.
+fn facts_every_exit_restates(
+    exits: &[LoopExitFacts],
+    already_shared: &[ExecutionPureFact],
+) -> Vec<ExecutionPureFact> {
+    let Some((first, others)) = exits.split_first() else {
+        return Vec::new();
+    };
+    if first.restated.is_empty() || others.iter().any(|exit| exit.restated.is_empty()) {
+        return Vec::new();
+    }
+    crate::instrumentation::record_deterministic_work(
+        exits.iter().map(|exit| exit.restated.len()).sum(),
+    );
+    let shared = already_shared
+        .iter()
+        .map(ExecutionPureFact::proposition)
+        .collect::<BTreeSet<_>>();
+    let mut kept = BTreeSet::new();
+    positions_in_every_set(
+        first.restated.iter(),
+        others.iter().map(|exit| exit.restated.iter()),
+    )
+    .into_iter()
+    .map(|position| &first.restated[position])
+    .filter(|proposition| !shared.contains(proposition) && kept.insert(*proposition))
+    .map(|proposition| ExecutionPureFact::new(proposition.clone()))
+    .collect()
+}
+
+/// The positions of the `first` items that every one of `others` also holds,
+/// in `first`'s order.
+///
+/// Each of `others` is indexed once and each `first` item is looked up in
+/// the indexes until one lacks it, so the comparisons are the items times a
+/// logarithm of one set's size. Nothing compares one exit's facts with every
+/// other exit's.
+fn positions_in_every_set<'a, T: Ord + 'a>(
+    first: impl Iterator<Item = &'a T>,
+    others: impl Iterator<Item = impl Iterator<Item = &'a T>>,
+) -> Vec<usize> {
+    let indexes = others
+        .map(|items| items.collect::<BTreeSet<_>>())
+        .collect::<Vec<_>>();
+    first
+        .enumerate()
+        .filter(|(_, item)| indexes.iter().all(|index| index.contains(item)))
+        .map(|(position, _)| position)
+        .collect()
+}
+
 /// One exit's contribution to a loop's join.
 ///
 /// `stated` is what that path actually holds, and the join's common prefix is
@@ -2919,6 +2999,10 @@ fn join_loop_exit_paths(
 struct LoopExitFacts {
     stated: Vec<ExecutionPureFact>,
     disjunct: Vec<Proposition>,
+    /// The stated facts that mention this exit's value for a binder the join
+    /// renamed, with that value replaced by the successor's name; see
+    /// [`facts_every_exit_restates`].
+    restated: Vec<Proposition>,
     obligations: Vec<ProofObligation>,
     loan_evidence: CheckedLoanCallEvidenceSequence,
 }
@@ -2937,6 +3021,7 @@ impl LoopExitFacts {
                 .map(|fact| fact.proposition().clone())
                 .collect(),
             stated: facts,
+            restated: Vec::new(),
             obligations,
             loan_evidence,
         }
@@ -3060,6 +3145,206 @@ fn retained_loop_invariant_declarations<'a, T: Ord + 'a>(
 }
 
 #[cfg(test)]
+mod loop_exit_resource_agreement_tests {
+    use super::*;
+
+    fn range(block: &str) -> CMemoryRange {
+        CMemoryRange::new_with_element_width(
+            Pointer {
+                block: PointerBlock::Concrete(block.to_string()),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+            4,
+        )
+    }
+
+    fn view(block: &str) -> CResourceFact {
+        CResourceFact::View(CResource::Memory(range(block)))
+    }
+
+    fn own(block: &str) -> CResourceFact {
+        CResourceFact::own(CResource::Memory(range(block)))
+    }
+
+    fn token(quantity: u32) -> CResourceFact {
+        CResourceFact::Own(
+            CResource::Token {
+                name: "ticket".to_string(),
+                arguments: Vec::new().into(),
+            },
+            Box::new(Bitvector32Term::Constant(quantity)),
+        )
+    }
+
+    fn context(facts: impl IntoIterator<Item = CResourceFact>) -> ResourceContext {
+        ResourceContext::new().unchecked_with_facts(facts)
+    }
+
+    /// A view held twice is the view held once, and nothing else about two
+    /// exits' resources is looked through: a permission one exit lacks, a
+    /// view against ownership, another range, and another owned quantity
+    /// each keep the exits apart.
+    #[test]
+    fn exits_agree_on_resources_only_up_to_a_view_held_twice() {
+        let assumptions = PureFactContext::new();
+        let agree = |left: &ResourceContext, right: &ResourceContext| {
+            loop_exit_resources_agree(left, right, &assumptions)
+                && loop_exit_resources_agree(right, left, &assumptions)
+        };
+        let once = context([view("a"), own("b")]);
+        let twice = context([view("a"), view("a"), own("b")]);
+        assert!(once != twice);
+        assert!(agree(&once, &twice));
+
+        // A permission only one exit holds.
+        assert!(!agree(&once, &context([own("b")])));
+        // A view where the other exit owns.
+        assert!(!agree(&once, &context([own("a"), own("b")])));
+        // The same shape over another range.
+        assert!(!agree(&once, &context([view("c"), own("b")])));
+        // Ownership only one exit holds.
+        assert!(!agree(&once, &context([view("a")])));
+        // Different owned quantities of one resource.
+        assert!(!agree(&context([token(1)]), &context([token(2)])));
+        assert!(!agree(&context([token(1)]), &context([token(1), token(1)])));
+    }
+}
+
+#[cfg(test)]
+mod loop_exit_shared_fact_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn fact(variable: u64, value: i64) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(Variable(variable))),
+                Box::new(Bitvector32Term::Constant(value as _)),
+            ),
+            true,
+        )
+    }
+
+    fn exit(restated: Vec<Proposition>) -> LoopExitFacts {
+        LoopExitFacts {
+            stated: Vec::new(),
+            disjunct: Vec::new(),
+            restated,
+            obligations: Vec::new(),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+
+    fn kept(exits: &[LoopExitFacts]) -> Vec<Proposition> {
+        facts_every_exit_restates(exits, &[])
+            .into_iter()
+            .map(|fact| fact.proposition().clone())
+            .collect()
+    }
+
+    /// A fact is kept only when every exit restates that very proposition.
+    #[test]
+    fn only_a_fact_every_exit_restates_is_kept() {
+        let merged = 7_000_001;
+        // Every exit restates it: kept once, in the first exit's order.
+        assert_eq!(
+            kept(&[
+                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 1)]),
+                exit(vec![fact(merged, 2), fact(merged, 1)]),
+                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 3)]),
+            ]),
+            vec![fact(merged, 1), fact(merged, 2)],
+        );
+        // All but one exit restate it.
+        assert!(
+            kept(&[
+                exit(vec![fact(merged, 1)]),
+                exit(vec![fact(merged, 1)]),
+                exit(vec![fact(merged, 2)]),
+            ])
+            .is_empty()
+        );
+        // An exit that restates nothing keeps nothing, whichever it is.
+        assert!(kept(&[exit(vec![fact(merged, 1)]), exit(Vec::new())]).is_empty());
+        assert!(kept(&[exit(Vec::new()), exit(vec![fact(merged, 1)])]).is_empty());
+        // The same words about different symbols are different facts: each
+        // exit's own name for something (an arm binding, say) is not shared.
+        assert!(
+            kept(&[
+                exit(vec![fact(7_000_010, 1)]),
+                exit(vec![fact(7_000_011, 1)]),
+            ])
+            .is_empty()
+        );
+        // A fact the exits already share as stated is not added again.
+        let shared = [ExecutionPureFact::new(fact(merged, 1))];
+        assert!(
+            facts_every_exit_restates(
+                &[exit(vec![fact(merged, 1)]), exit(vec![fact(merged, 1)])],
+                &shared,
+            )
+            .is_empty()
+        );
+    }
+
+    /// The intersection is one indexing pass per exit and one lookup pass
+    /// over the first exit's facts: its comparisons grow with the exits
+    /// times the facts times a logarithm, along either axis, and never with
+    /// the square of either.
+    #[test]
+    fn facts_in_every_exit_cost_exits_times_facts() {
+        #[derive(Eq)]
+        struct Counted<'a>(usize, &'a Cell<usize>);
+        impl PartialEq for Counted<'_> {
+            fn eq(&self, other: &Self) -> bool {
+                self.cmp(other).is_eq()
+            }
+        }
+        impl PartialOrd for Counted<'_> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for Counted<'_> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.1.set(self.1.get() + 1);
+                self.0.cmp(&other.0)
+            }
+        }
+        for (exits, facts) in [
+            (4usize, 64usize),
+            (16, 64),
+            (64, 64),
+            (256, 64),
+            (8, 16),
+            (8, 64),
+            (8, 256),
+            (8, 1024),
+        ] {
+            let comparisons = Cell::new(0);
+            let sets = (0..exits)
+                .map(|_| {
+                    (0..facts)
+                        .rev()
+                        .map(|fact| Counted(fact, &comparisons))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let positions =
+                positions_in_every_set(sets[0].iter(), sets[1..].iter().map(|set| set.iter()));
+            assert_eq!(positions.len(), facts);
+            assert!(
+                comparisons.get() <= 4 * exits * facts * (facts.ilog2() as usize + 1),
+                "{exits} exits of {facts} facts: {} comparisons",
+                comparisons.get()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod loop_invariant_correspondence_tests {
     use super::*;
     use std::cell::Cell;
@@ -3166,6 +3451,7 @@ fn abstract_loop_exit_states(
     }
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
+    let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
     abstract_loop_exit_binders(
         &mut successor,
         &rebound,
@@ -3205,11 +3491,19 @@ fn abstract_loop_exit_states(
         variables,
         budget,
     )?;
+    let bookkeeping =
+        join_loop_exit_storage_bookkeeping(&mut successor, &rebound, variables, budget)?;
     // Everything the rule knows how to describe has now been made common. A
     // state that still differs differs in something this rule does not model,
     // so it is refused under its own name rather than abstracted blindly.
+    let abstracted = LoopExitAbstraction {
+        locals: &locals,
+        uninitialized: &uninitialized,
+        cells: &cells,
+        bookkeeping,
+    };
     if let Some(mismatch) = rebound.iter().find_map(|state| {
-        loop_exit_residual_difference(&successor, state, &locals, &cells, binders)
+        loop_exit_residual_difference(&successor, state, &abstracted, binders, assumptions)
     }) {
         return Err(mismatch);
     }
@@ -3231,6 +3525,11 @@ fn abstract_loop_exit_states(
 struct LoopExitRestatement {
     equations: Vec<Proposition>,
     renamings: Vec<(Variable, Bitvector32Term)>,
+    /// For each binder argument or field of algebraic sort that the join
+    /// renamed: the term this exit held there, and the successor's name.
+    /// The held value is a term, not only a symbol: one exit may hold the
+    /// head's own model variable and another a constructor it folded.
+    replacements: Vec<(AlgebraicTerm, AlgebraicTerm)>,
 }
 
 impl LoopExitRestatement {
@@ -3263,6 +3562,31 @@ impl LoopExitRestatement {
             resource_value_term(fresh),
             resource_value_term(held),
         ));
+        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
+            self.replacements.push((held.clone(), fresh.clone()));
+        }
+    }
+
+    /// One stated fact with this exit's value for each renamed binder
+    /// replaced by the successor's name, or `None` when the fact mentions no
+    /// such value. Every occurrence is replaced, which is the one choice that
+    /// lets two exits arrive at the same proposition; the result holds on
+    /// this path because the name equals the value here.
+    fn restated_about_merged_binders(&self, proposition: &Proposition) -> Option<Proposition> {
+        let mut restated = None;
+        for (held, fresh) in &self.replacements {
+            let current = restated.as_ref().unwrap_or(proposition);
+            let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(held, fresh);
+            let rewritten = rewrite.proposition(current);
+            // A refused walk hands back a placeholder, not a rewritten fact.
+            if rewrite.refusal().is_some() {
+                return None;
+            }
+            if rewrite.changed {
+                restated = Some(rewritten);
+            }
+        }
+        restated
     }
 
     /// This exit's contribution to the join: what it states, and the same
@@ -3283,6 +3607,14 @@ impl LoopExitRestatement {
         if self.renamings.is_empty() && self.equations.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
+        let restated = if self.replacements.is_empty() {
+            Vec::new()
+        } else {
+            facts
+                .iter()
+                .filter_map(|fact| self.restated_about_merged_binders(fact.proposition()))
+                .collect()
+        };
         let rename = |proposition: &Proposition| {
             self.renamings
                 .iter()
@@ -3307,6 +3639,7 @@ impl LoopExitRestatement {
         LoopExitFacts {
             stated: facts,
             disjunct,
+            restated,
             obligations,
             loan_evidence,
         }
@@ -3489,6 +3822,125 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
         AlgebraicValue::C(value) => Term::CValue(value.clone()),
         AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
     }
+}
+
+/// What the join replaced in the successor, for the residual comparison to
+/// put back at each exit.
+struct LoopExitAbstraction<'a> {
+    locals: &'a [(String, CType)],
+    uninitialized: &'a [String],
+    cells: &'a BTreeSet<Pointer>,
+    bookkeeping: bool,
+}
+
+/// Leaves uninitialized every scalar local some exit has initialized and
+/// another has not, and reports their names.
+///
+/// A path that leaves the loop before its first assignment to a local holds
+/// it uninitialized; one that leaves after holds a value. The successor
+/// claims neither: the local keeps its slot, type and qualifiers and has no
+/// value, so a read of it after the loop is refused rather than given a value
+/// one path never produced. What this gives up is exactly such a read.
+///
+/// One pass over the successor's names, looking each up in every exit.
+fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -> Vec<String> {
+    let names = successor
+        .locals
+        .bindings
+        .iter()
+        .filter(|(_, binding)| {
+            matches!(
+                binding,
+                CLocalBinding::Object { .. } | CLocalBinding::UninitializedObject { .. }
+            )
+        })
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    crate::instrumentation::record_deterministic_work(names.len().saturating_mul(exits.len()));
+    let mut uninitialized = Vec::new();
+    for name in names {
+        let mut initialized = false;
+        let mut not_initialized = false;
+        for state in exits {
+            match state.locals.binding(&name) {
+                Some(CLocalBinding::Object { .. }) => initialized = true,
+                Some(CLocalBinding::UninitializedObject { .. }) => not_initialized = true,
+                // Any other shape is a difference the residual comparison
+                // names; this step only reconciles initialization.
+                _ => {}
+            }
+        }
+        if initialized && not_initialized {
+            successor.locals.forget_initialization(&name);
+            uninitialized.push(name);
+        }
+    }
+    uninitialized
+}
+
+/// Joins what the exits recorded about automatic storage, when they differ.
+///
+/// A path that called a function with a local holds a tombstone for that
+/// local's ended block, a forget mark from retiring its cell, and a larger
+/// lifetime counter than a path that did not. None of these is a value the
+/// C can observe after the loop, and each has a conservative join:
+///
+/// - **Tombstones: the union.** A tombstone for a block a path never created
+///   forbids accesses that path could not make, and only disables the
+///   inference that a loaded pointer predates the block. The interface join
+///   takes the same union.
+/// - **Lifetime counter: the maximum,** so the next re-entered declaration
+///   gets an identity no exit has used. The branch join takes the same
+///   maximum. A smaller counter would reissue an ended block's identity.
+/// - **Snapshot identity: fresh.** A forget mark says a memory is not known
+///   to be the memory it forgot from. When the exits' marks differ, the
+///   successor's memory keeps only what every exit agrees on (the cells the
+///   join has already made common) and is marked as forgetting from a
+///   snapshot minted here, which no exit's memory and no earlier snapshot
+///   is, with no derivation recorded. A load after the loop of a cell the
+///   successor does not hold is therefore related to no load before or
+///   inside the loop. That relation is what this gives up.
+///
+/// Applied only when an exit differs from the successor in one of these, so
+/// a loop whose exits agree keeps its memory's identity and every read
+/// equality through it. Returns whether it applied.
+fn join_loop_exit_storage_bookkeeping(
+    successor: &mut CState,
+    exits: &[CState],
+    variables: &mut KernelVariableGenerator,
+    budget: &mut ExecutionBudget,
+) -> Result<bool, String> {
+    crate::instrumentation::record_deterministic_work(exits.len());
+    let forgotten_differ = exits
+        .iter()
+        .any(|state| state.memory.forgotten != successor.memory.forgotten);
+    let counter = exits
+        .iter()
+        .map(|state| state.next_local_lifetime)
+        .max()
+        .unwrap_or(successor.next_local_lifetime);
+    let counters_differ = exits
+        .iter()
+        .any(|state| state.next_local_lifetime != successor.next_local_lifetime);
+    if !forgotten_differ && !counters_differ {
+        return Ok(false);
+    }
+    successor.next_local_lifetime = counter;
+    if forgotten_differ {
+        let mut memory = successor.memory.clone();
+        let ended = exits
+            .iter()
+            .flat_map(|state| state.memory.forgotten.ended_local_blocks.iter().cloned())
+            .collect::<crate::kernel::SnapshotSet<_>>();
+        std::sync::Arc::make_mut(&mut memory.forgotten).ended_local_blocks = ended;
+        let marker = variables.next_in(budget).map_err(exhausted_identities)?;
+        let minted = crate::kernel::intern_c_memory(
+            CMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
+        );
+        memory.mark_forgotten_from(&minted);
+        *successor = successor.clone().with_memory(memory);
+    }
+    Ok(true)
 }
 
 /// Havocs the locals the exits disagree on, keeping the rest, and reports
@@ -3743,10 +4195,16 @@ fn fresh_loop_local_value(
 fn loop_exit_residual_difference(
     successor: &CState,
     exit: &CState,
-    locals: &[(String, CType)],
-    cells: &BTreeSet<Pointer>,
+    abstracted: &LoopExitAbstraction<'_>,
     binders: &[CLoopBinder],
+    assumptions: &PureFactContext,
 ) -> Option<String> {
+    let LoopExitAbstraction {
+        locals,
+        uninitialized,
+        cells,
+        bookkeeping,
+    } = *abstracted;
     let mut witness = successor.clone();
     // Where a path last folded a binder is not a component of its state: a
     // resource context is a multiset, and the witness below re-seats each
@@ -3777,6 +4235,17 @@ fn loop_exit_residual_difference(
         };
         witness = witness.with_resource_context(resources.unchecked_with_fact(held_fact.clone()));
         seated = seated.with_resource_context(exit_resources.unchecked_with_fact(held_fact));
+    }
+    for name in uninitialized {
+        // This exit's own binding, initialized or not, is what the successor
+        // left without a value.
+        if let Some(binding) = seated.locals.binding(name).cloned() {
+            witness.locals.restore_binding(name, binding);
+        }
+    }
+    if bookkeeping {
+        witness.next_local_lifetime = seated.next_local_lifetime;
+        witness.memory.forgotten = seated.memory.forgotten.clone();
     }
     for (name, c_type) in locals {
         let value = seated.locals().get(name)?.clone();
@@ -3809,13 +4278,66 @@ fn loop_exit_residual_difference(
         witness = witness.with_memory(memory);
         seated = seated.with_memory(exit_memory);
     }
-    loop_exit_state_difference(&witness, &seated)
+    loop_exit_state_difference(&witness, &seated, assumptions)
+}
+
+/// Whether two exits hold the same resources: structurally, or after each
+/// context is normalized once. Normalization merges only descriptions the
+/// resource algebra says are one authority, so a view against none, a view
+/// against an owner, or two owned quantities stay different.
+fn loop_exit_resources_agree(
+    left: &ResourceContext,
+    right: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> bool {
+    left == right || left.clone().normalized(assumptions) == right.clone().normalized(assumptions)
 }
 
 /// What two loop exit states disagree about, named for a refusal.
-fn loop_exit_state_difference(left: &CState, right: &CState) -> Option<String> {
+///
+/// Two components are compared by what they mean rather than by how the
+/// path that built them happened to lay them out, because a layout is not
+/// something a path reaches:
+///
+/// - memory, by [`CMemory::same_contents_as`]: the same cells with the same
+///   values, whether the cell cache holds one as a concrete cell or as a
+///   slot of a seeded run;
+/// - resource ownership, by the normalized context, the form
+///   `ResourceContext::normalized` already gives two contexts before the
+///   kernel compares an unfolded body with its expected one. It merges only
+///   what the resource algebra says is one authority (an unbound view held
+///   twice, an owner and its own unbound view) and never a loan-bound or
+///   supported description.
+///
+/// Both are exact: a byte, a value, an owned or viewed fact, a quantity, a
+/// read-only block, a heap lifetime or a loan dependency that differs still
+/// differs afterwards. The equivalent component is then taken from the left
+/// state so the remaining components are compared by `==` as before.
+fn loop_exit_state_difference(
+    left: &CState,
+    right: &CState,
+    assumptions: &PureFactContext,
+) -> Option<String> {
     if left == right {
         return None;
+    }
+    let same_memory = left.memory().same_contents_as(right.memory());
+    let same_resources =
+        loop_exit_resources_agree(left.resources(), right.resources(), assumptions);
+    if same_memory || same_resources {
+        // The fields are assigned directly: the setters also refresh what
+        // they mirror elsewhere in the state, and nothing but the component
+        // just shown equivalent may change before the comparison.
+        let mut aligned = right.clone();
+        if same_memory {
+            aligned.memory = left.memory.clone();
+        }
+        if same_resources {
+            aligned.resources = left.resources.clone();
+        }
+        if *left == aligned {
+            return None;
+        }
     }
     let mut differences = Vec::new();
     let changed_locals = left
@@ -3827,10 +4349,10 @@ fn loop_exit_state_difference(left: &CState, right: &CState) -> Option<String> {
     if !changed_locals.is_empty() {
         differences.push(format!("local `{}`", changed_locals.join("`, `")));
     }
-    if left.memory() != right.memory() {
+    if !same_memory {
         differences.push("memory".to_string());
     }
-    if left.resources() != right.resources() {
+    if !same_resources {
         differences.push("resource ownership".to_string());
     }
     if left.loan_ledger != right.loan_ledger {

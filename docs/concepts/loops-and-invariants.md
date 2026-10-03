@@ -427,9 +427,63 @@ exit read, because only that path opened the instance owning it, is knowledge
 the successor does not claim rather than a difference between the exits
 (`mdtests/loop_break_exit_join_sets_aside_unshared_cells.md`).
 
+Two layouts of one state are one state. Memory is compared by its cells, the
+same pointers with the same values, whether the cell cache holds one as a
+written cell or as a slot of the run an `unfold` seeded
+(`mdtests/loop_break_exit_join_compares_cells_not_their_cache.md`). Resources
+are compared after the merges the resource algebra itself defines, so a view
+of a cell that one exit holds twice, because it opened the binder and folded
+it back, is the view the other exit holds once
+(`mdtests/loop_break_exit_join_refolded_and_untouched_binder.md`). Nothing
+else is looked through: a block, a read-only status, a heap lifetime, or an
+owned or lent resource still has to agree
+(`mdtests/loop_break_exit_differing_ownership_rejected.md`).
+
+Exits can also disagree about bookkeeping no C expression observes after the
+loop, and the join reconciles each piece in the direction that claims less:
+
+- A local some exits have initialized and others have not stays declared,
+  with its slot and type, but uninitialized. A read of it after the loop is
+  refused (`mdtests/loop_break_exit_uninitialized_at_one_exit_is_not_read.md`);
+  that read is what this gives up.
+- A path that called a function with a local records that the local's block
+  has ended. The successor keeps every exit's record, so a pointer that may
+  designate such a block is not readable through
+  (`mdtests/loop_break_exit_stale_alias_after_join_is_not_read.md`).
+- The counter that names re-entered declarations takes the largest value any
+  exit reached, so no ended block's identity is issued again.
+- When the exits' memories disagree on what they have forgotten, the
+  successor's memory keeps the cells every exit holds and takes a freshly
+  minted identity with no recorded history
+  (`mdtests/loop_break_exit_after_a_call_with_a_local_joins.md`). A load after
+  the loop of a cell the successor does not hold is then related to no load
+  before or inside the loop; that relation is what this gives up. Cells every
+  exit holds keep their values
+  (`mdtests/loop_break_exit_after_a_call_keeps_cells_every_exit_holds.md`),
+  and a loop whose exits agree keeps its memory's identity and every read
+  equality through it (`mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md`).
+
 What every exit states survives the join as an ordinary fact, so a claim that
 does not distinguish the exits needs nothing special
-(`mdtests/loop_break_exit_refold_join.md`). A claim that does distinguish them
+(`mdtests/loop_break_exit_refold_join.md`).
+
+That includes a fact each exit states about its own value for a binder the
+join renamed. The join restates every exit's facts with that exit's value,
+as a term, replaced by the successor's name: an exit that holds `x` at
+`Cell::Missing` and states `Cell::Missing == old(x.model)`, and one that holds
+it at `Cell::Red(identity)` and states `Cell::Red(identity) == old(x.model)`,
+both restate `x.model == old(x.model)` about the successor. On each exit's
+path the name equals that exit's value, so the restated fact holds on that
+path, and a fact every exit restates identically holds whichever exit was
+taken. It is kept as an ordinary fact
+(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`). Nothing is
+searched for or proved again: a fact one exit does not state is not kept
+(`mdtests/loop_break_exit_fact_one_exit_does_not_state_is_dropped.md`), and a
+fact about another binder is not restated about the renamed one
+(`mdtests/loop_break_exit_fact_about_another_binder_is_not_restated.md`).
+Identity is of the kernel's propositions, so two exits that spell a fact
+alike about their own arm bindings state different facts, and neither is
+kept. A claim that does distinguish them
 is read off the exported disjunction with `cases`:
 
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->
