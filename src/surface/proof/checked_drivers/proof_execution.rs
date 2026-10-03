@@ -98,6 +98,23 @@ fn arm_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     }
 }
 
+/// Whether a tactic only relates facts and resources at the frontier where it
+/// stands, without running C: what an arm may do before the `contradiction`
+/// that refutes it.
+fn bridges_without_executing(tactic: &ProofTactic) -> bool {
+    matches!(
+        tactic,
+        ProofTactic::Have(_)
+            | ProofTactic::UnfoldResource(_)
+            | ProofTactic::UnfoldPredicate(_)
+            | ProofTactic::UnfoldFunction(_)
+            | ProofTactic::UnfoldFunctionUsing { .. }
+            | ProofTactic::ObserveResource(_)
+            | ProofTactic::ApplyTheorem(_)
+            | ProofTactic::ApplyTheoremUsing { .. }
+    )
+}
+
 fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
@@ -2592,7 +2609,58 @@ fn advance_execution_match<'a>(
     }
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
-    let plan = proof.plan_execution_match(source)?;
+    let mut plan = proof.plan_execution_match(source)?;
+    // An arm that only bridges facts and then refutes itself owes no C
+    // outcome either. Its bridge (`have`s, unfolds, theorem applications, no
+    // C step) runs in the arm, and its `contradiction` excludes the
+    // constructor from the facts the bridge reached, so it is planned like a
+    // sole `contradiction` rather than executed as a live arm that would
+    // have to reach function exit.
+    for (index, arm) in arms.iter().enumerate() {
+        if plan.excluded_certificate(index).is_some() {
+            continue;
+        }
+        let InternalProofNode::Linear {
+            tactics,
+            continuation,
+        } = arm
+        else {
+            continue;
+        };
+        let Some((last, bridge)) = tactics.split_last() else {
+            continue;
+        };
+        let ProofTactic::Contradiction(surface) = &last.tactic else {
+            continue;
+        };
+        if !matches!(continuation.as_ref(), InternalProofNode::Done)
+            || !bridge
+                .iter()
+                .all(|indexed| bridges_without_executing(&indexed.tactic))
+        {
+            continue;
+        }
+        let scoped = proof.enter_execution_match_arm(&plan, index)?;
+        let entered = scoped.checkpoint();
+        let Some(scoped) =
+            advance_focused_execution_arm(scoped, bridge, None, proof_site, owning_source_index)?
+        else {
+            continue;
+        };
+        let scoped = scoped.at_source_tactic(last.source_index);
+        scoped.exclude_execution_match_arm_after_bridge(
+            &mut plan,
+            index,
+            &entered,
+            surface,
+            last.source_index,
+        )?;
+    }
+    if plan.live_cases().is_empty() {
+        return Err(ClickError::new(
+            "proof match with every constructor excluded is not yet supported",
+        ));
+    }
     // A checked contradiction covers its dead constructor without a C outcome,
     // so only the live arms are executed and joined. Certificates are placed by
     // constructor index, not by the order the live arms are visited.

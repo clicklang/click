@@ -340,6 +340,39 @@ impl<'a> Proof<'a> {
         Ok(plan)
     }
 
+    /// Excludes the arm this proof stands in, after the arm's own bridging
+    /// `have`s, by the `contradiction` that ends it.
+    ///
+    /// `self` is the arm entered with [`Self::enter_execution_match_arm`] and
+    /// advanced by those `have`s; `entered` is the checkpoint taken on entry.
+    /// The arm closes by the `contradiction` step exactly as a written one
+    /// closes a branch, the kernel partition excludes the constructor from
+    /// the facts the arm reached, and the arm's certificate is its `have`s
+    /// and that step.
+    pub(in crate::surface::proof) fn exclude_execution_match_arm_after_bridge(
+        &self,
+        plan: &mut ExecutionMatchPlan,
+        index: usize,
+        entered: &ProofCheckpoint<'a>,
+        surface: &ClickProposition,
+        source_index: usize,
+    ) -> Result<(), ClickError> {
+        let fact = self.lower_surface_proposition(surface, "constructor-arm contradiction")?;
+        let partition = plan
+            .partition
+            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), fact)
+            .ok_or_else(|| {
+                self.step_error(format!(
+                    "constructor-arm `contradiction({})` requires an exact fact and its negation in that arm",
+                    crate::surface::diagnostics::describe_click_proposition(surface)
+                ))
+            })?;
+        let closed = self.apply_step_at(ProofStep::Contradiction(surface.clone()), source_index)?;
+        plan.excluded[index] = Some(closed.execution_match_arm_certificate(entered)?);
+        plan.partition = partition;
+        Ok(())
+    }
+
     pub(in crate::surface::proof) fn enter_execution_match_arm(
         &self,
         plan: &ExecutionMatchPlan,

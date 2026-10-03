@@ -173,7 +173,7 @@ match the frame, fold the produced instances at `parent`, and close. Under
 there, because each exit states `ctx_is_right(c.model) == 0`, and refuting it
 takes a `contradiction` after a bridging `have`, which a function-level `match`
 arm does not accept
-([`function_match_arm_contradiction_after_a_have.md`](function_match_arm_contradiction_after_a_have.md)).
+([`function_match_arm_closes_by_contradiction_after_a_have.md`](function_match_arm_closes_by_contradiction_after_a_have.md)).
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H

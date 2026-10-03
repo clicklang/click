@@ -3398,6 +3398,31 @@ impl CheckedProofCasePartition {
         Some(Arc::new(successor))
     }
 
+    /// Excludes a constructor whose arm refutes itself after bridging steps.
+    ///
+    /// `arm_facts` are the facts the arm's own proof reached: this case's
+    /// facts plus what the arm's `have`s established from them, each checked
+    /// by its own proof. The arm is refuted when those facts contradict
+    /// `fact`, exactly as [`Self::excluding_constructor_case`] decides it for
+    /// a sole `contradiction`. The facts must hold this case's fact, so a
+    /// context from another arm, or from before the split, cannot exclude
+    /// this one.
+    pub(crate) fn excluding_constructor_case_in(
+        &self,
+        index: usize,
+        arm_facts: &ProofFacts,
+        fact: Proposition,
+    ) -> Option<Arc<Self>> {
+        self.witness_scope.as_ref()?;
+        if !arm_facts.contains(self.case_fact(index)?) || !arm_facts.contradicts(&fact) {
+            return None;
+        }
+        let mut successor = self.clone();
+        successor.identity = Arc::new(());
+        successor.excluded[index] = Some(fact);
+        Some(Arc::new(successor))
+    }
+
     pub(crate) fn case_fact(&self, index: usize) -> Option<&Proposition> {
         self.case_facts.get(index)
     }
