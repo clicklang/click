@@ -437,6 +437,13 @@ predicate fixture now uses explicit empty-family authority and keeps its
 original C and predicate claim through a checked birth. Foreign-memory facts
 remain rejected, and checking work stays bounded beside unrelated caller locals.
 
+**Consumed-predicate slice:** `consumed_population_count_in_ensured_predicate.md`
+now uses an ordinary accounting control containing C fields and both family
+authorities. Explicit symbolic member consumption and the unchanged C update
+restore the current predicate and the private count equation. A companion
+rejects a declared consumption that the proof omits; a C update alone cannot
+restore that equation. The original C and ensured claim are preserved.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

@@ -302,6 +302,14 @@ model while evaluating only the member's own body; ambient memory ownership
 cannot satisfy a missing body permission. A kernel regression checks bounded
 work beside increasing numbers of unrelated caller locals.
 
+`consumed_population_count_in_ensured_predicate.md` now uses authority semantics.
+An ordinary accounting control owns the C fields and the slot/item authorities;
+slot members remain separate. Explicit symbolic consumption and the unchanged
+C subtraction restore the current `valid_capacity` predicate. The companion
+`consumed_population_predicate_rejects_missing_consumption.md` rejects updating
+capacity without performing the declared consumption, because the control
+cannot be closed with its count equation restored.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

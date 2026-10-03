@@ -1,9 +1,7 @@
-# consumed populations are visible to ensured predicates
+# consumed population predicates require the actual consumption
 
-A symbolic resource consumption and a matching C update preserve a predicate
-that relates concrete state to the post-state population count. Independent
-contract certification must use the same checked population transition as the
-explicit proof.
+Declaring consumption does not perform it. Updating concrete capacity without
+consuming the matching members cannot restore the private accounting invariant.
 
 ```c filename=consume_population.c
 struct owner {
@@ -52,9 +50,7 @@ void consume_population(struct owner* owner, int32 amount) {
 } by {
     open(accounting(owner)) {
         unfold(valid_capacity);
-        unfold(amount of slot(owner));
         step();
-        have owner->capacity == owner->used + count(slot(owner)) by { simp(); }
     }
     execute();
     unfold(valid_capacity);
@@ -63,5 +59,5 @@ void consume_population(struct owner* owner, int32 amount) {
 ```
 
 ```expect
-pass
+fail: Requires owner->capacity == (owner->used + count(slot(owner)))
 ```
