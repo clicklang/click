@@ -3445,7 +3445,7 @@ mod wildcard_scope_tests {
     }
 
     #[test]
-    fn wildcard_helper_birth_checks_bound_identity_and_single_transition() {
+    fn wildcard_helper_birth_and_consumption_check_bound_identity_and_custody() {
         let (scope, member) = opaque_scope(0);
         let entry = CreationEvents::new()
             .import_opaque_wildcard_authority(&scope)
@@ -3505,9 +3505,24 @@ mod wildcard_scope_tests {
         assert!(birth(&issued, &different, &bounded).is_err());
         assert!(
             issued
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &different, false)
+                .is_err()
+        );
+        let (returned, death) = issued
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .unwrap();
+        assert!(death.matches(&issued, &returned, &member, false));
+        assert!(!death.matches(&issued, &returned, &different, false));
+        let restored = returned.observe_symbolic(&scope).unwrap();
+        assert_eq!(restored.entry_count, count.entry_count);
+        assert_eq!(restored.delta, 0);
+        assert!(!returned.owns_imported_population_member(&member));
+        assert!(
+            returned
                 .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
                 .is_err()
         );
+
         assert!(
             issued
                 .checked_establish(&PointerBlock::ExternalArgument, &scope)

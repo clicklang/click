@@ -2042,8 +2042,7 @@ impl CreationEvents {
                     if import.wildcard_member.is_some() || import.owned_members != 0 {
                         return Err(CreationRefusal::InvalidMember);
                     }
-                } else if import.entry_owned_members != 1
-                    || import.owned_members != 1
+                } else if import.owned_members != 1
                     || import.wildcard_member.as_ref() != Some(description)
                 {
                     return Err(CreationRefusal::InvalidMember);

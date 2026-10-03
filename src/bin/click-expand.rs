@@ -811,17 +811,18 @@ mod tests {
             .enumerate()
             .find(|(_, line)| *line == "    simp();")
             .expect("fixture should contain an exit simp");
-        let click_line = line_index + 1;
+        let markdown_line = mdtest.click_start_line + line_index;
         let column = line.find("simp()").unwrap() + 1;
-        let sources = source_refs(&mdtest.c_sources);
-        let expanded = expand_c0_tactic_source_at(click_source, &sources, click_line, column)
-            .expect("exit simp should generate a certificate");
-        click::surface::verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-            panic!(
-                "resource-pattern exit simp expansion should check: {}\n{expanded}",
-                error.message()
-            )
-        });
+        let selection = format!("{}:{markdown_line}:{column}", path.display());
+        let arguments = parse_arguments([selection]).expect("fixture selection should parse");
+        // Use the artifact loader so the authority fence and C inputs survive
+        // both expansion and certificate verification.
+        let expanded = run(&arguments).expect("exit simp should generate a checked certificate");
+        let expanded_mdtest = cli::parse_mdtest(&path, &expanded).unwrap();
+        assert_eq!(
+            expanded_mdtest.resource_semantics,
+            mdtest.resource_semantics
+        );
     }
 
     #[test]

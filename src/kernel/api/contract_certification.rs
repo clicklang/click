@@ -1672,33 +1672,44 @@ fn c_function_contract_entry_facts(
             else {
                 continue;
             };
-            let expression = SpecExpression::CountedResourceCount {
-                name: name.clone(),
-                arguments,
-            };
-            let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
-                &entry_state,
-                &expression,
-                &assumptions,
-                &BTreeMap::new(),
-                &mut budget,
-            ) else {
-                continue;
-            };
-            let [path] = paths.as_slice() else {
-                continue;
-            };
-            if !path.obligations.iter().all(|obligation| {
-                PureFactContext::settles_exactly(&assumptions, obligation.proposition())
-            }) {
-                continue;
+            // A concrete member also witnesses the anchored wildcard total.
+            // Evaluate both observations through the checked ledger rather than
+            // equating either total to the helper's locally owned quantity.
+            let mut observations = vec![arguments.clone()];
+            if arguments.len() > 1 {
+                let mut wildcard = vec![None; arguments.len()];
+                wildcard[0] = arguments[0].clone();
+                observations.push(wildcard);
             }
-            for fact in &path.facts {
-                assumptions = entry_facts.assume(
-                    assumptions,
-                    CContractEntryFactOrigin::PopulationCount,
-                    fact.proposition().clone(),
-                );
+            for arguments in observations {
+                let expression = SpecExpression::CountedResourceCount {
+                    name: name.clone(),
+                    arguments,
+                };
+                let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                    &entry_state,
+                    &expression,
+                    &assumptions,
+                    &BTreeMap::new(),
+                    &mut budget,
+                ) else {
+                    continue;
+                };
+                let [path] = paths.as_slice() else {
+                    continue;
+                };
+                if !path.obligations.iter().all(|obligation| {
+                    PureFactContext::settles_exactly(&assumptions, obligation.proposition())
+                }) {
+                    continue;
+                }
+                for fact in &path.facts {
+                    assumptions = entry_facts.assume(
+                        assumptions,
+                        CContractEntryFactOrigin::PopulationCount,
+                        fact.proposition().clone(),
+                    );
+                }
             }
             continue;
         }

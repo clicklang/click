@@ -367,6 +367,17 @@ memory remains independently owned; the reset helper performs no population
 operation. The unchanged zero-reset and two-pool C pipelines preserve their
 postconditions and the first pool's predicate across the second call.
 
+**Abstract-token member slice:** `resource_pattern_counts_cross_contracts.md`
+uses explicit wildcard authority with the original checkout, return, and
+roundtrip C programs unchanged. A member privately owns its exact abstract
+`available(object)` token; creation consumes the token and consumption returns
+it. Return accepts arbitrary entry totals, with its decrement bound supplied by
+checked member custody rather than an exact-count-equals-one requirement.
+Contract entry retains the checked wildcard bound as well as the exact bound.
+A helper-created nonexclusive member can subsequently be consumed by its exact
+current owner; identity and single-spend checks remain enforced. The three
+proofs and nine expansion-audit sites pass.
+
 **First small slice:** The constant-quantity fixtures now use authority semantics.
 `let_bound_constant_quantity.md` packages allocation, counter memory, and
 authority in an ordinary control; its contract still consumes the quantity

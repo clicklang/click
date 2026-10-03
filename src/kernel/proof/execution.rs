@@ -735,6 +735,7 @@ fn checks_population_member_exchange(
             !matches!(
                 spec.term(),
                 crate::kernel::CResourceTerm::Memory(_)
+                    | crate::kernel::CResourceTerm::Token { .. }
                     | crate::kernel::CResourceTerm::Composite { .. }
             ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                 || spec.quantity() != &crate::kernel::CResourceQuantity::One
@@ -13109,103 +13110,141 @@ mod population_authority_rewrite_tests {
 
     #[test]
     fn checked_member_exchange_transfers_exact_contained_resource() {
-        let (state, authority) = source_state();
-        let facts = ProofFacts::default();
-        let CResource::PopulationAuthority(description) = authority.resource() else {
-            unreachable!()
-        };
-        let member = CResourceFact::own(CResource::Composite {
-            name: "reference".into(),
-            arguments: description.arguments().to_vec().into(),
-        });
-        let child = CResourceFact::own(CResource::Composite {
-            name: "payload".into(),
-            arguments: description.arguments().to_vec().into(),
-        });
-        let definition = CCompositeResourceDefinition::new(
-            "reference",
-            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::composite(
-                crate::kernel::CResourceAccessMode::Own,
-                "payload".into(),
-                vec![crate::kernel::c_variable("p")],
-                vec![CType::Int32Pointer],
-            )],
-            vec![],
-        );
-        let function = c_function(
-            CType::Void,
-            "member",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        )
-        .with_composite_resource_definitions(vec![definition.clone()]);
-        let (empty, _) = state
-            .checked_population_authority_exchange(&authority, true, facts.assumptions())
-            .unwrap();
-        assert!(empty.checked_population_member_exchange(
-            &member, true, &definition, facts.assumptions(),
-        ).is_err());
-        let empty = empty
-            .clone()
-            .with_resource_context(empty.resources().clone().unchecked_with_fact(child.clone()));
-        let (one, birth) = empty
-            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
-            .unwrap();
-        assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
-        assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
-        let event = CheckedPopulationMemberRewrite::check(
-            &function, &empty, &facts, &member, true, &birth, &one, &facts,
-        )
-        .unwrap();
-        assert!(event.advance_checked(&empty, &facts).is_some());
-        let duplicated = one
-            .clone()
-            .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
-        assert!(
-            CheckedPopulationMemberRewrite::check(
-                &function,
-                &empty,
-                &facts,
-                &member,
-                true,
-                &birth,
-                &duplicated,
-                &facts,
+        for abstract_token in [false, true] {
+            let (state, authority) = source_state();
+            let facts = ProofFacts::default();
+            let CResource::PopulationAuthority(description) = authority.resource() else {
+                unreachable!()
+            };
+            let member = CResourceFact::own(CResource::Composite {
+                name: "reference".into(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            let (child, child_spec) = if abstract_token {
+                (
+                    CResourceFact::own(CResource::Token {
+                        name: "payload".into(),
+                        arguments: vec![crate::kernel::int32(7).into()].into(),
+                    }),
+                    CResourceSpec::token(
+                        crate::kernel::CResourceAccessMode::Own,
+                        "payload".into(),
+                        vec![crate::kernel::c_int32_literal(7)],
+                        vec![CType::Int32],
+                    ),
+                )
+            } else {
+                (
+                    CResourceFact::own(CResource::Composite {
+                        name: "payload".into(),
+                        arguments: description.arguments().to_vec().into(),
+                    }),
+                    CResourceSpec::composite(
+                        crate::kernel::CResourceAccessMode::Own,
+                        "payload".into(),
+                        vec![crate::kernel::c_variable("p")],
+                        vec![CType::Int32Pointer],
+                    ),
+                )
+            };
+            let definition = CCompositeResourceDefinition::new(
+                "reference",
+                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![child_spec],
+                vec![],
+            );
+            let function = c_function(
+                CType::Void,
+                "member",
+                vec![],
+                CStatement::Return(CExpression::Value(CValue::Void)),
             )
-            .is_err()
-        );
-        assert!(one.checked_population_member_exchange(
-            &member, true, &definition, facts.assumptions(),
-        ).is_err());
-        let (zero, death) = one
-            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .with_composite_resource_definitions(vec![definition.clone()]);
+            let (empty, _) = state
+                .checked_population_authority_exchange(&authority, true, facts.assumptions())
+                .unwrap();
+            assert!(
+                empty
+                    .checked_population_member_exchange(
+                        &member,
+                        true,
+                        &definition,
+                        facts.assumptions(),
+                    )
+                    .is_err()
+            );
+            let empty = empty.clone().with_resource_context(
+                empty.resources().clone().unchecked_with_fact(child.clone()),
+            );
+            let (one, birth) = empty
+                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+                .unwrap();
+            assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
+            assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
+            let event = CheckedPopulationMemberRewrite::check(
+                &function, &empty, &facts, &member, true, &birth, &one, &facts,
+            )
             .unwrap();
-        assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
-        assert!(
-            !zero
-                .resources()
-                .satisfies_fact(&member, facts.assumptions())
-        );
-        let event = CheckedPopulationMemberRewrite::check(
-            &function, &one, &facts, &member, false, &death, &zero, &facts,
-        )
-        .unwrap();
-        assert!(event.advance_checked(&one, &facts).is_some());
-        let missing = zero.clone().with_resource_context(
-            zero.resources()
+            assert!(event.advance_checked(&empty, &facts).is_some());
+            let duplicated = one
                 .clone()
-                .without_fact_incrementally(&child, facts.assumptions())
-                .unwrap(),
-        );
-        assert!(
-            CheckedPopulationMemberRewrite::check(
-                &function, &one, &facts, &member, false, &death, &missing, &facts,
+                .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
+            assert!(
+                CheckedPopulationMemberRewrite::check(
+                    &function,
+                    &empty,
+                    &facts,
+                    &member,
+                    true,
+                    &birth,
+                    &duplicated,
+                    &facts,
+                )
+                .is_err()
+            );
+            assert!(
+                one.checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition,
+                    facts.assumptions(),
+                )
+                .is_err()
+            );
+            let (zero, death) = one
+                .checked_population_member_exchange(
+                    &member,
+                    false,
+                    &definition,
+                    facts.assumptions(),
+                )
+                .unwrap();
+            assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
+            assert!(
+                !zero
+                    .resources()
+                    .satisfies_fact(&member, facts.assumptions())
+            );
+            let event = CheckedPopulationMemberRewrite::check(
+                &function, &one, &facts, &member, false, &death, &zero, &facts,
             )
-            .is_err()
-        );
+            .unwrap();
+            assert!(event.advance_checked(&one, &facts).is_some());
+            let missing = zero.clone().with_resource_context(
+                zero.resources()
+                    .clone()
+                    .without_fact_incrementally(&child, facts.assumptions())
+                    .unwrap(),
+            );
+            assert!(
+                CheckedPopulationMemberRewrite::check(
+                    &function, &one, &facts, &member, false, &death, &missing, &facts,
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

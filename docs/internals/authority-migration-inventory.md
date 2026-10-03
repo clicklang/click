@@ -374,6 +374,17 @@ original C and postconditions, including the first pool's count predicate
 across the second pool's call. Verification and expansion audit cover all four
 functions; reordering the sidecar declarations also preserves the verdict.
 
+`resource_pattern_counts_cross_contracts.md` now uses authority semantics for
+all three original C functions. Each membership privately owns an abstract
+availability token, which checkout consumes and return restores. Return accepts
+arbitrary totals and uses the member's checked wildcard lower bound for the
+unchanged C decrement. A checked helper birth may be followed by consumption
+of that exact current member, restoring the arbitrary entry total. Kernel
+regressions check exact token transfer, missing or duplicated children, wrong
+member identity, and repeated consumption. The other-pool negative rejects
+using unrelated member custody to bound a wildcard total. Verification and all
+nine expansion-audit sites pass.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

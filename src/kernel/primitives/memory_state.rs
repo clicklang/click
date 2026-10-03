@@ -6542,6 +6542,7 @@ impl CState {
                 !matches!(
                     spec.term(),
                     super::super::CResourceTerm::Memory(_)
+                        | super::super::CResourceTerm::Token { .. }
                         | super::super::CResourceTerm::Composite { .. }
                 ) || spec.access() != super::super::CResourceAccessMode::Own
                     || spec.quantity() != &super::super::CResourceQuantity::One
@@ -6629,7 +6630,10 @@ impl CState {
         };
         for child in &body {
             let Some(range) = child.memory_own_range() else {
-                if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                if let CResourceFact::Own(
+                    CResource::Token { .. } | CResource::Composite { .. },
+                    quantity,
+                ) = child
                     && quantity.as_const() == Some(1)
                 {
                     // Transfer the folded child; do not expose its contents or
