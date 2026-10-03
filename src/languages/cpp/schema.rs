@@ -3,6 +3,58 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+// Validation follows lexical scopes. A child owns only its declarations and
+// borrows its parent; entering a scope never copies or scans outer places.
+#[derive(Default)]
+struct ValidationPlaces<'a> {
+    parent: Option<&'a ValidationPlaces<'a>>,
+    declarations: BTreeMap<String, (String, CppType)>,
+    names: BTreeSet<String>,
+}
+
+impl<'a> ValidationPlaces<'a> {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn child(&self) -> ValidationPlaces<'_> {
+        ValidationPlaces {
+            parent: Some(self),
+            ..ValidationPlaces::default()
+        }
+    }
+
+    fn get(&self, id: &str) -> Option<&(String, CppType)> {
+        self.declarations
+            .get(id)
+            .or_else(|| self.parent.and_then(|parent| parent.get(id)))
+    }
+
+    fn contains_key(&self, id: &str) -> bool {
+        self.get(id).is_some()
+    }
+
+    fn contains_name(&self, name: &str) -> bool {
+        self.names.contains(name) || self.parent.is_some_and(|parent| parent.contains_name(name))
+    }
+
+    fn insert_name(&mut self, name: String) -> bool {
+        if self.contains_name(&name) {
+            return false;
+        }
+        self.names.insert(name)
+    }
+
+    fn insert(&mut self, id: String, place: (String, CppType)) -> Result<(), ()> {
+        // Duplicate identities are errors; do not hide an outer declaration.
+        if self.contains_key(&id) {
+            return Err(());
+        }
+        self.declarations.insert(id, place);
+        Ok(())
+    }
+}
+
 pub(crate) const EXPORT_SCHEMA: u32 = 33;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
@@ -959,8 +1011,7 @@ impl CppFunction {
             ));
         }
         self.span.validate(logical_source)?;
-        let mut places = BTreeMap::new();
-        let mut names = std::collections::BTreeSet::new();
+        let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
             parameter.span.validate(logical_source)?;
             if parameter.declaration_id.is_empty() || parameter.name.is_empty() {
@@ -1002,14 +1053,14 @@ impl CppFunction {
                     parameter.declaration_id.clone(),
                     (parameter.name.clone(), parameter.value_type.clone()),
                 )
-                .is_some()
+                .is_err()
             {
                 return Err(format!(
                     "duplicate C++ parameter declaration identity `{}`",
                     parameter.declaration_id
                 ));
             }
-            if !names.insert(parameter.name.clone()) {
+            if !places.insert_name(parameter.name.clone()) {
                 return Err(format!("duplicate C++ parameter name `{}`", parameter.name));
             }
             parameter.value_type.validate_aliases_in(alias_sources)?;
@@ -1213,14 +1264,14 @@ impl CppFunction {
                         local.declaration_id.clone(),
                         (local.name.clone(), local.value_type.clone()),
                     )
-                    .is_some()
+                    .is_err()
                 {
                     return Err(format!(
                         "duplicate C++ local declaration identity `{}`",
                         local.declaration_id
                     ));
                 }
-                if !names.insert(local.name.clone()) {
+                if !places.insert_name(local.name.clone()) {
                     return Err(format!(
                         "C++ local `{}` shadows another supported place",
                         local.name
@@ -1252,7 +1303,7 @@ impl CppFunction {
                 require_int32(&binding.value_type, false, "catch binding")?;
                 binding.value_type.validate_aliases_in(alias_sources)?;
                 if places.contains_key(&binding.declaration_id)
-                    || !names.insert(binding.name.clone())
+                    || places.contains_name(&binding.name)
                 {
                     return Err(format!(
                         "C++ catch binding `{}` shadows another supported place",
@@ -1298,11 +1349,14 @@ impl CppFunction {
                         member.validate(&places, records, logical_source)?;
                     }
                 }
-                let mut handler_places = places.clone();
-                handler_places.insert(
+                let mut handler_places = places.child();
+                debug_assert!(!handler_places.contains_name(&binding.name));
+                handler_places.insert_name(binding.name.clone());
+                let inserted = handler_places.insert(
                     binding.declaration_id.clone(),
                     (binding.name.clone(), binding.value_type.clone()),
                 );
+                debug_assert!(inserted.is_ok());
                 for member in handler {
                     member.validate(&handler_places, records, logical_source)?;
                 }
@@ -1402,7 +1456,7 @@ impl CppFunction {
                 require_int32(&binding.value_type, false, "catch binding")?;
                 binding.value_type.validate_aliases_in(alias_sources)?;
                 if places.contains_key(&binding.declaration_id)
-                    || !names.insert(binding.name.clone())
+                    || places.contains_name(&binding.name)
                 {
                     return Err(format!(
                         "C++ catch binding `{}` shadows another supported place",
@@ -1418,11 +1472,14 @@ impl CppFunction {
                     logical_source,
                     &self.name,
                 )?;
-                let mut handler_places = places.clone();
-                handler_places.insert(
+                let mut handler_places = places.child();
+                debug_assert!(!handler_places.contains_name(&binding.name));
+                handler_places.insert_name(binding.name.clone());
+                let inserted = handler_places.insert(
                     binding.declaration_id.clone(),
                     (binding.name.clone(), binding.value_type.clone()),
                 );
+                debug_assert!(inserted.is_ok());
                 for member in handler {
                     member.validate(&handler_places, records, logical_source)?;
                 }
@@ -1570,7 +1627,7 @@ impl CppFunction {
 impl CppStatement {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1715,7 +1772,7 @@ impl CppStatement {
 impl CppCleanup {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1760,7 +1817,7 @@ impl CppInitializer {
     fn validate_for_local(
         &self,
         local_type: &CppType,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1856,7 +1913,7 @@ fn validate_call(
     callee: &CppFunctionReference,
     arguments: &[CppCallArgument],
     span: &CppSpan,
-    places: &BTreeMap<String, (String, CppType)>,
+    places: &ValidationPlaces<'_>,
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<(), String> {
@@ -1889,10 +1946,7 @@ fn validate_call(
 // locals and by-value parameters cannot have their address taken in this
 // profile. References, pointers, field reads and checked arithmetic do not
 // meet this condition, even when their expression syntax has no side effects.
-fn stable_scalar_argument(
-    expression: &CppExpression,
-    places: &BTreeMap<String, (String, CppType)>,
-) -> bool {
+fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<'_>) -> bool {
     match expression {
         CppExpression::IntegerLiteral { .. }
         | CppExpression::CompilerConstant { .. }
@@ -1909,7 +1963,7 @@ fn stable_scalar_argument(
 impl CppCallArgument {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -2011,7 +2065,7 @@ impl CppExpression {
 
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -2294,17 +2348,13 @@ fn validate_nested_scope(
     body: &[CppStatement],
     cleanups: &[CppCleanup],
     span: &CppSpan,
-    outer_places: &BTreeMap<String, (String, CppType)>,
+    outer_places: &ValidationPlaces<'_>,
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
     function_name: &str,
 ) -> Result<(), String> {
     span.validate(logical_source)?;
-    let mut places = outer_places.clone();
-    let mut names = places
-        .values()
-        .map(|(name, _)| name.clone())
-        .collect::<std::collections::BTreeSet<_>>();
+    let mut places = outer_places.child();
     let mut locals = Vec::new();
     for statement in body {
         if let CppStatement::Declare {
@@ -2353,14 +2403,14 @@ fn validate_nested_scope(
                     candidate.declaration_id.clone(),
                     (candidate.name.clone(), candidate.value_type.clone()),
                 )
-                .is_some()
+                .is_err()
             {
                 return Err(format!(
                     "duplicate C++ local declaration identity `{}`",
                     candidate.declaration_id
                 ));
             }
-            if !names.insert(candidate.name.clone()) {
+            if !places.insert_name(candidate.name.clone()) {
                 return Err(format!(
                     "C++ local `{}` shadows another supported place",
                     candidate.name
@@ -3290,7 +3340,7 @@ fn valid_relative_source_path(value: &str) -> bool {
 
 fn validate_place_reference<'a>(
     reference: &CppPlaceReference,
-    places: &'a BTreeMap<String, (String, CppType)>,
+    places: &'a ValidationPlaces<'_>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
     reference.span.validate(logical_source)?;
@@ -3329,7 +3379,7 @@ fn validate_record_reference<'a>(
 fn validate_member_reference<'a>(
     object: &CppPlaceReference,
     field: &CppFieldReference,
-    places: &'a BTreeMap<String, (String, CppType)>,
+    places: &'a ValidationPlaces<'_>,
     records: &'a BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
@@ -3605,6 +3655,98 @@ mod tests {
     }
 
     #[test]
+    fn lexical_place_environments_borrow_outer_storage_and_own_only_scope_deltas() {
+        for (outer_count, sibling_count) in [(4, 4), (32, 16), (256, 64), (2048, 256)] {
+            let mut outer = ValidationPlaces::new();
+            for index in 0..outer_count {
+                let id = format!("outer-{index}");
+                assert!(outer.insert_name(id.clone()));
+                assert!(
+                    outer
+                        .insert(id.clone(), (id, signed_integer(32, false)))
+                        .is_ok()
+                );
+            }
+            let outer_place = outer.get("outer-0").unwrap();
+            let mut owned_entries = 0;
+            for _ in 0..sibling_count {
+                let mut scope = outer.child();
+                assert!(scope.declarations.is_empty());
+                assert!(scope.names.is_empty());
+                assert!(std::ptr::eq(scope.parent.unwrap(), &outer));
+                // A lookup returns the original tuple and type, even after
+                // adding local declarations. Nothing copies an outer type.
+                for index in 0..2 {
+                    let id = format!("local-{index}");
+                    assert!(scope.insert_name(id.clone()));
+                    assert!(
+                        scope
+                            .insert(id.clone(), (id, signed_integer(32, false)))
+                            .is_ok()
+                    );
+                }
+                assert!(std::ptr::eq(scope.get("outer-0").unwrap(), outer_place));
+                assert!(scope.contains_name("outer-0"));
+                assert!(!scope.insert_name("outer-0".into()));
+                assert!(
+                    scope
+                        .insert(
+                            "outer-0".into(),
+                            ("wrong".into(), signed_integer(64, false))
+                        )
+                        .is_err()
+                );
+                assert!(std::ptr::eq(scope.get("outer-0").unwrap(), outer_place));
+                owned_entries += scope.declarations.len();
+                assert_eq!(scope.names.len(), 2);
+                // Deeper lexical lookup and shadow checking use the same
+                // parent chain, without copying either enclosing scope.
+                let nested = scope.child();
+                assert!(std::ptr::eq(nested.get("outer-0").unwrap(), outer_place));
+                assert!(nested.contains_name("local-0"));
+                assert!(nested.declarations.is_empty());
+            }
+            assert_eq!(owned_entries, sibling_count * 2);
+            assert_eq!(outer.declarations.len(), outer_count);
+            assert_eq!(outer.names.len(), outer_count);
+            assert!(outer.get("local-0").is_none());
+            assert!(!outer.contains_name("local-0"));
+            let sibling = outer.child();
+            let reference = CppPlaceReference {
+                declaration_id: "local-0".into(),
+                name: "local-0".into(),
+                span: cleanup_span(),
+            };
+            assert!(
+                validate_place_reference(&reference, &sibling, "fixture.cpp")
+                    .unwrap_err()
+                    .contains("unknown declaration")
+            );
+            let forged_name = CppPlaceReference {
+                declaration_id: "outer-0".into(),
+                name: "forged".into(),
+                span: cleanup_span(),
+            };
+            assert!(
+                validate_place_reference(&forged_name, &sibling, "fixture.cpp")
+                    .unwrap_err()
+                    .contains("is named")
+            );
+        }
+    }
+
+    fn validation_places<const N: usize>(
+        entries: [(String, (String, CppType)); N],
+    ) -> ValidationPlaces<'static> {
+        let mut places = ValidationPlaces::new();
+        for (id, (name, value_type)) in entries {
+            assert!(places.insert_name(name.clone()));
+            assert!(places.insert(id, (name, value_type)).is_ok());
+        }
+        places
+    }
+
+    #[test]
     fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
         let mut function = CppFunction {
             declaration_id: "static_function".into(),
@@ -3673,7 +3815,7 @@ mod tests {
 
     #[test]
     fn nested_call_sibling_artifacts_require_stable_scalar_storage_and_total_expressions() {
-        let places = BTreeMap::from([
+        let places = validation_places([
             (
                 "scalar".into(),
                 ("scalar".into(), signed_integer(32, false)),
@@ -3767,7 +3909,7 @@ mod tests {
         };
         arguments.push(nested.clone());
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_ok()
         );
         let mut invalid = call.clone();
@@ -3777,7 +3919,7 @@ mod tests {
         arguments.push(nested.clone());
         assert!(
             invalid
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("evaluation order")
         );
@@ -3788,7 +3930,7 @@ mod tests {
         *value_type = CppType::Void;
         assert!(
             invalid
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_err()
         );
         let function = |name: &str, body, parameters| CppFunction {
@@ -3925,7 +4067,7 @@ mod tests {
                         name: "R".into(),
                         is_const: false
                     },
-                    &BTreeMap::new(),
+                    &ValidationPlaces::new(),
                     &BTreeMap::new(),
                     "fixture.cpp"
                 )
@@ -3938,7 +4080,7 @@ mod tests {
     fn return_call_artifacts_require_scalar_types_and_matching_returns() {
         let mut call = return_call();
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_ok()
         );
         assert!(call.always_returns());
@@ -3954,7 +4096,7 @@ mod tests {
         cleanups.clear();
         *value_type = CppType::Void;
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_err()
         );
     }
@@ -4199,7 +4341,7 @@ mod tests {
             };
             assert_eq!(
                 constant
-                    .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                    .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                     .is_ok(),
                 valid
             );
@@ -4236,7 +4378,7 @@ mod tests {
                 *slot = operator;
             }
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap();
         }
         if let CppExpression::Binary { right, .. } = &mut expression {
@@ -4244,7 +4386,7 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );
@@ -4261,7 +4403,7 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );

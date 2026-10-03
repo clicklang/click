@@ -179,8 +179,10 @@ multi-size deterministic work checks for affected hot paths.
 1. **Finish artifact validity, supported semantics, and scope budgets.** The
    inventory slice below is delivered. Continue separating structural validity
    from semantic-profile rules at the recursive statement/type boundary. Replace
-   the remaining fixed local/scope counts only after scope validation borrows or
-   overlays its environment rather than cloning all outer places. Preserve the
+   the remaining fixed local/scope counts now that scope validation borrows its
+   outer environment. Index per-function places for graph validation before
+   growing cleanup inventories, so reference/destructor checks do not repeatedly
+   scan the function body. Preserve the
    independent exporter/checker trust boundary. Budget diagnostics must name the
    exhausted limit; semantic diagnostics must identify the missing operation.
    Acceptance requires multi-size sibling/local/scope regressions, malformed
@@ -206,8 +208,16 @@ functions. Serialized nesting/containers are bounded before deserialization,
 and call depth uses cached full subgraph depths so traversal order cannot hide
 an exhausted limit. Multi-size constant/record/function regressions cover the
 new inventories; malformed dependencies, duplicates, bad evaluated values,
-orphan layouts, and budget boundaries remain rejected. Scope-environment copying
-and the existing local/lifetime shape restrictions are the next bounded cleanup.
+orphan layouts, and budget boundaries remain rejected.
+
+Scope validation now uses a lexical environment whose children borrow their
+parent and own only newly declared places and names. Entering a normal scope or
+catch handler neither clones outer types nor scans all outer names. Catch names
+belong to the handler environment. Multi-size deterministic regressions check
+shared outer storage, local-only entry counts, sibling isolation, duplicate
+identities, shadowing, and forged references. The existing lifetime profiles and
+count limits remain; the next bounded cleanup is per-function graph place
+indexing followed by named local/scope budgets and growing lifetime regressions.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction
