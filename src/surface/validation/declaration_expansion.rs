@@ -1235,22 +1235,18 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
-        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-            disjunction: expand_declared_resource_proposition(
-                proof_cases.disjunction,
-                resource_definitions,
-            )?,
-            left_tactics: proof_cases
-                .left_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-            right_tactics: proof_cases
-                .right_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
+        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(proof_cases.try_map(
+            |assumption| {
+                expand_declared_resource_proposition(assumption.clone(), resource_definitions)
+            },
+            |tactics| {
+                tactics
+                    .iter()
+                    .cloned()
+                    .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                    .collect::<Result<Vec<_>, _>>()
+            },
+        )?)),
         ProofTactic::StructuralInduct {
             parameter,
             hypothesis,

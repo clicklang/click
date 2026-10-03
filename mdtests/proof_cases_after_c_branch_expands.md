@@ -53,13 +53,16 @@ int use_pick(int x) {
         simp();
     } else {
         have result == 18 by {
-            cases (result == 18 or result == -1) {
-                simp();
-            } {
-                have result < 0 by {
+            cases {
+                result == 18 => {
                     simp();
                 }
-                contradiction(result < 0);
+                result == -1 => {
+                    have result < 0 by {
+                        simp();
+                    }
+                    contradiction(result < 0);
+                }
             }
         }
         simp();

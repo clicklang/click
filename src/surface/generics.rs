@@ -738,19 +738,10 @@ fn instantiate_proof_tactic(
                 algebraic_parameters,
             )?,
         }),
-        ProofTactic::Cases(cases) => ProofTactic::Cases(ProofCases {
-            disjunction: proposition(&cases.disjunction)?,
-            left_tactics: instantiate_proof_tactics(
-                &cases.left_tactics,
-                substitution,
-                algebraic_parameters,
-            )?,
-            right_tactics: instantiate_proof_tactics(
-                &cases.right_tactics,
-                substitution,
-                algebraic_parameters,
-            )?,
-        }),
+        ProofTactic::Cases(cases) => ProofTactic::Cases(cases.try_map(
+            |assumption| proposition(assumption),
+            |tactics| instantiate_proof_tactics(tactics, substitution, algebraic_parameters),
+        )?),
         ProofTactic::Extract(value) => ProofTactic::Extract(proposition(value)?),
         ProofTactic::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(
             premises

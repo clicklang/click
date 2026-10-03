@@ -2009,8 +2009,9 @@ fn validate_pure_theorem_tactics(
                 validate_pure_theorem_tactics(theorem_name, &both.right_tactics)?;
             }
             ProofTactic::Cases(proof_cases) => {
-                validate_pure_theorem_tactics(theorem_name, &proof_cases.left_tactics)?;
-                validate_pure_theorem_tactics(theorem_name, &proof_cases.right_tactics)?;
+                for arm in proof_cases.arms() {
+                    validate_pure_theorem_tactics(theorem_name, arm.tactics())?;
+                }
             }
             ProofTactic::Have(proof_have) => {
                 validate_pure_theorem_proof(theorem_name, &proof_have.proof)?;

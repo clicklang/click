@@ -38,47 +38,44 @@ int32 drain(int32 n) {
     ensures result == 0;
 } by {
     step();
-    branch {
-        then {
-            have 0 <= n - 1 by {
-                apply(int32_positive_predecessor_is_nonnegative(n)) using {
-                    n > 0;
-                }
+    branch then {
+        have 0 <= n - 1 by {
+            apply(int32_positive_predecessor_is_nonnegative(n)) using {
+                n > 0;
             }
-            have 1 <= n by {
-                arithmetic() using {
-                    n > 0;
-                }
+        }
+        have 1 <= n by {
+            arithmetic() using {
+                n > 0;
             }
-            have defined(n - 1) by {
-                apply(int32_nonnegative_subtract_within_value_is_defined(n, 1)) using {
-                    1 <= n;
-                }
-                simp();
+        }
+        have defined(n - 1) by {
+            apply(int32_nonnegative_subtract_within_value_is_defined(n, 1)) using {
+                1 <= n;
             }
-            have 0 <= level(n - 1) by {
-                unfold(level(n - 1));
-                apply(int32_less_equal_to_integer(0, n - 1)) using {
-                    0 <= n - 1;
-                }
-                simp();
-            }
-            have level(n - 1) < level(n) by {
-                unfold(level(n - 1));
-                unfold(level(n));
-                apply(int32_subtract_to_integer(n, 1)) using {
-                    defined(n - 1);
-                }
-                simp() using {
-                    to_integer(n - 1) == to_integer(n) - to_integer(1);
-                };
-            }
-            step();
-            step();
             simp();
         }
-        else {}
-    }
+        have 0 <= level(n - 1) by {
+            unfold(level(n - 1));
+            apply(int32_less_equal_to_integer(0, n - 1)) using {
+                0 <= n - 1;
+            }
+            simp();
+        }
+        have level(n - 1) < level(n) by {
+            unfold(level(n - 1));
+            unfold(level(n));
+            apply(int32_subtract_to_integer(n, 1)) using {
+                defined(n - 1);
+            }
+            simp() using {
+                to_integer(n - 1) == to_integer(n) - to_integer(1);
+            };
+        }
+        step();
+        step();
+        simp();
+    } else {}
     step();
     simp();
 }

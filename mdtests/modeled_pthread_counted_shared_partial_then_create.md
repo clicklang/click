@@ -42,30 +42,21 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch {
-        then { have count(ticket(p)) == 3 by { simp(); } step(); simp(); }
-        else {}
-    }
+    branch then { have count(ticket(p)) == 3 by { simp(); } step(); simp(); } else {}
     step();
-    branch {
-        then {
-            step();
-            have count(ticket(p)) == 2 by { simp(); }
-            have count(ticket(q)) == 1 by { simp(); }
-            step(); simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        have count(ticket(p)) == 2 by { simp(); }
+        have count(ticket(q)) == 1 by { simp(); }
+        step(); simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            have count(ticket(p)) == 1 by { simp(); }
-            step(); simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        have count(ticket(p)) == 1 by { simp(); }
+        step(); simp();
+    } else {}
     step();
     have count(ticket(q)) == 1 by { simp(); }
     step();

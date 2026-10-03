@@ -37,13 +37,10 @@ int32 f(int32* p, int32 x) {
     owns c: r(p);
     ensures result == 0 or result == 1;
 } by {
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     match c.m {
         T::A(w) => {
             execute();

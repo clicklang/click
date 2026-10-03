@@ -38,19 +38,15 @@ int32 conditional_deallocation_join(int32* p, int32 error) {
 } by {
     unfold(allocated(p));
     step();
-    branch {
-        ensuring {
-            owns maybe_allocated(p, error);
-        }
-        then {
-            step();
-            step();
-            fold(maybe_allocated(p, error));
-        }
-        else {
-            step();
-            fold(maybe_allocated(p, error));
-        }
+    branch ensuring {
+        owns maybe_allocated(p, error);
+    } then {
+        step();
+        step();
+        fold(maybe_allocated(p, error));
+    } else {
+        step();
+        fold(maybe_allocated(p, error));
     }
     step();
     simp();

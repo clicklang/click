@@ -150,12 +150,12 @@ needle = "if x <= 0 {"
 [[form]]
 id = "cases"
 path = "src/surface/tests/tactic_tests/logical_tactics.rs"
-needle = "cases (x == 1 or x == 2) {"
+needle = "x == 1 => {"
 
 [[form]]
 id = "branch"
 path = "mdtests/frontier_branch.md"
-needle = "branch {"
+needle = "branch ensuring {"
 
 [[form]]
 id = "loop"

@@ -18,7 +18,7 @@ the first conjunct's negation alone is not assumed.
 disjunctive guard is the mirror image: `while (a != 0 || b != 0)` has two ways
 *in* and one way out. The single exit states both conjuncts false as before,
 and the entry paths export the disjunction of what each one states alone, which
-is what `either`'s `cases(a != 0 or b != 0)` below splits on;
+is what `either`'s `cases { a != 0 => ... b != 0 => ... }` below splits on;
 `mdtests/loop_disjunctive_guard_entry_join.md` is that join on its own.
 
 An operand the function cannot read still refuses, in both spellings:
@@ -114,12 +114,15 @@ int32 either(int32 a, int32 b) {
         invariant b <= 1;
         preserve by {
             have 0 < a + b by {
-                cases(a != 0 or b != 0) {
-                    have 0 < a by { arithmetic() using { a >= 0; a != 0; } }
-                    arithmetic() using { 0 < a; b >= 0; a <= 1; b <= 1; }
-                } {
-                    have 0 < b by { arithmetic() using { b >= 0; b != 0; } }
-                    arithmetic() using { 0 < b; a >= 0; a <= 1; b <= 1; }
+                cases {
+                    a != 0 => {
+                        have 0 < a by { arithmetic() using { a >= 0; a != 0; } }
+                        arithmetic() using { 0 < a; b >= 0; a <= 1; b <= 1; }
+                    }
+                    b != 0 => {
+                        have 0 < b by { arithmetic() using { b >= 0; b != 0; } }
+                        arithmetic() using { 0 < b; a >= 0; a <= 1; b <= 1; }
+                    }
                 }
             }
             step();

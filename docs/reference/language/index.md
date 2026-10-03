@@ -893,13 +893,10 @@ its condition as a logical case split:
 
 <!-- verified-example: mdtests/frontier_branch.md -->
 ```click
-branch {
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch then {
+    step();
+} else {
+    step();
 }
 step();
 ```
@@ -946,16 +943,12 @@ optional common-frontier interface to `branch`:
 
 <!-- verified-example: mdtests/proof_branch_interface_continuation.md -->
 ```click
-branch {
-    ensuring {
-        fact y >= 0;
-    }
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch ensuring {
+    fact y >= 0;
+} then {
+    step();
+} else {
+    step();
 }
 step();
 ```

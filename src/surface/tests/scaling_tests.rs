@@ -3856,7 +3856,7 @@ fn branching_grouped_claim_project(claim_count: usize) -> (String, String) {
         click_source.push_str("    ensures result == a;\n");
     }
     click_source.push_str(
-        "} by {\n    step();\n    branch {\n        then {\n            execute();\n            simp();\n        }\n        else {}\n    }\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
+        "} by {\n    step();\n    branch then {\n            execute();\n            simp();\n        } else {}\n    step();\n    have x == a by {\n        simp();\n    }\n    execute();\n    simp();\n}\n",
     );
     (c_source, click_source)
 }

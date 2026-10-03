@@ -26,26 +26,18 @@ verifying "nested_branch.c";
 int32 nested_branch(int32 x, int32 y) {
     ensures result > 0 by {
         step();
-        branch {
-            ensuring {
+        branch ensuring {
+            fact at(statement(6).entry, c(result)) > 0;
+        } then {
+            branch ensuring {
                 fact at(statement(6).entry, c(result)) > 0;
-            }
-            then {
-                branch {
-                    ensuring {
-                        fact at(statement(6).entry, c(result)) > 0;
-                    }
-                    then {
-                        step();
-                    }
-                    else {
-                        step();
-                    }
-                }
-            }
-            else {
+            } then {
+                step();
+            } else {
                 step();
             }
+        } else {
+            step();
         }
         step();
         simp();

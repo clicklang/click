@@ -60,10 +60,7 @@ int32 tree_spin(struct node* root) {
             simp();
         },
         HeapTree::Node(identity, value, left_model, right_model) => {
-            branch {
-                then { step(); simp(); }
-                else {}
-            }
+            branch then { step(); simp(); } else {}
             step(tree_spin(root), { t: t });
             step();
             simp();

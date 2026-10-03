@@ -85,10 +85,13 @@ void paint(struct node* p, int32 flag) {
     }
     step();
     have c.color == Color::Red or c.color == Color::Black by {
-        cases((flag == 0 and c.color == Color::Red and p->shade == 0) or (c.color == Color::Black and p->shade == 1)) {
-            simp();
-        } {
-            simp();
+        cases {
+            (flag == 0 and c.color == Color::Red and p->shade == 0) => {
+                simp();
+            }
+            (c.color == Color::Black and p->shade == 1) => {
+                simp();
+            }
         }
     }
     simp();

@@ -24,16 +24,12 @@ int32 branch_common_requirement(int32 x, int32 flag) {
 
     ensures result >= 0 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         simp();

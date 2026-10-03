@@ -51,10 +51,13 @@ int32 enters_either_way(int32 a, int32 b) {
         invariant b <= 1;
         preserve by {
             have 0 < a + b by {
-                cases(a > 0 or b > 0) {
-                    arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }
-                } {
-                    arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; }
+                cases {
+                    a > 0 => {
+                        arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }
+                    }
+                    b > 0 => {
+                        arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; }
+                    }
                 }
             }
             step();

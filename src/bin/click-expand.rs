@@ -1040,7 +1040,7 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "            have st.live == 1 by {")
+            .position(|line| line == "        have st.live == 1 by {")
             .expect("fixture should contain the nested smart have")
             + 1;
         let simp = markdown.lines().nth(have_line).unwrap();
@@ -1060,7 +1060,7 @@ int32 bad(int32 x) {
 
         let from_simp = run_at(have_line + 1, simp.find("simp").unwrap() + 1)
             .expect("the nested simp should select its smart have");
-        let from_have = run_at(have_line, 13).expect("the have keyword should select it");
+        let from_have = run_at(have_line, 9).expect("the have keyword should select it");
 
         assert_eq!(from_simp, from_have);
         assert!(
@@ -1123,10 +1123,10 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "            have st.live == 1 by {")
+            .position(|line| line == "        have st.live == 1 by {")
             .unwrap()
             + 1;
-        let from_have = run_location(&path, &format!("{have_line}:13")).unwrap();
+        let from_have = run_location(&path, &format!("{have_line}:9")).unwrap();
         assert_eq!(
             run_location(&path, &format!("{}", have_line + 1)).unwrap(),
             from_have
@@ -1134,7 +1134,7 @@ int32 bad(int32 x) {
         let premise_line = have_line + 2;
         assert!(markdown_line(&path, premise_line).contains("defined(1 + got)"));
         assert_eq!(
-            run_location(&path, &format!("{premise_line}:24")).unwrap(),
+            run_location(&path, &format!("{premise_line}:20")).unwrap(),
             from_have
         );
         let error = run_location(&path, &format!("{premise_line}"))
@@ -1157,8 +1157,8 @@ int32 bad(int32 x) {
         let original = fs::read_to_string(&path).unwrap();
         let original_lines = original.lines().collect::<Vec<_>>();
         // (selected line, first and last line of the rewritten tactic): the
-        // `simp` in the smart `have` on line 59 selects that `have`.
-        for (line, first, last) in [(53, 53, 53), (65, 65, 65), (57, 57, 57), (60, 59, 61)] {
+        // `simp` in the smart `have` on line 61 selects that `have`.
+        for (line, first, last) in [(53, 53, 53), (68, 68, 68), (58, 58, 58), (62, 61, 63)] {
             let expanded = run_location(&path, &line.to_string())
                 .unwrap_or_else(|error| panic!("line {line}: {error}"));
             assert_ne!(expanded, original);
@@ -1211,7 +1211,7 @@ int32 bad(int32 x) {
         assert_eq!(markdown_line(&path, 81).trim(), "simp();");
         let expanded = run_location(&path, "81").unwrap();
         let tail = expanded
-            .split_once("        threw {\n")
+            .split_once("        threw => {\n")
             .expect("the threw arm is kept")
             .1;
         assert!(

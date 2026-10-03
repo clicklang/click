@@ -140,89 +140,77 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     step();
-    branch {
-        then {
-            step();
-            fold(arena_initialized_storage(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_initialized_access(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_init_result(arena, result));
-            simp();
-        }
-        else {}
-    }
-    branch {
-        then {
-            step();
-            fold(arena_initialized_storage(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_initialized_access(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_init_result(arena, result));
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        simp();
+    } else {}
+    branch then {
+        step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            fold(arena_initialized_storage(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_initialized_access(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_init_result(arena, result));
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            step();
-            fold(arena_initialized_storage(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_initialized_access(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
-                result
-            ));
-            fold(arena_init_result(arena, result));
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        fold(arena_initialized_storage(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_initialized_access(
+            arena->data,
+            arena->occupied,
+            arena->capacity,
+            result
+        ));
+        fold(arena_init_result(arena, result));
+        simp();
+    } else {}
     have 1 <= capacity by {
         arithmetic() using {
             not (capacity <= 0);

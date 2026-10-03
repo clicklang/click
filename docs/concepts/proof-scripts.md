@@ -98,7 +98,7 @@ An execution proof carries a C frontier. The execution vocabulary is:
 - `step()` for one simple deterministic transition;
 - `execute_until(statement(N))` for a forward prefix;
 - `execute()` for the remainder of the function;
-- `branch { [ensuring { ... }] then { ... } else { ... } }` for the C `if` at
+- `branch ensuring { ... } then { ... } else { ... }` for the C `if` at
   the frontier and its single joined continuation; and
 - `loop { ... }` for the C loop exactly at the current frontier.
 

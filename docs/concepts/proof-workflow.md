@@ -217,13 +217,10 @@ When the execution frontier is a C `if`, use `branch`:
 
 <!-- verified-example: mdtests/grouped_function_proof.md -->
 ```click
-branch {
-    then {
-        step(); // Execute the first statement in the C then arm.
-    }
-    else {
-        step(); // Execute the first statement in the C else arm.
-    }
+branch then {
+    step(); // Execute the first statement in the C then arm.
+} else {
+    step(); // Execute the first statement in the C else arm.
 }
 ```
 
@@ -242,18 +239,14 @@ before the rest of the function proof:
 
 <!-- verified-example: mdtests/grouped_function_proof.md -->
 ```click
-branch {
-    ensuring {
-        fact y >= 0;
-        owns buffer(data, len);
-        views metadata(data, len);
-    }
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch ensuring {
+    fact y >= 0;
+    owns buffer(data, len);
+    views metadata(data, len);
+} then {
+    step();
+} else {
+    step();
 }
 step();
 ```

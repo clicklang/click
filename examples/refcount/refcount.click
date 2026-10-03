@@ -109,13 +109,10 @@ int32 refcount_pipeline(int32 amount) {
     }
     step();
     step();
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
     have defined(obj->refs + amount) by {
         rewrite(obj->refs == 1);

@@ -811,8 +811,8 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
         message.contains("Use `outcomes` at this point"),
         "{message}"
     );
-    assert!(message.contains("returned { step(); }"), "{message}");
-    assert!(message.contains("threw { step(); }"), "{message}");
+    assert!(message.contains("returned => { step(); }"), "{message}");
+    assert!(message.contains("threw => { step(); }"), "{message}");
     assert!(
         message.contains("all\ncontract claims are closed"),
         "{message}"
@@ -1369,12 +1369,15 @@ theorem good(x: int32, y: int32) {
 theorem split(x: int32) {
     requires x == 1 or x == 2;
     ensures x >= 1 by {
-        cases(x == 1 or x == 2) {
-            rewrite(x == 1);
-            normalize();
-        } {
-            rewrite(x == 2);
-            normalize();
+        cases {
+            x == 1 => {
+                rewrite(x == 1);
+                normalize();
+            }
+            x == 2 => {
+                rewrite(x == 2);
+                normalize();
+            }
         }
     }
 }
@@ -1417,12 +1420,12 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
             &locate,
             &arm,
             &|_, _, _| false,
-            Some(&SourcePosition::new(17, 13)),
+            Some(&SourcePosition::new(19, 17)),
         )
         .unwrap();
         assert!(
             right.ends_with(
-                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@16: rewrite\n  tactic@17: normalize()"
+                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@18: rewrite\n  tactic@19: normalize()"
             ),
             "{right}"
         );

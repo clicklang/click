@@ -154,178 +154,142 @@ int f() {
 } by {
     step();
     step();
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
-    branch {
-        then {
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
     step();

@@ -174,49 +174,37 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     step();
-    branch {
-        then {
-            step();
-            let outcome = fold(arena_init_outcome(arena), {
-                model: ArenaInitOutcome::Failure
-            });
-            simp();
-        }
-        else {}
-    }
-    branch {
-        then {
-            step();
-            let outcome = fold(arena_init_outcome(arena), {
-                model: ArenaInitOutcome::Failure
-            });
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        let outcome = fold(arena_init_outcome(arena), {
+            model: ArenaInitOutcome::Failure
+        });
+        simp();
+    } else {}
+    branch then {
+        step();
+        let outcome = fold(arena_init_outcome(arena), {
+            model: ArenaInitOutcome::Failure
+        });
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            let outcome = fold(arena_init_outcome(arena), {
-                model: ArenaInitOutcome::Failure
-            });
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        let outcome = fold(arena_init_outcome(arena), {
+            model: ArenaInitOutcome::Failure
+        });
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            step();
-            let outcome = fold(arena_init_outcome(arena), {
-                model: ArenaInitOutcome::Failure
-            });
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        let outcome = fold(arena_init_outcome(arena), {
+            model: ArenaInitOutcome::Failure
+        });
+        simp();
+    } else {}
     have 1 <= capacity by {
         arithmetic() using {
             not (capacity <= 0);
@@ -446,224 +434,218 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
     step();
     step();
     step();
-    branch {
-        then {
-            step();
-            let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
-            let outcome = fold(arena_alloc_result(region), {
-                model: ArenaAllocOutcome::Failure
-            });
-            have result == 0 by {
-                normalize();
-            }
-            have forall (k: int32) {
-                result == 0 and 0 <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                transport(
-                    old(arena->occupied[k]) == old(arena->occupied[k]),
-                    arena->occupied[k] == old(arena->occupied[k])
-                ) using {
-                    0 <= k;
-                    k < arena->capacity;
-                }
-            }
-            assumption();
-            have result == 0 or result == 1 by simp;
-            assumption();
-            have st.live == old(st.live) + result by simp;
-            assumption();
-            have arena->capacity == old(arena->capacity) by simp;
-            assumption();
-            have arena->capacity <= 536870911 by simp;
-            assumption();
-            have st.capacity == arena->capacity by simp;
-            assumption();
-            have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
-            assumption();
-            have result == 1 implies outcome.model ==
-                ArenaAllocOutcome::Success(region->start, region->end) by simp;
-            assumption();
-            have result == 1 implies region->arena == arena by simp;
-            assumption();
-            have result == 1 implies region->end == region->start + count by simp;
-            assumption();
-            have result == 1 implies region->end <= arena->capacity by simp;
-            assumption();
-            have result == 1 implies 0 <= region->start by simp;
-            assumption();
-            have result == 1 implies region->start < region->end by simp;
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    arena->occupied[k] == 1
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and 0 <= k and k < region->start implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->end <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    old(arena->occupied[k]) == 0
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            assumption();
-            assumption();
+    branch then {
+        step();
+        let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
+        let outcome = fold(arena_alloc_result(region), {
+            model: ArenaAllocOutcome::Failure
+        });
+        have result == 0 by {
+            normalize();
         }
-        else {}
-    }
-    branch {
-        then {
-            step();
-            let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
-            let outcome = fold(arena_alloc_result(region), {
-                model: ArenaAllocOutcome::Failure
-            });
-            have result == 0 by {
-                normalize();
+        have forall (k: int32) {
+            result == 0 and 0 <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            transport(
+                old(arena->occupied[k]) == old(arena->occupied[k]),
+                arena->occupied[k] == old(arena->occupied[k])
+            ) using {
+                0 <= k;
+                k < arena->capacity;
             }
-            have forall (k: int32) {
-                result == 0 and 0 <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                transport(
-                    old(arena->occupied[k]) == old(arena->occupied[k]),
-                    arena->occupied[k] == old(arena->occupied[k])
-                ) using {
-                    0 <= k;
-                    k < arena->capacity;
-                }
-            }
-            assumption();
-            have result == 0 or result == 1 by simp;
-            assumption();
-            have st.live == old(st.live) + result by simp;
-            assumption();
-            have arena->capacity == old(arena->capacity) by simp;
-            assumption();
-            have arena->capacity <= 536870911 by simp;
-            assumption();
-            have st.capacity == arena->capacity by simp;
-            assumption();
-            have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
-            assumption();
-            have result == 1 implies outcome.model ==
-                ArenaAllocOutcome::Success(region->start, region->end) by simp;
-            assumption();
-            have result == 1 implies region->arena == arena by simp;
-            assumption();
-            have result == 1 implies region->end == region->start + count by simp;
-            assumption();
-            have result == 1 implies region->end <= arena->capacity by simp;
-            assumption();
-            have result == 1 implies 0 <= region->start by simp;
-            assumption();
-            have result == 1 implies region->start < region->end by simp;
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    arena->occupied[k] == 1
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and 0 <= k and k < region->start implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->end <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    old(arena->occupied[k]) == 0
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            assumption();
-            assumption();
         }
-        else {}
-    }
+        assumption();
+        have result == 0 or result == 1 by simp;
+        assumption();
+        have st.live == old(st.live) + result by simp;
+        assumption();
+        have arena->capacity == old(arena->capacity) by simp;
+        assumption();
+        have arena->capacity <= 536870911 by simp;
+        assumption();
+        have st.capacity == arena->capacity by simp;
+        assumption();
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        assumption();
+        have result == 1 implies outcome.model ==
+            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+        assumption();
+        have result == 1 implies region->arena == arena by simp;
+        assumption();
+        have result == 1 implies region->end == region->start + count by simp;
+        assumption();
+        have result == 1 implies region->end <= arena->capacity by simp;
+        assumption();
+        have result == 1 implies 0 <= region->start by simp;
+        assumption();
+        have result == 1 implies region->start < region->end by simp;
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                arena->occupied[k] == 1
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and 0 <= k and k < region->start implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->end <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                old(arena->occupied[k]) == 0
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        assumption();
+        assumption();
+    } else {}
+    branch then {
+        step();
+        let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
+        let outcome = fold(arena_alloc_result(region), {
+            model: ArenaAllocOutcome::Failure
+        });
+        have result == 0 by {
+            normalize();
+        }
+        have forall (k: int32) {
+            result == 0 and 0 <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            transport(
+                old(arena->occupied[k]) == old(arena->occupied[k]),
+                arena->occupied[k] == old(arena->occupied[k])
+            ) using {
+                0 <= k;
+                k < arena->capacity;
+            }
+        }
+        assumption();
+        have result == 0 or result == 1 by simp;
+        assumption();
+        have st.live == old(st.live) + result by simp;
+        assumption();
+        have arena->capacity == old(arena->capacity) by simp;
+        assumption();
+        have arena->capacity <= 536870911 by simp;
+        assumption();
+        have st.capacity == arena->capacity by simp;
+        assumption();
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        assumption();
+        have result == 1 implies outcome.model ==
+            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+        assumption();
+        have result == 1 implies region->arena == arena by simp;
+        assumption();
+        have result == 1 implies region->end == region->start + count by simp;
+        assumption();
+        have result == 1 implies region->end <= arena->capacity by simp;
+        assumption();
+        have result == 1 implies 0 <= region->start by simp;
+        assumption();
+        have result == 1 implies region->start < region->end by simp;
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                arena->occupied[k] == 1
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and 0 <= k and k < region->start implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->end <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                old(arena->occupied[k]) == 0
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        assumption();
+        assumption();
+    } else {}
     have 0 < count by {
         arithmetic() using { not (count <= 0); }
     }
@@ -752,13 +734,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         run_length < count;
                     }
                 }
-                branch {
-                    then {
-                        step();
-                    }
-                    else {
-                        contradiction(not (arena->occupied[i] == 0));
-                    }
+                branch then {
+                    step();
+                } else {
+                    contradiction(not (arena->occupied[i] == 0));
                 }
                 step();
                 have forall (k: int32) {
@@ -930,13 +909,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 }
             } else {
-                branch {
-                    then {
-                        contradiction(arena->occupied[i] == 0);
-                    }
-                    else {
-                        step();
-                    }
+                branch then {
+                    contradiction(arena->occupied[i] == 0);
+                } else {
+                    step();
                 }
                 step();
                 have forall (k: int32) {
@@ -1040,124 +1016,121 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         assumption();
     }
     mark scanned;
-    branch {
-        then {
-            fold(arena_cells(arena->data, arena->occupied, arena->capacity));
-            step();
-            let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
-            let outcome = fold(arena_alloc_result(region), {
-                model: ArenaAllocOutcome::Failure
-            });
-            have result == 0 by {
-                normalize();
-            }
-            have forall (k: int32) {
-                result == 0 and 0 <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                instantiate(forall (j: int32) {
-                    at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies
-                        at(scanned, arena->occupied[j]) == old(arena->occupied[j])
-                }, k) using {
-                    0 <= k;
-                    k < arena->capacity;
-                }
-                transport(
-                    at(scanned, arena->occupied[k]) == old(arena->occupied[k]),
-                    arena->occupied[k] == old(arena->occupied[k])
-                ) using {
-                    at(scanned, arena->occupied[k]) == old(arena->occupied[k]);
-                    0 <= k;
-                    k < arena->capacity;
-                }
-            }
-            assumption();
-            have result == 0 or result == 1 by simp;
-            assumption();
-            have st.live == old(st.live) + result by simp;
-            assumption();
-            have arena->capacity == old(arena->capacity) by simp;
-            assumption();
-            have arena->capacity <= 536870911 by simp;
-            assumption();
-            have st.capacity == arena->capacity by simp;
-            assumption();
-            have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
-            assumption();
-            have result == 1 implies outcome.model ==
-                ArenaAllocOutcome::Success(region->start, region->end) by simp;
-            assumption();
-            have result == 1 implies region->arena == arena by simp;
-            assumption();
-            have result == 1 implies region->end == region->start + count by simp;
-            assumption();
-            have result == 1 implies region->end <= arena->capacity by simp;
-            assumption();
-            have result == 1 implies 0 <= region->start by simp;
-            assumption();
-            have result == 1 implies region->start < region->end by simp;
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    arena->occupied[k] == 1
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and 0 <= k and k < region->start implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->end <= k and k < arena->capacity implies
-                    arena->occupied[k] == old(arena->occupied[k])
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            have forall (k: int32) {
-                result == 1 and region->start <= k and k < region->end implies
-                    old(arena->occupied[k]) == 0
-            } by {
-                intro();
-                intro();
-                extract(result == 1);
-                have not (result == 1) by {
-                    arithmetic() using { result == 0; }
-                }
-                contradiction(result == 1);
-            }
-            assumption();
-            assumption();
-            assumption();
+    branch then {
+        fold(arena_cells(arena->data, arena->occupied, arena->capacity));
+        step();
+        let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
+        let outcome = fold(arena_alloc_result(region), {
+            model: ArenaAllocOutcome::Failure
+        });
+        have result == 0 by {
+            normalize();
         }
-        else {}
-    }
+        have forall (k: int32) {
+            result == 0 and 0 <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            instantiate(forall (j: int32) {
+                at(scanned, 0) <= at(scanned, j) and at(scanned, j) < at(scanned, arena->capacity) implies
+                    at(scanned, arena->occupied[j]) == old(arena->occupied[j])
+            }, k) using {
+                0 <= k;
+                k < arena->capacity;
+            }
+            transport(
+                at(scanned, arena->occupied[k]) == old(arena->occupied[k]),
+                arena->occupied[k] == old(arena->occupied[k])
+            ) using {
+                at(scanned, arena->occupied[k]) == old(arena->occupied[k]);
+                0 <= k;
+                k < arena->capacity;
+            }
+        }
+        assumption();
+        have result == 0 or result == 1 by simp;
+        assumption();
+        have st.live == old(st.live) + result by simp;
+        assumption();
+        have arena->capacity == old(arena->capacity) by simp;
+        assumption();
+        have arena->capacity <= 536870911 by simp;
+        assumption();
+        have st.capacity == arena->capacity by simp;
+        assumption();
+        have result == 0 implies outcome.model == ArenaAllocOutcome::Failure by simp;
+        assumption();
+        have result == 1 implies outcome.model ==
+            ArenaAllocOutcome::Success(region->start, region->end) by simp;
+        assumption();
+        have result == 1 implies region->arena == arena by simp;
+        assumption();
+        have result == 1 implies region->end == region->start + count by simp;
+        assumption();
+        have result == 1 implies region->end <= arena->capacity by simp;
+        assumption();
+        have result == 1 implies 0 <= region->start by simp;
+        assumption();
+        have result == 1 implies region->start < region->end by simp;
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                arena->occupied[k] == 1
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and 0 <= k and k < region->start implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->end <= k and k < arena->capacity implies
+                arena->occupied[k] == old(arena->occupied[k])
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        have forall (k: int32) {
+            result == 1 and region->start <= k and k < region->end implies
+                old(arena->occupied[k]) == 0
+        } by {
+            intro();
+            intro();
+            extract(result == 1);
+            have not (result == 1) by {
+                arithmetic() using { result == 0; }
+            }
+            contradiction(result == 1);
+        }
+        assumption();
+        assumption();
+        assumption();
+    } else {}
     have run_length == count by {
         apply(int32_le_and_not_lt_implies_eq(run_length, count)) using {
             run_length <= count;
@@ -2863,22 +2836,22 @@ int32 arena_pipeline(
     step();
     step();
     let { outcome: o0 } = step(arena_init(arena, 8), {});
-    branch {
-        then {
-            have o0.model == ArenaInitOutcome::Failure by {
-                simp();
-            }
-            unfold(o0);
-            execute();
+    branch then {
+        have o0.model == ArenaInitOutcome::Failure by {
             simp();
         }
-        else {}
-    }
+        unfold(o0);
+        execute();
+        simp();
+    } else {}
     have initialized == 1 by {
-        cases(initialized == 0 or initialized == 1) {
-            contradiction(initialized == 0);
-        } {
-            assumption();
+        cases {
+            initialized == 0 => {
+                contradiction(initialized == 0);
+            }
+            initialized == 1 => {
+                assumption();
+            }
         }
     }
     have o0.model == ArenaInitOutcome::Success(0, 8) by {
@@ -2907,56 +2880,56 @@ int32 arena_pipeline(
     have arena->capacity == at(a1, arena->capacity) by {
         simp();
     }
-    branch {
-        then {
-            have o1.model == ArenaAllocOutcome::Failure by {
-                simp();
-            }
-            have forall (k: int32) {
-                0 <= k and k < arena->capacity implies arena->occupied[k] == 0
-            } by {
-                intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) {
-                        allocated == 0 and 0 <= j and j < arena->capacity implies
-                            arena->occupied[j] == at(a1, arena->occupied[j])
-                    }, k) using {
-                        allocated == 0;
-                        0 <= k;
-                        k < arena->capacity;
-                    }
-                    simp();
-                }
-                have k < at(a1, arena->capacity) by {
-                    simp();
-                }
-                have at(a1, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) {
-                        0 <= j and j < at(a1, arena->capacity) implies
-                            at(a1, arena->occupied[j]) == 0
-                    }, k) using {
-                        0 <= k;
-                        k < at(a1, arena->capacity);
-                    }
-                    simp();
-                }
-                simp();
-            }
-            step(arena_destroy(arena), { st: s0 });
-            unfold(o1);
-            execute();
+    branch then {
+        have o1.model == ArenaAllocOutcome::Failure by {
             simp();
         }
-        else {}
-    }
+        have forall (k: int32) {
+            0 <= k and k < arena->capacity implies arena->occupied[k] == 0
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                instantiate(forall (j: int32) {
+                    allocated == 0 and 0 <= j and j < arena->capacity implies
+                        arena->occupied[j] == at(a1, arena->occupied[j])
+                }, k) using {
+                    allocated == 0;
+                    0 <= k;
+                    k < arena->capacity;
+                }
+                simp();
+            }
+            have k < at(a1, arena->capacity) by {
+                simp();
+            }
+            have at(a1, arena->occupied[k]) == 0 by {
+                instantiate(forall (j: int32) {
+                    0 <= j and j < at(a1, arena->capacity) implies
+                        at(a1, arena->occupied[j]) == 0
+                }, k) using {
+                    0 <= k;
+                    k < at(a1, arena->capacity);
+                }
+                simp();
+            }
+            simp();
+        }
+        step(arena_destroy(arena), { st: s0 });
+        unfold(o1);
+        execute();
+        simp();
+    } else {}
     have allocated == 1 by {
-        cases(allocated == 0 or allocated == 1) {
-            contradiction(allocated == 0);
-        } {
-            assumption();
+        cases {
+            allocated == 0 => {
+                contradiction(allocated == 0);
+            }
+            allocated == 1 => {
+                assumption();
+            }
         }
     }
     have o1.model == ArenaAllocOutcome::Success(first->start, first->end) by {
@@ -2998,38 +2971,41 @@ int32 arena_pipeline(
             }
             simp();
         }
-        cases(k < at(z1, first->start) or at(z1, first->end) <= k) {
-            have k < first->start by {
-                simp();
-            }
-            have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and 0 <= j and j < first->start implies
-                        arena->occupied[j] == at(a1, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    0 <= k;
-                    k < first->start;
+        cases {
+            k < at(z1, first->start) => {
+                have k < first->start by {
+                    simp();
+                }
+                have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and 0 <= j and j < first->start implies
+                            arena->occupied[j] == at(a1, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        0 <= k;
+                        k < first->start;
+                    }
+                    simp();
                 }
                 simp();
             }
-            simp();
-        } {
-            have first->end <= k by {
-                simp();
-            }
-            have arena->occupied[k] == at(a1, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and first->end <= j and j < arena->capacity implies
-                        arena->occupied[j] == at(a1, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    first->end <= k;
-                    k < arena->capacity;
+            at(z1, first->end) <= k => {
+                have first->end <= k by {
+                    simp();
+                }
+                have arena->occupied[k] == at(a1, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and first->end <= j and j < arena->capacity implies
+                            arena->occupied[j] == at(a1, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        first->end <= k;
+                        k < arena->capacity;
+                    }
+                    simp();
                 }
                 simp();
             }
-            simp();
         }
     }
     have at(a1, s0.live) == 0 by {
@@ -3043,230 +3019,230 @@ int32 arena_pipeline(
     have arena->capacity == at(a2, arena->capacity) by {
         simp();
     }
-    branch {
-        then {
-            have o2.model == ArenaAllocOutcome::Failure by {
+    branch then {
+        have o2.model == ArenaAllocOutcome::Failure by {
+            simp();
+        }
+        have forall (k: int32) {
+            0 <= k and k < arena->capacity and
+                (k < at(z1, first->start) or at(z1, first->end) <= k) implies
+                arena->occupied[k] == 0
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            extract(k < at(z1, first->start) or at(z1, first->end) <= k);
+            have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                instantiate(forall (j: int32) {
+                    allocated == 0 and 0 <= j and j < arena->capacity implies
+                        arena->occupied[j] == at(a2, arena->occupied[j])
+                }, k) using {
+                    allocated == 0;
+                    0 <= k;
+                    k < arena->capacity;
+                }
                 simp();
             }
-            have forall (k: int32) {
-                0 <= k and k < arena->capacity and
-                    (k < at(z1, first->start) or at(z1, first->end) <= k) implies
-                    arena->occupied[k] == 0
-            } by {
+            have k < at(a2, arena->capacity) by {
+                simp();
+            }
+            have at(a2, arena->occupied[k]) == 0 by {
+                instantiate(forall (j: int32) {
+                    0 <= j and j < at(a2, arena->capacity) and
+                        (j < at(z1, first->start) or at(z1, first->end) <= j) implies
+                        at(a2, arena->occupied[j]) == 0
+                }, k) using {
+                    0 <= k;
+                    k < at(a2, arena->capacity);
+                    k < at(z1, first->start) or at(z1, first->end) <= k;
+                }
+                simp();
+            }
+            simp();
+        }
+        have at(a2, s0.live) == 1 by {
+            simp();
+        }
+        have s0.live == 1 by {
+            simp();
+        }
+        have r1.end <= at(z1, arena->capacity) by {
+            simp();
+        }
+        have s0.capacity == arena->capacity by {
+            simp();
+        }
+        have r1.end <= s0.capacity by {
+            simp();
+        }
+        have 1 <= s0.live by {
+            simp();
+        }
+        have first->arena == arena by {
+            simp();
+        }
+        mark f1;
+        let { after: g1 } = step(arena_free(first), { r: r1, st: s0 });
+        have first->arena == arena by {
+            simp();
+        }
+        have first->arena->capacity == at(f1, first->arena->capacity) by {
+            simp();
+        }
+        have arena->capacity == first->arena->capacity by {
+            rewrite(first->arena == arena);
+            normalize();
+        }
+        have at(f1, first->arena->capacity) == at(f1, arena->capacity) by {
+            simp();
+        }
+        have arena->capacity == at(f1, arena->capacity) by {
+            simp();
+        }
+        have first->start == at(z1, first->start) by {
+            simp();
+        }
+        have first->end == at(z1, first->end) by {
+            simp();
+        }
+        have forall (k: int32) {
+            0 <= k and k < arena->capacity implies arena->occupied[k] == 0
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            have k < first->start implies arena->occupied[k] == 0 by {
                 intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                extract(k < at(z1, first->start) or at(z1, first->end) <= k);
-                have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
                     instantiate(forall (j: int32) {
-                        allocated == 0 and 0 <= j and j < arena->capacity implies
-                            arena->occupied[j] == at(a2, arena->occupied[j])
+                        0 <= j and j < first->start implies
+                            first->arena->occupied[j] == at(f1, first->arena->occupied[j])
                     }, k) using {
-                        allocated == 0;
                         0 <= k;
-                        k < arena->capacity;
+                        k < first->start;
                     }
                     simp();
                 }
-                have k < at(a2, arena->capacity) by {
+                have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
                     simp();
                 }
-                have at(a2, arena->occupied[k]) == 0 by {
+                have k < at(f1, arena->capacity) by {
+                    simp();
+                }
+                have k < at(z1, first->start) by {
+                    simp();
+                }
+                have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                    left();
+                }
+                have at(f1, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) {
-                        0 <= j and j < at(a2, arena->capacity) and
+                        0 <= j and j < at(f1, arena->capacity) and
                             (j < at(z1, first->start) or at(z1, first->end) <= j) implies
-                            at(a2, arena->occupied[j]) == 0
+                            at(f1, arena->occupied[j]) == 0
                     }, k) using {
                         0 <= k;
-                        k < at(a2, arena->capacity);
+                        k < at(f1, arena->capacity);
                         k < at(z1, first->start) or at(z1, first->end) <= k;
                     }
                     simp();
                 }
                 simp();
             }
-            have at(a2, s0.live) == 1 by {
-                simp();
-            }
-            have s0.live == 1 by {
-                simp();
-            }
-            have r1.end <= at(z1, arena->capacity) by {
-                simp();
-            }
-            have s0.capacity == arena->capacity by {
-                simp();
-            }
-            have r1.end <= s0.capacity by {
-                simp();
-            }
-            have 1 <= s0.live by {
-                simp();
-            }
-            have first->arena == arena by {
-                simp();
-            }
-            mark f1;
-            let { after: g1 } = step(arena_free(first), { r: r1, st: s0 });
-            have first->arena == arena by {
-                simp();
-            }
-            have first->arena->capacity == at(f1, first->arena->capacity) by {
-                simp();
-            }
-            have arena->capacity == first->arena->capacity by {
-                rewrite(first->arena == arena);
-                normalize();
-            }
-            have at(f1, first->arena->capacity) == at(f1, arena->capacity) by {
-                simp();
-            }
-            have arena->capacity == at(f1, arena->capacity) by {
-                simp();
-            }
-            have first->start == at(z1, first->start) by {
-                simp();
-            }
-            have first->end == at(z1, first->end) by {
-                simp();
-            }
-            have forall (k: int32) {
-                0 <= k and k < arena->capacity implies arena->occupied[k] == 0
-            } by {
+            have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
                 intro();
+                extract(first->start <= k);
+                extract(k < first->end);
+                have arena->occupied[k] == 0 by {
+                    instantiate(forall (j: int32) {
+                        first->start <= j and j < first->end implies
+                            first->arena->occupied[j] == 0
+                    }, k) using {
+                        first->start <= k;
+                        k < first->end;
+                    }
+                    simp();
+                }
+                simp();
+            }
+            have first->end <= k implies arena->occupied[k] == 0 by {
                 intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                have k < first->start implies arena->occupied[k] == 0 by {
-                    intro();
-                    have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
-                        instantiate(forall (j: int32) {
-                            0 <= j and j < first->start implies
-                                first->arena->occupied[j] == at(f1, first->arena->occupied[j])
-                        }, k) using {
-                            0 <= k;
-                            k < first->start;
-                        }
-                        simp();
-                    }
-                    have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
-                        simp();
-                    }
-                    have k < at(f1, arena->capacity) by {
-                        simp();
-                    }
-                    have k < at(z1, first->start) by {
-                        simp();
-                    }
-                    have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                        left();
-                    }
-                    have at(f1, arena->occupied[k]) == 0 by {
-                        instantiate(forall (j: int32) {
-                            0 <= j and j < at(f1, arena->capacity) and
-                                (j < at(z1, first->start) or at(z1, first->end) <= j) implies
-                                at(f1, arena->occupied[j]) == 0
-                        }, k) using {
-                            0 <= k;
-                            k < at(f1, arena->capacity);
-                            k < at(z1, first->start) or at(z1, first->end) <= k;
-                        }
-                        simp();
+                have k < first->arena->capacity by {
+                    simp();
+                }
+                have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        first->end <= j and j < first->arena->capacity implies
+                            first->arena->occupied[j] == at(f1, first->arena->occupied[j])
+                    }, k) using {
+                        first->end <= k;
+                        k < first->arena->capacity;
                     }
                     simp();
                 }
-                have first->start <= k and k < first->end implies arena->occupied[k] == 0 by {
-                    intro();
-                    extract(first->start <= k);
-                    extract(k < first->end);
-                    have arena->occupied[k] == 0 by {
-                        instantiate(forall (j: int32) {
-                            first->start <= j and j < first->end implies
-                                first->arena->occupied[j] == 0
-                        }, k) using {
-                            first->start <= k;
-                            k < first->end;
-                        }
-                        simp();
+                have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
+                    simp();
+                }
+                have k < at(f1, arena->capacity) by {
+                    simp();
+                }
+                have at(z1, first->end) <= k by {
+                    simp();
+                }
+                have k < at(z1, first->start) or at(z1, first->end) <= k by {
+                    right();
+                }
+                have at(f1, arena->occupied[k]) == 0 by {
+                    instantiate(forall (j: int32) {
+                        0 <= j and j < at(f1, arena->capacity) and
+                            (j < at(z1, first->start) or at(z1, first->end) <= j) implies
+                            at(f1, arena->occupied[j]) == 0
+                    }, k) using {
+                        0 <= k;
+                        k < at(f1, arena->capacity);
+                        k < at(z1, first->start) or at(z1, first->end) <= k;
                     }
                     simp();
                 }
-                have first->end <= k implies arena->occupied[k] == 0 by {
-                    intro();
-                    have k < first->arena->capacity by {
-                        simp();
-                    }
-                    have first->arena->occupied[k] == at(f1, first->arena->occupied[k]) by {
-                        instantiate(forall (j: int32) {
-                            first->end <= j and j < first->arena->capacity implies
-                                first->arena->occupied[j] == at(f1, first->arena->occupied[j])
-                        }, k) using {
-                            first->end <= k;
-                            k < first->arena->capacity;
-                        }
-                        simp();
-                    }
-                    have at(f1, first->arena->occupied[k]) == at(f1, arena->occupied[k]) by {
-                        simp();
-                    }
-                    have k < at(f1, arena->capacity) by {
-                        simp();
-                    }
-                    have at(z1, first->end) <= k by {
-                        simp();
-                    }
-                    have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                        right();
-                    }
-                    have at(f1, arena->occupied[k]) == 0 by {
-                        instantiate(forall (j: int32) {
-                            0 <= j and j < at(f1, arena->capacity) and
-                                (j < at(z1, first->start) or at(z1, first->end) <= j) implies
-                                at(f1, arena->occupied[j]) == 0
-                        }, k) using {
-                            0 <= k;
-                            k < at(f1, arena->capacity);
-                            k < at(z1, first->start) or at(z1, first->end) <= k;
-                        }
-                        simp();
-                    }
+                simp();
+            }
+            if k < first->start {
+                have k < first->start by {
                     simp();
                 }
-                if k < first->start {
-                    have k < first->start by {
+                extract(arena->occupied[k] == 0);
+            } else {
+                have first->start <= k by {
+                    simp();
+                }
+                if k < first->end {
+                    have first->start <= k and k < first->end by {
                         simp();
                     }
                     extract(arena->occupied[k] == 0);
                 } else {
-                    have first->start <= k by {
+                    have first->end <= k by {
                         simp();
                     }
-                    if k < first->end {
-                        have first->start <= k and k < first->end by {
-                            simp();
-                        }
-                        extract(arena->occupied[k] == 0);
-                    } else {
-                        have first->end <= k by {
-                            simp();
-                        }
-                        extract(arena->occupied[k] == 0);
-                    }
+                    extract(arena->occupied[k] == 0);
                 }
             }
-            step(arena_destroy(arena), { st: g1 });
-            unfold(o2);
-            execute();
-            simp();
         }
-        else {}
-    }
+        step(arena_destroy(arena), { st: g1 });
+        unfold(o2);
+        execute();
+        simp();
+    } else {}
     have allocated == 1 by {
-        cases(allocated == 0 or allocated == 1) {
-            contradiction(allocated == 0);
-        } {
-            assumption();
+        cases {
+            allocated == 0 => {
+                contradiction(allocated == 0);
+            }
+            allocated == 1 => {
+                assumption();
+            }
         }
     }
     have o2.model == ArenaAllocOutcome::Success(second->start, second->end) by {
@@ -3319,38 +3295,41 @@ int32 arena_pipeline(
             }
             simp();
         }
-        cases(k < at(z2, second->start) or at(z2, second->end) <= k) {
-            have k < second->start by {
-                simp();
-            }
-            have arena->occupied[k] == at(a2, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and 0 <= j and j < second->start implies
-                        arena->occupied[j] == at(a2, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    0 <= k;
-                    k < second->start;
+        cases {
+            k < at(z2, second->start) => {
+                have k < second->start by {
+                    simp();
+                }
+                have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and 0 <= j and j < second->start implies
+                            arena->occupied[j] == at(a2, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        0 <= k;
+                        k < second->start;
+                    }
+                    simp();
                 }
                 simp();
             }
-            simp();
-        } {
-            have second->end <= k by {
-                simp();
-            }
-            have arena->occupied[k] == at(a2, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and second->end <= j and j < arena->capacity implies
-                        arena->occupied[j] == at(a2, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    second->end <= k;
-                    k < arena->capacity;
+            at(z2, second->end) <= k => {
+                have second->end <= k by {
+                    simp();
+                }
+                have arena->occupied[k] == at(a2, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and second->end <= j and j < arena->capacity implies
+                            arena->occupied[j] == at(a2, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        second->end <= k;
+                        k < arena->capacity;
+                    }
+                    simp();
                 }
                 simp();
             }
-            simp();
         }
     }
     have first->arena == arena by {
@@ -4529,62 +4508,62 @@ int32 arena_pipeline(
     have arena->capacity == at(a3, arena->capacity) by {
         assumption();
     }
-    branch {
-        then {
-            have o3.model == ArenaAllocOutcome::Failure by {
-                simp();
-            }
-            have forall (k: int32) {
-                0 <= k and k < arena->capacity implies arena->occupied[k] == 0
-            } by {
-                intro();
-                intro();
-                extract(0 <= k);
-                extract(k < arena->capacity);
-                have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                    instantiate(forall (j: int32) {
-                        allocated == 0 and 0 <= j and j < arena->capacity implies
-                            arena->occupied[j] == at(a3, arena->occupied[j])
-                    }, k) using {
-                        allocated == 0;
-                        0 <= k;
-                        k < arena->capacity;
-                    }
-                    assumption();
-                }
-                have k < at(a3, arena->capacity) by {
-                    simp() using {
-                        k < arena->capacity;
-                        arena->capacity == at(a3, arena->capacity);
-                    }
-                }
-                have at(a3, arena->occupied[k]) == 0 by {
-                    instantiate(forall (j: int32) {
-                        0 <= j and j < at(a3, arena->capacity) implies
-                            at(a3, arena->occupied[j]) == 0
-                    }, k) using {
-                        0 <= k;
-                        k < at(a3, arena->capacity);
-                    }
-                    assumption();
-                }
-                simp() using {
-                    arena->occupied[k] == at(a3, arena->occupied[k]);
-                    at(a3, arena->occupied[k]) == 0;
-                }
-            }
-            step(arena_destroy(arena), { st: g3 });
-            unfold(o3);
-            execute();
+    branch then {
+        have o3.model == ArenaAllocOutcome::Failure by {
             simp();
         }
-        else {}
-    }
+        have forall (k: int32) {
+            0 <= k and k < arena->capacity implies arena->occupied[k] == 0
+        } by {
+            intro();
+            intro();
+            extract(0 <= k);
+            extract(k < arena->capacity);
+            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                instantiate(forall (j: int32) {
+                    allocated == 0 and 0 <= j and j < arena->capacity implies
+                        arena->occupied[j] == at(a3, arena->occupied[j])
+                }, k) using {
+                    allocated == 0;
+                    0 <= k;
+                    k < arena->capacity;
+                }
+                assumption();
+            }
+            have k < at(a3, arena->capacity) by {
+                simp() using {
+                    k < arena->capacity;
+                    arena->capacity == at(a3, arena->capacity);
+                }
+            }
+            have at(a3, arena->occupied[k]) == 0 by {
+                instantiate(forall (j: int32) {
+                    0 <= j and j < at(a3, arena->capacity) implies
+                        at(a3, arena->occupied[j]) == 0
+                }, k) using {
+                    0 <= k;
+                    k < at(a3, arena->capacity);
+                }
+                assumption();
+            }
+            simp() using {
+                arena->occupied[k] == at(a3, arena->occupied[k]);
+                at(a3, arena->occupied[k]) == 0;
+            }
+        }
+        step(arena_destroy(arena), { st: g3 });
+        unfold(o3);
+        execute();
+        simp();
+    } else {}
     have allocated == 1 by {
-        cases(allocated == 0 or allocated == 1) {
-            contradiction(allocated == 0);
-        } {
-            assumption();
+        cases {
+            allocated == 0 => {
+                contradiction(allocated == 0);
+            }
+            allocated == 1 => {
+                assumption();
+            }
         }
     }
     have o3.model == ArenaAllocOutcome::Success(combined->start, combined->end) by {
@@ -4652,43 +4631,46 @@ int32 arena_pipeline(
             }
             assumption();
         }
-        cases(k < at(z3, combined->start) or at(z3, combined->end) <= k) {
-            have k < combined->start by {
-                simp();
-            }
-            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and 0 <= j and j < combined->start implies
-                        arena->occupied[j] == at(a3, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    0 <= k;
-                    k < combined->start;
+        cases {
+            k < at(z3, combined->start) => {
+                have k < combined->start by {
+                    simp();
                 }
-                assumption();
-            }
-            simp() using {
-                arena->occupied[k] == at(a3, arena->occupied[k]);
-                at(a3, arena->occupied[k]) == 0;
-            }
-        } {
-            have combined->end <= k by {
-                simp();
-            }
-            have arena->occupied[k] == at(a3, arena->occupied[k]) by {
-                instantiate(forall (j: int32) {
-                    allocated == 1 and combined->end <= j and j < arena->capacity implies
-                        arena->occupied[j] == at(a3, arena->occupied[j])
-                }, k) using {
-                    allocated == 1;
-                    combined->end <= k;
-                    k < arena->capacity;
+                have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and 0 <= j and j < combined->start implies
+                            arena->occupied[j] == at(a3, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        0 <= k;
+                        k < combined->start;
+                    }
+                    assumption();
                 }
-                assumption();
+                simp() using {
+                    arena->occupied[k] == at(a3, arena->occupied[k]);
+                    at(a3, arena->occupied[k]) == 0;
+                }
             }
-            simp() using {
-                arena->occupied[k] == at(a3, arena->occupied[k]);
-                at(a3, arena->occupied[k]) == 0;
+            at(z3, combined->end) <= k => {
+                have combined->end <= k by {
+                    simp();
+                }
+                have arena->occupied[k] == at(a3, arena->occupied[k]) by {
+                    instantiate(forall (j: int32) {
+                        allocated == 1 and combined->end <= j and j < arena->capacity implies
+                            arena->occupied[j] == at(a3, arena->occupied[j])
+                    }, k) using {
+                        allocated == 1;
+                        combined->end <= k;
+                        k < arena->capacity;
+                    }
+                    assumption();
+                }
+                simp() using {
+                    arena->occupied[k] == at(a3, arena->occupied[k]);
+                    at(a3, arena->occupied[k]) == 0;
+                }
             }
         }
     }

@@ -18,15 +18,12 @@ verifying "wrong_selected_branch.c";
 
 int32 wrong_selected_branch(int32 x) {
     ensures result >= 0 by {
-        branch {
-            then {
-                step();
-                simp();
-            }
-            else {
-                step();
-                simp();
-            }
+        branch then {
+            step();
+            simp();
+        } else {
+            step();
+            simp();
         }
     }
 }

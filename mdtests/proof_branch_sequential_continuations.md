@@ -25,27 +25,19 @@ int32 advance_sequential_joins(int32 x) {
     ensures result >= 0 by {
         step();
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
-        branch {
-            ensuring {
-                fact z >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact z >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         simp();

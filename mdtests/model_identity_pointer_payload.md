@@ -79,20 +79,17 @@ int cell_same(struct cell* p, struct cell* q) {
             unfold(c);
             have p == identity by { simp(); }
             have p->value == value by { simp(); }
-            branch {
-                then {
-                    step();
-                    let c = fold(cell_at(p), { model: old(c.model) });
-                    have identity == q by { rewrite(identity == p); normalize() using { p == q; } }
-                    have result == cell_member(old(c.model), q) by {
-                        rewrite(old(c.model) == CellModel::Present(identity, value));
-                        unfold(cell_member(CellModel::Present(identity, value), q));
-                        normalize() using { identity == q; }
-                    }
-                    simp();
+            branch then {
+                step();
+                let c = fold(cell_at(p), { model: old(c.model) });
+                have identity == q by { rewrite(identity == p); normalize() using { p == q; } }
+                have result == cell_member(old(c.model), q) by {
+                    rewrite(old(c.model) == CellModel::Present(identity, value));
+                    unfold(cell_member(CellModel::Present(identity, value), q));
+                    normalize() using { identity == q; }
                 }
-                else {}
-            }
+                simp();
+            } else {}
             step();
             let c = fold(cell_at(p), { model: old(c.model) });
             have not(identity == q) by { rewrite(identity == p); normalize() using { not(p == q); } }

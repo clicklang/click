@@ -52,7 +52,7 @@ void relay(int32* source, int32* destination, int32* p) {
 } by { execute(); simp(); }
 int32 lifecycle() { ensures result == 0 or result == 6; } by {
     step(); step(); step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step(); step();
     fold(authority(slot(&source, _)));
     fold(authority(slot(&destination, _)));

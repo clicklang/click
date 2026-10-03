@@ -48,13 +48,10 @@ int32 run(struct cell *job, struct cell *unrelated) {
     step();
     step();
     step();
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
     step();
     simp();

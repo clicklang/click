@@ -406,19 +406,22 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, "}");
         }
         ProofTactic::Cases(proof_cases) => {
-            output.push_str(&prefix);
-            output.push_str("cases (");
-            output.push_str(&source_click_proposition(&proof_cases.disjunction));
-            output.push_str(") {\n");
-            write_tactics(output, &proof_cases.left_tactics, indent + 1);
-            line(output, &prefix, "} {");
-            write_tactics(output, &proof_cases.right_tactics, indent + 1);
+            line(output, &prefix, "cases {");
+            let arm_prefix = "    ".repeat(indent + 1);
+            for arm in proof_cases.arms() {
+                line(
+                    output,
+                    &arm_prefix,
+                    &format!("{} => {{", source_click_proposition(arm.assumption())),
+                );
+                write_tactics(output, arm.tactics(), indent + 2);
+                line(output, &arm_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
         ProofTactic::Branch(proof_branch) => {
-            line(output, &prefix, "branch {");
             if let Some(assertions) = &proof_branch.ensuring {
-                line(output, &"    ".repeat(indent + 1), "ensuring {");
+                line(output, &prefix, "branch ensuring {");
                 for assertion in assertions {
                     let text = match assertion {
                         ProofAssertion::Fact(fact) => {
@@ -433,26 +436,26 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                             format_resource_target(resource)
                         ),
                     };
-                    line(output, &"    ".repeat(indent + 2), &text);
+                    line(output, &"    ".repeat(indent + 1), &text);
                 }
-                line(output, &"    ".repeat(indent + 1), "}");
+                line(output, &prefix, "} then {");
+            } else {
+                line(output, &prefix, "branch then {");
             }
-            line(output, &"    ".repeat(indent + 1), "then {");
-            write_tactics(output, &proof_branch.then_tactics, indent + 2);
-            line(output, &"    ".repeat(indent + 1), "}");
-            line(output, &"    ".repeat(indent + 1), "else {");
-            write_tactics(output, &proof_branch.else_tactics, indent + 2);
-            line(output, &"    ".repeat(indent + 1), "}");
+            write_tactics(output, &proof_branch.then_tactics, indent + 1);
+            line(output, &prefix, "} else {");
+            write_tactics(output, &proof_branch.else_tactics, indent + 1);
             line(output, &prefix, "}");
         }
         ProofTactic::CallOutcomes(outcomes) => {
+            let arm_prefix = "    ".repeat(indent + 1);
             line(output, &prefix, "outcomes {");
-            line(output, &"    ".repeat(indent + 1), "returned {");
+            line(output, &arm_prefix, "returned => {");
             write_tactics(output, &outcomes.returned_tactics, indent + 2);
-            line(output, &"    ".repeat(indent + 1), "}");
-            line(output, &"    ".repeat(indent + 1), "threw {");
+            line(output, &arm_prefix, "}");
+            line(output, &arm_prefix, "threw => {");
             write_tactics(output, &outcomes.threw_tactics, indent + 2);
-            line(output, &"    ".repeat(indent + 1), "}");
+            line(output, &arm_prefix, "}");
             line(output, &prefix, "}");
         }
         ProofTactic::Loop(loop_clause) => {

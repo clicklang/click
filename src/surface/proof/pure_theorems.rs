@@ -304,16 +304,9 @@ fn collect_structural_induction_arguments(
                 collect_structural_induction_arguments(&both.right_tactics, hypothesis, collected);
             }
             ProofTactic::Cases(proof_cases) => {
-                collect_structural_induction_arguments(
-                    &proof_cases.left_tactics,
-                    hypothesis,
-                    collected,
-                );
-                collect_structural_induction_arguments(
-                    &proof_cases.right_tactics,
-                    hypothesis,
-                    collected,
-                );
+                for arm in proof_cases.arms() {
+                    collect_structural_induction_arguments(arm.tactics(), hypothesis, collected);
+                }
             }
             _ => {}
         }
@@ -485,11 +478,9 @@ fn prepare_pure_induction_tactics(
                     left_tactics: transform(&both.left_tactics, hypothesis)?,
                     right_tactics: transform(&both.right_tactics, hypothesis)?,
                 })),
-                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                    disjunction: proof_cases.disjunction.clone(),
-                    left_tactics: transform(&proof_cases.left_tactics, hypothesis)?,
-                    right_tactics: transform(&proof_cases.right_tactics, hypothesis)?,
-                })),
+                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
+                    proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
+                )),
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",
@@ -643,19 +634,11 @@ fn prepare_structural_induction_arm_tactics(
                     bindings,
                 )?,
             })),
-            ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                disjunction: proof_cases.disjunction.clone(),
-                left_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.left_tactics,
-                    setup,
-                    bindings,
-                )?,
-                right_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.right_tactics,
-                    setup,
-                    bindings,
-                )?,
-            })),
+            ProofTactic::Cases(proof_cases) => {
+                Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
+                    |tactics| prepare_structural_induction_arm_tactics(tactics, setup, bindings),
+                )?))
+            }
             ProofTactic::StructuralInduct { .. } | ProofTactic::Induct { .. } => Err(
                 ClickError::new("nested induction is not supported in a structural induction arm"),
             ),
@@ -3477,8 +3460,12 @@ mod tests {
             }
         "#;
         let cases = source
-            .replace("if x == 0", "cases (x == 0 or x != 0)")
-            .replace("} else {", "} {");
+            .replace("if x == 0 {", "cases {\n x == 0 => {")
+            .replace("} else {", "}\n x != 0 => {")
+            .replace(
+                "using {}\n                    }\n                    assumption();",
+                "using {}\n                    }\n }\n                    assumption();",
+            );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
             assert!(verified.kernel_authority.is_some());

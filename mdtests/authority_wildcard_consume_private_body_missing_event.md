@@ -31,7 +31,7 @@ void release(int32* pool, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 2; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p));

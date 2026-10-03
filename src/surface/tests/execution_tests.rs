@@ -1811,13 +1811,10 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
             ensures result == a;
         } by {
             step();
-            branch {
-                then {
-                    execute();
-                    simp();
-                }
-                else {}
-            }
+            branch then {
+                execute();
+                simp();
+            } else {}
             step();
             have x == a by {
                 simp();

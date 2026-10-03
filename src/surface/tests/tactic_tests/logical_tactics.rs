@@ -1637,12 +1637,15 @@ fn cases_eliminates_a_disjunctive_premise() {
         } by {
             execute();
             have x <= 2 by {
-                cases (x == 1 or x == 2) {
-                    rewrite(x == 1);
-                    normalize();
-                } {
-                    rewrite(x == 2);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
+                    x == 2 => {
+                        rewrite(x == 2);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1669,12 +1672,15 @@ fn cases_requires_its_exact_disjunction_as_an_available_fact() {
         } by {
             execute();
             have x <= 3 by {
-                cases (x == 1 or x == 3) {
-                    rewrite(x == 1);
-                    normalize();
-                } {
-                    rewrite(x == 3);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
+                    x == 3 => {
+                        rewrite(x == 3);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1710,12 +1716,15 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
         } by {
             execute();
             have x <= 2 by {
-                cases (x == 1 or x == 2) {
-                    rewrite(x == 2);
-                    normalize();
-                } {
-                    rewrite(x == 1);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 2);
+                        normalize();
+                    }
+                    x == 2 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1740,10 +1749,13 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
             requires x <= 0 or x > 0;
 
             ensures x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
         }
@@ -1958,10 +1970,13 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                 assumption();
             }
             have x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
             have x == 0 or not (x == 0) by {
@@ -2199,10 +2214,13 @@ fn smart_pure_cases_retains_checked_arm_proofs_directly() {
             requires x <= 0 or x > 0;
 
             ensures x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    simp();
-                } {
-                    simp();
+                cases {
+                    x <= 0 => {
+                        simp();
+                    }
+                    x > 0 => {
+                        simp();
+                    }
                 }
             }
         }
@@ -2228,10 +2246,13 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
         } by {
             execute();
             have x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
             assumption();
@@ -2459,24 +2480,20 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
 
             ensures result == left[0] or result == right[0] by {
                 step();
-                branch {
-                    ensuring {
-                        fact selected == left or selected == right;
-                        views selected[0..1];
+                branch ensuring {
+                    fact selected == left or selected == right;
+                    views selected[0..1];
+                } then {
+                    step();
+                    have selected == left or selected == right by {
+                        have selected == left by { normalize(); }
+                        left();
                     }
-                    then {
-                        step();
-                        have selected == left or selected == right by {
-                            have selected == left by { normalize(); }
-                            left();
-                        }
-                    }
-                    else {
-                        step();
-                        have selected == left or selected == right by {
-                            have selected == right by { normalize(); }
-                            right();
-                        }
+                } else {
+                    step();
+                    have selected == left or selected == right by {
+                        have selected == right by { normalize(); }
+                        right();
                     }
                 }
                 step();
@@ -2811,4 +2828,97 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
 
     verify_c0_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
+}
+
+const THREE_WAY_CASES: &str = r#"
+theorem three_way(x: int32) {
+    requires x == 1 or x == 2 or x == 3;
+    ensures x >= 1 by {
+        cases {
+            x == 1 => {
+                rewrite(x == 1);
+                normalize();
+            }
+            x == 2 => {
+                simp();
+            }
+            x == 3 => {
+                rewrite(x == 3);
+                normalize();
+            }
+        }
+    }
+}
+"#;
+
+/// `cases` takes one arm per disjunct, any number from two: three arms
+/// eliminate `x == 1 or x == 2 or x == 3`, and expansion of the smart
+/// tactic in the middle arm keeps every arm in place and reverifies.
+#[test]
+fn three_arm_cases_verifies_and_expands() {
+    verify_c0_sources(THREE_WAY_CASES, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
+    let expanded = expand_c0_claim_source_by_label(THREE_WAY_CASES, &[], "three_way.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for arm in ["x == 1 => {", "x == 2 => {", "x == 3 => {"] {
+        assert!(expanded.contains(arm), "{expanded}");
+    }
+    assert!(!expanded.contains("simp();"), "{expanded}");
+    verify_c0_sources(&expanded, &[])
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// The arms' disjunction is grouped left to right in the written order, and
+/// it must be exactly an available fact: arms written out of order are
+/// refused rather than matched up.
+#[test]
+fn cases_arms_out_of_the_disjunction_order_are_refused() {
+    let reordered = THREE_WAY_CASES
+        .replacen("x == 1 => {", "x == 0 => {", 1)
+        .replacen("x == 2 => {", "x == 1 => {", 1)
+        .replacen("x == 0 => {", "x == 2 => {", 1);
+    let error = verify_c0_sources(&reordered, &[])
+        .expect_err("arms out of the disjunction's order are a different disjunction");
+    assert!(
+        error
+            .message()
+            .contains("`cases` requires its exact disjunction as an available fact"),
+        "{}",
+        error.message()
+    );
+}
+
+/// `outcomes` names its arms like `match` does, so they may come in either
+/// order, each exactly once.
+#[test]
+fn parses_outcomes_arms_in_either_order() {
+    let source = FILL3_CLICK.replace(
+        "by auto;",
+        "by { outcomes { threw => { simp(); } returned => { execute(); simp(); } } }",
+    );
+    let file = parse(&source).expect("outcomes arms in either order should parse");
+    let tactics = file.function_blocks()[0].ensures()[0]
+        .proof()
+        .tactics()
+        .expect("expected tactics");
+    assert!(matches!(
+        &tactics[0],
+        ProofTactic::CallOutcomes(ProofCallOutcomes {
+            returned_tactics,
+            threw_tactics,
+        }) if returned_tactics == &[ProofTactic::SmartExecute, ProofTactic::Simp]
+            && threw_tactics == &[ProofTactic::Simp]
+    ));
+
+    let duplicate = FILL3_CLICK.replace(
+        "by auto;",
+        "by { outcomes { returned => { simp(); } returned => { simp(); } } }",
+    );
+    let error = parse(&duplicate).expect_err("an arm written twice is refused");
+    assert!(
+        error
+            .message()
+            .contains("duplicate `outcomes` arm `returned`"),
+        "{}",
+        error.message()
+    );
 }

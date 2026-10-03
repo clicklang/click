@@ -5640,21 +5640,28 @@ impl Parser {
             }));
         }
         if name == "cases" {
-            self.expect(Token::LParen)?;
-            let disjunction = self.parse_proposition()?;
-            self.expect(Token::RParen)?;
-            // Each branch proves the goal under exactly its assumed disjunct.
-            // Both branches are always spelled; there is no implicit side.
-            let left_tactics = self.parse_possibly_empty_tactic_block()?;
-            let right_tactics = self.parse_possibly_empty_tactic_block()?;
+            // One arm per disjunct, each naming the disjunct it assumes:
+            // `cases { A => { ... } B => { ... } }`. The arms' disjunction,
+            // grouped left to right, must be an available fact.
+            self.expect(Token::LBrace)?;
+            let mut arms = Vec::new();
+            while self.peek() != Some(&Token::RBrace) {
+                let assumption = self.parse_proposition()?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                arms.push(ProofCaseArm::new(assumption, tactics));
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RBrace)?;
+            if arms.len() < 2 {
+                return Err(self.error("`cases` needs one arm for each disjunct, at least two"));
+            }
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
-            return Ok(ProofTactic::Cases(ProofCases {
-                disjunction,
-                left_tactics,
-                right_tactics,
-            }));
+            return Ok(ProofTactic::Cases(ProofCases::new(arms)));
         }
         if name == "match" {
             let scrutinee = self.parse_contract_expression()?;
@@ -5720,7 +5727,6 @@ impl Parser {
             return Ok(ProofTactic::Match(Box::new(ProofMatch { scrutinee, arms })));
         }
         if name == "branch" {
-            self.expect(Token::LBrace)?;
             let ensuring = if self.peek_ident() == Some("ensuring") {
                 self.position += 1;
                 self.expect(Token::LBrace)?;
@@ -5756,7 +5762,6 @@ impl Parser {
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect(Token::RBrace)?;
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
@@ -5767,12 +5772,36 @@ impl Parser {
             }));
         }
         if name == "outcomes" {
+            // `outcomes { returned => { ... } threw => { ... } }`: one arm per
+            // way the call can end, in either order, as `match` arms are.
             self.expect(Token::LBrace)?;
-            self.expect_ident_spelling("returned")?;
-            let returned_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect_ident_spelling("threw")?;
-            let threw_tactics = self.parse_possibly_empty_tactic_block()?;
+            let mut returned_tactics = None;
+            let mut threw_tactics = None;
+            while self.peek() != Some(&Token::RBrace) {
+                let arm = self.expect_ident("`returned` or `threw`")?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                let slot = match arm.as_str() {
+                    "returned" => &mut returned_tactics,
+                    "threw" => &mut threw_tactics,
+                    _ => {
+                        return Err(self.error(format!(
+                            "`outcomes` arms are `returned` and `threw`, got `{arm}`"
+                        )));
+                    }
+                };
+                if slot.replace(tactics).is_some() {
+                    return Err(self.error(format!("duplicate `outcomes` arm `{arm}`")));
+                }
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
             self.expect(Token::RBrace)?;
+            let (Some(returned_tactics), Some(threw_tactics)) = (returned_tactics, threw_tactics)
+            else {
+                return Err(self.error("`outcomes` needs both a `returned` and a `threw` arm"));
+            };
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }

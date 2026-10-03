@@ -151,13 +151,10 @@ int32 scan_run(struct arena* arena, int32 count) {
                         run_length < count;
                     }
                 }
-                branch {
-                    then {
-                        step();
-                    }
-                    else {
-                        contradiction(not (arena->occupied[i] == 0));
-                    }
+                branch then {
+                    step();
+                } else {
+                    contradiction(not (arena->occupied[i] == 0));
                 }
                 step();
                 have forall (k: int32) {
@@ -288,13 +285,10 @@ int32 scan_run(struct arena* arena, int32 count) {
                 }
                 close_invariants();
             } else {
-                branch {
-                    then {
-                        contradiction(arena->occupied[i] == 0);
-                    }
-                    else {
-                        step();
-                    }
+                branch then {
+                    contradiction(arena->occupied[i] == 0);
+                } else {
+                    step();
                 }
                 step();
                 have forall (k: int32) {

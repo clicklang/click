@@ -533,7 +533,7 @@ mod tests {
             (
                 "cases_arm",
                 identity(
-                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases (x > 0 or not (x > 0)) {\n            simp();\n        } {\n            assumption();\n        }\n",
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases { x > 0 => {\n            simp();\n        } not (x > 0) => {\n            assumption();\n        } }\n",
                 ),
                 16,
             ),
