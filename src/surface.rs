@@ -338,6 +338,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "statement",
     "step",
     "struct",
+    "tactic",
     "take",
     "target",
     "trivial",
@@ -421,6 +422,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "resource-witness",
     "same-object",
     "separate",
+    "tactic",
     "target",
     "theorem",
     "verifying",
@@ -462,6 +464,9 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    /// User-defined tactics: contracts over the proof state, each proved once
+    /// and then applied as one simple step.
+    tactic_definitions: Vec<TacticDefinition>,
     /// Canonical project-relative owner of every declaration in this resolved
     /// file. Surface names are intentionally unqualified in the first module
     /// delivery; the owner keeps the internal identity qualified without
@@ -487,6 +492,7 @@ enum DeclarationIdentity {
     Theorem(String),
     Contract(String),
     CFunction(String),
+    Tactic(String),
 }
 
 /// One canonical source file in a resolved local specification graph.
@@ -918,6 +924,38 @@ pub struct ContractDefinition {
     function_block: FunctionBlock,
 }
 
+/// A user-defined tactic: a contract over the proof state, with no C body.
+///
+/// Its clauses are a function contract's (`consumes`, `produces`, `owns`,
+/// `views`, `requires`, `ensures`, `decreases`), and its `by` block proves
+/// them once at a fixed execution point. An application is one simple step
+/// that consumes and produces resource instances and adds the `ensures`
+/// facts, leaving memory and C state unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TacticDefinition {
+    function_block: FunctionBlock,
+}
+
+impl TacticDefinition {
+    pub(in crate::surface) fn new(function_block: FunctionBlock) -> Self {
+        Self { function_block }
+    }
+
+    pub fn name(&self) -> &str {
+        self.function_block.signature().name()
+    }
+
+    /// The tactic's contract and proof, in the shape of a function block
+    /// whose signature returns `void`.
+    pub fn function_block(&self) -> &FunctionBlock {
+        &self.function_block
+    }
+
+    pub(in crate::surface) fn function_block_mut(&mut self) -> &mut FunctionBlock {
+        &mut self.function_block
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractApplication {
     name: String,
@@ -1001,6 +1039,45 @@ impl CallBinderTransport {
     /// the callee produces no resource instance.
     pub fn result(&self) -> Option<&str> {
         self.result.as_deref()
+    }
+}
+
+impl CallBinderTransport {
+    /// The transport spelled as a tactic application: `name(args)`, then the
+    /// binder map when there is one, after a `let` output pattern when the
+    /// tactic produces instances.
+    pub fn tactic_spelling(&self) -> String {
+        let mut spelling = String::new();
+        if !self.produced.is_empty() {
+            spelling.push_str("let { ");
+            for (index, produced) in self.produced.iter().enumerate() {
+                if index != 0 {
+                    spelling.push_str(", ");
+                }
+                spelling.push_str(&format!("{}: {}", produced.binder, produced.instance));
+            }
+            spelling.push_str(" } = ");
+        }
+        spelling.push_str(&self.callee);
+        spelling.push('(');
+        for (index, argument) in self.arguments.iter().enumerate() {
+            if index != 0 {
+                spelling.push_str(", ");
+            }
+            spelling.push_str(&diagnostics::describe_contract_expression(argument));
+        }
+        spelling.push(')');
+        if !self.binders.is_empty() {
+            spelling.push_str(" { ");
+            for (index, binding) in self.binders.iter().enumerate() {
+                if index != 0 {
+                    spelling.push_str(", ");
+                }
+                spelling.push_str(&format!("{}: {}", binding.binder, binding.instance));
+            }
+            spelling.push_str(" }");
+        }
+        spelling
     }
 }
 
@@ -1094,6 +1171,10 @@ pub struct FunctionBlock {
     /// Internal source grouping for an `executes` theorem's call and return.
     /// The kernel still checks the complete ordinary statement sequence.
     one_call_proof: bool,
+    /// This block is a user-defined tactic's contract, certified as a
+    /// procedure whose body runs no code. Its write frame is empty: the
+    /// procedure writes nothing, so an application leaves memory unchanged.
+    tactic_procedure: bool,
     requires: Vec<Requirement>,
     /// For each entry of `requires`, the 0-based index of the clause the
     /// author wrote it in. An aggregate clause (an embedded struct field)
@@ -3023,6 +3104,9 @@ pub enum ProofTactic {
     Step,
     StepContract(ContractApplication),
     StepCall(CallBinderTransport),
+    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// tactic's verified contract, with no C statement.
+    UserTactic(CallBinderTransport),
     SmartExecute,
     ExecuteUntil(CodeRegionRef),
     UnfoldPredicate(String),
@@ -3202,6 +3286,8 @@ fn source_proof_sorry_outside_have(proof: &SourceProof, in_have: bool) -> bool {
 pub enum SimpleTactic {
     Mark,
     StatementTransition,
+    /// One application of a user-defined tactic's verified contract.
+    UserTactic,
     UnfoldPredicate,
     UnfoldFunction,
     UnfoldResource,
@@ -3302,6 +3388,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "step-call",
         syntax: "step(callee(...), { binder: instance })",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "user-tactic",
+        syntax: "name(args) { binder: instance }",
         class: "simple",
     },
     PublicTacticForm {
@@ -3611,6 +3702,8 @@ pub enum ProofStep {
     Step,
     StepContract(ContractApplication),
     StepCall(CallBinderTransport),
+    /// One application of a user-defined tactic's verified contract.
+    UserTactic(CallBinderTransport),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
     /// `unfold(f(args)) using { ... }`: the same defining equation, plus
@@ -3941,6 +4034,7 @@ impl ProofStep {
             ProofTactic::Step => Self::Step,
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
+            ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
             ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
             ProofTactic::UnfoldFunctionUsing {
@@ -4183,6 +4277,7 @@ impl ProofStep {
             Self::Step => ProofTactic::Step,
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
+            Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
             Self::UnfoldPredicate(name) => ProofTactic::UnfoldPredicate(name.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
             Self::UnfoldFunctionUsing {
@@ -4435,6 +4530,7 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
             TacticClass::Simple(SimpleTactic::StatementTransition)
         }
+        ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
         ProofStep::UnfoldFunction(_) | ProofStep::UnfoldFunctionUsing { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
@@ -4762,6 +4858,7 @@ impl ProofTactic {
             Self::Step | Self::StepContract(_) | Self::StepCall(_) => {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
+            Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
             Self::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
             Self::UnfoldFunction(_) | Self::UnfoldFunctionUsing { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
@@ -5994,6 +6091,10 @@ impl ClickFile {
         &self.function_blocks
     }
 
+    pub fn tactic_definitions(&self) -> &[TacticDefinition] {
+        &self.tactic_definitions
+    }
+
     fn declaration_owner(&self, identity: &DeclarationIdentity) -> Option<&str> {
         self.declaration_owners.get(identity).map(String::as_str)
     }
@@ -6279,6 +6380,11 @@ impl FunctionBlock {
 
     pub fn exceptional_ensures(&self) -> &[EnsureClause] {
         &self.exceptional_ensures
+    }
+
+    /// Whether this block is a user-defined tactic's contract.
+    pub(in crate::surface) fn is_tactic_procedure(&self) -> bool {
+        self.tactic_procedure
     }
 
     pub fn grouped_proof(&self) -> Option<&SourceProof> {

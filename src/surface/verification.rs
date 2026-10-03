@@ -912,6 +912,91 @@ fn parse_c0_click_file_context(
     )
 }
 
+/// Adds every user-defined tactic to the run as the contract of a procedure
+/// whose whole body is `return;`.
+///
+/// A tactic runs no code, so its contract holds of the proof state exactly
+/// when it holds of that empty procedure: certifying the procedure is
+/// certifying the tactic, through the same contract, recursion, and
+/// termination checks every C function has, and the packaged rule is what an
+/// application of the tactic applies. The tactic's own script runs first;
+/// then the one `return` is stepped, and every claim is closed by
+/// `assumption`, so the script must already have established each produced
+/// instance and each `ensures` as an available fact.
+fn with_tactic_procedures(
+    mut file: ClickFile,
+    mut parsed_sources: BTreeMap<String, (String, syntax::C0Function)>,
+) -> Result<(ClickFile, BTreeMap<String, (String, syntax::C0Function)>), ClickError> {
+    for tactic in file.tactic_definitions.clone() {
+        let name = tactic.name().to_string();
+        if parsed_sources.contains_key(&name)
+            || file
+                .function_blocks
+                .iter()
+                .any(|function| function.signature().name() == name)
+        {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` has the name of a C function; give the tactic its own name"
+            )));
+        }
+        let mut block = tactic.function_block().clone();
+        block.tactic_procedure = true;
+        let Some(SourceProof::Script(mut script)) = block.grouped_proof.take() else {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` must be proved by an explicit `by {{ ... }}` script"
+            )));
+        };
+        if let Some(executing) = first_executing_tactic(&script) {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` runs no code, so its proof cannot use `{executing}`; a \
+                 tactic's proof folds, unfolds, applies, and proves facts at one point"
+            )));
+        }
+        script.push(ProofTactic::Step);
+        script.extend(std::iter::repeat_n(
+            ProofTactic::Assumption,
+            block.ensures.len(),
+        ));
+        block.grouped_proof = Some(SourceProof::Script(script));
+        let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
+            syntax::C0Expression::Void,
+            syntax::C0Site::NONE,
+        ));
+        parsed_sources.insert(name, ("<tactic>".to_string(), procedure));
+        file.function_blocks.push(block);
+    }
+    Ok((file, parsed_sources))
+}
+
+/// The first tactic in `tactics`, at any depth of proof control, that runs
+/// C or addresses a C control-flow point, by its source name.
+fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
+    tactics.iter().find_map(|tactic| match tactic {
+        ProofTactic::Step | ProofTactic::StepContract(_) | ProofTactic::StepCall(_) => Some("step"),
+        ProofTactic::SmartExecute => Some("execute"),
+        ProofTactic::ExecuteUntil(_) => Some("execute_until"),
+        ProofTactic::Loop(_) => Some("loop"),
+        ProofTactic::Branch(_) => Some("branch"),
+        ProofTactic::CallOutcomes(_) => Some("outcomes"),
+        ProofTactic::CloseInvariantsBy(_) => Some("close_invariants"),
+        ProofTactic::Open(open) => first_executing_tactic(&open.tactics),
+        ProofTactic::If(proof_if) => first_executing_tactic(&proof_if.then_tactics)
+            .or_else(|| first_executing_tactic(&proof_if.else_tactics)),
+        ProofTactic::Cases(cases) => first_executing_tactic(&cases.left_tactics)
+            .or_else(|| first_executing_tactic(&cases.right_tactics)),
+        ProofTactic::Both(both) => first_executing_tactic(&both.left_tactics)
+            .or_else(|| first_executing_tactic(&both.right_tactics)),
+        ProofTactic::Match(proof_match) => proof_match
+            .arms
+            .iter()
+            .find_map(|arm| first_executing_tactic(&arm.tactics)),
+        ProofTactic::StructuralInduct { arms, .. } => arms
+            .iter()
+            .find_map(|arm| first_executing_tactic(&arm.tactics)),
+        _ => None,
+    })
+}
+
 pub(in crate::surface) fn proof_unit_erased_click_file(
     mut file: ClickFile,
     target: &VerificationTarget,
@@ -928,7 +1013,11 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
     let VerificationTarget::Function(target_name) = target else {
         return file;
     };
-    for function in &mut file.function_blocks {
+    for function in file.function_blocks.iter_mut().chain(
+        file.tactic_definitions
+            .iter_mut()
+            .map(TacticDefinition::function_block_mut),
+    ) {
         if function.signature.name != *target_name {
             continue;
         }
@@ -1901,11 +1990,17 @@ impl C0VerificationSession {
                 column,
             )?;
             let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => self
-                    .baseline_file
-                    .function_blocks()
-                    .iter()
-                    .any(|function| function.signature().name() == name),
+                VerificationTarget::Function(name) => {
+                    self.baseline_file
+                        .function_blocks()
+                        .iter()
+                        .any(|function| function.signature().name() == name)
+                        || self
+                            .baseline_file
+                            .tactic_definitions()
+                            .iter()
+                            .any(|tactic| tactic.name() == name)
+                }
                 VerificationTarget::Theorem(name) => self.baseline_file.theorem_is_selected(name),
                 VerificationTarget::Functions(_) => false,
             };
@@ -1968,11 +2063,17 @@ impl C0VerificationSession {
             )?;
             let target = verification_target_at_context(click_source, &sources, line, column)?;
             let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => self
-                    .baseline_file
-                    .function_blocks()
-                    .iter()
-                    .any(|function| function.signature().name() == name),
+                VerificationTarget::Function(name) => {
+                    self.baseline_file
+                        .function_blocks()
+                        .iter()
+                        .any(|function| function.signature().name() == name)
+                        || self
+                            .baseline_file
+                            .tactic_definitions()
+                            .iter()
+                            .any(|tactic| tactic.name() == name)
+                }
                 VerificationTarget::Theorem(name) => self
                     .baseline_file
                     .theorem_definitions()
@@ -2034,11 +2135,17 @@ impl C0VerificationSession {
         )?;
         let target = verification_target_at_context(click_source, &sources, line, column)?;
         let target_exists_in_baseline = match &target {
-            VerificationTarget::Function(name) => self
-                .baseline_file
-                .function_blocks()
-                .iter()
-                .any(|function| function.signature().name() == name),
+            VerificationTarget::Function(name) => {
+                self.baseline_file
+                    .function_blocks()
+                    .iter()
+                    .any(|function| function.signature().name() == name)
+                    || self
+                        .baseline_file
+                        .tactic_definitions()
+                        .iter()
+                        .any(|tactic| tactic.name() == name)
+            }
             VerificationTarget::Theorem(name) => self
                 .baseline_file
                 .theorem_definitions()
@@ -2240,6 +2347,7 @@ fn verify_c0_sources_in_context(
         };
         modules::reject_theorem_justification_cycles(&file)?;
         let parsed_sources = parse_verified_sources_context(&file, c_sources)?;
+        let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
         record_never_address_taken_locals(&parsed_sources, session_is_fresh);
         let expansion_functions = expansion_capture
             .as_deref()
@@ -2775,7 +2883,18 @@ fn verify_c0_sources_in_context(
                     &theorem_environment,
                     function_source_registry.clone(),
                     tactics,
-                )?,
+                )
+                .map_err(|error| {
+                    if function_block.is_tactic_procedure() {
+                        error.with_context(format!(
+                            "tactic `{}`: its proof must end with every produced instance held \
+                             and every `ensures` an available fact",
+                            function_block.signature().name()
+                        ))
+                    } else {
+                        error
+                    }
+                })?,
                 SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                     return Err(ClickError::new(format!(
                         "grouped proof for `{}` must use `by auto;` or an explicit `by {{ ... }}` proof script",
@@ -6756,10 +6875,11 @@ pub(in crate::surface) fn build_function_environment(
                     click_function_environment,
                     resource_environment,
                 )?;
-                let resource_derived_mutable_frame = function_block
-                    .requires()
-                    .iter()
-                    .any(|requirement| matches!(requirement, Requirement::Resource(_)));
+                let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
+                    && function_block
+                        .requires()
+                        .iter()
+                        .any(|requirement| matches!(requirement, Requirement::Resource(_)));
                 let mut function = function
                     .to_kernel_function()
                     .with_resource_summary(resource_requires, resource_ensures)

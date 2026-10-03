@@ -486,6 +486,7 @@ mod tests {
             external: true,
             parameter_struct_casts: BTreeMap::new(),
             one_call_proof: false,
+            tactic_procedure: false,
             requires,
             decreases: None,
             structural_clauses: Vec::new(),

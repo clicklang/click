@@ -2084,6 +2084,69 @@ fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
     assert_near_linear_scaling("model-ranked loops by back edge count", &samples);
 }
 
+/// One proof applying a user-defined tactic `count` times, each application
+/// consuming the instance the previous one produced. An application checks
+/// its binder map and the tactic's `ensures` against the proof state it is
+/// given; it must cost the same whether it is the first or the hundredth.
+fn repeated_tactic_applications(count: usize) -> (String, String) {
+    let c_source = "struct pr { int32 a; int32 b; };\n\nvoid user(struct pr *p) {\n}\n".to_string();
+    let mut click_source = String::from(
+        "verifying \"applications.c\";\n\
+         \n\
+         resource tagged(p: struct pr*) {\n\
+         \x20   field tag: int32;\n\
+         \x20   owns p->a;\n\
+         }\n\
+         \n\
+         tactic retag(p: struct pr*) {\n\
+         \x20   consumes x: tagged(p);\n\
+         \x20   produces y: tagged(p);\n\
+         \x20   ensures y.tag == 1;\n\
+         } by {\n\
+         \x20   unfold(x);\n\
+         \x20   let y = fold(tagged(p), { tag: 1 });\n\
+         \x20   have y.tag == 1 by { simp(); }\n\
+         }\n\
+         \n\
+         void user(struct pr* p) {\n\
+         \x20   consumes t0: tagged(p);\n\
+         \x20   produces out: tagged(p);\n\
+         } by {\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!(
+            "    let {{ y: t{} }} = retag(p) {{ x: t{index} }};\n",
+            index + 1
+        ));
+    }
+    click_source.push_str(&format!(
+        "    let {{ y: out }} = retag(p) {{ x: t{count} }};\n    step();\n    step();\n    simp();\n}}\n"
+    ));
+    (c_source, click_source)
+}
+
+#[test]
+fn repeated_tactic_applications_scale_near_linearly() {
+    let samples = [8, 16, 32, 64]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = repeated_tactic_applications(size);
+            let sources = [("applications.c", c_source.as_str())];
+            let (verified, sample) =
+                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} repeated tactic application fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("repeated tactic applications", &samples);
+}
+
 /// The same ranked loop closed by the smart `close_invariants()` planner.
 /// The planner's candidate premises are the loop head's clauses and the
 /// contract's own requirements, so growing the function's unrelated

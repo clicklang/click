@@ -344,7 +344,9 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
     let error = verify_c0_sources(&implicit_normalize, &[("keep.c", c_source)])
         .expect_err("assumption must not normalize a proposition");
     assert!(
-        error.message().contains("`assumption` did not match")
+        error
+            .message()
+            .contains("`assumption` found no available fact or held instance for any open claim")
             || error
                 .message()
                 .contains("`assumption` requires the current goal as an available semantic fact"),

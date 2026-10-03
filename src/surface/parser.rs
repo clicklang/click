@@ -186,6 +186,20 @@ pub(super) fn parse_file_items_for_module(
     parser.parse_file_items()
 }
 
+/// Whether `name` is the leading word of a built-in tactic or proof form, which
+/// a user-defined tactic may not shadow.
+fn is_builtin_tactic_spelling(name: &str) -> bool {
+    matches!(name, "let" | "by" | "sorry")
+        || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
+            form.id != "user-tactic"
+                && form
+                    .syntax
+                    .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                    .next()
+                    == Some(name)
+        })
+}
+
 fn is_tactic_name(name: &str) -> bool {
     matches!(name, "auto" | "simp")
 }
@@ -381,6 +395,13 @@ struct Parser {
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     pending_contract_name: Option<String>,
+    /// Set while a `tactic` declaration's signature is parsed: the name
+    /// follows directly, the parameters use Click's `name: type` spelling,
+    /// and the implicit result is `void`.
+    pending_tactic_signature: bool,
+    /// Every user-defined tactic declared so far in this file, so a proof
+    /// can tell `name(args)` applying one from other syntax.
+    tactic_names: BTreeSet<String>,
     contract_resource_parameters: BTreeMap<String, ResourceClause>,
     contract_proof_bindings: BTreeMap<String, Vec<(String, Variable, String)>>,
     next_resource_identity: u64,
@@ -684,6 +705,8 @@ impl Parser {
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_contract_name: None,
+            pending_tactic_signature: false,
+            tactic_names: BTreeSet::new(),
             contract_resource_parameters: BTreeMap::new(),
             contract_proof_bindings: BTreeMap::new(),
             next_resource_identity: 0,
@@ -824,6 +847,7 @@ impl Parser {
         let mut deferred_theorems = Vec::new();
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
+        let mut tactic_definitions = Vec::new();
 
         while self.peek().is_some() {
             if self.peek_ident() == Some("import") {
@@ -879,6 +903,10 @@ impl Parser {
                 }
             } else if self.peek_ident() == Some("contract") {
                 contract_definitions.push(self.parse_contract_definition()?);
+            } else if self.peek_ident() == Some("tactic")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
+            {
+                tactic_definitions.push(self.parse_tactic_definition()?);
             } else if self.peek_ident() == Some("abstract") {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
@@ -916,6 +944,7 @@ impl Parser {
             theorem_definitions,
             contract_definitions,
             function_blocks,
+            tactic_definitions,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
         };
@@ -930,6 +959,62 @@ impl Parser {
         let path = self.expect_string("Click module path")?;
         self.expect(Token::Semicolon)?;
         Ok(ImportDeclaration { path, position })
+    }
+
+    /// `tactic name(p: type, ...) { clauses } by { proof }`.
+    ///
+    /// The clauses are a function contract's, parsed by the function-block
+    /// parser so binders, `old`, and `decreases` mean what they mean there.
+    /// A tactic runs no code, so it has no result, no exceptional outcome,
+    /// and may not diverge; it must be proved by its own `by` block.
+    fn parse_tactic_definition(&mut self) -> Result<TacticDefinition, ClickError> {
+        self.expect_ident_spelling("tactic")?;
+        let start = self.error_context();
+        if is_builtin_tactic_spelling(self.peek_ident().unwrap_or_default()) {
+            return Err(self.error(format!(
+                "tactic `{}` would shadow the built-in tactic of the same name",
+                self.peek_ident().unwrap_or_default()
+            )));
+        }
+        self.pending_tactic_signature = true;
+        let function_block = self.parse_function_block(false);
+        self.pending_tactic_signature = false;
+        let function_block = function_block?;
+        let name = function_block.signature().name().to_string();
+        let refuse = |parser: &Self, message: &str| {
+            Err(parser.error_at(start.clone(), format!("tactic `{name}`: {message}")))
+        };
+        if function_block.signature().diverges() {
+            return refuse(
+                self,
+                "a tactic may not declare `diverges`; a tactic that need not terminate could prove anything",
+            );
+        }
+        if function_block.grouped_proof().is_none() {
+            return refuse(self, "a tactic must be proved by a `by { ... }` block");
+        }
+        if !function_block.constructs().is_empty()
+            || !function_block.exceptional_ensures().is_empty()
+        {
+            return refuse(
+                self,
+                "a tactic runs no code, so it has no `constructs` or `exceptional ensures` clauses",
+            );
+        }
+        if function_block
+            .ensures()
+            .iter()
+            .any(|clause| !matches!(clause.proof(), SourceProof::Default))
+        {
+            return refuse(
+                self,
+                "an `ensures` of a tactic is proved by the tactic's `by` block, not by its own",
+            );
+        }
+        if !self.tactic_names.insert(name.clone()) {
+            return refuse(self, "is declared twice");
+        }
+        Ok(TacticDefinition::new(function_block))
     }
 
     fn parse_contract_definition(&mut self) -> Result<ContractDefinition, ClickError> {
@@ -2816,6 +2901,7 @@ impl Parser {
             signature,
             external,
             one_call_proof: false,
+            tactic_procedure: false,
             requires,
             requirement_source_clauses,
             decreases,
@@ -2872,6 +2958,43 @@ impl Parser {
     }
 
     fn parse_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
+        if std::mem::take(&mut self.pending_tactic_signature) {
+            let name = self.expect_ident("tactic name")?;
+            self.expect(Token::LParen)?;
+            let parsed_parameters = self.parse_click_parameters()?;
+            self.expect(Token::RParen)?;
+            if let Some(parameter) = parsed_parameters
+                .parameters
+                .iter()
+                .find(|parameter| parameter.click_type().c_type().is_none())
+            {
+                return Err(self.error(format!(
+                    "tactic parameter `{}` has a mathematical type; tactic parameters are C \
+                     scalars and pointers in this release",
+                    parameter.name()
+                )));
+            }
+            if matches!(self.peek_ident(), Some("throws" | "diverges")) {
+                return Err(self.error(format!(
+                    "a tactic runs no code, so its signature cannot declare `{}`",
+                    self.peek_ident().unwrap_or_default()
+                )));
+            }
+            return Ok(ParsedFunctionSignature {
+                signature: FunctionSignature {
+                    return_type: C0Type::Void,
+                    return_pointee_constant: false,
+                    name,
+                    parameters: parsed_parameters.parameters,
+                    exceptional_type: None,
+                    diverges: false,
+                    declared_loadable_bytes: parsed_parameters.declared_loadable_bytes,
+                },
+                struct_params: parsed_parameters.struct_params,
+                struct_array_params: parsed_parameters.struct_array_params,
+                return_struct_name: None,
+            });
+        }
         let parsed_return_type = self.parse_type()?;
         if parsed_return_type.constant {
             return Err(
@@ -3614,8 +3737,17 @@ impl Parser {
     fn parse_call_binder_transport(
         &mut self,
         output: Option<CallOutputPattern>,
+        tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident("call step callee")?;
+        let callee = self.expect_ident(if tactic {
+            "tactic name"
+        } else {
+            "call step callee"
+        })?;
+        // A call step writes `step(callee(...), { ... })`; a tactic
+        // application writes `name(...) { ... }`, where the map is optional
+        // when the tactic supplies no binder.
+        let form = if tactic { "name(...)" } else { "step(...)" };
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         while self.peek() != Some(&Token::RParen) {
@@ -3626,17 +3758,24 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RParen)?;
-        self.expect(Token::Comma)?;
+        let has_map = if tactic {
+            self.peek() == Some(&Token::LBrace)
+        } else {
+            self.expect(Token::Comma)?;
+            true
+        };
         let mut declared = self
             .callee_resource_binders
             .get(&callee)
             .cloned()
             .unwrap_or_default();
-        self.expect(Token::LBrace)?;
+        if has_map {
+            self.expect(Token::LBrace)?;
+        }
         let mut binders: Vec<CallBinderBinding> = Vec::new();
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
-        while self.peek() != Some(&Token::RBrace) {
+        while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
             let instance = self.expect_ident("caller resource instance")?;
@@ -3648,7 +3787,7 @@ impl Parser {
             };
             if declaration.kind == CalleeResourceBinderKind::Produced {
                 return Err(self.error(format!(
-                    "`{callee}` produces `{binder}`; introduce it with `let {binder} = step(...)`"
+                    "`{callee}` produces `{binder}`; introduce it with `let {{ {binder}: name }} = {form}`"
                 )));
             }
             if !bound.insert(binder.clone()) {
@@ -3683,7 +3822,9 @@ impl Parser {
             }
             self.position += 1;
         }
-        self.expect(Token::RBrace)?;
+        if has_map {
+            self.expect(Token::RBrace)?;
+        }
         // An empty mutex has no protected resource to deposit. Its named
         // initialization still produces ordinary lifetime authority.
         if callee == "pthread_mutex_init" && !bound.contains("state") {
@@ -3749,7 +3890,7 @@ impl Parser {
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(self.error(format!(
-                    "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = step(...)`"
+                    "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
             // The legacy single-name form binds the only produced instance,
@@ -5166,10 +5307,18 @@ impl Parser {
                             "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
                         ));
             }
-            let transport = self.parse_call_binder_transport(Some(output))?;
+            let transport = self.parse_call_binder_transport(Some(output), false)?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
             return Ok(ProofTactic::StepCall(transport));
+        }
+        if let Some(name) = self.peek_ident()
+            && self.tactic_names.contains(name)
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            let application = self.parse_call_binder_transport(Some(output), true)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::UserTactic(application));
         }
         if self.peek_ident() == Some("unfold") {
             let CallOutputPattern::Named(bindings) = output else {
@@ -5765,13 +5914,21 @@ impl Parser {
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
     fn parse_named_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
+        if self.tactic_names.contains(&name) && self.peek() == Some(&Token::LParen) {
+            // The name was consumed by the dispatcher; the application
+            // parser reads it again as the tactic it applies.
+            self.position -= 1;
+            let application = self.parse_call_binder_transport(None, true)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::UserTactic(application));
+        }
         let tactic = match name.as_str() {
             "step" => {
                 self.expect(Token::LParen)?;
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
                 } else if self.call_binder_transport_follows() {
-                    ProofTactic::StepCall(self.parse_call_binder_transport(None)?)
+                    ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;
                     let arguments = if self.peek() == Some(&Token::LParen) {

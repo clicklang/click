@@ -138,6 +138,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Step => line(output, &prefix, "step();"),
         ProofTactic::StepContract(name) => line(output, &prefix, &format!("step({name});")),
         ProofTactic::StepCall(transport) => line(output, &prefix, &format!("{transport};")),
+        ProofTactic::UserTactic(application) => line(
+            output,
+            &prefix,
+            &format!("{};", application.tactic_spelling()),
+        ),
         ProofTactic::UnfoldPredicate(name) => {
             line(output, &prefix, &format!("unfold({name});"));
         }

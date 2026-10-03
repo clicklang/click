@@ -107,6 +107,81 @@ pub(crate) enum CheckedExecutionEvent {
     /// `scatter`). Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
     IteratedStep(CheckedIteratedStep),
+    /// One application of a user-defined tactic: the verified rule of a
+    /// procedure whose body runs no code, applied with no C statement. It
+    /// changes the resource context and adds the rule's `ensures` facts.
+    TacticApplication(CheckedTacticApplication),
+}
+
+/// A checked application of a verified tactic rule.
+///
+/// Only [`Self::check`] builds one, and it applies the rule itself through
+/// [`crate::kernel::functions::apply_verified_tactic_rule`], so holding the
+/// event is holding the kernel's verdict on that exact before state and fact
+/// context. Trace certification then only has to connect the states.
+#[derive(Clone)]
+pub(crate) struct CheckedTacticApplication {
+    before_state: CState,
+    pub(crate) after_state: CState,
+    before_facts: ProofFacts,
+    pub(crate) after_facts: ProofFacts,
+}
+
+impl CheckedTacticApplication {
+    fn check(
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        name: &str,
+        arguments: &[crate::kernel::CValue],
+        environment: &crate::kernel::CExecutionEnvironment,
+        next_kernel_variable: u64,
+    ) -> Result<(Self, u64), crate::kernel::functions::TacticApplicationRefusal> {
+        let transition = crate::kernel::functions::apply_verified_tactic_rule(
+            before_state,
+            name,
+            arguments,
+            before_facts,
+            environment,
+            next_kernel_variable,
+        )?;
+        let after_facts = transition
+            .facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.proposition().clone())
+            });
+        Ok((
+            Self {
+                before_state: before_state.clone(),
+                after_state: transition.state,
+                before_facts: before_facts.clone(),
+                after_facts,
+            },
+            transition.next_kernel_variable,
+        ))
+    }
+
+    pub(crate) fn before_state(&self) -> &CState {
+        &self.before_state
+    }
+
+    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
+        if state != &self.before_state || facts.introduced_since(&self.before_facts).is_none() {
+            return None;
+        }
+        Some(
+            self.after_facts
+                .introduced_since(&self.before_facts)?
+                .into_iter()
+                .fold(facts.clone(), |facts, fact| {
+                    if facts.contains_top_level(&fact) {
+                        facts
+                    } else {
+                        facts.with_fact(fact)
+                    }
+                }),
+        )
+    }
 }
 
 /// Proof-object-owned authority for one checked call occurrence.
@@ -5492,7 +5567,8 @@ fn collect_retained_call_events(
             | CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {}
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {}
         }
     }
 }
@@ -5993,6 +6069,11 @@ fn check_evidence_events_with_call_events(
                 state = step.advance_checked(&state, &current_facts)?;
                 continue;
             }
+            CheckedExecutionEvent::TacticApplication(application) => {
+                current_facts = application.advance_checked(&state, &current_facts)?;
+                state = application.after_state.clone();
+                continue;
+            }
             // The retained context of the preceding theorem; the arm check
             // above already holds the arm's own facts.
             CheckedExecutionEvent::Context(_) => continue,
@@ -6076,7 +6157,8 @@ fn check_evidence_events_with_call_events(
             CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {
                 unreachable!("handled before source advance")
             }
         }
@@ -6198,6 +6280,12 @@ fn trace_completion(
                 fallthrough = None;
                 if completed.is_some() {
                     return Err("population member rewrite must precede function exit");
+                }
+            }
+            CheckedExecutionEvent::TacticApplication(_) => {
+                fallthrough = None;
+                if completed.is_some() {
+                    return Err("a tactic application must precede function exit");
                 }
             }
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
@@ -6345,6 +6433,10 @@ fn events_use_the_function_definitions(
                 definitions.contains(observation.definition())
             }
             CheckedExecutionEvent::PopulationAuthorityRewrite(_) => true,
+            // The application was checked against the environment's own
+            // verified rule; the rule carries the definitions it was
+            // certified under, and the same run installed both.
+            CheckedExecutionEvent::TacticApplication(_) => true,
             CheckedExecutionEvent::PopulationMemberRewrite(rewrite) => {
                 definitions.contains(&rewrite.definition)
             }
@@ -6443,7 +6535,8 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
             | CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {
                 pending_call_views.clear();
                 continue;
             }
@@ -8235,6 +8328,70 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
+    }
+
+    /// Applies the verified rule of tactic `name` at the reached state and
+    /// records the checked application. Returns the successor state and fact
+    /// context the proof continues from.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_tactic_application(
+        &mut self,
+        function: &CFunction,
+        function_arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        name: &str,
+        arguments: &[crate::kernel::CValue],
+        environment: &crate::kernel::CExecutionEnvironment,
+    ) -> Result<(CState, ProofFacts), crate::kernel::functions::TacticApplicationRefusal> {
+        use crate::kernel::functions::TacticApplicationRefusal::Refused;
+        if self.evidence_completed {
+            return Err(Refused(
+                "a tactic must be applied before execution reaches function exit".into(),
+            ));
+        }
+        let (mut application, mark) = CheckedTacticApplication::check(
+            self.reached_state(),
+            before_facts,
+            name,
+            arguments,
+            environment,
+            self.kernel_variable_mark(),
+        )?;
+        self.advance_kernel_variable_mark(mark)
+            .map_err(|message| Refused(message.into()))?;
+        let result = (
+            application.after_state.clone(),
+            application.after_facts.clone(),
+        );
+        // Before any evidence, the core holds the caller-side state and the
+        // trace holds entry-bound states, as for a resource rewrite here.
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
+            application.before_state = crate::kernel::c_function_entry_state(
+                &application.before_state,
+                function,
+                function_arguments,
+            )
+            .ok_or_else(|| {
+                Refused("a tactic application could not bind the function entry state".into())
+            })?;
+            application.after_state = crate::kernel::c_function_entry_state(
+                &application.after_state,
+                function,
+                function_arguments,
+            )
+            .ok_or_else(|| {
+                Refused("a tactic application could not bind its successor entry state".into())
+            })?;
+        }
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(application.after_state.clone());
+        }
+        for trace in &mut *self.execution_evidence {
+            trace.push(CheckedExecutionEvent::TacticApplication(
+                application.clone(),
+            ));
+        }
+        Ok(result)
     }
 
     pub(crate) fn record_resource_rewrite(

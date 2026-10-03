@@ -35,7 +35,7 @@ documentation inventory keep the following accepted words synchronized.
 | `import` | Loads declarations from a local Click module without selecting that module's proofs. |
 | `verifying` | C-source declaration. |
 | `target` | Selects the C implementation target the file's C sources are preprocessed and verified under. |
-| `predicate`, `function`, `theorem`, `contract` | Top-level logic and behavioral-interface declarations; `function` also starts a C contract. |
+| `predicate`, `function`, `theorem`, `contract`, `tactic` | Top-level logic and behavioral-interface declarations; `function` also starts a C contract, and `tactic` declares a user-defined tactic. |
 | `executes` | Gives a contract-refinement theorem an explicit one-call execution frontier, over the theorem's callback parameter or a named project function. |
 | `spec`, `enum`, `match` | Specification-only algebraic datatype declarations and exhaustive elimination. |
 | `abstract`, `resource` | Abstract and composite resource declarations. |

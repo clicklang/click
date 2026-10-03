@@ -157,6 +157,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 "{importing_site}: imported module `{identity}` contains `verifying`; only the entry module may select C translation units"
             )));
         }
+        if !local.tactic_definitions().is_empty() {
+            return Err(ClickError::new(format!(
+                "{importing_site}: imported module `{identity}` declares a tactic; tactics are applied in the module that declares them in this release"
+            )));
+        }
         if !local.contract_definitions().is_empty() || !local.function_blocks().is_empty() {
             return Err(ClickError::new(format!(
                 "{importing_site}: imported module `{identity}` contains a named contract or C function specification; the first import delivery supports only algebraic types, predicates, pure functions, resources, and theorems"
@@ -338,6 +343,11 @@ fn local_identities(file: &ClickFile) -> Vec<DeclarationIdentity> {
         .chain(file.function_blocks().iter().map(|definition| {
             DeclarationIdentity::CFunction(definition.signature().name().to_string())
         }))
+        .chain(
+            file.tactic_definitions()
+                .iter()
+                .map(|definition| DeclarationIdentity::Tactic(definition.name().to_string())),
+        )
         .collect()
 }
 
@@ -379,6 +389,7 @@ fn merge_modules(
         theorem_definitions: Vec::new(),
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
+        tactic_definitions: Vec::new(),
         declaration_owners: BTreeMap::new(),
         entry_module: Some(entry.to_string()),
     };
@@ -428,6 +439,7 @@ fn merge_modules(
             merged.verifying_sources = local.verifying_sources.clone();
             merged.contract_definitions = local.contract_definitions.clone();
             merged.function_blocks = local.function_blocks.clone();
+            merged.tactic_definitions = local.tactic_definitions.clone();
         }
         merged
             .algebraic_type_definitions

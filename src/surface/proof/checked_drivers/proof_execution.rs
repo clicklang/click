@@ -112,6 +112,7 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
             | ProofTactic::ObserveResource(_)
             | ProofTactic::ApplyTheorem(_)
             | ProofTactic::ApplyTheoremUsing { .. }
+            | ProofTactic::UserTactic(_)
     )
 }
 
@@ -121,6 +122,7 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
+        ProofTactic::UserTactic(application) => Some(ProofStep::UserTactic(application.clone())),
         ProofTactic::TransportUsing {
             source,
             target,
@@ -4081,6 +4083,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepCall(transport) => transport.to_string(),
+        ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "execute()".to_string(),
         ProofTactic::ExecuteUntil(region) => format!(
             "execute_until({})",

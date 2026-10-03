@@ -260,9 +260,7 @@ pub fn expand_c0_claim_source(
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let grouped = function_block.grouped_proof().is_some();
@@ -314,9 +312,7 @@ fn expand_c0_project_claim_source(
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
@@ -365,9 +361,7 @@ fn expand_c0_prepared_project_claim_source(
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
@@ -413,9 +407,7 @@ fn expand_c0_prepared_claim_source(
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let grouped = function_block.grouped_proof().is_some();
@@ -472,7 +464,7 @@ pub fn expand_c0_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -532,7 +524,7 @@ pub fn expand_c0_project_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -586,7 +578,7 @@ pub fn expand_c0_prepared_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -643,7 +635,7 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -712,7 +704,7 @@ fn expand_program_prepared_claim_source_by_label_context(
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_c_layouts_context(click_source, &sources)?,
     };
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -777,9 +769,7 @@ fn expand_program_prepared_claim_source_context(
     };
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
@@ -928,7 +918,7 @@ fn c0_smart_tactic_source_sites_file(
             collect_smart_proof_sites(&label, ensure.proof(), &mut sites);
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(file) {
         // An `extern` contract is assumed, not proved: its clauses carry no
         // proof, so the implicit `auto` of an unproved clause is not a site
         // there is anything to expand.
@@ -1187,7 +1177,7 @@ pub(in crate::surface) fn verification_target_at_file(
             return Ok(VerificationTarget::Theorem(theorem.name().to_string()));
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(file) {
         let function_name = function.signature().name();
         let source = find_function(&tokens, function_name)?;
         let in_body = tokens[source.body_open].span.start <= wanted
@@ -2077,6 +2067,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
     Ok(tokens)
 }
 
+/// Every block whose proof the expansion tools address: the C function
+/// blocks, then each user-defined tactic, whose `by` script is its contract's
+/// one grouped proof. A tactic is declared before any proof applies it, so
+/// [`find_function`] reaches its declaration first.
+fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBlock> {
+    file.function_blocks().iter().chain(
+        file.tactic_definitions()
+            .iter()
+            .map(TacticDefinition::function_block),
+    )
+}
+
 fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
     for (index, token) in tokens.iter().enumerate() {
         if token.text != name || tokens.get(index + 1).map(|token| token.text.as_str()) != Some("(")
@@ -2102,6 +2104,33 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
     }
     Err(ClickError::new(format!(
         "could not locate Click function block `{name}`"
+    )))
+}
+
+/// The `tactic name(...) { ... }` declaration of `name`. Only the declaration
+/// has the `tactic` keyword before the name; an application `name(...) { ... }`
+/// inside a proof is never matched.
+fn find_tactic(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text != "tactic"
+            || tokens.get(index + 1).map(|token| token.text.as_str()) != Some(name)
+            || tokens.get(index + 2).map(|token| token.text.as_str()) != Some("(")
+        {
+            continue;
+        }
+        let parameters_close = matching_delimiter(tokens, index + 2, "(", ")")?;
+        let body_open = parameters_close + 1;
+        if tokens.get(body_open).map(|token| token.text.as_str()) != Some("{") {
+            continue;
+        }
+        let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
+        return Ok(FunctionSource {
+            body_open,
+            body_close,
+        });
+    }
+    Err(ClickError::new(format!(
+        "could not locate Click tactic `{name}`"
     )))
 }
 
@@ -2978,7 +3007,7 @@ fn source_tactic_entries(
             proof_tactic_entries(&tokens, &edit, ensure.proof(), &site, &label, &mut entries)?;
         }
     }
-    for function_block in file.function_blocks() {
+    for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
         let function = find_function(&tokens, function_name)?;
         for clause in function_block.structural_clauses() {
@@ -3694,7 +3723,22 @@ fn c0_tactic_source_position_file(
             );
         }
     }
-    for function_block in file.function_blocks() {
+    for tactic in file.tactic_definitions() {
+        if claim_label != format!("{}.contract", tactic.name()) {
+            continue;
+        }
+        let function = find_tactic(&tokens, tactic.name())?;
+        return proof_source_position(
+            click_source,
+            &tokens,
+            Some(&find_grouped_proof_span(&tokens, &function)?),
+            tactic.function_block().grouped_proof(),
+            tokens[function.body_close].span.start,
+            claim_label,
+            source_index,
+        );
+    }
+    for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
         let function = find_function(&tokens, function_name)?;
         for clause in function_block.structural_clauses() {

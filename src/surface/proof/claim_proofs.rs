@@ -3301,8 +3301,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                     }
                                 }
                                 if !closed_any {
+                                    let open = claims
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(index, _)| !closures[*index].is_closed())
+                                        .take(crate::surface::diagnostics::diagnostic_item_limit())
+                                        .map(|(_, claim)| {
+                                            format!(
+                                                "`{}`",
+                                                crate::surface::diagnostics::describe_ensure_clause(
+                                                    claim.clause()
+                                                )
+                                            )
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` did not match any current proposition goal"
+                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` found no available fact or held instance for any open claim: {open}"
                                     )));
                                 }
                                 let tactics = retained_certificate

@@ -4078,6 +4078,133 @@ pub(super) fn execute_c_function_call_paths(
     Ok(paths)
 }
 
+/// The successor of one statement-free application of a verified tactic rule.
+#[derive(Clone)]
+pub(crate) struct TacticRuleTransition {
+    pub(crate) state: CState,
+    pub(crate) facts: Vec<ExecutionPureFact>,
+    /// The execution's kernel-variable mark after the application, which
+    /// the caller installs so later steps cannot reuse an identity it minted.
+    pub(crate) next_kernel_variable: u64,
+}
+
+/// Why a tactic application was refused. A missing precondition is kept as
+/// the proposition, so the surface can name it in the reader's spelling.
+#[derive(Clone, Debug)]
+pub(crate) enum TacticApplicationRefusal {
+    MissingRequirement(Proposition),
+    Refused(String),
+}
+
+/// Whether a certified body runs no code: it is one `return;` of no value.
+fn body_runs_no_code(body: &CStatement) -> bool {
+    match body {
+        CStatement::Return(CExpression::Value(CValue::Void)) => true,
+        CStatement::Seq(first, second) => {
+            matches!(first.as_ref(), CStatement::Skip) && body_runs_no_code(second)
+        }
+        _ => false,
+    }
+}
+
+/// Applies the verified rule of `name` at `state` with no C call statement.
+///
+/// The rule must be one certified for a procedure whose whole body is
+/// `return;`. Such a procedure runs no code, so a call to it may be inserted
+/// anywhere without changing what the program does; applying its rule here is
+/// exactly that call, and the call boundary's own checks bind the selected
+/// instances, consume and produce them, and add the `ensures` facts. This is
+/// how a user-defined tactic is applied.
+///
+/// Every precondition the application emits must already be an available
+/// fact in `facts`. A tactic application is a simple step: nothing is
+/// searched for.
+pub(crate) fn apply_verified_tactic_rule(
+    state: &CState,
+    name: &str,
+    arguments: &[CValue],
+    facts: &crate::kernel::proof::ProofFacts,
+    environment: &CExecutionEnvironment,
+    next_kernel_variable: u64,
+) -> Result<TacticRuleTransition, TacticApplicationRefusal> {
+    use TacticApplicationRefusal::Refused;
+    let function = environment
+        .get_function(name)
+        .ok_or_else(|| Refused(format!("unknown tactic `{name}`")))?;
+    if !body_runs_no_code(function.body()) {
+        return Err(Refused(format!(
+            "`{name}` is a C function, not a tactic; its rule applies only at a call"
+        )));
+    }
+    // A selected tactic is certified in this run (or held as its recursion
+    // hypothesis while it is); an unselected one is the run's scoped
+    // assumption, exactly as an unselected C callee is. Nothing else may
+    // stand in for its contract.
+    if environment.get_verified_function_rule(name).is_none()
+        && !environment
+            .get_external_function_rule(name)
+            .is_some_and(CExternalFunctionRule::is_scoped_unselected)
+    {
+        return Err(Refused(format!(
+            "tactic `{name}` has no verified rule in this proof"
+        )));
+    }
+    let expressions = arguments
+        .iter()
+        .cloned()
+        .map(CExpression::Value)
+        .collect::<Vec<_>>();
+    let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
+    let paths = execute_c_function_call_paths(
+        state,
+        function,
+        &expressions,
+        facts.assumptions(),
+        environment,
+        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        &mut budget,
+    )
+    .map_err(|limit| {
+        Refused(format!(
+            "applying tactic `{name}` exhausted its budget: {limit:?}"
+        ))
+    })?;
+    let [path] = paths.as_slice() else {
+        return Err(Refused(format!(
+            "applying tactic `{name}` produced {} outcomes; an application has exactly one",
+            paths.len()
+        )));
+    };
+    let after = match &path.outcome {
+        CFunctionOutcome::Return { state, .. } => state.clone(),
+        CFunctionOutcome::RuntimeError(error) => {
+            return Err(Refused(format!(
+                "tactic `{name}` could not be applied: {error:?}"
+            )));
+        }
+        CFunctionOutcome::UndefinedBehavior(behavior) => {
+            return Err(Refused(format!(
+                "tactic `{name}` could not be applied: {behavior:?}"
+            )));
+        }
+        CFunctionOutcome::Throw { .. } | CFunctionOutcome::VerificationDiverges => {
+            return Err(Refused(format!("tactic `{name}` has no ordinary outcome")));
+        }
+    };
+    for obligation in &path.obligations {
+        if !facts.contains(&obligation.proposition) {
+            return Err(TacticApplicationRefusal::MissingRequirement(
+                obligation.proposition.clone(),
+            ));
+        }
+    }
+    Ok(TacticRuleTransition {
+        state: after,
+        facts: path.facts.clone(),
+        next_kernel_variable: budget.next_kernel_variable(),
+    })
+}
+
 fn execute_verified_function_rule(
     caller_state: &CState,
     rule: &CVerifiedFunctionRule,

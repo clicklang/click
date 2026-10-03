@@ -256,11 +256,20 @@ pub(in crate::surface) fn check_resource_field_schemas(
             );
         }
     }
-    for function in file.function_blocks.iter_mut().chain(
-        file.contract_definitions
-            .iter_mut()
-            .map(|contract| &mut contract.function_block),
-    ) {
+    for function in file
+        .function_blocks
+        .iter_mut()
+        .chain(
+            file.contract_definitions
+                .iter_mut()
+                .map(|contract| &mut contract.function_block),
+        )
+        .chain(
+            file.tactic_definitions
+                .iter_mut()
+                .map(TacticDefinition::function_block_mut),
+        )
+    {
         let mut bindings = BTreeMap::new();
         let parameter_names = function
             .signature
@@ -935,10 +944,11 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         click_function_environment,
         resource_environment,
     )?;
-    let resource_derived_mutable_frame = function_block
-        .requires()
-        .iter()
-        .any(|requirement| matches!(requirement, Requirement::Resource(_)));
+    let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
+        && function_block
+            .requires()
+            .iter()
+            .any(|requirement| matches!(requirement, Requirement::Resource(_)));
     // A resource-derived function's write footprint is never lowered from
     // source: the kernel projects it from the checked resource transition,
     // and a loop inherits it as validated ranges installed at function
