@@ -557,6 +557,7 @@ pub(in crate::kernel) fn algebraic_predicate_fact(
             Bitvector32Term::Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
         )
     };
     let (application, constant) = match (left, right) {
@@ -1498,6 +1499,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         Bitvector32Term::Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::Int64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::UInt64Constant(value) => std::hash::Hash::hash(value, hasher),
+        Bitvector32Term::MachineIntegerConstant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::Variable(variable) => std::hash::Hash::hash(variable, hasher),
         Bitvector32Term::MemoryLoad(_, pointer, kind) => {
             std::hash::Hash::hash(kind, hasher);
@@ -1687,7 +1689,8 @@ fn collect_bitvector_memory_load_keys(
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
             keys.insert((
                 pointer.block.clone(),
@@ -2000,7 +2003,8 @@ fn collect_bitvector_memory_loads_with_width(
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => Ok(()),
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => Ok(()),
         Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             if CMemorySnapshotIdentity::of(memory.memory())
                 == CMemorySnapshotIdentity::of(current_memory)
@@ -2132,6 +2136,7 @@ fn collect_bitvector_memory_loads_with_width(
                 MachineIntegerType::UInt8 => 1,
                 MachineIntegerType::Int32 | MachineIntegerType::UInt32 => 4,
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => 8,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128 => 16,
             });
             collect_integer_memory_loads_with_width(
                 value,
@@ -2236,6 +2241,14 @@ fn collect_cvalue_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match value {
+        CValue::Int128(term) | CValue::UInt128(term) => collect_bitvector_memory_loads_with_width(
+            term,
+            current_memory,
+            loads,
+            Some(16),
+            seen_integers,
+        ),
+
         CValue::Void => Ok(()),
         CValue::Bool(term) | CValue::UInt8(term) => collect_bitvector_memory_loads_with_width(
             term,
@@ -2401,6 +2414,7 @@ fn collect_integer_node_memory_loads(
                 MachineIntegerType::Int16 | MachineIntegerType::UInt16 => 2,
                 MachineIntegerType::Int32 | MachineIntegerType::UInt32 => 4,
                 MachineIntegerType::Int64 | MachineIntegerType::UInt64 => 8,
+                MachineIntegerType::Int128 | MachineIntegerType::UInt128 => 16,
             }),
             seen_integers,
         ),

@@ -2239,6 +2239,9 @@ fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> S
 
 pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
     match c_type {
+        C0Type::Int128 => "int128".to_string(),
+        C0Type::UInt128 => "uint128".to_string(),
+
         C0Type::Bool => "bool".to_string(),
         C0Type::Void => "void".to_string(),
         C0Type::VoidPointer => "void*".to_string(),
@@ -2738,6 +2741,9 @@ fn infer_c_expression_type(
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     match expression {
+        CExpression::Value(CValue::Int128(_)) => Some(C0Type::Int128),
+        CExpression::Value(CValue::UInt128(_)) => Some(C0Type::UInt128),
+
         CExpression::Value(CValue::Void) => Some(C0Type::Void),
         CExpression::Value(CValue::Bool(_)) => Some(C0Type::Bool),
         CExpression::Value(CValue::Int8(_)) => Some(C0Type::Int8),
@@ -2757,6 +2763,9 @@ fn infer_c_expression_type(
             target_type,
             ..
         } => match target_type {
+            CType::Int128 => Some(C0Type::Int128),
+            CType::UInt128 => Some(C0Type::UInt128),
+
             CType::Bool => Some(C0Type::Bool),
             CType::Int8 => Some(C0Type::Int8),
             CType::Int16 => Some(C0Type::Int16),
@@ -2878,6 +2887,8 @@ fn infer_c_expression_type(
             CType::UInt32 => C0Type::UInt32,
             CType::Int64 => C0Type::Int64,
             CType::UInt64 => C0Type::UInt64,
+            CType::Int128 => C0Type::Int128,
+            CType::UInt128 => C0Type::UInt128,
             CType::Float32 => C0Type::Float32,
             CType::Float64 => C0Type::Float64,
             CType::Int32Pointer => C0Type::Int32Pointer,

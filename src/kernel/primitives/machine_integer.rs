@@ -230,6 +230,8 @@ impl MachineIntegerType {
             Self::UInt32 => (Bits32, false),
             Self::Int64 => (Bits64, true),
             Self::UInt64 => (Bits64, false),
+            Self::Int128 => (Bits128, true),
+            Self::UInt128 => (Bits128, false),
         };
         MachineIntegerFormat::new(width, signed)
     }
@@ -249,6 +251,7 @@ impl MachineIntegerType {
             }
             Self::Int64 => Bitvector32Term::Int64Constant(value.to_i128()? as i64),
             Self::UInt64 => Bitvector32Term::UInt64Constant(value.to_u128()? as u64),
+            Self::Int128 | Self::UInt128 => Bitvector32Term::MachineIntegerConstant(value),
         })
     }
 
@@ -265,6 +268,11 @@ impl MachineIntegerType {
             value => value,
         };
         let source = Self::from_c_type(value.c_type())?;
+        // Wide runtime values are initially identity/observation-only. Do not
+        // lower a wide symbolic value through a 32/64-bit conversion carrier.
+        if source.format().bits() == 128 || self.format().bits() == 128 {
+            return (source == self).then_some(value);
+        }
         if let Some(constant) = source.constant_from_value(&value) {
             return self.constant_value(constant.convert_modulo(self.format()));
         }
@@ -279,7 +287,9 @@ impl MachineIntegerType {
             | CValue::Int32(term)
             | CValue::UInt32(term)
             | CValue::Int64(term)
-            | CValue::UInt64(term) => term,
+            | CValue::UInt64(term)
+            | CValue::Int128(term)
+            | CValue::UInt128(term) => term,
             _ => return None,
         };
         let source_format = source.format();
@@ -329,6 +339,22 @@ impl MachineIntegerType {
         Some(self.value_from_term(term))
     }
 
+    /// Root validation for the initial wide runtime profile. The term arena
+    /// is shared, but its legacy arithmetic nodes must not acquire a wide
+    /// interpretation merely by changing a value wrapper.
+    pub(crate) fn accepts_wide_term(self, value: &Bitvector32Term) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.format().bits() != 128 {
+            return false;
+        }
+        match value {
+            Bitvector32Term::MachineIntegerConstant(value) => value.format() == self.format(),
+            Bitvector32Term::Variable(_) => true,
+            Bitvector32Term::IntegerToMachine { destination, .. } => *destination == self,
+            _ => false,
+        }
+    }
+
     pub(crate) fn constant_value(self, value: MachineIntegerConstant) -> Option<CValue> {
         Some(self.value_from_term(self.constant_term(value)?))
     }
@@ -343,6 +369,8 @@ impl MachineIntegerType {
             Self::UInt32 => CValue::UInt32(term),
             Self::Int64 => CValue::Int64(term),
             Self::UInt64 => CValue::UInt64(term),
+            Self::Int128 => CValue::Int128(term),
+            Self::UInt128 => CValue::UInt128(term),
         }
     }
 
@@ -351,6 +379,11 @@ impl MachineIntegerType {
         value: &Bitvector32Term,
     ) -> Option<MachineIntegerConstant> {
         match (self, value) {
+            (Self::Int128 | Self::UInt128, Bitvector32Term::MachineIntegerConstant(value))
+                if value.format() == self.format() =>
+            {
+                Some(*value)
+            }
             (Self::Int8 | Self::Int16 | Self::Int32, Bitvector32Term::Constant(value)) => {
                 MachineIntegerConstant::from_signed(self.format(), i128::from(*value as i32))
             }
@@ -379,7 +412,9 @@ impl MachineIntegerType {
             | CValue::Int32(term)
             | CValue::UInt32(term)
             | CValue::Int64(term)
-            | CValue::UInt64(term) => term,
+            | CValue::UInt64(term)
+            | CValue::Int128(term)
+            | CValue::UInt128(term) => term,
             _ => return None,
         };
         self.constant_from_term(term)

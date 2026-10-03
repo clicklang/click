@@ -522,6 +522,8 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt32 => C0Type::UInt32,
             CType::Int64 => C0Type::Int64,
             CType::UInt64 => C0Type::UInt64,
+            CType::Int128 => C0Type::Int128,
+            CType::UInt128 => C0Type::UInt128,
             CType::Float32 => C0Type::Float32,
             CType::Float64 => C0Type::Float64,
             CType::Int8Pointer => C0Type::Int8Pointer,
@@ -1288,6 +1290,10 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
         .filter_map(|(index, parameter)| {
             let c_type = parameter.click_type().c_type()?;
             let value = match c_type {
+                C0Type::Int128 => CValue::Int128(Bitvector32Term::Variable(Variable(index as u64))),
+                C0Type::UInt128 => {
+                    CValue::UInt128(Bitvector32Term::Variable(Variable(index as u64)))
+                }
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 C0Type::Bool => {
                     crate::kernel::bool_value(Bitvector32Term::Variable(Variable(index as u64)))

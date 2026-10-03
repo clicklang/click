@@ -190,6 +190,8 @@ pub(super) fn c0_type_from_kernel(c_type: CType) -> C0Type {
         CType::UInt32 => C0Type::UInt32,
         CType::Int64 => C0Type::Int64,
         CType::UInt64 => C0Type::UInt64,
+        CType::Int128 => C0Type::Int128,
+        CType::UInt128 => C0Type::UInt128,
         CType::Float32 => C0Type::Float32,
         CType::Float64 => C0Type::Float64,
         CType::Int8Pointer => C0Type::Int8Pointer,

@@ -1468,6 +1468,16 @@ impl Renderer<'_> {
                 self.bitvector(v);
                 self.push(")");
             }
+            crate::kernel::CValue::Int128(v) => {
+                self.push("int128(");
+                self.bitvector(v);
+                self.push(")");
+            }
+            crate::kernel::CValue::UInt128(v) => {
+                self.push("uint128(");
+                self.bitvector(v);
+                self.push(")");
+            }
             crate::kernel::CValue::Int8(v) => {
                 self.push("int8(");
                 self.bitvector(v);

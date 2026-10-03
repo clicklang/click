@@ -7453,6 +7453,8 @@ fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
             MachineIntegerType::UInt32 => (32, false),
             MachineIntegerType::Int64 => (64, true),
             MachineIntegerType::UInt64 => (64, false),
+            MachineIntegerType::Int128 => (128, true),
+            MachineIntegerType::UInt128 => (128, false),
         }
     }
     fn integer(term: &IntegerTerm, input: &BigInt) -> BigInt {

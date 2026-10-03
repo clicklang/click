@@ -236,7 +236,7 @@ implements the constant policy of C++20 integral conversions and Rust integer
 `as`; a C importer must still select its target's signed narrowing policy.
 The ordinary reverse conversion from Integer always uses the checked operation.
 
-The existing 8–64-bit runtime types use the shared format for their bounds,
+The runtime machine types use the shared format for their bounds,
 constant observations, Integer conversions, and constant rewrite normalization.
 C++ literals use it as well. The runtime bridge requires an exact format match,
 including signedness; narrow signed constants retain the
@@ -247,10 +247,8 @@ allocation is charged before constructing bounded exact values.
 
 Signed and unsigned 128-bit constants, their full endpoint ranges, widening,
 and narrowing are represented and tested against independent exact arithmetic.
-Symbolic 128-bit terms, runtime storage/ABI, source types, arithmetic definedness,
-and frontend admission remain separate work. This layer does not yet enable
-`__int128` execution or surface `int128` / `uint128` types.
-
+The kernel also has a bounded wide scalar profile, described below. Source
+`__int128` execution and surface `int128` / `uint128` types remain unsupported.
 
 ## Explicit machine modulo casts
 
@@ -268,8 +266,39 @@ results, floats, pointers, arrays, and unsupported widths are refused at this
 integer boundary; their ordinary conversions use their own rules. Evaluation
 of the operand still carries its definedness obligations, including overflow.
 This explicit policy does not relax ordinary C casts or checked Integer
-conversions, and does not admit native 128-bit runtime values.
+conversions. Wide runtime casts currently admit identity only; a cast between
+128 bits and another width, or between signed and unsigned wide types, is
+refused until its symbolic conversion model is added.
 
+## Wide runtime scalars
+
+The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
+wrappers in the existing machine-term arena. `c_int128_literal` and
+`c_uint128_literal` retain all 128 bits in `MachineIntegerConstant` payloads.
+Symbolic variables, scalar locals, assignment, function parameters/results,
+and substitution preserve the wide type. The pinned x86_64 Linux profile gives
+these scalar objects 16 bytes and alignment 16; value width alone does not
+choose an arbitrary target's ABI alignment.
+
+Exact Integer observation retains the source's wide machine type and numeric
+interpretation. Reverse Integer conversions use the full signed/unsigned
+bounds and retain both obligations for symbolic inputs. Truthiness compares
+that exact observation with zero, including high bits above bit 63. These
+observations do not turn native arithmetic into unbounded Integer arithmetic.
+
+A wide runtime wrapper accepts only a matching wide constant, a symbolic
+variable, or the shared checked Integer-to-machine node for that destination.
+Legacy word constants and arithmetic nodes cannot acquire 128-bit semantics
+by retagging their wrapper. Validation examines only the root; substitutions,
+alpha keys, snapshot identities, and bounded walks keep the full payload.
+
+This profile does not yet admit native wide arithmetic, cross-width or
+signedness-changing casts, wide pointer/array types, aggregate field access,
+byte loads, callbacks, or any C/C++/Rust source spelling. Internal C0 type
+identities preserve the kernel sorts without adding parser admission. The
+frontends continue to reject reachable `__int128` behavior. Wide conversions,
+checked multiplication, storage access, and source admission are later slices;
+existing implementation fixtures remain unchanged.
 
 ## Work budgets and certificate scaling
 

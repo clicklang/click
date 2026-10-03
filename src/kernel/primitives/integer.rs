@@ -295,6 +295,8 @@ pub enum MachineIntegerType {
     UInt32,
     Int64,
     UInt64,
+    Int128,
+    UInt128,
 }
 
 impl MachineIntegerType {
@@ -308,6 +310,8 @@ impl MachineIntegerType {
             CType::UInt32 => Self::UInt32,
             CType::Int64 => Self::Int64,
             CType::UInt64 => Self::UInt64,
+            CType::Int128 => Self::Int128,
+            CType::UInt128 => Self::UInt128,
             _ => return None,
         })
     }
@@ -322,6 +326,8 @@ impl MachineIntegerType {
             Self::UInt32 => CType::UInt32,
             Self::Int64 => CType::Int64,
             Self::UInt64 => CType::UInt64,
+            Self::Int128 => CType::Int128,
+            Self::UInt128 => CType::UInt128,
         }
     }
 }
@@ -708,11 +714,15 @@ impl IntegerTerm {
         variables.into_iter().next_back()
     }
     pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
+        if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
+            return None;
+        }
         if matches!(
             value,
             Bitvector32Term::Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
         ) {
             ty.constant_from_term(&value)
                 .map(|value| Self::constant(value.to_integer()))

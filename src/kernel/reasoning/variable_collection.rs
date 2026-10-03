@@ -1074,6 +1074,8 @@ fn collect_c_value_bound_identities(
         | CValue::UInt32(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => {
             collect_bitvector_integer_variables(bits, variables);
@@ -2175,6 +2177,7 @@ fn collect_bitvector_integer_variables_seen(
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _) | Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_integer_variables(pointer, variables, seen)
@@ -2641,6 +2644,8 @@ fn collect_c_value_integer_variables(
         | CValue::UInt32(value)
         | CValue::Int64(value)
         | CValue::UInt64(value)
+        | CValue::Int128(value)
+        | CValue::UInt128(value)
         | CValue::Float32(value)
         | CValue::Float64(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
@@ -2809,7 +2814,8 @@ pub(crate) fn collect_bitvector_variables(
     match term {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Variable(variable) => {
             variables.insert(*variable);
             // A load variable denotes its load, so the variables
@@ -2963,7 +2969,8 @@ fn collect_bitvector_capture_variables_seen(
     match term {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Variable(variable) => {
             variables.insert(*variable);
             if crate::kernel::is_load_variable(variable)
@@ -3306,6 +3313,8 @@ fn collect_capture_variables_in_c_value(
         | CValue::UInt32(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => {
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
@@ -3712,7 +3721,8 @@ fn collect_bitvector_scope_summary(
     match term {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => IntegerScopeSummary::default(),
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => IntegerScopeSummary::default(),
         Bitvector32Term::Variable(variable) => {
             let mut summary = IntegerScopeSummary::bitvector_variable(*variable);
             if crate::kernel::is_load_variable(variable)
@@ -4045,6 +4055,8 @@ fn collect_c_value_scope_summary(
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
         CValue::Pointer(pointer) => collect_pointer_scope_summary(pointer.pointer(), summaries),
@@ -4328,6 +4340,7 @@ fn collect_bitvector_binder_variables_seen(
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_) => {}
@@ -4768,6 +4781,8 @@ fn collect_binder_variables_in_c_value(
         | CValue::UInt32(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_binder_variables_seen(
             bits,
@@ -5548,6 +5563,8 @@ pub(crate) fn collect_c_value_bitvector_variables(
         | CValue::UInt32(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
         CValue::Pointer(pointer) => collect_pointer_bitvector_variables(pointer, variables),

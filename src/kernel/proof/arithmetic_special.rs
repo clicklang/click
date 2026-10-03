@@ -88,6 +88,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => {}
             Bitvector32Term::Int64Add(left, right)
             | Bitvector32Term::BitwiseXor(left, right)

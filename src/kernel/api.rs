@@ -1651,6 +1651,30 @@ pub fn c_uint32_literal(value: u32) -> CExpression {
     CExpression::Value(uint32(Bitvector32Term::Constant(value)))
 }
 
+/// Signed wide literal in the common checked machine arena.
+pub fn c_int128_literal(value: i128) -> CExpression {
+    let ty = MachineIntegerType::Int128;
+    CExpression::Value(
+        ty.constant_value(
+            MachineIntegerConstant::from_signed(ty.format(), value)
+                .expect("i128 fits the signed 128-bit format"),
+        )
+        .expect("exact wide format"),
+    )
+}
+
+/// Unsigned wide literal; the high 64 bits are retained.
+pub fn c_uint128_literal(value: u128) -> CExpression {
+    let ty = MachineIntegerType::UInt128;
+    CExpression::Value(
+        ty.constant_value(
+            MachineIntegerConstant::from_unsigned(ty.format(), value)
+                .expect("u128 fits the unsigned 128-bit format"),
+        )
+        .expect("exact wide format"),
+    )
+}
+
 pub fn c_int64_literal(value: i64) -> CExpression {
     CExpression::Value(int64(Bitvector32Term::Int64Constant(value)))
 }
@@ -7798,6 +7822,7 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::PointerAddress(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Int64From32(_)
         | Bitvector32Term::Int64FromUInt32(_)
         | Bitvector32Term::UInt64From32(_)

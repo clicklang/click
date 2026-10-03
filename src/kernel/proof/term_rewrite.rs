@@ -143,6 +143,8 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
         CValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.pointer().clone())),
@@ -242,6 +244,8 @@ fn replace_binding_variable(
             | CValue::UInt32(term)
             | CValue::Int64(term)
             | CValue::UInt64(term)
+            | CValue::Int128(term)
+            | CValue::UInt128(term)
             | CValue::Float32(term)
             | CValue::Float64(term)
                 if matches!(term, Bitvector32Term::Variable(_)) =>
@@ -448,6 +452,8 @@ fn collect_c_value_carriers(value: &CValue, variables: &mut CarrierVariables) {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => collect_bitvector_carriers(term, variables),
         CValue::Pointer(pointer) => collect_pointer_carriers(pointer, variables),
@@ -608,7 +614,8 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
     match term {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Variable(variable) => {
             variables.c.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
@@ -1079,6 +1086,24 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::Constant(0)),
         CValue::Int64(_) => CValue::Int64(Bitvector32Term::Constant(0)),
         CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::Constant(0)),
+        CValue::Int128(_) => MachineIntegerType::Int128
+            .constant_value(
+                crate::kernel::MachineIntegerConstant::from_signed(
+                    MachineIntegerType::Int128.format(),
+                    0,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        CValue::UInt128(_) => MachineIntegerType::UInt128
+            .constant_value(
+                crate::kernel::MachineIntegerConstant::from_unsigned(
+                    MachineIntegerType::UInt128.format(),
+                    0,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
         CValue::Float32(_) => CValue::Float32(Bitvector32Term::Constant(0)),
         CValue::Float64(_) => CValue::Float64(Bitvector32Term::Constant(0)),
         CValue::Pointer(pointer) => CValue::Pointer(
@@ -2302,6 +2327,8 @@ impl<'a> TermRewrite<'a> {
             CValue::UInt32(v) => CValue::UInt32(self.bits(v)),
             CValue::Int64(v) => CValue::Int64(self.bits(v)),
             CValue::UInt64(v) => CValue::UInt64(self.bits(v)),
+            CValue::Int128(v) => CValue::Int128(self.bits(v)),
+            CValue::UInt128(v) => CValue::UInt128(self.bits(v)),
             CValue::Float32(v) => CValue::Float32(self.bits(v)),
             CValue::Float64(v) => CValue::Float64(self.bits(v)),
             CValue::Pointer(v) => {
@@ -3730,6 +3757,7 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => v.clone(),
             Bitvector32Term::Add(a, b) => {
                 Bitvector32Term::Add(Box::new(self.bits(a)), Box::new(self.bits(b)))
