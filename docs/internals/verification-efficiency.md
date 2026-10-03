@@ -506,8 +506,8 @@ loads of settled classes at the same memory-blind address. The regression
 is `counter_call_chain_ensure_lowering_stays_flat_per_call`
 (`src/surface/tests/scaling_tests.rs`).
 
-Atomic condition-premise selection follows a persistent variable-to-fact
-adjacency index. Facts whose variables can be read without inspecting a
+The condition-premise test oracle follows a persistent variable-to-fact
+adjacency index, also used by condition queries. Facts whose variables can be read without inspecting a
 snapshot update the index as they are filed or withdrawn. The context-entry
 charge covers the first variable entry; additional variables are charged
 separately, and a restriction rebuild pays its own entry charge. Construction
@@ -704,9 +704,8 @@ separation queries also use this fallback. It visits the remaining family
 once and tries individual sources; it never enumerates pairs. Viewability
 and store source selection need no family fallback because their checker
 consults only the goal block's viewability bucket. The existing cold
-viewability shape index and trial-context construction can still cost ambient
-work; the latter is tracked separately in
-`bugs/atomic-evidence-retains-ambient-context.md`.
+viewability shape index can still cost ambient work. Atomic trial contexts,
+retained certificates and their checking use only selected dependencies.
 
 `loadable_candidate_selection_ignores_facts_about_other_objects` and
 `read_defined_and_separation_selection_try_indexed_sources_first` measure
@@ -717,3 +716,66 @@ ranges exercise the wider bucket without exhaustive pair trials. Certificates
 are checked independently and rejected when a required source is withdrawn.
 `indexed_memory_sources_expand_and_recheck_at_multiple_sizes` checks one-source
 and adjacent-source smart proofs, expansion and re-verification at four sizes.
+
+Atomic certificate planning also maintains persistent syntax adjacency for
+condition and proposition facts. Each key names a value variable or an
+explicit pointer block. Symbolic blocks use their variable key rather than
+a duplicate block entry. Formal arrays share the external address arena, so
+that arena and the shared null block are omitted as keys: their offset
+variables identify the objects. Scalar condition facts reuse their existing
+variable adjacency; supplemental keys cover syntax the scalar index omits.
+Scalar conditions with named values extend traversal through their explicit
+blocks but are retrieved through their value variables. Snapshot equations
+retain reverse block adjacency because a load may name their defining address.
+Filing or withdrawing a fact adjusts only its keys; restrictions rebuild this
+metadata from their selected facts. Typed pointer-read support is restored
+through selected defining equations rather than scanning ambient definitions.
+Construction is charged to `atomic dependency indexing`. Snapshot contents do not connect two
+facts merely because they carry the same snapshot. Connection collection
+includes pointer-offset variables, algebraic variables and function arguments
+that a bitvector-only free-variable collector deliberately omits. A load also
+looks up an explicitly stored value at its exact address, without synthesizing
+loads from symbolic cell runs; nested load dependencies stop after 64 lookups
+on one path. Those lookups are charged individually. Scoped
+collection flags restore their previous values even during unwinding.
+
+Candidate trials first check their named sources alone. When conditions are
+needed, they walk only the condition buckets connected to the goal and source,
+then rebuild and prove the restricted context. Separate condition and
+proposition buckets prevent every single-source trial from visiting the other
+proposition candidates. If no source succeeds, a joint selection follows both
+kinds of adjacency. Condition goals retain the established condition-component
+selection, including its lazy snapshot adjacency. If that query fails, its
+selected conditions seed one joint fallback that includes frame and quantified
+dependencies. Other atomic goals try narrow and widened selections. Retry
+comparisons use premise sets, so reaching additional keys without adding facts
+never repeats a kernel query. Widening is also skipped when it adds no seeds to the completed
+component. A wider smart fallback admits ground and quantified facts and
+follows variables in recent store addresses and call or loop havoc ranges,
+at most 64 history edges per snapshot. Those buckets cost the facts they admit;
+they are not a claim that the ambient context proves the goal. Every successful selection
+still has to establish the goal in the restricted kernel context. For smart
+equality failures, the shared ambient oracle can reject a goal before another
+history walk in a restricted context. Its positive answer never issues or
+retains evidence: the selected restricted query must still succeed. The
+former all-condition candidate trials and full-context retained leaves are
+gone. Traversal is charged to `atomic dependency selection`; interruption returns no partial proof.
+
+`atomic_memory_evidence_cites_only_connected_conditions` keeps one-source
+evidence at one premise, equality-assisted evidence at two, and refuses a
+range at an index not known equal. Beside 16, 32, 64 and 128 unrelated
+conditions and memory propositions, retained premise sizes stay at 565 and
+658 debug bytes and checking costs stay at 2 and 12 work units respectively.
+`atomic_evidence_without_one_source_cites_connected_facts` covers the joint
+quantified fallback: two premises, 840 debug bytes and 4 checking work units
+at every size. Construction of the ambient input is outside these query
+measurements. Withdrawing each required premise invalidates the certificate.
+`atomic_retained_evidence_expands_without_unrelated_conditions` covers
+covering and adjacent ranges, a pointer alias, resource separation and the
+quantified fallback through smart verification, expansion and independent
+checking. `atomic_load_dependencies_ignore_other_snapshot_cells` checks that
+an index loaded from one cell selects its equality, without retaining
+conditions about other cells in the supplied snapshot. Cold canonicalization
+may still charge the explicit snapshot input. Expanded proof bodies remain
+the same size as unrelated requirements grow; whole-source work scales with
+the input that must be parsed and checked.

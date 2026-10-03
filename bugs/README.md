@@ -6,4 +6,4 @@ roadmap milestones. Each file states the violated invariant, a small intended
 regression, and acceptance criteria. Delete a bug file when its fix, regression
 coverage, and documentation land.
 
-- [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
+No open bugs are currently listed.

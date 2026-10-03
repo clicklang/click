@@ -8248,8 +8248,26 @@ pub struct AlgebraicVariantEvidence {
     pub variant: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum AtomicConnectionKey {
+    Variable(Variable),
+    Block(PointerBlock),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct AtomicConnectionFacts {
+    pub conditions: crate::persistent::PersistentSet<Proposition>,
+    pub propositions: crate::persistent::PersistentSet<Proposition>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Persistent syntax adjacency for atomic certificate planning. Unlike
+    /// free-variable indexes, this never scans snapshot contents.
+    pub(super) atomic_connection_facts:
+        crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
+    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<Proposition>,
+    pub(super) atomic_quantified_facts: crate::persistent::PersistentSet<Proposition>,
     /// True 64-bit equalities as an undirected adjacency map, derived
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.

@@ -420,7 +420,6 @@ fn equality_graph_term_key(term: &Bitvector32Term) -> Bitvector32Term {
 thread_local! {
     static SIMP_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
         const { RefCell::new(BTreeSet::new()) };
-    static ATOMIC_PREMISE_MINIMIZATION_DEPTH: Cell<usize> = const { Cell::new(0) };
     static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<ConditionTerm>> =
         const { RefCell::new(BTreeSet::new()) };
     static REASONING_PROVENANCE_STACK: RefCell<Vec<ReasoningProvenanceFrame>> =
@@ -651,10 +650,6 @@ pub(crate) fn record_implicit_reasoning_provenance(
 /// ask it while this holds.
 pub(crate) fn implicit_reasoning_provenance_capturing() -> bool {
     CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.get() != 0)
-}
-
-pub(crate) fn atomic_premise_minimization_disabled() -> bool {
-    ATOMIC_PREMISE_MINIMIZATION_DEPTH.with(|depth| depth.get() != 0)
 }
 
 /// True while any condition decision is in progress on this thread. Deep
@@ -3396,17 +3391,33 @@ impl PureFactContext {
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
         }
-        for (variable, definitions) in prior_typed_reads.iter() {
-            for ((_, address), (pointer_value, memory)) in definitions.iter() {
-                let condition = ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(*variable)),
-                    Box::new(Bitvector32Term::MemoryLoad(
-                        memory.clone(),
-                        Box::new(address.clone()),
-                    )),
-                );
-                if self.condition_facts.get(&condition) == Some(&true) {
-                    self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+        // Restore typing support by the selected equations' load variables,
+        // rather than walking every pointer read in the ambient context.
+        for (condition, value) in conditions.iter() {
+            if !*value {
+                continue;
+            }
+            let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+                continue;
+            };
+            let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _)) =
+                (left.as_ref(), right.as_ref())
+            else {
+                continue;
+            };
+            if let Some(definitions) = prior_typed_reads.get(variable) {
+                for ((_, address), (pointer_value, memory)) in definitions.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let definition = ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(*variable)),
+                        Box::new(Bitvector32Term::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                        )),
+                    );
+                    if self.condition_facts.get(&definition) == Some(&true) {
+                        self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+                    }
                 }
             }
         }
@@ -3420,8 +3431,15 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
+        let proposition = Proposition::ConditionIs(condition.clone(), value);
+        if !insert {
+            self.adjust_atomic_connection_fact(&proposition, false);
+        }
         self.adjust_condition_variable_index(condition, value, insert, true);
         self.adjust_condition_side_indexes(condition, value, insert);
+        if insert {
+            self.adjust_atomic_connection_fact(&proposition, true);
+        }
     }
 
     fn adjust_condition_variable_index(
@@ -3847,6 +3865,7 @@ impl PureFactContext {
 
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = imbl::OrdSet::new();
+        self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
         self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
         self.disjunction_facts = std::sync::Arc::new(BTreeSet::new());
@@ -3882,6 +3901,7 @@ impl PureFactContext {
                 .cloned()
                 .collect(),
         );
+        self.rebuild_atomic_connection_facts();
         self.rebuild_algebraic_constructor_field_equalities();
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
@@ -4526,6 +4546,7 @@ impl PureFactContext {
             .insert(crate::kernel::clone_proposition_iteratively(&proposition))
             .is_none()
         {
+            self.adjust_atomic_connection_fact(&proposition, true);
             self.adjust_stated_proposition_index(&proposition, true);
             if matches!(proposition, Proposition::Or(_, _)) {
                 std::sync::Arc::make_mut(&mut self.disjunction_facts)
@@ -4545,6 +4566,7 @@ impl PureFactContext {
 
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
+            self.adjust_atomic_connection_fact(proposition, false);
             self.adjust_stated_proposition_index(proposition, false);
             if matches!(proposition, Proposition::Or(_, _)) {
                 std::sync::Arc::make_mut(&mut self.disjunction_facts).remove(proposition);
@@ -4951,6 +4973,146 @@ impl PureFactContext {
             .collect::<Vec<_>>();
         facts.extend(self.prop_facts.iter().cloned());
         facts
+    }
+
+    fn adjust_atomic_connection_fact(&mut self, proposition: &Proposition, insert: bool) {
+        let _timing =
+            crate::instrumentation::OperationTiming::new("", "", "atomic dependency indexing");
+        let all_keys =
+            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(
+                proposition,
+            );
+        let mut keys = all_keys.clone();
+        let mut covered_variables = 0;
+        if let Proposition::ConditionIs(condition, value) = proposition {
+            let has_variables = all_keys
+                .iter()
+                .any(|key| matches!(key, AtomicConnectionKey::Variable(_)));
+            let covered = all_keys
+                .iter()
+                .filter_map(|key| match key {
+                    AtomicConnectionKey::Variable(variable)
+                        if self
+                            .condition_facts_by_variable
+                            .get(variable)
+                            .is_some_and(|facts| facts.get(condition) == Some(value)) =>
+                    {
+                        Some(*variable)
+                    }
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>();
+            covered_variables = covered.len();
+            keys.retain(|key| match key {
+                AtomicConnectionKey::Variable(variable) => !covered.contains(variable),
+                // Snapshot equations can define a load named by its address,
+                // so retain their reverse address-block adjacency as well.
+                // Scalar facts reuse their existing value-variable index.
+                AtomicConnectionKey::Block(_) => !has_variables || covered.is_empty(),
+            });
+        }
+        // Filing already charges the first entry. Existing scalar adjacency
+        // covers its variables; charge only genuinely additional syntax keys.
+        let extra_work = if covered_variables > 0 {
+            keys.len()
+        } else {
+            keys.len().saturating_sub(1)
+        };
+        crate::instrumentation::record_deterministic_work(extra_work);
+        if all_keys.is_empty() {
+            self.atomic_ground_facts = if insert {
+                self.atomic_ground_facts.with_value(proposition.clone())
+            } else {
+                self.atomic_ground_facts.without_value(proposition)
+            };
+        }
+        for key in keys {
+            let mut bucket = self
+                .atomic_connection_facts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let facts = if matches!(proposition, Proposition::ConditionIs(..)) {
+                &mut bucket.conditions
+            } else {
+                &mut bucket.propositions
+            };
+            *facts = if insert {
+                facts.with_value(proposition.clone())
+            } else {
+                facts.without_value(proposition)
+            };
+            self.atomic_connection_facts =
+                if bucket.conditions.is_empty() && bucket.propositions.is_empty() {
+                    self.atomic_connection_facts.without_key(&key)
+                } else {
+                    self.atomic_connection_facts.with_inserted(key, bucket)
+                };
+        }
+        if matches!(proposition, Proposition::ForAll { .. }) {
+            self.atomic_quantified_facts = if insert {
+                self.atomic_quantified_facts.with_value(proposition.clone())
+            } else {
+                self.atomic_quantified_facts.without_value(proposition)
+            };
+        }
+    }
+
+    fn rebuild_atomic_connection_facts(&mut self) {
+        self.atomic_connection_facts = crate::persistent::PersistentMap::default();
+        self.atomic_ground_facts = crate::persistent::PersistentSet::default();
+        self.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        let conditions = self.condition_facts.clone();
+        for (condition, value) in conditions.iter() {
+            self.adjust_atomic_connection_fact(
+                &Proposition::ConditionIs(condition.clone(), *value),
+                true,
+            );
+        }
+        let propositions = self.prop_facts.clone();
+        for proposition in propositions.iter() {
+            self.adjust_atomic_connection_fact(proposition, true);
+        }
+    }
+
+    pub(crate) fn atomic_facts_connected_to(
+        &self,
+        key: &AtomicConnectionKey,
+        include_propositions: bool,
+    ) -> (impl Iterator<Item = Proposition>, bool) {
+        let scalar = match key {
+            AtomicConnectionKey::Variable(variable) => {
+                self.condition_facts_by_variable.get(variable)
+            }
+            AtomicConnectionKey::Block(_) => None,
+        };
+        let scalar = scalar.into_iter().flat_map(|facts| {
+            facts
+                .iter()
+                .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), *value))
+        });
+        let bucket = self.atomic_connection_facts.get(key);
+        let has_propositions = bucket.is_some_and(|bucket| !bucket.propositions.is_empty());
+        let conditions = bucket.map(|bucket| &bucket.conditions);
+        let propositions = include_propositions
+            .then(|| bucket.map(|bucket| &bucket.propositions))
+            .flatten();
+        (
+            scalar.chain(
+                conditions
+                    .into_iter()
+                    .chain(propositions)
+                    .flat_map(crate::persistent::PersistentSet::iter)
+                    .cloned(),
+            ),
+            has_propositions,
+        )
+    }
+
+    pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
+        self.atomic_ground_facts
+            .iter()
+            .chain(self.atomic_quantified_facts.iter())
     }
 
     /// The condition facts of this context, in the index's own order.

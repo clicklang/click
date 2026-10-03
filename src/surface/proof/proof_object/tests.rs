@@ -2027,7 +2027,9 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
         // and bucket add two constant base nodes and the order-fact index
         // seven (57 rather than the former 48). The condition-variable
         // adjacency adds its one-variable outer node and a fact-bucket path,
-        // eight more base nodes (65). Adding two tree levels must still add
+        // eight more base nodes (65). Atomic dependency selection reuses
+        // that scalar adjacency rather than filing the same keys again.
+        // Adding two tree levels must still add
         // at most 24 nodes; the new bucket adds one path, not an ambient copy.
         let allocation_bound = base_allocations + 12 * (height - base_height);
         assert!(

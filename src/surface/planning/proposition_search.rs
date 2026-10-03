@@ -451,11 +451,7 @@ impl PropositionSearch for PureFactContext {
                 return evidence.map(|evidence| (candidate, premises_id, evidence));
             }
         }
-        if !exclude_exact_goal && atomic_premise_minimization_disabled() {
-            let (evidence, premises_id) =
-                self.proves_atomic_for_derivation_with_id(proposition, for_simp);
-            return evidence.map(|evidence| (self.clone(), premises_id, evidence));
-        }
+        let mut condition_sources = Vec::new();
         if condition_goal {
             let selected = connected_condition_premises(self, proposition, exclude_exact_goal)?;
             let candidate = self.restricted_to_facts(&selected, &[]);
@@ -464,6 +460,10 @@ impl PropositionSearch for PureFactContext {
             if let Some(evidence) = evidence {
                 return Some((candidate, premises_id, evidence));
             }
+            condition_sources = selected
+                .into_iter()
+                .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+                .collect();
         }
 
         let candidate_family = |fact: &Proposition| match proposition {
@@ -548,6 +548,28 @@ impl PropositionSearch for PureFactContext {
                 .collect::<Vec<_>>()
         };
         let candidates = indexed.unwrap_or_default();
+        // Every trial is rebuilt only from explicitly selected dependencies.
+        // The kernel must establish the goal again in that restricted context.
+        let trial = |sources: &[Proposition]| {
+            let direct = atomic_context_from_facts(self, &[], sources);
+            let (evidence, premises_id) =
+                direct.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            if let Some(evidence) = evidence {
+                return Some((direct, premises_id, evidence));
+            }
+            let (conditions, propositions, _, _) = connected_atomic_premises(
+                self,
+                proposition,
+                sources,
+                false,
+                false,
+                exclude_exact_goal,
+            )?;
+            let candidate = atomic_context_from_facts(self, &conditions, &propositions);
+            let (evidence, premises_id) =
+                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            evidence.map(|evidence| (candidate, premises_id, evidence))
+        };
         if let Proposition::CMemoryLoadable {
             memory,
             base,
@@ -555,24 +577,17 @@ impl PropositionSearch for PureFactContext {
         } = proposition
             && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
             && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
+            && let Some(found) = trial(&premises)
         {
-            let candidate = self.with_only_proposition_facts(&premises);
-            let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
-            if let Some(evidence) = evidence {
-                return Some((candidate, premises_id, evidence));
-            }
+            return Some(found);
         }
         let try_each = |candidates: &[Proposition]| {
             for selected in candidates {
                 if simp_reasoning_interrupted() {
                     return Err(());
                 }
-                let candidate = self.with_only_proposition_facts(std::slice::from_ref(selected));
-                let (evidence, premises_id) =
-                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
-                if let Some(evidence) = evidence {
-                    return Ok(Some((candidate, premises_id, evidence)));
+                if let Some(found) = trial(std::slice::from_ref(selected)) {
+                    return Ok(Some(found));
                 }
             }
             Ok(None)
@@ -594,19 +609,24 @@ impl PropositionSearch for PureFactContext {
             } = proposition
             && candidates.len() > 1
         {
-            let sources = self.with_only_proposition_facts(&candidates);
-            if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes) {
-                let candidate = self.with_only_proposition_facts(&premises);
-                let (evidence, premises_id) =
-                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
-                if let Some(evidence) = evidence {
-                    return Some((candidate, premises_id, evidence));
-                }
+            let (conditions, propositions, _, _) = connected_atomic_premises(
+                self,
+                proposition,
+                &candidates,
+                false,
+                false,
+                exclude_exact_goal,
+            )?;
+            let sources = atomic_context_from_facts(self, &conditions, &propositions);
+            if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes)
+                && let Some(found) = trial(&premises)
+            {
+                return Some(found);
             }
         }
         let fallback = family_fallback(&candidates);
-        // A lone fallback fact is the whole family: the full context below
-        // decides the goal from it just as well.
+        // A lone fallback fact will be available to the joint dependency
+        // selection below.
         if fallback.len() + candidates.len() > 1 {
             match try_each(&fallback) {
                 Err(()) => return None,
@@ -617,9 +637,84 @@ impl PropositionSearch for PureFactContext {
         if exclude_exact_goal {
             None
         } else {
-            let (evidence, premises_id) =
-                self.proves_atomic_for_derivation_with_id(proposition, for_simp);
-            evidence.map(|evidence| (self.clone(), premises_id, evidence))
+            // Smart equality failures can be expensive history walks. Use
+            // the shared ambient oracle only to reject an unprovable goal;
+            // a positive answer still needs selected premises and a fresh
+            // restricted kernel query before it can become evidence.
+            if for_simp
+                && matches!(
+                    proposition,
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(..)
+                            | ConditionTerm::Bitvector64Equal(..)
+                            | ConditionTerm::PointerOffsetEqual(..),
+                        _
+                    )
+                )
+                && self
+                    .proves_atomic_for_derivation_with_id(proposition, for_simp)
+                    .0
+                    .is_none()
+            {
+                return None;
+            }
+            // The condition-only query above already checked this fact set.
+            // Compare facts, not traversal keys: widening can reach more keys
+            // without adding any premise and must not repeat the same query.
+            let mut tried = condition_goal.then(|| {
+                (
+                    condition_sources
+                        .iter()
+                        .filter_map(|fact| match fact {
+                            Proposition::ConditionIs(condition, value) => {
+                                Some((condition.clone(), *value))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    Vec::new(),
+                )
+            });
+            // Condition selection already made the narrow attempt. Its
+            // fallback includes frame and quantified dependencies in one
+            // query, rather than retrying a partial snapshot context first.
+            let widths: &[bool] = if condition_goal {
+                &[true]
+            } else {
+                &[false, true]
+            };
+            for &widened in widths {
+                let selected = connected_atomic_premises(
+                    self,
+                    proposition,
+                    &condition_sources,
+                    true,
+                    widened,
+                    false,
+                )?;
+                let (conditions, propositions, reached, _) = &selected;
+                if tried
+                    .as_ref()
+                    .is_some_and(|(prior_conditions, prior_propositions)| {
+                        prior_conditions == conditions && prior_propositions == propositions
+                    })
+                {
+                    continue;
+                }
+                let candidate = atomic_context_from_facts(self, conditions, propositions);
+                let (evidence, premises_id) =
+                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                if let Some(evidence) = evidence {
+                    return Some((candidate, premises_id, evidence));
+                }
+                if !widened
+                    && !atomic_widening_adds_dependencies(self, proposition, &candidate, reached)
+                {
+                    break;
+                }
+                tried = Some((conditions.clone(), propositions.clone()));
+            }
+            None
         }
     }
 
@@ -1639,4 +1734,122 @@ pub(crate) fn candidate_visits() -> usize {
 #[cfg(test)]
 pub(crate) fn reset_candidate_visits() {
     CANDIDATE_VISITS.with(|visits| visits.set(0));
+}
+
+type AtomicPremiseSelection = (
+    Vec<(ConditionTerm, bool)>,
+    Vec<Proposition>,
+    BTreeSet<AtomicConnectionKey>,
+    bool,
+);
+
+/// Walk syntax adjacency, never rebuilding an index of the ambient context.
+/// A wider smart fallback follows recent havoc bounds and general facts;
+/// its result still has to pass the restricted kernel query.
+fn connected_atomic_premises(
+    context: &PureFactContext,
+    goal: &Proposition,
+    sources: &[Proposition],
+    include_propositions: bool,
+    widened: bool,
+    exclude_exact_goal: bool,
+) -> Option<AtomicPremiseSelection> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "atomic dependency selection");
+    let mut selected = BTreeSet::new();
+    let mut reached = collect_atomic_connection_keys(goal);
+    let mut select = |fact: &Proposition| {
+        reached.extend(collect_atomic_connection_keys(fact));
+        selected.insert(fact.clone());
+    };
+    for source in sources {
+        select(source);
+    }
+    if widened {
+        for fact in context.atomic_general_facts() {
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            if (!exclude_exact_goal || fact != goal)
+                && (include_propositions || matches!(fact, Proposition::ConditionIs(..)))
+            {
+                select(fact);
+            }
+        }
+    }
+    if widened {
+        let mut frame_variables = BTreeSet::new();
+        collect_proposition_frame_variables(goal, &mut frame_variables);
+        reached.extend(
+            frame_variables
+                .into_iter()
+                .map(AtomicConnectionKey::Variable),
+        );
+    }
+    let mut joint_adds = false;
+    let mut pending = reached.iter().cloned().collect::<Vec<_>>();
+    while let Some(key) = pending.pop() {
+        if simp_reasoning_interrupted() {
+            return None;
+        }
+        let (facts, has_propositions) =
+            context.atomic_facts_connected_to(&key, include_propositions);
+        joint_adds |= has_propositions;
+        for fact in facts {
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            if (exclude_exact_goal && &fact == goal)
+                || (!include_propositions && !matches!(fact, Proposition::ConditionIs(..)))
+                || !selected.insert(fact.clone())
+            {
+                continue;
+            }
+            for next in collect_atomic_connection_keys(&fact) {
+                crate::instrumentation::record_deterministic_work(1);
+                if reached.insert(next.clone()) {
+                    pending.push(next);
+                }
+            }
+        }
+    }
+    let mut conditions = Vec::new();
+    let mut propositions = Vec::new();
+    for fact in selected {
+        match fact {
+            Proposition::ConditionIs(condition, value) => conditions.push((condition, value)),
+            other => propositions.push(other),
+        }
+    }
+    Some((conditions, propositions, reached, joint_adds))
+}
+
+/// A completed component already contains every dependency of its seeds.
+/// Avoid walking it a second time if widening introduces no new seeds.
+fn atomic_widening_adds_dependencies(
+    context: &PureFactContext,
+    goal: &Proposition,
+    selected: &PureFactContext,
+    reached: &BTreeSet<AtomicConnectionKey>,
+) -> bool {
+    for fact in context.atomic_general_facts() {
+        if simp_reasoning_interrupted() || !selected.contains_assumed_exact(fact) {
+            return true;
+        }
+    }
+    let mut frame_variables = BTreeSet::new();
+    collect_proposition_frame_variables(goal, &mut frame_variables);
+    frame_variables.into_iter().any(|variable| {
+        crate::instrumentation::record_deterministic_work(1);
+        !reached.contains(&AtomicConnectionKey::Variable(variable))
+    })
+}
+
+/// Retain typing support only when its defining equation is selected.
+fn atomic_context_from_facts(
+    available: &PureFactContext,
+    conditions: &[(ConditionTerm, bool)],
+    propositions: &[Proposition],
+) -> PureFactContext {
+    available.restricted_to_facts(conditions, propositions)
 }

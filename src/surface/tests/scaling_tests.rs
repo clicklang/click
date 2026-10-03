@@ -1482,7 +1482,17 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             .map(|unrelated| {
                 let mut context = PureFactContext::new();
                 for index in 0..unrelated {
-                    context = context.assume_proposition(unrelated_fact(index));
+                    context = context
+                        .assume_condition(
+                            ConditionTerm::Bitvector32SignedLessThan(
+                                Box::new(Bitvector32Term::Variable(Variable(
+                                    463_000 + index as u64,
+                                ))),
+                                Box::new(Bitvector32Term::Constant(1000)),
+                            ),
+                            true,
+                        )
+                        .assume_proposition(unrelated_fact(index));
                 }
                 for source in &sources {
                     context = context.assume_proposition(source.clone());
@@ -2715,7 +2725,7 @@ fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
             std::thread::Builder::new()
                 .name(format!("roundtrip-{size}-{extra}"))
                 .stack_size(64 << 20)
-                .spawn(move || roundtrip_sample_on_this_thread(size, extra).work)
+                .spawn(move || roundtrip_sample_on_this_thread(size, extra))
                 .expect("spawn a sample thread")
         })
         .collect::<Vec<_>>();
@@ -2725,9 +2735,25 @@ fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
         .collect::<Vec<_>>();
     let marginal = work
         .chunks(2)
-        .map(|pair| pair[1] as i64 - pair[0] as i64)
+        .map(|pair| pair[1].work as i64 - pair[0].work as i64)
         .collect::<Vec<_>>();
     eprintln!("extra-copy marginal work beside {SIZES:?} allocations: {marginal:?}");
+    let mut names = BTreeSet::new();
+    for sample in &work {
+        names.extend(sample.named_work.keys().cloned());
+    }
+    for name in names {
+        let delta = work
+            .chunks(2)
+            .map(|pair| {
+                pair[1].named_work.get(&name).copied().unwrap_or(0) as i64
+                    - pair[0].named_work.get(&name).copied().unwrap_or(0) as i64
+            })
+            .collect::<Vec<_>>();
+        if delta.last() > delta.first() {
+            eprintln!("{name}: {delta:?}");
+        }
+    }
     assert!(marginal[0] > 0, "{marginal:?}");
     let allowed = marginal[0] + marginal[0] / 8;
     assert!(
@@ -4805,5 +4831,471 @@ fn indexed_memory_sources_expand_and_recheck_at_multiple_sizes() {
         assert_near_linear_scaling("indexed memory source verification", &verification);
         assert_near_linear_scaling("indexed memory source expansion", &expansions);
         assert_near_linear_scaling("indexed memory source recheck", &rechecks);
+    }
+}
+
+/// A memory goal proved from one source cites that source and the condition
+/// facts connected to it, not every ambient condition: the certificate is
+/// the same size however many unrelated conditions the context holds.
+#[test]
+fn atomic_memory_evidence_cites_only_connected_conditions() {
+    use crate::kernel::{
+        Bitvector32Term, CMemory, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        PureFactContext, Variable,
+    };
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    let memory = CMemory::new();
+    // The address of element `variable` of the goal's array.
+    let at = |variable: u64| Pointer {
+        block: "goal".into(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            byte_width: 4,
+        },
+    };
+    let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base,
+        bytes: Bitvector32Term::Constant(bytes),
+    };
+    let equal = |left: u64, right: u64| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(Variable(left))),
+                Box::new(Bitvector32Term::Variable(Variable(right))),
+            ),
+            true,
+        )
+    };
+    // (sources, goal, premises the certificate cites; none when unproved)
+    let cases = [
+        (
+            "a covering range",
+            vec![loadable(at(470_000), 16)],
+            loadable(at(470_000).offset_by_bytes(4), 4),
+            Some(1),
+        ),
+        (
+            "a non-null source without other non-null objects",
+            vec![
+                loadable(Pointer::symbolic(Variable(470_002)), 16),
+                Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(470_002)),
+                        Pointer::null(),
+                    ),
+                    false,
+                ),
+            ],
+            loadable(Pointer::symbolic(Variable(470_002)).offset_by_bytes(4), 4),
+            Some(1),
+        ),
+        (
+            "a range at an equal index",
+            vec![loadable(at(470_001), 16), equal(470_000, 470_001)],
+            loadable(at(470_000), 16),
+            Some(2),
+        ),
+        (
+            "a range at an index not known equal",
+            vec![loadable(at(470_001), 16)],
+            loadable(at(470_000), 16),
+            None,
+        ),
+    ];
+    for (name, sources, goal, cited) in cases {
+        let samples = [16usize, 32, 64, 128]
+            .into_iter()
+            .map(|unrelated| {
+                let mut context = PureFactContext::new();
+                for index in 0..unrelated as u64 {
+                    context = context
+                        .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
+                        .assume_proposition(Proposition::ConditionIs(
+                            ConditionTerm::pointer_equal(
+                                Pointer::symbolic(Variable(475_000 + index)),
+                                Pointer::null(),
+                            ),
+                            false,
+                        ))
+                        .assume_proposition(Proposition::CMemoryLoadable {
+                            memory: memory.clone(),
+                            base: Pointer {
+                                block: format!("other{index}").as_str().into(),
+                                offset: PointerOffsetTerm::Constant(0),
+                            },
+                            bytes: Bitvector32Term::Constant(16),
+                        });
+                }
+                for source in &sources {
+                    context = context.assume_proposition(source.clone());
+                }
+                let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.derive_atomic_proposition(&goal)
+                });
+                let mut check_work = 0;
+                let mut certificate_bytes = 0;
+                let premises = match (cited, derivation) {
+                    (Some(cited), Some(derivation)) => {
+                        let premises = derivation.context_premises();
+                        assert_eq!(premises.len(), cited, "{name}: {premises:?}");
+                        assert!(premises.iter().all(|premise| sources.contains(premise)));
+                        certificate_bytes = format!("{premises:?}").len();
+                        let (valid, work) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                derivation.check(&context)
+                            });
+                        assert!(valid, "{name}: kernel rejected retained leaf");
+                        check_work = work;
+                        for source in &premises {
+                            assert!(
+                                !derivation.check(&context.without_exact_fact(source)),
+                                "{name}: omitted required premise accepted"
+                            );
+                        }
+                        premises.len()
+                    }
+                    (None, None) => 0,
+                    (cited, derivation) => panic!(
+                        "{name}: expected {cited:?} cited premises, derived {}",
+                        derivation.is_some()
+                    ),
+                };
+                (unrelated, premises, work, check_work, certificate_bytes)
+            })
+            .collect::<Vec<_>>();
+        eprintln!("{name}: unrelated/premises/planning/check/bytes {samples:?}");
+        for sample in &samples {
+            assert_eq!(
+                sample.4, samples[0].4,
+                "certificate bytes grew: {samples:?}"
+            );
+            assert!(
+                sample.3 <= samples[0].3 + 8,
+                "checker work grew: {samples:?}"
+            );
+            assert!(
+                sample.2 <= samples[0].2 + 8,
+                "planner work grew: {samples:?}"
+            );
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].2 <= pair[0].2.saturating_mul(3),
+                "{name}: derivation work is superlinear: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn atomic_load_dependencies_ignore_other_snapshot_cells() {
+    use crate::kernel::{
+        Bitvector32Term, CMemory, CValue, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        PureFactContext, Variable,
+    };
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    let index_cell = Pointer {
+        block: "selected-index".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let index = Bitvector32Term::Variable(Variable(490_000));
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(index.clone()),
+            Box::new(Bitvector32Term::Constant(2)),
+        ),
+        true,
+    );
+    let mut samples = Vec::new();
+    for size in [8usize, 16, 32, 64] {
+        let mut memory = CMemory::new().store(index_cell.clone(), CValue::Int32(index.clone()));
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            let value = Bitvector32Term::Variable(Variable(491_000 + i as u64));
+            memory = memory.store(
+                Pointer {
+                    block: format!("other-cell-{i}").as_str().into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(value.clone()),
+            );
+            context = context.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(value),
+                    Box::new(Bitvector32Term::Constant(7)),
+                ),
+                true,
+            ));
+        }
+        let at = |value| Pointer {
+            block: "selected-array".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(value),
+                byte_width: 4,
+            },
+        };
+        let source = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: at(Bitvector32Term::Constant(2)),
+            bytes: Bitvector32Term::Constant(4),
+        };
+        let goal = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: at(Bitvector32Term::MemoryLoad(
+                memory.into(),
+                Box::new(index_cell.clone()),
+            )),
+            bytes: Bitvector32Term::Constant(4),
+        };
+        context = context
+            .assume_proposition(source.clone())
+            .assume_proposition(equality.clone());
+        let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.derive_atomic_proposition(&goal)
+        });
+        let proof = proof.expect("the addressed index's equality should suffice");
+        assert_eq!(proof.context_premises().len(), 2);
+        assert!(
+            proof
+                .context_premises()
+                .iter()
+                .all(|p| p == &source || p == &equality)
+        );
+        assert!(proof.check(&context));
+        assert!(!proof.check(&context.without_exact_fact(&source)));
+        assert!(!proof.check(&context.without_exact_fact(&equality)));
+        samples.push((size, work));
+    }
+    // Cold snapshot canonicalization may read the supplied snapshot. Its
+    // size is explicit input; the retained ambient conditions stay bounded.
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 2, "{samples:?}");
+    }
+}
+
+/// A goal no single source decides is proved from the facts connected to it
+/// and cites only those: here a quantified fact and the bound its
+/// instantiation needs, beside unrelated conditions and memory facts. This
+/// goal used to be proved from, and cite, the whole context.
+#[test]
+fn atomic_evidence_without_one_source_cites_connected_facts() {
+    use crate::kernel::{
+        Bitvector32Term, CMemory, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        PureFactContext, Sort, Variable,
+    };
+    use crate::surface::planning::proposition_search::PropositionSearch;
+
+    let memory = CMemory::new();
+    let load = |offset: PointerOffsetTerm| {
+        Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory_ref(&memory),
+            Box::new(Pointer {
+                block: "data".into(),
+                offset,
+            }),
+        )
+    };
+    let equal = |left: Bitvector32Term, right: Bitvector32Term| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let less = |left: Bitvector32Term, right: Bitvector32Term, holds: bool| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right)),
+            holds,
+        )
+    };
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(id));
+    let index = Variable(480_000);
+    // forall index. index < exit ==> data[index] == index
+    let quantified = Proposition::ForAll {
+        var: index,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::Implies(
+            Box::new(less(variable(480_000), variable(480_001), true)),
+            Box::new(equal(
+                load(PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(variable(480_000)),
+                    byte_width: 4,
+                }),
+                variable(480_000),
+            )),
+        )),
+    };
+    // not (exit < 3), so index 2 is below exit.
+    let bound = less(variable(480_001), Bitvector32Term::Constant(3), false);
+    let goal = equal(
+        load(PointerOffsetTerm::Constant(8)),
+        Bitvector32Term::Constant(2),
+    );
+    let context = |unrelated: u64, with_bound: bool| {
+        let mut context = PureFactContext::new();
+        for index in 0..unrelated {
+            context = context
+                .assume_proposition(less(
+                    variable(481_000 + 2 * index),
+                    variable(481_001 + 2 * index),
+                    true,
+                ))
+                .assume_proposition(Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: Pointer {
+                        block: format!("other{index}").as_str().into(),
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: Box::new(variable(482_000 + index)),
+                            byte_width: 4,
+                        },
+                    },
+                    bytes: Bitvector32Term::Constant(16),
+                });
+        }
+        context = context.assume_proposition(quantified.clone());
+        if with_bound {
+            context = context.assume_proposition(bound.clone());
+        }
+        context
+    };
+    let samples = [16u64, 32, 64, 128]
+        .into_iter()
+        .map(|unrelated| {
+            let available = context(unrelated, true);
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                available.derive_atomic_proposition(&goal)
+            });
+            let derivation = derivation.expect("the instantiated fact derives the goal");
+            let premises = derivation.context_premises();
+            assert_eq!(premises.len(), 2, "{premises:?}");
+            assert!(premises.contains(&quantified) && premises.contains(&bound));
+            let certificate_bytes = format!("{premises:?}").len();
+            let (valid, check_work) =
+                crate::instrumentation::measure_deterministic_work(|| derivation.check(&available));
+            assert!(valid);
+            for required in [&quantified, &bound] {
+                assert!(!derivation.check(&available.without_exact_fact(required)));
+            }
+            // Without the bound the instantiation's guard is not known.
+            assert!(
+                context(unrelated, false)
+                    .derive_atomic_proposition(&goal)
+                    .is_none()
+            );
+            (unrelated, work, check_work, certificate_bytes)
+        })
+        .collect::<Vec<_>>();
+    eprintln!("fallback: unrelated/planning/check/bytes {samples:?}");
+    for sample in &samples {
+        assert_eq!(
+            sample.3, samples[0].3,
+            "certificate bytes grew: {samples:?}"
+        );
+        assert!(
+            sample.2 <= samples[0].2 + 8,
+            "checker work grew: {samples:?}"
+        );
+        assert!(
+            sample.1 <= samples[0].1 + 8,
+            "planner work grew: {samples:?}"
+        );
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1.saturating_mul(3),
+            "derivation work is superlinear: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn atomic_retained_evidence_expands_without_unrelated_conditions() {
+    let cases = [
+        (
+            "covering",
+            "requires viewable(p[0..4]);",
+            "viewable(p[1..2])",
+            "requires viewable(p[0..4]);",
+        ),
+        (
+            "adjacent",
+            "requires viewable(p[0..2]); requires viewable(p[2..4]);",
+            "viewable(p[0..4])",
+            "requires viewable(p[2..4]);",
+        ),
+        (
+            "alias",
+            "requires p == q; requires viewable(p[0..4]);",
+            "viewable(q[1..2])",
+            "requires p == q;",
+        ),
+        (
+            "resource",
+            "requires separate(memory(p[0..4]), memory(q[0..4]));",
+            "separate(memory(p[0..4]), memory(q[0..4]))",
+            "requires separate(memory(p[0..4]), memory(q[0..4]));",
+        ),
+        (
+            "quantified fallback",
+            "requires forall (k: int32) { k < exit implies p[k] == k }; requires not (exit < 3);",
+            "p[2] == 2",
+            "requires not (exit < 3);",
+        ),
+    ];
+    for (name, sources, goal, required) in cases {
+        let mut verification = Vec::new();
+        let mut expansions = Vec::new();
+        let mut rechecks = Vec::new();
+        let mut body_sizes = Vec::new();
+        for size in [4, 8, 16, 32] {
+            let parameters = std::iter::once("p: int32[], q: int32[], exit: int32".to_string())
+                .chain((0..size).map(|index| format!("u{index}: int32[], x{index}: int32")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let requirements = (0..size)
+                .map(|index| {
+                    format!("requires viewable(u{index}[0..4]); requires x{index} < 1000;")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let source = format!(
+                "theorem leaf({parameters}) {{ {requirements} {sources} ensures {goal} by {{ simp(); }} }}"
+            );
+            let (result, sample) = scaling_sample(size, || verify_click_theorems(&source));
+            result.unwrap_or_else(|error| panic!("{name}/{size}: {}", error.message()));
+            verification.push(sample);
+            let position = expansion::position_at_offset(&source, source.find("simp();").unwrap());
+            let (expanded, sample) = scaling_sample(size, || {
+                expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+            });
+            let expanded = expanded
+                .unwrap_or_else(|error| panic!("{name}/{size} expansion: {}", error.message()));
+            let body = &expanded[expanded.find("by {").unwrap()..];
+            assert!(!body.contains("simp();"), "{body}");
+            for index in 0..size {
+                assert!(
+                    !body.contains(&format!("u{index}")) && !body.contains(&format!("x{index}")),
+                    "{name}: unrelated premise retained: {body}"
+                );
+            }
+            body_sizes.push(body.len());
+            expansions.push(sample);
+            let (result, sample) = scaling_sample(size, || verify_click_theorems(&expanded));
+            result.unwrap_or_else(|error| panic!("{name}/{size} recheck: {}", error.message()));
+            rechecks.push(sample);
+            assert!(
+                verify_click_theorems(&expanded.replace(required, "")).is_err(),
+                "{name}: omitted required premise accepted"
+            );
+        }
+        assert!(
+            body_sizes.iter().all(|size| *size == body_sizes[0]),
+            "{name}: expanded certificate grew: {body_sizes:?}"
+        );
+        assert_near_linear_scaling(name, &verification);
+        assert_near_linear_scaling(name, &expansions);
+        assert_near_linear_scaling(name, &rechecks);
     }
 }
