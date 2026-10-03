@@ -1945,10 +1945,11 @@ impl CreationEvents {
         produce: bool,
     ) -> Result<Self, CreationRefusal> {
         let description = reference.description();
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if description.schema().is_countable()
+        if description.population_arity().is_some()
             || !description.resource_arguments().is_empty()
             || self.recognizes_imported_population(description)
         {

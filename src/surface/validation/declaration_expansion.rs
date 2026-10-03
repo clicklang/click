@@ -1717,11 +1717,6 @@ fn expand_resource_type_arguments(
                     "authority requires R(anchor) or R(anchor, _, ...) with a pointer anchor",
                 ));
             }
-            if is_authority && info.has_fields && arguments.len() != 1 {
-                return Err(ClickError::new(
-                    "field-bearing authority scopes currently require one pointer argument",
-                ));
-            }
             let schema = declared_resource_type_schema(&info)?;
             Ok(ResourceClause::Declared {
                 type_schema: Some(schema),

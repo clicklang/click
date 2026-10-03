@@ -6146,7 +6146,7 @@ fn evaluate_resource_count_paths(
                     let member = ResourceDescription::new(
                         name.to_owned(),
                         arguments.into(),
-                        member.schema().clone(),
+                        description.schema().clone(),
                     );
                     Some(
                         creation

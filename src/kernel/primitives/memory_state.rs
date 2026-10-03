@@ -6194,7 +6194,10 @@ impl CState {
         };
         let description = super::super::ResourceDescription::from_instance(instance);
         let history = if events.tracks_population(&description) {
-            let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+            let governing = events
+                .governing_authority(&description)
+                .ok_or("Requires a matching population authority")?;
+            let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
             if !before.resources.satisfies_fact(&authority, assumptions) {
                 return Err(format!("Requires owns authority({}(...))", instance.name()));
             }

@@ -325,6 +325,15 @@ cache repair remains removed. Milestone 2 is the next implementation work.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
+**Wildcard checkpoint:** Field-bearing local families now support
+`authority(R(anchor, _, ...))`, aggregate counts, and exact counts. Each named
+instance keeps its own fields and ownership, including multiple instances at
+equal exact arguments. Private bodies can occupy disjoint cells selected by
+proof fields; overlapping bodies fail their ordinary memory ownership check.
+Validation: all 2,522 kernel/declaration tests, the seven named-field fixtures,
+and all 23 new wildcard/private-memory audit sites passed. Helper transport and
+private updates under a closed control remain the next slices.
+
 **First kernel checkpoint:** A checked local authority can govern separately
 named unary members with proof fields. The existing resource context retains
 each occurrence identity and field values; the population ledger records only
@@ -344,8 +353,8 @@ Two named occurrences with equal arguments retain distinct proof fields; their
 count progresses from zero to two to one to zero under checked fold/unfold.
 Replacement negatives cover late establishment, live-member retirement, and
 consumption while the authority control stays closed. Legacy field-count and
-quantity rejections remain in place. Wildcard field-bearing families and helper
-transport remain the next checkpoints; no new notation is introduced.
+quantity rejections remain in place. Helper transport remains a separate checkpoint; the following wildcard slice
+extends this local surface. No new notation is introduced.
 Validation: all kernel and declaration-expansion tests (2,521), the complete
 Markdown corpus, the final four field-member fixtures, and all 10 positive
 expansion-audit sites passed. Anonymous quantities cannot manufacture named

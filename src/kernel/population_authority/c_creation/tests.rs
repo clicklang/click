@@ -4002,3 +4002,68 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
         }
     }
 }
+
+#[test]
+fn local_named_wildcard_members_count_occurrences_not_field_values() {
+    let block = PointerBlock::Heap(940_502);
+    let anchor = CValue::pointer(Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let scope = ResourceDescription::new(
+        "ticket".into(),
+        vec![anchor.clone().into()].into(),
+        schema.clone(),
+    )
+    .with_population_arity(2)
+    .unwrap();
+    let created = CreationEvents::new().created(block.clone());
+    let (empty, _) = created.checked_establish(&block, &scope).unwrap();
+    let member = |tag, serial| {
+        ResourceInstance::new(
+            Variable::allocate_fresh().unwrap(),
+            "ticket".into(),
+            vec![anchor.clone().into(), int32(tag).into()].into(),
+            schema.clone(),
+            vec![int32(serial).into()].into(),
+        )
+        .unwrap()
+    };
+    let first = member(7, 1);
+    let second = member(7, 2);
+    let absent = member(8, 99);
+    let one = empty
+        .checked_instance_exchange(&ResourceReference::from_instance(&first), true)
+        .unwrap();
+    let two = one
+        .checked_instance_exchange(&ResourceReference::from_instance(&second), true)
+        .unwrap();
+    let assumptions = PureFactContext::new();
+    let exact = |events: &CreationEvents, instance: &ResourceInstance| {
+        events
+            .observe_exact_member(&ResourceDescription::from_instance(instance), &assumptions)
+            .unwrap()
+            .entry_count
+            .as_const()
+            .unwrap()
+    };
+    assert_eq!(two.observe(&block, "ticket"), Ok(2));
+    assert_eq!(exact(&two, &first), 2);
+    assert_eq!(exact(&two, &absent), 0);
+    assert_eq!(
+        two.checked_retire(&block, &scope).err(),
+        Some(CreationRefusal::OutstandingMembers)
+    );
+    let one = two
+        .checked_instance_exchange(&ResourceReference::from_instance(&first), false)
+        .unwrap();
+    assert_eq!(exact(&one, &second), 1);
+    let zero = one
+        .checked_instance_exchange(&ResourceReference::from_instance(&second), false)
+        .unwrap();
+    assert_eq!(exact(&zero, &first), 0);
+    zero.checked_retire(&block, &scope).unwrap();
+}

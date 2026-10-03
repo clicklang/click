@@ -111,15 +111,18 @@ ordinary field-free control can package counter memory, authorities, and facts
 relating the memory to population counts. Ordinary helper contracts transfer
 these controls, concrete members, and checked symbolic groups.
 
-Local unary families can also have C or integer proof fields. For example,
+Local families can also have C or integer proof fields. For example,
 `authority(ticket(p))` governs separately named `ticket(p)` instances; their
 identities and field values remain distinct even when their arguments agree.
 `let first = fold(ticket(p), { serial: 1 });` creates one member, and
 `unfold(first)` consumes that exact member. Both operations require the matching
 owned authority. `count(ticket(p))` observes the population total, not field
 values or ownership of individual members. Retirement requires zero members.
-Field-bearing wildcard scopes and helper transport are separate migration
-checkpoints; symbolic quantities of heterogeneous named instances are not
+A wildcard authority such as `authority(ticket(pool, _))` governs all exact
+arguments of that local family. Both aggregate and exact counts include separate
+occurrences with equal arguments. Private bodies remain exclusive even when
+instances share their family arguments. Helper transport is a separate migration
+checkpoint; symbolic quantities of heterogeneous named instances are not
 supported. Legacy mode retains its existing field-count restriction.
 
 **Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
