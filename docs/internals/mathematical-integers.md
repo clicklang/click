@@ -266,9 +266,22 @@ results, floats, pointers, arrays, and unsupported widths are refused at this
 integer boundary; their ordinary conversions use their own rules. Evaluation
 of the operand still carries its definedness obligations, including overflow.
 This explicit policy does not relax ordinary C casts or checked Integer
-conversions. Wide runtime casts currently admit identity only; a cast between
-128 bits and another width, or between signed and unsigned wide types, is
-refused until its symbolic conversion model is added.
+conversions. Casts involving 128-bit values use `MachineIntegerCast`, retaining
+both source and destination types. Constants fold through the same exact
+format policy, and symbolic operands remain typed through substitution and
+proof rewriting. The existing 8–64-bit casts keep their current carriers.
+
+Wide integral widening and narrowing, including signedness changes, are
+supported at the kernel's explicit modulo boundary. Ordinary C conversions
+involving wide values retain the representable-range policy for signed
+destinations: both lower and upper bounds must be established unless the
+whole source range fits. Unsigned destinations use modulo conversion.
+Neither route loses the operand's definedness obligations.
+
+Exact Integer observation removes a widening cast only when every value of
+the source type fits the destination. Narrowing and signedness changes that
+can change the numeric value stay machine observations of the converted
+value; they are not equated with the source's mathematical Integer.
 
 ## Wide runtime scalars
 
@@ -287,17 +300,19 @@ that exact observation with zero, including high bits above bit 63. These
 observations do not turn native arithmetic into unbounded Integer arithmetic.
 
 A wide runtime wrapper accepts only a matching wide constant, a symbolic
-variable, or the shared checked Integer-to-machine node for that destination.
+variable, the shared checked Integer-to-machine node, or a typed machine cast
+for that destination.
 Legacy word constants and arithmetic nodes cannot acquire 128-bit semantics
-by retagging their wrapper. Validation examines only the root; substitutions,
+by retagging their wrapper. Validation examines the root and any strictly
+widening conversion chain (bounded by the five machine widths); substitutions,
 alpha keys, snapshot identities, and bounded walks keep the full payload.
 
-This profile does not yet admit native wide arithmetic, cross-width or
-signedness-changing casts, wide pointer/array types, aggregate field access,
+This profile does not yet admit native wide arithmetic,
+wide pointer/array types, aggregate field access,
 byte loads, callbacks, or any C/C++/Rust source spelling. Internal C0 type
 identities preserve the kernel sorts without adding parser admission. The
-frontends continue to reject reachable `__int128` behavior. Wide conversions,
-checked multiplication, storage access, and source admission are later slices;
+frontends continue to reject reachable `__int128` behavior. Checked
+multiplication, storage access, and source admission are later slices;
 existing implementation fixtures remain unchanged.
 
 ## Work budgets and certificate scaling

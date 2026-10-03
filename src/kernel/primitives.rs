@@ -384,6 +384,13 @@ pub enum Bitvector32Term {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
     },
+    /// Explicit integral conversion modulo the destination width. Wide casts
+    /// retain the operand's format instead of reusing a legacy word cast.
+    MachineIntegerCast {
+        value: Box<Bitvector32Term>,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    },
     Int64From32(Box<Bitvector32Term>),
     UInt64From32(Box<Bitvector32Term>),
     /// Unsigned narrowing modulo 2^32; the operand is a signed or unsigned

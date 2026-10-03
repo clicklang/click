@@ -3647,6 +3647,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 }
                 Bitvector32Term::BitwiseNot(value)
                 | Bitvector32Term::Int64From32(value)
+                | Bitvector32Term::MachineIntegerCast { value, .. }
                 | Bitvector32Term::Int64FromUInt32(value)
                 | Bitvector32Term::UInt64From32(value)
                 | Bitvector32Term::UInt32From64(value)
@@ -3771,6 +3772,7 @@ enum AtomicCanonicalizationTask<'a> {
     VisitOffset(&'a PointerOffsetTerm),
     RebuildBinary(AtomicBinaryConstructor),
     RebuildUnary(AtomicUnaryConstructor),
+    RebuildMachineCast(MachineIntegerType, MachineIntegerType),
     RebuildFloatUnary(bool),
     RebuildFloatBinary {
         is_float64: bool,
@@ -3876,6 +3878,18 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                 #[cfg(test)]
                 ATOMIC_CANONICALIZATION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } => {
+                        tasks.push(AtomicCanonicalizationTask::RebuildMachineCast(
+                            *source,
+                            *destination,
+                        ));
+                        tasks.push(AtomicCanonicalizationTask::Visit(value));
+                    }
+
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
@@ -4437,6 +4451,14 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                 let left = results.pop().expect("visited left term");
                 results.push(constructor(Box::new(left), Box::new(right)));
             }
+            AtomicCanonicalizationTask::RebuildMachineCast(source, destination) => {
+                let value = results.pop().expect("visited machine cast operand");
+                results.push(Bitvector32Term::machine_integer_cast(
+                    source,
+                    destination,
+                    value,
+                ));
+            }
             AtomicCanonicalizationTask::RebuildUnary(constructor) => {
                 let value = results.pop().expect("visited unary term");
                 results.push(constructor(Box::new(value)));
@@ -4900,6 +4922,7 @@ pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
             | Bitvector32Term::Float32Negate(term)
             | Bitvector32Term::Float64Negate(term) => bitvector_has_memory(term),
             Bitvector32Term::Int64From32(term)
+            | Bitvector32Term::MachineIntegerCast { value: term, .. }
             | Bitvector32Term::UInt64From32(term)
             | Bitvector32Term::UInt32From64(term)
             | Bitvector32Term::Int64FromUInt32(term)
@@ -5164,6 +5187,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
         | Bitvector32Term::Int64BitwiseNot(term)
         | Bitvector32Term::UInt64BitwiseNot(term)
         | Bitvector32Term::Int64From32(term)
+        | Bitvector32Term::MachineIntegerCast { value: term, .. }
         | Bitvector32Term::UInt64From32(term)
         | Bitvector32Term::UInt32From64(term)
         | Bitvector32Term::Int64FromUInt32(term)
@@ -5421,6 +5445,16 @@ fn transport_framed_atomic_bitvector(
         ))
     };
     Some(match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => Bitvector32Term::machine_integer_cast(
+            *source,
+            *destination,
+            transport_framed_atomic_bitvector(value, after, assumptions)?,
+        ),
+
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
@@ -5910,6 +5944,7 @@ enum ExactLoadBinary {
 
 #[derive(Clone, Copy)]
 enum ExactLoadUnary {
+    MachineCast(MachineIntegerType, MachineIntegerType),
     BitwiseNot,
     Int64From32,
     UInt64From32,
@@ -5992,6 +6027,9 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
 
     fn rebuild_unary(operator: ExactLoadUnary, value: Bitvector32Term) -> Bitvector32Term {
         match operator {
+            ExactLoadUnary::MachineCast(source, destination) => {
+                Bitvector32Term::machine_integer_cast(source, destination, value)
+            }
             ExactLoadUnary::BitwiseNot => Bitvector32Term::bitwise_not(value),
             ExactLoadUnary::Int64From32 => Bitvector32Term::int64_from_32(value),
             ExactLoadUnary::UInt64From32 => Bitvector32Term::uint64_from_32(value),
@@ -6038,6 +6076,16 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     continue;
                 }
                 match term {
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } => push_unary(
+                        &mut tasks,
+                        ExactLoadUnary::MachineCast(source, destination),
+                        value,
+                    ),
+
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)

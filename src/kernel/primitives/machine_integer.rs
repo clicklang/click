@@ -41,6 +41,20 @@ pub struct MachineIntegerFormat {
 }
 
 impl MachineIntegerFormat {
+    /// Whether every source value is representable without changing its
+    /// numeric interpretation. This is a width/signedness check, not a walk.
+    pub const fn contains(self, source: Self) -> bool {
+        if self.signed {
+            if source.signed {
+                self.bits() >= source.bits()
+            } else {
+                self.bits() > source.bits()
+            }
+        } else {
+            !source.signed && self.bits() >= source.bits()
+        }
+    }
+
     pub const fn new(width: MachineIntegerWidth, signed: bool) -> Self {
         Self { width, signed }
     }
@@ -268,10 +282,28 @@ impl MachineIntegerType {
             value => value,
         };
         let source = Self::from_c_type(value.c_type())?;
-        // Wide runtime values are initially identity/observation-only. Do not
-        // lower a wide symbolic value through a 32/64-bit conversion carrier.
+        // Root validation stays local even when an operand contains a large
+        // legacy expression. Wide operands cannot reinterpret word nodes.
         if source.format().bits() == 128 || self.format().bits() == 128 {
-            return (source == self).then_some(value);
+            let term = match value {
+                CValue::Int8(term)
+                | CValue::UInt8(term)
+                | CValue::Int16(term)
+                | CValue::UInt16(term)
+                | CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Int128(term)
+                | CValue::UInt128(term) => term,
+                _ => return None,
+            };
+            if !source.accepts_cast_operand(&term) {
+                return None;
+            }
+            return Some(
+                self.value_from_term(Bitvector32Term::machine_integer_cast(source, self, term)),
+            );
         }
         if let Some(constant) = source.constant_from_value(&value) {
             return self.constant_value(constant.convert_modulo(self.format()));
@@ -339,7 +371,7 @@ impl MachineIntegerType {
         Some(self.value_from_term(term))
     }
 
-    /// Root validation for the initial wide runtime profile. The term arena
+    /// Root validation for the bounded wide runtime profile. The term arena
     /// is shared, but its legacy arithmetic nodes must not acquire a wide
     /// interpretation merely by changing a value wrapper.
     pub(crate) fn accepts_wide_term(self, value: &Bitvector32Term) -> bool {
@@ -351,7 +383,50 @@ impl MachineIntegerType {
             Bitvector32Term::MachineIntegerConstant(value) => value.format() == self.format(),
             Bitvector32Term::Variable(_) => true,
             Bitvector32Term::IntegerToMachine { destination, .. } => *destination == self,
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } => *destination == self && source.accepts_cast_operand(value),
             _ => false,
+        }
+    }
+
+    fn accepts_cast_operand(self, value: &Bitvector32Term) -> bool {
+        let (mut ty, mut value) = (self, value);
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            match value {
+                Bitvector32Term::Constant(_)
+                | Bitvector32Term::Int64Constant(_)
+                | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_) => {
+                    return ty.constant_from_term(value).is_some();
+                }
+                Bitvector32Term::Variable(_) => return true,
+                Bitvector32Term::IntegerToMachine { destination, .. } => return *destination == ty,
+                Bitvector32Term::MachineIntegerCast {
+                    value: operand,
+                    source,
+                    destination,
+                } => {
+                    if *destination != ty {
+                        return false;
+                    }
+                    // Observation unwraps only strictly widening conversions.
+                    // Validate that same bounded chain; equal-width and narrowing
+                    // nodes stay typed and opaque. There are only five widths.
+                    if ty.format().bits() > source.format().bits()
+                        && ty.format().contains(source.format())
+                    {
+                        ty = *source;
+                        value = operand;
+                    } else {
+                        return true;
+                    }
+                }
+                _ => return ty.format().bits() != 128,
+            }
         }
     }
 
@@ -421,9 +496,146 @@ impl MachineIntegerType {
     }
 }
 
+impl Bitvector32Term {
+    /// Fold only a constant at the operand root. Symbolic conversion records
+    /// both formats, and construction does not scan or clone the operand tree.
+    pub(crate) fn machine_integer_cast(
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        value: Self,
+    ) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        if source == destination {
+            return value;
+        }
+        if let Some(constant) = source.constant_from_term(&value) {
+            return destination
+                .constant_term(constant.convert_modulo(destination.format()))
+                .expect("matching destination format");
+        }
+        Self::MachineIntegerCast {
+            value: Box::new(value),
+            source,
+            destination,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wide_cast_symbolic_and_constant_conversions_match_independent_exact_oracle() {
+        use crate::kernel::Variable;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use MachineIntegerType::*;
+        let types = [
+            Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Int128, UInt128,
+        ];
+        let variable = Variable(149_001);
+        for source in types {
+            let (min, max) = source.format().bounds();
+            let mut samples = vec![
+                min.clone(),
+                &min + 1,
+                &max - 1,
+                max.clone(),
+                0.into(),
+                1.into(),
+            ];
+            if source.format().is_signed() {
+                samples.push((-1).into());
+            }
+            for bit in [7, 15, 31, 63, 64, 100, 126, 127] {
+                for delta in [-1, 0, 1] {
+                    let value: BigInt = (BigInt::from(1) << bit) + delta;
+                    for value in [value.clone(), -value] {
+                        if value >= min && value <= max {
+                            samples.push(value);
+                        }
+                    }
+                }
+            }
+            for destination in types {
+                if source.format().bits() != 128 && destination.format().bits() != 128 {
+                    continue;
+                }
+                let symbolic = destination
+                    .convert_modulo_value(
+                        source.value_from_term(Bitvector32Term::Variable(variable)),
+                    )
+                    .unwrap();
+                for integer in &samples {
+                    let input =
+                        MachineIntegerConstant::from_integer(source.format(), integer).unwrap();
+                    let actual = substitute_bitvector_variable_in_c_value(
+                        &symbolic,
+                        variable,
+                        &source.constant_term(input).unwrap(),
+                    );
+                    let literal = destination
+                        .convert_modulo_value(source.constant_value(input).unwrap())
+                        .unwrap();
+                    let modulus = BigInt::from(1) << destination.format().bits();
+                    let mut expected = ((integer % &modulus) + &modulus) % &modulus;
+                    if destination.format().is_signed() && expected >= (&modulus >> 1) {
+                        expected -= &modulus;
+                    }
+                    assert_eq!(
+                        destination
+                            .constant_from_value(&actual)
+                            .unwrap()
+                            .to_integer(),
+                        expected,
+                        "{source:?}->{destination:?}: {integer}"
+                    );
+                    assert_eq!(actual, literal);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
+        use crate::kernel::Variable;
+        for size in [16, 64, 256, 1024] {
+            let mut operand = Bitvector32Term::Variable(Variable(149_002));
+            for _ in 0..size {
+                operand = Bitvector32Term::Int64Add(
+                    Box::new(operand),
+                    Box::new(Bitvector32Term::Int64Constant(1)),
+                );
+            }
+            let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                MachineIntegerType::Int128.convert_modulo_value(CValue::Int64(operand))
+            });
+            let CValue::Int128(term) = converted.unwrap() else {
+                unreachable!()
+            };
+            assert_eq!(work, 3, "size {size}");
+            let (accepted, validation_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    MachineIntegerType::Int128.accepts_wide_term(&term)
+                });
+            assert!(accepted);
+            assert_eq!(validation_work, 2);
+        }
+    }
+
+    #[test]
+    fn wide_cast_value_preserving_format_checks_match_exact_bounds() {
+        for destination in formats() {
+            for source in formats() {
+                let (source_min, source_max) = source.bounds();
+                let (dest_min, dest_max) = destination.bounds();
+                assert_eq!(
+                    destination.contains(source),
+                    dest_min <= source_min && source_max <= dest_max
+                );
+            }
+        }
+    }
 
     #[test]
     fn symbolic_modulo_conversions_match_exact_numeric_oracle_after_substitution() {

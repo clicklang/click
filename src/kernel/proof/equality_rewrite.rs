@@ -672,6 +672,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
+                Bitvector32Term::MachineIntegerCast {
+                    value,
+                    source,
+                    destination,
+                } => Bitvector32Term::machine_integer_cast(
+                    *source,
+                    *destination,
+                    rewrite_term_offset(value, left, right),
+                ),
+
                 Bitvector32Term::Add(left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
                     Bitvector32Term::Add(left, right)
@@ -1327,6 +1337,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // it is deterministic arithmetic on the rewritten node only, so the
         // rewritten goal states the value the substitution denotes.
         match term {
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } => Bitvector32Term::machine_integer_cast(
+                *source,
+                *destination,
+                rewrite_term(value, from, to),
+            ),
+
             Bitvector32Term::Add(left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
