@@ -53,11 +53,15 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             filter='not (binary(mdtests) | binary(examples))'
             nextest_args=(--partition "hash:$partition")
             ;;
+        charon-live)
+            filter='binary(rust_import) & test(charon_)'
+            nextest_args=(--run-ignored only --test-threads 2 --no-fail-fast)
+            ;;
         mdtests|examples)
             filter="binary($suite)"
             nextest_args=(--no-capture)
             ;;
-        *) echo "error: CI suite must be unit, mdtests, or examples" >&2; exit 2 ;;
+        *) echo "error: CI suite must be unit, mdtests, examples, or charon-live" >&2; exit 2 ;;
     esac
 
     # A few expansion regressions recurse deeply enough to overflow the
@@ -89,6 +93,16 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     cargo-nextest nextest run --archive-file "$artifacts/tests.tar.zst" \
         --extract-to "$PWD" --extract-overwrite \
         --filterset "$filter" "${nextest_args[@]}"
+    exit 0
+fi
+
+# Explicit local counterpart of the required archive-based live CI gate.
+if [[ "${1:-}" == "--charon-live" ]]; then
+    export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
+    export CLICK_RUST_EXPORTER="${CLICK_RUST_EXPORTER:-$PWD/target/rust-exporter/debug/click-rust-exporter}"
+    scripts/build-charon.sh
+    cargo nextest run --test rust_import --filterset 'test(charon_)' \
+        --run-ignored only --test-threads 2 --no-fail-fast
     exit 0
 fi
 

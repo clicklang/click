@@ -1141,7 +1141,7 @@ fn charon_slices_live_refresh_and_borrow_checking() {
         ),
         (
             "pub fn bad(x:&[u16])->usize { x.len() }",
-            "slice elements other than u8",
+            "slice elements outside shared scalar array iteration",
         ),
     ] {
         fs::remove_file(p.root.join("slices.ullbc")).unwrap();
@@ -3626,3 +3626,6 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
     assert_cli(&p, &["expand", "--claim", "bump_a.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
+
+#[path = "rust_import/parity.rs"]
+mod parity;

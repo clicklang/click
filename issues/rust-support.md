@@ -532,3 +532,22 @@ increment and the required gates; report their actual results.
 Delete this issue and its list entry when both milestones, regressions, and
 public documentation land. Retain architectural findings in the durable design
 records so issue closure does not erase the supported boundaries.
+
+
+### Charon cleanup and default-switch gate
+
+The [live parity inventory](../design/charon-trial/parity.json) now enumerates
+all legacy Rust example configs. CI re-extracts their unchanged source bodies
+and checks unchanged sidecars, recording complete successes and explicit
+extraction/proof gaps. Eight of 16 fixtures verify unchanged; six have
+normalization gaps and two depend on legacy iterator proof observations. The required `test` gate also requires the existing live
+Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
+establish compiler compatibility.
+
+A single compiled-in [Charon profile](../src/languages/rust/charon-profile.json)
+now owns extraction pins, flags, and semantic interpretation versions, and the
+build script reads it. This cleanup preserves existing lock identities.
+Before switching the default, close every parity gap and retain stable proof
+observations. Then retire the legacy exporter and its structured-body schema
+path. Preserve qualified declaration identities before broader module/crate
+imports; the current flat-name subset still rejects those shapes.

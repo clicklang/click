@@ -1956,6 +1956,7 @@ fn synthesize_surface_atomic_proposition(
 /// -2147483644`. Constants and uint32 locals retain their direct spellings;
 /// computed operands and signed locals receive an explicit uint32 cast. The
 /// reconstructed comparison must lower back to this same flipped form.
+/// Snapshot-relative operands retain the literal sign-bit spelling.
 fn synthesize_unsigned_comparison(
     condition: &ConditionTerm,
     parameters: &[syntax::C0Parameter],
@@ -2015,13 +2016,24 @@ fn synthesize_unsigned_comparison(
             })
             .map(|(name, _)| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
             .or_else(|| {
-                synthesize_uint32_operand(synthesize_surface_bitvector(
+                let expression = synthesize_surface_bitvector(
                     term,
                     parameters,
                     arguments,
                     state,
                     bound_variables,
-                )?)
+                )?;
+                // Keep the literal sign-bit order when an operand is snapshot
+                // relative, preserving loop-ranking observations and refusal
+                // diagnostics. Division/remainder still cast within their own
+                // snapshot when reconstructing those operations.
+                if matches!(
+                    expression,
+                    ContractExpression::At { .. } | ContractExpression::Old(_)
+                ) {
+                    return None;
+                }
+                synthesize_uint32_operand(expression)
             }),
     };
     Some(ClickProposition::Comparison {

@@ -4341,6 +4341,12 @@ impl<'a> Proof<'a> {
     /// The surface spelling of an exact fact, looked up as `simp` resolves
     /// the premises of a derivation it selected.
     fn unsigned_surface_fact(&self, kernel: &Proposition) -> Option<ClickProposition> {
+        // A reconstructible spelling is not evidence that the fact is held.
+        // In particular, a positive difference may need to be derived from
+        // the unsigned guard before the predecessor lemma can use it.
+        if !self.facts().contains(kernel) {
+            return None;
+        }
         match self.context.as_ref() {
             ProofContext::Pure(context) => self.available_surface_fact(
                 &context.theorem_context.surface_requirements,

@@ -181,6 +181,59 @@ jobs:
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
         run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" "${{ matrix.suite }}" "${{ matrix.partition }}"
 
+  charon_live:
+    needs: [scope, prepare]
+    if: needs.scope.outputs.docs_only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest
+          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+      - name: Locate pinned Rust exporter runtime
+        id: rust_runtime
+        run: |
+          source scripts/rust-exporter-toolchain.sh
+          echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
+          echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.rust_runtime.outputs.path }}
+            ${{ steps.rust_runtime.outputs.update_hash }}
+          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
+      - name: Set up test runner
+        run: scripts/setup-environment.sh --test-runner
+      - uses: actions/download-artifact@v4
+        with:
+          name: compiled-tests
+          path: ${{ runner.temp }}/compiled-tests
+      - name: Locate Charon toolchain cache
+        id: charon_runtime
+        run: |
+          echo "toolchain=$(python3 -c 'import json; print(json.load(open("src/languages/rust/charon-profile.json"))["toolchain"])')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.rustup/toolchains/${{ steps.charon_runtime.outputs.toolchain }}-x86_64-unknown-linux-gnu
+            target/charon-source
+            target/charon
+          key: ${{ runner.os }}-${{ runner.arch }}-click-charon-${{ hashFiles('src/languages/rust/charon-profile.json', 'scripts/build-charon.sh') }}
+      - name: Build pinned Charon and compiler runtime
+        run: scripts/build-charon.sh --install-toolchain
+      - name: Re-extract and check Rust fixtures
+        run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" charon-live
+
   docs:
     needs: scope
     if: needs.scope.outputs.docs_only == 'true'
@@ -205,7 +258,7 @@ jobs:
     # Keep one stable required check named `test` while the test suite runs
     # in parallel and docs-only changes continue to use their focused gate.
     if: always()
-    needs: [scope, quality, prepare, test_shards, docs]
+    needs: [scope, quality, prepare, test_shards, charon_live, docs]
     runs-on: ubuntu-24.04
     steps:
       - name: Require the selected gate to pass
@@ -214,6 +267,7 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
+          CHARON_RESULT: ${{ needs.charon_live.result }}
           SHARDS_RESULT: ${{ needs.test_shards.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
         run: |
@@ -226,5 +280,6 @@ jobs:
           else
             [[ "$QUALITY_RESULT" == success ]] || { echo "quality checks did not pass"; exit 1; }
             [[ "$PREPARE_RESULT" == success ]] || { echo "full-gate preparation did not pass"; exit 1; }
+            [[ "$CHARON_RESULT" == success ]] || { echo "live Charon gate did not pass"; exit 1; }
             [[ "$SHARDS_RESULT" == success ]] || { echo "one or more fixture partitions did not pass"; exit 1; }
           fi
