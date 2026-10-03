@@ -2085,7 +2085,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Iterated(IteratedTactic::Gather(_)) => "gather",
         ProofTactic::Iterated(IteratedTactic::Scatter(_)) => "scatter",
         ProofTactic::Witness(_) => "witness",
-        ProofTactic::LetSatisfy(_) => "let satisfy",
+        ProofTactic::LetSatisfy(_) => "obtain",
         ProofTactic::Sorry => "sorry",
         ProofTactic::Choose(_) => "choose",
         ProofTactic::Assumption => "assumption",

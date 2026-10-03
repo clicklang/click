@@ -311,6 +311,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "not",
     "object",
     "observe",
+    "obtain",
     "of",
     "old",
     "open",
@@ -328,7 +329,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "reverse",
     "scale",
     "same_object",
-    "satisfy",
     "scatter",
     "separate",
     "simp",
@@ -3542,12 +3542,12 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "witness",
-        syntax: "witness(name = value)",
+        syntax: "witness {",
         class: "simple",
     },
     PublicTacticForm {
-        id: "let-satisfy",
-        syntax: "let (name: Type, ...) satisfy { P }",
+        id: "obtain",
+        syntax: "obtain (",
         class: "simple",
     },
     PublicTacticForm {
@@ -5486,10 +5486,88 @@ pub enum ProgramPointKind {
     Exit,
 }
 
+/// `witness { k: value, ... }`: a value for each named binder of the
+/// existential goal, instantiated in the order written.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
+    bindings: Vec<WitnessBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WitnessBinding {
     name: String,
     value: ContractExpression,
+}
+
+impl ProofWitness {
+    pub(crate) fn single(name: String, value: ContractExpression) -> Self {
+        Self {
+            bindings: vec![WitnessBinding { name, value }],
+        }
+    }
+
+    pub(crate) fn new(bindings: Vec<(String, ContractExpression)>) -> Self {
+        Self {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, value)| WitnessBinding { name, value })
+                .collect(),
+        }
+    }
+
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&str, &ContractExpression)> {
+        self.bindings
+            .iter()
+            .map(|binding| (binding.name.as_str(), &binding.value))
+    }
+
+    /// One single-binder witness per binding, in order; a step with several
+    /// bindings is applied as these.
+    pub(crate) fn singles(&self) -> impl Iterator<Item = Self> + '_ {
+        self.bindings.iter().map(|binding| Self {
+            bindings: vec![binding.clone()],
+        })
+    }
+
+    pub(crate) fn is_single(&self) -> bool {
+        self.bindings.len() == 1
+    }
+
+    /// The binder of a single-binder witness.
+    pub(crate) fn name(&self) -> &str {
+        debug_assert!(
+            self.is_single(),
+            "a multi-binder witness is applied binding by binding"
+        );
+        &self.bindings[0].name
+    }
+
+    /// The value of a single-binder witness.
+    pub(crate) fn value(&self) -> &ContractExpression {
+        debug_assert!(
+            self.is_single(),
+            "a multi-binder witness is applied binding by binding"
+        );
+        &self.bindings[0].value
+    }
+
+    pub(crate) fn try_map_values<E>(
+        &self,
+        mut map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+    ) -> Result<Self, E> {
+        Ok(Self {
+            bindings: self
+                .bindings
+                .iter()
+                .map(|binding| {
+                    Ok(WitnessBinding {
+                        name: binding.name.clone(),
+                        value: map(&binding.value)?,
+                    })
+                })
+                .collect::<Result<_, E>>()?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

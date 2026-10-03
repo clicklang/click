@@ -862,7 +862,7 @@ id = "language.word.same_object"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.satisfy"
+id = "language.word.obtain"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1369,7 +1369,7 @@ id = "tactic.witness"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.let satisfy"
+id = "tactic.obtain"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 
@@ -1514,7 +1514,7 @@ path = "reference/tactics/index.md#resources-and-snapshots"
 id = "tactic-form.witness"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.let-satisfy"
+id = "tactic-form.obtain"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.assumption"
