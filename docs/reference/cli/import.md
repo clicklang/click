@@ -454,6 +454,14 @@ the real project profile. This does not prove the class's other methods or
 its documented application invariant. The typed artifact schema is now 34;
 previous artifacts require an explicit lock refresh.
 
+The offline checker validates recursive function metadata before checking the
+supported semantic profile. It checks source spans, declaration metadata, and
+type-alias provenance and cycles throughout both branch arms, scopes, handlers,
+initializers, calls, and cleanup lists. A malformed node inside an unsupported
+lifetime arrangement reports a metadata error first. Supported widths, operand
+types, lexical visibility, and cleanup ordering are checked separately; valid
+metadata alone does not make a construct supported.
+
 Artifact resource limits are independent of the supported C++ semantic profile:
 
 | Budget | Limit |

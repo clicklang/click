@@ -176,17 +176,7 @@ Each should be a coherent change with unchanged-source regressions, hostile
 artifacts and false claims, verification/expansion/audit agreement, and
 multi-size deterministic work checks for affected hot paths.
 
-1. **Finish artifact validity, supported semantics, and scope budgets.** The
-   inventory slice below is delivered. Continue separating structural validity
-   from semantic-profile rules at the recursive statement/type boundary.
-   Inventory and lifetime-count budgets are delivered, with borrowed lexical
-   environments and indexed graph places.
-   Preserve the independent exporter/checker trust boundary. Budget diagnostics
-   must name the exhausted limit; semantic diagnostics must identify the missing operation.
-   Acceptance requires multi-size sibling/local/scope regressions, malformed
-   graphs, and verification/expansion/audit agreement for the existing lifetime
-   profiles before broader lifetime combinations are admitted.
-2. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
+1. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
    interpretation and conversions across the artifact validator, kernel
    lowering, and contract-facing interfaces. Specify widths, signedness,
    promotions, narrowing, Boolean conversions, overflow and division
@@ -213,8 +203,9 @@ parent and own only newly declared places and names. Entering a normal scope or
 catch handler neither clones outer types nor scans all outer names. Catch names
 belong to the handler environment. Multi-size deterministic regressions check
 shared outer storage, local-only entry counts, sibling isolation, duplicate
-identities, shadowing, and forged references. The existing lifetime combinations remain constrained by their semantic profile;
-lifetime inventory counts use the named budgets described below.
+identities, shadowing, and forged references. The existing lifetime combinations
+remain constrained by their semantic profile; lifetime inventory counts use
+the named budgets described below.
 
 Graph place indexing is delivered. Each visited function builds one index of
 borrowed declaration IDs and places, including parameters, locals, and catch
@@ -239,8 +230,21 @@ overlapping outer/sibling combinations, and the existing conditional/exception
 arrangement restrictions remain semantic-profile limitations. Artifact schema 34
 requires an explicit refresh of earlier locks.
 
-Next finish the recursive validity/profile separation, then consolidate scalar
-interpretation before wide arithmetic.
+Recursive function metadata validity is delivered in its own module. Before a
+function's semantic profile is checked, a borrowed traversal validates every
+statement, expression, initializer, argument, cleanup, and type-alias chain,
+including both branch arms and nested scopes/handlers that the current profile
+will reject. Declaration metadata, source spans, and alias provenance/cycles
+are structural checks; supported widths, operand relationships, lexical
+visibility, and lifetime arrangements remain semantic checks. The existing
+serialized nesting budget bounds recursive input. Local semantic validators
+reuse the metadata helpers when checked in isolation. Regressions mutate every
+span and identity in a corpus covering all recursive variants, distinguish
+malformed metadata from unsupported nested lifetimes, and measure growing
+syntax/alias work without cloning lexical environments. Artifact schema remains
+34 and existing supported-source proofs remain unchanged.
+
+Next consolidate scalar interpretation before wide arithmetic.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction
