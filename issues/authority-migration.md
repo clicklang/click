@@ -451,6 +451,13 @@ the intended missing-member return obligation after explicit checked spends.
 Restoring the count equation cannot authorize an undeclared second consumption
 or return a member already spent by the proof or a helper.
 
+**Partial-cleanup slice:** `population_cleanup_rejects_partial_quantity.md`
+now rejects a partial spend that would restore a control with the wrong
+count/counter relation. A whole-quantity companion with the same C consumes
+all members after exposing the control and returns its memory and authority.
+This preserves the cleanup refusal without reintroducing the legacy blanket
+requirement that every quantity consumption be a whole-population operation.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

@@ -1,9 +1,9 @@
-# Cleanup requires the requested quantity to be the whole population
+# Cleanup consumes the whole quantity after exposing its control
 
-A live control records zero contributions and three remaining members. Spending
-only two leaves one member and cannot restore the zero-contribution equation.
-Partial batches are supported; retaining this cleanup control with mismatched
-accounting is rejected. The C source is unchanged.
+After the unchanged C reset, three members are created under explicit empty
+authority and packaged with their counter in an ordinary control. Exposing
+the control and consuming the whole batch returns the original counter memory
+and borrowed authority with no members left.
 
 ```c filename=partial_cleanup.c
 struct counter { unsigned int value; };
@@ -26,12 +26,13 @@ uint32 cleanup(struct counter* p) {
     step();
     fold(3 of remaining(p));
     fold(control(p));
-    open(control(p)) { unfold(2 of remaining(p)); }
+    unfold(control(p));
+    unfold(3 of remaining(p));
     step();
     simp();
 }
 ```
 
 ```expect
-fail: Requires p->value == (3 - count(remaining(p)))
+pass
 ```

@@ -317,6 +317,13 @@ ordinary controls restore counter facts after checked member spends, but the
 return checker rejects the missing promised member. The three unchanged C
 programs retain their missing, nested-extra, and repeated-consumption refusals.
 
+`population_cleanup_rejects_partial_quantity.md` now uses authority semantics.
+Consuming two of three members while retaining the cleanup control violates
+its counter/count equation. `population_cleanup_consumes_whole_quantity.md`
+uses the same C and verifies after exposing the control and consuming all three.
+The authority model permits partial consumption when the retained invariants
+are restored; this negative rejects the mismatched cleanup equation.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
