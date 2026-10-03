@@ -7377,11 +7377,66 @@ impl ExecutionProofCore {
                 } => (state, condition, *value),
                 _ => return Err("retained condition evidence has a non-value conclusion".into()),
             };
-        let Some((next, tail)) = self.next_source_statement_and_tail(function) else {
+        let Some((mut next, mut tail)) = self.next_source_statement_and_tail(function) else {
             return Err(
                 "condition evidence was recorded with no source statement remaining".into(),
             );
         };
+        // A `do`-`while` runs its body before its condition is read, so a
+        // condition decided at its head belongs to the body's first
+        // statement, never to the loop: the source is the body followed by
+        // an ordinary loop head, as for a statement theorem.
+        while let CStatement::While {
+            condition,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            do_while: true,
+            backedge_target,
+            natural_exit_target,
+            body,
+        } = &*next
+        {
+            if backedge_target.is_some() || natural_exit_target.is_some() {
+                return Err(EvidenceRefusal {
+                    reason: "condition evidence does not decide the frontier's next `if` or `while`",
+                    expected: Some(next.into_owned()),
+                    proved: None,
+                    premise: None,
+                });
+            }
+            let loop_head = CStatement::While {
+                condition: condition.clone(),
+                invariant: invariant.clone(),
+                invariant_checks: invariant_checks.clone(),
+                effect_checks: effect_checks.clone(),
+                resource_specs: resource_specs.clone(),
+                ranking_measures: ranking_measures.clone(),
+                structural_measure: structural_measure.clone(),
+                do_while: false,
+                backedge_target: None,
+                natural_exit_target: None,
+                body: body.clone(),
+            };
+            let unrolled = prepend_shared_source(
+                Arc::new((**body).clone()),
+                Some(prepend_shared_source(Arc::new(loop_head), tail)),
+            );
+            let (mut head, mut rest) = split_shared_source(&unrolled);
+            while matches!(*head, CStatement::Skip) {
+                let Some(following) = rest else {
+                    break;
+                };
+                let (following_head, following_rest) = split_shared_source(&following);
+                head = std::borrow::Cow::Owned(following_head.into_owned());
+                rest = following_rest;
+            }
+            next = std::borrow::Cow::Owned(head.into_owned());
+            tail = rest;
+        }
         let decided = match &*next {
             CStatement::If { condition, .. } | CStatement::While { condition, .. } => condition,
             _ => {

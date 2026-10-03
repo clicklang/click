@@ -3135,6 +3135,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => Ok(CExpression::Cast {
             expression: Box::new(substitute_c_fragment_in(expression, substitutions)?),
             target_type: *target_type,
@@ -3142,6 +3143,7 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         }),
         CExpression::FloatNegate(expression) => Ok(CExpression::FloatNegate(Box::new(
             substitute_c_fragment_in(expression, substitutions)?,

@@ -1270,6 +1270,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             pointee_struct: _,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => evaluate_c_cast_paths(
             state,
             expression,
@@ -1277,6 +1278,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             *integer_mode,
             *pointee_volatile,
             *pointee_constant,
+            *explicit_qualification,
             assumptions,
             budget,
         )?,
@@ -1551,6 +1553,7 @@ fn evaluate_c_cast_paths(
     integer_mode: CIntegerCastMode,
     pointee_volatile: bool,
     pointee_constant: bool,
+    explicit_qualification: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
@@ -1623,11 +1626,16 @@ fn evaluate_c_cast_paths(
                 };
                 match coerced {
                     Ok(value) => {
+                        // A cast the source wrote yields exactly the
+                        // destination's qualification. Any other cast keeps
+                        // a const source view. Neither affects whether the
+                        // storage itself may be written.
                         let pointee_constant = pointee_constant
-                            || matches!(
-                                &value,
-                                CValue::Pointer(pointer) if pointer.pointee_constant()
-                            );
+                            || (!explicit_qualification
+                                && matches!(
+                                    &value,
+                                    CValue::Pointer(pointer) if pointer.pointee_constant()
+                                ));
                         CExpressionOutcome::Value(
                             value
                                 .with_pointer_pointee_volatile(pointee_volatile)

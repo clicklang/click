@@ -1337,6 +1337,7 @@ impl Parser {
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             },
             None => expression.clone(),
         }
@@ -8483,6 +8484,7 @@ impl Parser {
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
+                explicit_qualification: false,
             }));
         }
         if self.peek() == Some(&Token::LParen)
@@ -8506,6 +8508,7 @@ impl Parser {
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }));
         }
         if self.peek() == Some(&Token::Minus) {
@@ -9144,6 +9147,7 @@ impl Parser {
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }));
         }
 
@@ -9758,6 +9762,7 @@ impl Parser {
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
+                        explicit_qualification: false,
                     });
                 }
                 self.position += 1;
@@ -10423,6 +10428,7 @@ fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             })),
             Box::new(uint64(alignment - 1)),
         ),

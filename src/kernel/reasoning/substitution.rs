@@ -2843,6 +2843,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => CExpression::Cast {
             expression: Box::new(substitute_bitvector_variable_in_c_expression(
                 expression, from, to,
@@ -2852,6 +2853,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         },
         CExpression::Conditional {
             condition,
@@ -6044,6 +6046,7 @@ fn substitute_pointer_variable_in_c_expression(
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => CExpression::Cast {
             expression: Box::new(substitute_pointer_variable_in_c_expression(
                 expression, from, to,
@@ -6053,6 +6056,7 @@ fn substitute_pointer_variable_in_c_expression(
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         },
         CExpression::Conditional {
             condition,

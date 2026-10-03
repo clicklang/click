@@ -5,10 +5,10 @@ The storage-level companion of
 which refuses a copy into mutable storage the function holds only a `views`
 borrow of. Here the destination is a live `static const` table: read-only
 storage with permanent read authority and no write authority at all. The
-cast `(unsigned char *)table` is valid C, but the write `memcpy` would make
-through it is undefined, and Click's C frontend refuses the const-discarding
-conversion of the argument, before any copy is considered. The table keeps its
-initializer, and no representation is copied into it.
+cast `(unsigned char *)table` is valid C and Click accepts it, but the write
+`memcpy` would make through it is undefined: no owned footprint can cover
+read-only storage, so the copy's write requirement cannot be met. The table
+keeps its initializer, and no representation is copied into it.
 
 ```c filename=const_destination.c
 void *memcpy(void *dest, const void *src, unsigned long n);
@@ -36,5 +36,5 @@ int f() {
 ```
 
 ```expect
-fail: cannot discard const qualification from a pointer initializer
+fail: missing resource fact `owns table
 ```

@@ -1553,6 +1553,28 @@ pub fn c_cast_with_pointee_qualifiers_and_struct(
         pointee_struct,
         pointee_volatile,
         pointee_constant,
+        explicit_qualification: false,
+    }
+}
+
+/// A cast the C source wrote. Its result has exactly the destination's
+/// pointee `const` qualification, so unlike the lowering-inserted casts
+/// above it can drop the source pointer's `const`.
+pub fn c_source_cast_with_pointee_qualifiers_and_struct(
+    expression: CExpression,
+    target_type: CType,
+    pointee_volatile: bool,
+    pointee_constant: bool,
+    pointee_struct: Option<String>,
+) -> CExpression {
+    CExpression::Cast {
+        expression: Box::new(expression),
+        target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        pointee_struct,
+        pointee_volatile,
+        pointee_constant,
+        explicit_qualification: true,
     }
 }
 

@@ -1500,6 +1500,7 @@ impl<'a> TermRewrite<'a> {
                 pointee_struct,
                 pointee_volatile,
                 pointee_constant,
+                explicit_qualification,
             } => CExpression::Cast {
                 expression: Box::new(self.rewrite_c_expression(expression)?),
                 target_type: *target_type,
@@ -1507,6 +1508,7 @@ impl<'a> TermRewrite<'a> {
                 pointee_struct: pointee_struct.clone(),
                 pointee_volatile: *pointee_volatile,
                 pointee_constant: *pointee_constant,
+                explicit_qualification: *explicit_qualification,
             },
             CExpression::Conditional {
                 condition,

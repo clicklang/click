@@ -2353,8 +2353,24 @@ fn integer_type_bits(c_type: C0Type) -> Option<u32> {
     }
 }
 
+/// The standard-library function a `__builtin_constant_p` call lowers to.
+/// Its contract leaves the result an unknown 0 or 1.
+const CONSTANT_P_UNKNOWN: &str = "__click_constant_p_unknown";
+
+/// C's null pointer constant: the integer constant `0`, or that constant
+/// cast to `void *`.
 fn is_null_pointer_constant(expression: &C0Expression) -> bool {
-    matches!(expression, C0Expression::Int32Literal(0))
+    match expression {
+        C0Expression::Int32Literal(0) => true,
+        C0Expression::Cast {
+            expression,
+            c_type: C0Type::VoidPointer,
+            pointee_constant: false,
+            pointee_volatile: false,
+            ..
+        } => matches!(**expression, C0Expression::Int32Literal(0)),
+        _ => false,
+    }
 }
 
 fn conditional_expression_type(
@@ -2699,10 +2715,14 @@ pub enum C0Expression {
         /// This is the qualifier in `T * volatile *`, not volatility of the
         /// storage designated by `T *`.
         pointee_volatile: bool,
-        /// Const qualification of the storage reached by this pointer. An
-        /// unqualified cast retains the source view; a qualified destination
-        /// adds a read-only view without changing pointer identity.
+        /// Const qualification of the storage reached by this pointer. A
+        /// qualified destination adds a read-only view without changing
+        /// pointer identity.
         pointee_constant: bool,
+        /// A cast written in the source: its result has exactly the
+        /// destination's pointee qualification, so it may drop `const`. A
+        /// cast inserted by the parser keeps the source view instead.
+        explicit_qualification: bool,
     },
     Conditional {
         condition: Box<C0Expression>,
@@ -4616,13 +4636,21 @@ impl C0Expression {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
-            } => crate::kernel::c_cast_with_pointee_qualifiers_and_struct(
-                expression.to_kernel_expression(),
-                c_type.to_kernel_type(),
-                *pointee_volatile,
-                *pointee_constant,
-                struct_name.clone(),
-            ),
+                explicit_qualification,
+            } => {
+                let cast = if *explicit_qualification {
+                    crate::kernel::c_source_cast_with_pointee_qualifiers_and_struct
+                } else {
+                    crate::kernel::c_cast_with_pointee_qualifiers_and_struct
+                };
+                cast(
+                    expression.to_kernel_expression(),
+                    c_type.to_kernel_type(),
+                    *pointee_volatile,
+                    *pointee_constant,
+                    struct_name.clone(),
+                )
+            }
             Self::Conditional {
                 condition,
                 then_branch,
@@ -4903,9 +4931,56 @@ pub(crate) fn parse_translation_unit_for_import(
     source: &str,
     source_identity: &str,
     map: &CSourceMap,
+    promises: PromiseAttributes,
 ) -> Result<C0TranslationUnit, C0SyntaxError> {
-    Parser::new_with_source_identity_and_map(source, CAbi::SUPPORTED, Some(source_identity), map)?
-        .parse_translation_unit()
+    let mut parser = Parser::new_with_source_identity_and_map(
+        source,
+        CAbi::SUPPORTED,
+        Some(source_identity),
+        map,
+    )?;
+    parser.refuse_promises = promises == PromiseAttributes::Refuse;
+    parser.parse_translation_unit()
+}
+
+/// Whether a compiler import accepts the function attributes and qualifiers
+/// that GCC's optimizer trusts as programmer promises. Click checks none of
+/// those promises. Without optimization GCC does not act on them, so they
+/// are accepted and ignored; under an option profile that accepts `-O2` they
+/// are refused. The GCC 13 measurements behind the list are in
+/// `docs/reference/cli/import.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromiseAttributes {
+    Accept,
+    Refuse,
+}
+
+/// Why an otherwise accepted function attribute is refused when GCC
+/// optimizes. Attributes the frontend refuses in every mode (`pure`,
+/// `malloc`, `returns_nonnull`, `alloc_size`, `assume_aligned`, ...) are not
+/// listed.
+fn optimizer_promise(attribute: &str) -> Option<&'static str> {
+    Some(match attribute {
+        "nonnull" | "__nonnull__" => {
+            "GCC at -O2 deletes the parameter's null checks even with -fno-delete-null-pointer-checks, and Click does not check the promise"
+        }
+        "const" | "__const__" => {
+            "GCC at -O2 merges calls and assumes the function touches no memory, and Click does not check the promise"
+        }
+        "leaf" | "__leaf__" => {
+            "GCC at -O2 assumes the call leaves this unit's unescaped static data unchanged, and Click does not check the promise"
+        }
+        "access" | "__access__" => {
+            "it promises how the function accesses the pointed-to object, and Click does not check the promise"
+        }
+        "noreturn" | "__noreturn__" => {
+            "GCC emits nothing after a call to it, and Click proves calls unreachable only for `compiletime_assert`'s error declarations"
+        }
+        "returns_twice" | "__returns_twice__" => {
+            "a second return from a call needs a control-flow model that Click does not have"
+        }
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -6864,6 +6939,24 @@ struct Parser {
     /// Unnamed parameters seen by `parse_parameters`; a function header
     /// records how many belong to it.
     unnamed_parameters: usize,
+    /// Set while parsing a block-scope function declaration, the only place
+    /// the GNU `error` attribute is accepted; records whether it was seen.
+    error_attribute: Option<bool>,
+    /// Set for a compiler import whose option profile accepts optimization:
+    /// the attributes and qualifiers GCC's optimizer trusts as unchecked
+    /// programmer promises are refused. See `PromiseAttributes`.
+    refuse_promises: bool,
+    /// Under `refuse_promises`, the refusal of a `noreturn` seen in a
+    /// block-scope declaration, kept until the declaration shows whether it
+    /// is a `compiletime_assert` error declaration, the one place it is
+    /// allowed.
+    pending_noreturn: Option<C0SyntaxError>,
+    /// Function names declared in a block, with the scope depth they leave
+    /// with.
+    block_function_declarations: Vec<(usize, String)>,
+    /// Set while parsing a discarded call statement, the only position in
+    /// which a call to an `error` function is accepted.
+    statement_call: bool,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -6937,6 +7030,9 @@ pub(crate) struct C0FunctionHeader {
     variadic: bool,
     /// A parameter has no name, which only a body-less prototype may do.
     has_unnamed_parameter: bool,
+    /// Declared with GNU `error`: the compiler rejects the program unless
+    /// it removes every call, so a call must be unreachable.
+    compile_time_error: bool,
     parameters: Vec<C0Parameter>,
 }
 
@@ -7021,6 +7117,7 @@ fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader
         && left.weak_linkage == right.weak_linkage
         && left.returns_twice == right.returns_twice
         && left.variadic == right.variadic
+        && left.compile_time_error == right.compile_time_error
         && left.name == right.name
         && left.parameters.len() == right.parameters.len()
         && left
@@ -7147,6 +7244,11 @@ impl Parser {
             function_declarations: BTreeMap::new(),
             static_inline_attribute: "always-inline",
             unnamed_parameters: 0,
+            error_attribute: None,
+            refuse_promises: false,
+            pending_noreturn: None,
+            block_function_declarations: Vec::new(),
+            statement_call: false,
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -7182,6 +7284,18 @@ impl Parser {
     /// Closes the innermost scope; its names, and any struct layouts they
     /// carried, are no longer visible.
     fn pop_scope(&mut self) {
+        let depth = self.scopes.len();
+        while let Some((declared_depth, _)) = self.block_function_declarations.last()
+            && *declared_depth >= depth
+        {
+            let (_, source_name) = self
+                .block_function_declarations
+                .pop()
+                .expect("the last entry was just inspected");
+            if let Some(header) = self.function_declarations.remove(&source_name) {
+                self.function_source_names.remove(&header.name);
+            }
+        }
         for binding in self.scopes.pop().unwrap_or_default() {
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
@@ -7472,8 +7586,12 @@ impl Parser {
             C0Expression::Cast {
                 expression,
                 pointee_constant,
+                explicit_qualification,
                 ..
-            } => self.expression_pointee_is_constant(expression) || *pointee_constant,
+            } => {
+                *pointee_constant
+                    || (!*explicit_qualification && self.expression_pointee_is_constant(expression))
+            }
             C0Expression::Conditional {
                 then_branch,
                 else_branch,
@@ -7781,6 +7899,15 @@ impl Parser {
         {
             return Err(self.error_here(format!(
                 "weak function `{source_name}` may be absent; function-address uses need an availability model"
+            )));
+        }
+        if self
+            .function_declarations
+            .get(source_name)
+            .is_some_and(|header| header.compile_time_error)
+        {
+            return Err(self.error_here(format!(
+                "function `{source_name}` is declared with the GNU `error` attribute; its address cannot be used"
             )));
         }
         if self
@@ -8533,6 +8660,7 @@ impl Parser {
             returns_twice: false,
             variadic,
             has_unnamed_parameter,
+            compile_time_error: false,
             parameters,
         })
     }
@@ -8554,6 +8682,22 @@ impl Parser {
             self.expect(Token::LParen)?;
             loop {
                 let attribute = self.expect_ident("GNU function attribute")?;
+                if self.refuse_promises
+                    && let Some(reason) = optimizer_promise(&attribute)
+                {
+                    let refusal = self.error_at_previous(format!(
+                        "GNU function attribute `{attribute}` is refused under an optimizing compiler-option profile: {reason}"
+                    ));
+                    // `compiletime_assert`'s block-scope declaration is
+                    // decided once its `error` attribute has been seen.
+                    if matches!(attribute.as_str(), "noreturn" | "__noreturn__")
+                        && self.error_attribute.is_some()
+                    {
+                        self.pending_noreturn = Some(refusal);
+                    } else {
+                        return Err(refusal);
+                    }
+                }
                 match attribute.as_str() {
                     "always_inline" | "__always_inline__" => {
                         always_inline = true;
@@ -8607,6 +8751,16 @@ impl Parser {
                     | "__const__" | "noreturn" | "__noreturn__" | "deprecated"
                     | "__deprecated__" | "unused" | "__unused__"
                     | "no_instrument_function" | "__no_instrument_function__" => {},
+                    "error" | "__error__" if self.error_attribute.is_some() => {
+                        self.expect(Token::LParen)?;
+                        let Some(Token::StringLiteral(_)) = self.next() else {
+                            return Err(self.error_at_previous(
+                                "the GNU error attribute requires one string literal",
+                            ));
+                        };
+                        self.expect(Token::RParen)?;
+                        self.error_attribute = Some(true);
+                    }
                     "nonnull" | "__nonnull__" => {
                         if self.peek() == Some(&Token::LParen) {
                             self.position += 1;
@@ -11119,7 +11273,14 @@ impl Parser {
                     Some("const") => object_constant = true,
                     Some("volatile") => volatile_levels |= 1,
                     // Restrict constrains aliases used by a valid C program.
-                    // Click never infers ownership or separation from it.
+                    // Click never infers ownership or separation from it,
+                    // and it does not check it either, so it is refused
+                    // where GCC's optimizer relies on it.
+                    Some("restrict" | "__restrict" | "__restrict__") if self.refuse_promises => {
+                        return Err(self.error_here(
+                            "`restrict` is refused under an optimizing compiler-option profile: GCC at -O2 assumes restrict pointers do not alias, and Click does not check it",
+                        ));
+                    }
                     Some("restrict" | "__restrict" | "__restrict__") => {}
                     _ => break,
                 }
@@ -11851,6 +12012,7 @@ impl Parser {
                 struct_name: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }
         } else {
             expression
@@ -11859,11 +12021,122 @@ impl Parser {
         Ok(C0Statement::Return(expression, C0Site::NONE))
     }
 
+    /// A block-scope `extern` function declaration, as the Linux
+    /// `compiletime_assert` macro writes it:
+    /// `__attribute__((__noreturn__)) extern void name(void) __attribute__((__error__("...")));`.
+    /// The name is visible until its block ends. It declares no object and
+    /// executes nothing.
+    fn parse_block_scope_function_declaration(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        self.error_attribute = Some(false);
+        self.pending_noreturn = None;
+        let declaration = self.parse_block_scope_function_header();
+        let compile_time_error = self.error_attribute.take() == Some(true);
+        let noreturn_refusal = self.pending_noreturn.take();
+        let mut header = declaration?;
+        // Every call to a `compiletime_assert` error declaration lowers to a
+        // check that fails on any path reaching it, so Click proves each call
+        // unreachable and GCC's `noreturn` promise holds vacuously.
+        if let Some(refusal) = noreturn_refusal
+            && !compile_time_error
+        {
+            return Err(refusal);
+        }
+        header.compile_time_error = compile_time_error;
+        if self.function_declarations.contains_key(&header.source_name) {
+            return Err(self.error_here(format!(
+                "block-scope declaration of `{}` redeclares a visible function; only a new name is supported",
+                header.source_name
+            )));
+        }
+        self.register_function_declaration(&header, false)?;
+        self.block_function_declarations
+            .push((self.scopes.len(), header.source_name));
+        Ok(C0Statement::Skip)
+    }
+
+    /// The Linux `barrier()` statement, exactly
+    /// `__asm__ __volatile__("" : : : "memory");`: an empty template with
+    /// no operands and a `memory` clobber. It emits no instruction, so in
+    /// the sequential semantics it does nothing. What it tells the compiler
+    /// about reordering, and so its meaning for concurrent readers, is
+    /// outside that semantics. Every other inline assembly is rejected.
+    fn parse_empty_memory_barrier(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        const ONLY: &str = "inline assembly is not supported, except the empty `__asm__ __volatile__(\"\" : : : \"memory\")` barrier";
+        self.position += 1;
+        if !matches!(self.peek_ident(), Some("volatile" | "__volatile__")) {
+            return Err(self.error_here(ONLY));
+        }
+        self.position += 1;
+        self.expect(Token::LParen)?;
+        if self.next() != Some(Token::StringLiteral(Vec::new())) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        for _ in 0..3 {
+            if self.next() != Some(Token::Colon) {
+                return Err(self.error_at_previous(ONLY));
+            }
+        }
+        if self.next() != Some(Token::StringLiteral(b"memory".to_vec())) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        if self.next() != Some(Token::RParen) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        self.expect(Token::Semicolon)?;
+        Ok(C0Statement::Skip)
+    }
+
+    fn parse_block_scope_function_header(&mut self) -> Result<C0FunctionHeader, C0SyntaxError> {
+        let (prefix_inline, prefix_weak, prefix_returns_twice) =
+            self.consume_function_attributes()?;
+        if self.peek_ident() != Some("extern") {
+            return Err(self.error_here(
+                "a block-scope declaration that starts with an attribute must be an `extern` function declaration",
+            ));
+        }
+        self.position += 1;
+        if !self.is_type_start() {
+            return Err(
+                self.error_here("expected a function declaration after block-scope `extern`")
+            );
+        }
+        let header = self.parse_function_header(false)?;
+        self.pop_scope();
+        let (suffix_inline, suffix_weak, suffix_returns_twice) =
+            self.consume_function_attributes()?;
+        if prefix_inline
+            || suffix_inline
+            || prefix_weak
+            || suffix_weak
+            || prefix_returns_twice
+            || suffix_returns_twice
+            || header.variadic
+        {
+            return Err(self.error_here(
+                "block-scope function declarations support only the declaration-only attributes and `error`",
+            ));
+        }
+        if self.peek() != Some(&Token::Semicolon) {
+            return Err(self.error_here(format!(
+                "block-scope declaration of `{}` must be a body-less function prototype",
+                header.source_name
+            )));
+        }
+        self.position += 1;
+        Ok(header)
+    }
+
     fn parse_statement_slow(&mut self) -> Result<C0Statement, C0SyntaxError> {
         match self.peek() {
             Some(Token::Semicolon) => {
                 self.position += 1;
                 Ok(C0Statement::Skip)
+            }
+            Some(Token::Ident(name)) if name == "extern" || name == "__attribute__" => {
+                self.parse_block_scope_function_declaration()
+            }
+            Some(Token::Ident(name)) if name == "asm" || name == "__asm__" => {
+                self.parse_empty_memory_barrier()
             }
             // Discarding a direct call's result is an ordinary C expression
             // statement. Preserve the call while omitting its unused value.
@@ -12082,8 +12355,37 @@ impl Parser {
                                 self.error_here("the allocation result may not be discarded")
                             );
                         }
-                        let arguments = self.parse_call_arguments(Some(&source_name))?;
+                        // As in an expression: a GNU builtin such as
+                        // `__builtin_unreachable` is not an ordinary call.
+                        if source_name.starts_with("__builtin_") {
+                            return Err(self.error_at_previous(format!(
+                                "unsupported GNU builtin `{source_name}`"
+                            )));
+                        }
+                        let compile_time_error = self
+                            .function_declarations
+                            .get(&source_name)
+                            .is_some_and(|header| header.compile_time_error)
+                            && !self
+                                .variable_types
+                                .contains_key(&self.resolve_name(&source_name));
+                        self.statement_call = true;
+                        let arguments = self.parse_call_arguments(Some(&source_name));
+                        self.statement_call = false;
+                        let arguments = arguments?;
                         self.expect(Token::Semicolon)?;
+                        if compile_time_error {
+                            // The compiler accepts the program only if it
+                            // removes this call, so it must be unreachable:
+                            // the check fails on any path that gets here.
+                            return Ok(C0Statement::Assert {
+                                condition: C0Expression::Int32Literal(0),
+                                label: format!(
+                                    "call to `{source_name}`, declared with the GNU `error` attribute, is unreachable"
+                                ),
+                                site: C0Site::NONE,
+                            });
+                        }
                         if let Some(statement) =
                             self.parse_kernel_primitive_statement(&source_name, &arguments)?
                         {
@@ -16096,6 +16398,33 @@ impl Parser {
         Ok(())
     }
 
+    /// Whether evaluating `expression` reads nothing but named scalar
+    /// locals outside `assigned`: no load through a pointer, no call, no
+    /// static object, and no aggregate value. Such an evaluation cannot
+    /// read or write any object an assignment to a name in `assigned`
+    /// modifies, whatever the program's aliasing.
+    fn reads_only_locals_other_than(&self, expression: &C0Expression, assigned: &[String]) -> bool {
+        match expression {
+            C0Expression::Int32Literal(_)
+            | C0Expression::UInt8Literal(_)
+            | C0Expression::UInt32Literal(_)
+            | C0Expression::Int64Literal(_)
+            | C0Expression::UInt64Literal(_) => true,
+            C0Expression::Variable(name) => {
+                !assigned.contains(name)
+                    && self.variable_types.contains_key(name)
+                    && !self.variable_struct_values.contains_key(name)
+                    && !self.variable_has_static_storage(name)
+            }
+            C0Expression::Cast { expression, .. }
+            | C0Expression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            } => self.reads_only_locals_other_than(expression, assigned),
+            _ => false,
+        }
+    }
+
     fn lower_expression_pair(
         &mut self,
         left: C0Expression,
@@ -16109,6 +16438,14 @@ impl Parser {
         let right_reads = self.expression_reads_potentially_changed_value(&right);
         let left_value_reads = expression_reads_runtime_value(&left);
         let right_value_reads = expression_reads_runtime_value(&right);
+        // An assignment's side effect is unsequenced relative to the other
+        // operand, which C leaves undefined only when that operand reads or
+        // writes the assigned object. An operand built solely from direct
+        // reads of other named locals cannot touch it.
+        let left_disjoint_from_right_assignment = assignment_chain_targets(&right)
+            .is_some_and(|targets| self.reads_only_locals_other_than(&left, &targets));
+        let right_disjoint_from_left_assignment = assignment_chain_targets(&left)
+            .is_some_and(|targets| self.reads_only_locals_other_than(&right, &targets));
         let (left_prefix, left) = self.lower_expression_calls(left)?;
         let (right_prefix, right) = self.lower_expression_calls(right)?;
         if prefix_has_non_assertion(&left_prefix) && prefix_has_non_assertion(&right_prefix) {
@@ -16135,13 +16472,19 @@ impl Parser {
                 "an expression call and a potentially aliased operand read are not supported",
             ));
         }
-        if right_value_reads && let Some(position) = left_assignment {
+        if right_value_reads
+            && !right_disjoint_from_left_assignment
+            && let Some(position) = left_assignment
+        {
             return Err(self.error_at_position(
                 Some(position),
                 "an assignment expression and an unsequenced operand read are not supported",
             ));
         }
-        if left_value_reads && let Some(position) = right_assignment {
+        if left_value_reads
+            && !left_disjoint_from_right_assignment
+            && let Some(position) = right_assignment
+        {
             return Err(self.error_at_position(
                 Some(position),
                 "an assignment expression and an unsequenced operand read are not supported",
@@ -16284,6 +16627,7 @@ impl Parser {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
+                explicit_qualification,
             } => {
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
                 Ok((
@@ -16294,6 +16638,7 @@ impl Parser {
                         struct_name,
                         pointee_volatile,
                         pointee_constant,
+                        explicit_qualification,
                     },
                 ))
             }
@@ -16861,6 +17206,17 @@ impl Parser {
         {
             return Err(self.error_here("conditional operator branches have incompatible types"));
         }
+        // Pointers to different struct types share a kernel pointer type
+        // but are not compatible C types.
+        if let (Some(then_pointee), Some(else_pointee)) = (
+            self.struct_pointer_name(&then_branch),
+            self.struct_pointer_name(&else_branch),
+        ) && then_pointee != else_pointee
+        {
+            return Err(self.error_here(format!(
+                "conditional operator branches have incompatible types `struct {then_pointee} *` and `struct {else_pointee} *`"
+            )));
+        }
         let then_branch = if let Some(common_type) = common_type {
             self.coerce_conditional_branch(then_branch, common_type)
         } else {
@@ -16886,6 +17242,15 @@ impl Parser {
         let Some(expression_type) = self.source_expression_type(&expression) else {
             return expression;
         };
+        // With a pointer as the other operand, a null pointer constant is
+        // converted to that pointer type; the null pointer is the same
+        // value at every pointer type.
+        if common_type.is_object_pointer()
+            && expression_type != common_type
+            && is_null_pointer_constant(&expression)
+        {
+            return C0Expression::Int32Literal(0);
+        }
         if expression_type == common_type
             || !is_arithmetic_type(expression_type)
             || !is_arithmetic_type(common_type)
@@ -16898,6 +17263,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         }
     }
 
@@ -16905,6 +17271,9 @@ impl Parser {
         &mut self,
         function_name: Option<&str>,
     ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        // Only the call the statement itself makes is a statement call; calls
+        // among its arguments are not.
+        let statement_call = std::mem::take(&mut self.statement_call);
         // Every direct call, in statement or expression position, reaches
         // its arguments through here, so the declarations whose calls have
         // no model are refused at one place.
@@ -16922,6 +17291,11 @@ impl Parser {
             if header.returns_twice {
                 return Err(self.error_at_previous(format!(
                     "returns-twice function `{source_name}` needs a checked control-flow model"
+                )));
+            }
+            if header.compile_time_error && !(statement_call && header.parameters.is_empty()) {
+                return Err(self.error_at_previous(format!(
+                    "function `{source_name}` is declared with the GNU `error` attribute; only a discarded call with no arguments is supported"
                 )));
             }
             if header.variadic {
@@ -17323,6 +17697,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         };
         let byte_offset = C0Expression::Multiply(
             Box::new(offset),
@@ -17406,6 +17781,7 @@ impl Parser {
             struct_name,
             pointee_volatile: volatile_pointer_object_cast,
             pointee_constant: parsed_type.pointee_constant,
+            explicit_qualification: c_type.is_pointer(),
         })
     }
 
@@ -17827,6 +18203,31 @@ impl Parser {
                         expression = value.clone();
                         continue;
                     }
+                    if source_name == "__builtin_constant_p" {
+                        let [operand] = arguments.as_slice() else {
+                            return Err(self.error_at_position(
+                                call_position,
+                                "`__builtin_constant_p` expects one argument",
+                            ));
+                        };
+                        if self.expression_has_runtime_effect(operand) {
+                            return Err(self.error_at_position(
+                                call_position,
+                                "the operand of `__builtin_constant_p` must be side-effect free",
+                            ));
+                        }
+                        // The operand is not evaluated. Whether the compiler
+                        // folds it to a constant depends on optimization, so
+                        // the result is an unknown 0 or 1 and both outcomes
+                        // are checked; the standard library's contract for
+                        // this name says only that.
+                        expression = C0Expression::Call {
+                            function_name: CONSTANT_P_UNKNOWN.to_string(),
+                            arguments: Vec::new(),
+                            position: call_position.clone(),
+                        };
+                        continue;
+                    }
                     if source_name.starts_with("__builtin_") {
                         return Err(self.error_at_position(
                             call_position,
@@ -17990,6 +18391,7 @@ impl Parser {
                                 struct_name: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
+                                explicit_qualification: false,
                             };
                             let offset = C0Expression::Multiply(
                                 Box::new(first_index),
@@ -18275,10 +18677,20 @@ impl Parser {
                 C0Expression::Variable(name) => self.variable_struct_values.get(name).cloned(),
                 _ => None,
             },
+            // The tag names what a one-level struct pointer points to. A cast
+            // to `struct T **` points to a pointer cell, not to a struct.
             C0Expression::Cast {
                 struct_name: Some(struct_name),
+                c_type,
                 ..
-            } => Some(struct_name.clone()),
+            } if !c_type.pointee_type().is_some_and(C0Type::is_pointer) => {
+                Some(struct_name.clone())
+            }
+            C0Expression::Cast { c_type, .. }
+                if c_type.pointee_type().is_some_and(C0Type::is_pointer) =>
+            {
+                None
+            }
             // A cast to another pointer type keeps the struct identity of
             // the pointer underneath; a cast to an integer does not, so an
             // `(unsigned long)p + 1` is integer arithmetic, not scaled
@@ -18288,6 +18700,19 @@ impl Parser {
             } if c_type.is_pointer() => self.struct_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_name(left)
+            }
+            // `parse_conditional` has already required the two branches to
+            // agree, with a null pointer constant taking the other's type.
+            C0Expression::Conditional {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if is_null_pointer_constant(then_branch) {
+                    self.struct_pointer_name(else_branch)
+                } else {
+                    self.struct_pointer_name(then_branch)
+                }
             }
             _ => None,
         }
@@ -18377,6 +18802,11 @@ impl Parser {
             },
             C0Expression::SequentialRead { struct_name, .. }
             | C0Expression::SequentialWrite { struct_name, .. } => struct_name.clone(),
+            C0Expression::Cast {
+                struct_name: Some(struct_name),
+                c_type,
+                ..
+            } if c_type.pointee_type().is_some_and(C0Type::is_pointer) => Some(struct_name.clone()),
             C0Expression::Cast { expression, .. } => self.struct_pointer_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_pointer_name(left)
@@ -18947,6 +19377,28 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown union declaration `{name}`")))?
                     .size_bytes;
                 return Ok(C0Expression::SizeOfUnion { name, bytes });
+            }
+            if !self.is_type_start() {
+                // `sizeof(expression)`: the operand is not evaluated; only
+                // its type is used, as for GNU `typeof`.
+                let operand = self.parse_expression_allow_direct_aggregate()?;
+                self.expect(Token::RParen)?;
+                let c_type = self
+                    .source_expression_type(&operand)
+                    .filter(|c_type| {
+                        (c_type.is_pointer() || is_arithmetic_type(*c_type))
+                            && self.aggregate_struct_name(&operand).is_none()
+                    })
+                    .ok_or_else(|| {
+                        self.error_at_previous(
+                            "`sizeof` of an expression requires a modeled scalar or pointer operand",
+                        )
+                    })?;
+                return Ok(C0Expression::SizeOfType {
+                    c_type,
+                    struct_name: None,
+                    bytes: c_type.abi_size_bytes(),
+                });
             }
             let parsed_type = self.parse_type_with_anonymous_struct(false, true)?;
             self.expect(Token::RParen)?;
@@ -20176,6 +20628,18 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         | C0Expression::SizeOfUnion { .. }
         | C0Expression::SizeOfType { .. } => None,
     }
+}
+
+/// The names a chain of simple assignments `a = b = value` assigns, when
+/// `expression` is such a chain and `value` holds no further assignment.
+fn assignment_chain_targets(expression: &C0Expression) -> Option<Vec<String>> {
+    let mut targets = Vec::new();
+    let mut current = expression;
+    while let C0Expression::Assignment { name, value, .. } = current {
+        targets.push(name.clone());
+        current = value;
+    }
+    (!targets.is_empty() && first_assignment_position(current).is_none()).then_some(targets)
 }
 
 fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition> {

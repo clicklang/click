@@ -602,10 +602,10 @@ Stage 0 record:
 
 The gate pins the first rejection on each route:
 
-- Import route: `click import lock` refuses the recorded arguments, first
-  `-fmacro-prefix-map=./=`. The profile accepts only `-D`, `-U`, `-I`,
-  `-isystem`, and `-include`; 83 of the recorded arguments are other options.
-  The importer also does not allowlist `HOME`.
+- Import route: `click import lock` locks the recorded configuration under
+  the `linux-6.8-x86_64-kbuild` option profile (see "Option profile",
+  below); the lock and artifact are committed and load offline. `HOME`
+  stays outside the importer's environment allowlist.
 - C frontend, on the reproduced artifact:
   `././include/linux/compiler_types.h:172`, `expected union name`, the
   anonymous union member of the artifact's first declaration. Before octal
@@ -614,7 +614,7 @@ The gate pins the first rejection on each route:
 
 The inventory below was measured at the commit that accepted the kernel's
 `inline` attributes and unnamed prototype parameters, and its closure table
-again at the commit that accepted `static` non-inline functions, with
+again at the commit that accepted the `WRITE_ONCE` store, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -647,23 +647,73 @@ Most of that graph is not rbtree. A token-level estimate of the declarations
 that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
 in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
 enumeration in `stddef.h`, and the `uintptr_t` typedef in `types.h`. The
-estimate is heuristic and was not checked by a compiler. Of those 80, 34 are
-accepted today and 46 are rejected. 36 of the 46 are the twelve exports,
-three declarations each: `extern typeof(fn) fn;`, a `static void *` with
+estimate is heuristic and was not checked by a compiler. Of those 80, 44 are
+accepted today: every type, prototype, inline helper, and function
+definition of the rbtree code. The 36 rejected are the twelve exports, three
+declarations each: `extern typeof(fn) fn;`, a `static void *` with
 `__used__` and `__section__(".discard.addressable")` initialized to the
 function's address, and a file-scope `asm` that emits the `.export_symbol`
 record. No verified function depends on them, so the projection excludes
-them and they are outside the claim. The other ten are:
+them and they are outside the claim.
 
-| Declaration | First rejection | At |
-| --- | --- | --- |
-| `__rb_change_child` | block-scope `extern` declaration with `__noreturn__` and `__error__`, from `compiletime_assert` inside `WRITE_ONCE` | `rbtree_augmented.h:200` |
-| `__rb_change_child_rcu` | `__builtin_constant_p`, from `rcu_assign_pointer`; the same body also holds the `barrier()` assembly `__asm__ __volatile__("": : :"memory")` | `rbtree_augmented.h:213` |
-| `__rb_erase_augmented` | `conditional operator branches have incompatible types` | `rbtree_augmented.h:247` |
-| `__rb_insert` | the `compiletime_assert` declaration | `lib/rbtree.c:155` |
-| `____rb_erase_color` | the `compiletime_assert` declaration | `lib/rbtree.c:253` |
-| `rb_next`, `rb_prev`, `rb_left_deepest_node` | `cannot discard const qualification from a pointer initializer`, at `return (struct rb_node *)node;` with `node` a `const struct rb_node *` | `lib/rbtree.c:507`, `:539`, `:600` |
-| `rb_next_postorder`, `rb_first_postorder` | `expected a pointer to struct rb_node` | `lib/rbtree.c:615`, `:628` |
+Forms accepted on the way here, each of which surfaced only after the one
+before it was accepted: the kernel's `inline` attributes, unnamed prototype
+parameters, `static` non-inline functions, explicit casts that drop `const`,
+conditionals with a null pointer constant, chained simple assignments,
+`compiletime_assert`'s block-scope `error` declaration with its unreachable
+call, `sizeof(expression)`, `__builtin_constant_p` as an unknown 0 or 1, the
+empty `memory` barrier assembly, and the store through a cast to a pointer
+cell that `WRITE_ONCE` expands to.
+
+Accepted means parsed and lowered declaration by declaration. No proof has
+run against these bodies.
+
+The dependency-closure projection (`docs/reference/cli/import.md`) is now
+implemented as an import option. On the pinned artifact it keeps 32 of the
+2,575 file-scope declarations, omits 2,543 including the twelve export
+triples, and the kept unit parses and lowers as a whole: 26 functions, the
+12 definitions in `lib/rbtree.c` that have external linkage plus 14
+translation-unit-local helpers from it and its two rbtree headers. The gate pins that inventory. The unprojected
+artifact still stops at `compiler_types.h:172`, and the gate pins that too.
+
+The import route is complete: the projected unit has a committed lock, and
+the sidecars can attach.
+
+Option profile, 2026-10-02. The configuration now carries the recorded
+vector unchanged except for `-E` and the source operand, which the importer
+supplies, and selects the named option profile `linux-6.8-x86_64-kbuild`. The
+classification table and each option's reason are in
+`docs/reference/cli/import.md`; a test keeps the table and the profile's
+exact-spelling lists equal. Of the 83 recorded options outside the base
+preprocessing options and the target's fixed four, 79 spellings are distinct,
+and all are accepted: `-mno-sse` and `-mno-sse2` only beside `-mno-80387`,
+since alone they move floating point to the x87 with excess precision, and
+`-O2` only beside `-fno-strict-aliasing`, `-fno-strict-overflow`, and
+`-fno-delete-null-pointer-checks`. `-O2` was first rejected: GCC 13 at `-O2` deletes a `nonnull` parameter's null check even
+with `-fno-delete-null-pointer-checks`, merges `const` calls across a store,
+and drops the code after a `noreturn` call. The frontend accepts all three
+attributes without modeling them, and at `-O0` GCC does none of these, so
+ignoring `-O2` could make Click accept a program the compiler treats
+differently. The owner's decision, 2026-10-02: under an optimizing profile
+the frontend refuses every attribute and qualifier GCC's optimizer trusts as
+an unchecked promise (`nonnull`, `const`, `leaf`, `access`, `noreturn`,
+`returns_twice`, `restrict`; the others were never accepted), allowing
+`noreturn` only on `compiletime_assert`'s block-scope `error` declaration,
+whose calls Click proves unreachable. The list and the GCC 13 experiments
+behind it are in `docs/reference/cli/import.md`. The projected rbtree unit
+contains none of them besides that declaration, and parses with them
+refused.
+
+`HOME`: the recorded capture environment set `HOME=/tmp`. Neither the GCC 13
+driver nor `cc1` contains the string `HOME`, a traced run of the recorded
+preprocessing with `HOME` set to an unused path opens nothing under it, and
+the preprocessed output is the recorded 637,604 bytes and SHA-256 with `HOME`
+unset, `/tmp`, a nonexistent directory, or a real home directory. The
+importer-style invocation (the target's fixed arguments first, then the
+configured vector, `-x c -E -MD -MF`, with `HOME` unset) also reproduces the
+recorded output. Preprocessing does not read `HOME`, so it stays outside the
+allowlist: allowing it would add an ambient input to the invocation identity
+without selecting anything.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.

@@ -1178,8 +1178,14 @@ pub enum CExpression {
         pointee_volatile: bool,
         /// Whether the cast result points at const-qualified storage. Source
         /// pointee constness is retained independently when the cast is
-        /// evaluated.
+        /// evaluated, unless `explicit_qualification` is set.
         pointee_constant: bool,
+        /// Whether this is a cast the C source wrote, whose result has
+        /// exactly the destination's pointee qualification. C lets such a
+        /// cast drop `const`; the storage's own read-only status still
+        /// decides every store. A cast that lowering inserts leaves this
+        /// unset and keeps the source pointer's qualification.
+        explicit_qualification: bool,
     },
     Conditional {
         condition: Box<CExpression>,
