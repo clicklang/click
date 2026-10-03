@@ -502,13 +502,10 @@ fn validate_config(config: &Config) -> Result<(), String> {
     ) {
         return Err("the first C++ import slice requires a `.cpp` or `.h` logical source".into());
     }
-    let valid_selector = match config.function.split_once("::") {
-        Some((record, method)) => {
-            is_identifier(record)
-                && (is_identifier(method) || matches!(method, "operator+=" | "operator-="))
-        }
-        None => is_identifier(&config.function),
-    };
+    let mut components = config.function.rsplit("::");
+    let member = components.next().unwrap_or_default();
+    let valid_selector = (is_identifier(member) || matches!(member, "operator+=" | "operator-="))
+        && components.all(is_identifier);
     if !valid_selector {
         return Err("C++ function selector requires a function name or Class::method (including operator+= and operator-=)".into());
     }
@@ -518,7 +515,7 @@ fn validate_config(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-fn is_identifier(value: &str) -> bool {
+pub(super) fn is_identifier(value: &str) -> bool {
     let mut chars = value.chars();
     chars
         .next()

@@ -252,7 +252,7 @@ fn function_interface(
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(
-        syntax::C0Function::external(return_type, source.name.clone(), parameters)
+        syntax::C0Function::external(return_type, lowered.name().to_owned(), parameters)
             .with_prelowered_kernel_function(lowered.clone()),
     )
 }

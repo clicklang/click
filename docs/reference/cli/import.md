@@ -451,8 +451,19 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 31;
+its documented application invariant. The typed artifact schema is now 32;
 previous artifacts require an explicit lock refresh.
+
+C++ calls and contracts bind through Clang declaration IDs. Unique readable
+names are preserved; free namespace names replace `::` with `_`. If reachable
+declarations share a readable name, each contract name is `__click_cpp_decl_`
+plus the full lowercase hexadecimal UTF-8 declaration ID from the artifact.
+This prefix is reserved: source declarations beginning with it also receive
+encoded names, as do spellings that are not valid sidecar identifiers
+(such as anonymous namespace members). The lowered-import API exposes
+`contract_name(declaration_id)`.
+Reachable overloads are supported; selecting an overloaded declaration directly
+still fails until a signature selector is available.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
 `%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked

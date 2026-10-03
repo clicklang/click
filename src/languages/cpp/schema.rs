@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 31;
+pub(crate) const EXPORT_SCHEMA: u32 = 32;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -531,7 +531,7 @@ impl CppExport {
                     }
                 )
             }
-            _ => function.to_owned(),
+            _ => function.replace("::", "_"),
         };
         if self.function.name != expected_name {
             return Err(format!(
@@ -616,7 +616,6 @@ impl CppExport {
         }
 
         let mut functions = BTreeMap::new();
-        let mut names = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
         for source in std::iter::once(&self.function).chain(&self.reachable_functions) {
             source.validate(
@@ -638,13 +637,6 @@ impl CppExport {
                 return Err(format!(
                     "duplicate C++ function declaration identity `{}`",
                     source.declaration_id
-                ));
-            }
-            if let Some(previous) = names.insert(source.name.clone(), source.declaration_id.clone())
-            {
-                return Err(format!(
-                    "reachable C++ functions `{previous}` and `{}` share unsupported overloaded name `{}`",
-                    source.declaration_id, source.name
                 ));
             }
         }

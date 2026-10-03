@@ -11,6 +11,7 @@
 //! assignment, and call-result statements.
 
 use super::lifetime::{LifetimePlan, LifetimeState};
+use super::names::ResolvedNames;
 use std::collections::BTreeMap;
 
 use super::{
@@ -34,12 +35,18 @@ use crate::kernel::{
 #[derive(Clone, Debug)]
 pub struct LoweredCppFunction {
     source: PreparedCppImport,
+    names: ResolvedNames,
     function: CFunction,
     reachable_functions: Vec<CFunction>,
     execution: std::sync::Arc<crate::languages::PreparedExecution>,
 }
 
 impl LoweredCppFunction {
+    /// Proof-facing name for a resolved Clang declaration identity.
+    pub fn contract_name(&self, declaration_id: &str) -> Option<&str> {
+        self.names.get(declaration_id)
+    }
+
     pub(crate) fn prepared_execution(&self) -> std::sync::Arc<crate::languages::PreparedExecution> {
         self.execution.clone()
     }
@@ -71,12 +78,17 @@ impl LoweredCppFunction {
 /// Normalize the pinned C++ artifact into checked execution and its prepared
 /// contract-facing metadata.
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
-    let function = lower_function(import, &import.export().function)?;
+    let names = ResolvedNames::new(
+        std::iter::once(&import.export().function)
+            .chain(&import.export().reachable_functions)
+            .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
+    )?;
+    let function = lower_function(import, &import.export().function, &names)?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source))
+        .map(|source| lower_function(import, source, &names))
         .collect::<Result<Vec<_>, _>>()?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
@@ -85,13 +97,18 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
     )?);
     Ok(LoweredCppFunction {
         execution,
+        names,
         source: import.clone(),
         function,
         reachable_functions,
     })
 }
 
-fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CFunction, String> {
+fn lower_function(
+    import: &PreparedCppImport,
+    source: &CppFunction,
+    names: &ResolvedNames,
+) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
     let places = source
@@ -107,7 +124,8 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
         .collect::<Result<Vec<_>, _>>()?;
     let mut context = LoweringContext {
         source_unit: import.logical_source(),
-        function_name: &source.name,
+        function_name: names.require(&source.declaration_id)?,
+        names,
         source_names: places.values().map(|place| place.name.as_str()).collect(),
         next_call_capture: 0,
         places,
@@ -186,7 +204,7 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     };
     Ok(c_function(
         return_type,
-        source.name.clone(),
+        names.require(&source.declaration_id)?.to_owned(),
         parameters,
         body,
     ))
@@ -262,6 +280,7 @@ struct ScalarEvaluation {
 struct LoweringContext<'a> {
     source_unit: &'a str,
     function_name: &'a str,
+    names: &'a ResolvedNames,
     places: BTreeMap<&'a str, &'a CppPlace>,
     records: BTreeMap<&'a str, &'a CppRecord>,
     constants: BTreeMap<&'a str, &'a CppConstant>,
@@ -374,7 +393,10 @@ impl LoweringContext<'_> {
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
                         c_begin_aggregate_construction(local.name.clone(), layout),
-                        c_call(callee.name.clone(), lowered_arguments),
+                        c_call(
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            lowered_arguments,
+                        ),
                     ))
                 }
                 _ => Err(format!(
@@ -428,7 +450,10 @@ impl LoweringContext<'_> {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 Ok(evaluate_then(
                     prefix,
-                    c_call(callee.name.clone(), arguments),
+                    c_call(
+                        self.names.require(&callee.declaration_id)?.to_owned(),
+                        arguments,
+                    ),
                 ))
             }
         }
@@ -622,7 +647,11 @@ impl LoweringContext<'_> {
                         prefix,
                         c_seq(
                             c_declare(capture.clone(), value_type),
-                            c_call_assign(capture.clone(), callee.name.clone(), arguments),
+                            c_call_assign(
+                                capture.clone(),
+                                self.names.require(&callee.declaration_id)?.to_owned(),
+                                arguments,
+                            ),
                         ),
                     ),
                     value: c_variable(capture),
@@ -712,7 +741,7 @@ impl LoweringContext<'_> {
     fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<CStatement, String> {
         let CppCleanup::Destructor { object, callee, .. } = cleanup;
         Ok(c_call(
-            callee.name.clone(),
+            self.names.require(&callee.declaration_id)?.to_owned(),
             vec![c_cast(self.lower_place(object)?, CType::Int32Pointer)],
         ))
     }
