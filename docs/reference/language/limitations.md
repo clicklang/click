@@ -132,18 +132,16 @@ forward prototypes. Project-local quoted includes such as
 the named header is supplied in the source bundle. Headers may contain
 supported structs, typedefs, enums, prototypes, and `static inline` or
 `static __always_inline` function bodies. Those inline bodies are checked from
-the expanded translation unit and
-their calls execute the checked body directly, on the caller's own memory
-and resources, with no contract boundary. A sidecar contract may name an
-inline helper by its ordinary C spelling for direct verification, but is not
-applied as a call boundary. Every call executes the header body; Click
-never emits a standalone definition or selects an external one, matching
-the observable `always_inline` behavior under the single supported
-`x86_64-linux-kernel` profile. Termination follows that execution: a helper
-is a node of the caller's call graph rather than an opaque callee, so a
-straight-line helper needs no ranking of its own and a ranked loop may call
-one, while a helper carrying a loop still needs that loop ranked and a
-recursive helper needs a checked rule for its cycle. `extern inline` has profile-dependent
+the expanded translation unit. A call to a helper with a verified sidecar
+contract applies that contract as its boundary, like any call; a call to a
+helper with no contract executes the checked body directly, on the caller's
+own memory and resources. Click never emits a standalone definition or
+selects an external one under the single supported `x86_64-linux-kernel`
+profile. Termination follows the same split: a contracted helper is a callee
+with its own termination rule, while a contract-less helper is a node of the
+caller's call graph, so a straight-line one needs no ranking of its own and a
+ranked loop may call it, while one carrying a loop still needs that loop
+ranked and a recursive one needs a checked rule for its cycle. `extern inline` has profile-dependent
 emission rules and stays rejected, as do bare `inline` and other inline
 spellings. The declaration-only GNU spellings
 `__attribute__((always_inline))` and `__attribute__((__always_inline__))` are

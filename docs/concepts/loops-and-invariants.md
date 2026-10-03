@@ -110,16 +110,17 @@ Termination is also a claim about everything the loop body calls: every
 reachable loop, recursive cycle, and callee needs a checked ranking proof. A
 callee with a contract answers with a verified rule of its own, and an
 `extern` contract is trusted to return exactly as its `ensures` is trusted. A
-header-provided `static inline` helper has no contract boundary — its body
-executes at the call site — so it is read as a node of the caller's own call
-graph instead. A helper whose body is straight-line, with no loop, no
-recursion, and no call to anything not itself terminating, terminates by
-construction, so a ranked loop may call one:
+header-provided `static inline` helper with a contract is such a callee. One
+with no contract has no call boundary, since its body executes at the call
+site, so it is read as a node of the caller's own call graph instead. A
+contract-less helper whose body is straight-line, with no loop, no recursion,
+and no call to anything not itself terminating, terminates by construction,
+so a ranked loop may call one:
 `mdtests/c_decreases_loop_inline_helper.md`, and the rbtree ascent of
 `mdtests/rb_ascending_walk_to_root.md`, which climbs through the unchanged
-Linux `rb_parent` under `decreases c;`. A helper carrying a loop still needs
-that loop ranked and certified, and a recursive helper is a cycle needing a
-checked rule; both are refused otherwise
+Linux `rb_parent` under `decreases c;`. A contract-less helper carrying a
+loop still needs that loop ranked and certified, and a recursive one is a
+cycle needing a checked rule; both are refused otherwise
 (`mdtests/c_decreases_rejects_inline_helper_loop.md` and
 `mdtests/c_decreases_rejects_recursive_inline_helper.md`). A helper's own
 ranked loop is planned under the translation-unit-qualified name its body

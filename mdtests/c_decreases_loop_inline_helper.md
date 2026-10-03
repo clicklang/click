@@ -1,6 +1,6 @@
 # a ranked loop may call a contract-less inline helper
 
-An inline body executes at the call site with no contract boundary, so
+An inline helper with no contract executes its body at the call site, so
 termination reads the helper as a node of `drain`'s own call graph. Both
 helpers here are straight-line over terminating callees, so they terminate by
 construction and `decreases n;` is the whole of the obligation. `predecessor`

@@ -29,11 +29,12 @@ great-grandparent's frame. Every `break` states the three whole-tree facts
 about `plug(c.model, t.model)`, so they survive the loop's exit join, and the
 post-loop proof folds the two binders into `rb_tree_at(root)`.
 
-`rb_insert_color` itself has no proof here. It calls `__rb_insert`, a
-`static __always_inline` helper, and Click executes an inline helper's body at
-each call site instead of applying its contract, so a proof of
-`rb_insert_color` would have to execute the fixup loop again without its
-invariants. See `bugs/inline-helper-symbolic-loop-call-runs-away.md`.
+`rb_insert_color`, the exported entry point, is proved too. It calls
+`__rb_insert`, a `static __always_inline` helper, with the no-op
+`dummy_rotate` as its augment callback. The helper has a verified contract,
+so the call applies that contract like any call, and the proof is one call
+step that hands the context and red subtree to `__rb_insert`'s binders and
+takes back `rb_tree_at(root)`. It states the same three whole-tree facts.
 
 `tests/examples.rs` also checks that the proof refuses a copy of the C whose
 root case skips `rb_set_parent_color(node, NULL, RB_BLACK)`.
