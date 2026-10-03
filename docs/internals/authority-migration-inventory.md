@@ -310,6 +310,13 @@ C subtraction restore the current `valid_capacity` predicate. The companion
 capacity without performing the declared consumption, because the control
 cannot be closed with its count equation restored.
 
+`population_consumption_missing_contract.md`,
+`population_consumption_nested_overconsume.md`, and
+`population_consumption_repeated.md` now select authority semantics. Their
+ordinary controls restore counter facts after checked member spends, but the
+return checker rejects the missing promised member. The three unchanged C
+programs retain their missing, nested-extra, and repeated-consumption refusals.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

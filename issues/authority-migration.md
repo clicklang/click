@@ -444,6 +444,13 @@ restore the current predicate and the private count equation. A companion
 rejects a declared consumption that the proof omits; a C update alone cannot
 restore that equation. The original C and ensured claim are preserved.
 
+**Single-spend negative slice:** The missing-contract, repeated-consumption,
+and nested-overconsumption fixtures now separate member custody from an
+ordinary counter/authority control. Each retains its unchanged C and reaches
+the intended missing-member return obligation after explicit checked spends.
+Restoring the count equation cannot authorize an undeclared second consumption
+or return a member already spent by the proof or a helper.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked
