@@ -373,12 +373,15 @@ than `InvalidQuantity`. C source is unchanged.
 currently rejected because numeric and symbolic ledger effects cannot mix.
 The reduced reproduction is the original pair of
 `population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
-authority and defined-addition contracts. Separately, the unanchored global
-counts in `resource_count_patterns.md` and
-`counted_distinct_populations_symbolic_sum.md` need a scope decision: current
-authority requires a fixed pointer anchor and does not authorize summing all
-independently anchored populations. Do not silently weaken these fixtures or
-present them as migrated.
+authority and defined-addition contracts.
+
+**Global-count decision resolved:** Remove the two obsolete fixtures that
+counted across all independently anchored populations or used integer-only
+population identities. No arena abstraction or new syntax is required for this
+migration. Existing fixed-anchor wildcard fixtures retain scoped aggregation
+coverage. The independent symbolic-entry fixture now owns each exact family's
+authority; it still needs no invented bound on the sum of unrelated counts.
+
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
