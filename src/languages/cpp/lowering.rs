@@ -659,10 +659,39 @@ impl LoweringContext<'_> {
         arguments: &[CppCallArgument],
     ) -> Result<(CStatement, Vec<CExpression>), String> {
         let mut evaluation = c_skip();
-        let mut lowered = Vec::with_capacity(arguments.len());
+        let has_nested = arguments
+            .iter()
+            .any(|argument| matches!(argument, CppCallArgument::Call { .. }));
+        // Check and snapshot field reads before a nested call can throw. Scalar
+        // isolation keeps their values invariant in every argument order.
+        let mut snapshots = Vec::with_capacity(arguments.len());
         for argument in arguments {
+            let snapshot = if let CppCallArgument::Value { value } = argument {
+                if has_nested && super::schema::field_scalar_argument(value) {
+                    let capture = self.fresh_call_capture()?;
+                    let expression = self.lower_expression(value)?;
+                    evaluation = evaluate_then(
+                        evaluation,
+                        c_seq(
+                            c_declare(capture.clone(), cpp_return_scalar_type(value.value_type())?),
+                            c_assign(capture.clone(), expression),
+                        ),
+                    );
+                    Some(c_variable(capture))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            snapshots.push(snapshot);
+        }
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for (argument, snapshot) in arguments.iter().zip(snapshots) {
             crate::instrumentation::record_deterministic_work(1);
-            if let CppCallArgument::Call {
+            if let Some(snapshot) = snapshot {
+                lowered.push(snapshot);
+            } else if let CppCallArgument::Call {
                 callee,
                 arguments,
                 value_type,
@@ -677,8 +706,7 @@ impl LoweringContext<'_> {
                 evaluation = evaluate_then(evaluation, inner.prefix);
                 lowered.push(inner.value);
             } else {
-                // When calls are present, validation permits only stable, total
-                // siblings. Evaluating them after the calls preserves every order.
+                // Remaining siblings are stable and total across the call.
                 lowered.push(self.lower_call_argument(argument)?);
             }
         }

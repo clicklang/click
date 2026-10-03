@@ -101,7 +101,7 @@ Nested scalar calls now support one call argument in a direct free-function
 return call, including deeper chains and multiple stable scalar siblings.
 By-value scalar parameters/locals, literals, locked constants, and supported
 integer/Boolean casts are stable and total, so all argument orders agree even
-when the inner call writes memory or throws. Memory-reading siblings, arithmetic,
+when the inner call writes memory or throws. Aliasing memory-reading siblings, arithmetic,
 multiple nested calls, and sibling side effects remain explicit errors. Typed
 captures preserve normal cleanup and inner exceptions skip outer calls.
 Regressions cover widths/signedness, Boolean results, each argument position,
@@ -111,7 +111,8 @@ deterministic scaling regressions. The synthetic 64-bit fee fixture preserves
 `Div(Mul(...), divisor, round_down)` and proves concrete positive/negative rounding
 and exact division, including concrete Boolean template wrappers; zero divisors
 and unproved product bounds are rejected.
-This does not yet import Bitcoin's wide helper path or field-reading siblings.
+The scalar-isolated field-reading sibling extension is described below; Bitcoin's
+wide helper path remains unsupported.
 
 Static scalar helpers now retain class and declaration identity without an
 implicit receiver or importing unrelated object layouts. Ordinary
@@ -165,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 35 and earlier locks require
+needs separate support. Artifact schema is now 36 and earlier locks require
 an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
 
 ## Required invariant
@@ -205,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 35. `__int128` remains a feature prerequisite for the
+artifact schema is now 36. `__int128` remains a feature prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -250,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 35
+arrangement restrictions remain semantic-profile limitations. Artifact schema 36
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -265,9 +266,24 @@ reuse the metadata helpers when checked in isolation. Regressions mutate every
 span and identity in a corpus covering all recursive variants, distinguish
 malformed metadata from unsupported nested lifetimes, and measure growing
 syntax/alias work without cloning lexical environments. Artifact schema remains
-35 and existing supported-source proofs remain unchanged.
+36 and existing supported-source proofs remain unchanged.
 
 Next extend the shared scalar and kernel design for the fee arithmetic milestone.
+
+Field-reading siblings beside a scalar-isolated nested call are delivered.
+The producer and offline checker require that nested call's inputs to be scalar
+values, with no pointer/reference inputs or further input calls. Mutable globals
+and external calls remain rejected, so the call cannot access caller storage.
+The shared normalizer snapshots field siblings before the call, checking read
+authority even when the call throws. Aliasing and hidden input calls remain
+rejected; general alias analysis and other memory-reading siblings are deferred.
+Offline proofs cover every argument position, supported field casts, initializer
+and discarded contexts, concrete positive/negative and exact/remainder fee
+rounding in a synthetic method/template/static-helper wrapper, expansion,
+reverification, and retained audit. Hostile checks cover missing authority, false
+results, direct/hidden aliases, and unchecked reads before exceptions. Argument
+inventories have deterministic validation/lowering scaling regressions. This
+does not yet admit the unchanged Bitcoin wide arithmetic/Assume source.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction
@@ -300,9 +316,9 @@ and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
-cases. The selected upstream source still requires `__int128`,
-support for its library `Assume` annotation, and argument-order support for field-reading siblings
-in `Div(Mul(...), size, RoundDown)` on this target. Stable scalar sibling arguments
+cases. The selected upstream source still requires `__int128`
+and support for its library `Assume` annotation on this target. Stable scalar
+and isolated field-reading sibling arguments in `Div(Mul(...), size, RoundDown)`
 are now supported; upstream `EvaluateFee` is not yet supported.
 
 Before implementing the upstream proof, freeze a small regression that
