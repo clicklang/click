@@ -458,6 +458,13 @@ all members after exposing the control and returns its memory and authority.
 This preserves the cleanup refusal without reintroducing the legacy blanket
 requirement that every quantity consumption be a whole-population operation.
 
+**Scoped-body slice:** The population-opening positive, explicit-piece helper,
+and restored-body helper fixtures now use ordinary counter/authority controls
+with unchanged C. Their reentrant, aliased, and nested-opening companions
+reject duplicating a suspended control. An unrelated call cannot assume the
+caller-open control invariant after a contradictory store. Opening does not
+create or consume members; body facts must be restored before closing.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

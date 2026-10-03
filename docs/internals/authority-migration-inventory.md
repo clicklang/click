@@ -324,6 +324,17 @@ uses the same C and verifies after exposing the control and consuming all three.
 The authority model permits partial consumption when the retained invariants
 are restored; this negative rejects the mismatched cleanup equation.
 
+`resource_population_open.md`, `population_open_calls_explicit_piece.md`,
+and `population_call_with_restored_body.md` now select authority semantics.
+An ordinary control owns counter memory and authority; scoped opening preserves
+population membership while explicit-piece and whole-control helper calls
+restore the required custody. The unchanged-C companions
+`call_inside_open_population_does_not_assume_its_body.md`,
+`population_call_requires_closed_body.md`, `population_call_rejects_open_alias.md`,
+`population_call_rejects_reentrant_restored_body.md`,
+`population_rejects_nested_open.md`, and `population_rejects_nested_alias_open.md`
+reject false invariant certification or duplicating a suspended control.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

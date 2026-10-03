@@ -1,4 +1,7 @@
-# Restoring a value does not restore suspended access authority
+# Restoring a value cannot lend a still-open control
+
+The helper requires the closed control. Restoring the counter value inside
+the open scope does not independently restore the control for a nested call.
 
 ```c filename=reopen.c
 struct object { int32 refs; };
@@ -6,19 +9,21 @@ void inspect(struct object* obj) { }
 void restored(struct object* obj) { obj->refs = obj->refs; inspect(obj); }
 ```
 
-```click
-resource reference(obj: struct object*) {
+```click resource_semantics=authority
+resource reference(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(reference(obj));
     owns obj->refs;
     fact obj->refs == count(reference(obj));
 }
 verifying "reopen.c";
 void inspect(struct object* obj) {
-    owns reference(obj);
+    owns control(obj);
 } by { execute(); simp(); }
 void restored(struct object* obj) {
-    owns reference(obj);
+    owns control(obj);
 } by {
-    open(reference(obj)) {
+    open(control(obj)) {
         step();
         step();
         execute();

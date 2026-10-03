@@ -1,8 +1,7 @@
-# A second membership cannot reopen a suspended population body
+# An ordinary control cannot be opened twice
 
-A scoped `open` exposes the one body owned by an active population. It does
-not consume a unit, and closing the block requires every body resource to be
-restored.
+Scoped opening exposes exclusive counter memory and authority. The same
+control cannot supply that body to a second nested opening.
 
 ```c filename=resource_population_open.c
 struct object {
@@ -14,8 +13,10 @@ int32 object_refcount(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(object_ref(obj));
     owns obj->refs;
     fact obj->refs == count(object_ref(obj));
 }
@@ -23,12 +24,12 @@ resource object_ref(obj: struct object*) {
 verifying "resource_population_open.c";
 
 int32 object_refcount(struct object* obj) {
-    owns object_ref(obj);
+    owns control(obj);
 
     ensures result == count(object_ref(obj));
 } by {
-    open(object_ref(obj)) {
-        open(object_ref(obj)) { execute(); }
+    open(control(obj)) {
+        open(control(obj)) { execute(); }
     }
     simp();
 }
