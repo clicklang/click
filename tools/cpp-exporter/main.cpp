@@ -238,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 31;
+    artifact["schema"] = 32;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -2639,7 +2639,13 @@ private:
   }
 
   std::string function_name(const clang::FunctionDecl *function) {
-    return function->getNameAsString() + template_suffix(function);
+    std::string name = function->getQualifiedNameAsString();
+    size_t pos = 0;
+    while ((pos = name.find("::", pos)) != std::string::npos) {
+      name.replace(pos, 2, "_");
+      ++pos;
+    }
+    return name + template_suffix(function);
   }
 
   std::string method_name(const clang::CXXMethodDecl *method) {

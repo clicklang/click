@@ -176,14 +176,7 @@ Each should be a coherent change with unchanged-source regressions, hostile
 artifacts and false claims, verification/expansion/audit agreement, and
 multi-size deterministic work checks for affected hot paths.
 
-1. **Resolved identity and contract names.** Carry declaration identities
-   through execution and contract binding independently of readable names.
-   Define deterministic, unambiguous names for namespace members, overloads,
-   and concrete template instances. Preserve existing ordinary names where
-   unambiguous. Regression cases must distinguish equal spellings in different
-   scopes and equal-width source types; name collisions must never bind the
-   wrong definition.
-2. **Artifact validity, supported semantics, and budgets.** Separate structural
+1. **Artifact validity, supported semantics, and budgets.** Separate structural
    validation from the supported semantic profile and resource limits. Keep
    independent artifact checks; duplicated exporter/checker validation is
    intentional at the trust boundary. Replace numerical example-shape limits
@@ -192,7 +185,7 @@ multi-size deterministic work checks for affected hot paths.
    identify the exhausted limit, while unsupported-semantics diagnostics name
    the missing operation. Acceptance requires multi-size constant/record/scope
    regressions and explicit rejection of malformed graphs.
-3. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
+2. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
    interpretation and conversions across the artifact validator, kernel
    lowering, and contract-facing interfaces. Specify widths, signedness,
    promotions, narrowing, Boolean conversions, overflow and division
@@ -200,6 +193,22 @@ multi-size deterministic work checks for affected hot paths.
    semantics agree and keep language-specific policies explicit. Add
    `__int128` only after its execution, contract types, and proof obligations
    fit that design; do not introduce another isolated family of matches.
+
+Resolved function identities and contract names are delivered. One immutable
+ID-to-name index drives kernel definitions, every call (including construction
+and cleanup), load owners, and proof interfaces. Unique readable names remain
+unchanged; free namespace names flatten `::` to `_`. Colliding spellings use
+`__click_cpp_decl_` followed by the full hexadecimal UTF-8 declaration ID.
+That prefix is reserved, including for user declarations, so encoded names are
+injective without digest assumptions or order-dependent numbering. Anonymous
+namespace spellings also use encoded names. Nested namespace selectors work. The original
+artifact IDs remain independently available, and `contract_name(id)` exposes
+the binding on the lowered import. Regressions cover reachable overloads with
+`long`/`long long` parameters of equal width, namespace/global spelling collisions,
+and same-named static helpers in different namespaces. Selected overloads still
+require a future signature selector; namespaced method selection and multiple
+record layouts remain outside this slice. Existing template instance names remain
+readable when unique. Hostile reference-name/ID mismatches still fail validation.
 
 The expression normalizer and prepared execution boundary are delivered in
 this consolidation. Future expression positions and richer ordering support

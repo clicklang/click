@@ -8,6 +8,7 @@ mod import;
 mod interface;
 mod lifetime;
 mod lowering;
+mod names;
 mod schema;
 
 pub use import::{PreparedCppImport, load_import, refresh_import};
