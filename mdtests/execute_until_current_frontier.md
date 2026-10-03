@@ -76,16 +76,12 @@ int32 execute_until_selected_branch(int32 flag) {
 int32 execute_until_after_advance(int32 flag) {
     ensures result == 3 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
         execute_until(statement(6));
         step();

@@ -89,40 +89,34 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         0 <= k and k < n implies 0 <= old(right[k]) and old(right[k]) < n
     } by { assumption(); }
 
-    branch {
-        then {
-            have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
-                intro();
-                instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur) using { 0 <= cur; cur < n; }
-                contradiction(visited[cur] != 0);
-            }
+    branch then {
+        have (forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }) implies forall (path: Path) { walk(old(left), old(right), cur, path) != to } by {
+            intro();
+            instantiate(forall (k: int32) { 0 <= k and k < n implies old(visited[k]) == 0 }, cur) using { 0 <= cur; cur < n; }
+            contradiction(visited[cur] != 0);
+        }
 
-            have forall (k: int32) {
-                0 <= k and k < n and old(visited[k]) == 0 and visited[k] != 0 implies
-                    visited[old(left[k])] != 0 and visited[old(right[k])] != 0
-            } by {
-                intro(); intro();
-                extract(old(visited[k]) == 0); extract(visited[k] != 0);
-                contradiction(visited[k] != 0);
-            }
+        have forall (k: int32) {
+            0 <= k and k < n and old(visited[k]) == 0 and visited[k] != 0 implies
+                visited[old(left[k])] != 0 and visited[old(right[k])] != 0
+        } by {
+            intro(); intro();
+            extract(old(visited[k]) == 0); extract(visited[k] != 0);
+            contradiction(visited[k] != 0);
+        }
 
-            step();
+        step();
+        simp();
+    } else {}
+    branch then {
+        have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
+            witness(path = Path::Here);
+            unfold(walk(old(left), old(right), cur, Path::Here));
             simp();
         }
-        else {}
-    }
-    branch {
-        then {
-            have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-                witness(path = Path::Here);
-                unfold(walk(old(left), old(right), cur, Path::Here));
-                simp();
-            }
-            step();
-            simp();
-        }
-        else {}
-    }
+        step();
+        simp();
+    } else {}
     mark before_mark;
     step();
 
@@ -200,32 +194,29 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 == old(unmarked(visited, 0, n));
         }
     }
-    branch {
-        then {
-            have exists (path: Path) {
-                walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
-            } by { simp(); }
-            let (rest: Path) satisfy {
-                walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
-            };
-            have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
-                unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
-                assumption();
-            }
-            apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
-            have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-                witness(path = Path::Left(rest));
-                simp() using {
-                    walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
-                    walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
-                }
-            }
-            have 0 <= to and to < n and at(after_mark, visited[to]) == 0 by { simp(); }
-            step();
-            simp();
+    branch then {
+        have exists (path: Path) {
+            walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
+        } by { simp(); }
+        let (rest: Path) satisfy {
+            walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
+        };
+        have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
+            unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
+            assumption();
         }
-        else {}
-    }
+        apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
+        have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
+            witness(path = Path::Left(rest));
+            simp() using {
+                walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
+                walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
+            }
+        }
+        have 0 <= to and to < n and at(after_mark, visited[to]) == 0 by { simp(); }
+        step();
+        simp();
+    } else {}
     observe(bounded_successors(left, right, n));
     have viewable(visited[0..n]) by { simp(); }
     apply(unmarked_nonnegative(visited, 0, n, n));

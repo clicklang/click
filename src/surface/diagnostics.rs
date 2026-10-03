@@ -644,8 +644,8 @@ pub(super) fn describe_multiple_statement_successors_guidance(
     r#"
 `step()` cannot choose between the two successors of this call. Use `outcomes` at this point:
 outcomes {
-    returned { step(); }
-    threw { step(); }
+    returned => { step(); }
+    threw => { step(); }
 }
 The `step()` in each arm advances the selected path; add the remaining
 `step()`, `execute()`, and `simp()` tactics inside that arm until all

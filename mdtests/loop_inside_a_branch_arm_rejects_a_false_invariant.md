@@ -27,18 +27,14 @@ int32 count_up(int32 n) {
 } by {
     step();
     step();
-    branch {
-        ensuring {
-            fact i >= 0;
+    branch ensuring {
+        fact i >= 0;
+    } then {
+        loop {
+            decreases n - i;
+            invariant i <= 0;
         }
-        then {
-            loop {
-                decreases n - i;
-                invariant i <= 0;
-            }
-        }
-        else {}
-    }
+    } else {}
     step();
     simp();
 }

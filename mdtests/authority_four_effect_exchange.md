@@ -52,7 +52,7 @@ void move(int32* source, int32* destination, int32* p) {
 }
 int32 lifecycle() { ensures result == 0 or result == 18; } by {
     step(); step(); step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&source)));
     fold(authority(slot(&destination)));

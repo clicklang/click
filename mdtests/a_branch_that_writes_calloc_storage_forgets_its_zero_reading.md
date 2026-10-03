@@ -34,26 +34,18 @@ int32 f(int32 c) {
     step();
     step();
     step();
-    branch {
-        ensuring {
-            fact 1 == 1;
-        }
-        then {
-            step();
-            simp();
-        }
-        else {
-        }
+    branch ensuring {
+        fact 1 == 1;
+    } then {
+        step();
+        simp();
+    } else {
     }
-    branch {
-        ensuring {
-            fact 1 == 1;
-        }
-        then {
-            step();
-        }
-        else {
-        }
+    branch ensuring {
+        fact 1 == 1;
+    } then {
+        step();
+    } else {
     }
     execute();
     simp();

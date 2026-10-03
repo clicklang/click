@@ -35,20 +35,17 @@ int32 drain(int32 box[4]) {
     ensures result == 0;
 } by {
     step();
-    branch {
-        then {
-            step();
-            have 0 <= head(box) by { unfold(head(box)); simp(); }
-            have head(box) < old(head(box)) by {
-                unfold(head(box));
-                simp();
-            }
-            step();
-            step();
+    branch then {
+        step();
+        have 0 <= head(box) by { unfold(head(box)); simp(); }
+        have head(box) < old(head(box)) by {
+            unfold(head(box));
             simp();
         }
-        else {}
-    }
+        step();
+        step();
+        simp();
+    } else {}
     step();
     simp();
 }

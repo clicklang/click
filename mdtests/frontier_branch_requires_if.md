@@ -17,11 +17,8 @@ verifying "branch_requires_if.c";
 
 int32 branch_requires_if(int32 x) {
     ensures result >= 0 by {
-        branch {
-            then {
-            }
-            else {
-            }
+        branch then {
+        } else {
         }
     }
 }

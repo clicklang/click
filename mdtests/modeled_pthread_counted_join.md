@@ -27,10 +27,7 @@ int32 run(void* p) {
 } by {
     step();
     step();
-    branch {
-        then { have count(ticket(p)) == 1 by { simp(); } step(); simp(); }
-        else {}
-    }
+    branch then { have count(ticket(p)) == 1 by { simp(); } step(); simp(); } else {}
     have old(count(ticket(p))) == 1 by { simp(); }
     step();
     have count(ticket(p)) == 0 by { simp(); }

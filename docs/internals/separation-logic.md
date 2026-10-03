@@ -258,7 +258,7 @@ each completed execution path.
 `step()` is the simple execution tactic. It advances by one supported
 transition with the whole proof context visible to the kernel.
 
-`branch { ensuring { Q } then { ... } else { ... } }` is the sequencing rule
+`branch ensuring { Q } then { ... } else { ... }` is the sequencing rule
 for a C conditional whose arms need an explicit common resource interface.
 Every continuing arm must prove `Q`. Click then constructs one symbolic
 frontier satisfying `Q`, while retaining exact common facts and resources.

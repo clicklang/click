@@ -30,7 +30,7 @@ int32 spent_count() {
 } by {
     step();
     step();
-    branch { then { step(); simp(); } else {} }
+    branch then { step(); simp(); } else {}
     step();
     step();
     have count(reference(obj)) == 0 by simp;

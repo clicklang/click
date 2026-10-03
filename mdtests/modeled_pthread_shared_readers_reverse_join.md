@@ -52,22 +52,16 @@ int32 run(struct cell *task) {
     step();
     step();
     step();
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        step();
+        simp();
+    } else {}
     step();
     step();
     step();

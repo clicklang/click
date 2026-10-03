@@ -21,16 +21,12 @@ verifying "advance_hidden_branch_fact.c";
 int32 advance_hidden_branch_fact(int32 x) {
     ensures result <= 1 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         simp();

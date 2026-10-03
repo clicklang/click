@@ -75,12 +75,12 @@ int32 single_guard_step(int32* value, bool should_throw) {
     step();
     step();
     outcomes {
-        returned {
+        returned => {
             step();
             execute();
             simp();
         }
-        threw {
+        threw => {
             step();
             execute();
             simp();

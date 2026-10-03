@@ -39,10 +39,7 @@ int32 branch_arm_break(int32 n) {
 
         initialize by simp;
         preserve by {
-            branch {
-                then { step(); }
-                else { }
-            }
+            branch then { step(); } else { }
             step();
             close_invariants();
         }

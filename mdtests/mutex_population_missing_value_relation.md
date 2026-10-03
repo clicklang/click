@@ -97,33 +97,24 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     let state = fold(counter_state(counter), { value: counter->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
-    branch {
-        then { have count(contribution(counter)) == 2 by { simp(); } unfold(state); step(); simp(); }
-        else {}
-    }
+    branch then { have count(contribution(counter)) == 2 by { simp(); } unfold(state); step(); simp(); } else {}
     step();
-    branch {
-        then {
-            have count(contribution(counter)) == 2 by { simp(); }
-            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
-            unfold(state);
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        have count(contribution(counter)) == 2 by { simp(); }
+        step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+        unfold(state);
+        step();
+        simp();
+    } else {}
     step();
-    branch {
-        then {
-            step();
-            have count(contribution(counter)) == 1 by { simp(); }
-            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
-            unfold(state);
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        have count(contribution(counter)) == 1 by { simp(); }
+        step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+        unfold(state);
+        step();
+        simp();
+    } else {}
     step();
     step();
     have count(contribution(counter)) == 0 by { simp(); }

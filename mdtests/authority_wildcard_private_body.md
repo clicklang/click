@@ -22,7 +22,7 @@ resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_body.c";
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p));

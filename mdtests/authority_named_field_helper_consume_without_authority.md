@@ -28,7 +28,7 @@ void consume(int32* pool, int32* p) {
 } by { unfold(member); execute(); simp(); }
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { serial: 1 });

@@ -930,31 +930,34 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
                 }
             }
             have __rust_mir_17_remaining < 2 by {
-                cases (not 0 < __rust_mir_17_remaining or not 2 <= __rust_mir_17_remaining) {
-                    have __rust_mir_17_remaining <= 0 by {
-                        extract(at(statement(158).entry, 0) <= at(statement(158).entry, __rust_mir_8_remaining));
-                        extract(at(loop(1).exit, 0) <= at(loop(1).exit, __rust_mir_17_remaining));
-                        extract(at(loop(1).exit, 0) <= at(loop(1).exit, ((8 - __rust_mir_8_remaining) - __rust_mir_17_remaining)));
-                        extract(at(statement(158).entry, __rust_mir_8_remaining) <= at(statement(158).entry, 8));
-                        extract(at(loop(1).exit, __rust_mir_17_remaining) <= at(loop(1).exit, 4));
-                        extract(at(loop(1).exit, ((8 - __rust_mir_8_remaining) - __rust_mir_17_remaining)) <= at(loop(1).exit, 8));
-                        apply(int32_not_lt_implies_ge(at(statement(276).entry, 0), at(statement(276).entry, __rust_mir_17_remaining))) using {
-                            not at(statement(276).entry, 0) < at(statement(276).entry, __rust_mir_17_remaining);
+                cases {
+                    not 0 < __rust_mir_17_remaining => {
+                        have __rust_mir_17_remaining <= 0 by {
+                            extract(at(statement(158).entry, 0) <= at(statement(158).entry, __rust_mir_8_remaining));
+                            extract(at(loop(1).exit, 0) <= at(loop(1).exit, __rust_mir_17_remaining));
+                            extract(at(loop(1).exit, 0) <= at(loop(1).exit, ((8 - __rust_mir_8_remaining) - __rust_mir_17_remaining)));
+                            extract(at(statement(158).entry, __rust_mir_8_remaining) <= at(statement(158).entry, 8));
+                            extract(at(loop(1).exit, __rust_mir_17_remaining) <= at(loop(1).exit, 4));
+                            extract(at(loop(1).exit, ((8 - __rust_mir_8_remaining) - __rust_mir_17_remaining)) <= at(loop(1).exit, 8));
+                            apply(int32_not_lt_implies_ge(at(statement(276).entry, 0), at(statement(276).entry, __rust_mir_17_remaining))) using {
+                                not at(statement(276).entry, 0) < at(statement(276).entry, __rust_mir_17_remaining);
+                            }
+                            apply(int32_ge_implies_reversed_le(at(statement(276).entry, 0), at(statement(276).entry, __rust_mir_17_remaining))) using {
+                                at(statement(276).entry, 0) >= at(statement(276).entry, __rust_mir_17_remaining);
+                            }
                         }
-                        apply(int32_ge_implies_reversed_le(at(statement(276).entry, 0), at(statement(276).entry, __rust_mir_17_remaining))) using {
-                            at(statement(276).entry, 0) >= at(statement(276).entry, __rust_mir_17_remaining);
+                        arithmetic_certificate signed_int32 {
+                            premise 0: __rust_mir_17_remaining <= 0 => __rust_mir_17_remaining <= 0;
+                            trivial => -1 <= 0;
+                            add 0, 1 => (__rust_mir_17_remaining + -1) <= (0 + 0);
+                            conclusion 2;
                         }
                     }
-                    arithmetic_certificate signed_int32 {
-                        premise 0: __rust_mir_17_remaining <= 0 => __rust_mir_17_remaining <= 0;
-                        trivial => -1 <= 0;
-                        add 0, 1 => (__rust_mir_17_remaining + -1) <= (0 + 0);
-                        conclusion 2;
-                    }
-                } {
-                    arithmetic_certificate signed_int32 {
-                        premise 0: not at(statement(276).entry, 2) <= at(statement(276).entry, __rust_mir_17_remaining) => not at(statement(276).entry, 2) <= at(statement(276).entry, __rust_mir_17_remaining);
-                        conclusion 0;
+                    not 2 <= __rust_mir_17_remaining => {
+                        arithmetic_certificate signed_int32 {
+                            premise 0: not at(statement(276).entry, 2) <= at(statement(276).entry, __rust_mir_17_remaining) => not at(statement(276).entry, 2) <= at(statement(276).entry, __rust_mir_17_remaining);
+                            conclusion 0;
+                        }
                     }
                 }
             }
@@ -1100,27 +1103,30 @@ uint64 nested(const uint8* bytes, uint64 bytes_len) {
         }
     }
     have __rust_mir_8_remaining < 4 by {
-        cases (not 0 < __rust_mir_8_remaining or not 4 <= __rust_mir_8_remaining) {
-            have __rust_mir_8_remaining <= 0 by {
-                extract(at(loop(0).exit, 0) <= at(loop(0).exit, __rust_mir_8_remaining));
-                extract(at(loop(0).exit, __rust_mir_8_remaining) <= at(loop(0).exit, 8));
-                apply(int32_not_lt_implies_ge(at(statement(301).entry, 0), at(statement(301).entry, __rust_mir_8_remaining))) using {
-                    not at(statement(301).entry, 0) < at(statement(301).entry, __rust_mir_8_remaining);
+        cases {
+            not 0 < __rust_mir_8_remaining => {
+                have __rust_mir_8_remaining <= 0 by {
+                    extract(at(loop(0).exit, 0) <= at(loop(0).exit, __rust_mir_8_remaining));
+                    extract(at(loop(0).exit, __rust_mir_8_remaining) <= at(loop(0).exit, 8));
+                    apply(int32_not_lt_implies_ge(at(statement(301).entry, 0), at(statement(301).entry, __rust_mir_8_remaining))) using {
+                        not at(statement(301).entry, 0) < at(statement(301).entry, __rust_mir_8_remaining);
+                    }
+                    apply(int32_ge_implies_reversed_le(at(statement(301).entry, 0), at(statement(301).entry, __rust_mir_8_remaining))) using {
+                        at(statement(301).entry, 0) >= at(statement(301).entry, __rust_mir_8_remaining);
+                    }
                 }
-                apply(int32_ge_implies_reversed_le(at(statement(301).entry, 0), at(statement(301).entry, __rust_mir_8_remaining))) using {
-                    at(statement(301).entry, 0) >= at(statement(301).entry, __rust_mir_8_remaining);
+                arithmetic_certificate signed_int32 {
+                    premise 0: __rust_mir_8_remaining <= 0 => __rust_mir_8_remaining <= 0;
+                    trivial => -3 <= 0;
+                    add 0, 1 => (__rust_mir_8_remaining + -3) <= (0 + 0);
+                    conclusion 2;
                 }
             }
-            arithmetic_certificate signed_int32 {
-                premise 0: __rust_mir_8_remaining <= 0 => __rust_mir_8_remaining <= 0;
-                trivial => -3 <= 0;
-                add 0, 1 => (__rust_mir_8_remaining + -3) <= (0 + 0);
-                conclusion 2;
-            }
-        } {
-            arithmetic_certificate signed_int32 {
-                premise 0: not at(statement(301).entry, 4) <= at(statement(301).entry, __rust_mir_8_remaining) => not at(statement(301).entry, 4) <= at(statement(301).entry, __rust_mir_8_remaining);
-                conclusion 0;
+            not 4 <= __rust_mir_8_remaining => {
+                arithmetic_certificate signed_int32 {
+                    premise 0: not at(statement(301).entry, 4) <= at(statement(301).entry, __rust_mir_8_remaining) => not at(statement(301).entry, 4) <= at(statement(301).entry, __rust_mir_8_remaining);
+                    conclusion 0;
+                }
             }
         }
     }

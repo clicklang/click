@@ -321,9 +321,9 @@ fn unsupported_proof_shape(
         |(index, shape)| format!("tactic {index} ({shape})"),
     );
     let rewrite = if grouped {
-        "Every terminal path must establish every listed claim. If `step()` reaches a maybe-throwing call, use `outcomes { returned { ... } threw { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
+        "Every terminal path must establish every listed claim. If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
     } else {
-        "If `step()` reaches a maybe-throwing call, use `outcomes { returned { ... } threw { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
+        "If `step()` reaches a maybe-throwing call, use `outcomes { returned => { ... } threw => { ... } }` to handle its two successors. For proposition-only work, move the operation into `have proposition by { ... }`."
     };
     ClickError::new(format!(
         "`{proof_label}`: the proof script is valid, but the verifier cannot yet certify it for {claim_description}. It reached {shape}, which is not implemented in this execution context. No listed claim was shown false. {rewrite}"

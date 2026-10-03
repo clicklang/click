@@ -21,13 +21,10 @@ void zap(int32 *v, int32 n) {
     owns v[0..n];
     ensures forall (k: int32) { 0 <= k and k < n - 1 implies v[k] == old(v[k]) };
 } by {
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
     have 0 <= n - 1 by { arithmetic() using { 0 < n; } }
     have n - 1 <= 1000 by { arithmetic() using { 0 < n; n <= 1000; } }

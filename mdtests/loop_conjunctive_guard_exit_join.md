@@ -67,23 +67,23 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
             }
         }
     }
-    branch {
-        then {
-            have p[0] == 0 by {
-                cases(a == 0 or p[0] == 0) {
+    branch then {
+        have p[0] == 0 by {
+            cases {
+                a == 0 => {
                     have a == 0 by {
                         assumption();
                     }
                     contradiction(a == 0);
-                } {
+                }
+                p[0] == 0 => {
                     assumption();
                 }
             }
-            step();
-            simp();
         }
-        else {}
-    }
+        step();
+        simp();
+    } else {}
     step();
     simp();
 }
