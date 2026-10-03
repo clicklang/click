@@ -219,6 +219,38 @@ it exact, so it needs no ordering or definedness side condition. The body
 remains exact, so a fold over a written array is never equated with the same
 fold over the snapshot before the write.
 
+## Shared machine constants
+
+`MachineIntegerFormat` records signedness and one of the fixed widths 8, 16,
+32, 64, or 128. `MachineIntegerConstant` pairs that format with a checked
+two's-complement payload; its private fields prevent oversized payloads from
+entering a consumer. The inclusive bounds, literal checking, numeric observation,
+and conversion policies share this representation. Boolean values remain a
+separate source type. Width gives the number of value bytes, not ABI alignment
+or a promise that a frontend supports that width.
+
+Checked conversion preserves the numeric value or refuses it. Modulo conversion
+is a separately requested operation: it sign-extends a signed source, retains
+an unsigned source's value, and reduces modulo the destination width. This
+implements the constant policy of C++20 integral conversions and Rust integer
+`as`; a C importer must still select its target's signed narrowing policy.
+The ordinary reverse conversion from Integer always uses the checked operation.
+
+The existing 8–64-bit runtime types use the shared format for their bounds,
+constant observations, Integer conversions, and constant rewrite normalization.
+C++ literals and constant casts use it as well. The runtime bridge requires an
+exact format match, including signedness; narrow signed constants retain the
+existing sign-extended 32-bit carrier. An arbitrary Integer larger than the
+format is refused from its cached bit length before inspecting its limbs.
+Parsing work scales with the explicitly written decimal spelling, and numeric
+allocation is charged before constructing bounded exact values.
+
+Signed and unsigned 128-bit constants, their full endpoint ranges, widening,
+and narrowing are represented and tested against independent exact arithmetic.
+Symbolic 128-bit terms, runtime storage/ABI, source types, arithmetic definedness,
+and frontend admission remain separate work. This layer does not yet enable
+`__int128` execution or surface `int128` / `uint128` types.
+
 ## Work budgets and certificate scaling
 
 Numeric work has two independent costs: reachable expression visits and

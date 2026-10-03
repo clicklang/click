@@ -6505,6 +6505,7 @@ int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7
 
 #[test]
 fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
+    let mut previous = None;
     for size in [2usize, 4, 8, 16] {
         let locals = (0..size)
             .map(|index| format!("int __click_cpp_nested_value_{index} = 0;"))
@@ -6519,10 +6520,20 @@ fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
         let (lowered, work) =
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
+        // The shared constant layer charges decimal parsing at both artifact
+        // validation and lowering. Each one-character initializer adds six
+        // units; name probing must still grow linearly across all sizes.
         assert!(
-            work >= 2 * size && work <= 5 * size + 32,
+            work >= 2 * size && work <= 11 * size + 32,
             "{size} calls and collisions: {work} work"
         );
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 2,
+                "doubling calls must not exceed twice the work"
+            );
+        }
+        previous = Some(work);
     }
 }
 
@@ -6651,6 +6662,7 @@ int32 relay(bool fail, int32 left) throws int32 { ensures result == 5 by { execu
 
 #[test]
 fn nested_argument_lowering_scales_with_arity() {
+    let mut previous = None;
     for size in [2usize, 8, 32, 128] {
         let parameters = (0..size)
             .map(|i| format!("int a{i}"))
@@ -6669,10 +6681,19 @@ fn nested_argument_lowering_scales_with_arity() {
         let (lowered, work) =
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
+        // One-character literals now pay six units for shared checked parsing
+        // at the two import boundaries. Retain the multi-size growth check.
         assert!(
-            work >= size && work <= 3 * size + 32,
+            work >= size && work <= 9 * size + 32,
             "{size} arguments: {work} work"
         );
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 4,
+                "quadrupling arity must not exceed four times the work"
+            );
+        }
+        previous = Some(work);
     }
 }
 

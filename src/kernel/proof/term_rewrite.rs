@@ -6,6 +6,7 @@ use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
     AlgebraicValue, PureFunctionArgument,
 };
+#[cfg(test)]
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -4071,26 +4072,8 @@ fn canonicalize_integer_to_machine_constant(value: Bitvector32Term) -> Bitvector
     let Some(constant) = value.as_ref().as_const() else {
         return Bitvector32Term::IntegerToMachine { value, destination };
     };
-    let converted = match destination {
-        MachineIntegerType::Int8 => constant
-            .to_i8()
-            .map(|value| Bitvector32Term::Constant(value as i32 as u32)),
-        MachineIntegerType::Int16 => constant
-            .to_i16()
-            .map(|value| Bitvector32Term::Constant(value as i32 as u32)),
-        MachineIntegerType::Int32 => constant
-            .to_i32()
-            .map(|value| Bitvector32Term::Constant(value as u32)),
-        MachineIntegerType::UInt8 => constant
-            .to_u8()
-            .map(|value| Bitvector32Term::Constant(u32::from(value))),
-        MachineIntegerType::UInt16 => constant
-            .to_u16()
-            .map(|value| Bitvector32Term::Constant(u32::from(value))),
-        MachineIntegerType::UInt32 => constant.to_u32().map(Bitvector32Term::Constant),
-        MachineIntegerType::Int64 => constant.to_i64().map(Bitvector32Term::Int64Constant),
-        MachineIntegerType::UInt64 => constant.to_u64().map(Bitvector32Term::UInt64Constant),
-    };
+    let converted = MachineIntegerConstant::from_integer(destination.format(), constant)
+        .and_then(|value| destination.constant_term(value));
     converted.unwrap_or(Bitvector32Term::IntegerToMachine { value, destination })
 }
 

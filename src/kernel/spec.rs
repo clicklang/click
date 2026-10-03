@@ -1,7 +1,5 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 
 type EvaluatedSpecResource = (CResource, Vec<ExecutionPureFact>, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
@@ -7248,78 +7246,15 @@ fn integer_constant_to_machine(
     value: &IntegerTerm,
     destination: MachineIntegerType,
 ) -> Option<CValue> {
-    let value = value.as_const()?;
-    match destination {
-        MachineIntegerType::Int8 => {
-            let value = i8::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int8(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::Int16 => {
-            let value = i16::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int16(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::Int32 => {
-            let value = i32::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int32(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt8 => {
-            let value = u8::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt8(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt16 => {
-            let value = u16::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt16(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt32 => {
-            let value = u32::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt32(Bitvector32Term::Constant(value)))
-        }
-        MachineIntegerType::Int64 => Some(CValue::Int64(Bitvector32Term::Int64Constant(
-            value.to_i64()?,
-        ))),
-        MachineIntegerType::UInt64 => Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
-            value.to_u64()?,
-        ))),
-    }
+    let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
+    destination.constant_value(value)
 }
 
 pub(super) fn integer_machine_bounds(
     destination: MachineIntegerType,
 ) -> (IntegerTerm, IntegerTerm) {
-    match destination {
-        MachineIntegerType::Int8 => (
-            IntegerTerm::constant_i64(i8::MIN as i64),
-            IntegerTerm::constant_i64(i8::MAX as i64),
-        ),
-        MachineIntegerType::Int16 => (
-            IntegerTerm::constant_i64(i16::MIN as i64),
-            IntegerTerm::constant_i64(i16::MAX as i64),
-        ),
-        MachineIntegerType::Int32 => (
-            IntegerTerm::constant_i64(i32::MIN as i64),
-            IntegerTerm::constant_i64(i32::MAX as i64),
-        ),
-        MachineIntegerType::UInt8 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant_i64(u8::MAX as i64),
-        ),
-        MachineIntegerType::UInt16 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant_i64(u16::MAX as i64),
-        ),
-        MachineIntegerType::UInt32 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant(BigInt::from(u32::MAX)),
-        ),
-        MachineIntegerType::Int64 => (
-            IntegerTerm::constant(BigInt::from(i64::MIN)),
-            IntegerTerm::constant(BigInt::from(i64::MAX)),
-        ),
-        MachineIntegerType::UInt64 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant(BigInt::from(u64::MAX)),
-        ),
-    }
+    let (lower, upper) = destination.format().bounds();
+    (IntegerTerm::constant(lower), IntegerTerm::constant(upper))
 }
 
 fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<CValue> {
