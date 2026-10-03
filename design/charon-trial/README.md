@@ -284,7 +284,7 @@ mutable borrows. Verification, profiling, auditing and expanded-certificate
 rechecking agree on the trial.
 
 The following checkpoint adds owned local records and uniform region copies.
-Shared array iteration remains a requirement for
+Shared array iteration was subsequently assessed for
 adler2's owned `U32X4` computation.
 
 ## Owned uniform array-field checkpoint
@@ -424,9 +424,42 @@ cargo run --bin click -- verify design/charon-trial/arithmetic/arithmetic.click
 cargo nextest run --test rust_import --run-ignored only -E 'test(charon_checksum_arithmetic_live_refresh_and_rejected_modes)'
 ```
 
-The unchanged adler2 path still needs owned array-field construction/moves,
-array/shared-element iteration, resolved custom operators and crate-level import coverage. Continue
-those checkpoints before claiming checksum verification or changing the default.
+## Resolved source assignment operators
+
+[assignment-operators/operators.rs](assignment-operators/operators.rs) imports local
+`MulAssign<u32>`, `RemAssign<u32>` and `AddAssign<&U32X4>` implementations.
+The multiplication and remainder method bodies are copied unchanged from adler2.
+Resolved trait declarations, implementation identities, receiver and operand
+signatures, call arguments and safe Rust ABI are checked before ordinary
+function registration and dispatch. Stable contract names include the operand
+type: `U32X4_mul_assign_u32`, `U32X4_rem_assign_u32` and
+`U32X4_add_assign_ref_U32X4`. Colliding names fail import.
+
+`resolved-source-assignment-operators-v1` authorizes dispatch to imported source
+bodies. It adds no arithmetic axiom or special execution statement. A live
+compiler regression uses two `AddAssign` overloads whose bodies replace the
+receiver value, demonstrating that the implementation determines the behavior.
+False lane results, overflow, zero divisors, missing authority and writes through
+shared operands are rejected. Verification, profiling, auditing, expansion and
+expanded-certificate rechecking exercise the ordinary call path.
+
+The sidecar proves bounded doubling, arbitrary nonzero remainder, bounded
+borrowed addition with preserved input lanes, and a concrete two-call local
+construction. Source bodies remain fixed. General symbolic multiplication and
+symbolic successive-call composition currently encounter documented proof-engine
+limitations; see [the multiplication report](../../bugs/rust-symbolic-multiplication-precondition-not-matched.md)
+and [the successive-call report](../../bugs/rust-successive-array-field-calls-lose-symbolic-values.md).
+By-value aggregate operands, generic implementations, other operator traits,
+external implementation bodies and dynamic dispatch remain rejected.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/assignment-operators/operators.click
+cargo run --bin click -- verify design/charon-trial/assignment-operators/operators.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_assignment_operators_live_refresh_and_source_semantics)'
+```
+
+The unchanged adler2 path still needs by-value aggregate operator operands,
+crate-level import coverage and a checksum-loop proof. Charon remains opt-in.
 
 ## Profile, locks, and trust
 

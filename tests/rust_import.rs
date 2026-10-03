@@ -235,6 +235,139 @@ fn charon_array_snapshots_live_refresh() {
     .unwrap();
 }
 
+const CHARON_OPERATOR_SOURCE: &str =
+    include_str!("../design/charon-trial/assignment-operators/operators.rs");
+const CHARON_OPERATOR_SIDECAR: &str =
+    include_str!("../design/charon-trial/assignment-operators/operators.click");
+fn charon_operator_project() -> Project {
+    let p = Project::new(CHARON_OPERATOR_SOURCE);
+    for (name, bytes) in [
+        ("operators.rs", CHARON_OPERATOR_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_OPERATOR_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!(
+                "../design/charon-trial/assignment-operators/operators.click.import.json"
+            )
+            .as_slice(),
+        ),
+        (
+            "operators.ullbc",
+            include_bytes!("../design/charon-trial/assignment-operators/operators.ullbc")
+                .as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../design/charon-trial/assignment-operators/operators.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
+    let p = charon_operator_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_OPERATOR_SIDECAR, &prepared).unwrap();
+    for (before, after) in [
+        ("old(self->_0[0]) * rhs", "old(self->_0[0]) + rhs"),
+        ("old(self->_0[3]) % quotient", "old(self->_0[2]) % quotient"),
+        (
+            "ensures other->_0[0] == old(other->_0[0]);",
+            "ensures other->_0[0] == 0u32;",
+        ),
+        ("requires quotient != 0u32;", "requires quotient == 0u32;"),
+        ("owns self->_0[0..4];", "views self->_0[0..4];"),
+        ("views other->_0[0..4];", "views other->_0[1..4];"),
+        (
+            "requires self->_0[0] <= 1000u32;",
+            "requires self->_0[0] == 4294967295u32;",
+        ),
+        ("(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
+    ] {
+        let invalid = CHARON_OPERATOR_SIDECAR.replace(before, after);
+        assert_ne!(invalid, CHARON_OPERATOR_SIDECAR);
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "{before}"
+        );
+    }
+}
+#[test]
+fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
+    let p = charon_operator_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "U32X4_mul_assign_u32.contract",
+        "U32X4_add_assign_ref_U32X4.contract",
+        "reduced.contract",
+        "local.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_assignment_operators_live_refresh_and_source_semantics() {
+    let p = charon_operator_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_OPERATOR_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for source in [
+        "pub struct S(pub u32); impl core::ops::AddAssign<S> for S { fn add_assign(&mut self, rhs:S) { self.0 += rhs.0; } }",
+        "pub struct S<T>(pub T); impl<T> core::ops::AddAssign<T> for S<T> { fn add_assign(&mut self, rhs:T) { self.0 = rhs; } }",
+        "pub struct S(pub u32); trait AddAssign { fn add_assign(&mut self, rhs:u32); } impl AddAssign for S { fn add_assign(&mut self, rhs:u32) { self.0 = rhs; } }",
+        "pub struct S(pub u32); impl core::ops::AddAssign<&S> for S { fn add_assign(&mut self, rhs:&S) { rhs.0 = self.0; } }",
+        "pub struct S(pub u32); impl core::ops::AddAssign<u32> for S { fn add_assign(&mut self, rhs:u32) { self.0 = rhs; } } pub fn S_add_assign_u32(x:&mut S, rhs:u32) { x.0 = rhs; }",
+    ] {
+        fs::write(p.root.join("operators.rs"), source).unwrap();
+        let old_artifact = fs::read(p.root.join("operators.ullbc")).unwrap();
+        let old_lock = fs::read(p.root.join("borrow.click.import.json.lock")).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(!error.contains("panicked"), "{error}");
+        assert_eq!(
+            fs::read(p.root.join("operators.ullbc")).unwrap(),
+            old_artifact
+        );
+        assert_eq!(
+            fs::read(p.root.join("borrow.click.import.json.lock")).unwrap(),
+            old_lock
+        );
+    }
+    // Same trait and owner, different RHS identities. Neither body performs addition.
+    fs::write(p.root.join("operators.rs"), "pub struct S(pub u32); impl core::ops::AddAssign<u32> for S { fn add_assign(&mut self, rhs:u32) { self.0 = rhs; } } impl core::ops::AddAssign<&S> for S { fn add_assign(&mut self, rhs:&S) { self.0 = rhs.0; } } pub fn scalar(x:&mut S, rhs:u32) { *x += rhs; } pub fn borrowed(x:&mut S, rhs:&S) { *x += rhs; }").unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = r#"verifying "operators.rs";
+void S_add_assign_u32(struct S* self, uint32 rhs) { owns self->_0; ensures self->_0 == rhs; } by { execute(); simp(); }
+void S_add_assign_ref_S(struct S* self, const struct S* rhs) { requires separate(memory(self->_0), memory(rhs->_0)); views rhs->_0; owns self->_0; ensures self->_0 == old(rhs->_0); ensures rhs->_0 == old(rhs->_0); } by { execute(); simp(); }
+void scalar(struct S* x, uint32 rhs) { owns x->_0; ensures x->_0 == rhs; } by { execute(); simp(); }
+void borrowed(struct S* x, const struct S* rhs) { requires separate(memory(x->_0), memory(rhs->_0)); views rhs->_0; owns x->_0; ensures x->_0 == old(rhs->_0); } by { execute(); simp(); }
+"#;
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    let false_math = sidecar.replace(
+        "ensures self->_0 == rhs;",
+        "ensures self->_0 == old(self->_0) + rhs;",
+    );
+    assert!(C0VerificationSession::new_program_prepared(&false_math, &prepared).is_err());
+}
+
 const CHARON_ITERATION_SOURCE: &str =
     include_str!("../design/charon-trial/array-iteration/iteration.rs");
 const CHARON_ITERATION_SIDECAR: &str =
