@@ -1045,6 +1045,7 @@ fn collect_memory_load_work<'a>(
                     | Bitvector32Term::Float32Negate(value)
                     | Bitvector32Term::Float64Negate(value)
                     | Bitvector32Term::Int64From32(value)
+                    | Bitvector32Term::MachineIntegerCast { value, .. }
                     | Bitvector32Term::Int64FromUInt32(value)
                     | Bitvector32Term::UInt64From32(value)
                     | Bitvector32Term::UInt32From64(value)

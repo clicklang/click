@@ -2616,6 +2616,7 @@ fn substitute_load_variables(
         VisitOffset(&'a PointerOffsetTerm),
         RebuildBinary(BinaryConstructor),
         RebuildUnary(UnaryConstructor),
+        RebuildMachineCast(MachineIntegerType, MachineIntegerType),
         RebuildFloatUnary(bool),
         RebuildFloatBinary {
             is_float64: bool,
@@ -2676,6 +2677,15 @@ fn substitute_load_variables(
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } => {
+                        tasks.push(Task::RebuildMachineCast(*source, *destination));
+                        tasks.push(Task::VisitTerm(value));
+                    }
+
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
@@ -3151,6 +3161,14 @@ fn substitute_load_variables(
                 let left = term_results.pop().expect("visited left term");
                 term_results.push(constructor(Box::new(left), Box::new(right)));
             }
+            Task::RebuildMachineCast(source, destination) => {
+                let value = term_results.pop().expect("visited machine cast operand");
+                term_results.push(Bitvector32Term::machine_integer_cast(
+                    source,
+                    destination,
+                    value,
+                ));
+            }
             Task::RebuildUnary(constructor) => {
                 let value = term_results.pop().expect("visited unary term");
                 term_results.push(constructor(Box::new(value)));
@@ -3335,6 +3353,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)

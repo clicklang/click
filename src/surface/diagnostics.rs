@@ -4932,6 +4932,12 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        Bitvector32Term::MachineIntegerCast {
+            source,
+            destination,
+            ..
+        } => format!("machine-cast({source:?}->{destination:?})"),
+
         Bitvector32Term::Constant(value) => format!("{}", *value as i32),
         Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
         Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),

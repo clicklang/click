@@ -663,6 +663,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -3754,6 +3755,12 @@ impl<'a> TermRewrite<'a> {
             }
         }
         let result = match v {
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } => Bitvector32Term::machine_integer_cast(*source, *destination, self.bits(value)),
+
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)

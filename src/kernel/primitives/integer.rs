@@ -717,6 +717,23 @@ impl IntegerTerm {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
         }
+        let value = match value {
+            Bitvector32Term::MachineIntegerCast { destination, .. } if destination != ty => {
+                return None;
+            }
+            // Strictly increasing widths bound this normalization by the
+            // closed set of machine widths, even for caller-built terms.
+            Bitvector32Term::MachineIntegerCast {
+                source,
+                value: operand,
+                ..
+            } if ty.format().bits() > source.format().bits()
+                && ty.format().contains(source.format()) =>
+            {
+                return Self::from_machine(source, *operand);
+            }
+            value => value,
+        };
         if matches!(
             value,
             Bitvector32Term::Constant(_)
