@@ -1786,6 +1786,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
                 ))),
                 state,
             },
@@ -1856,7 +1857,8 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
             outcome: CStatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
-                    Box::new(pointer)
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32
                 ))),
                 state,
             },
@@ -2578,6 +2580,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(derived),
+                    crate::kernel::LoadKind::Bits32,
                 ))),
                 state,
             },
@@ -2898,7 +2901,9 @@ fn relative_dependent_range_is_covered_by_owned_range() {
         )
         .assume_condition(ConditionTerm::signed_less_than(index, length.clone()), true)
         .assume_condition(ConditionTerm::signed_less_equal(length, capacity), true);
-    let resources = ResourceContext::new().unchecked_with_fact(available);
+    // Publish the symbolic supplier at construction, before containment queries.
+    let resources =
+        ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(available);
 
     assert!(resources.satisfies_fact(&required, &assumptions));
     assert!(resources.without_fact(&required, &assumptions).is_some());
@@ -3075,6 +3080,63 @@ fn excluded_small_integer_range_is_inconsistent() {
 }
 
 #[test]
+fn excluded_range_endpoints_force_the_remaining_value() {
+    // `0 <= k < 4` with `k != 0`, `k != 1` and `k != 3` leaves only `k == 2`;
+    // without the exclusion at either end the value stays undecided.
+    let k = Bitvector32Term::Variable(Variable(87));
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+            true,
+        );
+    let exclude = |assumptions: PureFactContext, value: u32| {
+        assumptions.assume_condition(
+            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+            false,
+        )
+    };
+    let is_two = ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(2));
+    let all = exclude(exclude(exclude(bounded.clone(), 0), 1), 3);
+    assert_eq!(all.decide(&is_two), Some(true));
+    let low_only = exclude(exclude(bounded.clone(), 0), 1);
+    assert_eq!(low_only.decide(&is_two), None);
+    let high_only = exclude(exclude(bounded, 1), 3);
+    assert_eq!(high_only.decide(&is_two), None);
+}
+
+#[test]
+fn a_signed_interval_moves_past_excluded_endpoints() {
+    let k = Bitvector32Term::Variable(Variable(88));
+    let assumptions = [1, 2, 3, 5].into_iter().fold(
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+                true,
+            ),
+        |assumptions, value| {
+            assumptions.assume_condition(
+                ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+                false,
+            )
+        },
+    );
+    assert_eq!(assumptions.signed_interval(&k), Some((0, 3)));
+    // `k != 5` lies outside the range and moves nothing.
+    assert_eq!(
+        assumptions.signed_interval_past_exclusions(&k),
+        Some((0, 0))
+    );
+}
+
+#[test]
 fn singleton_integer_range_forces_equality() {
     let k = Bitvector32Term::Variable(Variable(86));
     let assumptions = PureFactContext::new()
@@ -3182,6 +3244,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_greater_equal(load.clone(), Bitvector32Term::Constant(2)),
@@ -3207,6 +3270,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     let changed_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(changed),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let other_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
@@ -3214,6 +3278,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
             block: pointer.block,
             offset: PointerOffsetTerm::Constant(4),
         }),
+        crate::kernel::LoadKind::Bits32,
     );
     for unrelated in [changed_load, other_load] {
         assert_ne!(
@@ -3309,6 +3374,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), load.clone()),
@@ -3343,6 +3409,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
         let unrelated = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(snapshot),
             Box::new(address),
+            crate::kernel::LoadKind::Bits32,
         );
         let bad = Proposition::ConditionIs(
             ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1)),
@@ -3404,5 +3471,108 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
     assert!(
         samples[2] <= samples[0].saturating_mul(2) + 10,
         "{samples:?}"
+    );
+}
+
+#[test]
+fn resource_object_provenance_does_not_scan_same_raw_block() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(895_000 + id)),
+    };
+    let target = pointer(0);
+    let expression = c_less_equal(c_variable("pointer"), c_variable("pointer"));
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let assumptions = PureFactContext::new();
+        let mut resources = ResourceContext::new_with_equalities(&assumptions);
+        for id in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(pointer(id), 0u32.into(), 4u32.into(), 1),
+            ));
+        }
+        resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1),
+        ));
+        let state = CState::new()
+            .with_local("pointer", CValue::pointer(target.clone()))
+            .with_resource_context(resources);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut budget = ExecutionBudget::for_c_expression(&expression);
+            evaluate_c_expression_paths(&state, &expression, &assumptions, &mut budget).unwrap()
+        });
+        assert!(
+            paths
+                .iter()
+                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples[3] <= samples[0] + 2000,
+        "provenance scanned the raw block: {samples:?}"
+    );
+}
+
+#[test]
+fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
+    let assert_type_mismatch = |expression| {
+        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        assert!(matches!(
+            theorem.proposition(),
+            Proposition::CExpressionEvaluates {
+                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                ..
+            }
+        ));
+    };
+    for bits in [0u64, 1, i64::MAX as u64, 1u64 << 63, u64::MAX] {
+        let expression = c_uint64_bits_to_int64(c_uint64_literal(bits));
+        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let Proposition::CExpressionEvaluates {
+            outcome: CExpressionOutcome::Value(CValue::Int64(value)),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("expected signed bits");
+        };
+        assert_eq!(value.int64_as_const(), Some(bits as i64));
+        // The explicit language rule does not enable the same ordinary C cast.
+        assert_type_mismatch(c_cast(c_uint64_literal(bits), CType::Int64));
+    }
+    assert_type_mismatch(c_uint64_bits_to_int64(c_int32_literal(1)));
+    let mut malformed = c_uint64_bits_to_int64(c_uint64_literal(1));
+    let CExpression::Cast { target_type, .. } = &mut malformed else {
+        unreachable!()
+    };
+    *target_type = CType::UInt64;
+    assert_type_mismatch(malformed);
+}
+
+#[test]
+fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
+    let source = Bitvector32Term::uint64_subtract(
+        Bitvector32Term::Variable(Variable(139_001)),
+        Bitvector32Term::UInt64Constant(1),
+    );
+    let converted = Bitvector32Term::int64_from_uint64_bits(source.clone());
+    assert_eq!(converted, source); // Preserve the symbolic 64-bit expression.
+    let wrapped = Bitvector32Term::UInt64Add(
+        Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
+        Box::new(Bitvector32Term::UInt64Constant(1)),
+    );
+    assert_eq!(wrapped.int64_as_const(), Some(0));
+    let high = Bitvector32Term::UInt64Constant(1u64 << 63);
+    assert_eq!(
+        Bitvector32Term::int64_divide(high, Bitvector32Term::Int64Constant(-1)).int64_as_const(),
+        None
+    );
+    assert_eq!(
+        Bitvector32Term::int64_divide(
+            Bitvector32Term::Int64Constant(1),
+            Bitvector32Term::Int64Constant(0)
+        )
+        .int64_as_const(),
+        None
     );
 }

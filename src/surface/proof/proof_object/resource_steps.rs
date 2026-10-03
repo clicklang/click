@@ -33,6 +33,34 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return false;
         };
+        let Some(execution) = self.execution() else {
+            return false;
+        };
+        let (state, result) = match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) => {
+                (&*goal.data.core.state, Some(&*goal.data.core.result))
+            }
+            _ => (&*execution.core.state, None),
+        };
+        let selected = if let Some(result) = result {
+            lower_resource_clause_at_state_with_result(
+                resource,
+                context.parsed_function.parameters(),
+                context.arguments,
+                state,
+                result,
+            )
+        } else {
+            lower_resource_clause_at_state(
+                resource,
+                context.parsed_function.parameters(),
+                context.arguments,
+                state,
+            )
+        };
+        if selected.is_ok_and(|selected| state.tracks_authority_member(&selected)) {
+            return false;
+        }
         let Some(definition) = context.resource_environment.get(name) else {
             return false;
         };
@@ -86,21 +114,21 @@ impl<'a> Proof<'a> {
                 "`{name}` is abstract; its members require an ordinary producing contract"
             )));
         };
+        let contains_nonprivate_resource = body.contains.iter().any(|clause| {
+            !matches!(clause, ResourceClause::OwnMemory(_))
+                && !matches!(clause, ResourceClause::Declared { name, .. } if name != "authority")
+        });
         if !definition.resource_parameters().is_empty()
             || !definition.fields().is_empty()
             || !body.children.is_empty()
             || body.guarded_by.is_some()
             || body.matched.is_some()
             || body.condition.is_some()
-            || body
-                .contains
-                .iter()
-                .any(|clause| !matches!(clause, ResourceClause::OwnMemory(_)))
-            || !body.facts.is_empty()
+            || contains_nonprivate_resource
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
-                "authority-mode fold/unfold of `{name}` requires a private owned-memory body"
+                "authority-mode fold/unfold of `{name}` requires a private body of owned memory or declared resources"
             )));
         }
         self.require_execution_frontier("population member change")?;
@@ -132,6 +160,27 @@ impl<'a> Proof<'a> {
                 before_facts.assumptions(),
             )
             .map_err(|message| {
+                if let Some(index) = message
+                    .strip_prefix("Requires member body fact #")
+                    .and_then(|index| index.parse::<usize>().ok())
+                    && let Some(fact) = body.facts.get(index)
+                {
+                    let fact = resource_argument_substitutions(
+                        definition,
+                        resource,
+                        context.claim_label,
+                        context.tactic_index,
+                    )
+                    .ok()
+                    .and_then(|substitutions| {
+                        substitute_click_proposition(fact, &substitutions).ok()
+                    });
+                    if let Some(fact) = fact {
+                        return self
+                            .step_error(format!("Requires {}", describe_click_proposition(&fact)));
+                    }
+                }
+
                 if produce && message.contains("Requires the private body") {
                     let missing = resource_argument_substitutions(
                         definition,
@@ -166,6 +215,24 @@ impl<'a> Proof<'a> {
                 }
                 self.step_error(message)
             })?;
+        let added_facts = if !produce && !compiled_definition.facts().is_empty() {
+            crate::kernel::instantiate_private_member_body_facts(
+                &selected,
+                compiled_definition,
+                execution.core.state.memory(),
+                before_facts.assumptions(),
+            )
+            .ok_or_else(|| {
+                self.step_error("Requires ownership of every cell read by member body facts")
+            })?
+            .propositions
+        } else {
+            Vec::new()
+        };
+        let mut after_facts = before_facts.clone();
+        for fact in &added_facts {
+            after_facts = after_facts.with_kernel_checked_fact(fact.clone());
+        }
         let entry_successor = execution
             .core
             .record_population_member_rewrite(
@@ -176,7 +243,7 @@ impl<'a> Proof<'a> {
                 produce,
                 &witness,
                 &after_state,
-                &before_facts,
+                &after_facts,
             )
             .map_err(|message| {
                 self.step_error(format!(
@@ -188,15 +255,15 @@ impl<'a> Proof<'a> {
             .focused_branch()
             .expect("population member change requires an open goal")
             .with_state(BranchState {
-                facts: before_facts,
+                facts: after_facts,
                 unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
             locals: self.state().locals().clone(),
             branch: Some(branch),
-            added_facts: Vec::new(),
-            checked_facts: Vec::new(),
+            added_facts: added_facts.clone(),
+            checked_facts: added_facts,
         })
     }
 
@@ -720,7 +787,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    &crate::persistent::PersistentMap::default(),
+                    self.local_integer_values(),
                     context.pre_state,
                     context.state,
                     context.result,
@@ -745,7 +812,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    &crate::persistent::PersistentMap::default(),
+                    self.local_integer_values(),
                     view.pre_state,
                     view.state,
                     view.result,
@@ -776,7 +843,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    &crate::persistent::PersistentMap::default(),
+                    self.local_integer_values(),
                     pre_state,
                     &execution.core.state,
                     None,
@@ -2018,11 +2085,13 @@ impl<'a> Proof<'a> {
             context.click_function_environment,
             &execution.core.unfolded_predicates,
         )?;
-        let selected = lower_resource_clause_at_state(
+        let selected = lower_resource_clause_at_state_with_assumptions(
             resource,
             context.parsed_function.parameters(),
             context.arguments,
             &checked.state,
+            None,
+            checked.facts.assumptions(),
         )?;
         execution
             .core
@@ -2243,12 +2312,13 @@ impl<'a> Proof<'a> {
         if state.uses_population_authority_semantics()
             && self.is_authority_transfer_wrapper(resource)
         {
-            let selected = lower_resource_clause_at_state_with_result(
+            let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &state,
-                &value,
+                Some(&value),
+                checked.facts.assumptions(),
             )?;
             execution
                 .core

@@ -1530,11 +1530,13 @@ impl CompositeProjectionEvidence {
     }
 
     fn contains_child(&self, child: &CResourceFact) -> bool {
+        // Evidence-local structural entailment has no ambient premises.
+        let assumptions = &PureFactContext::default();
         self.children.iter().any(|piece| {
             piece == child
-                || ResourceContext::new()
+                || ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(piece.clone())
-                    .satisfies_fact(child, &PureFactContext::default())
+                    .satisfies_fact(child, assumptions)
         })
     }
 }
@@ -1656,7 +1658,7 @@ impl LocalViewBacking {
             bytes,
             1,
         );
-        if !ResourceContext::new()
+        if !ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_fact(CResourceFact::own_memory(entire))
             .satisfies_fact(viewed, assumptions)
         {
@@ -2601,7 +2603,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     LAST_OWNED_RESERVATION_MISS.with(|miss| *miss.borrow_mut() = None);
     let mut residual = caller_resources.clone();
     let mut parent_view_bindings = parent_view_bindings.clone();
-    let mut callee_resources = ResourceContext::new();
+    let mut callee_resources = ResourceContext::new_with_equalities(assumptions);
     let mut transferred_ownership = Vec::new();
     let mut transferred_holds = Vec::new();
     let mut rebound_parents = BTreeMap::new();
@@ -2755,9 +2757,55 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         // removal below: the transferred hold and the effect provenance both
         // name the residual entry that actually supplied the requirement, not
         // an equal-looking owner elsewhere in the caller's partition.
-        let Some((occurrence, caller_fact)) =
-            residual.directly_supporting_owned_entry(&requirement.fact, assumptions)
-        else {
+        // A concrete owned footprint is reserved directly from indexed live
+        // fragments before any general support lookup. Returned pointer
+        // aliases must not turn this join into a scan of the parent's block.
+        let fragment_reservation = residual
+            .clone()
+            .reserve_owned_memory_fragments(&requirement.fact, assumptions);
+        if let Some((remaining, supports)) = &fragment_reservation
+            && supports.len() > 1
+        {
+            // Bare memory may be joined, but a hold-bearing owner cannot
+            // lose its authenticated binding through an implicit join.
+            if supports.iter().any(|support| {
+                parent_view_bindings
+                    .get(support)
+                    .is_some_and(|binding| binding.hold.is_some())
+            }) {
+                return Err(StableViewPlanError::UnsupportedPartition);
+            }
+            callee_resources = callee_resources
+                .try_compose_with_fact(requirement.fact.clone(), assumptions)
+                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+            memory_effects.push(
+                requirement
+                    .fact
+                    .memory_own_range()
+                    .expect("fragment reservation is memory")
+                    .clone(),
+            );
+            reserved_ownership_supports.extend(
+                supports
+                    .iter()
+                    .copied()
+                    .map(|support| (requirement.fact.clone(), support)),
+            );
+            canonical_transferred_ownership.push(None);
+            transferred_ownership.push(requirement.clone());
+            residual = remaining.clone();
+            continue;
+        }
+        let direct = fragment_reservation
+            .as_ref()
+            .filter(|(_, supports)| supports.len() == 1)
+            .and_then(|(_, supports)| {
+                residual
+                    .owned_fact_for_occurrence(supports[0])
+                    .map(|fact| (supports[0], fact))
+            })
+            .or_else(|| residual.directly_supporting_owned_entry(&requirement.fact, assumptions));
+        let Some((occurrence, caller_fact)) = direct else {
             let error = missing_own_requirement(&requirement.fact);
             if let StableViewPlanError::MissingResource(missing) = &error
                 && !reserved_ownership_supports.is_empty()
@@ -2784,7 +2832,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             _ => false,
         };
         let canonical_caller_fact = (same_memory_extent
-            || ResourceContext::new()
+            || ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(requirement.fact.clone())
                 .satisfies_fact(caller_fact, assumptions))
         .then(|| caller_fact.clone());
@@ -2793,9 +2841,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         {
             transferred_holds.push((requirement.fact.clone(), binding.clone()));
         }
-        residual = residual
-            .without_fact_incrementally(&requirement.fact, assumptions)
-            .ok_or_else(|| missing_own_requirement(&requirement.fact))?;
+        residual = match fragment_reservation {
+            Some((remaining, supports)) if supports.len() == 1 => remaining,
+            _ => residual
+                .without_fact_incrementally(&requirement.fact, assumptions)
+                .ok_or_else(|| missing_own_requirement(&requirement.fact))?,
+        };
         callee_resources = callee_resources
             .try_compose_with_fact(requirement.fact.clone(), assumptions)
             .map_err(|_| StableViewPlanError::InvalidResidual)?;
@@ -2857,7 +2908,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         if let Some((parent_occurrence, binding)) = bound_occurrence {
             ledger.validate_view_binding(binding.clone(), caller)?;
-            if !ResourceContext::new()
+            if !ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(binding.viewed.clone())
                 .satisfies_fact(&requirement.fact, assumptions)
             {
@@ -3174,7 +3225,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                                 origin_support,
                                 assumptions,
                             )
-                            && ResourceContext::new()
+                            && ResourceContext::new_with_equalities(assumptions)
                                 .unchecked_with_fact(origin.clone())
                                 .satisfies_fact(&owned, assumptions)
                     });
@@ -3359,7 +3410,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         let mut child_occurrence = None;
         for (index, requirement) in group {
-            if !ResourceContext::new()
+            if !ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(binding.viewed.clone())
                 .satisfies_fact(&requirement.fact, assumptions)
             {
@@ -4737,12 +4788,14 @@ impl LoanLedger {
         if !scope.active || record.recovered {
             return Err(LoanRefusal::ScopeEnded);
         }
+        // Binding identity is checked without importing ambient equality facts.
+        let assumptions = &PureFactContext::default();
         if !parent.is_view()
             || !matches!(parent.resource(), CResource::Composite { .. })
             || !record.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(parent, &PureFactContext::default())
+                    .satisfies_fact(parent, assumptions)
             })
         {
             return Err(LoanRefusal::MissingLoanBinding);
@@ -4973,11 +5026,13 @@ impl LoanLedger {
         holder: LoanParticipantId,
     ) -> Result<(), LoanRefusal> {
         let loan = self.validate_authority_binding(binding.authority(), holder)?;
+        // Binding identity is checked without importing ambient equality facts.
+        let assumptions = &PureFactContext::default();
         if !binding.viewed.is_view()
             || !loan.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(&binding.viewed, &PureFactContext::default())
+                    .satisfies_fact(&binding.viewed, assumptions)
             })
         {
             return Err(LoanRefusal::MissingLoanBinding);
@@ -5218,7 +5273,7 @@ impl LoanLedger {
         .is_ok()
             && description.viewed.is_view()
             && loan.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&description.viewed, assumptions)
             })
@@ -5274,7 +5329,7 @@ impl LoanLedger {
         }
         if !viewed.is_view()
             || !record.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&viewed, assumptions)
             })
@@ -10644,6 +10699,107 @@ mod tests {
             .unwrap();
         assert!(recovery.resources.satisfies_fact(&owner, &assumptions));
         assert_eq!(recovery.ledger, ledger);
+    }
+
+    #[test]
+    fn joint_planner_reserves_owned_fragments_once_and_retains_each_support() {
+        let facts = PureFactContext::new();
+        let pieces = [memory(0, 2, true), memory(2, 3, true), memory(3, 4, true)];
+        let resources = pieces
+            .iter()
+            .fold(ResourceContext::new(), |resources, piece| {
+                resources.unchecked_with_fact(piece.clone())
+            });
+        resources.synchronize_memory_equalities(&facts);
+        let (ledger, caller, callee) = participants();
+        let required = checked(memory(0, 4, true));
+        let plan = plan_stable_view_transfer(
+            &resources,
+            std::slice::from_ref(&required),
+            &facts,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        assert!(plan.callee_resources.satisfies_fact(&required.fact, &facts));
+        assert!(plan.caller_resources_after_requirements.facts().is_empty());
+        assert_eq!(plan.reserved_ownership_supports.len(), 3);
+        for (fact, support) in &plan.reserved_ownership_supports {
+            assert_eq!(fact, &required.fact);
+            assert!(resources.owned_fact_for_occurrence(*support).is_some());
+        }
+        assert!(
+            plan_stable_view_transfer(
+                &resources,
+                &[required.clone(), required.clone()],
+                &facts,
+                &ledger,
+                caller,
+                callee
+            )
+            .is_err()
+        );
+        assert!(
+            plan_stable_view_transfer(
+                &plan.caller_resources_after_requirements,
+                &[required],
+                &facts,
+                &ledger,
+                caller,
+                callee
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(944_023)),
+                Bitvector32Term::Constant(7),
+            ),
+            true,
+        );
+        assert!(facts.equality_graph.has_term_equivalences());
+        let (ledger, caller, callee) = participants();
+        let required = checked(memory(0, 4, true));
+        let mut samples = Vec::new();
+        for count in [16, 64, 256, 1024] {
+            let mut resources = ResourceContext::new()
+                .unchecked_with_fact(memory(0, 2, true))
+                .unchecked_with_fact(memory(2, 3, true))
+                .unchecked_with_fact(memory(3, 4, true));
+            for index in 0..count {
+                resources =
+                    resources.unchecked_with_fact(memory(8192 + index * 2, 8193 + index * 2, true));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let ((plan, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    plan_stable_view_transfer(
+                        &resources,
+                        std::slice::from_ref(&required),
+                        &facts,
+                        &ledger,
+                        caller,
+                        callee,
+                    )
+                    .unwrap()
+                })
+            });
+            assert_eq!(plan.reserved_ownership_supports.len(), 3);
+            samples.push((work, map_work));
+        }
+        assert!(
+            samples[3].0 <= samples[0].0 * 2 + 64,
+            "ambient ownership scan: {samples:?}"
+        );
+        assert!(
+            samples[3].1 <= samples[0].1 * 4 + 256,
+            "ambient index scan: {samples:?}"
+        );
     }
 
     #[test]

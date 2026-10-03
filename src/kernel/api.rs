@@ -34,6 +34,65 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
+/// The element question a memory access in a named object asks, for a
+/// refusal to state: the access lands in element `index` of an object of
+/// `count` elements, each `stride` bytes wide.
+///
+/// This reads the address the way the element rules do (the widest scaled
+/// summand of the offset, at least as wide as the access, is the element
+/// index; the object's size divided by its stride is the count). It decides
+/// nothing; a refusal uses it to say which bound it could not show.
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryAccessElementBound {
+    pub(crate) index: Bitvector32Term,
+    pub(crate) count: Bitvector32Term,
+    pub(crate) stride: u32,
+}
+
+pub(crate) fn memory_access_element_bound(
+    memory: &CMemory,
+    pointer: &Pointer,
+    byte_width: u32,
+) -> Option<MemoryAccessElementBound> {
+    let size = memory.block_size(&pointer.block)?;
+    let mut pending = vec![&pointer.offset];
+    let mut widest: Option<(&Bitvector32Term, u32)> = None;
+    while let Some(term) = pending.pop() {
+        match term {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            // A widened index is spelled as the C index it widens: a
+            // `uint32` index zero-extends to the 64-bit offset.
+            PointerOffsetTerm::Int32Scaled { value, byte_width }
+            | PointerOffsetTerm::Int64Scaled {
+                value, byte_width, ..
+            } => {
+                let value = match value.as_ref() {
+                    Bitvector32Term::UInt64From32(index) => index,
+                    value => value,
+                };
+                let stride = u32::try_from(*byte_width).ok()?;
+                if widest.is_none_or(|(_, widest)| stride > widest) {
+                    widest = Some((value, stride));
+                }
+            }
+            PointerOffsetTerm::Constant(_) => {}
+            PointerOffsetTerm::Variable(_) => return None,
+        }
+    }
+    let (index, stride) = widest?;
+    if stride < byte_width {
+        return None;
+    }
+    Some(MemoryAccessElementBound {
+        index: index.clone(),
+        count: crate::kernel::reasoning::element_count_from_bytes(size, stride)?,
+        stride,
+    })
+}
+
 pub(crate) fn clear_borrowed_input_root_memo() {
     BORROWED_INPUT_ROOTS.with(|roots| roots.borrow_mut().clear());
 }
@@ -57,9 +116,7 @@ mod algebraic_cases;
 pub(in crate::kernel) use algebraic_cases::algebraic_constructor_case_equations;
 pub use algebraic_cases::algebraic_constructor_cases;
 use contract_certification::{
-    c_function_contract_certification_assumptions,
     certification_proves_condition_from_verified_pure_implication,
-    certification_proves_context_free_forall, certification_proves_proposition,
     contract_resource_condition_cases, prove_symbolic_c_function_verification_paths,
     resources_certify_loadability,
 };
@@ -116,6 +173,62 @@ pub(crate) fn c_bool_range_fact(value: &CValue) -> Option<Proposition> {
         )
     };
     Some(Proposition::Or(Box::new(equals(0)), Box::new(equals(1))))
+}
+
+/// The range `[lower, upper]` every value of a narrow C integer type lies
+/// in, with the term holding it: a `uint8` is in `[0, 255]`, an `int16` in
+/// `[-32768, 32767]`. `None` for every other type, whose range is its word.
+pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&Bitvector32Term, i32, i32)> {
+    match value {
+        CValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
+        CValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
+        CValue::UInt8(term) => Some((term, 0, i32::from(u8::MAX))),
+        CValue::UInt16(term) => Some((term, 0, i32::from(u16::MAX))),
+        _ => None,
+    }
+}
+
+/// The type range `lower <= value` and `value <= upper` of a narrow integer
+/// value that is not a constant, as the facts every reader of the value may
+/// use.
+///
+/// Click never truncates: each conversion into a narrow type owes the
+/// obligation that its operand is in the type's range, so a narrow value is
+/// in range wherever one exists. A parameter's entry value is one such value
+/// (the caller's argument was converted to the parameter's type), so its
+/// range is an entry fact of the function, stated once where the value is
+/// introduced instead of at each use.
+pub(crate) fn c_narrow_integer_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
+    let (term, lower, upper) = c_narrow_integer_range(value)?;
+    if term.as_const().is_some() {
+        return None;
+    }
+    let mut facts = vec![
+        Proposition::ConditionIs(
+            ConditionTerm::signed_greater_equal(
+                term.clone(),
+                Bitvector32Term::Constant(lower as u32),
+            ),
+            true,
+        ),
+        Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(term.clone(), Bitvector32Term::Constant(upper as u32)),
+            true,
+        ),
+    ];
+    // An unsigned type's range is also an unsigned bound. The closers do
+    // not yet bridge the signed pair to it, and a widening to `uint32` is
+    // read in that order, so it is stated beside them.
+    if lower == 0 {
+        facts.push(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                term.clone(),
+                Bitvector32Term::Constant(upper as u32),
+            ),
+            true,
+        ));
+    }
+    Some(facts)
 }
 
 pub fn int8(bits: impl Into<Bitvector32Term>) -> CValue {
@@ -192,6 +305,34 @@ pub fn c_condition_facts_match_for_transport(
         && assumptions.condition_matches(source_condition, target_condition)
 }
 
+/// The `transport` rule for one bare condition: `context` states it, it
+/// holds by memory resolution from the facts in `context`, or a quantified
+/// fact instantiated at its terms states it.
+fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> bool {
+    let Proposition::ConditionIs(condition, value) = target else {
+        return false;
+    };
+    context.proves_exact(target)
+        || contract_certification::condition_holds_by_memory_resolution(context, condition, *value)
+        || contract_certification::condition_holds_by_instantiated_fact(
+            context,
+            condition,
+            *value,
+            &|premise| transport_premise_holds(context, premise),
+        )
+}
+
+/// A premise of a quantified fact `transport` instantiates: each conjunct
+/// is settled by an exact route or reaches like a target.
+fn transport_premise_holds(context: &PureFactContext, premise: &Proposition) -> bool {
+    match premise {
+        Proposition::And(left, right) => {
+            transport_premise_holds(context, left) && transport_premise_holds(context, right)
+        }
+        _ => context.settles_exactly(premise) || condition_target_reaches(context, premise),
+    }
+}
+
 /// Certifies a stated condition target from one explicit condition source and
 /// deterministic memory-resolution evidence. Unlike whole-fact transport,
 /// this permits a target to retain an old load on one side while transporting
@@ -207,7 +348,7 @@ pub(crate) fn c_condition_fact_target_reaches_in_context(
         return false;
     }
     let with_source = assumptions.clone().assume_proposition(source.clone());
-    certification_proves_proposition(&with_source, target)
+    condition_target_reaches(&with_source, target)
 }
 
 /// Exports target-directed transport only when every contextual dependency
@@ -238,7 +379,7 @@ pub fn prove_c_condition_fact_target_transport(
             context.assume_proposition(premise)
         })
         .assume_proposition(source.clone());
-    certification_proves_proposition(&restricted, target)
+    condition_target_reaches(&restricted, target)
         .then(|| c_condition_fact_transport_theorem(source, target.clone(), premises))
 }
 
@@ -1244,6 +1385,8 @@ fn abstract_c_state_for_join_across_with_policy(
     // untouched: the arms' authority survives the abstraction, only the
     // per-occurrence bookkeeping of the discarded context goes away.
     Ok(CStateJoinAbstraction {
+        // Structural empty join shape; live successor resources are supplied
+        // separately by the checked interface, not inserted into this placeholder.
         state: abstract_state.with_resource_context(ResourceContext::new()),
         next_kernel_variable: budget.next_kernel_variable(),
     })
@@ -1406,10 +1549,42 @@ pub fn c_cast_with_pointee_qualifiers_and_struct(
     CExpression::Cast {
         expression: Box::new(expression),
         target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
         pointee_struct,
         pointee_volatile,
         pointee_constant,
+        explicit_qualification: false,
     }
+}
+
+/// A cast the C source wrote. Its result has exactly the destination's
+/// pointee `const` qualification, so unlike the lowering-inserted casts
+/// above it can drop the source pointer's `const`.
+pub fn c_source_cast_with_pointee_qualifiers_and_struct(
+    expression: CExpression,
+    target_type: CType,
+    pointee_volatile: bool,
+    pointee_constant: bool,
+    pointee_struct: Option<String>,
+) -> CExpression {
+    CExpression::Cast {
+        expression: Box::new(expression),
+        target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        pointee_struct,
+        pointee_volatile,
+        pointee_constant,
+        explicit_qualification: true,
+    }
+}
+
+/// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
+pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
+    let mut result = c_cast(expression, CType::Int64);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::UInt64BitsToInt64;
+    }
+    result
 }
 
 pub fn c_conditional(
@@ -1710,6 +1885,30 @@ pub fn c_declare_with_all_qualifiers(
         pointee_volatile,
         constant,
         pointee_constant,
+        zero_fill: None,
+    }
+}
+
+/// [`c_declare_with_all_qualifiers`], zero-filling the object first when
+/// `zero_fill` says how: an automatic array declared with an initializer,
+/// whose written elements follow as ordinary stores ([`CZeroFill`]).
+pub fn c_declare_with_zero_fill(
+    name: impl Into<String>,
+    c_type: CType,
+    volatile: bool,
+    pointee_volatile: bool,
+    constant: bool,
+    pointee_constant: bool,
+    zero_fill: Option<CZeroFill>,
+) -> CStatement {
+    CStatement::Declare {
+        name: name.into(),
+        c_type,
+        volatile,
+        pointee_volatile,
+        constant,
+        pointee_constant,
+        zero_fill,
     }
 }
 
@@ -1741,6 +1940,42 @@ pub fn c_copy_aggregate(
         target,
         source,
         layout,
+    }
+}
+
+pub fn c_initialize_scalar_array(
+    target: CExpression,
+    source: CExpression,
+    element_type: CType,
+    count: u32,
+    copy: bool,
+) -> CStatement {
+    CStatement::InitializeScalarArray {
+        target,
+        source,
+        element_type,
+        count,
+        copy,
+        fresh: true,
+    }
+}
+
+/// Write an embedded scalar-array region without changing adjacent bytes.
+/// This does not grant storage, initialization or memory authority.
+pub fn c_write_scalar_array_region(
+    target: CExpression,
+    source: CExpression,
+    element_type: CType,
+    count: u32,
+    copy: bool,
+) -> CStatement {
+    CStatement::InitializeScalarArray {
+        target,
+        source,
+        element_type,
+        count,
+        copy,
+        fresh: false,
     }
 }
 
@@ -2242,6 +2477,10 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::AuthorityCountNeedsExactPointer => {
             "authority-mode count(...) needs one exact base pointer".to_string()
         }
+        ExecutionLimit::AuthorityCountNeedsResolvedMember => {
+            "count(...) requires resolved member indices or the helper's selected member"
+                .to_string()
+        }
         ExecutionLimit::AuthorityCountNeedsOwnership => {
             "count(...) requires owning authority for that population".to_string()
         }
@@ -2592,6 +2831,12 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
             .filter(|(installed_on, _)| installed_on == &state)
             .map(|(_, rooted)| rooted.clone())
     }) {
+        // Loan identities are reused across separately checked claims, but
+        // their pure contexts have independent graph lineages. This is the
+        // selected contract-input producer boundary, not a permission query.
+        rooted
+            .resources()
+            .synchronize_memory_equalities(assumptions);
         return Ok(rooted);
     }
     let mut rooted = if has_views {
@@ -2888,7 +3133,8 @@ fn install_borrowed_contract_inputs(
     for (occurrence, viewed) in selected {
         let (backing, backing_pieces) = if matches!(viewed.resource(), CResource::Composite { .. })
         {
-            let singleton = ResourceContext::new().unchecked_with_fact(viewed.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(viewed.clone());
             let pieces = expand_composite_resource_fact_with_children(
                 &singleton,
                 &viewed,
@@ -3102,10 +3348,9 @@ pub(crate) fn checked_c_function_contract_resource_transition(
         outcome,
         assumptions,
     )?;
-    if let Some(obligation) = obligations
-        .iter()
-        .find(|obligation| !certification_proves_proposition(assumptions, obligation.proposition()))
-    {
+    if let Some(obligation) = obligations.iter().find(|obligation| {
+        !crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
+    }) {
         return Err(format!(
             "unproved contract resource obligation: {}",
             obligation.context().unwrap_or("resource transition"),
@@ -4361,10 +4606,13 @@ pub fn prove_checked_c_function_execution_with_environment(
         checked_resource_transitions: vec![false; path_count],
         deferred_contract_exits: vec![false; path_count],
         deferred_contract_exit_errors: vec![None; path_count],
+        // Empty certificate placeholders, replaced by checked clause contexts;
+        // they never receive unchecked memory deltas or answer permission queries.
         checked_returned_resources: vec![ResourceContext::new(); path_count],
         entry_representation_origin: None,
         boundary_transfer: None,
         checked_call_events: Default::default(),
+        applied_tactics: Default::default(),
     }
 }
 
@@ -4590,6 +4838,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
         CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::PopulationMemberRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::IteratedStep(step) => Some(step.before_state()),
+        CheckedExecutionEvent::TacticApplication(application) => Some(application.before_state()),
         CheckedExecutionEvent::Statement(theorem) | CheckedExecutionEvent::Condition(theorem) => {
             match proof_evidence_conclusion(theorem) {
                 Proposition::CStatementVerifies { state, .. }
@@ -4650,7 +4899,8 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::ResourceRewrite(_)
                 | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
                 | CheckedExecutionEvent::PopulationMemberRewrite(_)
-                | CheckedExecutionEvent::IteratedStep(_) => {}
+                | CheckedExecutionEvent::IteratedStep(_)
+                | CheckedExecutionEvent::TacticApplication(_) => {}
             }
         }
         true
@@ -4990,7 +5240,7 @@ pub fn prove_owned_resource_count_lower_bound(
         None => {
             let zero = Bitvector32Term::Constant(0);
             let quantity_is_zero = quantity == zero
-                || certification_proves_proposition(
+                || crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &Proposition::ConditionIs(
                         ConditionTerm::Bitvector32Equal(
@@ -5434,7 +5684,7 @@ pub(crate) fn counted_populations_definitionally_equal(
         );
         right_by_identity.get(&identity).is_some_and(|right_count| {
             let exact = population.count == **right_count;
-            let proved = certification_proves_proposition(
+            let proved = crate::kernel::PureFactContext::settles_exactly(
                 assumptions,
                 &Proposition::ConditionIs(
                     ConditionTerm::Bitvector32Equal(
@@ -5458,7 +5708,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     state: CState,
     function: CFunction,
     arguments: Vec<CExpression>,
-    derived_entry_facts: Vec<Proposition>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -5468,7 +5717,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
         state,
         function,
         arguments,
-        derived_entry_facts,
         environment,
         execution_semantics,
         mode,
@@ -5483,7 +5731,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     state: CState,
     function: CFunction,
     arguments: Vec<CExpression>,
-    derived_entry_facts: Vec<Proposition>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -5497,8 +5744,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     } else {
         environment
     };
-    // Certification derives the anchor itself rather than trusting the one
-    // the caller stepped with. An artifact whose environment carries no
+    // Certification computes the anchor a second time here; the proof
+    // stepped with its own. An artifact whose environment carries no
     // anchor, or a different one, then fails `matches_execution_metadata`
     // below and is not reused: a body stepped without the anchor emitted no
     // descent obligation at its self-calls, and certifying a contract from it
@@ -5516,21 +5763,13 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         .iter()
         .map(|verified| verified.theorem.proposition().clone())
         .collect::<Vec<_>>();
-    let selection_assumptions =
-        assumptions_with_propositions(&PureFactContext::new(), &derived_entry_facts);
     let base_assumptions = match crate::instrumentation::measure_operation(
         function.name(),
         "contract certification",
         "contract assumptions",
         || {
-            c_function_contract_certification_assumptions(
-                &state,
-                &function,
-                &arguments,
-                PureFactContext::new(),
-                &selection_assumptions,
-                &pure_theorem_facts,
-            )
+            c_function_contract_entry(&state, &function, &arguments)
+                .map(CContractEntry::into_assumptions)
         },
     ) {
         Ok(assumptions) => assumptions,
@@ -5570,37 +5809,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     let mut reuse_entry_resources = Vec::new();
     let mut reuse_context_facts = Vec::new();
     for case_facts in resource_condition_cases {
-        let case_seed = assumptions_with_propositions(&PureFactContext::new(), &case_facts);
-        let mut assumptions = match crate::instrumentation::measure_operation(
-            function.name(),
-            "contract certification",
-            "contract case assumptions",
-            || {
-                c_function_contract_certification_assumptions(
-                    &state,
-                    &function,
-                    &arguments,
-                    case_seed,
-                    &selection_assumptions,
-                    &pure_theorem_facts,
-                )
-            },
-        ) {
-            Ok(assumptions) => assumptions,
-            Err(reason) => {
-                if crate::instrumentation::enabled() {
-                    crate::instrumentation::emit(
-                        crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                            "exact certification rejected a resource-guard case for {}: {reason}",
-                            function.name()
-                        )),
-                    );
-                }
-                return CFunctionContractExecution::failed(format!(
-                    "in one resource-guard case of the contract entry, {reason}"
-                ));
-            }
-        };
+        // A resource-guard case assumes its guards beside the contract entry.
+        let assumptions = assumptions_with_propositions(&base_assumptions, &case_facts);
         let Some(mut entry_state) = c_function_entry_state(&state, &function, &arguments) else {
             return CFunctionContractExecution::failed(
                 "could not build the contract entry state from the call arguments".to_string(),
@@ -5610,6 +5820,9 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             .composite_resource_definitions()
             .iter()
             .any(CCompositeResourceDefinition::is_recursive);
+        // With recursive definitions the caller state already holds the
+        // proof-directed projections. Expanding it globally would erase child
+        // composites and expose unrelated recursive branches, so it is kept.
         if !has_recursive_resources {
             let Some(entry_resources) = crate::instrumentation::measure_operation(
                 function.name(),
@@ -5638,182 +5851,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         .to_string(),
                 );
             };
-            entry_state = entry_state.with_resource_context(entry_resources.clone());
-            assumptions = crate::instrumentation::measure_operation(
-                function.name(),
-                "contract certification",
-                "contract derived entry facts",
-                || {
-                    let mut derived_assumptions = assumptions;
-                    for fact in &derived_entry_facts {
-                        // Derived entry facts are predominantly loadability
-                        // witnesses. Check the exact entry resources first:
-                        // that is the narrow authority for those facts and
-                        // avoids asking the general proposition prover to
-                        // scan the growing contract context before the direct
-                        // resource check succeeds.
-                        let resource_certified = crate::instrumentation::measure_operation(
-                            function.name(),
-                            "contract certification",
-                            "derived fact resource check",
-                            || {
-                                resources_certify_loadability(
-                                    &entry_state,
-                                    &entry_resources,
-                                    fact,
-                                    &derived_assumptions,
-                                )
-                            },
-                        );
-                        let proposition_operation = match fact {
-                            Proposition::CMemoryLoadable { .. } => "derived proposition: viewable",
-                            Proposition::ConditionIs(_, _) => "derived proposition: condition",
-                            Proposition::CResourceSeparate { .. } => {
-                                "derived proposition: resource separate"
-                            }
-                            Proposition::CResourceContains { .. } => {
-                                "derived proposition: resource contains"
-                            }
-                            Proposition::ForAll { .. } => "derived proposition: forall",
-                            _ => "derived proposition: other",
-                        };
-                        let context_free_certified = !resource_certified
-                            && matches!(fact, Proposition::ForAll { .. })
-                            && (pure_theorem_facts.contains(fact)
-                                || crate::instrumentation::measure_operation(
-                                    function.name(),
-                                    "contract certification",
-                                    "derived forall context-free check",
-                                    || certification_proves_context_free_forall(fact),
-                                ));
-                        let theorem_predicate_certified = !resource_certified
-                            && !context_free_certified
-                            && certification_proves_predicate_from_verified_pure_implications(
-                                &derived_assumptions,
-                                &pure_theorem_facts,
-                                fact,
-                            );
-                        let proposition_certified = !resource_certified
-                            && !context_free_certified
-                            && !theorem_predicate_certified
-                            && crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                proposition_operation,
-                                || certification_proves_proposition(&derived_assumptions, fact),
-                            );
-                        if !resource_certified {
-                            crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                if context_free_certified
-                                    || theorem_predicate_certified
-                                    || proposition_certified
-                                {
-                                    "derived proposition result: proved"
-                                } else {
-                                    "derived proposition result: unproved"
-                                },
-                                || (),
-                            );
-                        }
-                        if resource_certified
-                            || context_free_certified
-                            || theorem_predicate_certified
-                            || proposition_certified
-                        {
-                            derived_assumptions = crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                "derived fact insertion",
-                                || derived_assumptions.assume_proposition(fact.clone()),
-                            );
-                        }
-                    }
-                    derived_assumptions
-                },
-            );
-        } else {
-            // The caller state already contains the proof-directed
-            // recursive projections certified above. Preserve that
-            // targeted boundary; globally expanding it would erase child
-            // composites and expose unrelated recursive branches.
-            let mut entry_resources = entry_state.resources().clone();
-            for fact in &derived_entry_facts {
-                if assumptions.proves_exact(fact) {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                if certification_proves_predicate_from_verified_pure_implications(
-                    &assumptions,
-                    &pure_theorem_facts,
-                    fact,
-                ) {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                if let Proposition::CMemoryLoadable { base, bytes, .. } = &fact
-                    && let Some(bytes) = bytes.as_const()
-                {
-                    let projected = CResourceFact::view_memory(CMemoryRange::new(
-                        base.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(1),
-                    ));
-                    if let Some(exposed) = expose_composite_resource_fact(
-                        &entry_resources,
-                        &projected,
-                        function.composite_resource_definitions(),
-                        entry_state.memory(),
-                        &assumptions,
-                    ) {
-                        entry_resources = exposed.unchecked_with_fact(projected);
-                        assumptions = assumptions.assume_proposition(fact.clone());
-                        continue;
-                    }
-                    if resource_context_has_structural_read(
-                        &entry_resources,
-                        base,
-                        bytes,
-                        &assumptions,
-                    ) {
-                        entry_resources = entry_resources.unchecked_with_fact(projected);
-                        assumptions = assumptions.assume_proposition(fact.clone());
-                        continue;
-                    }
-                }
-                if resources_certify_loadability(&entry_state, &entry_resources, fact, &assumptions)
-                {
-                    if let Proposition::CMemoryLoadable { base, .. } = &fact {
-                        entry_resources = entry_resources.unchecked_with_fact(
-                            CResourceFact::view_memory(CMemoryRange::new(
-                                base.clone(),
-                                Bitvector32Term::Constant(0),
-                                Bitvector32Term::Constant(1),
-                            )),
-                        );
-                    }
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                let proves_fact = match &fact {
-                    Proposition::ConditionIs(condition, value) => {
-                        assumptions.proves_condition_exact_or_snapshot(condition, *value)
-                            || assumptions.decide(condition) == Some(*value)
-                    }
-                    Proposition::Not(body) => match body.as_ref() {
-                        Proposition::ConditionIs(condition, value) => {
-                            assumptions.proves_condition_exact_or_snapshot(condition, !*value)
-                                || assumptions.decide(condition) == Some(!*value)
-                        }
-                        _ => assumptions.proves_exact(fact),
-                    },
-                    _ => assumptions.proves_exact(fact),
-                };
-                if proves_fact {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                }
-            }
             entry_state = entry_state.with_resource_context(entry_resources);
         }
         let matches_execution_metadata_except_state = |checked: &CCheckedFunctionExecution| {
@@ -5827,31 +5864,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 && !checked.execution.paths().is_empty()
                 && checked_loan_evidence_is_valid(checked, &function)
         };
-        // Contract requirements are lowered to their bodies, while a claim
-        // proof may assume the registered predicate identity itself. Each
-        // registered unfolding is definitional, so an identity whose
-        // instantiated body and side obligations the contract context proves
-        // is a renaming of an assumption the context already holds.
         let raw_entry_state = c_function_entry_state(&state, &function, &arguments);
         let mut reuse_assumptions = assumptions.clone();
-        if let Some(raw_entry_state) = raw_entry_state.as_ref() {
-            let mut budget = ExecutionBudget::for_new_execution();
-            for unfolding in function.predicate_unfoldings() {
-                let Some((predicate, body)) =
-                    contract_certification::instantiate_contract_predicate_unfolding(
-                        raw_entry_state,
-                        unfolding,
-                        &assumptions,
-                        &mut budget,
-                    )
-                else {
-                    continue;
-                };
-                if certification_proves_proposition(&assumptions, &body) {
-                    reuse_assumptions = reuse_assumptions.assume_proposition(predicate);
-                }
-            }
-        }
         // A claim proof opens entry composites and assumes the containment
         // and separation facts of their children. Derive those facts from the
         // kernel definitions at the contract entry state, expanding only the
@@ -5886,7 +5900,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             premise,
                             Proposition::CResourceContains { .. }
                                 | Proposition::CResourceSeparate { .. }
-                        ) && !certification_proves_proposition(&reuse_assumptions, premise)
+                        ) && !(reuse_assumptions.proves_exact(premise)
+                            || reuse_assumptions.states_required_goal(premise))
                     })
                     .flat_map(|premise| match premise {
                         Proposition::CResourceContains { parent, .. } => vec![parent],
@@ -5935,7 +5950,15 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         }
         let checked_premise_is_authorized =
             |_checked: &CCheckedFunctionExecution, premise: &Proposition| {
-                certification_proves_proposition(&reuse_assumptions, premise)
+                reuse_assumptions.proves_exact(premise)
+                    || reuse_assumptions.states_required_goal(premise)
+                    || matches!(premise, Proposition::CMemoryLoadable { .. })
+                        && resources_certify_loadability(
+                            &entry_state,
+                            entry_state.resources(),
+                            premise,
+                            &reuse_assumptions,
+                        )
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked
@@ -6207,17 +6230,16 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     else {
                         continue;
                     };
-                    if certification_proves_proposition(
-                        &certification_assumptions,
-                        obligation.proposition(),
-                    ) || pure_theorem_facts.iter().any(|fact| {
-                        certification_proves_condition_from_verified_pure_implication(
-                            &certification_assumptions,
-                            fact,
-                            condition,
-                            *value,
-                        )
-                    }) {
+                    if certification_assumptions.proves_exact(obligation.proposition())
+                        || pure_theorem_facts.iter().any(|fact| {
+                            certification_proves_condition_from_verified_pure_implication(
+                                &certification_assumptions,
+                                fact,
+                                condition,
+                                *value,
+                            )
+                        })
+                    {
                         certification_assumptions = certification_assumptions
                             .assume_proposition(obligation.proposition().clone());
                     }
@@ -6228,8 +6250,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         cases.push(alternatives);
     }
     let mut checked_call_events = crate::kernel::proof::CheckedCallEvents::default();
+    let mut applied_tactics = std::collections::BTreeSet::new();
     for artifact in checked_artifacts {
         checked_call_events.extend(&artifact.checked_call_events);
+        applied_tactics.extend(artifact.applied_tactics.iter().cloned());
     }
     CFunctionContractExecution {
         cases,
@@ -6239,6 +6263,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         reuse_context_facts,
         checked_call_events,
         loop_semantics: execution_semantics.loops,
+        applied_tactics,
     }
 }
 
@@ -7758,7 +7783,7 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::AlgebraicMatch { .. } => term.clone(),
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
-        | Bitvector32Term::MemoryLoad(_, _)
+        | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
@@ -8115,6 +8140,29 @@ pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
     ))
 }
 
+/// Signed int32 observation is injective: two equal mathematical values
+/// have the same 32-bit pattern. No overflow premise or conversion back is
+/// needed, since every signed int32 pattern has one exact Integer value.
+pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+            .expect("every int32 bit pattern has a mathematical interpretation")
+    };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                observe(left.clone()).into(),
+                observe(right.clone()).into(),
+            ),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(left, right),
+            true,
+        )),
+    ))
+}
+
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
 pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     prove_int32_operation_to_integer(left, right, true)
@@ -8313,6 +8361,214 @@ pub fn prove_int32_positive_predecessor_strictly_decreases(value: Bitvector32Ter
         Box::new(premise),
         Box::new(conclusion),
     ))
+}
+
+fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(premise, true)),
+        Box::new(Proposition::ConditionIs(conclusion, true)),
+    ))
+}
+
+/// Decrementing a nonzero uint32 value strictly decreases it. A nonzero
+/// value has a predecessor that does not wrap; at zero the predecessor is
+/// `UINT_MAX`, which the premise excludes.
+pub fn prove_uint32_positive_predecessor_strictly_decreases(value: Bitvector32Term) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(Bitvector32Term::Constant(0), value.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Subtract(
+                Box::new(value.clone()),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            value,
+        ),
+    )
+}
+
+/// A uint32 increment preserves a strict upper bound as a non-strict bound.
+/// The strict premise rules out wraparound: if `value` were `UINT_MAX`, no
+/// uint32 `upper` could be greater than it.
+pub fn prove_uint32_increment_upper_bound(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
+        ConditionTerm::unsigned_less_equal(
+            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
+            upper,
+        ),
+    )
+}
+
+/// A uint32 increment is strictly greater than its input when a strict
+/// upper bound rules out wraparound.
+pub fn prove_uint32_increment_strictly_increases(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper),
+        ConditionTerm::unsigned_less_than(
+            value.clone(),
+            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
+        ),
+    )
+}
+
+/// The uint32 difference `upper - value` is nonzero when `value` is strictly
+/// below `upper`. The subtraction does not wrap, because `value <= upper`.
+pub fn prove_uint32_lt_implies_positive_difference(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Subtract(Box::new(upper), Box::new(value)),
+        ),
+    )
+}
+
+/// Incrementing a uint32 `value` below `bound` decreases the difference
+/// `bound - value`, stated over the affine forms a loop measure `bound -
+/// value` evaluates to: `(0 - value) + (bound - 1)` after the increment and
+/// `(0 - value) + bound` before it. Neither wraps: `value <= bound - 1`, so
+/// the first is `bound - 1 - value` in `[0, bound - 1]` and the second is
+/// one more.
+pub fn prove_uint32_difference_decreases_after_increment(
+    value: Bitvector32Term,
+    bound: Bitvector32Term,
+) -> Theorem {
+    let negated = Bitvector32Term::Subtract(
+        Box::new(Bitvector32Term::Constant(0)),
+        Box::new(value.clone()),
+    );
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value, bound.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Add(
+                Box::new(negated.clone()),
+                Box::new(Bitvector32Term::Subtract(
+                    Box::new(bound.clone()),
+                    Box::new(Bitvector32Term::Constant(1)),
+                )),
+            ),
+            Bitvector32Term::Add(Box::new(negated), Box::new(bound)),
+        ),
+    )
+}
+
+fn uint32_transitivity(
+    first: ConditionTerm,
+    second: ConditionTerm,
+    conclusion: ConditionTerm,
+) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(first, true)),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(second, true)),
+            Box::new(Proposition::ConditionIs(conclusion, true)),
+        )),
+    ))
+}
+
+/// Unsigned strict order followed by non-strict order is strict order.
+pub fn prove_uint32_lt_le_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_equal(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned non-strict order followed by strict order is strict order.
+pub fn prove_uint32_le_lt_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_than(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned strict order is transitive.
+pub fn prove_uint32_lt_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_than(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned non-strict order is transitive.
+pub fn prove_uint32_le_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_equal(middle, last.clone()),
+        ConditionTerm::unsigned_less_equal(first, last),
+    )
+}
+
+/// `greater > lower` and `lower < greater` are one uint32 order.
+pub fn prove_uint32_gt_implies_reversed_lt(
+    greater: Bitvector32Term,
+    lower: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_greater_than(greater.clone(), lower.clone()),
+        ConditionTerm::unsigned_less_than(lower, greater),
+    )
+}
+
+/// `lower < greater` and `greater > lower` are one uint32 order.
+pub fn prove_uint32_lt_implies_reversed_gt(
+    lower: Bitvector32Term,
+    greater: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
+        ConditionTerm::unsigned_greater_than(greater, lower),
+    )
+}
+
+/// `greater >= lower` and `lower <= greater` are one uint32 order.
+pub fn prove_uint32_ge_implies_reversed_le(
+    greater: Bitvector32Term,
+    lower: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
+        ConditionTerm::unsigned_less_equal(lower, greater),
+    )
+}
+
+/// `lower <= greater` and `greater >= lower` are one uint32 order.
+pub fn prove_uint32_le_implies_reversed_ge(
+    lower: Bitvector32Term,
+    greater: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_equal(lower.clone(), greater.clone()),
+        ConditionTerm::unsigned_greater_equal(greater, lower),
+    )
 }
 
 /// Signed non-strict order followed by strict order is strict order.

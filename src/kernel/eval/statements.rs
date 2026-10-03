@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::loans::empty_checked_loan_evidence_sequence;
+mod scalar_arrays;
 
 pub(in crate::kernel) fn execute_c_statement(
     state: &CState,
@@ -426,26 +427,6 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     let pointee_constant = lvalue.pointee_is_constant();
     let value = value.with_pointer_pointee_volatile(pointee_volatile);
     let volatile_pointer = is_volatile.then(|| lvalue.pointer(state)).flatten();
-    if lvalue.value_type == CType::Int32 {
-        let range_result = match &value {
-            CValue::Int8(value) => {
-                add_int8_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::Int16(value) => {
-                add_int16_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::UInt8(value) => {
-                add_uint8_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::UInt16(value) => {
-                add_uint16_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            _ => Some(()),
-        };
-        if range_result.is_none() {
-            return Ok(Vec::new());
-        }
-    }
     // Storing a freed pointer moves it without using it, but an implicit
     // conversion to `_Bool` (or any non-pointer type) tests its value; see
     // `freed_pointer_use`.
@@ -893,6 +874,23 @@ fn execute_c_aggregate_copy_paths(
                 });
                 continue;
             }
+            if let Some(resource) = missing_aggregate_copy_write_resource(
+                state,
+                target_pointer.pointer(),
+                layout,
+                &assumptions_with_path_context(assumptions, &facts, &obligations),
+            ) {
+                paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource,
+                    }),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            }
             let mut state = state.clone();
             let next_memory = match crate::kernel::functions::copy_aggregate_fields_checked(
                 state.memory.clone(),
@@ -926,6 +924,45 @@ fn execute_c_aggregate_copy_paths(
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+fn missing_aggregate_copy_write_resource(
+    state: &CState,
+    target: &Pointer,
+    layout: &CAggregateLayout,
+    assumptions: &PureFactContext,
+) -> Option<CResourceFact> {
+    if !is_external_memory_pointer(target) {
+        return None;
+    }
+    let ranges = layout
+        .fields()
+        .iter()
+        .map(|field| (field.offset_bytes(), field.c_type().byte_width()))
+        .chain(
+            layout
+                .unions()
+                .iter()
+                .map(|union| (union.offset_bytes(), union.size_bytes())),
+        );
+    for (offset, bytes) in ranges {
+        let pointer = target.offset_by_bytes(offset);
+        if state
+            .resources()
+            .memory_write_range(&pointer, bytes, assumptions)
+            .is_none()
+        {
+            return Some(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    bytes,
+                ),
+            ));
+        }
+    }
+    None
 }
 
 fn missing_aggregate_copy_read_resource(
@@ -1754,6 +1791,39 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     break;
                 }
             }
+            // The old block's initialized bytes the new allocation holds,
+            // whether or not a cell above carries their value: each run cut
+            // at the new size where that is a constant, and kept whole where
+            // the facts place its end inside the new size. A run the facts
+            // cannot place is left out, which can only refuse a later read.
+            let mut initialized_prefix = Vec::new();
+            for (start, length) in state.memory.initialized_runs_in_block(&old_pointer.block) {
+                let end = start + i64::from(length);
+                let Ok(end_constant) = u32::try_from(end) else {
+                    continue;
+                };
+                let fits_condition = if new_bytes.unsigned {
+                    ConditionTerm::unsigned_less_equal(
+                        Bitvector32Term::Constant(end_constant),
+                        new_bytes.term.clone(),
+                    )
+                } else {
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Constant(end_constant),
+                        new_bytes.term.clone(),
+                    )
+                };
+                if effective_assumptions.decide(&fits_condition) == Some(true) {
+                    initialized_prefix.push((start, length));
+                } else if let Some(new_size) = new_bytes.term.as_const()
+                    && i64::from(new_size) > start
+                    && start >= 0
+                {
+                    let kept = u32::try_from(i64::from(new_size) - start)
+                        .map_or(length, |kept| kept.min(length));
+                    initialized_prefix.push((start, kept));
+                }
+            }
             if copy_is_unsupported {
                 paths.push(CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
@@ -1791,6 +1861,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                             (PointerOffsetTerm::Constant(i64::from(offset)), value)
                         })
                         .collect(),
+                    initialized_prefix,
                 );
             let pending_state = state.clone().with_memory(pending_memory);
             let assigned = execute_c_lvalue_assignment_paths(
@@ -2466,6 +2537,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::Goto { .. }
         | CStatement::ForStep { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
@@ -2602,6 +2674,70 @@ pub(in crate::kernel) fn paths_after_scope_exit(
 }
 
 pub(in crate::kernel) fn execute_c_statement_paths(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &PureFactContext,
+    environment: &CExecutionEnvironment,
+    execution_semantics: CExecutionSemantics,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    // Keep a source block's sequence spine out of the large leaf-operation
+    // frame. Adding a fact index must not multiply stack use per statement.
+    if let CStatement::Seq(first, second) = statement {
+        let mut paths = Vec::new();
+        for first_path in execute_c_statement_paths(
+            state,
+            first,
+            assumptions,
+            environment,
+            execution_semantics,
+            budget,
+        )? {
+            match first_path.outcome {
+                CStatementOutcome::Normal(state) => {
+                    paths.extend(execute_c_statement_paths_with_prefix(
+                        &state,
+                        second,
+                        assumptions,
+                        environment,
+                        execution_semantics,
+                        &first_path.facts,
+                        &first_path.obligations,
+                        &first_path.loan_evidence,
+                        budget,
+                    )?);
+                }
+                outcome @ (CStatementOutcome::Break(_)
+                | CStatementOutcome::Continue(_)
+                | CStatementOutcome::Jump { .. }
+                | CStatementOutcome::Return { .. }
+                | CStatementOutcome::Throw { .. }
+                | CStatementOutcome::VerificationDiverges
+                | CStatementOutcome::UndefinedBehavior(_)
+                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome,
+                    facts: first_path.facts,
+                    obligations: first_path.obligations,
+
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }),
+            }
+        }
+        budget.check_path_width(paths.len())?;
+        return Ok(paths);
+    }
+    execute_c_statement_leaf_paths(
+        state,
+        statement,
+        assumptions,
+        environment,
+        execution_semantics,
+        budget,
+    )
+}
+
+fn execute_c_statement_leaf_paths(
     state: &CState,
     statement: &CStatement,
     assumptions: &PureFactContext,
@@ -2818,6 +2954,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             pointee_volatile,
             constant,
             pointee_constant,
+            zero_fill,
         } => {
             let outcome = if *c_type == CType::Void {
                 CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
@@ -2830,7 +2967,11 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                     *pointee_volatile,
                     *constant,
                     *pointee_constant,
-                ) {
+                )
+                .and_then(|state| match zero_fill {
+                    Some(zero_fill) => zero_fill_declared_array(state, name, zero_fill),
+                    None => Ok(state),
+                }) {
                     Ok(state) => {
                         CStatementOutcome::Normal(note_declared_population_storage(state, name))
                     }
@@ -2875,6 +3016,24 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             source,
             layout,
         } => execute_c_aggregate_copy_paths(state, target, source, layout, assumptions, budget)?,
+        CStatement::InitializeScalarArray {
+            target,
+            source,
+            element_type,
+            count,
+            copy,
+            fresh,
+        } => scalar_arrays::execute(
+            state,
+            target,
+            source,
+            *element_type,
+            *count,
+            *copy,
+            *fresh,
+            assumptions,
+            budget,
+        )?,
         CStatement::Assign { name, expression } => execute_c_lvalue_assignment_paths(
             state,
             &c_variable(name.clone()),
@@ -2919,49 +3078,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
         CStatement::Assert { condition, label } => {
             execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
-        CStatement::Seq(first, second) => {
-            let mut paths = Vec::new();
-            for first_path in execute_c_statement_paths(
-                state,
-                first,
-                assumptions,
-                environment,
-                execution_semantics,
-                budget,
-            )? {
-                match first_path.outcome {
-                    CStatementOutcome::Normal(state) => {
-                        paths.extend(execute_c_statement_paths_with_prefix(
-                            &state,
-                            second,
-                            assumptions,
-                            environment,
-                            execution_semantics,
-                            &first_path.facts,
-                            &first_path.obligations,
-                            &first_path.loan_evidence,
-                            budget,
-                        )?);
-                    }
-                    outcome @ (CStatementOutcome::Break(_)
-                    | CStatementOutcome::Continue(_)
-                    | CStatementOutcome::Jump { .. }
-                    | CStatementOutcome::Return { .. }
-                    | CStatementOutcome::Throw { .. }
-                    | CStatementOutcome::VerificationDiverges
-                    | CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome,
-                        facts: first_path.facts,
-                        obligations: first_path.obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }),
-                }
-            }
-            paths
-        }
+        CStatement::Seq(_, _) => unreachable!("sequences dispatch before leaf execution"),
         CStatement::Return(CExpression::Value(CValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal
@@ -3258,16 +3375,12 @@ fn execute_c_switch_paths(
     for selector_path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
         let CExpressionPath {
             outcome,
-            mut facts,
+            facts,
             obligations,
         } = selector_path;
         match outcome {
             CExpressionOutcome::Value(value) => {
-                let selector_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
-                let Some(selector) =
-                    promote_c_int32_path_value(value, &mut facts, &selector_assumptions)
-                else {
+                let Some(selector) = promote_c_int32_path_value(value) else {
                     paths.push(CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -3897,6 +4010,90 @@ fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
     state
 }
 
+/// Zero-fills the automatic array `name` that was just declared, as its
+/// initializer does before the elements it writes are stored: C
+/// zero-initializes every element and field the initializer does not name
+/// (C11 6.7.9p21). Each zero cell of an element holds the zero initializer
+/// coerced to the cell's type exactly as its typed store would coerce it,
+/// and holds it in every element, so the cells are one constant run each
+/// over the fresh block: the declaration costs the element's cells, not the
+/// array's length. Where the memory refuses runs the cells are stored one by
+/// one, which leaves the same cells.
+fn zero_fill_declared_array(
+    mut state: CState,
+    name: &str,
+    zero_fill: &CZeroFill,
+) -> Result<CState, CRuntimeError> {
+    let slot = state
+        .locals
+        .slot(name)
+        .cloned()
+        .filter(|slot| slot.block.starts_with("local:") && state.memory.has_block(&slot.block))
+        .ok_or(CRuntimeError::TypeMismatch)?;
+    let object_bytes = zero_fill
+        .stride
+        .checked_mul(zero_fill.count)
+        .ok_or(CRuntimeError::TypeMismatch)?;
+    if state
+        .memory
+        .block_size(&slot.block)
+        .and_then(Bitvector32Term::as_const)
+        != Some(object_bytes)
+    {
+        return Err(CRuntimeError::TypeMismatch);
+    }
+    let mut runs = Vec::with_capacity(zero_fill.cells.len());
+    let mut element_end = 0u32;
+    for cell in zero_fill.cells.iter() {
+        crate::instrumentation::record_deterministic_work(1);
+        let mut obligations = Vec::new();
+        let value = crate::kernel::functions::coerce_c_value_with_pointee_constant(
+            cell.zero.clone(),
+            cell.value_type,
+            cell.pointee_constant,
+            &mut obligations,
+            &PureFactContext::new(),
+        )
+        .filter(|_| obligations.is_empty())
+        .ok_or(CRuntimeError::TypeMismatch)?;
+        // The cells of one element are ascending and disjoint, and lie in it.
+        let end = cell
+            .offset
+            .checked_add(value.byte_width())
+            .filter(|end| cell.offset >= element_end && *end <= zero_fill.stride)
+            .ok_or(CRuntimeError::TypeMismatch)?;
+        element_end = end;
+        runs.push(CConstantRun {
+            offset: cell.offset,
+            stride: zero_fill.stride,
+            count: zero_fill.count,
+            value,
+        });
+    }
+    let memory = match state.memory.clone().with_constant_runs(&slot, &runs) {
+        Ok(filled) => filled,
+        Err(mut memory) => {
+            for run in &runs {
+                for index in 0..run.count {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let offset = index
+                        .checked_mul(run.stride)
+                        .and_then(|offset| offset.checked_add(run.offset))
+                        .ok_or(CRuntimeError::TypeMismatch)?;
+                    memory = memory.store(slot.offset_by_bytes(offset), run.value.clone());
+                }
+            }
+            memory
+        }
+    };
+    // The initializer writes every byte of the object, so they stay
+    // initialized once the zero cells' values are forgotten: a run dropped
+    // as a whole by a loop havoc or a store the facts cannot place then
+    // costs one covering query, not its slots.
+    state.set_memory(memory.with_initialized_object(&slot, object_bytes));
+    Ok(state)
+}
+
 pub(in crate::kernel) fn declare_local(
     state: &CState,
     name: &str,
@@ -4183,6 +4380,14 @@ fn begin_aggregate_construction(
         .expect("aggregate construction has a declared stack slot")
         .clone();
     for field in layout.fields() {
+        // Aggregate array fields have no scalar placeholder. Their actual
+        // constructor writes establish initialization before the value is live.
+        if matches!(
+            field.c_type(),
+            CType::Int32Array(_) | CType::UInt8Array(_) | CType::UInt32Array(_)
+        ) {
+            continue;
+        }
         let variable = budget.allocate_kernel_variable()?;
         let value = crate::kernel::functions::symbolic_call_result(field.c_type(), variable);
         state.set_memory(

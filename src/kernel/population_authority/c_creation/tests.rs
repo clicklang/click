@@ -571,15 +571,385 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
             .as_ref()
             .unwrap()
             .observe_symbolic(&description)
-            .is_none()
+            .is_some()
+    );
+}
+
+#[test]
+fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let source = CreationEvents::new();
+    let entry = source
+        .import_observable_contract_population(&description, 1)
+        .unwrap();
+    let count = entry.observe_symbolic(&description).unwrap();
+    assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+    assert_eq!(count.entry_owned_members, 1);
+    assert_eq!(
+        entry
+            .import_observable_contract_population(&description, 1)
+            .unwrap(),
+        entry
+    );
+    let repeated = source
+        .import_observable_contract_population(&description, 1)
+        .unwrap();
+    assert_eq!(
+        repeated.observe_symbolic(&description).unwrap().entry_count,
+        count.entry_count
+    );
+    let helper = entry.enter_call();
+    let held = entry
+        .transfer_call_fact(&entry, &helper, &description, true)
+        .unwrap();
+    assert!(held.observe_symbolic(&description).is_none());
+    let held = held
+        .transfer_call_fact(&entry, &helper, &description, false)
+        .unwrap()
+        .return_to(&helper);
+    let (spent, _) = held
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    let after = spent.observe_symbolic(&description).unwrap();
+    assert_eq!(after.entry_count, count.entry_count);
+    assert_eq!(after.delta, -1);
+}
+
+#[test]
+fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_observable_contract_population(&description, 0)
+        .unwrap();
+    let initial = entry.observe_symbolic(&description).unwrap();
+    let empty = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::equal(
+            initial.entry_count.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let exchange = |state: &CreationEvents, produce, amount, facts: &PureFactContext| {
+        state.checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            produce,
+            &Bitvector32Term::Constant(amount),
+            facts,
+        )
+    };
+    assert!(matches!(
+        exchange(&entry, true, 2, &PureFactContext::new()),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+    let two = exchange(&entry, true, 2, &empty).unwrap().0;
+    assert_eq!(two.observe_symbolic(&description).unwrap().delta, 2);
+    assert_eq!(
+        two.observe_symbolic(&description).unwrap().entry_count,
+        initial.entry_count
+    );
+    let one = exchange(&two, false, 1, &empty).unwrap().0;
+    assert_eq!(one.observe_symbolic(&description).unwrap().delta, 1);
+    assert!(matches!(
+        exchange(&one, false, 2, &empty),
+        Err(CreationRefusal::MissingMembers)
+    ));
+    let none = exchange(&one, false, 1, &empty).unwrap().0;
+    assert!(!none.owns_population_member(&description));
+    let zero = exchange(&none, true, 0, &empty).unwrap().0;
+    assert_eq!(zero.observe_symbolic(&description).unwrap().delta, 0);
+    assert!(!zero.owns_population_member(&description));
+    let zero = exchange(&zero, false, 0, &empty).unwrap().0;
+    assert!(!zero.owns_population_member(&description));
+    let max = exchange(&entry, true, i32::MAX as u32, &empty).unwrap().0;
+    assert!(matches!(
+        exchange(&max, true, 2, &empty),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+    let literal_empty = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(0)),
+            None,
+            None,
+        )
+        .unwrap();
+    let literal_two = exchange(&literal_empty, true, 2, &PureFactContext::new())
+        .unwrap()
+        .0;
+    let literal_one = exchange(&literal_two, false, 1, &PureFactContext::new())
+        .unwrap()
+        .0;
+    assert_eq!(literal_one.observe_symbolic(&description).unwrap().delta, 1);
+    let helper = entry.enter_call();
+    let lent = two
+        .transfer_call_fact(&entry, &helper, &description, true)
+        .unwrap();
+    // A caller that lent its authority cannot perform even a zero exchange.
+    assert!(matches!(
+        exchange(&lent, true, 0, &empty),
+        Err(CreationRefusal::MissingAuthority)
+    ));
+}
+
+#[test]
+fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(940_140));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(2)),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            2,
+            Some(Bitvector32Term::Constant(2)),
+            None,
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    assert_eq!(
+        child
+            .transfer_call_fact_quantity(
+                &entry,
+                &child,
+                &description,
+                false,
+                &quantity,
+                &PureFactContext::new()
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+    let wrong = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(3)),
+        true,
+    );
+    assert_eq!(
+        child
+            .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &wrong)
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+    // Transfer custody separately from authority; equality grants neither.
+    let members = child
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &facts)
+        .unwrap();
+    assert!(members.owns_population_member(&description));
+    assert!(!members.owns_population_authority(&description));
+    assert_eq!(
+        members
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &facts
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority,
+    );
+    assert_eq!(
+        members
+            .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &facts)
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+    let both = members
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let spent = both
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &facts,
+        )
+        .unwrap()
+        .0;
+    assert!(!spent.owns_population_member(&description));
+    assert_eq!(spent.observe_symbolic(&description).unwrap().delta, -2);
+    assert_eq!(
+        spent
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &facts
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+    let retired = spent
+        .checked_retire_imported(&description, &facts)
+        .unwrap()
+        .0;
+    let returned = retired.finish_call(&entry).unwrap();
+    assert!(!returned.owns_population_authority(&description));
+    assert!(!returned.owns_population_member(&description));
+}
+
+#[test]
+fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(940_141));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(2)),
+        true,
+    );
+    let authority_only = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(2)),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        authority_only
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &facts
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+    let child = authority_only.enter_call();
+    assert_eq!(
+        child
+            .transfer_call_fact_quantity(
+                &authority_only,
+                &child,
+                &description,
+                false,
+                &quantity,
+                &facts
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers,
+    );
+}
+
+#[test]
+fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(940_142));
+    let mut work = Vec::new();
+    for (amount, unrelated) in [(2, 0), (64, 32), (1024, 256), (65536, 1024)] {
+        let entry = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &description,
+                amount,
+                Some(Bitvector32Term::Constant(amount)),
+                None,
+                None,
+            )
+            .unwrap();
+        let mut facts = PureFactContext::new();
+        for index in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(950_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        facts = facts.assume_condition(
+            ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(amount)),
+            true,
+        );
+        let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            let child = entry.enter_call();
+            let both = child
+                .transfer_call_fact(&entry, &child, &description, true)
+                .unwrap()
+                .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &facts)
+                .unwrap();
+            let spent = both
+                .checked_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    &description,
+                    false,
+                    &quantity,
+                    &facts,
+                )
+                .unwrap()
+                .0;
+            spent
+                .checked_retire_imported(&description, &facts)
+                .unwrap()
+                .0
+                .finish_call(&entry)
+                .unwrap()
+        });
+        assert!(!returned.owns_population_member(&description));
+        work.push(measured);
+    }
+    assert!(work[3] <= work[0] * 2 + 32, "{work:?}");
+}
+
+#[test]
+fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_observable_contract_population(&description, 0)
+        .unwrap();
+    let facts = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::equal(
+            entry.observe_symbolic(&description).unwrap().entry_count,
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let measurements = [2, 64, 1024, 65536].map(|amount| {
+        let (after, work) = crate::persistent::measure_persistent_work(|| {
+            entry
+                .checked_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(amount),
+                    &facts,
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(
+            after.observe_symbolic(&description).unwrap().delta,
+            amount as i32
+        );
+        work
+    });
+    assert!(measurements[0] > 0, "{measurements:?}");
+    assert!(
+        measurements.iter().all(|work| *work == measurements[0]),
+        "{measurements:?}"
     );
 }
 
 #[test]
 fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let quantity = Bitvector32Term::Constant(5);
-    let assumptions = PureFactContext::new();
+    // Keep this a genuinely symbolic batch: fixed numerical batches now
+    // compose with unit exchanges, covered by the separate numerical test.
+    let quantity = Bitvector32Term::Variable(Variable(940_120));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
     let held = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -638,6 +1008,314 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
         born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
         Err(CreationRefusal::InvalidQuantity)
     ));
+}
+
+#[test]
+fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(940_130));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let zero_transfer = child
+        .transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &Bitvector32Term::Constant(0),
+            &assumptions,
+        )
+        .unwrap();
+    assert!(!zero_transfer.owns_population_member(&description));
+    assert!(!zero_transfer.owns_population_authority(&description));
+    assert!(
+        zero_transfer
+            .finish_call(&entry)
+            .unwrap()
+            .owns_population_member(&description)
+    );
+    let authority_only = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    assert!(authority_only.owns_population_authority(&description));
+    assert!(!authority_only.owns_population_member(&description));
+    assert_eq!(
+        authority_only
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    assert!(
+        authority_only
+            .return_to(&entry)
+            .owns_population_member(&description)
+    );
+    let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+    assert_eq!(
+        authority_only
+            .transfer_call_fact_quantity(&entry, &child, &description, false, &wrong, &assumptions,)
+            .unwrap_err(),
+        CreationRefusal::InvalidQuantity
+    );
+    let both = authority_only
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &assumptions)
+        .unwrap();
+    assert!(both.owns_population_member(&description));
+    assert!(!both.return_to(&entry).owns_population_member(&description));
+    assert_eq!(
+        both.transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    let authority_returned = both
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap();
+    assert!(matches!(
+        authority_returned.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    ));
+    let all_returned = authority_returned
+        .transfer_call_fact_quantity(&child, &entry, &description, false, &quantity, &assumptions)
+        .unwrap()
+        .finish_call(&entry)
+        .unwrap();
+    assert!(all_returned.owns_population_authority(&description));
+    assert!(all_returned.owns_population_member(&description));
+    assert_eq!(
+        all_returned
+            .observe_symbolic(&description)
+            .unwrap()
+            .entry_count,
+        quantity
+    );
+    assert!(
+        all_returned
+            .imported_member_delta_since_entry(&description)
+            .is_none()
+    );
+    // Moving only the batch also grants no authority to consume it.
+    let child = all_returned.enter_call();
+    let batch_only = child
+        .transfer_call_fact_quantity(
+            &all_returned,
+            &child,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(batch_only.owns_population_member(&description));
+    assert!(!batch_only.owns_population_authority(&description));
+    assert_eq!(
+        batch_only
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority
+    );
+}
+
+#[test]
+fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry_count = Bitvector32Term::Variable(Variable(940_132));
+    let quantity = Bitvector32Term::Variable(Variable(940_133));
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_add_overflows(entry_count.clone(), quantity.clone()),
+            false,
+        );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(entry_count.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let authorized = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let (born, _) = authorized
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            true,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(born.owns_population_member(&description));
+    let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+    assert_eq!(born.transfer_call_fact_quantity(
+        &child, &entry, &description, false, &wrong, &assumptions,
+    ).unwrap_err(), CreationRefusal::InvalidQuantity);
+    let returned = born
+        .transfer_call_fact_quantity(&child, &entry, &description, false, &quantity, &assumptions)
+        .unwrap();
+    assert!(!returned.owns_population_member(&description));
+    assert!(
+        returned
+            .return_to(&entry)
+            .owns_population_member(&description)
+    );
+    assert_eq!(
+        returned
+            .transfer_call_fact_quantity(
+                &child,
+                &entry,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    assert!(matches!(
+        returned.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    ));
+    let finished = returned
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap()
+        .finish_call(&entry)
+        .unwrap();
+    assert!(finished.owns_population_member(&description));
+    assert!(finished.owns_population_authority(&description));
+    let observed = finished.observe_symbolic(&description).unwrap();
+    assert_eq!(observed.entry_count, entry_count);
+    assert_eq!(observed.symbolic_delta, Some((true, quantity)));
+}
+
+#[test]
+fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
+    let quantity = Bitvector32Term::Variable(Variable(940_131));
+    let description = member_description(PointerBlock::ExternalArgument);
+    let assumptions = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+        true,
+    );
+    for born_batch in [false, true] {
+        let mut work = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut entry = CreationEvents::new();
+            for index in 0..size {
+                let unrelated = ResourceDescription::new(
+                    format!("unrelated-{index}"),
+                    description.arguments().to_vec().into(),
+                    description.schema().clone(),
+                );
+                entry = entry
+                    .import_opaque_contract_population_inner(
+                        &unrelated,
+                        0,
+                        Some(Bitvector32Term::Constant(0)),
+                        None,
+                        None,
+                    )
+                    .unwrap();
+            }
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &description,
+                    0,
+                    Some(if born_batch {
+                        Bitvector32Term::Constant(0)
+                    } else {
+                        quantity.clone()
+                    }),
+                    (!born_batch).then(|| quantity.clone()),
+                    None,
+                )
+                .unwrap();
+            let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                let child = entry.enter_call();
+                let authority = child
+                    .transfer_call_fact(&entry, &child, &description, true)
+                    .unwrap();
+                let held = if born_batch {
+                    authority
+                        .checked_member_exchange_quantity(
+                            &PointerBlock::ExternalArgument,
+                            &description,
+                            true,
+                            &quantity,
+                            &assumptions,
+                        )
+                        .unwrap()
+                        .0
+                } else {
+                    authority
+                        .transfer_call_fact_quantity(
+                            &entry,
+                            &child,
+                            &description,
+                            false,
+                            &quantity,
+                            &assumptions,
+                        )
+                        .unwrap()
+                };
+                held.transfer_call_fact_quantity(
+                    &child,
+                    &entry,
+                    &description,
+                    false,
+                    &quantity,
+                    &assumptions,
+                )
+                .unwrap()
+                .transfer_call_fact(&child, &entry, &description, true)
+                .unwrap()
+                .finish_call(&entry)
+                .unwrap()
+            });
+            assert!(returned.owns_population_member(&description));
+            work.push(measured);
+        }
+        assert!(work[3] <= work[0] * 2 + 32, "born={born_batch}: {work:?}");
+    }
 }
 
 #[test]
@@ -770,6 +1448,231 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
 }
 
 #[test]
+fn two_authority_control_import_checks_each_custody_and_scope() {
+    let pointer = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(940_112)),
+    };
+    let selected = CResourceFact::own(CResource::Composite {
+        name: "control".into(),
+        arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+    });
+    let reference = CResourceSpec::composite(
+        CResourceAccessMode::Own,
+        "reference".into(),
+        vec![c_variable("p")],
+        vec![CType::Int32Pointer],
+    );
+    let authority = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: None,
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(reference),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    let cell = SpecExpression::MemoryLoad {
+        memory: SpecMemory::Current,
+        pointer: Box::new(SpecExpression::PointerOffset {
+            pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
+            elements: Box::new(SpecExpression::Value(int32(0))),
+            byte_width: 4,
+        }),
+        value_type: CType::Int32,
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::CExpression(c_variable("p")))],
+    };
+    let mut definition = CCompositeResourceDefinition::new(
+        "control",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            )),
+            authority,
+        ],
+        vec![SpecProposition::Comparison {
+            left: cell,
+            operator: CComparisonOperator::Equal,
+            right: count,
+        }],
+    );
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+    let entry = state.population_effects.creation.as_ref().unwrap();
+    let wildcard = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: Some(2),
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(CResourceSpec::composite(
+                    CResourceAccessMode::Own,
+                    "item".into(),
+                    vec![c_variable("p")],
+                    vec![CType::Int32Pointer],
+                )),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    definition.contains.push(wildcard);
+    let imported = entry
+        .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+        .unwrap();
+    let components = state
+        .checked_authority_wrapper_import_components(
+            &selected,
+            &definition,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(components.len(), 2);
+    assert!(components[0].1.is_some());
+    assert!(components[1].1.is_none());
+    for (description, _) in &components {
+        assert!(imported.owns_population_authority(description));
+        assert!(imported.observe_symbolic(description).is_some());
+        assert!(!imported.checked_empty_population(description));
+        assert!(
+            imported
+                .checked_establish(&PointerBlock::ExternalArgument, description)
+                .is_err()
+        );
+    }
+    let mut current = state.clone();
+    Arc::make_mut(&mut current.population_effects).creation = Some(imported.clone());
+    assert!(
+        current
+            .checked_authority_wrapper_body(&selected, &definition, &PureFactContext::new())
+            .is_ok()
+    );
+    let callee = imported.enter_call();
+    let handed_off = imported
+        .transfer_call_fact(&imported, &callee, &components[0].0, true)
+        .unwrap();
+    let mut partial = state.clone();
+    Arc::make_mut(&mut partial.population_effects).creation = Some(handed_off);
+    assert!(
+        partial
+            .checked_authority_wrapper_body(&selected, &definition, &PureFactContext::new())
+            .is_err()
+    );
+    // A selected wildcard member is authenticated against both the exact
+    // input custody and the contained scope; its total remains arbitrary.
+    let scope = components
+        .iter()
+        .find(|(scope, _)| scope.population_arity().is_some())
+        .unwrap()
+        .0
+        .clone();
+    let member = ResourceDescription::new(
+        scope.family().into(),
+        vec![scope.arguments()[0].clone(), int32(7).into()].into(),
+        scope.schema().clone(),
+    );
+    let fact = CResourceFact::own(CResource::Composite {
+        name: member.family().into(),
+        arguments: member.arguments().to_vec().into(),
+    });
+    let selected_state = state
+        .clone()
+        .with_resource_context(state.resources().clone().unchecked_with_fact(fact.clone()));
+    let members = BTreeMap::from([(scope.clone(), vec![fact.clone()])]);
+    let selected_import = entry
+        .import_checked_control_wrapper_with_members(
+            &selected_state,
+            &selected,
+            &definition,
+            &PureFactContext::new(),
+            &members,
+        )
+        .unwrap();
+    assert!(selected_import.owns_imported_population_member(&member));
+    assert_eq!(
+        selected_import
+            .observe_symbolic(&scope)
+            .unwrap()
+            .entry_owned_members,
+        1
+    );
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &members,
+            )
+            .is_err(),
+        "a supplied member map cannot invent ownership"
+    );
+    let duplicated = BTreeMap::from([(scope.clone(), vec![fact.clone(), fact])]);
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &selected_state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &duplicated,
+            )
+            .is_err()
+    );
+    let mut wrong_args = member.arguments().to_vec();
+    wrong_args[0] = CValue::pointer(Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(912),
+    })
+    .into();
+    let wrong = CResourceFact::own(CResource::Composite {
+        name: member.family().into(),
+        arguments: wrong_args.into(),
+    });
+    let wrong_state = state
+        .clone()
+        .with_resource_context(state.resources().clone().unchecked_with_fact(wrong.clone()));
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &wrong_state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &BTreeMap::from([(scope, vec![wrong])]),
+            )
+            .is_err(),
+        "an owned member of another pool cannot seed this scope"
+    );
+
+    definition.contains[2] = definition.contains[1].clone();
+    assert!(
+        entry
+            .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+            .is_err()
+    );
+}
+
+#[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -787,6 +1690,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     );
     let authority = CResourceSpec::new(
         CResourceTerm::PopulationAuthority {
+            population_arity: None,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(reference),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -889,7 +1793,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(observed.delta, 0);
     assert_eq!(observed.entry_owned_members, 0);
     assert!(
-        matches!(observed.entry_count, Bitvector32Term::MemoryLoad(_, loaded) if *loaded == pointer)
+        matches!(observed.entry_count, Bitvector32Term::MemoryLoad(_, loaded, _) if *loaded == pointer)
     );
     let count_expression = SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -911,6 +1815,62 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let folded_paths = evaluate_count(&folded).expect("owned control opens for a count read");
     assert!(folded.resources().contains_exact_representation(&selected));
     assert_eq!(folded.resources().facts().len(), 1);
+    // Repackaging an existing authority into a different ordinary control
+    // retains the same count and custody. It grants no import or creator right.
+    let mut replacement_definition = definition.clone();
+    replacement_definition.name = "replacement".into();
+    let replacement = CResourceFact::own(CResource::Composite {
+        name: "replacement".into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let replacement_state = folded
+        .clone()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(replacement.clone()));
+    let registered = replacement_state
+        .with_checked_current_control_wrapper(
+            &replacement,
+            &replacement_definition,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        evaluate_count(&registered).unwrap()[0].value,
+        folded_paths[0].value
+    );
+    assert_eq!(
+        registered
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .unwrap()
+            .population_effects
+            .creation,
+        registered.population_effects.creation
+    );
+    assert!(
+        folded
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .is_err(),
+        "an unowned replacement cannot register count permission"
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(replacement_state.resources().clone())
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .is_err(),
+        "packaging cannot invent authority custody"
+    );
     let absent_control = folded.clone().with_resource_context(ResourceContext::new());
     assert!(evaluate_count(&absent_control).is_err());
     let viewed_control = folded.clone().with_resource_context(
@@ -962,7 +1922,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].value,
-        CValue::Int32(Bitvector32Term::MemoryLoad(_, _))
+        CValue::Int32(Bitvector32Term::MemoryLoad(_, _, _))
     ));
     // A population entry in the ledger is insufficient without current
     // ownership. Preserve the same ledger while changing only custody.
@@ -1326,7 +2286,7 @@ fn opaque_returned_authority_cannot_strand_members() {
 }
 
 #[test]
-fn opaque_symbolic_nested_transfer_is_explicitly_unsupported() {
+fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total() {
     let description = member_description(PointerBlock::ExternalArgument);
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -1338,20 +2298,34 @@ fn opaque_symbolic_nested_transfer_is_explicitly_unsupported() {
         )
         .unwrap();
     let child = entry.enter_call();
+    let authority_only = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
     assert_eq!(
-        child.transfer_call_fact(&entry, &child, &description, true),
+        authority_only.transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &Bitvector32Term::Constant(1),
+            &PureFactContext::new()
+        ),
         Err(CreationRefusal::InvalidQuantity)
     );
-    assert_eq!(
-        child.transfer_call_fact_quantity(
+    let both = authority_only
+        .transfer_call_fact_quantity(
             &entry,
             &child,
             &description,
             false,
             &Bitvector32Term::Constant(3),
-            &PureFactContext::new()
-        ),
-        Err(CreationRefusal::InvalidQuantity)
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert!(both.owns_population_member(&description));
+    assert_eq!(
+        both.observe_symbolic(&description).unwrap().entry_count,
+        Bitvector32Term::Constant(7)
     );
 }
 
@@ -1511,6 +2485,118 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         .unwrap();
     assert!(retired.checked_empty_population(&description));
     assert!(!retired.owns_population_authority(&description));
+}
+
+#[test]
+fn imported_retirement_supports_empty_and_complete_numeric_populations() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    for quantity in [0, 1, 3, 2147483647] {
+        let events = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &description,
+                quantity,
+                Some(Bitvector32Term::Constant(quantity)),
+                None,
+                None,
+            )
+            .unwrap();
+        let spent = if quantity == 0 {
+            events
+        } else {
+            events
+                .checked_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(quantity),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        };
+        let (retired, _) = spent
+            .checked_retire_imported(&description, &PureFactContext::new())
+            .unwrap();
+        assert!(retired.checked_empty_population(&description));
+        assert!(!retired.owns_population_authority(&description));
+    }
+}
+
+#[test]
+fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(980_210));
+    let total = Bitvector32Term::Variable(Variable(980_211));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let held = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(total.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let total_zero = assumptions.clone().assume_condition(
+        crate::kernel::ConditionTerm::Bitvector32Equal(
+            Box::new(total.clone()),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        true,
+    );
+    assert_eq!(
+        held.check_imported_retirement(&description, &total_zero),
+        Err(CreationRefusal::OutstandingMembers)
+    );
+    let spent = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(
+        spent.check_imported_retirement(&description, &assumptions),
+        Err(CreationRefusal::UnknownTotal)
+    );
+    let all_owned = assumptions.assume_condition(
+        crate::kernel::ConditionTerm::Bitvector32Equal(Box::new(total), Box::new(quantity)),
+        true,
+    );
+    let (retired, _) = spent
+        .checked_retire_imported(&description, &all_owned)
+        .unwrap();
+    assert!(retired.checked_empty_population(&description));
+    assert!(!retired.owns_population_authority(&description));
+    assert!(retired.observe_symbolic(&description).is_none());
+    assert_eq!(
+        retired.imported_member_delta_since_entry(&description),
+        spent.imported_member_delta_since_entry(&description),
+    );
+    assert!(
+        retired
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                true,
+                &Bitvector32Term::Constant(1),
+                &all_owned,
+            )
+            .is_err()
+    );
+    assert_eq!(
+        retired.check_imported_retirement(&description, &all_owned),
+        Err(CreationRefusal::MissingAuthority)
+    );
 }
 
 #[test]
@@ -1899,4 +2985,1232 @@ fn allocation_companion_cannot_free_storage_with_live_population() {
         held.transfer_call_anchor(&unrelated, &caller, &block)
             .is_err()
     );
+}
+
+mod wildcard_scope_tests {
+    use super::*;
+
+    fn description(block: &PointerBlock, keys: &[u32]) -> ResourceDescription {
+        let mut arguments = vec![
+            CValue::pointer(Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            })
+            .into(),
+        ];
+        arguments.extend(keys.iter().map(|key| AlgebraicValue::C(int32(*key))));
+        ResourceDescription::new(
+            "slot".into(),
+            arguments.into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        )
+    }
+    fn scope(block: &PointerBlock, arity: usize) -> ResourceDescription {
+        description(block, &[])
+            .with_population_arity(arity)
+            .unwrap()
+    }
+
+    fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
+        let anchor = CValue::pointer(Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+        });
+        let scope = ResourceDescription::new(
+            "slot".into(),
+            vec![anchor.clone().into()].into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        )
+        .with_population_arity(2)
+        .unwrap();
+        let member = ResourceDescription::new(
+            "slot".into(),
+            vec![anchor.into(), int32(7).into()].into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        );
+        (scope, member)
+    }
+
+    #[test]
+    fn wildcard_helper_borrows_exact_member_without_asserting_total() {
+        let (scope, member) = opaque_scope(1);
+        let entry = CreationEvents::new();
+        let imported = entry
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let total = imported.observe_symbolic(&scope).unwrap().entry_count;
+        assert!(matches!(total, Bitvector32Term::Variable(_)));
+        assert!(imported.owns_imported_population_member(&member));
+        assert!(!imported.owns_imported_population_member(&scope));
+        assert_eq!(
+            imported
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap(),
+            imported
+        );
+        let (wrong_pool, wrong_member) = opaque_scope(2);
+        assert!(
+            entry
+                .import_opaque_wildcard_population(&scope, &wrong_member)
+                .is_err()
+        );
+        assert!(!imported.owns_imported_population_member(&wrong_member));
+        let mut different_arguments = member.arguments().to_vec();
+        different_arguments[1] = int32(8).into();
+        let different_member = ResourceDescription::new(
+            "slot".into(),
+            different_arguments.into(),
+            member.schema().clone(),
+        );
+        assert!(
+            imported
+                .import_opaque_wildcard_population(&scope, &different_member)
+                .is_err()
+        );
+        let helper = imported.enter_call();
+        let held = imported
+            .transfer_call_fact(&imported, &helper, &scope, true)
+            .unwrap();
+        assert!(held.observe_symbolic(&scope).is_none());
+        assert!(
+            held.transfer_call_fact(&imported, &helper, &different_member, false)
+                .is_err()
+        );
+        let held = held
+            .transfer_call_fact(&imported, &helper, &member, false)
+            .unwrap()
+            .return_to(&helper);
+        assert!(held.observe_symbolic(&wrong_pool).is_none());
+        assert_eq!(held.observe_symbolic(&scope).unwrap().entry_count, total);
+        assert!(held.finish_call(&imported).is_err());
+        assert!(
+            held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+                .is_err()
+        );
+        let returned = held
+            .transfer_call_fact(&helper, &imported, &member, false)
+            .unwrap();
+        let returned = returned
+            .transfer_call_fact(&helper, &imported, &scope, true)
+            .unwrap()
+            .finish_call(&imported)
+            .unwrap();
+        assert_eq!(
+            returned.observe_symbolic(&scope).unwrap().entry_count,
+            total
+        );
+        assert!(returned.owns_imported_population_member(&member));
+        assert!(
+            returned
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_transfer_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap();
+            for index in 1..=size {
+                let (other, member) = opaque_scope(index);
+                entry = entry
+                    .import_opaque_wildcard_population(&other, &member)
+                    .unwrap();
+            }
+            let helper = entry.enter_call();
+            let ((held, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let held = entry
+                        .transfer_call_fact(&entry, &helper, &scope, true)
+                        .unwrap();
+                    held.transfer_call_fact(&entry, &helper, &member, false)
+                        .unwrap()
+                })
+            });
+            let held = held.return_to(&helper);
+            assert!(held.owns_imported_population_member(&member));
+            assert!(held.observe_symbolic(&scope).is_some());
+            assert!(work > 0);
+            indexed_work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 64 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn wildcard_helper_death_checks_identity_custody_and_single_transition() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 1);
+        let death = |events: &CreationEvents, candidate: &ResourceDescription| {
+            events.checked_member_exchange(&PointerBlock::ExternalArgument, candidate, false)
+        };
+        let mut arguments = member.arguments().to_vec();
+        arguments[1] = int32(8).into();
+        let different =
+            ResourceDescription::new("slot".into(), arguments.into(), member.schema().clone());
+        assert!(death(&entry, &different).is_err());
+        assert!(death(&entry, &opaque_scope(1).1).is_err());
+        let helper = entry.enter_call();
+        let authority_away = entry
+            .transfer_call_fact(&entry, &helper, &scope, true)
+            .unwrap();
+        assert!(death(&authority_away, &member).is_err());
+        let member_away = entry
+            .transfer_call_fact(&entry, &helper, &member, false)
+            .unwrap();
+        assert!(death(&member_away, &member).is_err());
+        let (spent, certificate) = death(&entry, &member).unwrap();
+        assert!(certificate.matches(&entry, &spent, &member, false));
+        assert!(!certificate.matches(&entry, &spent, &different, false));
+        assert!(!certificate.matches(&entry, &spent, &member, true));
+        assert!(!spent.owns_imported_population_member(&member));
+        let after = spent.observe_symbolic(&scope).unwrap();
+        assert_eq!(after.entry_count, count.entry_count);
+        assert_eq!(after.delta, -1);
+        assert_eq!(
+            spent.imported_member_delta_since_entry(&member),
+            Some((false, Bitvector32Term::Constant(1)))
+        );
+        assert!(
+            spent
+                .imported_member_delta_since_entry(&different)
+                .is_none()
+        );
+        assert!(death(&spent, &member).is_err());
+        assert!(
+            spent
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+                .is_err()
+        );
+        assert!(
+            spent
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_death_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap();
+            for index in 1..=size {
+                entry = entry
+                    .import_opaque_wildcard_authority(&opaque_scope(index).0)
+                    .unwrap();
+            }
+            let (spent, work) = crate::persistent::measure_persistent_work(|| {
+                entry
+                    .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                    .unwrap()
+                    .0
+            });
+            assert_eq!(spent.observe_symbolic(&scope).unwrap().delta, -1);
+            assert_eq!(spent.observe_symbolic(&opaque_scope(1).0).unwrap().delta, 0);
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 32 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn empty_opaque_population_entails_zero_for_every_exact_member() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap().entry_count;
+        let empty = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(0)),
+            true,
+        );
+        assert_eq!(
+            entry
+                .observe_exact_member(&member, &empty)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        let nonempty = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(count, Bitvector32Term::Constant(1)),
+            true,
+        );
+        assert!(matches!(
+            entry
+                .observe_exact_member(&member, &nonempty)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Variable(_)
+        ));
+        let child = entry.enter_call();
+        let away = entry
+            .transfer_call_fact(&entry, &child, &scope, true)
+            .unwrap();
+        assert!(away.observe_exact_member(&member, &empty).is_err());
+    }
+
+    #[test]
+    fn exclusive_wildcard_members_keep_exact_custody_through_a_call() {
+        let (scope, first) = opaque_scope(0);
+        let different = |index| {
+            let mut arguments = first.arguments().to_vec();
+            arguments[1] = int32(index).into();
+            ResourceDescription::new(
+                first.family().into(),
+                arguments.into(),
+                first.schema().clone(),
+            )
+        };
+        let second = different(8);
+        let wrong = different(9);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap().entry_count;
+        let bounds = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_greater_equal(
+                Bitvector32Term::Constant(i32::MAX as u32 - 3),
+                count,
+            ),
+            true,
+        );
+        let birth = |events: &CreationEvents, member: &ResourceDescription| {
+            events
+                .checked_exclusive_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    member,
+                    true,
+                    &Bitvector32Term::Constant(1),
+                    &bounds,
+                )
+                .unwrap()
+                .0
+        };
+        let one = birth(&entry, &first);
+        let two = birth(&one, &second);
+        assert_eq!(two.observe_symbolic(&scope).unwrap().delta, 2);
+        assert!(two.owns_imported_population_member(&first));
+        assert!(two.owns_imported_population_member(&second));
+        assert!(!two.owns_imported_population_member(&wrong));
+        assert!(
+            two.checked_member_exchange(&PointerBlock::ExternalArgument, &wrong, false)
+                .is_err()
+        );
+        assert!(two.observe_exact_member(&wrong, &bounds).is_err());
+        assert_eq!(
+            two.observe_exact_member(&first, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        let child = two.enter_call();
+        let sent_first = child
+            .transfer_call_fact(&two, &child, &scope, true)
+            .unwrap()
+            .transfer_call_fact(&two, &child, &first, false)
+            .unwrap();
+        let sent_second = child
+            .transfer_call_fact(&two, &child, &scope, true)
+            .unwrap()
+            .transfer_call_fact(&two, &child, &second, false)
+            .unwrap();
+        assert_ne!(
+            sent_first, sent_second,
+            "memoization must include exact member identity"
+        );
+        assert!(sent_first.owns_imported_population_member(&first));
+        assert!(!sent_first.owns_imported_population_member(&second));
+        assert!(
+            sent_first
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &second, false)
+                .is_err()
+        );
+        let spent = sent_first
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+            .unwrap()
+            .0;
+        assert!(
+            spent
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+                .is_err()
+        );
+        let returned = spent
+            .transfer_call_fact(&child, &two, &scope, true)
+            .unwrap()
+            .finish_call(&two)
+            .unwrap();
+        assert!(!returned.owns_imported_population_member(&first));
+        assert!(returned.owns_imported_population_member(&second));
+        assert_eq!(returned.observe_symbolic(&scope).unwrap().delta, 1);
+        assert_eq!(
+            returned
+                .observe_exact_member(&first, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        let three = birth(&returned, &wrong);
+        assert!(
+            three.observe_exact_member(&first, &bounds).is_err(),
+            "a later unresolved birth cannot preserve an old exact absence"
+        );
+        assert_eq!(
+            three
+                .observe_exact_member(&second, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+    }
+
+    #[test]
+    fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, first) = opaque_scope(0);
+            let at = |index| {
+                let mut arguments = first.arguments().to_vec();
+                arguments[1] = int32(index).into();
+                ResourceDescription::new(
+                    first.family().into(),
+                    arguments.into(),
+                    first.schema().clone(),
+                )
+            };
+            let mut events = CreationEvents::new()
+                .import_opaque_wildcard_authority(&scope)
+                .unwrap();
+            let bounds = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_greater_equal(
+                    Bitvector32Term::Constant(i32::MAX as u32 - size - 1),
+                    events.observe_symbolic(&scope).unwrap().entry_count,
+                ),
+                true,
+            );
+            for index in 0..size {
+                events = events
+                    .checked_exclusive_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &at(index),
+                        true,
+                        &Bitvector32Term::Constant(1),
+                        &bounds,
+                    )
+                    .unwrap()
+                    .0;
+            }
+            let selected = at(size / 2);
+            let child = events.enter_call();
+            let ((), work) = crate::persistent::measure_persistent_work(|| {
+                let sent = child
+                    .transfer_call_fact(&events, &child, &scope, true)
+                    .unwrap()
+                    .transfer_call_fact(&events, &child, &selected, false)
+                    .unwrap();
+                let spent = sent
+                    .checked_member_exchange(&PointerBlock::ExternalArgument, &selected, false)
+                    .unwrap()
+                    .0;
+                let returned = spent
+                    .transfer_call_fact(&child, &events, &scope, true)
+                    .unwrap()
+                    .finish_call(&events)
+                    .unwrap();
+                assert!(!returned.owns_imported_population_member(&selected));
+                assert!(returned.owns_imported_population_member(&at(0)));
+                assert_eq!(
+                    returned.observe_symbolic(&scope).unwrap().delta,
+                    size as i32 - 1
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 80 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn wildcard_helper_birth_checks_bound_identity_and_single_transition() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 0);
+        assert!(!entry.owns_imported_population_member(&member));
+        let bounded = PureFactContext::new().assume_condition(
+            crate::kernel::ConditionTerm::signed_add_overflows(
+                count.entry_count.clone(),
+                Bitvector32Term::Constant(1),
+            ),
+            false,
+        );
+        let birth = |events: &CreationEvents,
+                     candidate: &ResourceDescription,
+                     assumptions: &PureFactContext| {
+            events.checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                candidate,
+                true,
+                &Bitvector32Term::Constant(1),
+                assumptions,
+            )
+        };
+        assert!(birth(&entry, &member, &PureFactContext::new()).is_err());
+        let (wrong_scope, wrong_member) = opaque_scope(1);
+        assert!(birth(&entry, &wrong_member, &bounded).is_err());
+        let other = entry
+            .import_opaque_wildcard_authority(&wrong_scope)
+            .unwrap();
+        assert!(birth(&other, &wrong_member, &bounded).is_err());
+        let (issued, certificate) = birth(&entry, &member, &bounded).unwrap();
+        assert!(certificate.matches(&entry, &issued, &member, true));
+        assert!(!certificate.matches(&entry, &issued, &wrong_member, true));
+        assert_eq!(issued.observe_symbolic(&scope).unwrap().delta, 1);
+        assert!(issued.owns_imported_population_member(&member));
+        assert_eq!(
+            issued.imported_member_delta_since_entry(&member),
+            Some((true, Bitvector32Term::Constant(1)))
+        );
+        assert!(
+            issued
+                .imported_member_delta_since_entry(&wrong_member)
+                .is_none()
+        );
+        let mut arguments = member.arguments().to_vec();
+        arguments[1] = int32(8).into();
+        let different =
+            ResourceDescription::new("slot".into(), arguments.into(), member.schema().clone());
+        assert!(
+            issued
+                .imported_member_delta_since_entry(&different)
+                .is_none()
+        );
+        assert!(birth(&issued, &different, &bounded).is_err());
+        assert!(
+            issued
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                .is_err()
+        );
+        assert!(
+            issued
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_authority(&scope)
+                .unwrap();
+            for index in 1..=size {
+                entry = entry
+                    .import_opaque_wildcard_authority(&opaque_scope(index).0)
+                    .unwrap();
+            }
+            let bounded = PureFactContext::new().assume_condition(
+                crate::kernel::ConditionTerm::signed_add_overflows(
+                    entry.observe_symbolic(&scope).unwrap().entry_count,
+                    Bitvector32Term::Constant(1),
+                ),
+                false,
+            );
+            let (issued, work) = crate::persistent::measure_persistent_work(|| {
+                entry
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &member,
+                        true,
+                        &Bitvector32Term::Constant(1),
+                        &bounded,
+                    )
+                    .unwrap()
+                    .0
+            });
+            assert_eq!(issued.observe_symbolic(&scope).unwrap().delta, 1);
+            assert_eq!(
+                issued.observe_symbolic(&opaque_scope(1).0).unwrap().delta,
+                0
+            );
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 32 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn local_numeric_batch_preserves_exact_wildcard_counts() {
+        let pool = PointerBlock::Heap(991_202);
+        let scope = scope(&pool, 2);
+        let selected = description(&pool, &[1]);
+        let other = description(&pool, &[2]);
+        let empty = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap()
+            .0;
+        let facts = PureFactContext::new();
+        let issued = empty
+            .checked_member_exchange_quantity(
+                &pool,
+                &selected,
+                true,
+                &Bitvector32Term::Constant(3),
+                &facts,
+            )
+            .unwrap()
+            .0;
+        let spent = issued
+            .checked_member_exchange_quantity(
+                &pool,
+                &selected,
+                false,
+                &Bitvector32Term::Constant(2),
+                &facts,
+            )
+            .unwrap()
+            .0;
+        assert_eq!(spent.observe(&pool, scope.family()), Ok(1));
+        assert_eq!(
+            spent
+                .observe_exact_member(&selected, &facts)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        assert_eq!(
+            spent
+                .observe_exact_member(&other, &facts)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        assert!(
+            spent
+                .checked_member_exchange_quantity(
+                    &pool,
+                    &other,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &facts,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn exact_counts_preserve_multiplicity_and_require_current_authority() {
+        let pool = PointerBlock::Heap(950_001);
+        let scope = scope(&pool, 3);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let first = description(&pool, &[1, 10]);
+        let second = description(&pool, &[2, 20]);
+        let assumptions = PureFactContext::new();
+        let count = |events: &CreationEvents, member: &ResourceDescription| {
+            events
+                .observe_exact_member(member, &assumptions)
+                .unwrap()
+                .entry_count
+        };
+        assert_eq!(count(&empty, &first), Bitvector32Term::Constant(0));
+        let (one, _) = empty.checked_member_exchange(&pool, &first, true).unwrap();
+        let (two, _) = one.checked_member_exchange(&pool, &first, true).unwrap();
+        let (three, _) = two.checked_member_exchange(&pool, &second, true).unwrap();
+        assert_eq!(count(&three, &first), Bitvector32Term::Constant(2));
+        assert_eq!(count(&three, &second), Bitvector32Term::Constant(1));
+        let (spent, _) = three.checked_member_exchange(&pool, &first, false).unwrap();
+        assert_eq!(count(&spent, &first), Bitvector32Term::Constant(1));
+        assert_eq!(count(&spent, &second), Bitvector32Term::Constant(1));
+        let helper = spent.enter_call();
+        let transferred = spent
+            .transfer_call_fact(&spent, &helper, &scope, true)
+            .unwrap();
+        assert!(
+            transferred
+                .observe_exact_member(&first, &assumptions)
+                .is_err()
+        );
+        let held = transferred.return_to(&helper);
+        assert_eq!(count(&held, &first), Bitvector32Term::Constant(1));
+    }
+
+    #[test]
+    fn exact_helper_count_is_arbitrary_and_survives_checked_consumption() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let assumptions = PureFactContext::new();
+        let exact = entry.observe_exact_member(&member, &assumptions).unwrap();
+        let total = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(exact.entry_count, Bitvector32Term::Variable(_)));
+        assert_ne!(exact.entry_count, total.entry_count);
+        assert_eq!(exact.entry_owned_members, 1);
+        assert_eq!(exact.delta, 0);
+        let (spent, _) = entry
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .unwrap();
+        let after = spent.observe_exact_member(&member, &assumptions).unwrap();
+        assert_eq!(after.entry_count, exact.entry_count);
+        assert_eq!(after.delta, -1);
+        assert_eq!(
+            entry
+                .observe_exact_member(&member, &assumptions)
+                .unwrap()
+                .delta,
+            0
+        );
+        let (_, foreign) = opaque_scope(1);
+        assert!(spent.observe_exact_member(&foreign, &assumptions).is_err());
+    }
+
+    #[test]
+    fn exact_counts_do_not_treat_unresolved_indices_as_absent() {
+        let pool = PointerBlock::Heap(950_002);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let known = description(&pool, &[7]);
+        let mut arguments = known.arguments().to_vec();
+        arguments[1] = AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+            Variable::allocate_fresh().unwrap(),
+        )));
+        let unknown =
+            ResourceDescription::new("slot".into(), arguments.into(), known.schema().clone());
+        let (one, _) = empty
+            .checked_member_exchange(&pool, &unknown, true)
+            .unwrap();
+        assert!(
+            one.observe_exact_member(&known, &PureFactContext::new())
+                .is_err()
+        );
+        let (zero, _) = one.checked_member_exchange(&pool, &unknown, false).unwrap();
+        assert_eq!(
+            zero.observe_exact_member(&known, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+    }
+
+    #[test]
+    fn exact_count_identity_ignores_pointer_casts_and_qualifiers() {
+        let pool = PointerBlock::Heap(950_004);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let mut arguments = description(&pool, &[0]).arguments().to_vec();
+        let pointer = CValue::pointer(Pointer {
+            block: PointerBlock::Heap(950_005),
+            offset: PointerOffsetTerm::Constant(4),
+        });
+        arguments[1] = pointer.clone().into();
+        let member = ResourceDescription::new(
+            "slot".into(),
+            arguments.clone().into(),
+            scope.schema().clone(),
+        );
+        let (one, _) = empty.checked_member_exchange(&pool, &member, true).unwrap();
+        let CValue::Pointer(pointer) = pointer else {
+            unreachable!()
+        };
+        arguments[1] = CValue::Pointer(
+            pointer
+                .with_type(CType::VoidPointer)
+                .with_pointee_constant(true),
+        )
+        .into();
+        let cast =
+            ResourceDescription::new("slot".into(), arguments.into(), scope.schema().clone());
+        assert_eq!(
+            one.observe_exact_member(&cast, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        let (zero, _) = one.checked_member_exchange(&pool, &cast, false).unwrap();
+        assert_eq!(
+            zero.observe_exact_member(&member, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+    }
+
+    #[test]
+    fn exact_count_never_reports_zero_for_an_unindexed_batch() {
+        let pool = PointerBlock::Heap(950_006);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let member = description(&pool, &[7]);
+        let quantity = Bitvector32Term::Variable(Variable::allocate_fresh().unwrap());
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(
+                    quantity.clone(),
+                    Bitvector32Term::Constant(i32::MAX as u32),
+                ),
+                true,
+            );
+        let (batch, _) = empty
+            .checked_member_exchange_quantity(&pool, &member, true, &quantity, &facts)
+            .unwrap();
+        assert_eq!(
+            batch
+                .observe_exact_member(&member, &PureFactContext::new())
+                .err(),
+            Some(CreationRefusal::UnknownTotal)
+        );
+    }
+
+    #[test]
+    fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
+        let samples = [16, 64, 256].map(|size| {
+            let pool = PointerBlock::Heap(950_003);
+            let scope = scope(&pool, 2);
+            let (mut events, _) = CreationEvents::new()
+                .created(pool.clone())
+                .checked_establish(&pool, &scope)
+                .unwrap();
+            for index in 0..size {
+                events = events
+                    .checked_member_exchange(&pool, &description(&pool, &[index]), true)
+                    .unwrap()
+                    .0;
+            }
+            let selected = description(&pool, &[0]);
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert_eq!(
+                    events
+                        .observe_exact_member(&selected, &PureFactContext::new())
+                        .unwrap()
+                        .entry_count,
+                    Bitvector32Term::Constant(1)
+                );
+                let (spent, _) = events
+                    .checked_member_exchange(&pool, &selected, false)
+                    .unwrap();
+                assert_eq!(
+                    spent
+                        .observe_exact_member(&selected, &PureFactContext::new())
+                        .unwrap()
+                        .entry_count,
+                    Bitvector32Term::Constant(0)
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 64 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
+        let pool = PointerBlock::Heap(920_001);
+        let authority = scope(&pool, 3);
+        let entry = CreationEvents::new().created(pool.clone());
+        let (empty, _) = entry.checked_establish(&pool, &authority).unwrap();
+        let first = description(&pool, &[1, 10]);
+        let second = description(&pool, &[2, 20]);
+        let (one, witness) = empty.checked_member_exchange(&pool, &first, true).unwrap();
+        assert!(witness.matches(&empty, &one, &first, true));
+        assert!(!witness.matches(&empty, &one, &second, true));
+        let (two, _) = one.checked_member_exchange(&pool, &second, true).unwrap();
+        assert_eq!(
+            two.observe_term(&pool, "slot").unwrap(),
+            Bitvector32Term::Constant(2)
+        );
+        assert_eq!(two.governing_authority(&first), Some(authority.clone()));
+        assert!(two.checked_establish(&pool, &authority).is_err());
+        assert!(two.checked_retire(&pool, &authority).is_err());
+        assert!(
+            two.checked_member_exchange(&pool, &description(&pool, &[1]), true)
+                .is_err()
+        );
+        assert!(
+            two.checked_member_exchange(&pool, &authority, true)
+                .is_err()
+        );
+        let foreign = PointerBlock::Heap(920_002);
+        assert!(
+            two.checked_member_exchange(&foreign, &description(&foreign, &[1, 10]), true)
+                .is_err()
+        );
+        let (one, _) = two.checked_member_exchange(&pool, &second, false).unwrap();
+        let (zero, _) = one.checked_member_exchange(&pool, &first, false).unwrap();
+        let (retired, _) = zero.checked_retire(&pool, &authority).unwrap();
+        assert!(retired.checked_empty_population(&authority));
+        assert!(!retired.checked_empty_population(&description(&pool, &[])));
+        assert!(!retired.checked_empty_population(&scope(&pool, 2)));
+        assert!(retired.checked_establish(&pool, &authority).is_err());
+    }
+
+    #[test]
+    fn wildcard_scope_lookup_and_exchange_ignore_unrelated_pools() {
+        let samples = [16_u64, 64, 256, 1024].map(|size| {
+            let pool = PointerBlock::Heap(930_000);
+            let mut events = CreationEvents::new().created(pool.clone());
+            events = events.checked_establish(&pool, &scope(&pool, 2)).unwrap().0;
+            for index in 1..=size {
+                let other = PointerBlock::Heap(930_000 + index);
+                events = events
+                    .created(other.clone())
+                    .checked_establish(&other, &scope(&other, 2))
+                    .unwrap()
+                    .0;
+            }
+            let member = description(&pool, &[1]);
+            let ((next, _), work) = crate::instrumentation::measure_deterministic_work(|| {
+                events
+                    .checked_member_exchange(&pool, &member, true)
+                    .unwrap()
+            });
+            assert_eq!(
+                next.observe_term(&pool, "slot").unwrap(),
+                Bitvector32Term::Constant(1)
+            );
+            assert_eq!(
+                next.observe_term(&PointerBlock::Heap(930_001), "slot")
+                    .unwrap(),
+                Bitvector32Term::Constant(0)
+            );
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 8 * index, "{samples:?}");
+        }
+    }
+}
+
+#[test]
+fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(980_220));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let authority = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let held = authority
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &assumptions)
+        .unwrap();
+    let spent = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(
+        spent.finish_call(&entry).unwrap_err(),
+        CreationRefusal::OutstandingOwnership
+    );
+    let retired = spent
+        .checked_retire_imported(&description, &assumptions)
+        .unwrap()
+        .0;
+    let returned = retired.finish_call(&entry).unwrap();
+    assert!(returned.retired_imported_authority_since(&entry, &description));
+    assert_eq!(
+        returned.imported_member_delta_since_entry(&description),
+        Some((false, quantity))
+    );
+    assert!(returned.checked_empty_population(&description));
+    assert!(!returned.owns_population_authority(&description));
+    assert!(!returned.owns_population_member(&description));
+    assert!(returned.observe_symbolic(&description).is_none());
+    assert!(
+        returned
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                true,
+                &Bitvector32Term::Constant(1),
+                &assumptions
+            )
+            .is_err()
+    );
+    assert_eq!(
+        returned
+            .checked_retire_imported(&description, &assumptions)
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority
+    );
+}
+
+#[test]
+fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
+    let slots = member_description(PointerBlock::ExternalArgument);
+    let private = ResourceDescription::new(
+        "private".into(),
+        slots.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    )
+    .with_population_arity(2)
+    .unwrap();
+    let assumptions = PureFactContext::new();
+    for private_total in [0, 1] {
+        let entry = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &slots,
+                3,
+                Some(Bitvector32Term::Constant(3)),
+                None,
+                None,
+            )
+            .unwrap()
+            .import_opaque_contract_population_with_member(
+                &private,
+                0,
+                Some(Bitvector32Term::Constant(private_total)),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let child = entry.enter_call();
+        let held = child
+            .transfer_call_fact(&entry, &child, &slots, true)
+            .unwrap()
+            .transfer_call_fact(&entry, &child, &private, true)
+            .unwrap()
+            .transfer_call_fact_quantity(
+                &entry,
+                &child,
+                &slots,
+                false,
+                &Bitvector32Term::Constant(3),
+                &assumptions,
+            )
+            .unwrap();
+        let spent = held
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &slots,
+                false,
+                &Bitvector32Term::Constant(3),
+                &assumptions,
+            )
+            .unwrap()
+            .0;
+        let retired_slots = spent
+            .checked_retire_imported(&slots, &assumptions)
+            .unwrap()
+            .0;
+        assert_eq!(
+            retired_slots.finish_call(&entry).unwrap_err(),
+            CreationRefusal::OutstandingOwnership
+        );
+        let result = retired_slots.checked_retire_imported(&private, &assumptions);
+        if private_total == 0 {
+            let returned = result.unwrap().0.finish_call(&entry).unwrap();
+            assert!(returned.checked_empty_population(&slots));
+            assert!(returned.checked_empty_population(&private));
+            assert!(!returned.owns_population_authority(&slots));
+            assert!(!returned.owns_population_authority(&private));
+        } else {
+            assert_eq!(result.unwrap_err(), CreationRefusal::UnknownTotal);
+        }
+    }
+}
+
+#[test]
+fn local_named_wildcard_members_count_occurrences_not_field_values() {
+    let block = PointerBlock::Heap(940_502);
+    let anchor = CValue::pointer(Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let scope = ResourceDescription::new(
+        "ticket".into(),
+        vec![anchor.clone().into()].into(),
+        schema.clone(),
+    )
+    .with_population_arity(2)
+    .unwrap();
+    let created = CreationEvents::new().created(block.clone());
+    let (empty, _) = created.checked_establish(&block, &scope).unwrap();
+    let member = |tag, serial| {
+        ResourceInstance::new(
+            Variable::allocate_fresh().unwrap(),
+            "ticket".into(),
+            vec![anchor.clone().into(), int32(tag).into()].into(),
+            schema.clone(),
+            vec![int32(serial).into()].into(),
+        )
+        .unwrap()
+    };
+    let first = member(7, 1);
+    let second = member(7, 2);
+    let absent = member(8, 99);
+    let one = empty
+        .checked_instance_exchange(&ResourceReference::from_instance(&first), true)
+        .unwrap();
+    let two = one
+        .checked_instance_exchange(&ResourceReference::from_instance(&second), true)
+        .unwrap();
+    let assumptions = PureFactContext::new();
+    let exact = |events: &CreationEvents, instance: &ResourceInstance| {
+        events
+            .observe_exact_member(&ResourceDescription::from_instance(instance), &assumptions)
+            .unwrap()
+            .entry_count
+            .as_const()
+            .unwrap()
+    };
+    assert_eq!(two.observe(&block, "ticket"), Ok(2));
+    assert_eq!(exact(&two, &first), 2);
+    assert_eq!(exact(&two, &absent), 0);
+    assert_eq!(
+        two.checked_retire(&block, &scope).err(),
+        Some(CreationRefusal::OutstandingMembers)
+    );
+    let one = two
+        .checked_instance_exchange(&ResourceReference::from_instance(&first), false)
+        .unwrap();
+    assert_eq!(exact(&one, &second), 1);
+    let zero = one
+        .checked_instance_exchange(&ResourceReference::from_instance(&second), false)
+        .unwrap();
+    assert_eq!(exact(&zero, &first), 0);
+    zero.checked_retire(&block, &scope).unwrap();
+}
+
+#[test]
+fn local_numeric_batch_splits_and_requires_owned_authority() {
+    let block = PointerBlock::Heap(991_200);
+    let description = member_description(block.clone());
+    let created = CreationEvents::new().created(block.clone());
+    let exchange = |state: &CreationEvents, produce: bool, amount: u32| {
+        state.checked_member_exchange_quantity(
+            &block,
+            &description,
+            produce,
+            &Bitvector32Term::Constant(amount),
+            &PureFactContext::new(),
+        )
+    };
+    assert!(exchange(&created, true, 0).is_err());
+    let empty = created.checked_establish(&block, &description).unwrap().0;
+    let three = exchange(&empty, true, 3).unwrap().0;
+    assert_eq!(three.observe(&block, description.family()), Ok(3));
+    assert!(three.checked_retire(&block, &description).is_err());
+    let (two, certificate) = exchange(&three, false, 1).unwrap();
+    assert!(certificate.matches(&three, &two, &description, false));
+    assert!(!certificate.matches(&empty, &two, &description, false));
+    assert_eq!(two.observe(&block, description.family()), Ok(2));
+    assert!(exchange(&two, false, 3).is_err());
+    let zero = exchange(&two, false, 2).unwrap().0;
+    assert_eq!(zero.observe(&block, description.family()), Ok(0));
+    assert!(exchange(&zero, false, 1).is_err());
+    for produce in [false, true] {
+        let unchanged = exchange(&zero, produce, 0).unwrap().0;
+        assert_eq!(unchanged.observe(&block, description.family()), Ok(0));
+    }
+    let retired = zero.checked_retire(&block, &description).unwrap().0;
+    assert!(exchange(&retired, true, 0).is_err());
+    let maximum = exchange(&empty, true, i32::MAX as u32).unwrap().0;
+    assert!(exchange(&maximum, true, 1).is_err());
+    assert!(exchange(&empty, true, u32::MAX).is_err());
+}
+
+#[test]
+fn local_numeric_batch_work_does_not_grow_with_quantity() {
+    let block = PointerBlock::Heap(991_201);
+    let description = member_description(block.clone());
+    let empty = CreationEvents::new()
+        .created(block.clone())
+        .checked_establish(&block, &description)
+        .unwrap()
+        .0;
+    let work = [2, 64, 65536, i32::MAX as u32].map(|amount| {
+        let (issued, measured) = crate::persistent::measure_persistent_work(|| {
+            empty
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(amount),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(issued.observe(&block, description.family()), Ok(amount));
+        let (spent, consume_work) = crate::persistent::measure_persistent_work(|| {
+            issued
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(amount),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(spent.observe(&block, description.family()), Ok(0));
+        (measured, consume_work)
+    });
+    assert!(work[0].0 > 0 && work[0].1 > 0, "{work:?}");
+    assert!(work.iter().all(|n| *n == work[0]), "{work:?}");
 }

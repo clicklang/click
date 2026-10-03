@@ -108,6 +108,45 @@ fn collect_signed_surface_terms<'a>(
     }
 }
 
+// Arithmetic combinations may mix snapshots. Put each selector on its
+// operands so generated comparisons keep those snapshots when combined.
+fn surface_comparison_with_anchored_operands(proposition: &ClickProposition) -> ClickProposition {
+    let mut inner = proposition;
+    let mut selectors = Vec::new();
+    while let ClickProposition::At {
+        selector,
+        proposition,
+    } = inner
+    {
+        selectors.push(selector);
+        inner = proposition;
+    }
+    let ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    } = inner
+    else {
+        return proposition.clone();
+    };
+    let anchor = |expression: &ContractExpression| {
+        selectors
+            .iter()
+            .rev()
+            .fold(expression.clone(), |expression, selector| {
+                ContractExpression::At {
+                    selector: (*selector).clone(),
+                    expression: Box::new(expression),
+                }
+            })
+    };
+    ClickProposition::Comparison {
+        left: anchor(left),
+        operator: *operator,
+        right: anchor(right),
+    }
+}
+
 fn collect_signed_surface_proposition_terms<'a>(
     proposition: &'a ClickProposition,
     terms: &mut Vec<&'a ContractExpression>,
@@ -229,10 +268,34 @@ fn signed_surface_terms_equal(
             | (
                 crate::kernel::Bitvector32Term::BitwiseXor(left, right),
                 crate::kernel::Bitvector32Term::BitwiseXor(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Add(left, right),
+                crate::kernel::Bitvector32Term::UInt64Add(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Subtract(left, right),
+                crate::kernel::Bitvector32Term::UInt64Subtract(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Multiply(left, right),
+                crate::kernel::Bitvector32Term::UInt64Multiply(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Divide(left, right),
+                crate::kernel::Bitvector32Term::UInt64Divide(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Remainder(left, right),
+                crate::kernel::Bitvector32Term::UInt64Remainder(other_left, other_right),
             ) => {
                 pending.push((left, other_left));
                 pending.push((right, other_right));
             }
+            (
+                crate::kernel::Bitvector32Term::UInt32From64(left),
+                crate::kernel::Bitvector32Term::UInt32From64(right),
+            ) => pending.push((left, right)),
             _ => return false,
         }
     }
@@ -260,7 +323,10 @@ pub(super) fn integer_plan_to_surface_certificate(
                     proposition: surface.clone(),
                     result: surface.clone(),
                 };
-                (surface, certificate)
+                (
+                    surface_comparison_with_anchored_operands(&surface),
+                    certificate,
+                )
             }
             IntegerArithmeticNode::Scale {
                 source,
@@ -931,9 +997,13 @@ impl<'a> Proof<'a> {
                 operation_count += 1;
             }
         }
+        let rendered_premises: Vec<_> = premise_pairs
+            .iter()
+            .map(|(_, surface)| surface_comparison_with_anchored_operands(surface))
+            .collect();
         let mut terms: Vec<&ContractExpression> = Vec::new();
         collect_signed_surface_proposition_terms(surface_goal, &mut terms);
-        for (_, surface) in premise_pairs {
+        for surface in &rendered_premises {
             collect_signed_surface_proposition_terms(surface, &mut terms);
         }
         let term = |term: &crate::kernel::Bitvector32Term| self.signed_surface_term(term, &terms);
@@ -950,6 +1020,27 @@ impl<'a> Proof<'a> {
             SignedArithmeticComparison::Equal => SignedInt32Comparison::Equal,
             SignedArithmeticComparison::Disequal => SignedInt32Comparison::Disequal,
         };
+        // The additions of a chain of three or more inequalities: an `Add`
+        // whose left input is an `Add` of two inequalities, and that input.
+        // Each is spelled as the comparison of the chain's ends, because the
+        // sum of the source operands grows by one term per premise and no
+        // longer reads back as the claim it denotes.
+        let mut chain_additions = BTreeSet::new();
+        for (index, node) in plan.nodes.iter().enumerate() {
+            if let SignedArithmeticNode::Add { left, right, .. } = node
+                && matches!(
+                    plan.nodes.get(*left),
+                    Some(SignedArithmeticNode::Add { .. })
+                )
+                && !matches!(
+                    plan.nodes.get(*right),
+                    Some(SignedArithmeticNode::Trivial { .. })
+                )
+            {
+                chain_additions.insert(index);
+                chain_additions.insert(*left);
+            }
+        }
         let mut surfaces: Vec<Option<ClickProposition>> = Vec::with_capacity(plan.nodes.len());
         let claim_surface = |claim: &SignedArithmeticClaim| {
             let value = claim.constant.to_i32()?;
@@ -967,7 +1058,7 @@ impl<'a> Proof<'a> {
         for node in &plan.nodes {
             let value = match node {
                 SignedArithmeticNode::Premise { index, .. } => {
-                    Some(premise_pairs.get(*index)?.1.clone())
+                    Some(rendered_premises.get(*index)?.clone())
                 }
                 SignedArithmeticNode::Scale {
                     source,
@@ -991,6 +1082,23 @@ impl<'a> Proof<'a> {
                         && result.relation == SignedArithmeticRelation::LessEqual
                     {
                         integer_surface_zero_claim(left_surface, right_surface)
+                    } else if !result.terms.is_empty()
+                        && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
+                        && let Some(chained) =
+                            integer_surface_transitive(left_surface, right_surface)
+                    {
+                        // A sum over sign-bit-flipped atoms is a step of an
+                        // unsigned chain: `x <u n` and `n <=u 4` add to
+                        // `x <u 4`, which is the source comparison of the
+                        // chain's ends. Summing the source operands instead
+                        // would spell a wrapping `uint32` addition, a
+                        // different value from the flipped atoms' sum.
+                        Some(chained)
+                    } else if chain_additions.contains(&surfaces.len())
+                        && let Some(chained) =
+                            integer_surface_transitive(left_surface, right_surface)
+                    {
+                        Some(chained)
                     } else {
                         claim_surface(result).or_else(|| {
                             if weakening_source == Some(surfaces.len()) {
@@ -1018,7 +1126,12 @@ impl<'a> Proof<'a> {
                     surfaces.get(*lower)?.as_ref()?,
                     surfaces.get(*upper)?.as_ref()?,
                 )
-                .or_else(|| claim_surface(result)),
+                .or_else(|| claim_surface(result))
+                // Affine bounds may have different source groupings after
+                // equality substitution. The final goal supplies their
+                // equality spelling; the checker still validates both
+                // opposite claims and the stated result independently.
+                .or_else(|| (surfaces.len() == plan.conclusion).then(|| surface_goal.clone())),
                 SignedArithmeticNode::StrictFromDisequal { bound, result, .. } => {
                     integer_surface_strict_from_disequal(surfaces.get(*bound)?.as_ref()?)
                         .or_else(|| claim_surface(result))
@@ -1502,11 +1615,78 @@ impl<'a> Proof<'a> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        let result = self.try_simp_closure_after_direct(false)?;
+        let result = match self.try_simp_closure_after_direct(false)? {
+            Some(proof) => Some(proof),
+            None => self.try_restated_constant_upper_bound()?,
+        };
         if result.is_some() {
             scope.succeed();
         }
         Ok(result)
+    }
+
+    /// Closes `value <= c` over a constant by proving the same bound
+    /// written `value < c + 1`. The two are one claim, but an order chain
+    /// that ends at `c + 1` concludes the strict form, and the derivation
+    /// asked for the non-strict form finds no chain ending at `c`.
+    ///
+    /// It runs only after every other strategy has missed, on a goal of
+    /// exactly this shape, and the restated goal is strict, so it does not
+    /// recur.
+    fn try_restated_constant_upper_bound(&self) -> Result<Option<Self>, ClickError> {
+        let Some(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessEqual(_, bound),
+            true,
+        )) = self.goal()
+        else {
+            return Ok(None);
+        };
+        // `c + 1` must not wrap in the order the comparison is made in.
+        let Some(bound) = bound.as_const().filter(|bound| *bound as i32 != i32::MAX) else {
+            return Ok(None);
+        };
+        let Some(ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessEqual,
+            right,
+        }) = self.surface_goal().cloned()
+        else {
+            return Ok(None);
+        };
+        // The source bound is the kernel bound, or its sign-flipped form
+        // for an unsigned comparison; the successor is spelled in the
+        // operand's own type.
+        let successor = match &right {
+            ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+                Bitvector32Term::Constant(value),
+            ))) if *value == bound ^ 0x8000_0000 => ContractExpression::CFragment(
+                CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value + 1))),
+            ),
+            ContractExpression::IntegerLiteral(literal)
+                if literal.parse::<i32>().ok() == Some(bound as i32) =>
+            {
+                ContractExpression::IntegerLiteral((i64::from(bound as i32) + 1).to_string())
+            }
+            _ => return Ok(None),
+        };
+        let strict = ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessThan,
+            right: successor,
+        };
+        let Ok(scope) = self.begin_have(strict.clone()) else {
+            return Ok(None);
+        };
+        let Some(proved) = scope.try_simp_closure()? else {
+            return Ok(None);
+        };
+        let Ok(joined) = proved.join() else {
+            return Ok(None);
+        };
+        Ok(joined
+            .apply_step(ProofStep::ArithmeticUsing(vec![strict]))
+            .ok()
+            .filter(|proof| proof.is_complete() || proof.goal() != self.goal()))
     }
 
     /// Continues smart closure after direct logical candidates have either
@@ -1565,6 +1745,13 @@ impl<'a> Proof<'a> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Self>, ClickError> {
+        // An unsigned order is the signed order of sign-flipped operands,
+        // which the derivation below treats as opaque atoms. The uint32
+        // lemmas state the steps, so a goal of one of their shapes is closed
+        // by naming the lemma, from the exact premise it requires.
+        if let Some(proof) = self.try_unsigned_order_lemma() {
+            return Ok(Some(proof));
+        }
         // Integer arithmetic has its own compact, locally checked evidence
         // path. Keep it ahead of the legacy signed arithmetic derivation so
         // a mathematical Integer goal cannot accidentally enter the machine
@@ -4016,7 +4203,6 @@ impl<'a> Proof<'a> {
                 premise_pairs,
                 !matches!(self.context.as_ref(), ProofContext::Execution(_)),
             ),
-            SimpEvidence::Assumption => None,
         }
     }
 
@@ -4152,6 +4338,292 @@ impl<'a> Proof<'a> {
     /// this visits only selected equalities connected to that value and one
     /// exact upper-bound premise; it never tries every partially synthesizable
     /// context fact as a candidate step.
+    /// The surface spelling of an exact fact, looked up as `simp` resolves
+    /// the premises of a derivation it selected.
+    fn unsigned_surface_fact(&self, kernel: &Proposition) -> Option<ClickProposition> {
+        // A reconstructible spelling is not evidence that the fact is held.
+        // In particular, a positive difference may need to be derived from
+        // the unsigned guard before the predecessor lemma can use it.
+        if !self.facts().contains(kernel) {
+            return None;
+        }
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => self.available_surface_fact(
+                &context.theorem_context.surface_requirements,
+                None,
+                kernel,
+            ),
+            ProofContext::FixedState(context) => self.available_surface_fact(
+                context.surface_propositions,
+                context.premise_anchor.as_ref(),
+                kernel,
+            ),
+            ProofContext::Execution(_) => {
+                if let Some(data) = self.focused_outcome_data() {
+                    self.available_surface_fact(
+                        &data.surface_propositions,
+                        data.premise_anchor.as_ref(),
+                        kernel,
+                    )
+                } else {
+                    let execution = self.execution()?;
+                    let anchor = frontier_premise_anchor(execution);
+                    self.available_surface_fact(
+                        &execution.presentation.surface_propositions,
+                        anchor.as_ref(),
+                        kernel,
+                    )
+                }
+            }
+        }
+    }
+
+    /// The fact `lower <u upper` as a proof that has it in that spelling,
+    /// with the fact's surface and its two operands. The fact may be held
+    /// as `upper >u lower`; the lemma that reads it the other way round is
+    /// applied first. Both lookups are exact: no fact is scanned.
+    fn unsigned_strict_fact(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
+    ) -> Option<(
+        Self,
+        ClickProposition,
+        ContractExpression,
+        ContractExpression,
+    )> {
+        let less = Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
+            true,
+        );
+        if let Some(surface) = surface_fact(&less) {
+            let (lower, upper) = surface_strict_parts(&surface)?;
+            return Some((self.clone(), surface, lower, upper));
+        }
+        let greater = Proposition::ConditionIs(
+            ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
+            true,
+        );
+        let surface = surface_fact(&greater)?;
+        let (lower, upper) = surface_strict_parts(&surface)?;
+        let reversed = ClickProposition::Comparison {
+            left: lower.clone(),
+            operator: ComparisonOperator::LessThan,
+            right: upper.clone(),
+        };
+        let proof = self
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: "uint32_gt_implies_reversed_lt".to_string(),
+                    arguments: vec![upper.clone(), lower.clone()],
+                },
+                premises: vec![surface],
+            })
+            .ok()?;
+        Some((proof, reversed, lower, upper))
+    }
+
+    /// Applies one uint32 lemma and closes the goal with its conclusion.
+    fn close_with_unsigned_lemma(
+        &self,
+        name: &str,
+        arguments: Vec<ContractExpression>,
+        premise: ClickProposition,
+    ) -> Option<Self> {
+        let applied = self
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+                premises: vec![premise],
+            })
+            .ok()?;
+        // The lemma's conclusion is the goal, so applying it discharges the
+        // goal where it is stated exactly; the focus then leaves it, though
+        // sibling goals (other members of a loop bundle) may remain.
+        if applied.is_complete() || applied.goal() != self.goal() {
+            return Some(applied);
+        }
+        applied.try_direct_logical_closure().ok().flatten()
+    }
+
+    /// Closes an unsigned order goal that is one step of uint32 arithmetic
+    /// from an exact fact, by the lemma that states that step: a
+    /// predecessor, a successor under a strict bound, the descent of a
+    /// difference, or one comparison read the other way round.
+    ///
+    /// The goal's shape names the lemma and the one premise it needs, which
+    /// is looked up exactly, so the work is a fixed number of lookups
+    /// whatever the context holds.
+    pub(super) fn try_unsigned_order_lemma(&self) -> Option<Self> {
+        self.try_unsigned_order_lemma_from(&|kernel| self.unsigned_surface_fact(kernel))
+    }
+
+    /// [`Self::try_unsigned_order_lemma`] with the premise taken from the
+    /// surface premises a tactic lists, and from nowhere else: the step
+    /// `arithmetic() using { ... }` promises to use exactly those.
+    pub(in crate::surface::proof) fn try_unsigned_order_lemma_using(
+        &self,
+        surface_premises: &[ClickProposition],
+    ) -> Option<Self> {
+        // Only an unsigned order goal has a lemma, so only then are the
+        // listed premises lowered.
+        unsigned_order_parts(self.goal()?)?;
+        let listed = surface_premises
+            .iter()
+            .filter_map(|surface| {
+                let kernel = self
+                    .lower_cited_surface_proposition(surface, "`arithmetic using` premise")
+                    .ok()?;
+                self.facts()
+                    .listed_premise_available(&kernel, &[], false)
+                    .then(|| (kernel, surface.clone()))
+            })
+            .collect::<Vec<_>>();
+        self.try_unsigned_order_lemma_from(&|kernel| {
+            listed
+                .iter()
+                .find(|(listed, _)| listed == kernel)
+                .map(|(_, surface)| surface.clone())
+        })
+    }
+
+    fn try_unsigned_order_lemma_from(
+        &self,
+        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
+    ) -> Option<Self> {
+        let (order, left, right) = unsigned_order_parts(self.goal()?)?;
+        let zero = Bitvector32Term::Constant(0);
+        let one = Bitvector32Term::Constant(1);
+        let reversed_fact = |condition: ConditionTerm, name: &str, strict: bool| {
+            let surface = surface_fact(&Proposition::ConditionIs(condition, true))?;
+            let (lower, upper) = if strict {
+                surface_strict_parts(&surface)?
+            } else {
+                surface_nonstrict_parts(&surface)?
+            };
+            // Each reversal lemma takes the operands in the order its
+            // premise writes them.
+            let arguments = if name.starts_with("uint32_g") {
+                vec![upper, lower]
+            } else {
+                vec![lower, upper]
+            };
+            self.close_with_unsigned_lemma(name, arguments, surface)
+        };
+        match order {
+            UnsignedOrder::Less => {
+                // `value - 1 <u value` from `0 <u value`.
+                if left == Bitvector32Term::Subtract(Box::new(right.clone()), Box::new(one.clone()))
+                {
+                    if let Some((proof, premise, _, value)) =
+                        self.unsigned_strict_fact(&zero, &right, surface_fact)
+                    {
+                        return proof.close_with_unsigned_lemma(
+                            "uint32_positive_predecessor_strictly_decreases",
+                            vec![value],
+                            premise,
+                        );
+                    }
+                    // The value is a difference `upper - lower`, nonzero
+                    // because `lower <u upper`.
+                    if let Bitvector32Term::Subtract(upper, lower) = &right
+                        && let Some((proof, premise, lower, upper)) =
+                            self.unsigned_strict_fact(lower, upper, surface_fact)
+                    {
+                        // The difference is spelled from the premise's own
+                        // operands, so it lowers to the goal's term.
+                        let difference = ContractExpression::Subtract(
+                            Box::new(upper.clone()),
+                            Box::new(lower.clone()),
+                        );
+                        let positive = ClickProposition::Comparison {
+                            left: ContractExpression::CFragment(CExpression::Value(
+                                CValue::UInt32(Bitvector32Term::Constant(0)),
+                            )),
+                            operator: ComparisonOperator::LessThan,
+                            right: difference.clone(),
+                        };
+                        let proof = proof
+                            .apply_step(ProofStep::ApplyTheoremUsing {
+                                application: TheoremApplication {
+                                    name: "uint32_lt_implies_positive_difference".to_string(),
+                                    arguments: vec![lower, upper],
+                                },
+                                premises: vec![premise],
+                            })
+                            .ok()?;
+                        return proof.close_with_unsigned_lemma(
+                            "uint32_positive_predecessor_strictly_decreases",
+                            vec![difference],
+                            positive,
+                        );
+                    }
+                    return None;
+                }
+                // `(0 - value) + (bound - 1) <u (0 - value) + bound` from
+                // `value <u bound`: the affine forms a measure `bound -
+                // value` over a constant evaluates to.
+                if let (
+                    Bitvector32Term::Add(left_base, left_offset),
+                    Bitvector32Term::Add(right_base, right_offset),
+                ) = (&left, &right)
+                    && left_base == right_base
+                    && let Bitvector32Term::Subtract(negated_zero, value) = left_base.as_ref()
+                    && negated_zero.as_ref() == &zero
+                    && let (Some(lower), Some(bound)) =
+                        (left_offset.as_const(), right_offset.as_const())
+                    && bound != 0
+                    && lower == bound - 1
+                    && let Some((proof, premise, value, bound)) =
+                        self.unsigned_strict_fact(value, right_offset, surface_fact)
+                {
+                    return proof.close_with_unsigned_lemma(
+                        "uint32_difference_decreases_after_increment",
+                        vec![value, bound],
+                        premise,
+                    );
+                }
+                reversed_fact(
+                    ConditionTerm::unsigned_greater_than(right, left),
+                    "uint32_gt_implies_reversed_lt",
+                    true,
+                )
+            }
+            UnsignedOrder::LessEqual => {
+                // `value + 1 <=u upper` from `value <u upper`.
+                if let Bitvector32Term::Add(value, amount) = &left
+                    && amount.as_ref() == &one
+                    && let Some((proof, premise, value, upper)) =
+                        self.unsigned_strict_fact(value, &right, surface_fact)
+                {
+                    return proof.close_with_unsigned_lemma(
+                        "uint32_increment_upper_bound",
+                        vec![value, upper],
+                        premise,
+                    );
+                }
+                reversed_fact(
+                    ConditionTerm::unsigned_greater_equal(right, left),
+                    "uint32_ge_implies_reversed_le",
+                    false,
+                )
+            }
+            UnsignedOrder::Greater => reversed_fact(
+                ConditionTerm::unsigned_less_than(right, left),
+                "uint32_lt_implies_reversed_gt",
+                true,
+            ),
+            UnsignedOrder::GreaterEqual => reversed_fact(
+                ConditionTerm::unsigned_less_equal(right, left),
+                "uint32_le_implies_reversed_ge",
+                false,
+            ),
+        }
+    }
+
     pub(super) fn try_selected_predecessor_upper_bound(
         &self,
         goal: &Proposition,
@@ -4297,9 +4769,9 @@ impl<'a> Proof<'a> {
                     break;
                 };
                 let selected = focused_branch
-                    .try_simp_closure()
+                    .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
                     .ok()
-                    .flatten()
+                    .or_else(|| focused_branch.try_simp_closure().ok().flatten())
                     .or_else(|| {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;
@@ -4739,8 +5211,9 @@ impl<'a> Proof<'a> {
                     };
                     let conclusion = current.clone();
                     if &conclusion == goal || conclusion.clone() == goal.clone() {
-                        if let Ok(closed) = instantiated_proof.apply_step(ProofStep::Assumption) {
-                            return Some(closed);
+                        // The instantiation added the goal, so it closed it.
+                        if instantiated_proof.is_complete() {
+                            return Some(instantiated_proof);
                         }
                         continue;
                     }
@@ -5405,6 +5878,23 @@ impl<'a> Proof<'a> {
             })
             .or_else(|| plan_recorded_bitvector_equality_path(goal, derivation, premise_pairs))
             .or_else(|| {
+                if !derivation.is_int32_pinned_constant_equality() {
+                    return None;
+                }
+                let kernels = premise_pairs
+                    .iter()
+                    .map(|(premise, _)| premise.clone())
+                    .collect::<Vec<_>>();
+                let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
+                let certificate =
+                    self.signed_plan_to_surface_certificate(&plan, premise_pairs, surface_goal?)?;
+                Some(vec![ProofTactic::ArithmeticCertificate(
+                    ArithmeticCertificate {
+                        family: ArithmeticCertificateFamily::SignedInt32(certificate),
+                    },
+                )])
+            })
+            .or_else(|| {
                 plan_recorded_pointer_alignment(goal, derivation, premise_pairs, surface_goal?)
             })
             .or_else(|| plan_recorded_pointer_word(goal, derivation, premise_pairs, surface_goal?))
@@ -6019,14 +6509,20 @@ impl<'a> Proof<'a> {
                     tactic_name(tactic)
                 )));
             }
-            // A theorem can close the goal before a written suffix. Retain
-            // that completed application as a checked have, keeping the
-            // outer goal open so every remaining explicit step is checked.
+            // A step that adds a fact can close the goal before a written
+            // suffix. Retain that completed step as a checked have, keeping
+            // the outer goal open so every remaining explicit step is
+            // checked; only a final step, or one followed by a harmless
+            // closer, leaves the goal closed.
             let retain_application = matches!(
                 tactic,
                 ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
+                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Transport { .. }
+                    | ProofTactic::TransportUsing { .. }
+                    | ProofTactic::LetSatisfy(_)
             ) && tactics
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Simp));
@@ -6034,9 +6530,7 @@ impl<'a> Proof<'a> {
                 || (pure_source
                     && matches!(
                         tactic,
-                        ProofTactic::UnfoldFunction(_)
-                            | ProofTactic::Extract(_)
-                            | ProofTactic::ApplyTheorem(_)
+                        ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
                     )
                     && tactics.get(index + 1).is_some_and(|next| {
                         !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
@@ -6132,6 +6626,10 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_if(&marker, split, ids, proof_if.condition.clone())?
                         .at_site(&sites[index]);
+                    // Both arms checked the tactics after the `if`; a trace
+                    // to one of those follows the first arm.
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Both(both) => {
@@ -6214,6 +6712,8 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
                         .at_site(&sites[index]);
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 tactic => {
@@ -6254,7 +6754,16 @@ impl<'a> Proof<'a> {
             if let Some(before) = before_application
                 && proof.focused_discharged()
             {
-                proof = before.retain_completed_goal(&proof)?;
+                // An application guarantees every conclusion of its theorem,
+                // not only the one that happened to be the goal.
+                let conclusions = match tactic {
+                    ProofTactic::ApplyTheorem(application)
+                    | ProofTactic::ApplyTheoremUsing { application, .. } => {
+                        before.theorem_application_surface_conclusions(application)
+                    }
+                    _ => Vec::new(),
+                };
+                proof = before.retain_completed_goal(&proof, &conclusions)?;
             }
             if let Some(capture) = nested_capture {
                 capture.finish(&proof);
@@ -6696,9 +7205,6 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             "smart step selection",
         )?;
-        if matches!(statement, CStatement::While { .. }) {
-            return Ok(None);
-        }
         if matches!(statement, CStatement::If { .. } | CStatement::Switch { .. }) {
             // A C `if` the context decides is one step into that arm; one it
             // cannot decide is a fork for the driver's branch handling. A
@@ -6725,8 +7231,17 @@ impl<'a> Proof<'a> {
         }
         // The statement runs in the whole proof context; nothing can supply
         // more than the step already sees, so its failure is the answer,
-        // with the step's diagnostic.
-        apply(self).map(Some)
+        // with the step's diagnostic. The exception is a statement whose
+        // successors are path cases: a case split on their facts supplies
+        // each case's facts, and that split belongs to the planner.
+        match apply(self) {
+            Ok(proof) => Ok(Some(proof)),
+            Err(error) if error.is_path_case_split() => {
+                check_verification_deadline()?;
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -7390,4 +7905,58 @@ mod synthesized_literal_tests {
             )
         );
     }
+}
+
+/// How a 32-bit unsigned order relates its two operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnsignedOrder {
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+/// A 32-bit unsigned order and its operands, read from the signed order of
+/// sign-flipped operands the kernel states it as. A constant operand arrives
+/// already flipped; at least one operand carries the flip itself, so two
+/// bare constants are an ordinary signed comparison.
+fn unsigned_order_parts(
+    proposition: &Proposition,
+) -> Option<(UnsignedOrder, Bitvector32Term, Bitvector32Term)> {
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    let (order, left, right) = match condition {
+        ConditionTerm::Bitvector32SignedLessThan(left, right) => (UnsignedOrder::Less, left, right),
+        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+            (UnsignedOrder::LessEqual, left, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+            (UnsignedOrder::Greater, left, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+            (UnsignedOrder::GreaterEqual, left, right)
+        }
+        _ => return None,
+    };
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) if sign.as_const() == Some(SIGN_BIT) => {
+            Some(value.as_ref().clone())
+        }
+        Bitvector32Term::BitwiseXor(sign, value) if sign.as_const() == Some(SIGN_BIT) => {
+            Some(value.as_ref().clone())
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| {
+            term.as_const()
+                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+        })
+    };
+    if flipped(left).is_none() && flipped(right).is_none() {
+        return None;
+    }
+    Some((order, unflipped(left)?, unflipped(right)?))
 }

@@ -540,7 +540,8 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
             collect_c_expression_bitvector_variables(pointer, variables);
             collect_c_expression_bitvector_variables(value, variables);
         }
-        CStatement::CopyAggregate { target, source, .. } => {
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => {
             collect_c_expression_bitvector_variables(target, variables);
             collect_c_expression_bitvector_variables(source, variables);
         }
@@ -1959,7 +1960,11 @@ fn collect_execution_environment_variables_uncached(
     // not be handed out on top of one, exactly as for a loop head's measure.
     if let Some(anchor) = environment.recursion_anchor() {
         match anchor.measure() {
-            CRankingMeasureValue::Machine(term) => collect_bitvector_variables(term, variables),
+            CRankingMeasureValue::Machine(term)
+            | CRankingMeasureValue::Unsigned32(term)
+            | CRankingMeasureValue::Unsigned64(term) => {
+                collect_bitvector_variables(term, variables)
+            }
             // An Integer measure's reserved names are the C carriers it reads
             // plus its own Integer binders; both are named by later call steps.
             CRankingMeasureValue::Integer(term) => {
@@ -1999,15 +2004,6 @@ pub(crate) fn resource_context_has_read(
     crate::kernel::api::with_extended_dag_bridging(|| {
         resources.permits_memory_read(pointer, byte_width, assumptions)
     })
-}
-
-pub(in crate::kernel) fn resource_context_has_structural_read(
-    resources: &ResourceContext,
-    pointer: &Pointer,
-    byte_width: u32,
-    assumptions: &PureFactContext,
-) -> bool {
-    resources.permits_memory_read_structurally(pointer, byte_width, assumptions)
 }
 
 /// Charge one collector node and report whether the checked fold analysis has
@@ -2271,7 +2267,7 @@ fn collect_bitvector_integer_variables_seen(
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::Variable(_) => {}
-        Bitvector32Term::MemoryLoad(_, pointer) | Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) | Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_integer_variables(pointer, variables, seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -2897,6 +2893,32 @@ fn collect_shared_integer_variables(
     collect_integer_variables_seen(term, variables, seen);
 }
 
+fn collect_stored_load_connection_variables(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if collecting_connection_variables() {
+        // A written load depends on the value at its exact address,
+        // rather than every value stored in the same snapshot.
+        struct Depth(usize);
+        impl Drop for Depth {
+            fn drop(&mut self) {
+                CONNECTION_LOAD_DEPTH.with(|depth| depth.set(self.0));
+            }
+        }
+        let depth = CONNECTION_LOAD_DEPTH.with(std::cell::Cell::get);
+        if depth < HAVOC_RANGE_HOPS {
+            let _scope = Depth(depth);
+            CONNECTION_LOAD_DEPTH.with(|current| current.set(depth + 1));
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(value) = memory.memory().cells.explicitly_stored_value(pointer) {
+                collect_c_value_bitvector_variables(value, variables);
+            }
+        }
+    }
+}
+
 pub(crate) fn collect_bitvector_variables(
     term: &Bitvector32Term,
     variables: &mut BTreeSet<Variable>,
@@ -2906,7 +2928,10 @@ pub(crate) fn collect_bitvector_variables(
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_) => {}
         Bitvector32Term::Variable(variable) => {
-            variables.insert(*variable);
+            let newly_seen = variables.insert(*variable);
+            if collecting_connection_variables() && !newly_seen {
+                return;
+            }
             // A load variable denotes its load, so the variables
             // of that load's address (a bound index, a loop counter) are
             // free in the term: a case split or substitution keyed on the
@@ -2917,6 +2942,15 @@ pub(crate) fn collect_bitvector_variables(
             {
                 collect_shared_memory_bitvector_variables(&memory, variables);
                 collect_pointer_bitvector_variables(&pointer, variables);
+                collect_stored_load_connection_variables(&memory, &pointer, variables);
+                if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
+                    && let Some((origin, _)) =
+                        crate::kernel::eval::registered_load_origin_for_variable(variable)
+                {
+                    // The canonical snapshot may be a jumped placeholder.
+                    // Frame dependencies belong to the live origin DAG.
+                    collect_shared_memory_bitvector_variables(&origin, variables);
+                }
             }
         }
         Bitvector32Term::Add(left, right)
@@ -3033,32 +3067,10 @@ pub(crate) fn collect_bitvector_variables(
                 collect_bitvector_variables(&arm.body, variables);
             }
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             collect_shared_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
-            if collecting_connection_variables() {
-                // A written load depends on the value at its exact address,
-                // rather than every value stored in the same snapshot.
-                struct Depth(usize);
-                impl Drop for Depth {
-                    fn drop(&mut self) {
-                        CONNECTION_LOAD_DEPTH.with(|depth| depth.set(self.0));
-                    }
-                }
-                let depth = CONNECTION_LOAD_DEPTH.with(std::cell::Cell::get);
-                if depth < HAVOC_RANGE_HOPS {
-                    let _scope = Depth(depth);
-                    CONNECTION_LOAD_DEPTH.with(|current| current.set(depth + 1));
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Some(value) = memory
-                        .memory()
-                        .cells
-                        .explicitly_stored_value(pointer.as_ref())
-                    {
-                        collect_c_value_bitvector_variables(value, variables);
-                    }
-                }
-            }
+            collect_stored_load_connection_variables(memory, pointer, variables);
         }
         Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_bitvector_variables(pointer, variables);
@@ -3226,7 +3238,7 @@ fn collect_bitvector_capture_variables_seen(
                 }
             }
         }
-        Bitvector32Term::MemoryLoad(_, pointer) | Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) | Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_capture_variables(pointer, variables, integer_seen)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -3979,7 +3991,7 @@ fn collect_bitvector_scope_summary(
             }
             summary
         }
-        Bitvector32Term::MemoryLoad(_, pointer) | Bitvector32Term::PointerAddress(pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) | Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_scope_summary(pointer, summaries)
         }
         Bitvector32Term::IntegerToMachine { value, .. } => {
@@ -4447,7 +4459,7 @@ fn collect_bitvector_binder_variables_seen(
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::Variable(_)
-        | Bitvector32Term::MemoryLoad(_, _)
+        | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_) => {}
         Bitvector32Term::IntegerToMachine { value, .. } => {
             collect_integer_binder_variables_shared(
@@ -5183,6 +5195,11 @@ fn run_representative_variables(
         }
         crate::kernel::primitives::RunValueMode::Constant(value) => {
             return Some(constant_run_variables(run, value));
+        }
+        crate::kernel::primitives::RunValueMode::Copy { source_base } => {
+            let mut shared = symbolic_storage_run_shared_variables(run);
+            collect_pointer_bitvector_variables(source_base, &mut shared);
+            return Some(shared);
         }
         crate::kernel::primitives::RunValueMode::Load => {}
     }

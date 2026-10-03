@@ -13,6 +13,18 @@ pub enum CProofClaim {
     Grouped,
 }
 
+impl CProofClaim {
+    /// The claim as a diagnostic names it: the zero-based source clause, or
+    /// the function's one grouped proof.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Ensure(index) => format!("`ensures` clause {index}"),
+            Self::ExceptionalEnsure(index) => format!("`exceptional ensures` clause {index}"),
+            Self::Grouped => "grouped contract proof".to_string(),
+        }
+    }
+}
+
 pub fn verifying_source_paths(click_source: &str) -> Result<Vec<String>, ClickError> {
     let tokens = scan_source_tokens(click_source)?;
     let mut paths = Vec::new();
@@ -248,16 +260,14 @@ pub fn expand_c0_claim_source(
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts(click_source, c_sources)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let grouped = function_block.grouped_proof().is_some();
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_sources_at(click_source, c_sources, target.line, target.column)?;
@@ -302,15 +312,13 @@ fn expand_c0_project_claim_source(
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_project_at(project, c_sources, target.line, target.column)?;
@@ -353,15 +361,13 @@ fn expand_c0_prepared_project_claim_source(
     let file = resolve_click_project_context(project, &sources)?;
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_prepared_project_at(project, imports, target.line, target.column)?;
@@ -401,16 +407,14 @@ fn expand_c0_prepared_claim_source(
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let grouped = function_block.grouped_proof().is_some();
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified =
@@ -460,7 +464,7 @@ pub fn expand_c0_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -520,7 +524,7 @@ pub fn expand_c0_project_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -574,7 +578,7 @@ pub fn expand_c0_prepared_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -631,7 +635,7 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
@@ -662,23 +666,23 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
     )))
 }
 
-pub fn expand_cpp_prepared_claim_source_by_label(
+pub fn expand_program_prepared_claim_source_by_label(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    expand_cpp_prepared_claim_source_by_label_context(None, click_source, import, claim_label)
+    expand_program_prepared_claim_source_by_label_context(None, click_source, import, claim_label)
 }
 
-pub fn expand_cpp_prepared_project_claim_source_by_label(
+pub fn expand_program_prepared_project_claim_source_by_label(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_cpp_prepared_claim_source_by_label_context(
+    expand_program_prepared_claim_source_by_label_context(
         Some(project),
         click_source,
         import,
@@ -686,25 +690,25 @@ pub fn expand_cpp_prepared_project_claim_source_by_label(
     )
 }
 
-fn expand_cpp_prepared_claim_source_by_label_context(
+fn expand_program_prepared_claim_source_by_label_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
         None => parse_source_with_c_layouts_context(click_source, &sources)?,
     };
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
-            return expand_cpp_prepared_claim_source_context(
+            return expand_program_prepared_claim_source_context(
                 project,
                 click_source,
                 import,
@@ -718,7 +722,7 @@ fn expand_cpp_prepared_claim_source_by_label_context(
                 |name| format!("{function_name}.{name}"),
             );
             if label == claim_label {
-                return expand_cpp_prepared_claim_source_context(
+                return expand_program_prepared_claim_source_context(
                     project,
                     click_source,
                     import,
@@ -733,7 +737,7 @@ fn expand_cpp_prepared_claim_source_by_label_context(
                 |name| format!("{function_name}.{name}"),
             );
             if label == claim_label {
-                return expand_cpp_prepared_claim_source_context(
+                return expand_program_prepared_claim_source_context(
                     project,
                     click_source,
                     import,
@@ -744,20 +748,20 @@ fn expand_cpp_prepared_claim_source_by_label_context(
         }
     }
     Err(ClickError::new(format!(
-        "could not locate C++ function claim `{claim_label}`"
+        "could not locate compiler-imported function claim `{claim_label}`"
     )))
 }
 
-fn expand_cpp_prepared_claim_source_context(
+fn expand_program_prepared_claim_source_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
@@ -765,22 +769,22 @@ fn expand_cpp_prepared_claim_source_context(
     };
     let tokens = scan_source_tokens(click_source)?;
     let function = find_function(&tokens, function_name)?;
-    let function_block = file
-        .function_blocks()
-        .iter()
+    let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = match project {
         Some(project) => {
-            verify_cpp_prepared_project_at(project, import, target.line, target.column)?
+            verify_program_prepared_project_at(project, import, target.line, target.column)?
         }
-        None => verify_cpp_prepared_sources_at(click_source, import, target.line, target.column)?,
+        None => {
+            verify_program_prepared_sources_at(click_source, import, target.line, target.column)?
+        }
     };
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = checked_claim_expansion_source(
@@ -839,11 +843,11 @@ pub fn c0_prepared_smart_tactic_source_sites(
     c0_smart_tactic_source_sites_context(click_source, &sources)
 }
 
-pub fn cpp_prepared_smart_tactic_source_sites(
+pub fn program_prepared_smart_tactic_source_sites(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     c0_smart_tactic_source_sites_context(click_source, &sources)
 }
 
@@ -865,11 +869,11 @@ pub fn c0_prepared_project_smart_tactic_source_sites(
     c0_smart_tactic_source_sites_file(&file)
 }
 
-pub fn cpp_prepared_project_smart_tactic_source_sites(
+pub fn program_prepared_project_smart_tactic_source_sites(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_smart_tactic_source_sites_file(&file)
 }
@@ -914,7 +918,13 @@ fn c0_smart_tactic_source_sites_file(
             collect_smart_proof_sites(&label, ensure.proof(), &mut sites);
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(file) {
+        // An `extern` contract is assumed, not proved: its clauses carry no
+        // proof, so the implicit `auto` of an unproved clause is not a site
+        // there is anything to expand.
+        if function.is_external() {
+            continue;
+        }
         let function_name = function.signature().name();
         for clause in function.structural_clauses() {
             if let CodeRegion::Loop(loop_index) = clause.region() {
@@ -1167,7 +1177,7 @@ pub(in crate::surface) fn verification_target_at_file(
             return Ok(VerificationTarget::Theorem(theorem.name().to_string()));
         }
     }
-    for function in file.function_blocks() {
+    for function in proof_function_blocks(file) {
         let function_name = function.signature().name();
         let source = find_function(&tokens, function_name)?;
         let in_body = tokens[source.body_open].span.start <= wanted
@@ -1223,10 +1233,7 @@ fn unparseable_expansion_error_for_file(
         .iter()
         .any(|form| replacement.contains(form))
     {
-        return ClickError::new(format!(
-            "the expansion did not parse as Click: {}",
-            parse_error.message()
-        ));
+        return parse_error.with_context("the expansion did not parse as Click");
     }
     let witnesses = file
         .map(|file| {
@@ -1377,16 +1384,17 @@ fn expand_c0_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1398,7 +1406,8 @@ fn expand_c0_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1419,6 +1428,18 @@ fn expand_c0_tactic_source_at_context(
             };
             (span, replacement)
         }
+    };
+    // A tactic that contributed no step is removed, but a `by { ... }` block
+    // must hold at least one tactic. When it is the only tactic of its
+    // block, the block keeps `assumption();`, the step a phase with nothing
+    // to prove is checked by.
+    let replacement = if replacement.is_empty()
+        && click_source[..span.start].trim_end().ends_with('{')
+        && click_source[span.end..].trim_start().starts_with('}')
+    {
+        "assumption();".to_string()
+    } else {
+        replacement
     };
     // An empty replacement removes the selected tactic: take its whole line
     // when nothing else shares it, so the rewrite leaves no blank residue.
@@ -1494,37 +1515,43 @@ pub fn expand_c0_prepared_project_tactic_source_at(
     expand_c0_prepared_tactic_source_at_context(Some(project), click_source, imports, line, column)
 }
 
-pub fn expand_cpp_prepared_tactic_source_at(
+pub fn expand_program_prepared_tactic_source_at(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    expand_cpp_prepared_tactic_source_at_context(None, click_source, import, line, column)
+    expand_program_prepared_tactic_source_at_context(None, click_source, import, line, column)
 }
 
-pub fn expand_cpp_prepared_project_tactic_source_at(
+pub fn expand_program_prepared_project_tactic_source_at(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_cpp_prepared_tactic_source_at_context(Some(project), click_source, import, line, column)
+    expand_program_prepared_tactic_source_at_context(
+        Some(project),
+        click_source,
+        import,
+        line,
+        column,
+    )
 }
 
-fn expand_cpp_prepared_tactic_source_at_context(
+fn expand_program_prepared_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
@@ -1550,7 +1577,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
         TacticSourceEdit::WholeProof(_),
     ) = (&selected.site, &selected.edit)
     {
-        return expand_cpp_prepared_claim_source_context(
+        return expand_program_prepared_claim_source_context(
             project,
             click_source,
             import,
@@ -1561,7 +1588,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
-                super::proof::capture_cpp_prepared_project_tactic_expansion(
+                super::proof::capture_program_prepared_project_tactic_expansion(
                     project,
                     import,
                     selected.site.clone(),
@@ -1569,7 +1596,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
                     &selected.nested,
                 )?
             } else {
-                super::proof::capture_cpp_prepared_tactic_expansion(
+                super::proof::capture_program_prepared_tactic_expansion(
                     click_source,
                     import,
                     selected.site.clone(),
@@ -1580,13 +1607,13 @@ fn expand_cpp_prepared_tactic_source_at_context(
         }
         TacticSourceEdit::WholeProof(_) => {
             if let Some(project) = project {
-                super::proof::capture_cpp_prepared_project_proof_site_expansion(
+                super::proof::capture_program_prepared_project_proof_site_expansion(
                     project,
                     import,
                     selected.site.clone(),
                 )?
             } else {
-                super::proof::capture_cpp_prepared_proof_site_expansion(
+                super::proof::capture_program_prepared_proof_site_expansion(
                     click_source,
                     import,
                     selected.site.clone(),
@@ -1594,16 +1621,17 @@ fn expand_cpp_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1615,7 +1643,8 @@ fn expand_cpp_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1725,16 +1754,17 @@ fn expand_c0_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1746,7 +1776,8 @@ fn expand_c0_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1938,7 +1969,8 @@ fn select_expansion_theorem<'a>(
     };
     selected.ok_or_else(|| {
         ClickError::new(format!(
-            "verified function `{function_name}` has no {claim:?} claim"
+            "verified function `{function_name}` has no verified {}",
+            claim.describe()
         ))
     })
 }
@@ -2035,6 +2067,18 @@ fn scan_source_tokens(source: &str) -> Result<Vec<SourceToken>, ClickError> {
     Ok(tokens)
 }
 
+/// Every block whose proof the expansion tools address: the C function
+/// blocks, then each user-defined tactic, whose `by` script is its contract's
+/// one grouped proof. A tactic is declared before any proof applies it, so
+/// [`find_function`] reaches its declaration first.
+fn proof_function_blocks(file: &ClickFile) -> impl Iterator<Item = &FunctionBlock> {
+    file.function_blocks().iter().chain(
+        file.tactic_definitions()
+            .iter()
+            .map(TacticDefinition::function_block),
+    )
+}
+
 fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
     for (index, token) in tokens.iter().enumerate() {
         if token.text != name || tokens.get(index + 1).map(|token| token.text.as_str()) != Some("(")
@@ -2060,6 +2104,33 @@ fn find_function(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, C
     }
     Err(ClickError::new(format!(
         "could not locate Click function block `{name}`"
+    )))
+}
+
+/// The `tactic name(...) { ... }` declaration of `name`. Only the declaration
+/// has the `tactic` keyword before the name; an application `name(...) { ... }`
+/// inside a proof is never matched.
+fn find_tactic(tokens: &[SourceToken], name: &str) -> Result<FunctionSource, ClickError> {
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text != "tactic"
+            || tokens.get(index + 1).map(|token| token.text.as_str()) != Some(name)
+            || tokens.get(index + 2).map(|token| token.text.as_str()) != Some("(")
+        {
+            continue;
+        }
+        let parameters_close = matching_delimiter(tokens, index + 2, "(", ")")?;
+        let body_open = parameters_close + 1;
+        if tokens.get(body_open).map(|token| token.text.as_str()) != Some("{") {
+            continue;
+        }
+        let body_close = matching_delimiter(tokens, body_open, "{", "}")?;
+        return Ok(FunctionSource {
+            body_open,
+            body_close,
+        });
+    }
+    Err(ClickError::new(format!(
+        "could not locate Click tactic `{name}`"
     )))
 }
 
@@ -2212,12 +2283,14 @@ fn find_grouped_proof_span(
 fn find_claim_proof_span(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<Range<usize>, ClickError> {
-    match find_claim_proof_edit(tokens, function, claim)? {
+    match find_claim_proof_edit(tokens, function, function_block, claim)? {
         ProofSourceEdit::Explicit(span) => Ok(span),
         ProofSourceEdit::DefaultTerminator { .. } => Err(ClickError::new(format!(
-            "selected {claim:?} uses a default proof and has no explicit source tactic"
+            "selected {} uses a default proof and has no explicit source tactic",
+            claim.describe()
         ))),
         ProofSourceEdit::OmittedLoopPhase { .. } => {
             unreachable!("function claim edits are never loop phases")
@@ -2261,12 +2334,18 @@ impl ProofSourceEdit {
 fn find_claim_proof_edit(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<ProofSourceEdit, ClickError> {
     match claim {
-        CProofClaim::Ensure(index) => {
-            find_ensure_proof_edit(tokens, function.body_open, function.body_close, index)
-        }
+        // The source is searched by written clause; a flattened aggregate
+        // clause gives several ensures one written clause.
+        CProofClaim::Ensure(index) => find_ensure_proof_edit(
+            tokens,
+            function.body_open,
+            function.body_close,
+            function_block.ensure_source_clause(index),
+        ),
         CProofClaim::ExceptionalEnsure(index) => find_exceptional_ensure_proof_edit(
             tokens,
             function.body_open,
@@ -2274,7 +2353,8 @@ fn find_claim_proof_edit(
             index,
         ),
         CProofClaim::Grouped => Err(ClickError::new(format!(
-            "could not locate source clause for {claim:?}"
+            "could not locate the source clause for the {}",
+            claim.describe()
         ))),
     }
 }
@@ -2471,7 +2551,7 @@ impl ProofSite {
             Self::FunctionClaim {
                 function_name,
                 claim,
-            } => format!("function `{function_name}` {claim:?}"),
+            } => format!("function `{function_name}` {}", claim.describe()),
             Self::TheoremEnsure {
                 theorem_name,
                 ensure_index,
@@ -2504,6 +2584,40 @@ struct LocatedSourceTactic {
     /// tactic.
     nested: Vec<usize>,
     edit: TacticSourceEdit,
+    /// Where each claim-level tactic of this site starts in the source, by
+    /// source index: an expansion that stands for a run of tactics ending at
+    /// the selected one replaces from an earlier one of these.
+    sibling_starts: Vec<(usize, usize)>,
+}
+
+thread_local! {
+    /// The claim-level source index an expansion replaces from, when the
+    /// recorded tactics stand for more than the selected tactic.
+    static EXPANSION_REPLACES_FROM: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Records that the expansion captured for the selected tactic also stands
+/// for the tactics written before it, back to `source_index`. A closer of a
+/// loop phase shared by several invariants expands to one step per
+/// invariant, each holding the whole shared script; the written tactics
+/// before the closer are part of what it replaces.
+pub(in crate::surface) fn note_expansion_replaces_from(source_index: usize) {
+    EXPANSION_REPLACES_FROM.with(|from| from.set(Some(source_index)));
+}
+
+impl LocatedSourceTactic {
+    /// `span` widened back to the tactic a recorded
+    /// [`note_expansion_replaces_from`] names, if any.
+    fn replaced_span(&self, span: Range<usize>) -> Range<usize> {
+        let Some(from) = EXPANSION_REPLACES_FROM.with(std::cell::Cell::take) else {
+            return span;
+        };
+        self.sibling_starts
+            .iter()
+            .find(|(source_index, start)| *source_index == from && *start < span.start)
+            .map_or(span.clone(), |(_, start)| *start..span.end)
+    }
 }
 
 /// One written tactic in the span-indexed side table that source selection
@@ -2604,13 +2718,13 @@ pub fn c0_prepared_select_smart_tactic(
     select_smart_tactic_file(click_source, &file, line, column)
 }
 
-pub fn cpp_prepared_select_smart_tactic(
+pub fn program_prepared_select_smart_tactic(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::cpp(import).map_err(SmartTacticSelectionError::from_error)?;
+    let sources = CSourceContext::program(import).map_err(SmartTacticSelectionError::from_error)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
@@ -2636,13 +2750,13 @@ pub fn c0_prepared_project_select_smart_tactic(
     select_project_smart_tactic(project, &sources, line, column)
 }
 
-pub fn cpp_prepared_project_select_smart_tactic(
+pub fn program_prepared_project_select_smart_tactic(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::cpp(import)
+    let sources = CSourceContext::program(import)
         .map_err(SmartTacticSelectionError::from_error)?
         .with_click_project(project);
     select_project_smart_tactic(project, &sources, line, column)
@@ -2844,8 +2958,25 @@ fn locate_source_tactic_file(
         None => select_source_tactic_entry(click_source, &entries, line, Some(column))
             .map_err(|error| error.into_click_error(line, Some(column)))?,
     };
+    // A stale note from an earlier expansion on this thread must not widen
+    // this one.
+    EXPANSION_REPLACES_FROM.with(|from| from.set(None));
     match &entry.selection {
-        EntrySelection::Located(located) => Ok(located.clone()),
+        EntrySelection::Located(located) => {
+            let mut located = located.clone();
+            located.sibling_starts = entries
+                .iter()
+                .filter_map(|entry| match &entry.selection {
+                    EntrySelection::Located(sibling)
+                        if sibling.site == located.site && sibling.nested.is_empty() =>
+                    {
+                        Some((sibling.source_index, entry.span.start))
+                    }
+                    _ => None,
+                })
+                .collect();
+            Ok(located)
+        }
         EntrySelection::Unaddressable(reason) => Err(ClickError::new(reason.clone())),
     }
 }
@@ -2876,7 +3007,7 @@ fn source_tactic_entries(
             proof_tactic_entries(&tokens, &edit, ensure.proof(), &site, &label, &mut entries)?;
         }
     }
-    for function_block in file.function_blocks() {
+    for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
         let function = find_function(&tokens, function_name)?;
         for clause in function_block.structural_clauses() {
@@ -2939,7 +3070,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.ensures().iter().enumerate() {
             let claim = CProofClaim::Ensure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -2958,7 +3089,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.exceptional_ensures().iter().enumerate() {
             let claim = CProofClaim::ExceptionalEnsure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.exceptional_ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -2998,6 +3129,7 @@ fn proof_tactic_entries(
             source_index: 0,
             nested: Vec::new(),
             edit: TacticSourceEdit::WholeProof(edit.clone()),
+            sibling_starts: Vec::new(),
         }),
     };
     let omitted_proof_span = || match edit {
@@ -3052,6 +3184,7 @@ fn proof_tactic_entries(
                         source_index,
                         nested: Vec::new(),
                         edit,
+                        sibling_starts: Vec::new(),
                     }),
                 };
                 entries.push(entry.clone());
@@ -3210,6 +3343,7 @@ fn block_tactic_entries(
                 source_index,
                 nested: path.clone(),
                 edit: TacticSourceEdit::Partial(span.clone()),
+                sibling_starts: Vec::new(),
             }),
         };
         entries.push(entry.clone());
@@ -3431,14 +3565,64 @@ pub fn c0_prepared_tactic_source_position(
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
-pub fn cpp_prepared_tactic_source_position(
+pub fn program_prepared_tactic_source_position(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
+}
+
+/// Where the Click declaration named `name` is written: a function block,
+/// a named contract or a theorem. The position is the first token of the
+/// line the name is on, so the excerpt starts at the return type or
+/// keyword. `None` when the source declares no such name.
+///
+/// A failure with no tactic or C statement to address, such as a contract
+/// that could not be set up at entry, shows this declaration instead. A
+/// declaration is the name followed by its parameters or body outside every
+/// brace; a use of the name inside a body is not one.
+pub fn click_declaration_source_position(click_source: &str, name: &str) -> Option<SourcePosition> {
+    let tokens = scan_source_tokens(click_source).ok()?;
+    let mut depth = 0usize;
+    let declared = tokens.iter().enumerate().find_map(|(index, token)| {
+        match token.text.as_str() {
+            "{" => depth += 1,
+            "}" => depth = depth.saturating_sub(1),
+            text if depth == 0 && text == name => {
+                // A generic declaration lists its type parameters between
+                // the name and the parameter list.
+                let mut next = index + 1;
+                if tokens.get(next).map(|token| token.text.as_str()) == Some("<") {
+                    next = tokens[next..]
+                        .iter()
+                        .position(|token| token.text == ">")
+                        .map_or(next, |close| next + close + 1);
+                }
+                // A function, contract, resource or theorem is followed by
+                // its parameters; a datatype by its body.
+                if matches!(
+                    tokens.get(next).map(|token| token.text.as_str()),
+                    Some("(" | "{")
+                ) {
+                    return Some(token.span.start);
+                }
+            }
+            _ => {}
+        }
+        None
+    })?;
+    let line_start = click_source[..declared]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let first_token = tokens
+        .iter()
+        .find(|token| token.span.start >= line_start)?
+        .span
+        .start;
+    Some(position_at_offset(click_source, first_token))
 }
 
 pub fn c0_project_tactic_source_position(
@@ -3473,13 +3657,13 @@ pub fn c0_prepared_project_tactic_source_position(
     )
 }
 
-pub fn cpp_prepared_project_tactic_source_position(
+pub fn program_prepared_project_tactic_source_position(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_tactic_source_position_file(
         &file,
@@ -3539,7 +3723,22 @@ fn c0_tactic_source_position_file(
             );
         }
     }
-    for function_block in file.function_blocks() {
+    for tactic in file.tactic_definitions() {
+        if claim_label != format!("{}.contract", tactic.name()) {
+            continue;
+        }
+        let function = find_tactic(&tokens, tactic.name())?;
+        return proof_source_position(
+            click_source,
+            &tokens,
+            Some(&find_grouped_proof_span(&tokens, &function)?),
+            tactic.function_block().grouped_proof(),
+            tokens[function.body_close].span.start,
+            claim_label,
+            source_index,
+        );
+    }
+    for function_block in proof_function_blocks(file) {
         let function_name = function_block.signature().name();
         let function = find_function(&tokens, function_name)?;
         for clause in function_block.structural_clauses() {
@@ -3619,13 +3818,13 @@ fn c0_tactic_source_position_file(
         let fallback = match claim {
             CProofClaim::Grouped => tokens[function.body_close].span.start,
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_clause_offset(&tokens, &function, claim)?
+                find_claim_clause_offset(&tokens, &function, function_block, claim)?
             }
         };
         let proof_span = match claim {
             CProofClaim::Grouped => Some(find_grouped_proof_span(&tokens, &function)?),
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_proof_span(&tokens, &function, claim).ok()
+                find_claim_proof_span(&tokens, &function, function_block, claim).ok()
             }
         };
         return proof_source_position(
@@ -3686,9 +3885,10 @@ fn proof_source_position(
 fn find_claim_clause_offset(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<usize, ClickError> {
-    Ok(find_claim_proof_edit(tokens, function, claim)?.selector())
+    Ok(find_claim_proof_edit(tokens, function, function_block, claim)?.selector())
 }
 
 fn find_loop_phase_proof_span(
@@ -4086,6 +4286,26 @@ pub fn tactic_arm_containing_position(
         "branch" => find_branch_blocks(&tokens, &range)?,
         "if" => find_if_branch_blocks(&tokens, &range)?,
         "outcomes" => find_named_arm_blocks(&tokens, &range, "returned", "threw", "outcomes")?,
+        "cases" => find_cases_arm_blocks(&tokens, &range)?,
+        "both" => {
+            let left_open = start + 1;
+            if tokens.get(left_open).map(|token| token.text.as_str()) != Some("{") {
+                return Ok(None);
+            }
+            let left_close = matching_delimiter(&tokens, left_open, "{", "}")?;
+            let right_open = left_close + 2;
+            if tokens.get(left_close + 1).map(|token| token.text.as_str()) != Some("and")
+                || tokens.get(right_open).map(|token| token.text.as_str()) != Some("{")
+            {
+                return Ok(None);
+            }
+            (
+                left_open,
+                left_close,
+                right_open,
+                matching_delimiter(&tokens, right_open, "{", "}")?,
+            )
+        }
         _ => return Ok(None),
     };
     for (index, (open, close)) in [(blocks.0, blocks.1), (blocks.2, blocks.3)]
@@ -4167,6 +4387,22 @@ pub fn tactic_line_has_multiple_starts(
 /// trace target without requiring a column when the line is unambiguous.
 pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosition>, ClickError> {
     let tokens = scan_source_tokens(source)?;
+    // The line's byte range, found once: asking each tactic start for its
+    // line would rescan the source from the top for every tactic in it.
+    let mut line_starts = std::iter::once(0).chain(
+        source
+            .bytes()
+            .enumerate()
+            .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
+    );
+    let Some(line_start) = line.checked_sub(1).and_then(|index| line_starts.nth(index)) else {
+        return Ok(Vec::new());
+    };
+    let line_end = line_starts.next().unwrap_or(source.len() + 1);
+    // The `then` block of a proof `if` and the arm blocks of `cases` follow
+    // a condition, not a keyword; they are found from the tactic that owns
+    // them, which the scan reaches first.
+    let mut arm_blocks = std::collections::BTreeSet::new();
     let mut starts = std::collections::BTreeSet::new();
     for (open, token) in tokens.iter().enumerate() {
         if token.text != "{" {
@@ -4177,15 +4413,16 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
         // two punctuation tokens `=` and `>`.
         let arm_block = open >= 2 && tokens[open - 2].text == "=" && tokens[open - 1].text == ">";
         let direct_proof_block = arm_block
-            || preceding
-                .is_some_and(|token| matches!(token.text.as_str(), "by" | "then" | "else" | "and"));
+            || preceding.is_some_and(|token| {
+                matches!(token.text.as_str(), "by" | "then" | "else" | "and" | "both")
+            });
         let open_tactic_block = preceding.is_some_and(|token| token.text == ")")
             && tokens[..open]
                 .iter()
                 .rev()
                 .take_while(|token| !matches!(token.text.as_str(), ";" | "{" | "}"))
                 .any(|token| token.text == "open");
-        if !direct_proof_block && !open_tactic_block {
+        if !direct_proof_block && !open_tactic_block && !arm_blocks.contains(&open) {
             continue;
         }
         let Ok(close) = matching_delimiter(&tokens, open, "{", "}") else {
@@ -4195,8 +4432,23 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
             continue;
         };
         for range in ranges {
+            match tokens[range.start].text.as_str() {
+                "if" => {
+                    if let Ok((then_open, ..)) = find_if_branch_blocks(&tokens, &range) {
+                        arm_blocks.insert(then_open);
+                    }
+                }
+                "cases" => {
+                    if let Ok((left_open, _, right_open, _)) =
+                        find_cases_arm_blocks(&tokens, &range)
+                    {
+                        arm_blocks.extend([left_open, right_open]);
+                    }
+                }
+                _ => {}
+            }
             let start = tokens[range.start].span.start;
-            if position_at_offset(source, start).line == line {
+            if (line_start..line_end).contains(&start) {
                 starts.insert(start);
             }
         }
@@ -4220,7 +4472,7 @@ fn proof_span(tokens: &[SourceToken], by: usize) -> Result<Range<usize>, ClickEr
     let body = by + 1;
     let end_token = match tokens.get(body).map(|token| token.text.as_str()) {
         Some("{") => matching_delimiter(tokens, body, "{", "}")?,
-        Some("auto" | "frame" | "simp") => body,
+        Some("auto" | "simp") => body,
         _ => return Err(ClickError::new("unsupported source proof clause")),
     };
     let semicolon = end_token + 1;

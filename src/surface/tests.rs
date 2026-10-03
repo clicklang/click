@@ -2215,7 +2215,10 @@ theorem integer_affine_terminal_false_constant(x: Integer) {
     let error = verify_click_theorems(source)
         .expect_err("a false terminal constant must not close an Integer goal");
     assert!(
-        error.message().contains("NodeResultMismatch") || error.message().contains("DoesNotFollow"),
+        error
+            .message()
+            .contains("does not state what its rule derives")
+            || error.message().contains("does not establish the goal"),
         "unexpected false-constant diagnostic: {}",
         error.message()
     );
@@ -2239,7 +2242,10 @@ theorem integer_affine_intermediate_false_constant(x: Integer) {
     let error = verify_click_theorems(source)
         .expect_err("a false intermediate constant must not enter an Integer certificate");
     assert!(
-        error.message().contains("NodeResultMismatch") || error.message().contains("DoesNotFollow"),
+        error
+            .message()
+            .contains("does not state what its rule derives")
+            || error.message().contains("does not establish the goal"),
         "unexpected false-intermediate diagnostic: {}",
         error.message()
     );

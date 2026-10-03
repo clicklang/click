@@ -404,9 +404,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     tactic_name: &str,
     requested_branch: Option<bool>,
     prerequisite_policy: StatementPrerequisitePolicy,
-    branch_step_policy: BranchStepPolicy,
     complete_empty_branch: bool,
-    mut construction: Option<Construction<'_>>,
     context: Option<&PureFactContext>,
 ) -> Result<bool, ClickError> {
     let function_block = proof_context.function_block;
@@ -422,6 +420,10 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let state: &mut CState = &mut execution.core.state;
 
     let statement_index = execution.core.frontier.next_statement_index;
+    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+        &proof_context.constants.source_layout,
+        statement_index,
+    );
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
@@ -463,14 +465,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         )));
     };
 
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &[CodeRegion::Statement(statement_index)],
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -478,7 +472,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
     let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let condition_transitions = certified_condition_transitions(
@@ -487,13 +480,9 @@ pub(super) fn execute_branch_step_from_frontier_position(
         &condition,
         &transition_label,
         prerequisite_policy,
-        true,
         context,
     )?;
-    let condition_was_proven = condition_transitions.len() == 1;
-    if matches!(branch_step_policy, BranchStepPolicy::RequireProven)
-        && condition_transitions.len() != 1
-    {
+    if condition_transitions.len() != 1 {
         let expected = requested_branch.map_or("one exact truth value", |take_then| {
             if take_then { "true" } else { "false" }
         });
@@ -528,22 +517,10 @@ pub(super) fn execute_branch_step_from_frontier_position(
             )
         )));
     }
-    let condition_transition = match branch_step_policy {
-        BranchStepPolicy::RequireProven => condition_transitions
-            .into_iter()
-            .next()
-            .expect("one condition transition was required"),
-        BranchStepPolicy::Explore => {
-            let requested_branch = requested_branch.expect("branch exploration selects an arm");
-            let Some(transition) = condition_transitions
-                .into_iter()
-                .find(|transition| transition.is_true == requested_branch)
-            else {
-                return Ok(false);
-            };
-            transition
-        }
-    };
+    let condition_transition = condition_transitions
+        .into_iter()
+        .next()
+        .expect("one condition transition was required");
     let selected_then = condition_transition.is_true;
     if requested_branch.is_some_and(|take_then| selected_then != take_then) {
         let actual = if selected_then { "then" } else { "else" };
@@ -557,104 +534,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         )));
     }
 
-    if matches!(branch_step_policy, BranchStepPolicy::Explore)
-        && !condition_was_proven
-        && matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-    {
-        let occurrence = execution.core.next_path_choice;
-        execution.core.next_path_choice += 1;
-        let statement_condition = surface_at_snapshot(
-            &surface_c_condition(&condition),
-            &ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
-                kind: ProgramPointKind::Entry,
-            },
-        )?;
-        // Prefer a form in terms of the shared function-entry snapshot.
-        // It remains available after independently explored paths are merged,
-        // whereas a later statement-entry state can legitimately differ
-        // across those paths and is therefore not retained in the common
-        // check interface. Sorting networks are the representative case:
-        // the second comparison's current operand is an entry value selected
-        // by the first comparison.
-        let condition = proof_context
-            .constants
-            .function_entry_state
-            .as_ref()
-            .and_then(|entry_state| {
-                condition_transition.path_facts.iter().find_map(|fact| {
-                    let Proposition::ConditionIs(_, _) = fact else {
-                        return None;
-                    };
-                    let surface =
-                        synthesize_surface_proposition(fact, parameters, arguments, entry_state)?;
-                    let surface = surface_at_snapshot(
-                        &surface,
-                        &ProgramPointRef {
-                            region: CodeRegionRef::Function,
-                            kind: ProgramPointKind::Entry,
-                        },
-                    )
-                    .ok()?;
-                    Some(if condition_transition.is_true {
-                        surface
-                    } else {
-                        negate_click_proposition(&surface)
-                    })
-                })
-            })
-            .unwrap_or(statement_condition);
-        if let Some(construction) = construction.as_mut() {
-            let environments = construction.environments;
-            let restore = apply_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                &construction_snapshot_overrides,
-            );
-            construct_proof_step_for_planned_operation(
-                execution,
-                proof_context,
-                construction.sink,
-                &current_state,
-                function_block,
-                parameters,
-                arguments,
-                environments,
-                &ConstructionEvidence::CertifiedPathAssumption {
-                    occurrence,
-                    condition,
-                    value: condition_transition.is_true,
-                    facts: condition_transition.path_facts.clone(),
-                    theorem: condition_transition.theorem.clone(),
-                },
-            );
-            restore_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                restore,
-            );
-            let certificate_facts = &mut execution.presentation.surface_record.certificate_facts;
-            for fact in &condition_transition.path_facts {
-                certificate_facts.insert(fact.clone());
-            }
-        }
-    }
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        append_condition_transition_certificate(
-            execution,
-            proof_context,
-            &condition_transition,
-            &current_state,
-            available_pure_facts,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
     execution
         .core
         .record_condition_transition(
@@ -708,9 +587,11 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     .automatic_exits(skip_index, false),
             )
             .map_err(|error| {
-                ClickError::new(
+                ClickError::new(format!(
+                    "{}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(&error, &state),
-                )
+                    crate::surface::diagnostics::describe_c_statement_site(),
+                ))
                 .with_kind(runtime_refusal_kind(&error))
             })?;
         execution.core.state = state.clone().into();
@@ -793,7 +674,7 @@ fn execute_concrete_loop_head_step(
     current_state: CState,
     loop_statement: CStatement,
     remaining: Option<CStatement>,
-    mut construction: Option<Construction<'_>>,
+    context: Option<&PureFactContext>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -819,17 +700,6 @@ fn execute_concrete_loop_head_step(
         unreachable!("concrete loop stepping requires a while statement");
     };
 
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &[
-                CodeRegion::Statement(statement_index),
-                CodeRegion::Loop(loop_index),
-            ],
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -844,7 +714,6 @@ fn execute_concrete_loop_head_step(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
 
     let loop_head = CStatement::While {
         condition: condition.clone(),
@@ -868,23 +737,54 @@ fn execute_concrete_loop_head_step(
     // continuation is an ordinary while head: after the first body, every
     // iteration checks the condition before re-entering the body.
     if do_while {
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-            && let Some(construction) = construction.as_mut()
-        {
-            let environments = construction.environments;
-            construct_proof_step_for_planned_operation(
-                execution,
-                proof_context,
-                construction.sink,
+        // Entering the body records no evidence of its own. When the loop is
+        // the first thing this trace executes, the proof object would start
+        // matching evidence from the frontier position set below, which
+        // holds the body alone, and would find no loop head left when the
+        // condition is decided. A `Skip` theorem consumes nothing and makes
+        // the proof object start from the source as it stands here, loop
+        // included, so its own `do`-`while` rule performs the descent.
+        if execution.core.evidence_state.is_none() {
+            let transition_label =
+                format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
+            let mut next_opaque_call = execution.core.next_opaque_call;
+            let mut next_kernel_variable = execution.core.kernel_variable_mark();
+            let (transitions, _) = certified_statement_transitions(
                 &current_state,
-                function_block,
-                parameters,
-                arguments,
-                environments,
-                &ConstructionEvidence::CertifiedStatementStep {
-                    planned_transition: None,
-                },
-            );
+                available_pure_facts,
+                &CStatement::Skip,
+                proof_context.function_environment,
+                Some(proof_context.predicate_environment),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                &transition_label,
+                &mut next_opaque_call,
+                &mut next_kernel_variable,
+                StatementPrerequisitePolicy::Retained,
+                StatementFactTransportPolicy::None,
+                None,
+            )?;
+            let [transition] = transitions.as_slice() else {
+                return Err(ClickError::new(format!(
+                    "{transition_label} could not certify the entry of loop({loop_index})"
+                )));
+            };
+            execution
+                .core
+                .record_statement_transition_with_loan_evidence(
+                    function,
+                    arguments,
+                    transition.theorem.clone(),
+                    transition.context.clone(),
+                    &transition.execution_facts,
+                    &transition.obligations,
+                    &transition.loan_evidence,
+                )
+                .map_err(|refusal| {
+                    ClickError::new(format!(
+                        "{transition_label} recorded loop entry evidence the proof object rejected: {}",
+                        describe_evidence_refusal(&refusal, parameters, arguments)
+                    ))
+                })?;
         }
         let loop_head = match remaining {
             Some(remaining) => c_seq(loop_head, remaining),
@@ -928,8 +828,9 @@ fn execute_concrete_loop_head_step(
         &condition,
         &transition_label,
         prerequisite_policy,
-        true,
-        None,
+        // A step decides the loop condition from the same whole proof
+        // context it runs every other statement in.
+        context,
     )?;
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
@@ -949,24 +850,6 @@ fn execute_concrete_loop_head_step(
         .into_iter()
         .next()
         .expect("one condition transition was required");
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        append_condition_transition_certificate(
-            execution,
-            proof_context,
-            &condition_transition,
-            &current_state,
-            available_pure_facts,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
     execution
         .core
         .record_condition_transition(
@@ -1030,12 +913,14 @@ fn execute_concrete_loop_head_step(
                 .automatic_exits(statement_index, false),
         )
         .map_err(|error| {
-            ClickError::new(
+            ClickError::new(format!(
+                "{}{}",
                 crate::surface::diagnostics::describe_runtime_error_over_locals(
                     &error,
-                    &current_state,
+                    &current_state
                 ),
-            )
+                crate::surface::diagnostics::describe_c_statement_site(),
+            ))
             .with_kind(runtime_refusal_kind(&error))
         })?;
     execution.core.state = current_state.clone().into();
@@ -1179,82 +1064,6 @@ pub(super) fn record_loop_program_snapshot_state(
         kind,
         state,
     );
-}
-
-/// Swaps the listed program points to their pre-recording values (or removes
-/// points the recording introduced) so a surface step can be written against
-/// the view its own check will have; returns what must be put back.
-fn construction_snapshot_overrides(
-    recorded_snapshots: &RecordedSnapshots,
-    function_block: &FunctionBlock,
-    regions: &[CodeRegion],
-    kind: ProgramPointKind,
-) -> Vec<(ProgramPointRef, Option<CState>)> {
-    let mut points = BTreeSet::new();
-    for region in regions {
-        let point_region = match region {
-            CodeRegion::Function => CodeRegionRef::Function,
-            CodeRegion::Loop(index) => CodeRegionRef::Loop(*index),
-            CodeRegion::Statement(index) => CodeRegionRef::Statement(*index),
-        };
-        points.insert(ProgramPointRef {
-            region: point_region,
-            kind,
-        });
-        for label in function_block
-            .structural_clauses()
-            .iter()
-            .filter(|clause| clause.region() == region)
-            .filter_map(StructuralClause::label)
-        {
-            points.insert(ProgramPointRef {
-                region: CodeRegionRef::Label(label.to_string()),
-                kind,
-            });
-        }
-    }
-    points
-        .into_iter()
-        .map(|point| {
-            let prior = recorded_snapshots.get(&point).cloned();
-            (point, prior)
-        })
-        .collect()
-}
-
-fn apply_construction_snapshot_view(
-    recorded_snapshots: &mut RecordedSnapshots,
-    overrides: &[(ProgramPointRef, Option<CState>)],
-) -> Vec<(ProgramPointRef, Option<CState>)> {
-    let mut restore = Vec::with_capacity(overrides.len());
-    for (point, prior) in overrides {
-        restore.push((point.clone(), recorded_snapshots.get(point).cloned()));
-        match prior {
-            Some(state) => {
-                recorded_snapshots.insert(point.clone(), state.clone());
-            }
-            None => {
-                recorded_snapshots.remove(point);
-            }
-        }
-    }
-    restore
-}
-
-fn restore_construction_snapshot_view(
-    recorded_snapshots: &mut RecordedSnapshots,
-    restore: Vec<(ProgramPointRef, Option<CState>)>,
-) {
-    for (point, value) in restore {
-        match value {
-            Some(state) => {
-                recorded_snapshots.insert(point, state);
-            }
-            None => {
-                recorded_snapshots.remove(&point);
-            }
-        }
-    }
 }
 
 pub(super) fn record_statement_program_snapshot_state(
@@ -1494,20 +1303,6 @@ fn annotate_surface_at_snapshot(
     Ok(completed.pop().expect("visited snapshot root"))
 }
 
-pub(super) fn predicate_call_snapshot_selector(
-    surface: &ClickProposition,
-) -> Option<SnapshotSelector> {
-    let ClickProposition::PredicateCall { arguments, .. } = surface else {
-        return None;
-    };
-    arguments.iter().find_map(|argument| {
-        let ContractExpression::At { selector, .. } = argument else {
-            return None;
-        };
-        Some(selector.clone())
-    })
-}
-
 /// Returns a snapshot selector explicitly carried by a proposition produced
 /// by [`surface_at_snapshot`]. Callers must still
 /// re-lower any newly anchored form and check that it denotes the exact
@@ -1576,7 +1371,6 @@ pub(super) fn route_throw_to_handler(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
-    mut construction: Option<Construction<'_>>,
     throw_value: &CValue,
     thrown_state: &CState,
     throw_facts: &[Proposition],
@@ -1659,35 +1453,6 @@ pub(super) fn route_throw_to_handler(
             &mut execution.core.effect_facts,
             &transition.execution_facts,
         );
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-            // The bundled binding transitions correspond to no user
-            // statement, so there are no snapshot points to preserve.
-            let overrides = construction_snapshot_overrides(
-                &execution.presentation.recorded_snapshots,
-                function_block,
-                &[],
-                ProgramPointKind::Entry,
-            );
-            let restore = apply_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                &overrides,
-            );
-            append_statement_transition_certificate(
-                execution,
-                proof_context,
-                &transition,
-                LoopStepPolicy::EnterBody,
-                &state,
-                function_block,
-                parameters,
-                arguments,
-                construction.as_mut().map(Construction::reborrow),
-            );
-            restore_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                restore,
-            );
-        }
         facts = transition.pure_facts.clone();
         introduced_facts.extend(transition.introduced_facts.iter().cloned());
         state = next_state;
@@ -1758,7 +1523,6 @@ pub(super) fn execute_step_from_frontier_position(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
-    mut construction: Option<Construction<'_>>,
 ) -> Result<Vec<Proposition>, ClickError> {
     execute_step_from_frontier_position_selecting_path(
         execution,
@@ -1768,7 +1532,7 @@ pub(super) fn execute_step_from_frontier_position(
         prerequisite_policy,
         fact_transport_policy,
         loop_step_policy,
-        construction.as_mut().map(Construction::reborrow),
+        None,
         None,
         None,
     )
@@ -1851,6 +1615,7 @@ pub(super) fn prepare_call_outcome_split(
             try_statement_index,
             handler_statement_index,
             after_try_statement_index,
+            ..
         } = source_region.kind
         else {
             break;
@@ -2068,7 +1833,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
             StatementPrerequisitePolicy::Retained,
             StatementFactTransportPolicy::None,
             None,
-            None,
             value,
             state,
             &transition.pure_facts,
@@ -2139,8 +1903,8 @@ pub(super) fn execute_step_successor_from_frontier_position(
         fact_transport_policy,
         loop_step_policy,
         None,
-        None,
         context,
+        None,
     )?;
     Ok(ExecutionPointStepSuccessor {
         execution: successor,
@@ -2158,9 +1922,9 @@ fn execute_step_from_frontier_position_selecting_path(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
-    mut construction: Option<Construction<'_>>,
     selected_path_fact: Option<&Proposition>,
     context: Option<&PureFactContext>,
+    path_cases: Option<&mut Vec<CertifiedStatementTransition>>,
 ) -> Result<Vec<Proposition>, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -2175,17 +1939,11 @@ fn execute_step_from_frontier_position_selecting_path(
 
     let state: &mut CState = &mut execution.core.state;
 
-    #[cfg(test)]
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        PLANNING_STATEMENT_TRANSITIONS.with(|transitions| {
-            transitions.borrow_mut().push((
-                claim_label.to_owned(),
-                tactic_index,
-                tactic_name.to_owned(),
-            ));
-        });
-    }
     let mut statement_index = execution.core.frontier.next_statement_index;
+    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+        &proof_context.constants.source_layout,
+        statement_index,
+    );
     let mut source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
@@ -2214,9 +1972,7 @@ fn execute_step_from_frontier_position_selecting_path(
             "step",
             None,
             prerequisite_policy,
-            BranchStepPolicy::RequireProven,
             false,
-            construction.as_mut().map(Construction::reborrow),
             context,
         )?;
         debug_assert!(entered);
@@ -2260,6 +2016,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // later `Throw` resume at the handler entry instead of terminating the
     // path; normal completion pops it with the tail like any other
     // continuation.
+    let mut descended_try = false;
     while let CStatement::TryCatchInt32 {
         try_body,
         binding,
@@ -2272,6 +2029,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 try_statement_index,
                 handler_statement_index,
                 after_try_statement_index,
+                ..
             } => (
                 try_statement_index,
                 handler_statement_index,
@@ -2279,6 +2037,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ),
             _ => break,
         };
+        descended_try = true;
         execution
             .core
             .frontier
@@ -2337,7 +2096,7 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state,
             source_statement,
             remaining,
-            construction.as_mut().map(Construction::reborrow),
+            context,
         )?;
         return Ok(Vec::new());
     }
@@ -2366,7 +2125,7 @@ fn execute_step_from_frontier_position_selecting_path(
             _ => None,
         };
         match called {
-            Some((name, arity)) if name == transport.function.as_ref() => {
+            Some((name, arity)) if transport.names_call_to(name) => {
                 if arity != transport.arity {
                     return Err(ClickError::new(format!(
                         "`{name}` is called with {arity} argument(s) here, but the step writes {}",
@@ -2395,14 +2154,6 @@ fn execute_step_from_frontier_position_selecting_path(
     if let Some(loop_index) = loop_index {
         construction_regions.push(CodeRegion::Loop(loop_index));
     }
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &construction_regions,
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -2419,7 +2170,6 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state.clone(),
         );
     }
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
     let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let next_opaque_call_before_step = execution.core.next_opaque_call;
@@ -2579,32 +2329,6 @@ fn execute_step_from_frontier_position_selecting_path(
         // One checked source operation can have several completed outcomes,
         // including a terminal direct call followed by a return.
         // Preserve every theorem and its own outcome for final certification.
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-            && let Some(construction) = construction.as_mut()
-        {
-            let environments = construction.environments;
-            let restore = apply_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                &construction_snapshot_overrides,
-            );
-            construct_proof_step_for_planned_operation(
-                execution,
-                proof_context,
-                construction.sink,
-                &current_state,
-                function_block,
-                parameters,
-                arguments,
-                environments,
-                &ConstructionEvidence::CertifiedStatementStep {
-                    planned_transition: None,
-                },
-            );
-            restore_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                restore,
-            );
-        }
 
         let mut common_pure_facts = transitions[0].pure_facts.clone();
         common_pure_facts.retain(|fact| {
@@ -2766,6 +2490,23 @@ fn execute_step_from_frontier_position_selecting_path(
         let throw_transition = transitions.remove(throw_index);
         pending_exceptional_call = Some((split, root_facts, throw_transition));
     }
+    // A statement whose checked successors differ only in their path facts
+    // -- a load that may or may not read the cell an earlier store wrote --
+    // is one C operation with several cases. A step never publishes those
+    // cases as hidden siblings; a planner that asks for them receives them
+    // unchanged and splits the proof on their conditions. Nothing has been
+    // committed yet, so the caller runs the statement again from this
+    // frontier on each side of that split.
+    if transitions.len() > 1
+        && !descended_try
+        && pending_exceptional_call.is_none()
+        && let Some(path_cases) = path_cases
+        && statement_successors_are_path_cases(&transitions)
+    {
+        execution.core.next_opaque_call = next_opaque_call_before_step;
+        *path_cases = transitions;
+        return Ok(Vec::new());
+    }
     if transitions.len() != 1 {
         if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
             let safe = transitions
@@ -2801,8 +2542,9 @@ fn execute_step_from_frontier_position_selecting_path(
         {
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
                 describe_function_outcome(&outcome, parameters, arguments),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -2839,10 +2581,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 return Err(ClickError::new(detail).with_kind(kind));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -2853,12 +2596,45 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind));
         }
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}\n{}{}{}",
+        let path_case_split = statement_successors_are_path_cases(&transitions);
+        let split_condition = if path_case_split {
+            let cases = transitions
+                .iter()
+                .map(PathCase::of_statement)
+                .collect::<Vec<_>>();
+            path_case_split_condition(
+                &cases,
+                &|fact| available_pure_facts.contains(fact),
+                &current_state,
+                proof_context,
+            )
+            .map(|(_, condition)| condition)
+        } else {
+            None
+        };
+        let case_split_guidance = if path_case_split {
+            describe_path_case_split_guidance(split_condition.as_ref(), transitions.len())
+        } else {
+            String::new()
+        };
+        let error = ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}{}\n{}{}{}{}",
             describe_c_statement_head(&step_statement),
             transitions.len(),
+            crate::surface::diagnostics::describe_c_statement_site(),
             describe_undecided_statement_successors(&transitions, parameters, arguments),
-            describe_multiple_statement_successors_guidance(&step_statement, transitions.len()),
+            case_split_guidance,
+            describe_multiple_statement_successors_guidance(
+                &step_statement,
+                transitions.len(),
+                transitions
+                    .iter()
+                    .filter(|transition| {
+                        matches!(transition.outcome, CStatementOutcome::Throw { .. })
+                    })
+                    .count()
+                    == 1,
+            ),
             describe_proof_context(
                 &listed_context_pure_facts(available_pure_facts, context),
                 &current_resources,
@@ -2866,7 +2642,12 @@ fn execute_step_from_frontier_position_selecting_path(
                 arguments,
                 &[]
             )
-        )));
+        ));
+        return Err(match (path_case_split, split_condition) {
+            (true, Some(condition)) => error.with_path_case_condition(condition),
+            (true, None) => error.with_path_case_split(),
+            (false, _) => error,
+        });
     }
     let transition = transitions
         .into_iter()
@@ -2892,29 +2673,7 @@ fn execute_step_from_frontier_position_selecting_path(
             loop_index,
         )?;
     }
-    let mut deferred_transport_operations = Vec::new();
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        deferred_transport_operations = append_statement_transition_certificate(
-            execution,
-            proof_context,
-            &transition,
-            if loop_index.is_some() {
-                loop_step_policy
-            } else {
-                LoopStepPolicy::EnterBody
-            },
-            &current_state,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
+
     if let Some((split, root_facts, throw_transition)) = pending_exceptional_call {
         let parent = execution.core.clone();
         let branches = split
@@ -3124,11 +2883,13 @@ fn execute_step_from_frontier_position_selecting_path(
                 .core
                 .record_automatic_lifetime_end(state, ended)
                 .map_err(|error| {
-                    ClickError::new(
+                    ClickError::new(format!(
+                        "{}{}",
                         crate::surface::diagnostics::describe_runtime_error_over_locals(
-                            &error, state,
+                            &error, state
                         ),
-                    )
+                        crate::surface::diagnostics::describe_c_statement_site(),
+                    ))
                     .with_kind(runtime_refusal_kind(&error))
                 })?;
         }
@@ -3257,7 +3018,6 @@ fn execute_step_from_frontier_position_selecting_path(
                     prerequisite_policy,
                     fact_transport_policy,
                     context,
-                    construction.as_mut().map(Construction::reborrow),
                     value,
                     state,
                     &successor_pure_facts,
@@ -3433,8 +3193,9 @@ fn execute_step_from_frontier_position_selecting_path(
         CStatementOutcome::UndefinedBehavior(kind) => {
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
                 describe_function_outcome(&outcome, parameters, arguments),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -3465,10 +3226,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 return Err(ClickError::new(detail).with_kind(kind));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -3489,43 +3251,6 @@ fn execute_step_from_frontier_position_selecting_path(
     // certificate facts, and finishing the transports retires the stale
     // pre-statement sources, mirroring what the certificate's own check
     // carries across this statement.
-    if construction.is_some() {
-        // Construction reads the post-statement state while it records into
-        // the execution; the transports do not change the state.
-        let exit_state = (*execution.core.state).clone();
-        for operation in &deferred_transport_operations {
-            if let Some(construction) = construction.as_mut() {
-                let environments = construction.environments;
-                construct_proof_step_for_planned_operation(
-                    execution,
-                    proof_context,
-                    construction.sink,
-                    &exit_state,
-                    function_block,
-                    parameters,
-                    arguments,
-                    environments,
-                    operation,
-                );
-            }
-            let certificate_facts = &mut execution.presentation.surface_record.certificate_facts;
-            match operation {
-                ConstructionEvidence::CertifiedFactTransport { target, .. } => {
-                    certificate_facts.insert(target.clone());
-                }
-                ConstructionEvidence::FinishCertifiedFactTransports(sources) => {
-                    certificate_facts.retain(|fact| {
-                        !sources.iter().any(|source| {
-                            source == fact
-                                || exactly_available_fact(source, std::slice::from_ref(fact))
-                                    .is_some()
-                        })
-                    });
-                }
-                _ => {}
-            }
-        }
-    }
     Ok(introduced_facts)
 }
 
@@ -3596,838 +3321,143 @@ pub(super) fn record_current_statement_entry(
 
 pub(super) const BOUNDED_EXECUTE_STEP_LIMIT: usize = 10_000;
 
-#[derive(Clone)]
-pub(super) struct BoundedProofFrontier {
-    pub(super) execution: ExecutionProofState,
-    pub(super) pure_facts: PureFactList,
-    /// This path's construction sink while planning constructs steps.
-    pub(super) sink: Option<ProofCertificateBuilder>,
-}
-
-/// Fork a throwing call inside an entered `try` into its normal and
-/// exceptional paths. The normal outcome commits to the current frontier
-/// exactly as a single-transition step would; the throw resumes at the
-/// handler entry via [`route_throw_to_handler`], and both paths rejoin the
-/// worklist. Only entered `try` bodies push handler continuations, so C
-/// execution never forks here. Returns `Ok(true)` when forked (the caller
-/// must skip its normal step call), or `Ok(false)` when this shape does
-/// not apply (single-transition calls, missing handlers, or unexpected
-/// outcomes fall through to the ordinary step path and its errors).
-#[allow(clippy::too_many_arguments)]
-fn fork_throwing_call_in_try(
-    frontier: &mut BoundedProofFrontier,
-    proof_context: &ExecutionProofContext<'_>,
-    prerequisite_policy: StatementPrerequisitePolicy,
-    claim_label: &str,
-    tactic_index: usize,
-    function: &CFunction,
-    construction: Option<&Construction<'_>>,
-    pending: &mut Vec<BoundedProofFrontier>,
-) -> Result<bool, ClickError> {
-    let statement = match frontier_statement(&frontier.execution, function) {
-        Ok(CStatement::Call { .. } | CStatement::CallAssign { .. }) => {
-            match frontier_statement(&frontier.execution, function) {
-                Ok(statement) => statement,
-                Err(_) => return Ok(false),
-            }
-        }
-        _ => return Ok(false),
-    };
-    if !frontier
-        .execution
-        .core
-        .frontier
-        .continuations
+/// Whether several checked successors of one statement are the cases of a
+/// path split: each completes the statement normally or returns, and each
+/// assumes a path fact some other successor does not, so the facts tell the
+/// cases apart.
+fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransition]) -> bool {
+    let facts = transitions
         .iter()
-        .any(|continuation| continuation.exceptional.is_some())
-    {
-        return Ok(false);
-    }
-    let mut next_opaque_call = frontier.execution.core.next_opaque_call;
-    let mut next_kernel_variable = frontier.execution.core.kernel_variable_mark();
-    let (transitions, _) = certified_statement_transitions(
-        &frontier.execution.core.state,
-        &frontier.pure_facts,
-        &statement,
-        proof_context.function_environment,
-        Some(proof_context.predicate_environment),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
-        "`execute` throwing-call fork planning",
-        &mut next_opaque_call,
-        &mut next_kernel_variable,
-        prerequisite_policy,
-        StatementFactTransportPolicy::Automatic,
-        None,
-    )?;
-    if transitions
+        .map(|transition| transition.path_facts.as_slice())
+        .collect::<Vec<_>>();
+    transitions.iter().all(|transition| {
+        matches!(
+            transition.outcome,
+            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+        ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
+    })
+}
+
+/// The facts in `facts` that not every case in `cases` assumes: the
+/// conditions that select this case.
+fn distinguishing_path_facts<'t>(
+    facts: &'t [Proposition],
+    cases: &[&[Proposition]],
+) -> Vec<&'t Proposition> {
+    facts
         .iter()
-        .any(|transition| matches!(transition.outcome, CStatementOutcome::UndefinedBehavior(_)))
-    {
-        return Ok(false);
-    }
-    if transitions
-        .iter()
-        .any(|transition| matches!(transition.outcome, CStatementOutcome::RuntimeError(_)))
-    {
-        return Ok(false);
-    }
-    let mut transitions = transitions.into_iter();
-    let (normal, threw) = match (transitions.next(), transitions.next(), transitions.next()) {
-        (Some(first), Some(second), None)
-            if matches!(first.outcome, CStatementOutcome::Normal(_))
-                && matches!(second.outcome, CStatementOutcome::Throw { .. }) =>
-        {
-            (first, second)
-        }
-        (Some(first), Some(second), None)
-            if matches!(first.outcome, CStatementOutcome::Throw { .. })
-                && matches!(second.outcome, CStatementOutcome::Normal(_)) =>
-        {
-            (second, first)
-        }
-        _ => return Ok(false),
-    };
-    // Install the allocated identities on both paths below so later
-    // allocations stay fresh; mirrors the shared step's counter advance.
-    // Done only once the fork shape is confirmed, so fall-through paths
-    // leave the frontier pristine.
-    frontier.execution.core.next_opaque_call = next_opaque_call;
-    frontier
-        .execution
-        .core
-        .advance_kernel_variable_mark(next_kernel_variable)
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute` throwing-call fork: {message}"
-            ))
-        })?;
-    // Commit the normal outcome to the current frontier, mirroring the
-    // single-transition Normal commit: record evidence, advance facts,
-    // state, position, and snapshots. The construction certificate path
-    // below mirrors the shared step's Planning handling.
-    let CStatementOutcome::Normal(normal_state) = &normal.outcome else {
-        return Ok(false);
-    };
-    let normal_state = normal_state.clone();
-    frontier.execution.core.record_statement_transition(
-        function,
-        proof_context.arguments,
-        normal.theorem.clone(),
-        normal.context.clone(),
-        &normal.execution_facts,
-        &normal.obligations,
-    ).map_err(|refusal| {
-        ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `execute` recorded forked call evidence the proof object rejected: {}",
-            describe_evidence_refusal(&refusal, proof_context.parsed_function.parameters(), proof_context.arguments)
-        ))
-    })?;
-    frontier
-        .execution
-        .presentation
-        .record_generated_load_bindings(&normal.generated_load_bindings);
-    append_execution_effect_facts(
-        &mut frontier.execution.core.effect_facts,
-        &normal.execution_facts,
-    );
-    frontier.pure_facts = normal.pure_facts.clone();
-    // Advance past the call, mirroring the single-transition Normal
-    // commit: pop an exhausted region or resume the tail, then record the
-    // entry snapshot for the resumed statement.
-    let call_tail = match &frontier.execution.core.frontier.position {
-        FrontierPosition::StatementEntry { remaining } => {
-            let (_, tail) = split_next_source_operation(remaining).map_err(|message| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `execute` throwing-call fork: {message}"
-                ))
-            })?;
-            tail
-        }
-        _ => None,
-    };
-    // The call's own layout index advances like any completed statement;
-    // resolve it before resuming so snapshots key correctly.
-    let call_statement_index = frontier.execution.core.frontier.next_statement_index;
-    let call_source_region = proof_context
-        .constants
-        .source_layout
-        .statement(call_statement_index);
-    // Clone for the threw arm BEFORE committing Normal below: routing pops
-    // the handler continuation, which Normal completion would discard
-    // first. The clone keeps pristine pre-step continuations; routing
-    // overwrites its state, facts, position, and index explicitly.
-    let mut threw_frontier = frontier.clone();
-    if construction.is_some() {
-        // Planning certificates for the forked normal arm mirror the
-        // shared step's Planning handling.
-        let pre_state = (*frontier.execution.core.state).clone();
-        let overrides = construction_snapshot_overrides(
-            &frontier.execution.presentation.recorded_snapshots,
-            proof_context.function_block,
-            &[CodeRegion::Statement(call_statement_index)],
-            ProgramPointKind::Entry,
-        );
-        let restore = apply_construction_snapshot_view(
-            &mut frontier.execution.presentation.recorded_snapshots,
-            &overrides,
-        );
-        append_statement_transition_certificate(
-            &mut frontier.execution,
-            proof_context,
-            &normal,
-            LoopStepPolicy::EnterBody,
-            &pre_state,
-            proof_context.function_block,
-            proof_context.parsed_function.parameters(),
-            proof_context.arguments,
-            construction.as_ref().map(|construction| Construction {
-                environments: construction.environments,
-                sink: frontier
-                    .sink
-                    .as_mut()
-                    .expect("construction implies a frontier sink"),
-            }),
-        );
-        restore_construction_snapshot_view(
-            &mut frontier.execution.presentation.recorded_snapshots,
-            restore,
-        );
-    }
-    frontier.execution.core.frontier.execution_start_state =
-        Some((*frontier.execution.core.state).clone());
-    frontier.execution.core.state = normal_state.clone().into();
-    let resumed = if let Some(tail) = call_tail {
-        if let Some(region) = call_source_region {
-            frontier.execution.core.frontier.next_statement_index = region.continuation_node;
-        }
-        Some(tail)
-    } else {
-        resume_after_completed_region(&mut frontier.execution.core.frontier)
-    };
-    match resumed {
-        Some(resumed) => {
-            frontier.execution.core.frontier.position = FrontierPosition::StatementEntry {
-                remaining: resumed.into(),
-            };
-            record_statement_program_snapshot_state(
-                &mut frontier.execution.presentation.recorded_snapshots,
-                proof_context.function_block,
-                frontier.execution.core.frontier.next_statement_index,
-                ProgramPointKind::Entry,
-                normal_state,
-            );
-        }
-        None => {
-            // Mirror the Normal arm: a region boundary records and
-            // continues; anything else is a genuine end-of-function error.
-            // Either way the threw arm below is still routed.
-            if finish_exhausted_region(&mut frontier.execution.core.frontier) {
-                record_statement_program_snapshot_state(
-                    &mut frontier.execution.presentation.recorded_snapshots,
-                    proof_context.function_block,
-                    frontier.execution.core.frontier.next_statement_index,
-                    ProgramPointKind::Entry,
-                    normal_state,
-                );
-            } else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `execute` throwing-call fork reached the end of the function without a return"
-                )));
-            }
-        }
-    }
-    // Route the threw arm to the handler entry on the pristine clone, then
-    // push both paths for the worklist. The threw arm's binding evidence is
-    // recorded by the routing helper itself.
-    let mut threw_facts = threw.pure_facts.clone();
-    let mut threw_introduced = Vec::new();
-    let CStatementOutcome::Throw {
-        value: threw_value,
-        state: threw_state,
-    } = &threw.outcome
-    else {
-        return Ok(false);
-    };
-    if construction.is_some() && threw_frontier.sink.is_none() {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `execute` throwing-call fork construction implies a frontier sink"
-        )));
-    }
-    let threw_construction = construction.as_ref().map(|construction| Construction {
-        environments: construction.environments,
-        sink: threw_frontier
-            .sink
-            .as_mut()
-            .expect("construction implies a frontier sink"),
-    });
-    if !route_throw_to_handler(
-        &mut threw_frontier.execution,
-        proof_context,
-        &mut threw_facts,
-        &mut threw_introduced,
-        function,
-        proof_context.arguments,
-        proof_context.parsed_function.parameters(),
-        proof_context.function_block,
-        proof_context.function_environment,
-        claim_label,
-        tactic_index,
-        "execute",
-        prerequisite_policy,
-        StatementFactTransportPolicy::Automatic,
-        None,
-        threw_construction,
-        threw_value,
-        threw_state,
-        &threw.pure_facts,
-    )? {
-        return Ok(false);
-    }
-    threw_frontier.pure_facts = threw_facts;
-    pending.push(threw_frontier);
-    pending.push(frontier.clone());
-    Ok(true)
+        .filter(|fact| !cases.iter().all(|other| other.contains(fact)))
+        .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn bounded_execute_from_frontier_position(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut PureFactList,
-    prerequisite_policy: StatementPrerequisitePolicy,
-    mut construction: Option<Construction<'_>>,
-) -> Result<(), ClickError> {
-    let function = proof_context.function;
-    let arguments = proof_context.arguments;
-    let claim_label = proof_context.claim_label;
-    let tactic_index = proof_context.tactic_index;
-
-    // Each explored path constructs its own surface steps from a clean
-    // builder; the paths are merged back into one step sequence (with `if`
-    // structure at genuine forks) once the frontiers are complete. Every
-    // path starts from the certificate-visible certificate facts at this point.
-    // Each explored path constructs its own surface steps into its own sink,
-    // seeded with the planning anchor; the paths are merged back into one
-    // step sequence (with `if` structure at genuine forks) once complete.
-    let mut pending = vec![BoundedProofFrontier {
-        execution: execution.clone(),
-        pure_facts: available_pure_facts.clone(),
-        sink: construction
-            .as_ref()
-            .map(|construction| ProofCertificateBuilder {
-                last_step_entry: construction.sink.last_step_entry.clone(),
-                ..ProofCertificateBuilder::default()
-            }),
-    }];
-    let mut completed = Vec::new();
-    let mut executed_steps = 0;
-
-    while let Some(mut frontier) = pending.pop() {
-        if frontier.execution.core.frontier.is_at_function_exit() {
-            completed.push(frontier);
-            continue;
-        }
-        if executed_steps == BOUNDED_EXECUTE_STEP_LIMIT {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute` exhausted its {BOUNDED_EXECUTE_STEP_LIMIT}-step budget at statement({})",
-                frontier.execution.core.frontier.next_statement_index
-            )));
-        }
-        executed_steps += 1;
-
-        let statement_index = frontier.execution.core.frontier.next_statement_index;
-        let source_region = proof_context
-            .constants.source_layout
-            .statement(statement_index)
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `execute` could not resolve source statement({})",
-                    frontier.execution.core.frontier.next_statement_index
-                ))
-            })?;
-        if matches!(source_region.kind, SourceStatementKind::If { .. }) {
-            for take_then in [false, true] {
-                let mut branch = frontier.clone();
-                let entered = execute_branch_step_from_frontier_position(
-                    &mut branch.execution,
-                    proof_context,
-                    &mut branch.pure_facts,
-                    "execute",
-                    Some(take_then),
-                    prerequisite_policy,
-                    BranchStepPolicy::Explore,
-                    false,
-                    construction.as_ref().map(|construction| Construction {
-                        environments: construction.environments,
-                        sink: branch
-                            .sink
-                            .as_mut()
-                            .expect("construction implies a branch sink"),
-                    }),
-                    None,
-                )?;
-                if entered {
-                    pending.push(branch);
-                }
-            }
-            continue;
-        }
-
-        if matches!(
-            frontier_statement(&frontier.execution, function),
-            Ok(CStatement::Switch { .. })
-        ) {
-            let statement = frontier_statement(&frontier.execution, function).map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `execute` could not inspect switch: {error}"
-                ))
-            })?;
-            let mut next_opaque_call = frontier.execution.core.next_opaque_call;
-            let mut next_kernel_variable = frontier.execution.core.kernel_variable_mark();
-            let (transitions, _) = certified_statement_transitions(
-                &frontier.execution.core.state,
-                &frontier.pure_facts,
-                &statement,
-                proof_context.function_environment,
-                Some(proof_context.predicate_environment),
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
-                "`execute` switch path planning",
-                &mut next_opaque_call,
-                &mut next_kernel_variable,
-                StatementPrerequisitePolicy::Contextual,
-                StatementFactTransportPolicy::Automatic,
-                None,
-            )?;
-            if transitions.len() > 1
-                && !transitions.iter().all(|transition| {
-                    matches!(transition.outcome, CStatementOutcome::Return { .. })
-                })
-            {
-                let path_choices = transitions
-                    .iter()
-                    .map(|transition| {
-                        switch_surface_path_choices(
-                            transition,
-                            &frontier.execution.core.state,
-                            proof_context,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let choice_count = path_choices.iter().map(Vec::len).max().unwrap_or_default();
-                if choice_count == 0 || path_choices.iter().any(Vec::is_empty) {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `execute` could not construct checked proof branches for switch paths"
-                    )));
-                }
-                for (transition, choices) in transitions.iter().zip(path_choices) {
-                    if transition.path_facts.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "`{claim_label}` tactic {tactic_index}: switch path had no checked path fact"
-                        )));
-                    }
-                    let mut branch = frontier.clone();
-                    if let Some(construction) = construction.as_ref() {
-                        let base_occurrence = branch.execution.core.next_path_choice;
-                        for (choice_index, (condition, value)) in choices.into_iter().enumerate() {
-                            construct_proof_step_for_planned_operation(
-                                &mut branch.execution,
-                                proof_context,
-                                branch
-                                    .sink
-                                    .as_mut()
-                                    .expect("construction implies a branch sink"),
-                                &frontier.execution.core.state,
-                                proof_context.function_block,
-                                proof_context.parsed_function.parameters(),
-                                proof_context.arguments,
-                                construction.environments,
-                                &ConstructionEvidence::CertifiedPathAssumption {
-                                    occurrence: base_occurrence + choice_index,
-                                    condition,
-                                    value,
-                                    facts: transition.path_facts.clone(),
-                                    theorem: transition.theorem.clone(),
-                                },
-                            );
-                        }
-                        for fact in &transition.path_facts {
-                            branch
-                                .execution
-                                .presentation
-                                .surface_record
-                                .certificate_facts
-                                .insert(fact.clone());
-                            if !branch.pure_facts.contains(fact) {
-                                branch.pure_facts.push(fact.clone());
-                            }
-                        }
-                        branch.execution.core.next_path_choice += choice_count;
-                    }
-                    execute_step_from_frontier_position_selecting_path(
-                        &mut branch.execution,
-                        proof_context,
-                        &mut branch.pure_facts,
-                        "execute",
-                        prerequisite_policy,
-                        StatementFactTransportPolicy::Automatic,
-                        LoopStepPolicy::EnterBody,
-                        construction.as_ref().map(|construction| Construction {
-                            environments: construction.environments,
-                            sink: branch
-                                .sink
-                                .as_mut()
-                                .expect("construction implies a branch sink"),
-                        }),
-                        None,
-                        None,
-                    )
-                    .map_err(|error| {
-                        ClickError::new(format!(
-                            "`{claim_label}` tactic {tactic_index}: `execute` failed after switch path split: {}",
-                            error.message()
-                        ))
-                    })?;
-                    pending.push(branch);
-                }
-                continue;
-            }
-        }
-
-        // Fork a throwing call inside an entered `try`: the normal outcome
-        // continues here while the throw resumes at the handler entry.
-        // Switches fork above for path conditions; plain steps error on
-        // multiple successors. Only entered `try` bodies push handler
-        // continuations, so C execution never forks here.
-        if let Ok(CStatement::Call { .. } | CStatement::CallAssign { .. }) =
-            frontier_statement(&frontier.execution, function)
-            && frontier
-                .execution
-                .core
-                .frontier
-                .continuations
-                .iter()
-                .any(|continuation| continuation.exceptional.is_some())
-            && fork_throwing_call_in_try(
-                &mut frontier,
-                proof_context,
-                prerequisite_policy,
-                claim_label,
-                tactic_index,
-                function,
-                construction.as_ref(),
-                &mut pending,
-            )?
-        {
-            continue;
-        }
-
-        execute_step_from_frontier_position(
-            &mut frontier.execution,
-            proof_context,
-            &mut frontier.pure_facts,
-            "execute",
-            prerequisite_policy,
-            StatementFactTransportPolicy::Automatic,
-            LoopStepPolicy::EnterBody,
-            construction.as_ref().map(|construction| Construction {
-                environments: construction.environments,
-                sink: frontier
-                    .sink
-                    .as_mut()
-                    .expect("construction implies a frontier sink"),
-            }),
-        )
-        .map_err(|error| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute` failed after {executed_steps} small execution steps: {}",
-                error.message()
-            ))
-        })?;
-        pending.push(frontier);
-    }
-
-    let synthesized_paths = construction.as_mut().map(|construction| {
-        let paths = completed
-            .iter()
-            .map(|frontier| frontier.sink.clone().unwrap_or_default())
-            .collect::<Vec<_>>();
-        (construction, synthesize_surface_alternatives(paths))
-    });
-    merge_bounded_execution_frontiers(
-        execution,
-        available_pure_facts,
-        function,
-        arguments,
-        completed,
-        claim_label,
-        tactic_index,
-    )?;
-    if let Some((construction, synthesized)) = synthesized_paths {
-        match synthesized {
-            Ok(steps) => {
-                for step in steps {
-                    construction.sink.push_step(step);
-                }
-            }
-            Err(message) => construction.sink.block(format!(
-                "could not lower certified branch alternatives: {message}"
-            )),
-        }
-    }
-    Ok(())
+/// One case of a path split: the checked path facts that select it.
+struct PathCase<'t> {
+    path_facts: &'t [Proposition],
 }
 
-fn frontier_statement(
-    execution: &ExecutionProofState,
-    function: &CFunction,
-) -> Result<CStatement, String> {
-    let remaining = match &execution.core.frontier.position {
-        FrontierPosition::FunctionEntry => function.body().clone(),
-        FrontierPosition::StatementEntry { remaining } => remaining.as_ref().clone(),
-        FrontierPosition::FunctionExit { .. } => {
-            return Err("frontier is already at function exit".to_string());
+impl<'t> PathCase<'t> {
+    fn of_statement(transition: &'t CertifiedStatementTransition) -> Self {
+        Self {
+            path_facts: &transition.path_facts,
         }
-        FrontierPosition::RegionBoundary => {
-            return Err("frontier is already at a region boundary".to_string());
-        }
-    };
-    split_next_source_operation(&remaining).map(|(statement, _)| statement)
+    }
 }
 
-fn switch_surface_path_choices(
-    transition: &CertifiedStatementTransition,
+/// The Click condition a proof-level case split separates a C condition's
+/// checked paths on first, when one has a spelling: the same choice the
+/// planner makes before a `branch` whose condition has more paths than arms.
+pub(super) fn condition_path_case_split_condition(
+    path_facts: &[&[Proposition]],
+    available: &dyn Fn(&Proposition) -> bool,
     state: &CState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Result<Vec<(ClickProposition, bool)>, ClickError> {
-    transition
-        .path_facts
+) -> Option<ClickProposition> {
+    let cases = path_facts
         .iter()
+        .map(|path_facts| PathCase { path_facts })
+        .collect::<Vec<_>>();
+    path_case_split_condition(&cases, available, state, proof_context)
+        .map(|(_, condition)| condition)
+}
+
+/// The condition a case split of `cases` splits on first: a distinguishing
+/// condition fact that some case assumes true and another false, that the
+/// facts do not already decide, and that Click can spell in source terms.
+/// A condition every case decides is preferred, in the cases' order: it is
+/// the one the operation consults first on every path (`x > 0` in
+/// `x > 0 && y > 0`, the address comparison before a load reads the cell it
+/// selects), so the facts of each side are then the facts that side's paths
+/// have. Splitting leaves fewer cases on each side, so repeating the split
+/// separates every case.
+fn path_case_split_condition(
+    cases: &[PathCase<'_>],
+    available: &dyn Fn(&Proposition) -> bool,
+    state: &CState,
+    proof_context: &ExecutionProofContext<'_>,
+) -> Option<(ConditionTerm, ClickProposition)> {
+    let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
+    let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
+        case.path_facts
+            .contains(&Proposition::ConditionIs(condition.clone(), value))
+    };
+    let candidates = cases
+        .iter()
+        .flat_map(|case| distinguishing_path_facts(case.path_facts, &facts))
         .filter_map(|fact| {
-            let Proposition::ConditionIs(condition, value) = fact else {
+            let Proposition::ConditionIs(condition, _) = fact else {
                 return None;
             };
-            let positive = Proposition::ConditionIs(condition.clone(), true);
+            let splits = [true, false]
+                .into_iter()
+                .all(|value| cases.iter().any(|case| decides(case, condition, value)));
+            let undecided = [true, false]
+                .into_iter()
+                .all(|value| !available(&Proposition::ConditionIs(condition.clone(), value)));
+            (splits && undecided).then_some(condition)
+        })
+        .collect::<Vec<_>>();
+    let decided_by_every_case = |condition: &ConditionTerm| {
+        cases
+            .iter()
+            .all(|case| decides(case, condition, true) || decides(case, condition, false))
+    };
+    candidates
+        .iter()
+        .filter(|condition| decided_by_every_case(condition))
+        .chain(
+            candidates
+                .iter()
+                .filter(|condition| !decided_by_every_case(condition)),
+        )
+        .find_map(|condition| {
             let surface = synthesize_surface_proposition(
-                &positive,
+                &Proposition::ConditionIs((*condition).clone(), true),
                 proof_context.parsed_function.parameters(),
                 proof_context.arguments,
                 state,
             )?;
-            Some(Ok((surface, *value)))
+            Some(((*condition).clone(), surface))
         })
-        .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn merge_bounded_execution_frontiers(
-    execution: &mut ExecutionProofState,
-    available_pure_facts: &mut PureFactList,
-    function: &CFunction,
-    arguments: &[CExpression],
-    mut completed: Vec<BoundedProofFrontier>,
-    claim_label: &str,
-    tactic_index: usize,
-) -> Result<(), ClickError> {
-    if completed.is_empty() {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `execute` produced no complete execution paths"
-        )));
-    }
-
-    let execution_start_state = completed[0]
-        .execution.core.frontier
-        .execution_start_state
-        .clone()
-        .ok_or_else(|| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute` has no execution start execution.core.state"
-            ))
-        })?;
-    let mut common_pure_facts = completed[0].pure_facts.clone();
-    common_pure_facts.retain(|fact| {
-        completed
-            .iter()
-            .skip(1)
-            .all(|frontier| frontier.pure_facts.contains(fact))
-    });
-    let mut common_snapshots = completed[0]
-        .execution
-        .presentation
-        .recorded_snapshots
-        .clone();
-    common_snapshots.retain(|selector, snapshot_state| {
-        completed.iter().skip(1).all(|frontier| {
-            frontier
-                .execution
-                .presentation
-                .recorded_snapshots
-                .get(selector)
-                == Some(snapshot_state)
-        })
-    });
-
-    let mut paths = Vec::new();
-    for frontier in &completed {
-        let function_execution = frontier
-            .execution
-            .core
-            .frontier
-            .execution()
-            .expect("completed bounded frontier should have an execution");
-        for path in function_execution.paths() {
-            let mut facts = path.execution_facts();
-            for fact in &frontier.pure_facts {
-                let fact = ExecutionPureFact::new(fact.clone());
-                if !facts.contains(&fact) {
-                    facts.push(fact);
-                }
-            }
-            paths.push((
-                path.outcome().clone(),
-                facts,
-                path.obligations().to_vec(),
-                path.loan_evidence().clone(),
-            ));
-        }
-    }
-    let function_execution =
-        crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
-            execution_start_state.clone(),
-            function.clone(),
-            arguments.to_vec(),
-            paths,
-        );
-
-    let mut merged = completed.remove(0);
-    merged.execution.presentation.recorded_snapshots = common_snapshots;
-    merged.execution.core.frontier.position = FrontierPosition::FunctionExit {
-        execution: function_execution,
+/// What to write when a simple tactic meets a split it does not make: the
+/// proof `if` on the condition a planner would split on first, which gives
+/// each side its own frontier.
+fn describe_path_case_split_guidance(
+    split_condition: Option<&ClickProposition>,
+    case_count: usize,
+) -> String {
+    let split = match split_condition {
+        Some(condition) => format!(
+            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\n",
+            crate::surface::diagnostics::describe_click_proposition(condition)
+        ),
+        None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
     };
-    merged.execution.core.state = execution_start_state.into();
-    merged.pure_facts = common_pure_facts;
-    *execution = merged.execution;
-    *available_pure_facts = merged.pure_facts;
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn execute_rest_from_frontier_position(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut PureFactList,
-    mut construction: Option<Construction<'_>>,
-) -> Result<(), ClickError> {
-    let function = proof_context.function;
-
-    loop {
-        let can_execute_one_step = match &execution.core.frontier.position {
-            FrontierPosition::FunctionEntry => split_next_execution_step(function.body()).is_ok(),
-            FrontierPosition::StatementEntry { remaining } => {
-                split_next_execution_step(remaining).is_ok()
-            }
-            FrontierPosition::FunctionExit { .. } | FrontierPosition::RegionBoundary => {
-                return Ok(());
-            }
-        };
-        if !can_execute_one_step {
-            break;
-        }
-
-        execute_step_from_frontier_position(
-            execution,
-            proof_context,
-            available_pure_facts,
-            "execute",
-            StatementPrerequisitePolicy::Planning,
-            StatementFactTransportPolicy::Automatic,
-            LoopStepPolicy::ApplyVerifiedRule,
-            construction.as_mut().map(Construction::reborrow),
-        )?;
-    }
-
-    if !execution.core.frontier.is_at_function_exit() {
-        bounded_execute_from_frontier_position(
-            execution,
-            proof_context,
-            available_pure_facts,
-            StatementPrerequisitePolicy::Planning,
-            construction.as_mut().map(Construction::reborrow),
-        )?;
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn execute_until_statement(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut PureFactList,
-    statement_index: usize,
-    prerequisite_policy: StatementPrerequisitePolicy,
-    mut construction: Option<Construction<'_>>,
-) -> Result<(), ClickError> {
-    let claim_label = proof_context.claim_label;
-    let tactic_index = proof_context.tactic_index;
-
-    if proof_context
-        .constants
-        .source_layout
-        .statement(statement_index)
-        .is_none()
-    {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: function has no source statement({statement_index}); it contains {} statement regions",
-            proof_context.constants.source_layout.statement_count()
-        )));
-    }
-
-    if execution.core.frontier.is_at_function_exit() {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `execute_until(statement({statement_index}))` cannot run after execution already reached function exit"
-        )));
-    }
-    if statement_index < execution.core.frontier.next_statement_index {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `execute_until(statement({statement_index}))` cannot move backward from statement({})",
-            execution.core.frontier.next_statement_index
-        )));
-    }
-
-    while execution.core.frontier.next_statement_index != statement_index {
-        let region_start = execution.core.frontier.next_statement_index;
-        execute_step_from_frontier_position(
-            execution,
-            proof_context,
-            available_pure_facts,
-            "execute_until",
-            prerequisite_policy,
-            StatementFactTransportPolicy::Automatic,
-            LoopStepPolicy::ApplyVerifiedRule,
-            construction.as_mut().map(Construction::reborrow),
-        )?;
-        if execution.core.frontier.is_at_function_exit() {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until(statement({statement_index}))` reached function exit before its target"
-            )));
-        }
-        if execution.core.frontier.next_statement_index > statement_index {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until(statement({statement_index}))` target is not reachable from the current execution path; advancing statement({region_start}) moved the frontier to statement({})",
-                execution.core.frontier.next_statement_index
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn split_next_execution_step(
-    statement: &CStatement,
-) -> Result<(CStatement, Option<CStatement>), String> {
-    let (source_statement, remaining) = split_next_source_operation(statement)?;
-    if matches!(source_statement, CStatement::If { .. }) {
-        return Err("next statement is an `if`; use `step()` or `step()`".to_string());
-    }
-    Ok((source_statement, remaining))
+    format!(
+        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}`execute()` makes this split itself.\n",
+        case_count,
+    )
 }
 
 pub(super) fn split_next_source_operation(
@@ -4583,6 +3613,11 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
         CStatement::ForStep { step, .. } => describe_statement_head(step),
         CStatement::Declare { name, .. } => format!("declare {name}"),
         CStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
+        CStatement::Assign { name, expression }
+            if crate::surface::diagnostics::is_call_result_temporary(name) =>
+        {
+            describe_c_expression(expression)
+        }
         CStatement::Assign { name, expression } => {
             format!("{name} = {}", describe_c_expression(expression))
         }
@@ -4590,19 +3625,28 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             target,
             function_name,
             arguments,
-        } => format!(
-            "{target} = {function_name}({})",
-            arguments
-                .iter()
-                .map(describe_c_expression)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        } => {
+            let call = format!(
+                "{}({})",
+                crate::surface::diagnostics::describe_called_function(function_name),
+                arguments
+                    .iter()
+                    .map(describe_c_expression)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            if crate::surface::diagnostics::is_call_result_temporary(target) {
+                call
+            } else {
+                format!("{target} = {call}")
+            }
+        }
         CStatement::Call {
             function_name,
             arguments,
         } => format!(
-            "{function_name}({})",
+            "{}({})",
+            crate::surface::diagnostics::describe_called_function(function_name),
             arguments
                 .iter()
                 .map(describe_c_expression)
@@ -4631,6 +3675,23 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
                 describe_c_expression(value)
             )
         }
+        CStatement::InitializeScalarArray {
+            target,
+            count,
+            copy,
+            fresh,
+            ..
+        } => format!(
+            "{} {} with {} scalar elements{}",
+            if *fresh { "initialize" } else { "write" },
+            describe_c_expression(target),
+            count,
+            if *copy {
+                " by snapshot copy"
+            } else {
+                " by repetition"
+            }
+        ),
         CStatement::CopyAggregate { target, source, .. } => format!(
             "copy aggregate {} <- {}",
             describe_c_expression(target),

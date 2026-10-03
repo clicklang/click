@@ -80,7 +80,17 @@ pub(in crate::surface::proof) struct ProofStepSite {
 impl ProofStepSite {
     /// The same site addressing the claim's `index`th source tactic
     /// occurrence.
+    ///
+    /// A generated tactic carries `usize::MAX` in place of a source index:
+    /// nobody wrote it, so the site addresses no written tactic.
     pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
+        if index == usize::MAX {
+            return Self {
+                enclosing: self.enclosing.clone(),
+                block: self.block,
+                position: None,
+            };
+        }
         self.with_position(ProofStepPosition::SourceTactic(index))
     }
 
@@ -196,6 +206,111 @@ pub(super) struct ProofNode {
     /// is a marker that opened no goal of its own; the walk then treats it as
     /// the enclosing structural marker it is.
     pub(super) split_branches: Vec<BranchId>,
+    /// The lineage certificate this node ends, per goal that a walk reached
+    /// it following: see [`Proof::path_certificate`]. Filled the first time a
+    /// walk passes, so a later walk stops at the first node one already
+    /// answered for instead of re-reading the whole history behind it.
+    pub(super) path_memo: std::sync::Mutex<Vec<(BranchId, Arc<PathSteps>)>>,
+}
+
+/// One goal's lineage steps up to some node, newest first, shared between the
+/// nodes whose lineages coincide below it. `invalid` and `arithmetic_using`
+/// summarize the two checks [`ProofCertificate::from_steps`] applies to the
+/// list, each computed once for the step this link adds: a list passes those
+/// checks exactly when every step does.
+pub(super) struct PathSteps {
+    link: Option<(Arc<ProofStep>, Arc<PathSteps>)>,
+    len: usize,
+    invalid: bool,
+    arithmetic_using: bool,
+}
+
+impl PathSteps {
+    fn empty() -> Arc<Self> {
+        Arc::new(Self {
+            link: None,
+            len: 0,
+            invalid: false,
+            arithmetic_using: false,
+        })
+    }
+
+    fn extended(step: &Arc<ProofStep>, earlier: &Arc<Self>) -> Arc<Self> {
+        crate::instrumentation::record_deterministic_work(1);
+        let invalid = earlier.invalid
+            || crate::surface::validate_certificate_step(step, earlier.len, &mut Vec::new())
+                .is_err();
+        Arc::new(Self {
+            link: Some((step.clone(), earlier.clone())),
+            len: earlier.len + 1,
+            invalid,
+            arithmetic_using: earlier.arithmetic_using
+                || crate::surface::proof_step_contains_arithmetic_using(step),
+        })
+    }
+
+    /// The steps in proof order.
+    fn to_vec(&self) -> Vec<ProofStep> {
+        let mut steps = Vec::with_capacity(self.len);
+        let mut link = &self.link;
+        while let Some((step, earlier)) = link {
+            crate::instrumentation::record_deterministic_work(1);
+            steps.push(step.as_ref().clone());
+            link = &earlier.link;
+        }
+        steps.reverse();
+        steps
+    }
+}
+
+impl ProofNode {
+    fn memoized_path(&self, goal: BranchId) -> Option<Arc<PathSteps>> {
+        self.path_memo
+            .lock()
+            .expect("proof path memo")
+            .iter()
+            .find(|(memo_goal, _)| *memo_goal == goal)
+            .map(|(_, steps)| steps.clone())
+    }
+
+    /// The steps of `goal`'s lineage that end at this node: the walk
+    /// [`Proof::path_certificate`] describes, stopped at the first node an
+    /// earlier walk already answered for that goal, with every node it passed
+    /// remembered on the way back.
+    fn lineage_steps(self: &Arc<Self>, goal: BranchId) -> Arc<PathSteps> {
+        let mut walked: Vec<(Arc<ProofNode>, BranchId)> = Vec::new();
+        let mut goal = goal;
+        let mut node = Some(self.clone());
+        let mut base = PathSteps::empty();
+        while let Some(current) = node {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(steps) = current.memoized_path(goal) {
+                base = steps;
+                break;
+            }
+            let entry_goal = goal;
+            if current.step.is_none()
+                && (current.split_branches.is_empty() || current.split_branches.contains(&goal))
+            {
+                goal = current.focused_branch;
+            }
+            node = current.parent.clone();
+            walked.push((current, entry_goal));
+        }
+        for (current, entry_goal) in walked.into_iter().rev() {
+            if let Some(step) = &current.step
+                && current.focused_branch == entry_goal
+            {
+                base = PathSteps::extended(step, &base);
+            }
+            current
+                .path_memo
+                .lock()
+                .expect("proof path memo")
+                .push((entry_goal, base.clone()));
+        }
+        base
+    }
 }
 
 impl<'a> Proof<'a> {
@@ -209,26 +324,32 @@ impl<'a> Proof<'a> {
     /// goal being walked: a split nested inside a sibling arm leaves a marker
     /// naming that sibling, and following it would adopt the sibling arm's
     /// steps as this path's own.
+    ///
+    /// Each node remembers, per goal, the lineage that ends at it, so this
+    /// reads only the nodes added since the last walk that passed this way
+    /// and does not re-read sibling arms' history. The steps are checked as
+    /// [`ProofCertificate::from_steps`] checks them, one step at a time as
+    /// each joins a lineage; a lineage that fails either check is handed to
+    /// `from_steps` itself, so the refusal is the one it always was.
     pub(in crate::surface::proof) fn path_certificate(
         &self,
     ) -> Result<ProofCertificate, ClickError> {
-        let mut steps = Vec::new();
-        let mut goal = self.focused_branch_id();
-        let mut node = Some(self.node.clone());
-        while let Some(current) = node {
-            match &current.step {
-                Some(step) if current.focused_branch == goal => steps.push(step.as_ref().clone()),
-                Some(_) => {}
-                None => {
-                    if current.split_branches.is_empty() || current.split_branches.contains(&goal) {
-                        goal = current.focused_branch;
-                    }
-                }
-            }
-            node = current.parent.clone();
+        let steps = self.node.lineage_steps(self.focused_branch_id());
+        if steps.invalid || steps.arithmetic_using {
+            return ProofCertificate::from_steps(steps.to_vec());
         }
-        steps.reverse();
-        ProofCertificate::from_steps(steps)
+        Ok(ProofCertificate::from_admitted_steps(steps.to_vec()))
+    }
+
+    /// The number of steps in [`Self::path_certificate`], or its refusal,
+    /// without building it.
+    pub(in crate::surface::proof) fn path_step_count(&self) -> Result<usize, ClickError> {
+        let steps = self.node.lineage_steps(self.focused_branch_id());
+        if steps.invalid || steps.arithmetic_using {
+            return ProofCertificate::from_steps(steps.to_vec())
+                .map(|certificate| certificate.steps().len());
+        }
+        Ok(steps.len)
     }
 
     pub(super) fn certificate_after_node(

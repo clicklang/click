@@ -18,14 +18,16 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/LangStandard.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -42,6 +44,12 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace {
+// Resource policy; the independent artifact checker enforces the same bounds.
+constexpr std::size_t kMaxRecordDeclarations = 256;
+constexpr std::size_t kMaxConstantDeclarations = 1024;
+constexpr std::size_t kMaxFunctionDeclarations = 1024;
+constexpr unsigned kMaxLocalDeclarations = 1024;
+constexpr unsigned kMaxCleanupScopes = 256;
 
 constexpr const char *kClangVersion = "19.1.7";
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
@@ -146,9 +154,8 @@ public:
         exception_behavior_(std::move(exception_behavior)), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
-    if (!llvm::isa<clang::CXXMethodDecl>(declaration) &&
-        declaration->isThisDeclarationADefinition() &&
-        declaration->getNameAsString() == selected_name_ &&
+    if (declaration->isThisDeclarationADefinition() &&
+        declaration->getQualifiedNameAsString() == selected_name_ &&
         is_in_logical_source(declaration->getLocation())) {
       matches_.push_back(declaration);
     }
@@ -238,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 20;
+    artifact["schema"] = 36;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -281,10 +288,33 @@ private:
   };
 
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
+    if (declaration->isDependentContext() ||
+        declaration->getType()->isDependentType()) {
+      fail(declaration->getLocation(),
+           "select an ordinary C++ caller of concrete template instances, not "
+           "a dependent template pattern");
+      return std::nullopt;
+    }
     const auto *constructor =
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
         llvm::dyn_cast<clang::CXXDestructorDecl>(declaration);
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    const bool ordinary_method =
+        method != nullptr && constructor == nullptr && destructor == nullptr;
+    if (ordinary_method && (method->isVirtual() || method->isVolatile() ||
+                            method->getRefQualifier() != clang::RQ_None ||
+                            method->isDeleted() || method->isVariadic())) {
+      fail(method->getLocation(),
+           "supported C++ methods must be non-virtual, "
+           "non-volatile, non-deleted, unqualified, and non-variadic");
+      return std::nullopt;
+    }
+    if (constructor != nullptr &&
+        !validate_constructor(constructor,
+                              constructor->getParent()->getDefinition())) {
+      return std::nullopt;
+    }
     const auto *prototype =
         declaration->getType()->getAs<clang::FunctionProtoType>();
     if (prototype == nullptr) {
@@ -324,20 +354,34 @@ private:
     } else {
       return_type =
           lower_type(declaration->getReturnType(),
-                     declaration->getReturnTypeSourceRange().getBegin());
+                     declaration->getReturnTypeSourceRange().getBegin(),
+                     direct_source_alias(declaration->getTypeSourceInfo()));
       if (!return_type) {
         return std::nullopt;
       }
-      function_kind["kind"] = "free";
+      function_kind["kind"] =
+          ordinary_method ? (method->isStatic() ? "static_method" : "method")
+                          : "free";
+      if (ordinary_method) {
+        const auto *record = method->getParent()->getDefinition();
+        if (record == nullptr ||
+            (!method->isStatic() && !remember_record(record)))
+          return std::nullopt;
+        function_kind["record_declaration_id"] = declaration_id(record);
+        function_kind["record_name"] = record->getNameAsString();
+        if (!method->isStatic())
+          function_kind["is_const"] = method->isConst();
+      }
     }
     llvm::json::Array parameters;
-    if (constructor != nullptr || destructor != nullptr) {
+    if (method != nullptr && !method->isStatic()) {
       const auto *method = llvm::cast<clang::CXXMethodDecl>(declaration);
       const auto *record = method->getParent()->getDefinition();
       llvm::json::Object record_type;
       record_type["kind"] = "record";
       record_type["declaration_id"] = declaration_id(record);
       record_type["name"] = record->getNameAsString();
+      record_type["is_const"] = method->isConst();
       llvm::json::Object reference_type;
       reference_type["kind"] = "lvalue_reference";
       reference_type["pointee"] = std::move(record_type);
@@ -349,6 +393,13 @@ private:
       parameters.push_back(std::move(self));
     }
     for (const clang::ParmVarDecl *parameter : declaration->parameters()) {
+      if (ordinary_method && method->isStatic() &&
+          (!parameter->getType()->isIntegerType() ||
+           parameter->getType().hasQualifiers())) {
+        fail(parameter->getLocation(),
+             "static C++ helpers require by-value scalar parameters");
+        return std::nullopt;
+      }
       auto lowered = lower_parameter(parameter);
       if (!lowered) {
         return std::nullopt;
@@ -412,10 +463,10 @@ private:
 
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(declaration);
-    result["name"] = constructor == nullptr
-                         ? (destructor == nullptr
-                                ? declaration->getNameAsString()
-                                : destructor_name(destructor))
+    result["name"] = ordinary_method ? method_name(method)
+                     : constructor == nullptr
+                         ? (destructor == nullptr ? function_name(declaration)
+                                                  : destructor_name(destructor))
                          : constructor_name(constructor);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
@@ -442,7 +493,9 @@ private:
           reference->getPointeeType().isConstQualified() &&
           context_.getTypeSize(reference->getPointeeType()) == 64));
     const clang::CXXRecordDecl *record_reference = nullptr;
-    if (reference != nullptr && !reference->getPointeeType().hasQualifiers()) {
+    if (reference != nullptr &&
+        !reference->getPointeeType().isVolatileQualified() &&
+        !reference->getPointeeType().isRestrictQualified()) {
       if (const auto *record_type =
               reference->getPointeeType()->getAs<clang::RecordType>()) {
         record_reference = llvm::dyn_cast<clang::CXXRecordDecl>(
@@ -455,15 +508,24 @@ private:
         !pointer->getPointeeType().hasQualifiers() &&
         context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
                              context_.IntTy);
+    const bool by_value_integer =
+        !parameter->getType().hasQualifiers() &&
+        parameter->getType()->isIntegerType() &&
+        (context_.getTypeSize(parameter->getType()) == 32 ||
+         context_.getTypeSize(parameter->getType()) == 64);
     const bool by_value_bool =
         reference == nullptr &&
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
                              context_.BoolTy) &&
         !parameter->getType().isConstQualified();
-    if (!int_reference && record_reference == nullptr &&
-        !mutable_int_pointer && !by_value_bool) {
+    if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
+        !by_value_bool && !by_value_integer) {
       fail(parameter->getLocation(),
-           "the supported C++ parameter must be a by-value bool, int&, const int&, const signed-64 reference, or mutable int* parameter, or a mutable simple-record reference parameter");
+           "the supported C++ parameter must be a by-value bool or "
+           "signed/unsigned "
+           "32/64-bit integer, int&, const "
+           "int&, const signed-64 reference, or mutable int* parameter, or a "
+           "mutable or const simple-record reference parameter");
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -504,6 +566,11 @@ private:
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
+    if (type->isVoidType()) {
+      llvm::json::Object result;
+      result["kind"] = "void";
+      return Json(std::move(result));
+    }
     if (const auto *reference = type->getAs<clang::LValueReferenceType>()) {
       auto pointee =
           lower_type(reference->getPointeeType(), location, source_alias);
@@ -528,8 +595,8 @@ private:
     if (const auto *record_type = type->getAs<clang::RecordType>()) {
       const auto *record = llvm::dyn_cast<clang::CXXRecordDecl>(
           record_type->getDecl()->getDefinition());
-      if (type.hasQualifiers() || record == nullptr ||
-          !remember_record(record)) {
+      if (type.isVolatileQualified() || type.isRestrictQualified() ||
+          record == nullptr || !remember_record(record)) {
         if (record == nullptr && state_.error.empty()) {
           fail(location, "the supported C++ record type must be complete");
         } else if (type.hasQualifiers() && state_.error.empty()) {
@@ -542,6 +609,7 @@ private:
       result["kind"] = "record";
       result["declaration_id"] = declaration_id(record);
       result["name"] = record->getNameAsString();
+      result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
     if (context_.hasSameType(type.getUnqualifiedType(), context_.BoolTy)) {
@@ -551,10 +619,11 @@ private:
       result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
-    if (!context_.hasSameType(type.getUnqualifiedType(), context_.IntTy) &&
-        !(type->isSignedIntegerType() && context_.getTypeSize(type) == 64)) {
-      fail(location,
-           "the supported C++ slice supports bool, int, signed 64-bit integers, references to those integers, mutable int*, and one simple record-reference type");
+    if (!type->isIntegerType() || (context_.getTypeSize(type) != 32 &&
+                                   context_.getTypeSize(type) != 64)) {
+      fail(location, "the supported C++ slice supports bool, signed/unsigned "
+                     "32/64-bit integers, selected signed references, mutable "
+                     "int*, and one simple record-reference type");
       return std::nullopt;
     }
     llvm::json::Object result;
@@ -660,10 +729,26 @@ private:
       return lower_scope(compound, function, false);
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
+      const auto *callee = call->getDirectCallee();
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
+        if (call->getNumArgs() != 1 || !total_assumption_condition(call->getArg(0), function)) {
+          fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
+          return std::nullopt;
+        }
+        auto condition = lower_expression(call->getArg(0), function);
+        if (!condition) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "assume";
+        result["condition"] = std::move(*condition);
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       return lower_call(call, function);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
-      if (binary->getOpcode() != clang::BO_Assign) {
+      if (binary->getOpcode() != clang::BO_Assign &&
+          binary->getOpcode() != clang::BO_AddAssign &&
+          binary->getOpcode() != clang::BO_SubAssign) {
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
@@ -674,6 +759,45 @@ private:
       }
       llvm::json::Object result;
       const clang::Expr *left = binary->getLHS()->IgnoreParens();
+      if (binary->getOpcode() == clang::BO_AddAssign ||
+          binary->getOpcode() == clang::BO_SubAssign) {
+        const auto *compound =
+            llvm::cast<clang::CompoundAssignOperator>(binary);
+        const auto *member = llvm::dyn_cast<clang::MemberExpr>(left);
+        if (member == nullptr ||
+            !context_.hasSameType(compound->getComputationLHSType(),
+                                  left->getType()) ||
+            !context_.hasSameType(compound->getComputationResultType(),
+                                  left->getType()) ||
+            !context_.hasSameType(binary->getRHS()->getType(),
+                                  left->getType()) ||
+            !left->getType()->isSignedIntegerType()) {
+          fail(binary->getOperatorLoc(), "supported C++ += and -= require a "
+                                         "direct signed integer field and "
+                                         "same-width operands");
+          return std::nullopt;
+        }
+        auto loaded = lower_member(member, function);
+        auto value_type = lower_type(left->getType(), left->getExprLoc());
+        auto sum_type = lower_type(left->getType(), left->getExprLoc());
+        if (!loaded || !value_type || !sum_type)
+          return std::nullopt;
+        llvm::json::Object load;
+        load["kind"] = "member_load";
+        load["object"] = std::move(loaded->object);
+        load["field"] = std::move(loaded->field);
+        load["value_type"] = std::move(*value_type);
+        load["span"] = span(left->getSourceRange());
+        llvm::json::Object sum;
+        sum["kind"] = "binary";
+        sum["operator"] =
+            binary->getOpcode() == clang::BO_AddAssign ? "add" : "subtract";
+        sum["left"] = std::move(load);
+        sum["right"] = std::move(*value);
+        sum["value_type"] = std::move(*sum_type);
+        sum["span"] = span(binary->getSourceRange());
+        value = Json(std::move(sum));
+      }
       if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
         auto lowered = lower_member(member, function);
         if (!lowered) {
@@ -709,13 +833,35 @@ private:
              "the first C++ slice requires an int return value");
         return std::nullopt;
       }
-      auto value = lower_expression(returned->getRetValue(), function);
-      if (!value) {
-        return std::nullopt;
-      }
       llvm::json::Object result;
-      result["kind"] = "return";
-      result["value"] = std::move(*value);
+      const auto *call = llvm::dyn_cast<clang::CallExpr>(
+          returned->getRetValue()->IgnoreParens());
+      if (call != nullptr && !is_numeric_limits_max_call(call)) {
+        const auto *callee = call->getDirectCallee();
+        if (callee == nullptr ||
+            !context_.hasSameType(callee->getReturnType(),
+                                  function->getReturnType())) {
+          fail(call->getExprLoc(), "C++ return call requires matching callee "
+                                   "and caller return types");
+          return std::nullopt;
+        }
+        auto lowered = lower_call_operation(call, function, true);
+        auto value_type = lower_type(call->getType(), call->getExprLoc());
+        if (!lowered || !value_type) {
+          return std::nullopt;
+        }
+        result["kind"] = "return_call";
+        result["callee"] = std::move(lowered->callee);
+        result["arguments"] = std::move(lowered->arguments);
+        result["value_type"] = std::move(*value_type);
+      } else {
+        auto value = lower_expression(returned->getRetValue(), function);
+        if (!value) {
+          return std::nullopt;
+        }
+        result["kind"] = "return";
+        result["value"] = std::move(*value);
+      }
       llvm::json::Array cleanups;
       const auto cleanup = cleanup_locals_.find(function->getCanonicalDecl());
       if (cleanup != cleanup_locals_.end()) {
@@ -738,6 +884,34 @@ private:
         fail(conditional->getIfLoc(),
              "the supported C++ if statement cannot declare an initializer or condition variable");
         return std::nullopt;
+      }
+      // Clang has already instantiated this condition. A discarded constexpr
+      // arm is not runtime behavior and must not add callees, loads, or
+      // cleanup.
+      if (conditional->isConstexpr()) {
+        auto selected = conditional->getNondiscardedCase(context_);
+        if (!selected) {
+          fail(conditional->getIfLoc(),
+               "dependent C++ if constexpr condition is unsupported");
+          return std::nullopt;
+        }
+        const bool takes_then = *selected == conditional->getThen();
+        auto branch =
+            lower_branch(*selected, function,
+                         allow_nested_scope ? CleanupScopeKind::Conditional
+                                            : CleanupScopeKind::None);
+        if (!branch)
+          return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "if";
+        result["condition"] = boolean_constant(
+            takes_then, conditional->getCond()->getSourceRange(), true);
+        result["then_branch"] =
+            takes_then ? std::move(*branch) : llvm::json::Array();
+        result["else_branch"] =
+            takes_then ? llvm::json::Array() : std::move(*branch);
+        result["span"] = span(conditional->getSourceRange());
+        return Json(std::move(result));
       }
       auto condition = lower_expression(conditional->getCond(), function);
       auto branch_scope = allow_nested_scope
@@ -765,7 +939,7 @@ private:
 
   std::optional<Json> lower_call(const clang::CallExpr *call,
                                  const clang::FunctionDecl *caller) {
-    auto lowered = lower_call_operation(call, caller);
+    auto lowered = lower_call_operation(call, caller, true);
     if (!lowered) {
       return std::nullopt;
     }
@@ -794,6 +968,9 @@ private:
         handler_block == nullptr) {
       fail(catch_statement->getCatchLoc(),
            "scalar int32 handler requires one named by-value `int` binding");
+      return std::nullopt;
+    }
+    if (!remember_local_declaration(function, binding)) {
       return std::nullopt;
     }
     auto binding_type =
@@ -902,6 +1079,19 @@ private:
     return Json(std::move(result));
   }
 
+  bool remember_local_declaration(const clang::FunctionDecl *function,
+                                  const clang::VarDecl *local) {
+    unsigned &count = local_declaration_counts_[function->getCanonicalDecl()];
+    if (count == kMaxLocalDeclarations) {
+      fail(local->getLocation(),
+           "C++ artifact budget exhausted: local declarations per function (limit " +
+               std::to_string(kMaxLocalDeclarations) + ")");
+      return false;
+    }
+    ++count;
+    return true;
+  }
+
   std::optional<Json>
   lower_local_declaration(const clang::DeclStmt *statement,
                           const clang::FunctionDecl *function,
@@ -918,10 +1108,13 @@ private:
            "the supported C++ local must have automatic storage");
       return std::nullopt;
     }
-    const bool mutable_int =
-        context_.hasSameType(local->getType().getUnqualifiedType(),
-                             context_.IntTy) &&
-        !local->getType().isConstQualified();
+    if (!remember_local_declaration(function, local)) {
+      return std::nullopt;
+    }
+    const bool mutable_int = local->getType()->isIntegerType() &&
+                             (context_.getTypeSize(local->getType()) == 32 ||
+                              context_.getTypeSize(local->getType()) == 64) &&
+                             !local->getType().hasQualifiers();
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
         record_type == nullptr
@@ -930,9 +1123,18 @@ private:
                   record_type->getDecl()->getDefinition());
     const bool record_object =
         record != nullptr && !local->getType().hasQualifiers();
+    if (record_object && context_.getLangOpts().CXXExceptions &&
+        exception_behavior_ == "normal_only") {
+      fail(local->getLocation(),
+           "exception-enabled normal-only C++ supports borrowed records only, "
+           "not local object construction");
+      return std::nullopt;
+    }
     if (!mutable_int && !record_object) {
       fail(local->getLocation(),
-           "the supported automatic C++ local must resolve to mutable int or one simple record object");
+           "the supported automatic C++ local must resolve to mutable "
+           "signed/unsigned "
+           "32/64-bit integer or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit()) {
@@ -958,9 +1160,9 @@ private:
         if (!functions_with_aggregate_local_.insert(canonical).second) {
           const auto previous = cleanup_locals_.find(canonical);
           if (!destructible || previous == cleanup_locals_.end() ||
-              previous->second.size() != 1) {
+              previous->second.empty()) {
             fail(local->getLocation(),
-                 "the supported C++ slice permits one aggregate object or exactly two destructible objects per function");
+                 "the supported C++ slice permits multiple aggregate objects only when all require destruction");
             return std::nullopt;
           }
         }
@@ -979,8 +1181,8 @@ private:
           return std::nullopt;
         }
         cleanup_locals_[canonical].push_back(local);
-        if (known_functions_.insert(definition->getCanonicalDecl()).second) {
-          reachable_definitions_.push_back(definition);
+        if (!remember_function(definition)) {
+          return std::nullopt;
         }
       }
     }
@@ -1067,9 +1269,8 @@ private:
         }
         arguments.push_back(std::move(*argument));
       }
-      const clang::FunctionDecl *canonical = definition->getCanonicalDecl();
-      if (known_functions_.insert(canonical).second) {
-        reachable_definitions_.push_back(definition);
+      if (!remember_function(definition)) {
+        return std::nullopt;
       }
       llvm::json::Object reference;
       reference["declaration_id"] = declaration_id(definition);
@@ -1081,7 +1282,14 @@ private:
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call =
             llvm::dyn_cast<clang::CallExpr>(semantic_initializer)) {
-      auto lowered = lower_call_operation(call, function);
+      if (call->getDirectCallee() == nullptr ||
+          !context_.hasSameType(call->getDirectCallee()->getReturnType(),
+                                local->getType())) {
+        fail(call->getExprLoc(),
+             "C++ call capture requires matching return and local types");
+        return std::nullopt;
+      }
+      auto lowered = lower_call_operation(call, function, true);
       if (!lowered) {
         return std::nullopt;
       }
@@ -1153,9 +1361,10 @@ private:
            "nested-scope cleanup cannot yet be combined with an unsupported outer destructible object");
       return std::nullopt;
     }
-    if (!has_outer_aggregate && scope_count == 2) {
+    if (scope_count == kMaxCleanupScopes) {
       fail(scope->getLBracLoc(),
-           "the supported C++ slice permits at most two sibling cleanup scopes per function");
+           "C++ artifact budget exhausted: cleanup scopes per function (limit " +
+               std::to_string(kMaxCleanupScopes) + ")");
       return std::nullopt;
     }
     functions_with_nested_scope_.insert(canonical);
@@ -1178,9 +1387,9 @@ private:
     }
     const std::size_t new_count =
         active.size() < entry_count ? 0 : active.size() - entry_count;
-    if (local_count != new_count || new_count == 0 || new_count > 2) {
+    if (local_count != new_count || new_count == 0) {
       fail(scope->getLBracLoc(),
-           "the nested-scope slice requires one or two destructible objects and no other locals");
+           "the nested-scope slice requires destructible objects and no other locals");
       return std::nullopt;
     }
     llvm::json::Array cleanups;
@@ -1248,52 +1457,145 @@ private:
            "the return-cleanup slice requires one final return after object construction");
       return false;
     }
-    bool constructed = false;
-    for (auto iterator = body->body_begin(); iterator != body->body_end();
-         ++iterator) {
-      const clang::Stmt *statement = *iterator;
-      if (const auto *declarations =
-              llvm::dyn_cast<clang::DeclStmt>(statement)) {
-        for (const clang::Decl *declaration : declarations->decls()) {
-          if (declaration == local) {
-            constructed = true;
-          }
-        }
-      }
-      if (!constructed && statement_contains_return(statement)) {
-        fail(statement->getBeginLoc(),
-             "returns before automatic object construction are outside the return-cleanup slice");
-        return false;
-      }
-    }
     return true;
   }
 
-  bool statement_contains_return(const clang::Stmt *statement) const {
-    if (llvm::isa<clang::ReturnStmt>(statement)) {
-      return true;
-    }
-    for (const clang::Stmt *child : statement->children()) {
-      if (child != nullptr && statement_contains_return(child)) {
-        return true;
+  bool stable_scalar_argument(const clang::Expr *expression,
+                              const clang::FunctionDecl *caller) const {
+    expression = expression->IgnoreParens();
+    if (const auto *substitution =
+            llvm::dyn_cast<clang::SubstNonTypeTemplateParmExpr>(expression))
+      return stable_scalar_argument(substitution->getReplacement(), caller);
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      switch (cast->getCastKind()) {
+      case clang::CK_LValueToRValue:
+      case clang::CK_IntegralCast:
+      case clang::CK_IntegralToBoolean:
+      case clang::CK_NoOp:
+        return stable_scalar_argument(cast->getSubExpr(), caller);
+      default:
+        return false;
       }
+    }
+    if (llvm::isa<clang::IntegerLiteral>(expression) ||
+        llvm::isa<clang::CXXBoolLiteralExpr>(expression) ||
+        llvm::isa<clang::UnaryExprOrTypeTraitExpr>(expression))
+      return true;
+    if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression))
+      return is_numeric_limits_max_call(call);
+    if (const auto *reference =
+            llvm::dyn_cast<clang::DeclRefExpr>(expression)) {
+      const auto *variable =
+          llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return variable != nullptr && variable->getType()->isIntegerType() &&
+             !variable->getType().isVolatileQualified() &&
+             (variable->isConstexpr() ||
+              (variable->getDeclContext() == caller &&
+               (llvm::isa<clang::ParmVarDecl>(variable) ||
+                (variable->hasLocalStorage() && !variable->isStaticLocal()))));
     }
     return false;
   }
 
+  bool scalar_only_call(const clang::CallExpr *call) const {
+    const auto *callee = call->getDirectCallee();
+    if (callee == nullptr) return false;
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
+    if (method != nullptr && !method->isStatic()) return false;
+    for (const auto *parameter : callee->parameters())
+      if (!parameter->getType()->isIntegerType()) return false;
+    for (const auto *argument : call->arguments()) {
+      if (!argument->getType()->isIntegerType()) return false;
+      if (const auto *nested = llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens()))
+        if (!is_numeric_limits_max_call(nested)) return false;
+    }
+    return true;
+  }
+
+  bool field_scalar_argument(const clang::Expr *expression) const {
+    expression = expression->IgnoreParens();
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      switch (cast->getCastKind()) {
+      case clang::CK_LValueToRValue:
+      case clang::CK_IntegralCast:
+      case clang::CK_IntegralToBoolean:
+      case clang::CK_NoOp:
+        return field_scalar_argument(cast->getSubExpr());
+      default: return false;
+      }
+    }
+    return llvm::isa<clang::MemberExpr>(expression) &&
+           expression->getType()->isIntegerType() &&
+           !expression->getType().isVolatileQualified();
+  }
+
+  // The builtin does not evaluate its operand. Only total, side-effect-free
+  // scalar conditions can be checked as an obligation without adding an
+  // evaluation effect or hiding undefined behavior on another argument order.
+  bool total_assumption_condition(const clang::Expr *expression,
+                                  const clang::FunctionDecl *caller) const {
+    expression = expression->IgnoreParens();
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      if (cast->getCastKind() == clang::CK_IntegralToBoolean ||
+          cast->getCastKind() == clang::CK_NoOp)
+        return total_assumption_condition(cast->getSubExpr(), caller);
+    }
+    if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
+      if (binary->getOpcode() == clang::BO_LAnd)
+        return total_assumption_condition(binary->getLHS(), caller) &&
+               total_assumption_condition(binary->getRHS(), caller);
+      if (binary->isComparisonOp())
+        return stable_scalar_argument(binary->getLHS(), caller) &&
+               stable_scalar_argument(binary->getRHS(), caller);
+      return false;
+    }
+    return stable_scalar_argument(expression, caller);
+  }
+
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
-                       const clang::FunctionDecl *caller) {
+                       const clang::FunctionDecl *caller,
+                       bool allow_nested = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     if (callee == nullptr) {
       fail(call->getExprLoc(),
            "the supported C++ slice requires a direct free-function call");
       return std::nullopt;
     }
-    if (llvm::isa<clang::CXXMethodDecl>(callee)) {
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
+    const clang::Expr *receiver = nullptr;
+    unsigned argument_offset = 0;
+    if (method != nullptr && method->isStatic() &&
+        !llvm::isa<clang::DeclRefExpr>(
+            call->getCallee()->IgnoreParenImpCasts())) {
       fail(call->getExprLoc(),
-           "C++ method calls are outside the supported direct-call slice");
+           "static C++ calls require class-qualified or unqualified dispatch");
       return std::nullopt;
+    }
+    const bool has_receiver = method != nullptr && !method->isStatic();
+    if (has_receiver) {
+      if (method->isVirtual() || llvm::isa<clang::CXXConstructorDecl>(method) ||
+          llvm::isa<clang::CXXDestructorDecl>(method)) {
+        fail(call->getExprLoc(), "unsupported C++ method dispatch");
+        return std::nullopt;
+      }
+      if (const auto *member_call =
+              llvm::dyn_cast<clang::CXXMemberCallExpr>(call)) {
+        receiver = member_call->getImplicitObjectArgument();
+      } else if (const auto *operator_call =
+                     llvm::dyn_cast<clang::CXXOperatorCallExpr>(call)) {
+        if (operator_call->getNumArgs() == 0)
+          return std::nullopt;
+        receiver = operator_call->getArg(0);
+        argument_offset = 1;
+      }
+      if (receiver == nullptr ||
+          (receiver->getType()->isPointerType() &&
+           !llvm::isa<clang::CXXThisExpr>(receiver->IgnoreParenImpCasts()))) {
+        fail(call->getExprLoc(), "supported C++ method call requires a direct "
+                                 "record lvalue receiver");
+        return std::nullopt;
+      }
     }
     const clang::FunctionDecl *definition = callee->getDefinition();
     if (definition == nullptr) {
@@ -1308,30 +1610,107 @@ private:
            "the supported C++ call graph requires definitions in the selected file");
       return std::nullopt;
     }
-    if (call->getNumArgs() != definition->getNumParams()) {
+    if (call->getNumArgs() != definition->getNumParams() + argument_offset) {
       fail(call->getExprLoc(),
            "the supported C++ slice requires a call with one argument per parameter");
       return std::nullopt;
     }
 
+    if (allow_nested) {
+      unsigned nested_calls = 0;
+      for (unsigned index = argument_offset; index < call->getNumArgs();
+           ++index) {
+        const auto *nested = llvm::dyn_cast<clang::CallExpr>(
+            call->getArg(index)->IgnoreParens());
+        if (nested != nullptr && !is_numeric_limits_max_call(nested))
+          ++nested_calls;
+      }
+      if (nested_calls > 1 || (nested_calls != 0 && has_receiver)) {
+        fail(call->getExprLoc(),
+             "nested C++ call arguments require one call and order-independent scalar "
+             "siblings to preserve evaluation order");
+        return std::nullopt;
+      }
+      if (nested_calls == 1) {
+        bool isolated = false;
+        for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
+          const auto *nested = llvm::dyn_cast<clang::CallExpr>(call->getArg(index)->IgnoreParens());
+          if (nested != nullptr && !is_numeric_limits_max_call(nested))
+            isolated = scalar_only_call(nested);
+        }
+        for (unsigned index = argument_offset; index < call->getNumArgs();
+             ++index) {
+          const auto *argument = call->getArg(index);
+          const auto *nested =
+              llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens());
+          if (nested != nullptr && !is_numeric_limits_max_call(nested))
+            continue;
+          if (!stable_scalar_argument(argument, caller) &&
+              !(isolated && field_scalar_argument(argument))) {
+            fail(argument->getExprLoc(),
+                 "nested C++ call arguments require one call and order-independent scalar "
+                 "siblings to preserve evaluation order");
+            return std::nullopt;
+          }
+        }
+      }
+    }
+
     llvm::json::Array arguments;
-    for (unsigned index = 0; index < call->getNumArgs(); ++index) {
-      auto argument = lower_call_argument(call->getArg(index),
-                                          definition->getParamDecl(index), caller);
+    if (receiver != nullptr) {
+      auto place = lower_place_reference(receiver, caller);
+      if (!place)
+        return std::nullopt;
+      llvm::json::Object argument;
+      argument["kind"] = "reference";
+      argument["place"] = std::move(*place);
+      arguments.push_back(std::move(argument));
+    }
+    for (unsigned index = 0; index < definition->getNumParams(); ++index) {
+      const auto *source_argument = call->getArg(index + argument_offset);
+      const auto *nested =
+          llvm::dyn_cast<clang::CallExpr>(source_argument->IgnoreParens());
+      std::optional<Json> argument;
+      if (allow_nested && nested != nullptr &&
+          !is_numeric_limits_max_call(nested)) {
+        if (has_receiver ||
+            definition->getParamDecl(index)->getType()->isReferenceType() ||
+            !context_.hasSameType(source_argument->getType(),
+                                  definition->getParamDecl(index)->getType())) {
+          fail(source_argument->getExprLoc(),
+               "nested C++ calls require a matching scalar value "
+               "argument to preserve evaluation order");
+          return std::nullopt;
+        }
+        auto operation = lower_call_operation(nested, caller, true);
+        auto value_type = lower_type(nested->getType(), nested->getExprLoc());
+        if (!operation || !value_type)
+          return std::nullopt;
+        llvm::json::Object value;
+        value["kind"] = "call";
+        value["callee"] = std::move(operation->callee);
+        value["arguments"] = std::move(operation->arguments);
+        value["value_type"] = std::move(*value_type);
+        value["span"] = std::move(operation->span);
+        argument = Json(std::move(value));
+      } else {
+        argument = lower_call_argument(source_argument,
+                                       definition->getParamDecl(index), caller);
+      }
       if (!argument) {
         return std::nullopt;
       }
       arguments.push_back(std::move(*argument));
     }
 
-    const clang::FunctionDecl *canonical = definition->getCanonicalDecl();
-    if (known_functions_.insert(canonical).second) {
-      reachable_definitions_.push_back(definition);
+    if (!remember_function(definition)) {
+      return std::nullopt;
     }
 
     llvm::json::Object reference;
     reference["declaration_id"] = declaration_id(definition);
-    reference["name"] = definition->getNameAsString();
+    reference["name"] =
+        method != nullptr ? method_name(method) : function_name(definition);
     reference["span"] = span(call->getCallee()->getSourceRange());
 
     Json call_span = span(call->getSourceRange());
@@ -1365,9 +1744,11 @@ private:
       result["value"] = std::move(*value);
       return Json(std::move(result));
     }
-    if (context_.hasSameType(parameter->getType().getUnqualifiedType(),
-                             context_.BoolTy) &&
-        !parameter->getType().isConstQualified()) {
+    if (!parameter->getType().hasQualifiers() &&
+        (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
+         (parameter->getType()->isIntegerType() &&
+          (context_.getTypeSize(parameter->getType()) == 32 ||
+           context_.getTypeSize(parameter->getType()) == 64)))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -1437,6 +1818,19 @@ private:
     return result;
   }
 
+  bool remember_function(const clang::FunctionDecl *definition) {
+    if (known_functions_.insert(definition->getCanonicalDecl()).second) {
+      if (reachable_definitions_.size() + 1 >= kMaxFunctionDeclarations) {
+        fail(definition->getLocation(),
+             "C++ artifact budget exhausted: function declarations (limit " +
+                 std::to_string(kMaxFunctionDeclarations) + ")");
+        return false;
+      }
+      reachable_definitions_.push_back(definition);
+    }
+    return true;
+  }
+
   bool remember_constant(const clang::VarDecl *constant) {
     const clang::VarDecl *definition =
         constant == nullptr ? nullptr : constant->getDefinition();
@@ -1450,11 +1844,16 @@ private:
            "reachable C++ constants must be declared in the selected source");
       return false;
     }
+    const bool internal_namespace_constant =
+        definition->getDeclContext()->isFileContext() &&
+        definition->getFormalLinkage() == clang::Linkage::Internal;
     if (!definition->isConstexpr() ||
-        definition->getStorageClass() != clang::SC_Static ||
+        (definition->getStorageClass() != clang::SC_Static &&
+         !internal_namespace_constant) ||
         !definition->hasGlobalStorage()) {
       fail(definition->getLocation(),
-           "reachable C++ constants must be namespace-scope static constexpr declarations");
+           "reachable C++ constants must be namespace-scope static constexpr "
+           "or internal-linkage constexpr declarations");
       return false;
     }
     const clang::QualType type = definition->getType();
@@ -1465,9 +1864,10 @@ private:
       return false;
     }
     if (known_constants_.insert(definition).second) {
-      if (constant_definitions_.size() >= 2) {
+      if (constant_definitions_.size() >= kMaxConstantDeclarations) {
         fail(definition->getLocation(),
-             "the supported C++ constant slice permits at most two reachable constants");
+             "C++ artifact budget exhausted: constant declarations (limit " +
+                 std::to_string(kMaxConstantDeclarations) + ")");
         return false;
       }
       constant_definitions_.push_back(definition);
@@ -1513,7 +1913,7 @@ private:
     auto value_type =
         lower_type(constant->getType(), constant->getLocation(),
                    direct_source_alias(constant->getTypeSourceInfo()));
-    auto lowered_initializer = lower_expression(initializer, function, true);
+    auto lowered_initializer = lower_expression(initializer, function);
     const clang::APValue *evaluated = constant->evaluateValue();
     if (!value_type || !lowered_initializer || evaluated == nullptr ||
         !evaluated->isInt()) {
@@ -1565,9 +1965,22 @@ private:
     return Json(std::move(result));
   }
 
+  // These calls already have distinct compiler-constant semantics. Preserve
+  // that allowlist before recognizing a runtime return-call operation.
+  bool is_numeric_limits_max_call(const clang::CallExpr *call) const {
+    const auto *method =
+        call == nullptr ? nullptr
+                        : llvm::dyn_cast_or_null<clang::CXXMethodDecl>(
+                              call->getDirectCallee());
+    return method != nullptr && method->isStatic() && method->isConstexpr() &&
+           call->getNumArgs() == 0 && method->getNameAsString() == "max" &&
+           method->getParent()->getNameAsString() == "numeric_limits" &&
+           method->getParent()->getQualifiedNameAsString().rfind(
+               "std::numeric_limits", 0) == 0;
+  }
+
   std::optional<Json> lower_expression(const clang::Expr *expression,
-                                       const clang::FunctionDecl *function,
-                                       bool allow_constant_multiply = false) {
+                                       const clang::FunctionDecl *function) {
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(expression)) {
       fail(throw_expression->getThrowLoc(),
@@ -1576,16 +1989,111 @@ private:
                : "throw expressions are outside the normal-only C++ profile");
       return std::nullopt;
     }
+    if (const auto *substitution =
+            llvm::dyn_cast<clang::SubstNonTypeTemplateParmExpr>(expression)) {
+      return lower_expression(substitution->getReplacement(), function);
+    }
+    if (const auto *boolean =
+            llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expression)) {
+      return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
+                              false);
+    }
+    // Closed compile-time operations are evaluated by the pinned Clang profile,
+    // and retain their source span as distinct compiler_constant artifact
+    // nodes. Runtime calls are not folded or skipped by this narrow allowlist.
+    const clang::Expr *candidate = expression->IgnoreParenImpCasts();
+    const auto *trait =
+        llvm::dyn_cast<clang::UnaryExprOrTypeTraitExpr>(candidate);
+    const auto *constant_call = llvm::dyn_cast<clang::CallExpr>(candidate);
+    const bool limits_max = is_numeric_limits_max_call(constant_call);
+    if ((trait != nullptr && trait->getKind() == clang::UETT_SizeOf) ||
+        limits_max) {
+      if (expression->getType()->isIntegerType() &&
+          (context_.getTypeSize(expression->getType()) == 32 ||
+           context_.getTypeSize(expression->getType()) == 64) &&
+          expression->isCXX11ConstantExpr(context_)) {
+        clang::Expr::EvalResult evaluated;
+        if (expression->EvaluateAsInt(evaluated, context_,
+                                      clang::Expr::SE_NoSideEffects,
+                                      /*InConstantContext=*/false)) {
+          auto value_type =
+              lower_type(expression->getType(), expression->getExprLoc());
+          if (!value_type)
+            return std::nullopt;
+          llvm::SmallString<32> value;
+          evaluated.Val.getInt().toString(value, 10);
+          llvm::json::Object result;
+          result["kind"] = "compiler_constant";
+          result["value"] = value.str().str();
+          result["value_type"] = std::move(*value_type);
+          result["span"] = span(expression->getSourceRange());
+          return Json(std::move(result));
+        }
+      }
+      fail(expression->getExprLoc(),
+           "unsupported C++ compiler constant type or evaluation");
+      return std::nullopt;
+    }
     if (const auto *parentheses =
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
-      return lower_expression(parentheses->getSubExpr(), function,
-                              allow_constant_multiply);
+      return lower_expression(parentheses->getSubExpr(), function);
+    }
+    if (const auto *cast =
+            llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
+      if (cast->getCastKind() == clang::CK_NoOp &&
+          context_.hasSameType(cast->getType(),
+                               cast->getSubExpr()->getType()) &&
+          (cast->getType()->isBooleanType() ||
+           (cast->getType()->isIntegerType() &&
+            (context_.getTypeSize(cast->getType()) == 32 ||
+             context_.getTypeSize(cast->getType()) == 64)))) {
+        return lower_expression(cast->getSubExpr(), function);
+      }
+      if (cast->getCastKind() != clang::CK_IntegralCast &&
+          cast->getCastKind() != clang::CK_IntegralToBoolean &&
+          cast->getCastKind() != clang::CK_BooleanToSignedIntegral) {
+        fail(cast->getExprLoc(), "unsupported explicit C++ conversion");
+        return std::nullopt;
+      }
+      auto value = lower_expression(cast->getSubExpr(), function);
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value || !value_type)
+        return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "integral_cast";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_Minus) {
+      auto value = lower_expression(unary->getSubExpr(), function);
+      auto value_type = lower_type(unary->getType(), unary->getExprLoc());
+      auto zero_type = lower_type(unary->getType(), unary->getExprLoc());
+      if (!value || !value_type || !zero_type ||
+          !unary->getType()->isIntegerType())
+        return std::nullopt;
+      llvm::json::Object zero;
+      zero["kind"] = "integer_literal";
+      zero["value"] = "0";
+      zero["value_type"] = std::move(*zero_type);
+      zero["span"] = span(unary->getSourceRange());
+      llvm::json::Object result;
+      result["kind"] = "binary";
+      result["operator"] = "subtract";
+      result["left"] = std::move(zero);
+      result["right"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(unary->getSourceRange());
+      return Json(std::move(result));
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ImplicitCastExpr>(expression)) {
-      if (cast->getCastKind() == clang::CK_IntegralCast) {
-        auto value = lower_expression(cast->getSubExpr(), function,
-                                      allow_constant_multiply);
+      if (cast->getCastKind() == clang::CK_IntegralCast ||
+          cast->getCastKind() == clang::CK_IntegralToBoolean ||
+          cast->getCastKind() == clang::CK_BooleanToSignedIntegral) {
+        auto value = lower_expression(cast->getSubExpr(), function);
         auto value_type = lower_type(cast->getType(), cast->getExprLoc());
         if (!value || !value_type) {
           return std::nullopt;
@@ -1626,8 +2134,7 @@ private:
       } else if (const auto *dereference =
               llvm::dyn_cast<clang::UnaryOperator>(source);
           dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
-        auto pointer = lower_expression(dereference->getSubExpr(), function,
-                                        allow_constant_multiply);
+        auto pointer = lower_expression(dereference->getSubExpr(), function);
         if (!pointer) {
           return std::nullopt;
         }
@@ -1686,7 +2193,8 @@ private:
         return std::nullopt;
       }
       llvm::SmallString<32> value;
-      literal->getValue().toString(value, 10, true);
+      literal->getValue().toString(value, 10,
+                                   literal->getType()->isSignedIntegerType());
       llvm::json::Object result;
       result["kind"] = "integer_literal";
       result["value"] = value.str().str();
@@ -1697,37 +2205,40 @@ private:
     if (const auto *binary =
             llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() != clang::BO_Add &&
+          binary->getOpcode() != clang::BO_Sub &&
+          binary->getOpcode() != clang::BO_Div &&
+          binary->getOpcode() != clang::BO_Rem &&
+          binary->getOpcode() != clang::BO_LT &&
+          binary->getOpcode() != clang::BO_GT &&
+          binary->getOpcode() != clang::BO_EQ &&
           binary->getOpcode() != clang::BO_Mul &&
           binary->getOpcode() != clang::BO_LE &&
           binary->getOpcode() != clang::BO_GE &&
           binary->getOpcode() != clang::BO_LAnd) {
         fail(binary->getOperatorLoc(),
-             "unsupported binary operator; this C++ slice supports int addition, checked constant multiplication, signed 64-bit <= and >=, and built-in bool && bool only");
+             "unsupported binary operator; this C++ slice supports "
+             "signed/unsigned "
+             "32/64-bit arithmetic (+, -, *, /, %), same-width signed "
+             "comparisons, and built-in bool && bool only");
         return std::nullopt;
       }
-      if (binary->getOpcode() == clang::BO_Mul && !allow_constant_multiply) {
-        fail(binary->getOperatorLoc(),
-             "C++ multiplication is supported only in a checked constant initializer");
-        return std::nullopt;
+      if (binary->getOpcode() == clang::BO_Add ||
+          binary->getOpcode() == clang::BO_Sub ||
+          binary->getOpcode() == clang::BO_Mul ||
+          binary->getOpcode() == clang::BO_Div ||
+          binary->getOpcode() == clang::BO_Rem) {
+        if (!binary->getType()->isIntegerType() ||
+            (context_.getTypeSize(binary->getType()) != 32 &&
+             context_.getTypeSize(binary->getType()) != 64)) {
+          fail(binary->getOperatorLoc(),
+               "C++ arithmetic requires signed/unsigned 32/64-bit operands; "
+               "pointer "
+               "arithmetic is unsupported");
+          return std::nullopt;
+        }
       }
-      if (binary->getOpcode() == clang::BO_Add &&
-          !context_.hasSameType(binary->getType().getUnqualifiedType(),
-                                context_.IntTy)) {
-        fail(binary->getOperatorLoc(),
-             "the supported C++ slice does not include pointer arithmetic");
-        return std::nullopt;
-      }
-      if (binary->getOpcode() == clang::BO_Mul &&
-          (!binary->getType()->isSignedIntegerType() ||
-           context_.getTypeSize(binary->getType()) != 64)) {
-        fail(binary->getOperatorLoc(),
-             "supported C++ constant multiplication must produce signed 64-bit");
-        return std::nullopt;
-      }
-      auto left = lower_expression(binary->getLHS(), function,
-                                   allow_constant_multiply);
-      auto right = lower_expression(binary->getRHS(), function,
-                                    allow_constant_multiply);
+      auto left = lower_expression(binary->getLHS(), function);
+      auto right = lower_expression(binary->getRHS(), function);
       auto value_type = lower_type(binary->getType(), binary->getExprLoc());
       if (!left || !right || !value_type) {
         return std::nullopt;
@@ -1736,6 +2247,18 @@ private:
       result["kind"] = "binary";
       if (binary->getOpcode() == clang::BO_Add) {
         result["operator"] = "add";
+      } else if (binary->getOpcode() == clang::BO_Sub) {
+        result["operator"] = "subtract";
+      } else if (binary->getOpcode() == clang::BO_Div) {
+        result["operator"] = "divide";
+      } else if (binary->getOpcode() == clang::BO_Rem) {
+        result["operator"] = "remainder";
+      } else if (binary->getOpcode() == clang::BO_LT) {
+        result["operator"] = "less_than";
+      } else if (binary->getOpcode() == clang::BO_GT) {
+        result["operator"] = "greater_than";
+      } else if (binary->getOpcode() == clang::BO_EQ) {
+        result["operator"] = "equal";
       } else if (binary->getOpcode() == clang::BO_Mul) {
         result["operator"] = "multiply";
       } else if (binary->getOpcode() == clang::BO_LE) {
@@ -1764,19 +2287,20 @@ private:
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ != "scalar_int32") {
+        exception_behavior_ != "scalar_int32" &&
+        !definition->hasTrivialDestructor()) {
       fail(definition->getLocation(),
            "the exception-enabled C++ profile is limited to an object-free "
            "normal-only graph");
       return false;
     }
     const clang::CXXRecordDecl *canonical = definition->getCanonicalDecl();
-    if (!known_records_.empty() && known_records_.count(canonical) == 0) {
-      fail(definition->getLocation(),
-           "the first C++ object slice supports exactly one record type");
-      return false;
-    }
     if (known_records_.insert(canonical).second) {
+      if (record_definitions_.size() >= kMaxRecordDeclarations) {
+        fail(definition->getLocation(), "C++ artifact budget exhausted: record declarations (limit " +
+                 std::to_string(kMaxRecordDeclarations) + ")");
+        return false;
+      }
       if (!validate_record(definition)) {
         return false;
       }
@@ -1786,6 +2310,11 @@ private:
   }
 
   bool validate_record(const clang::CXXRecordDecl *record) {
+    if (llvm::isa<clang::ClassTemplateSpecializationDecl>(record)) {
+      fail(record->getLocation(),
+           "C++ class template instances are unsupported");
+      return false;
+    }
     if (!record->isStruct() || record->getName().empty()) {
       fail(record->getLocation(),
            "the supported C++ record must be a named struct");
@@ -1806,54 +2335,12 @@ private:
            "the supported C++ record must contain at least one field");
       return false;
     }
-    const clang::CXXConstructorDecl *supported_constructor = nullptr;
-    const clang::CXXDestructorDecl *supported_destructor = nullptr;
-    for (const clang::Decl *member : record->decls()) {
-      if (const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(member);
-          method != nullptr && !method->isImplicit()) {
-        if (const auto *constructor =
-                llvm::dyn_cast<clang::CXXConstructorDecl>(method)) {
-          if (supported_constructor != nullptr) {
-            fail(constructor->getLocation(),
-                 "the first constructor slice supports exactly one explicit constructor");
-            return false;
-          }
-          supported_constructor = constructor;
-        } else if (const auto *destructor =
-                       llvm::dyn_cast<clang::CXXDestructorDecl>(method)) {
-          if (supported_destructor != nullptr) {
-            fail(destructor->getLocation(),
-                 "the terminal-cleanup slice supports exactly one destructor");
-            return false;
-          }
-          supported_destructor = destructor;
-        } else {
-          fail(method->getLocation(),
-               "ordinary methods are outside the supported C++ object slice");
-          return false;
-        }
-      }
-      if (!member->isImplicit() && !llvm::isa<clang::FieldDecl>(member) &&
-          !llvm::isa<clang::CXXMethodDecl>(member) &&
-          !llvm::isa<clang::AccessSpecDecl>(member)) {
-        fail(member->getLocation(),
-             "nested declarations and static data members are outside the supported C++ record slice");
+    const clang::CXXDestructorDecl *supported_destructor =
+        record->getDestructor();
+    if (supported_destructor != nullptr &&
+        !supported_destructor->isImplicit()) {
+      if (!validate_destructor(supported_destructor, record))
         return false;
-      }
-    }
-    if (supported_constructor != nullptr &&
-        !validate_constructor(supported_constructor, record)) {
-      return false;
-    }
-    if (supported_destructor != nullptr) {
-      if (supported_constructor == nullptr) {
-        fail(supported_destructor->getLocation(),
-             "the terminal-cleanup slice requires a supported explicit constructor before a user-declared destructor");
-        return false;
-      }
-      if (!validate_destructor(supported_destructor, record)) {
-        return false;
-      }
     } else if (!record->isTriviallyCopyable() ||
                !record->hasTrivialDestructor()) {
       fail(record->getLocation(),
@@ -1865,7 +2352,8 @@ private:
       const auto *pointer = type->getAs<clang::PointerType>();
       const bool mutable_int =
           !type.hasQualifiers() &&
-          context_.hasSameType(type.getUnqualifiedType(), context_.IntTy);
+          (context_.hasSameType(type.getUnqualifiedType(), context_.IntTy) ||
+           (type->isSignedIntegerType() && context_.getTypeSize(type) == 64));
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&
@@ -1875,8 +2363,10 @@ private:
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
           (!mutable_int && !mutable_int_pointer)) {
-        fail(field->getLocation(),
-             "the supported C++ record fields must be named public mutable int or mutable int* fields without bit-fields");
+        fail(
+            field->getLocation(),
+            "the supported C++ record fields must be named public mutable int, "
+            "signed 64-bit integer, or mutable int* fields without bit-fields");
         return false;
       }
     }
@@ -1998,7 +2488,9 @@ private:
         fail(field->getLocation(), "supported C++ field layout is too large");
         return std::nullopt;
       }
-      auto value_type = lower_type(field->getType(), field->getLocation());
+      auto value_type =
+          lower_type(field->getType(), field->getLocation(),
+                     direct_source_alias(field->getTypeSourceInfo()));
       if (!value_type) {
         return std::nullopt;
       }
@@ -2081,7 +2573,8 @@ private:
     const bool supported_parameter =
         parameter != nullptr && parameter->getDeclContext() == function &&
         reference_type != nullptr &&
-        !reference_type->getPointeeType().hasQualifiers() &&
+        !reference_type->getPointeeType().isVolatileQualified() &&
+        !reference_type->getPointeeType().isRestrictQualified() &&
         base_record_type != nullptr &&
         base_record_type->getDecl()->getCanonicalDecl() ==
             record->getCanonicalDecl();
@@ -2094,13 +2587,13 @@ private:
             record->getCanonicalDecl();
     const bool supported_this =
         this_expression != nullptr && object_method != nullptr &&
-        (llvm::isa<clang::CXXConstructorDecl>(object_method) ||
-         llvm::isa<clang::CXXDestructorDecl>(object_method)) &&
+        !object_method->isStatic() &&
         object_method->getParent()->getCanonicalDecl() ==
             record->getCanonicalDecl();
     if (member->isArrow() && !supported_this) {
       fail(member->getOperatorLoc(),
-           "the first C++ object slice supports arrow access only for the current constructor or destructor object");
+           "the first C++ object slice supports arrow access only for the "
+           "current method, constructor, or destructor object");
       return std::nullopt;
     }
     if (!supported_parameter && !supported_local && !supported_this) {
@@ -2129,11 +2622,10 @@ private:
     expression = expression->IgnoreParenImpCasts();
     if (llvm::isa<clang::CXXThisExpr>(expression)) {
       const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(expected_function);
-      if (method == nullptr ||
-          (!llvm::isa<clang::CXXConstructorDecl>(method) &&
-           !llvm::isa<clang::CXXDestructorDecl>(method))) {
+      if (method == nullptr || method->isStatic()) {
         fail(expression->getExprLoc(),
-             "`this` is supported only inside a constructor or destructor body");
+             "`this` is supported only inside a method, constructor, or "
+             "destructor body");
         return std::nullopt;
       }
       llvm::json::Object result;
@@ -2183,6 +2675,109 @@ private:
 
   std::string object_self_id(const clang::CXXMethodDecl *method) {
     return declaration_id(method) + "@this";
+  }
+
+  Json boolean_constant(bool value, clang::SourceRange source,
+                        bool compiler_evaluated) {
+    llvm::json::Object integer_type;
+    integer_type["kind"] = "integer";
+    integer_type["bits"] = 32;
+    integer_type["signed"] = true;
+    integer_type["is_const"] = false;
+    integer_type["source_aliases"] = llvm::json::Array();
+    llvm::json::Object integer;
+    integer["kind"] =
+        compiler_evaluated ? "compiler_constant" : "integer_literal";
+    integer["value"] = value ? "1" : "0";
+    integer["value_type"] = std::move(integer_type);
+    integer["span"] = span(source);
+    llvm::json::Object boolean_type;
+    boolean_type["kind"] = "boolean";
+    boolean_type["bits"] =
+        static_cast<std::int64_t>(context_.getTypeSize(context_.BoolTy));
+    boolean_type["is_const"] = false;
+    llvm::json::Object result;
+    result["kind"] = "integral_cast";
+    result["value"] = std::move(integer);
+    result["value_type"] = std::move(boolean_type);
+    result["span"] = span(source);
+    return Json(std::move(result));
+  }
+
+  std::string template_suffix(const clang::FunctionDecl *function) {
+    const auto *arguments = function->getTemplateSpecializationArgs();
+    if (arguments == nullptr)
+      return {};
+    std::string suffix;
+    for (const auto &argument : arguments->asArray()) {
+      if (argument.getKind() == clang::TemplateArgument::Integral &&
+          argument.getIntegralType()->isBooleanType()) {
+        suffix +=
+            argument.getAsIntegral().isZero() ? "__bool_false" : "__bool_true";
+      } else if (argument.getKind() == clang::TemplateArgument::Type) {
+        const auto type = context_.getCanonicalType(argument.getAsType());
+        if (type.hasQualifiers()) {
+          fail(function->getLocation(),
+               "qualified C++ template type arguments are unsupported");
+          return {};
+        }
+        // Exact builtin identities, rather than widths, keep long and long
+        // long (both 64 bits in this profile) separate. Aliases canonicalize.
+        const std::pair<clang::QualType, const char *> supported[] = {
+            {context_.BoolTy, "__bool"},
+            {context_.IntTy, "__int"},
+            {context_.UnsignedIntTy, "__unsigned_int"},
+            {context_.LongTy, "__long"},
+            {context_.UnsignedLongTy, "__unsigned_long"},
+            {context_.LongLongTy, "__long_long"},
+            {context_.UnsignedLongLongTy, "__unsigned_long_long"}};
+        const char *name = nullptr;
+        for (const auto &[candidate, token] : supported) {
+          if (context_.hasSameType(type, candidate)) {
+            name = token;
+            break;
+          }
+        }
+        if (name == nullptr) {
+          fail(function->getLocation(), "C++ template type arguments require "
+                                        "bool or 32/64-bit builtin integers");
+          return {};
+        }
+        suffix += name;
+      } else {
+        fail(function->getLocation(), "C++ template arguments require Boolean "
+                                      "values or supported scalar types");
+        return {};
+      }
+    }
+    return suffix;
+  }
+
+  std::string function_name(const clang::FunctionDecl *function) {
+    std::string name = function->getQualifiedNameAsString();
+    size_t pos = 0;
+    while ((pos = name.find("::", pos)) != std::string::npos) {
+      name.replace(pos, 2, "_");
+      ++pos;
+    }
+    return name + template_suffix(function);
+  }
+
+  std::string method_name(const clang::CXXMethodDecl *method) {
+    std::string name = method->getNameAsString();
+    if (method->isOverloadedOperator()) {
+      if (method->getOverloadedOperator() != clang::OO_PlusEqual &&
+          method->getOverloadedOperator() != clang::OO_MinusEqual) {
+        fail(method->getLocation(), "the supported C++ operator methods are "
+                                    "operator+= and operator-= only");
+        return {};
+      }
+      name = method->getOverloadedOperator() == clang::OO_PlusEqual
+                 ? "operator_add_assign"
+                 : "operator_subtract_assign";
+    }
+    return method->getParent()->getNameAsString() + "_" + name +
+           template_suffix(method);
   }
 
   std::string constructor_name(
@@ -2342,6 +2937,7 @@ private:
   std::string compilation_file_;
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
+  std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
   std::vector<clang::FunctionDecl *> matches_;
@@ -2420,7 +3016,8 @@ public:
       state_.error = "error: preprocessor input `" +
                      accessed.generic_string() + "` changed its target";
     } else if (state_.preprocessor_files.size() > kMaxPreprocessorFiles) {
-      state_.error = "error: C++ preprocessor file inventory exceeds its bound";
+      state_.error = "error: C++ artifact budget exhausted: preprocessor files (limit " +
+                     std::to_string(kMaxPreprocessorFiles) + ")";
     }
   }
 

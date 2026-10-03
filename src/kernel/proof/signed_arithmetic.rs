@@ -44,6 +44,12 @@ pub(crate) enum SignedArithmeticRelation {
 enum SignedArithmeticAtomToken {
     Constant(u32),
     Variable(Variable),
+    // An opaque signed observation of the low word; it carries no fact
+    // about the original 64-bit value. Keep its identity distinct.
+    Narrow64Variable(Variable),
+    Narrow64Expression,
+    NativeConstant(u64),
+    NativeBinary(SignedArithmeticBinaryOperator),
     PureFunction { name: String, arity: usize },
     Binary(SignedArithmeticBinaryOperator),
     UnaryNot,
@@ -93,16 +99,36 @@ impl SignedArithmeticAtom {
         }
     }
 
+    /// Whether this atom is a sign-bit flip `v ^ 2^31`, the operand form a
+    /// 32-bit unsigned order is spelled with
+    /// (`ConditionTerm::unsigned_less_than`).
+    pub(crate) fn is_sign_bit_flip(&self) -> bool {
+        const SIGN_BIT: SignedArithmeticAtomToken =
+            SignedArithmeticAtomToken::Constant(0x8000_0000);
+        matches!(
+            self.tokens.first(),
+            Some(SignedArithmeticAtomToken::Binary(
+                SignedArithmeticBinaryOperator::BitwiseXor
+            ))
+        ) && (self.tokens.get(1) == Some(&SIGN_BIT) || self.tokens.last() == Some(&SIGN_BIT))
+    }
+
     fn is_opaque_root(&self) -> bool {
         matches!(
             self.tokens.first(),
             Some(SignedArithmeticAtomToken::Variable(_))
+                | Some(SignedArithmeticAtomToken::Narrow64Variable(_))
+                | Some(SignedArithmeticAtomToken::Narrow64Expression)
                 | Some(SignedArithmeticAtomToken::PureFunction { .. })
         ) && self.tokens.iter().all(|token| {
             matches!(
                 token,
                 SignedArithmeticAtomToken::Constant(_)
                     | SignedArithmeticAtomToken::Variable(_)
+                    | SignedArithmeticAtomToken::Narrow64Variable(_)
+                    | SignedArithmeticAtomToken::Narrow64Expression
+                    | SignedArithmeticAtomToken::NativeConstant(_)
+                    | SignedArithmeticAtomToken::NativeBinary(_)
                     | SignedArithmeticAtomToken::PureFunction { .. }
             )
         })
@@ -155,6 +181,52 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             }
             Bitvector32Term::Variable(variable) => {
                 push_token!(SignedArithmeticAtomToken::Variable(*variable));
+            }
+            Bitvector32Term::UInt32From64(value) => {
+                if let Bitvector32Term::Variable(variable) = value.as_ref() {
+                    push_token!(SignedArithmeticAtomToken::Narrow64Variable(*variable));
+                    continue;
+                }
+                // The full native expression is an opaque signed low-word
+                // observation. Encode its identity iteratively, without
+                // assuming that its arithmetic does not wrap or deriving any
+                // bound on its signed result.
+                push_token!(SignedArithmeticAtomToken::Narrow64Expression);
+                let mut native_pending = vec![value.as_ref()];
+                while let Some(native) = native_pending.pop() {
+                    if crate::instrumentation::deadline_exceeded_with_work(1) {
+                        return None;
+                    }
+                    let (left, right, operator) = match native {
+                        Bitvector32Term::Variable(variable) => {
+                            push_token!(SignedArithmeticAtomToken::Variable(*variable));
+                            continue;
+                        }
+                        Bitvector32Term::UInt64Constant(value) => {
+                            push_token!(SignedArithmeticAtomToken::NativeConstant(*value));
+                            continue;
+                        }
+                        Bitvector32Term::UInt64Add(a, b) => {
+                            (a, b, SignedArithmeticBinaryOperator::Add)
+                        }
+                        Bitvector32Term::UInt64Subtract(a, b) => {
+                            (a, b, SignedArithmeticBinaryOperator::Subtract)
+                        }
+                        Bitvector32Term::UInt64Multiply(a, b) => {
+                            (a, b, SignedArithmeticBinaryOperator::Multiply)
+                        }
+                        Bitvector32Term::UInt64Divide(a, b) => {
+                            (a, b, SignedArithmeticBinaryOperator::Divide)
+                        }
+                        Bitvector32Term::UInt64Remainder(a, b) => {
+                            (a, b, SignedArithmeticBinaryOperator::Remainder)
+                        }
+                        _ => return None,
+                    };
+                    push_token!(SignedArithmeticAtomToken::NativeBinary(operator));
+                    native_pending.push(right);
+                    native_pending.push(left);
+                }
             }
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 push_token!(SignedArithmeticAtomToken::PureFunction {
@@ -1575,11 +1647,18 @@ fn signed_atom_work(atom: &SignedArithmeticAtom) -> usize {
             SignedArithmeticAtomToken::Constant(value) => {
                 (u32::BITS - value.leading_zeros()) as usize + 1
             }
-            SignedArithmeticAtomToken::Variable(_) => 1,
+            SignedArithmeticAtomToken::Variable(_)
+            | SignedArithmeticAtomToken::Narrow64Variable(_) => 1,
             SignedArithmeticAtomToken::PureFunction { name, arity } => {
                 name.len().saturating_add(*arity).saturating_add(1)
             }
-            SignedArithmeticAtomToken::Binary(_) | SignedArithmeticAtomToken::UnaryNot => 1,
+            SignedArithmeticAtomToken::NativeConstant(value) => {
+                (u64::BITS - value.leading_zeros()) as usize + 1
+            }
+            SignedArithmeticAtomToken::Narrow64Expression
+            | SignedArithmeticAtomToken::NativeBinary(_)
+            | SignedArithmeticAtomToken::Binary(_)
+            | SignedArithmeticAtomToken::UnaryNot => 1,
         };
         units.saturating_add(token_units)
     })
@@ -2471,26 +2550,57 @@ fn comparison_proposition_matches(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
-    let (expected_value, expected_left, expected_right) = match (comparison, condition) {
+    let (expected_left, expected_right) = match (comparison, condition, *value) {
         (
             SignedArithmeticComparison::LessThan,
             ConditionTerm::Bitvector32SignedLessThan(left, right),
+            true,
         )
         | (
             SignedArithmeticComparison::LessEqual,
             ConditionTerm::Bitvector32SignedLessEqual(left, right),
+            true,
         )
-        | (SignedArithmeticComparison::Equal, ConditionTerm::Bitvector32Equal(left, right)) => {
-            (true, left.as_ref(), right.as_ref())
-        }
-        (SignedArithmeticComparison::Disequal, ConditionTerm::Bitvector32Equal(left, right)) => {
-            (false, left.as_ref(), right.as_ref())
-        }
+        | (SignedArithmeticComparison::Equal, ConditionTerm::Bitvector32Equal(left, right), true)
+        | (
+            SignedArithmeticComparison::Disequal,
+            ConditionTerm::Bitvector32Equal(left, right),
+            false,
+        )
+        | (
+            SignedArithmeticComparison::LessThan,
+            ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+            false,
+        )
+        | (
+            SignedArithmeticComparison::LessEqual,
+            ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+            false,
+        ) => (left.as_ref(), right.as_ref()),
+        (
+            SignedArithmeticComparison::LessThan,
+            ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+            true,
+        )
+        | (
+            SignedArithmeticComparison::LessEqual,
+            ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+            true,
+        )
+        | (
+            SignedArithmeticComparison::LessThan,
+            ConditionTerm::Bitvector32SignedLessEqual(left, right),
+            false,
+        )
+        | (
+            SignedArithmeticComparison::LessEqual,
+            ConditionTerm::Bitvector32SignedLessThan(left, right),
+            false,
+        ) => (right.as_ref(), left.as_ref()),
         _ => return false,
     };
-    *value == expected_value
-        && equivalent_explicit_with_sign_flip(terms, left, expected_left)
-        && terms.equivalent_explicit(right, expected_right)
+    equivalent_explicit_with_sign_flip(terms, left, expected_left)
+        && equivalent_explicit_with_sign_flip(terms, right, expected_right)
 }
 
 fn equivalent_explicit_with_sign_flip(
@@ -2773,6 +2883,90 @@ fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{Pointer, Variable};
+
+    #[test]
+    fn interval_comparisons_accept_direction_and_truth_equivalents() {
+        let a = Box::new(Bitvector32Term::Constant(10));
+        let b = Box::new(Bitvector32Term::Constant(11));
+        for (condition, truth, comparison) in [
+            (
+                ConditionTerm::Bitvector32SignedLessThan(a.clone(), b.clone()),
+                true,
+                SignedArithmeticComparison::LessThan,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedGreaterThan(b.clone(), a.clone()),
+                true,
+                SignedArithmeticComparison::LessThan,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedLessEqual(b.clone(), a.clone()),
+                false,
+                SignedArithmeticComparison::LessThan,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedGreaterEqual(a.clone(), b.clone()),
+                false,
+                SignedArithmeticComparison::LessThan,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedLessEqual(a.clone(), b.clone()),
+                true,
+                SignedArithmeticComparison::LessEqual,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedGreaterEqual(b.clone(), a.clone()),
+                true,
+                SignedArithmeticComparison::LessEqual,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedLessThan(b.clone(), a.clone()),
+                false,
+                SignedArithmeticComparison::LessEqual,
+            ),
+            (
+                ConditionTerm::Bitvector32SignedGreaterThan(a.clone(), b.clone()),
+                false,
+                SignedArithmeticComparison::LessEqual,
+            ),
+        ] {
+            let goal = Proposition::ConditionIs(condition, truth);
+            let certificate = SignedArithmeticCertificate {
+                nodes: vec![
+                    SignedArithmeticNode::IntervalAtom {
+                        carrier: SignedArithmeticCarrier::SignedInt32,
+                        term: (*a).clone(),
+                        lower: 10,
+                        upper: 10,
+                    },
+                    SignedArithmeticNode::IntervalAtom {
+                        carrier: SignedArithmeticCarrier::SignedInt32,
+                        term: (*b).clone(),
+                        lower: 11,
+                        upper: 11,
+                    },
+                    SignedArithmeticNode::IntervalCompare {
+                        left: 0,
+                        right: 1,
+                        comparison,
+                        result: goal.clone(),
+                    },
+                ],
+                conclusion: 2,
+            };
+            certificate.check(&goal, &[]).unwrap();
+            let invalid = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterThan(a.clone(), b.clone()),
+                true,
+            );
+            let mut bad = certificate;
+            let SignedArithmeticNode::IntervalCompare { result, .. } = &mut bad.nodes[2] else {
+                unreachable!()
+            };
+            *result = invalid.clone();
+            assert!(bad.check(&invalid, &[]).is_err());
+        }
+    }
 
     #[test]
     fn remainder_add_requires_nonnegative_bounded_dividends_and_single_residue_interval() {
@@ -3723,6 +3917,60 @@ mod tests {
     }
 
     #[test]
+    fn narrowed_native_variable_is_an_opaque_distinct_signed_atom() {
+        let variable = Bitvector32Term::Variable(Variable(42));
+        let narrowed = Bitvector32Term::UInt32From64(Box::new(variable.clone()));
+        assert!(is_opaque_atom(&narrowed));
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&narrowed),
+            SignedArithmeticAtom::from_term(&variable)
+        );
+        let changed =
+            Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(43))));
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&narrowed),
+            SignedArithmeticAtom::from_term(&changed)
+        );
+        let computed = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::UInt64Add(
+            Box::new(variable),
+            Box::new(Bitvector32Term::UInt64Constant(2)),
+        )));
+        assert!(is_opaque_atom(&computed));
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&computed),
+            SignedArithmeticAtom::from_term(&narrowed)
+        );
+        assert_eq!(
+            SignedArithmeticAtom::from_term(&narrowed).unwrap().work(),
+            1
+        );
+    }
+
+    #[test]
+    fn narrowed_variable_atom_identity_work_scales_linearly() {
+        let mut previous = None;
+        for size in [16usize, 64, 256, 1024] {
+            let terms: Vec<_> = (0..size)
+                .map(|index| {
+                    Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(
+                        index as u64,
+                    ))))
+                })
+                .collect();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for term in &terms {
+                    assert_eq!(SignedArithmeticAtom::from_term(term).unwrap().work(), 1);
+                }
+            });
+            assert!(work > 0);
+            if let Some(previous) = previous {
+                assert!(work <= 4 * previous + 4);
+            }
+            previous = Some(work);
+        }
+    }
+
+    #[test]
     fn opaque_payload_work_scales_with_application_identity() {
         let mut measurements = Vec::new();
         for payload_size in [8usize, 16, 32, 64] {
@@ -4128,6 +4376,63 @@ mod tests {
                 &[wrong_defined],
             ),
             Err(SignedArithmeticCheckError::InvalidDefinedness(2))
+        );
+    }
+}
+
+#[cfg(test)]
+mod narrowed_expression_tests {
+    use super::*;
+
+    #[test]
+    fn narrowed_native_expression_atom_preserves_structure_and_width() {
+        let n = Bitvector32Term::Variable(Variable(100));
+        let native = Bitvector32Term::uint64_subtract(
+            n.clone(),
+            Bitvector32Term::uint64_remainder(n.clone(), Bitvector32Term::UInt64Constant(4)),
+        );
+        let narrow = Bitvector32Term::uint32_from_64(native);
+        assert!(is_opaque_atom(&narrow));
+        let other = Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
+            n.clone(),
+            Bitvector32Term::uint64_remainder(n.clone(), Bitvector32Term::UInt64Constant(3)),
+        ));
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&narrow),
+            SignedArithmeticAtom::from_term(&other)
+        );
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&narrow),
+            SignedArithmeticAtom::from_term(&n)
+        );
+        let unsupported = Bitvector32Term::uint32_from_64(Bitvector32Term::int64_add(
+            n,
+            Bitvector32Term::Int64Constant(1),
+        ));
+        assert!(SignedArithmeticAtom::from_term(&unsupported).is_none());
+    }
+
+    #[test]
+    fn narrowed_native_expression_identity_work_scales_with_selected_expression() {
+        let mut measured = Vec::new();
+        for count in [16, 32, 64, 128] {
+            let mut value = Bitvector32Term::Variable(Variable(100));
+            for i in 0..count {
+                value = Bitvector32Term::uint64_subtract(
+                    value,
+                    Bitvector32Term::Variable(Variable(1000 + i)),
+                );
+            }
+            let narrow = Bitvector32Term::uint32_from_64(value);
+            let (atom, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SignedArithmeticAtom::from_term(&narrow).unwrap()
+            });
+            assert!(atom.is_opaque_root());
+            measured.push(work);
+        }
+        assert!(
+            measured.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+            "{measured:?}"
         );
     }
 }

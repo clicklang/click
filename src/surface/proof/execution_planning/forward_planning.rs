@@ -36,6 +36,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             else_branch,
         } => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             let source_region = environment
                 .source_layout
                 .statement(statement_index)
@@ -111,6 +115,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             ..
         } => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
             let source_region = environment
@@ -165,7 +173,14 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         context,
                         invariant_checks,
                         environment,
-                    )?;
+                    )
+                    .map_err(|error| {
+                        locate_loop_phase_error(
+                            environment,
+                            error,
+                            LoopPhasePlace::Script("initialize"),
+                        )
+                    })?;
                     initialization_path_certificates.push(PathCertificate {
                         case_path: context.case_path.clone(),
                         case_offsets: None,
@@ -211,16 +226,18 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 }
                 .map_err(|refusal| {
                     ClickError::new(format!(
-                        "`{}.loop({loop_index}).preserve`: {}",
+                        "`{}.loop({loop_index}).preserve`: {}{}",
                         environment.function_block.signature().name(),
-                        crate::surface::diagnostics::describe_loop_head_refusal(&refusal)
+                        crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
+                        crate::surface::diagnostics::describe_c_statement_site()
                     ))
                 })?;
                 for preservation in preservation_contexts {
-                    let mut pure_facts = context.pure_facts.to_vec();
-                    pure_facts.extend_from_slice(preservation.pure_facts());
-                    pure_facts.sort();
-                    pure_facts.dedup();
+                    // Retain the checked graph prefix paired with the head's
+                    // resources. The preservation assumptions are its explicit
+                    // delta, not a newly rebuilt equality namespace.
+                    let mut pure_facts = context.pure_facts.clone();
+                    pure_facts.extend(preservation.pure_facts().iter().cloned());
                     if let Some(clause) = loop_clause {
                         let (preservation_tactics, first_generated_tactic_index) =
                             if let Some(tactics) = explicit_tactics {
@@ -232,7 +249,14 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     &pure_facts,
                                     body,
                                     environment,
-                                )?;
+                                )
+                                .map_err(|error| {
+                                    locate_loop_phase_error(
+                                        environment,
+                                        error,
+                                        LoopPhasePlace::PlannedPreservation,
+                                    )
+                                })?;
                                 let mut tactics = clause
                                     .preserve_proof()
                                     .and_then(SourceProof::tactics)
@@ -262,7 +286,18 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             body,
                             *do_while,
                             environment,
-                        )?;
+                        )
+                        .map_err(|error| {
+                            locate_loop_phase_error(
+                                environment,
+                                error,
+                                if explicit_tactics.is_some() {
+                                    LoopPhasePlace::Script("preserve")
+                                } else {
+                                    LoopPhasePlace::PlannedPreservation
+                                },
+                            )
+                        })?;
                         verified_loop_rules.extend(result.nested_loop_rules);
                         final_exit_candidates.extend(result.final_exit_candidates);
                         break_exits.extend(result.break_exits);
@@ -274,7 +309,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     }
                     iteration_contexts.push(PlanningExecutionContext {
                         state: preservation.state().clone(),
-                        pure_facts: pure_facts.into(),
+                        pure_facts,
                         surface_propositions: context.surface_propositions.clone(),
                         recorded_snapshots: context.recorded_snapshots.clone(),
                         case_path: context.case_path.clone(),
@@ -462,6 +497,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
         }
         _ => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             *next_statement_index = environment
                 .source_layout
                 .statement(statement_index)
@@ -519,7 +558,6 @@ fn split_execution_proof_branch_contexts(
             condition,
             "execution proof traversal",
             StatementPrerequisitePolicy::Contextual,
-            true,
             None,
         )? {
             let next = PlanningExecutionContext {
@@ -790,16 +828,18 @@ fn advance_execution_proof_statement(
                 CStatementOutcome::VerificationDiverges => {}
                 CStatementOutcome::UndefinedBehavior(kind) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) produced undefined behavior: {}",
+                        "execution proof traversal for {} statement({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
-                        kind.description()
+                        kind.description(),
+                        crate::surface::diagnostics::describe_c_statement_site()
                     )));
                 }
                 CStatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}\nresource facts in context: {}",
+                        "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
                         describe_runtime_error(&error, &[], &[]),
+                        crate::surface::diagnostics::describe_c_statement_site(),
                         context.state.resources().facts().len()
                     ))
                     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(&error)));
@@ -808,4 +848,17 @@ fn advance_execution_proof_statement(
         }
     }
     Ok(advanced)
+}
+
+/// A refusal from a loop phase proof, restated at the `loop` tactic that owns
+/// it when the loop was written as a frontier-local tactic.
+fn locate_loop_phase_error(
+    environment: &ExecutionProofEnvironment<'_>,
+    error: ClickError,
+    phase: LoopPhasePlace,
+) -> ClickError {
+    match environment.frontier_loop_source {
+        Some(source) => source.locate_phase_error(error, phase),
+        None => error,
+    }
 }

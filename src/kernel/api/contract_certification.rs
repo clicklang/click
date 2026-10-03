@@ -81,7 +81,7 @@ pub(crate) fn contract_resource_condition_cases(
             return None;
         };
         if !path.obligations.iter().all(|obligation| {
-            certification_proves_proposition(assumptions, obligation.proposition())
+            crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
             return None;
         }
@@ -114,7 +114,7 @@ pub(crate) fn contract_resource_condition_cases(
             return None;
         };
         if !path.obligations.iter().all(|obligation| {
-            certification_proves_proposition(assumptions, obligation.proposition())
+            crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
             return None;
         }
@@ -129,8 +129,8 @@ pub(crate) fn contract_resource_condition_cases(
         let mut next = Vec::new();
         for facts in cases {
             let case_assumptions = assumptions_with_propositions(assumptions, &facts);
-            if certification_proves_proposition(&case_assumptions, &guard)
-                || certification_proves_proposition(&case_assumptions, &negated)
+            if crate::kernel::PureFactContext::settles_exactly(&case_assumptions, &guard)
+                || crate::kernel::PureFactContext::settles_exactly(&case_assumptions, &negated)
             {
                 next.push(facts);
                 continue;
@@ -337,7 +337,7 @@ pub fn c_loadability_obligation_impossible_with_assumptions(
     match obligation {
         Proposition::Implies(premise, body) => {
             c_loadability_obligation_impossible_with_assumptions(body, assumptions)
-                && !certification_proves_proposition(
+                && !crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &negate_contract_case_proposition(premise),
                 )
@@ -466,32 +466,6 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
         crate::kernel::record_implicit_reasoning_provenance(assumptions, goal);
     }
     covered
-}
-
-/// Certifies that `proposition` is false: a condition is refuted by
-/// certifying its other polarity, a negation by certifying its body, a
-/// conjunction by refuting a conjunct, a disjunction by refuting both
-/// disjuncts, and anything else by an exact assumed negation.
-fn certification_refutes_proposition(
-    assumptions: &PureFactContext,
-    proposition: &Proposition,
-) -> bool {
-    match proposition {
-        Proposition::ConditionIs(condition, value) => certification_proves_proposition(
-            assumptions,
-            &Proposition::ConditionIs(condition.clone(), !*value),
-        ),
-        Proposition::Not(body) => certification_proves_proposition(assumptions, body),
-        Proposition::And(left, right) => {
-            certification_refutes_proposition(assumptions, left)
-                || certification_refutes_proposition(assumptions, right)
-        }
-        Proposition::Or(left, right) => {
-            certification_refutes_proposition(assumptions, left)
-                && certification_refutes_proposition(assumptions, right)
-        }
-        _ => assumptions.proves_exact(&Proposition::Not(Box::new(proposition.clone()))),
-    }
 }
 
 /// Certifies `left <= right` by the exact rules: two constants compare,
@@ -642,7 +616,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             // quantified index. Variables in the loaded address belong to
             // the base expression (for example the owner parameter), not to
             // that index.
-            Bitvector32Term::MemoryLoad(_, _) => {}
+            Bitvector32Term::MemoryLoad(_, _, _) => {}
             Bitvector32Term::PointerAddress(_) | Bitvector32Term::IntegerToMachine { .. } => {}
         }
     }
@@ -727,7 +701,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                     let premises_hold = premises.iter().all(|premise| {
                         !crate::kernel::assumptions::reasoning_interrupted()
                             && matches!(premise, Proposition::ConditionIs(_, _))
-                            && certification_proves_proposition(assumptions, premise)
+                            && PureFactContext::settles_exactly(assumptions, premise)
                     });
                     premises_hold
                         && match conclusion {
@@ -797,7 +771,7 @@ fn certification_proves_exists_obligation_from_facts(
         let mut goals = Vec::new();
         proposition_conjuncts(body, &mut goals);
         goals.iter().all(|goal| {
-            certification_proves_proposition(&witness_assumptions, goal)
+            PureFactContext::settles_exactly(&witness_assumptions, goal)
                 || loadable_covered_by_fact(&witness_assumptions, goal)
                 // Nested existentials recurse: the inner obligation matches
                 // an inner assumed existential the same way.
@@ -965,18 +939,216 @@ fn format_loan_operation(operation: crate::kernel::LoanRefusalOperation) -> &'st
     }
 }
 
+/// Where one fact of a function's contract entry comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CContractEntryFactOrigin {
+    /// The `0 or 1` range of a `_Bool` parameter.
+    BoolRange,
+    /// The type range of a narrow integer parameter.
+    NarrowRange,
+    /// A fact the lowering of `requires` clause `index` produced beside it.
+    RequirementLowering(usize),
+    /// The lowered `requires` clause `index` itself.
+    Requirement(usize),
+    /// A bound on a counted population at entry.
+    PopulationCount,
+    /// A declared resource quantity.
+    ResourceQuantity,
+    /// Disjointness of the transferred and the borrowed entry clauses.
+    Partition,
+    /// A guard that a stated memory range's extent is well formed.
+    Extent,
+    /// Loadability of a stated clause range at the entry memory.
+    ClauseLoadable,
+    /// A declared fact of a composite resource the entry holds, at any depth.
+    CompositeDefinition,
+    /// A declared fact of a tracked population.
+    PopulationFact,
+    /// A verification condition of a lowered `requires` clause.
+    RequirementObligation,
+    /// A relation the expanded entry resources state: separation, containment.
+    Observable,
+    /// The facts of the instance arm the requirements select.
+    Publication,
+    /// The identity of a registered predicate whose body the entry holds.
+    PredicateIdentity,
+    /// A fact of `requires` clause `index` where that clause is the body of
+    /// a registered predicate: what the predicate says once unfolded.
+    PredicateBody(usize),
+}
+
+/// One fact a function may assume at entry, with where it comes from.
+#[derive(Clone, Debug)]
+pub struct CContractEntryFact {
+    origin: CContractEntryFactOrigin,
+    proposition: Proposition,
+}
+
+impl CContractEntryFact {
+    pub fn origin(&self) -> CContractEntryFactOrigin {
+        self.origin
+    }
+
+    pub fn proposition(&self) -> &Proposition {
+        &self.proposition
+    }
+}
+
+struct ContractEntryFactLog(Vec<CContractEntryFact>);
+
+impl ContractEntryFactLog {
+    /// Assumes `proposition` and records it with its origin.
+    fn assume(
+        &mut self,
+        assumptions: PureFactContext,
+        origin: CContractEntryFactOrigin,
+        proposition: Proposition,
+    ) -> PureFactContext {
+        self.0.push(CContractEntryFact {
+            origin,
+            proposition: proposition.clone(),
+        });
+        assumptions.assume_proposition(proposition)
+    }
+}
+
+/// What a function may assume at its entry, built once from its contract.
+///
+/// The facts are the kernel's lowering of the contract at the entry state:
+/// each `requires` clause, the ranges of its parameters, and what its entry
+/// resources state. A caller applying the function's rule discharges this
+/// same lowering, so a body proved from these facts is proved from what its
+/// callers establish.
+#[derive(Clone, Debug)]
+pub struct CContractEntry {
+    assumptions: PureFactContext,
+    facts: Vec<CContractEntryFact>,
+    /// The propositions of `facts`, for membership.
+    stated: BTreeSet<Proposition>,
+    /// The entry state holding the contract's expanded entry resources.
+    resource_state: CState,
+}
+
+impl CContractEntry {
+    /// The entry facts in the order the contract yields them.
+    pub fn facts(&self) -> &[CContractEntryFact] {
+        &self.facts
+    }
+
+    /// The entry facts as one context.
+    pub(super) fn into_assumptions(self) -> PureFactContext {
+        self.assumptions
+    }
+
+    /// Whether the entry states `proposition`: it is one of the entry facts,
+    /// a conjunction or resource composition of them, or one of them up to
+    /// the names of its bound variables. A lookup, never a search.
+    pub fn states(&self, proposition: &Proposition) -> bool {
+        self.stated.contains(proposition)
+            || self.assumptions.proves_exact(proposition)
+            || self.assumptions.states_required_goal(proposition)
+            || self.resources_supply(proposition)
+    }
+
+    /// Whether `proposition` is the loadability of memory the entry's
+    /// resources hold.
+    fn resources_supply(&self, proposition: &Proposition) -> bool {
+        matches!(proposition, Proposition::CMemoryLoadable { .. })
+            && resources_certify_loadability(
+                &self.resource_state,
+                self.resource_state.resources(),
+                proposition,
+                &self.assumptions,
+            )
+    }
+}
+
+/// Builds the contract entry of `function` called with `arguments` at
+/// `caller_state`, or says why the contract has none.
+pub fn c_function_contract_entry(
+    caller_state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> Result<CContractEntry, String> {
+    let (assumptions, facts, resource_state) =
+        c_function_contract_entry_facts(caller_state, function, arguments)?;
+    let predicate_bodies = function
+        .contract_requires()
+        .iter()
+        .map(|requirement| {
+            function
+                .predicate_unfoldings()
+                .iter()
+                .any(|unfolding| unfolding.body() == requirement)
+        })
+        .collect::<Vec<_>>();
+    let facts = facts
+        .into_iter()
+        .map(|mut fact| {
+            if let CContractEntryFactOrigin::Requirement(index)
+            | CContractEntryFactOrigin::RequirementLowering(index) = fact.origin
+                && predicate_bodies.get(index) == Some(&true)
+            {
+                fact.origin = CContractEntryFactOrigin::PredicateBody(index);
+            }
+            fact
+        })
+        .collect();
+    let mut entry_facts = ContractEntryFactLog(facts);
+    // A `requires` clause that names a registered predicate is lowered to
+    // the predicate's body. Each registered unfolding is definitional, so an
+    // identity whose instantiated body and side obligations the entry proves
+    // holds with it, and is the form a proof names.
+    let mut identities = Vec::new();
+    if let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) {
+        let mut budget = ExecutionBudget::for_new_execution();
+        for unfolding in function.predicate_unfoldings() {
+            let Some((predicate, body)) = instantiate_contract_predicate_unfolding(
+                &entry_state,
+                unfolding,
+                &assumptions,
+                &mut budget,
+            ) else {
+                continue;
+            };
+            if PureFactContext::settles_exactly(&assumptions, &body) {
+                identities.push(predicate);
+            }
+        }
+    }
+    let assumptions = identities
+        .into_iter()
+        .fold(assumptions, |assumptions, identity| {
+            entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::PredicateIdentity,
+                identity,
+            )
+        });
+    let stated = entry_facts
+        .0
+        .iter()
+        .map(|fact| fact.proposition.clone())
+        .collect();
+    Ok(CContractEntry {
+        assumptions,
+        facts: entry_facts.0,
+        stated,
+        resource_state,
+    })
+}
+
 /// Builds the assumptions an exact contract certification runs under, or says
 /// why it could not. The failure text is reported to the user: certification
 /// with no paths and no reason is a dead end for whoever wrote the contract,
 /// so every exit below names what stopped it.
-pub(super) fn c_function_contract_certification_assumptions(
+fn c_function_contract_entry_facts(
     caller_state: &CState,
     function: &CFunction,
     arguments: &[CExpression],
-    mut assumptions: PureFactContext,
-    selection_assumptions: &PureFactContext,
-    authorized_theorem_facts: &[Proposition],
-) -> Result<PureFactContext, String> {
+) -> Result<(PureFactContext, Vec<CContractEntryFact>, CState), String> {
+    let mut assumptions = PureFactContext::new();
+    let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
         crate::kernel::functions::guard_contract_refusal(function.contract_interface())
     {
@@ -1023,43 +1195,6 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         };
     }
-    // Resource-backed loadability is authoritative only after the exact
-    // entry resource context has been expanded. Keep the expansion as a
-    // capability check here; the propositions it produces are still added
-    // below through the ordinary requirement/resource certification path.
-    let entry_resources_for_authority = if entry_state.uses_population_authority_semantics() {
-        super::super::functions::expand_all_composite_resource_facts_at_state(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            &entry_state,
-            &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            entry_state.memory(),
-            &assumptions,
-        )
-    }
-    .unwrap_or_else(|| entry_state.resources().clone());
-    // Selection facts are caller-supplied routing hints, not hypotheses. Only
-    // facts whose authority is independently available at this exact entry
-    // state may enter the assumptions used to lower requirements.
-    for fact in selection_assumptions.prop_facts.iter() {
-        let loadability_authorized = matches!(fact, Proposition::CMemoryLoadable { .. })
-            && resources_certify_loadability(
-                &entry_state,
-                &entry_resources_for_authority,
-                fact,
-                &assumptions,
-            );
-        let theorem_authorized =
-            quantified_predicate_implication_fact(fact) && authorized_theorem_facts.contains(fact);
-        if loadability_authorized || theorem_authorized {
-            assumptions = assumptions.assume_proposition(fact.clone());
-        }
-    }
     // A `_Bool` parameter holds `0` or `1`. Its entry value is a normalized
     // conditional over those constants, so the range disjunction is
     // context-free true; `c_bool_range_fact` checks that shape.
@@ -1068,7 +1203,20 @@ pub(super) fn c_function_contract_certification_assumptions(
             && let CExpression::Value(value) = argument
             && let Some(fact) = c_bool_range_fact(value)
         {
-            assumptions = assumptions.assume_proposition(fact);
+            assumptions =
+                entry_facts.assume(assumptions, CContractEntryFactOrigin::BoolRange, fact);
+        }
+    }
+    // A narrow integer parameter holds a value of its type: the argument was
+    // converted to it, and that conversion owes the range.
+    for argument in arguments {
+        if let CExpression::Value(value) = argument
+            && let Some(facts) = c_narrow_integer_range_facts(value)
+        {
+            for fact in facts {
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::NarrowRange, fact);
+            }
         }
     }
     let mut requirement_obligations = Vec::new();
@@ -1105,13 +1253,9 @@ pub(super) fn c_function_contract_certification_assumptions(
         let path = if let [path] = paths.as_slice() {
             path
         } else {
-            let selection_context =
-                assumptions_with_propositions(&assumptions, &selection_assumptions.pure_facts());
             let proposition_matches = paths
                 .iter()
-                .filter(|path| {
-                    certification_proves_proposition(&selection_context, &path.proposition)
-                })
+                .filter(|path| assumptions.proves_exact(&path.proposition))
                 .collect::<Vec<_>>();
             if let [path] = proposition_matches.as_slice() {
                 *path
@@ -1120,7 +1264,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                     .iter()
                     .filter(|path| {
                         !assumptions_with_propositions(
-                            &selection_context,
+                            &assumptions,
                             &path
                                 .facts
                                 .iter()
@@ -1134,7 +1278,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                     if crate::instrumentation::enabled() {
                         crate::instrumentation::emit(
                             crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                                "contract requirement for {} lowered to {} paths; {} matched the selected surface facts and {} remained consistent",
+                                "contract requirement for {} lowered to {} paths; {} are already stated and {} remained consistent",
                                 function.name(),
                                 paths.len(),
                                 proposition_matches.len(),
@@ -1143,9 +1287,8 @@ pub(super) fn c_function_contract_certification_assumptions(
                         );
                     }
                     return Err(format!(
-                        "`requires` clause {} lowered to {} paths, of which {} matched the \
-                         selected facts and {} stayed consistent; certification needs exactly \
-                         one",
+                        "`requires` clause {} lowered to {} paths, of which {} are already \
+                         stated and {} stayed consistent; the contract entry needs exactly one",
                         requirement_index + 1,
                         paths.len(),
                         proposition_matches.len(),
@@ -1161,26 +1304,39 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         }
         for fact in &path.facts {
-            assumptions = assumptions.assume_proposition(fact.proposition().clone());
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::RequirementLowering(requirement_index),
+                fact.proposition().clone(),
+            );
         }
-        assumptions = assumptions.assume_proposition(path.proposition.clone());
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Requirement(requirement_index),
+            path.proposition.clone(),
+        );
     }
     // Counted populations are nonnegative by construction. Quantified entry
     // resource clauses may use a count-related C expression before the
     // required resource context itself has been evaluated, so make this
     // representation invariant explicit first.
     for population in entry_state.counted_populations.iter() {
-        assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
-                population.count.clone(),
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationCount,
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(
+                    Bitvector32Term::Constant(0),
+                    population.count.clone(),
+                ),
+                true,
             ),
-            true,
-        ));
+        );
     }
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         &entry_state,
         function.resource_requires(),
+        function.composite_resource_definitions(),
         &assumptions,
         &mut budget,
     ) {
@@ -1201,8 +1357,21 @@ pub(super) fn c_function_contract_certification_assumptions(
         }
     };
     for proposition in quantity_assumptions {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::ResourceQuantity,
+            proposition,
+        );
     }
+    // The trusted contract-entry builder creates its admissible premise context.
+    // Attach the selected caller input to that context once, before the
+    // contract clauses are evaluated; clause reads never publish a frame.
+    caller_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
+    entry_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
     let (required_resources, required_entry_clauses) =
         match evaluate_function_resource_context_with_metadata(
             &entry_state,
@@ -1225,17 +1394,15 @@ pub(super) fn c_function_contract_certification_assumptions(
                 ));
             }
         };
-    // The entry partition, authorized here rather than accepted from the
-    // proof: a transferred clause and a borrowed `views` clause of this
-    // contract denote disjoint memory. The premise is derivable from the
-    // contract's own clause list, which is what this recomputes from
-    // `function.resource_requires()` — the analogue of the way a `viewable`
-    // entry fact is authorized above from the resources the same clauses
-    // supply. `functions::contract_entry_partition_facts` carries the rule
+    // The entry partition: a transferred clause and a borrowed `views`
+    // clause of this contract denote disjoint memory. The proof side spells
+    // the same facts from the same clause list
+    // (`evaluate_entry_resource_context`) and keeps the ones this entry
+    // states. `functions::contract_entry_partition_facts` carries the rule
     // and its soundness argument; the fail-closed call-site planner is what
     // discharges the claim, so a caller owes nothing extra for it.
     for fact in crate::kernel::contract_entry_partition_facts(&required_entry_clauses) {
-        assumptions = assumptions.assume_proposition(fact);
+        assumptions = entry_facts.assume(assumptions, CContractEntryFactOrigin::Partition, fact);
     }
     // Each clause states its own range, and the proof side holds each one as
     // written: its byte-count guards and its loadability at entry. The
@@ -1264,7 +1431,8 @@ pub(super) fn c_function_contract_certification_assumptions(
             if guard_is_false {
                 well_formed = false;
             } else {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1272,16 +1440,20 @@ pub(super) fn c_function_contract_certification_assumptions(
             continue;
         }
         let width = range.element_width();
-        assumptions = assumptions.assume_proposition(Proposition::CMemoryLoadable {
-            memory: entry_state.memory().clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(width),
-            ),
-        });
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::ClauseLoadable,
+            Proposition::CMemoryLoadable {
+                memory: entry_state.memory().clone(),
+                base: range
+                    .base()
+                    .offset_by_elements(range.start().clone(), width),
+                bytes: Bitvector32Term::multiply(
+                    Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
+                    Bitvector32Term::Constant(width),
+                ),
+            },
+        );
     }
     for fact in required_resources.facts() {
         // Owned ranges carry their byte-count guards exactly as viewed ranges
@@ -1298,25 +1470,20 @@ pub(super) fn c_function_contract_certification_assumptions(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
     }
-    let expanded = if entry_state.uses_population_authority_semantics() {
+    // A declared fact may read a tracked population (`count(...)`), which
+    // only the entry state holds, so the facts are evaluated at the state.
+    let expanded =
         super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts_and_propositions(
-            &required_resources,
-            function.composite_resource_definitions(),
-            entry_state.memory(),
-            &assumptions,
-        )
-    };
+        );
     let (expanded_resources, resource_definition_facts) = expanded.ok_or_else(|| {
         "could not evaluate the composite resource facts required at the contract entry".to_string()
     })?;
@@ -1336,12 +1503,17 @@ pub(super) fn c_function_contract_certification_assumptions(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
     }
     for proposition in resource_definition_facts {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::CompositeDefinition,
+            proposition,
+        );
     }
     let population_facts = evaluate_resource_population_fact_propositions(
         &required_resources,
@@ -1354,7 +1526,11 @@ pub(super) fn c_function_contract_certification_assumptions(
         "could not evaluate the tracked populations of the contract entry resources".to_string()
     })?;
     for fact in population_facts {
-        assumptions = assumptions.assume_proposition(fact.proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationFact,
+            fact.proposition,
+        );
     }
     let expanded_required_resources = (if entry_state.uses_population_authority_semantics() {
         super::super::functions::expand_all_composite_resource_facts_at_state(
@@ -1483,10 +1659,14 @@ pub(super) fn c_function_contract_certification_assumptions(
         let Some(count) = entry_state.counted_population(name, arguments) else {
             continue;
         };
-        assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
-            true,
-        ));
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationCount,
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
+                true,
+            ),
+        );
     }
     if !requirement_obligations.iter().all(|obligation| {
         // Definedness travels with the assumption. A heap-dependent
@@ -1505,7 +1685,7 @@ pub(super) fn c_function_contract_certification_assumptions(
             return true;
         }
 
-        certification_proves_proposition(&assumptions, obligation.proposition())
+        assumptions.proves_exact(obligation.proposition())
             || resources_certify_loadability(
                 &entry_state,
                 &entry_resources,
@@ -1531,7 +1711,11 @@ pub(super) fn c_function_contract_certification_assumptions(
         );
     }
     for obligation in requirement_obligations {
-        assumptions = assumptions.assume_proposition(obligation.proposition().clone());
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::RequirementObligation,
+            obligation.proposition().clone(),
+        );
     }
     let observable_facts = entry_resources
         .observable_facts(&assumptions)
@@ -1550,14 +1734,16 @@ pub(super) fn c_function_contract_certification_assumptions(
             format!("the contract entry resources are not a valid context: {detail}")
         })?;
     for proposition in observable_facts {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Observable,
+            proposition,
+        );
     }
     entry_state = entry_state.with_resource_context(entry_resources.clone());
-    // The contract-entry publication, derived here rather than accepted from
-    // the caller: the arms the requirements refute and the facts of the arm
-    // they leave. Contract lowering publishes exactly this to the checked
-    // execution, so the two entry contexts agree instead of the execution
-    // assuming a premise certification cannot derive.
+    // The contract-entry publication: the arms the requirements refute and
+    // the facts of the arm they leave, which a proof starts from as part of
+    // the entry.
     let publication = crate::kernel::publish_instance_arms(
         &entry_resources,
         function.composite_resource_definitions(),
@@ -1569,9 +1755,13 @@ pub(super) fn c_function_contract_certification_assumptions(
         .into_iter()
         .chain(publication.arm_facts)
     {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Publication,
+            proposition,
+        );
     }
-    Ok(assumptions)
+    Ok((assumptions, entry_facts.0, entry_state))
 }
 
 pub(super) fn instantiate_contract_predicate_unfolding(
@@ -1591,7 +1781,7 @@ pub(super) fn instantiate_contract_predicate_unfolding(
     predicate_obligations
         .iter()
         .chain(&body_obligations)
-        .all(|obligation| certification_proves_proposition(assumptions, obligation))
+        .all(|obligation| assumptions.proves_exact(obligation))
         .then_some((predicate, body))
 }
 
@@ -2232,183 +2422,6 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
     }
 }
 
-/// Collects one-point-rule witness candidates for an existential body: any
-/// conjunct shaped `var == term` (on either side) pins the bound variable to
-/// `term`, provided `term` does not itself mention the variable.
-fn exists_equality_witness_candidates(
-    var: Variable,
-    body: &Proposition,
-    candidates: &mut Vec<Bitvector32Term>,
-) {
-    match body {
-        Proposition::And(left, right) => {
-            exists_equality_witness_candidates(var, left, candidates);
-            exists_equality_witness_candidates(var, right, candidates);
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-            let bound = Bitvector32Term::Variable(var);
-            for (side, other) in [(left, right), (right, left)] {
-                let mentions_var = crate::kernel::reasoning::substitute_bitvector_variable(
-                    other,
-                    var,
-                    &Bitvector32Term::Constant(0),
-                ) != **other;
-                if **side == bound && !mentions_var {
-                    candidates.push((**other).clone());
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Proves an order condition against a constant by removing an additive
-/// constant shift from the term side, when the assumptions prove the shifted
-/// addition overflow-free (the executing code already checked it). For
-/// example `x + 1 > 0` becomes `x >= 0` under `!AddOverflows(x, 1)`.
-fn shifted_order_condition_proven(
-    assumptions: &PureFactContext,
-    condition: &ConditionTerm,
-    value: bool,
-) -> bool {
-    if !value {
-        return false;
-    }
-    // Normalize to `left OP right` with OP in {<, <=}.
-    let (left, right, strict) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, true),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, false),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (right, left, true),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (right, left, false),
-        _ => return false,
-    };
-    let overflow_free = |base: &Bitvector32Term, shift: u32| {
-        // Any exact strict signed upper bound on `base` keeps `base + 1`
-        // below overflow: the bound itself is an int32 and therefore at
-        // most INT_MAX. This is the same direct increment certificate the
-        // executor uses for `x < capacity` before evaluating `x + 1`.
-        if shift == 1 && assumptions.has_exact_strict_upper_bound(base) {
-            return true;
-        }
-        let exact = assumptions.proves_exact(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(base.clone()),
-                Box::new(Bitvector32Term::Constant(shift)),
-            ),
-            false,
-        )) || assumptions.proves_exact(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(Bitvector32Term::Constant(shift)),
-                Box::new(base.clone()),
-            ),
-            false,
-        ));
-        if exact {
-            return true;
-        }
-        // A recorded overflow fact may write the operand through loads at a
-        // different snapshot; compare canonically.
-        let canonical_base = canonicalize_atomic_loads(base);
-        let recorded = assumptions.condition_facts.iter().any(|(condition, value)| {
-            !*value
-                && match condition {
-                    ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                        (matches!(right.as_ref(), Bitvector32Term::Constant(c) if *c == shift)
-                            && canonicalize_atomic_loads(left) == canonical_base)
-                            || (matches!(left.as_ref(), Bitvector32Term::Constant(c) if *c == shift)
-                                && canonicalize_atomic_loads(right) == canonical_base)
-                    }
-                    _ => false,
-                }
-        });
-        if recorded {
-            return true;
-        }
-        // Overflow-freedom also follows from a proven bound keeping the
-        // shifted sum inside the signed range.
-        let signed_shift = shift as i32;
-        if signed_shift > 0 {
-            let le_bound = Bitvector32Term::Constant((i32::MAX - signed_shift) as u32);
-            let le = ConditionTerm::signed_less_equal(base.clone(), le_bound);
-            let lt_bound = Bitvector32Term::Constant((i32::MAX - signed_shift + 1) as u32);
-            let lt = ConditionTerm::signed_less_than(base.clone(), lt_bound);
-            assumptions.proves_exact(&Proposition::ConditionIs(le.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&le, true)
-                || assumptions.proves_exact(&Proposition::ConditionIs(lt.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&lt, true)
-        } else if signed_shift < 0 {
-            let bound = Bitvector32Term::Constant((i32::MIN - signed_shift) as u32);
-            let condition = ConditionTerm::signed_less_equal(bound, base.clone());
-            assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
-        } else {
-            true
-        }
-    };
-    // `a + 1 <= b` follows from `a < b` for any terms when `a + 1` is
-    // provably overflow-free; this converts a strict requirement into the
-    // non-strict form a successor produces.
-    if !strict {
-        let (base, shift) = split_additive_constant(left);
-        if shift == 1 {
-            // `a < b` alone implies both that `a + 1` cannot overflow
-            // (`a < b <= i32::MAX`) and the goal `a + 1 <= b`.
-            let strict_form = ConditionTerm::signed_less_than(base, right.as_ref().clone());
-            if certification_proves_proposition(
-                assumptions,
-                &Proposition::ConditionIs(strict_form, true),
-            ) {
-                return true;
-            }
-        }
-    }
-    let shifted = match (left.as_ref(), right.as_ref()) {
-        (shifted_term, Bitvector32Term::Constant(bound)) => {
-            let (base, shift) = split_additive_constant(shifted_term);
-            if shift == 0 || !overflow_free(&base, shift) {
-                return false;
-            }
-            let Some(new_bound) = (*bound as i32).checked_sub(shift as i32) else {
-                return false;
-            };
-            (base, Bitvector32Term::Constant(new_bound as u32), false)
-        }
-        (Bitvector32Term::Constant(bound), shifted_term) => {
-            let (base, shift) = split_additive_constant(shifted_term);
-            if shift == 0 || !overflow_free(&base, shift) {
-                return false;
-            }
-            let Some(new_bound) = (*bound as i32).checked_sub(shift as i32) else {
-                return false;
-            };
-            (Bitvector32Term::Constant(new_bound as u32), base, true)
-        }
-        _ => return false,
-    };
-    let (new_left, new_right, constant_on_left) = shifted;
-    let condition = match (strict, constant_on_left) {
-        (true, false) | (true, true) => ConditionTerm::signed_less_than(new_left, new_right),
-        (false, _) => ConditionTerm::signed_less_equal(new_left, new_right),
-    };
-    certification_proves_proposition(assumptions, &Proposition::ConditionIs(condition, true))
-}
-
-/// Compares two range folds up to renaming of their bound accumulator and
-/// item variables; bound variables are freshened per lowering pass.
-///
-/// Renaming the right fold's binders to the left fold's and comparing the two
-/// bodies syntactically is not that comparison. Substituting `right_acc :=
-/// left_acc` into the right body merges the right body's *free* occurrences of
-/// `left_acc` with the left body's *bound* ones, so a fold that returns its
-/// initial value and a fold that returns the enclosing accumulator compare
-/// equal whenever the two happen to share an id — which fold binder names,
-/// hashed into a shared id space, readily do. The kernel's snapshot-aware
-/// alpha identity keeps bound and free occurrences apart by construction, so
-/// ask it instead.
-fn range_folds_alpha_equivalent(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-    crate::kernel::proof::fact_keys::bitvector_folds_alpha_equivalent(left, right) == Some(true)
-}
-
 /// Splits both offsets into non-constant atoms plus a constant shift,
 /// resolves atoms whose scaled values equality facts pin to a constant, and
 /// requires the remaining atoms to match pairwise. Runs the bounded constant
@@ -2544,230 +2557,57 @@ fn pointer_offsets_equal_with_resolved_atoms(
     right_atoms.is_empty()
 }
 
-/// The load terms a term denotes: the term itself when it is a load,
-/// plus every load one equality fact away.
-fn load_forms_of<'a>(
-    assumptions: &'a PureFactContext,
-    term: &'a Bitvector32Term,
-) -> Vec<(&'a CMemory, &'a Pointer)> {
-    let mut loads = Vec::new();
-    if let Bitvector32Term::MemoryLoad(memory, pointer) = term {
-        loads.push((&**memory, pointer.as_ref()));
-    }
-    for (condition, value) in assumptions.condition_facts.iter() {
-        if !*value {
-            continue;
-        }
-        let ConditionTerm::Bitvector32Equal(fact_left, fact_right) = condition else {
-            continue;
-        };
-        for (fact_term, fact_load) in [(fact_left, fact_right), (fact_right, fact_left)] {
-            if fact_term.as_ref() != term {
-                continue;
-            }
-            if let Bitvector32Term::MemoryLoad(memory, pointer) = fact_load.as_ref() {
-                loads.push((&**memory, pointer.as_ref()));
-            }
-        }
-    }
-    loads
-}
-
-/// Certifies an equality by resolving each side to a load term (itself,
-/// or one equality fact away) and proving some pair of forms denotes one
-/// framed cell: same block, offsets equal with constant-resolved atoms, and
-/// the loaded cell provably unchanged between the two snapshots.
-fn certification_proves_equality_via_load_fact(
+/// Whether a universally quantified fact, instantiated at the terms of
+/// `condition`, states that condition with premises `premise_holds` accepts.
+/// The instantiation is read off the condition; nothing is searched for.
+pub(crate) fn condition_holds_by_instantiated_fact(
     assumptions: &PureFactContext,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    condition: &ConditionTerm,
+    value: bool,
+    premise_holds: &dyn Fn(&Proposition) -> bool,
 ) -> bool {
-    let left_loads = load_forms_of(assumptions, left);
-    if left_loads.is_empty() {
-        return false;
-    }
-    let right_loads = load_forms_of(assumptions, right);
-    left_loads.iter().any(|(left_memory, left_pointer)| {
-        right_loads.iter().any(|(right_memory, right_pointer)| {
-            left_pointer.block == right_pointer.block
-                && pointer_offsets_equal_with_resolved_atoms(
-                    &left_pointer.offset,
-                    &right_pointer.offset,
-                    assumptions,
-                )
-                && [left_pointer, right_pointer].into_iter().any(|pointer| {
-                    crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                        &Bitvector32Term::MemoryLoad(
-                            (*left_memory).clone().into(),
-                            Box::new((*pointer).clone()),
-                        ),
-                        &Bitvector32Term::MemoryLoad(
-                            (*right_memory).clone().into(),
-                            Box::new((*pointer).clone()),
-                        ),
-                        assumptions,
-                    )
-                })
-        })
-    })
-}
-
-pub(crate) fn certification_proves_proposition(
-    assumptions: &PureFactContext,
-    proposition: &Proposition,
-) -> bool {
-    if assumptions.proves_exact(proposition) {
-        return true;
-    }
-    if matches!(
-        proposition,
-        Proposition::ForAll { .. } | Proposition::Exists { .. } | Proposition::Implies(..)
-    ) && assumptions.states_required_goal(proposition)
-    {
-        // Contract lowering freshens binders independently of proof facts.
-        // Use the checked, typed alpha-identity index for every quantified
-        // sort, including algebraic path witnesses. This recognizes an
-        // established quantified fact, including a conditional one whose
-        // antecedent also has fresh binders; it never invents a witness.
-        return true;
-    }
-    let directly_proven = match proposition {
-        // Initialization evidence follows the same checked memory edges used
-        // by typed reads; value equality alone cannot establish it.
-        Proposition::CMemoryReadDefined {
-            memory,
-            pointer,
-            value_type,
-        } => assumptions.proves_memory_read_defined(memory, pointer, *value_type),
-        // Order conditions use the deterministic bounded order prover; the
-        // fuel-dependent simp decision procedure stays out of certification.
-        Proposition::ConditionIs(condition, value)
-            if assumptions.proves_order_condition_for_memory_resolution(condition, *value) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(condition, value)
-            if shifted_order_condition_proven(assumptions, condition, *value) =>
-        {
-            true
-        }
-        // `defined(value + 1)` lowers to this exact non-overflow condition.
-        // Contract certification deliberately avoids the fuel-dependent simp
-        // solver, so apply the same narrow named rule as the surface proof:
-        // one indexed `value < INT32_MAX` fact is sufficient.
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
-            false,
-        ) if amount.as_ref() == &Bitvector32Term::Constant(1)
-            && has_exact_strict_increment_max_bound(assumptions, value) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if range_folds_alpha_equivalent(left, right) =>
-        {
-            true
-        }
-        // A definedness condition is certified by the exact overflow rules:
-        // the operands' signed intervals from the context's order facts.
-        Proposition::ConditionIs(
-            condition @ (ConditionTerm::Bitvector32SignedAddOverflows(..)
-            | ConditionTerm::Bitvector32SignedSubtractOverflows(..)
-            | ConditionTerm::Bitvector32SignedMultiplyOverflows(..)),
-            value,
-        ) if assumptions.decide_from_overflow_facts(condition) == Some(*value) => true,
-        // Both sides resolve to one known constant through equality facts
-        // and per-load snapshot bridging (deterministic and fuel-free).
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if assumptions.constants_known_equal_after_normalization(left, right) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if assumptions
-                .exact_signed_intervals_equal(left, right)
-                .is_some_and(|equal| equal) =>
-        {
-            true
-        }
-        // A signed comparison whose sides both resolve to known constants
-        // through equality facts and per-load snapshot bridging.
-        Proposition::ConditionIs(condition, value)
-            if assumptions
-                .signed_comparison_by_constant_normalization(condition)
-                .is_some_and(|known| known == *value) =>
-        {
-            true
-        }
-        // One side equals a recorded load term by an equality fact and
-        // the two loads denote the same framed cell.
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if certification_proves_equality_via_load_fact(assumptions, left, right) =>
-        {
-            true
-        }
-        Proposition::And(left, right) => {
-            certification_proves_proposition(assumptions, left)
-                && certification_proves_proposition(assumptions, right)
-        }
-        Proposition::Or(left, right) => {
-            certification_proves_proposition(assumptions, left)
-                || certification_proves_proposition(assumptions, right)
-        }
-        Proposition::Exists {
-            var,
-            sort: sort @ (Sort::CInt32 | Sort::Bitvector32 | Sort::CPointer(_)),
-            body,
-            ..
-        } => {
-            // An assumed existential proves the goal up to renaming of the
-            // bound variable; bound variables are freshened per lowering
-            // pass, so exact matching alone would never fire.
-            let alpha_matched = assumptions.prop_facts.iter().any(|fact| {
-                let Proposition::Exists {
-                    var: fact_var,
-                    sort: fact_sort,
-                    body: fact_body,
-                    ..
-                } = fact
-                else {
-                    return false;
-                };
-                if fact_sort != sort {
-                    return false;
-                }
-                let (renamed, goal_body) =
-                    freshen_proposition_bodies(sort, *fact_var, fact_body, *var, body);
-                if propositions_alpha_equivalent(&renamed, &goal_body) {
-                    return true;
-                }
-                // Weakening under the binder: an existential of a
-                // conjunction proves the existential of any subset of its
-                // conjuncts.
-                let mut fact_conjuncts = Vec::new();
-                proposition_conjuncts(&renamed, &mut fact_conjuncts);
-                let mut goal_conjuncts = Vec::new();
-                proposition_conjuncts(&goal_body, &mut goal_conjuncts);
-                goal_conjuncts.iter().all(|goal| {
-                    fact_conjuncts
-                        .iter()
-                        .any(|fact| propositions_alpha_equivalent(fact, goal))
-                })
-            });
-            if alpha_matched {
-                return true;
-            }
-            // One-point rule: `P[t/x]` proves `exists x. P` when a conjunct
-            // pins `x` to a witness term `t`.
-            let mut candidates = Vec::new();
-            exists_equality_witness_candidates(*var, body, &mut candidates);
-            candidates.into_iter().any(|witness| {
-                let instantiated =
-                    substitute_bitvector_variable_in_proposition(body, *var, &witness);
-                certification_proves_proposition(assumptions, &instantiated)
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "certification proposition",
+        "certification proof: quantified condition facts",
+        || {
+            assumptions.prop_facts.iter().any(|fact| {
+                assumptions
+                    .forall_instantiations_for_condition(fact, condition)
+                    .into_iter()
+                    .any(|instance| {
+                        let mut body = &instance;
+                        let mut premises = Vec::new();
+                        while let Proposition::Implies(premise, rest) = body {
+                            premises.push(premise.as_ref());
+                            body = rest;
+                        }
+                        let Proposition::ConditionIs(_, instance_value) = body else {
+                            return false;
+                        };
+                        *instance_value == value
+                            && c_condition_facts_equivalent_for_memory_resolution(
+                                body,
+                                &Proposition::ConditionIs(condition.clone(), value),
+                                assumptions,
+                            )
+                            && premises.into_iter().all(premise_holds)
+                    })
             })
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+        },
+    )
+}
+
+/// Whether a bare condition holds by the memory-resolution rules: the
+/// facts state it about the same values read at other snapshots, or the
+/// bounded order prover derives it. This is what `transport` checks.
+pub(crate) fn condition_holds_by_memory_resolution(
+    assumptions: &PureFactContext,
+    condition: &ConditionTerm,
+    value: bool,
+) -> bool {
+    match (condition, value) {
+        (ConditionTerm::Bitvector32Equal(left, right), true) => {
             names_of_one_cell_framed(left, right, assumptions)
                 || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions
@@ -2786,170 +2626,19 @@ pub(crate) fn certification_proves_proposition(
                     true,
                 )
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+        (ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
-                || assumptions.pointer_equality_in_graph(left, right)
+                || assumptions.pointers_known_equal(left, right)
         }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
+        (ConditionTerm::PointerOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
         }
-        Proposition::Equal(Term::CValue(left), Term::CValue(right)) => {
-            c_values_proven_equal_for_memory_resolution(left, right, assumptions)
+        _ => {
+            assumptions.proves_order_condition_for_memory_resolution(condition, value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
         }
-        Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_order_condition_for_memory_resolution(condition, *value)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
-        }
-        // A predicate is certified only as an exact assumed fact (above).
-        Proposition::Predicate { .. } => false,
-        // Resource separation: the indexed rule over separation facts,
-        // compositions, and constant bounds.
-        Proposition::CResourceSeparate { left, right } => {
-            assumptions.proves_resource_separate(left, right)
-        }
-        // Loadability: the resource-and-fact rule the loadable prover is.
-        Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-        } => assumptions.proves_memory_loadable(memory, base, bytes),
-        // An implication is certified by refuting its premise or by
-        // certifying its conclusion under the premise.
-        Proposition::Implies(premise, conclusion) => {
-            certification_refutes_proposition(assumptions, premise)
-                || certification_proves_proposition(
-                    &assumptions
-                        .clone()
-                        .assume_proposition(premise.as_ref().clone()),
-                    conclusion,
-                )
-        }
-        // Introduce an arbitrary fresh identity while retaining the entire
-        // ambient context. Its private origin prevents capture even when an
-        // ambient fact uses the same numeric ID, and nested introductions
-        // receive distinct identities.
-        Proposition::ForAll {
-            var,
-            sort: Sort::CInt32 | Sort::Bitvector32,
-            body,
-            ..
-        } => {
-            if crate::kernel::proposition_has_free_bitvector_variable(body, *var) {
-                let Some(witness) = Variable::allocate_fresh() else {
-                    return false;
-                };
-                let introduced = crate::kernel::substitute_int32_variable_in_proposition(
-                    body,
-                    *var,
-                    Bitvector32Term::Variable(witness),
-                );
-                certification_proves_proposition(assumptions, &introduced)
-            } else {
-                certification_proves_proposition(assumptions, body)
-            }
-        }
-        // Everything else is certified only as an exact assumed fact
-        // (above): a containment fact, a resource composition, a negation,
-        // a memory disjointness.
-        _ => false,
-    };
-    if directly_proven {
-        return true;
     }
-
-    if let Proposition::ConditionIs(condition, value) = proposition
-        && crate::instrumentation::measure_operation(
-            "kernel",
-            "certification proposition",
-            "certification proof: quantified condition facts",
-            || {
-                assumptions.prop_facts.iter().any(|fact| {
-                    assumptions
-                        .forall_instantiations_for_condition(fact, condition)
-                        .into_iter()
-                        .any(|instance| {
-                            let mut body = &instance;
-                            let mut premises = Vec::new();
-                            while let Proposition::Implies(premise, rest) = body {
-                                premises.push(premise.as_ref());
-                                body = rest;
-                            }
-                            let Proposition::ConditionIs(_, instance_value) = body else {
-                                return false;
-                            };
-                            instance_value == value
-                                && c_condition_facts_equivalent_for_memory_resolution(
-                                    body,
-                                    &Proposition::ConditionIs(condition.clone(), *value),
-                                    assumptions,
-                                )
-                                && premises.into_iter().all(|premise| {
-                                    certification_proves_proposition(assumptions, premise)
-                                })
-                        })
-                })
-            },
-        )
-    {
-        return true;
-    }
-
-    false
-}
-
-/// Instantiates an explicitly selected pure theorem whose one pointer binder
-/// relates named contract predicates.
-///
-/// The caller supplies only authorities for theorem names that the surface
-/// proof actually applied. Work is therefore proportional to that explicit
-/// certificate input, not to ambient facts or project-wide contracts.
-pub(super) fn certification_proves_predicate_from_verified_pure_implications(
-    assumptions: &PureFactContext,
-    verified_facts: &[Proposition],
-    target: &Proposition,
-) -> bool {
-    let Proposition::Predicate {
-        arguments: target_arguments,
-        ..
-    } = target
-    else {
-        return false;
-    };
-    let Some(target_pointer) = target_arguments.iter().find_map(|argument| match argument {
-        Term::CValue(CValue::Pointer(pointer)) if pointer.pointer().block.is_function() => {
-            Some(pointer)
-        }
-        _ => None,
-    }) else {
-        return false;
-    };
-    verified_facts.iter().any(|fact| {
-        let Proposition::ForAll {
-            var,
-            sort: Sort::CPointer(pointer_type),
-            body,
-            ..
-        } = fact
-        else {
-            return false;
-        };
-        if pointer_type != &target_pointer.c_type() {
-            return false;
-        }
-        let instantiated =
-            substitute_pointer_variable_in_proposition(body, *var, target_pointer.pointer());
-        let mut conclusion = &instantiated;
-        let mut premises = Vec::new();
-        while let Proposition::Implies(premise, rest) = conclusion {
-            premises.push(premise.as_ref());
-            conclusion = rest;
-        }
-        conclusion == target
-            && premises
-                .into_iter()
-                .all(|premise| certification_proves_proposition(assumptions, premise))
-    })
 }
 
 /// Two load variables for one address are equal when the cell is framed
@@ -2966,45 +2655,26 @@ fn names_of_one_cell_framed(
     else {
         return false;
     };
-    let (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) = (
-        crate::kernel::eval::registered_load_origin_for_variable(left_variable),
-        crate::kernel::eval::registered_load_origin_for_variable(right_variable),
+    let (Some(left), Some(right)) = (
+        crate::kernel::eval::registered_load_origin_term_for_variable(left_variable),
+        crate::kernel::eval::registered_load_origin_term_for_variable(right_variable),
     ) else {
         return false;
     };
+    let (
+        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+    ) = (&left, &right)
+    else {
+        return false;
+    };
     left_pointer == right_pointer
+        && left_kind == right_kind
         && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-            &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer)),
-            &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
+            &left,
+            &right,
             assumptions,
         )
-}
-
-fn has_exact_strict_increment_max_bound(
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> bool {
-    let int_max = Bitvector32Term::Constant(i32::MAX as u32);
-    [
-        (
-            ConditionTerm::signed_less_than(value.clone(), int_max.clone()),
-            true,
-        ),
-        (
-            ConditionTerm::signed_greater_than(int_max.clone(), value.clone()),
-            true,
-        ),
-        (
-            ConditionTerm::signed_less_equal(int_max.clone(), value.clone()),
-            false,
-        ),
-        (
-            ConditionTerm::signed_greater_equal(value.clone(), int_max),
-            false,
-        ),
-    ]
-    .into_iter()
-    .any(|(condition, expected)| assumptions.exact_condition_value(&condition) == Some(expected))
 }
 
 fn match_quantified_int32_term(
@@ -3124,77 +2794,8 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
     }
     premises.into_iter().all(|premise| {
         let premise = substitute_bitvector_variables_in_proposition(&premise, &substitutions);
-        certification_proves_proposition(assumptions, &premise)
+        PureFactContext::settles_exactly(assumptions, &premise)
     })
-}
-
-thread_local! {
-    /// Closed quantified facts already proved from the empty context on this
-    /// thread. Scoped to one `VerificationSession`: the proofs may consult
-    /// per-session tables (the load-variable registry, memory provenance), so
-    /// an entry must not outlive the session that established it.
-    static CONTEXT_FREE_FORALL_PROVED: std::cell::RefCell<BTreeSet<Proposition>> =
-        const { std::cell::RefCell::new(BTreeSet::new()) };
-}
-
-/// Forgets every context-free proved fact; `VerificationSession::enter`
-/// calls this alongside the other per-session tables.
-pub(crate) fn clear_context_free_forall_cache() {
-    CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow_mut().clear());
-}
-
-#[cfg(test)]
-pub(crate) fn context_free_forall_cache_len() -> usize {
-    CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow().len())
-}
-
-/// Reuses a closed quantified fact only after the kernel has proved it from
-/// previously proved closed quantified facts. Contract certification sees
-/// the same ordered global theorem facts once per function; this cache keeps
-/// their proof independent of every function entry state. Failures are never
-/// cached because a bounded proof attempt may have observed the active
-/// deadline.
-pub(in crate::kernel) fn certification_proves_context_free_forall(
-    proposition: &Proposition,
-) -> bool {
-    if !matches!(proposition, Proposition::ForAll { .. }) {
-        return false;
-    }
-    if CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow().contains(proposition)) {
-        return true;
-    }
-    let proved_facts = CONTEXT_FREE_FORALL_PROVED
-        .with(|proved| proved.borrow().iter().cloned().collect::<Vec<_>>());
-    let closed_assumptions = assumptions_with_propositions(&PureFactContext::new(), &proved_facts);
-    let proved = certification_proves_proposition(&closed_assumptions, proposition);
-    if proved && crate::instrumentation::exceeded_verification_limit_context().is_none() {
-        CONTEXT_FREE_FORALL_PROVED.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            if cache.len() >= 128 {
-                cache.pop_first();
-            }
-            cache.insert(proposition.clone());
-        });
-    }
-    proved
-}
-
-/// True for a closed universally-quantified implication chain that concludes
-/// in an opaque predicate — the shape of a surface-verified theorem fact.
-fn quantified_predicate_implication_fact(fact: &Proposition) -> bool {
-    let mut body = fact;
-    let mut binders = 0usize;
-    while let Proposition::ForAll { body: inner, .. } = body {
-        binders += 1;
-        body = inner.as_ref();
-    }
-    if binders == 0 {
-        return false;
-    }
-    while let Proposition::Implies(_, rest) = body {
-        body = rest.as_ref();
-    }
-    matches!(body, Proposition::Predicate { .. })
 }
 
 pub(super) fn resources_certify_loadability(

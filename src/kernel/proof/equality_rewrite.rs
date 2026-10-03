@@ -68,11 +68,51 @@ impl ProofFacts {
                 "`rewrite` requires its equality to be an exact available fact".to_string(),
             );
         }
-        let proposition = rewrite_with_admitted_equality(goal, equality)?;
-        Ok(CheckedEqualityRewrite {
-            proposition,
-            facts: self.clone(),
-        })
+        match rewrite_with_admitted_equality(goal, equality) {
+            Ok(proposition) => Ok(CheckedEqualityRewrite {
+                proposition,
+                facts: self.clone(),
+            }),
+            Err(original_error) => {
+                // The explicitly cited read may precede the goal's read of
+                // the same cell. Select only the goal's two atomic operands;
+                // retain and validate their checked snapshot/address bridge
+                // before doing ordinary exact substitution.
+                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(from, to), true) =
+                    equality
+                else {
+                    return Err(original_error);
+                };
+                let is_read = |term: &Bitvector32Term| {
+                    matches!(term, Bitvector32Term::MemoryLoad(..))
+                        || matches!(term, Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable))
+                };
+                if !is_read(from) {
+                    return Err(original_error);
+                }
+                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), _) =
+                    goal
+                else {
+                    return Err(original_error);
+                };
+                for selected in [left, right] {
+                    if !is_read(selected) || selected == from {
+                        continue;
+                    }
+                    let adapted = Proposition::ConditionIs(
+                        ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone()),
+                        true,
+                    );
+                    let Some(facts) = self.with_checked_rewritten_loads(equality, &adapted) else {
+                        continue;
+                    };
+                    if let Ok(proposition) = rewrite_with_admitted_equality(goal, &adapted) {
+                        return Ok(CheckedEqualityRewrite { proposition, facts });
+                    }
+                }
+                Err(original_error)
+            }
+        }
     }
 }
 
@@ -357,6 +397,7 @@ fn rewrite_through_load_variable(
     // Without a live origin, keep the variable's defining snapshot.
     let (memory, pointer) = crate::kernel::registered_load_origin_for_variable(variable)
         .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let rewritten = rewrite_pointer(&pointer);
     if rewritten == pointer {
         return None;
@@ -364,6 +405,7 @@ fn rewrite_through_load_variable(
     Some(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
         memory,
         Box::new(rewritten),
+        kind,
     )))
 }
 
@@ -385,6 +427,7 @@ fn rewrite_through_loaded_pointer_block(
     }
     let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
         .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let rewritten_address = {
         let direct = rewrite_pointer(&address);
         if direct != address {
@@ -396,10 +439,13 @@ fn rewrite_through_loaded_pointer_block(
     let load = crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
         memory,
         Box::new(rewritten_address),
+        kind,
     ));
     let named = match load {
         Bitvector32Term::Variable(variable) => variable,
-        load @ Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)?.0,
+        load @ Bitvector32Term::MemoryLoad(_, _, _) => {
+            crate::kernel::load_variable_for_term(&load)?.0
+        }
         _ => return None,
     };
     Some(Pointer {
@@ -560,6 +606,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 return Err("`rewrite` algebraic equality does not occur in this goal".to_string());
             }
         };
+        if rewrite.refusal().is_some() {
+            // A refused scope or exhausted work leaves placeholders in the
+            // walker's result; it is not a rewritten goal.
+            return Err(
+                "`rewrite` cannot substitute this equality through a binder in the current goal"
+                    .to_string(),
+            );
+        }
         if !rewrite.changed {
             return Err("`rewrite` equality does not occur in the current goal".to_string());
         }
@@ -806,9 +860,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .collect(),
                     }
                 }
-                Bitvector32Term::MemoryLoad(memory, pointer) => {
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(rewrite_pointer(pointer)))
-                }
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(rewrite_pointer(pointer)),
+                    *kind,
+                ),
                 Bitvector32Term::PointerAddress(pointer) => {
                     Bitvector32Term::PointerAddress(Box::new(rewrite_pointer(pointer)))
                 }
@@ -1093,9 +1149,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
-                Bitvector32Term::MemoryLoad(memory, pointer) => {
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(rewrite_pointer(pointer)))
-                }
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(rewrite_pointer(pointer)),
+                    *kind,
+                ),
                 Bitvector32Term::Variable(_) => {
                     rewrite_through_load_variable(term, rewrite_pointer)
                         .unwrap_or_else(|| term.clone())
@@ -1305,8 +1363,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 Bitvector32Term::UnsignedRemainder(left, right)
             }
             Bitvector32Term::ShiftLeft(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::ShiftLeft(left, right)
+                // The term denotes the shifted bits; signed C overflow is
+                // checked separately during expression evaluation. Preserve
+                // unsigned high-bit results when substitution makes both
+                // operands constant.
+                Bitvector32Term::unsigned_shift_left(
+                    rewrite_term(left, from, to),
+                    rewrite_term(right, from, to),
+                )
             }
             Bitvector32Term::ArithmeticShiftRight(left, right) => {
                 let (left, right) = binary(left, right);
@@ -1472,12 +1536,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             // The memory snapshot is fixed, but its address is an ordinary
             // expression: exact equality substitution is congruent there too.
-            Bitvector32Term::MemoryLoad(memory, pointer) => Bitvector32Term::MemoryLoad(
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, from, to),
                 }),
+                *kind,
             ),
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(Box::new(Pointer {
@@ -1497,7 +1562,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
             | Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => {
-                super::term_rewrite::TermRewrite::for_bits(from, to).bits(term)
+                let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
+                let rewritten = rewrite.bits(term);
+                // The walker reports a scope it will not substitute through,
+                // or exhausted work, by setting a flag and handing back a
+                // placeholder constant. That placeholder is not a rewritten
+                // term: keeping it replaced an unfolded `match` by `0` and
+                // let `rewrite` close false goals. Declining an occurrence is
+                // always a sound substitution, so the term stays as it was.
+                if rewrite.refusal().is_some() {
+                    term.clone()
+                } else {
+                    rewritten
+                }
             }
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
@@ -1533,8 +1610,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     // A mathematical observation of a machine value is still congruent under
     // a checked equality for that machine value.  Keep this bridge narrow:
-    // only the root machine observation and Int32 range-fold endpoints are
-    // exposed, so arbitrary Integer arithmetic does not acquire a new
+    // only root machine observations, scalar application arguments, and
+    // Int32 range-fold endpoints are exposed, so Integer arithmetic has no new
     // rewrite/search path. Re-interning through `from_machine` also folds a
     // rewritten constant to the ordinary mathematical constant while
     // retaining the carrier when it remains symbolic.
@@ -1554,6 +1631,37 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(machine.ty(), value))
                     })
                     .into()
+            }
+            IntegerTerm::PureFunctionApplication(application) => {
+                // Rewrite scalar arguments, preserving captured array memory
+                // and its element type. No snapshot contents are traversed.
+                let arguments = application
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        let value = match argument {
+                            PureFunctionArgument::Value(CValue::Int32(value)) => {
+                                CValue::Int32(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::UInt32(value)) => {
+                                CValue::UInt32(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::Int64(value)) => {
+                                CValue::Int64(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::UInt64(value)) => {
+                                CValue::UInt64(rewrite_term(value, from, to))
+                            }
+                            _ => return argument.clone(),
+                        };
+                        PureFunctionArgument::Value(value)
+                    })
+                    .collect();
+                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                    application.name().to_string(),
+                    arguments,
+                ))
+                .into()
             }
             IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Int32 { start, end },
@@ -1853,6 +1961,10 @@ mod tests {
             block: "rewrite-presentation".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
+        // The load is an `int32` one. A stored value answers only for a read
+        // of its own width, and a load whose width nobody recorded is taken
+        // as the widest scalar access, which no `int32` store supplies.
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let memory = CMemory::new().with_block("rewrite-presentation", 4).store(
             pointer.clone(),
             CValue::Int32(Bitvector32Term::Constant(42)),
@@ -1865,6 +1977,7 @@ mod tests {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let x = Bitvector32Term::Variable(Variable(931));
@@ -1880,6 +1993,64 @@ mod tests {
         assert_eq!(
             obligation.proposition(),
             &equality(y, Bitvector32Term::Constant(42))
+        );
+    }
+
+    #[test]
+    fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "rewrite-selected-read".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let before = CMemory::new().with_block("rewrite-selected-read", 4);
+        let after = before.clone().with_block("local:rewrite-unrelated", 4);
+        let changed = after.clone().store(
+            pointer.clone(),
+            CValue::Int32(Bitvector32Term::Constant(43)),
+        );
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
+        let premise = equality(load(&before), Bitvector32Term::Constant(42));
+        let goal = equality(load(&after), Bitvector32Term::Constant(42));
+        let mut costs = vec![];
+        for size in [16u64, 64, 256, 1024] {
+            let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+            for index in 0..size {
+                facts = facts.with_fact(equality(
+                    Bitvector32Term::Variable(Variable(80_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ));
+            }
+            crate::kernel::eval::clear_load_canonicalization_caches();
+            let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &premise)
+            });
+            assert_eq!(
+                rewritten.unwrap().proposition(),
+                &equality(Bitvector32Term::Constant(42), Bitvector32Term::Constant(42))
+            );
+            assert!(
+                facts
+                    .check_equality_rewrite(
+                        &equality(load(&changed), Bitvector32Term::Constant(42)),
+                        &premise
+                    )
+                    .is_err()
+            );
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|work| *work <= 8), "{costs:?}");
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &premise)
+                .is_err()
         );
     }
 
@@ -2011,6 +2182,7 @@ mod tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(Pointer::symbolic(address)),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 ),
                 true,
@@ -2022,5 +2194,67 @@ mod tests {
             costs.push(work);
         }
         assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+    }
+    #[test]
+    fn rewrite_integer_application_endpoint_keeps_byte_snapshot_and_ignores_its_contents() {
+        let index = Bitvector32Term::Variable(Variable(47));
+        let replacement = Bitvector32Term::Constant(9);
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::equal(index.clone(), replacement.clone()),
+            true,
+        );
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut memory = CMemory::new();
+            for i in 0..size {
+                memory = memory.store(
+                    Pointer::symbolic(Variable(300000 + i)),
+                    CValue::Int32(Bitvector32Term::Constant(i as u32)),
+                );
+            }
+            let array = PureFunctionArgument::ArrayRef {
+                memory,
+                pointer: CValue::typed_pointer(
+                    Pointer::symbolic(Variable(48)),
+                    CType::UInt8Pointer,
+                ),
+                element_type: CType::UInt8,
+            };
+            let application = |endpoint| {
+                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                    "prefix".into(),
+                    vec![
+                        array.clone(),
+                        PureFunctionArgument::Value(CValue::Int32(endpoint)),
+                    ],
+                ))
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    application(index.clone()),
+                    application(replacement.clone()),
+                ),
+                true,
+            );
+            let expected = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    application(replacement.clone()),
+                    application(replacement.clone()),
+                ),
+                true,
+            );
+            let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts
+                    .check_equality_rewrite(&goal, &equality)
+                    .map(|checked| checked.proposition().clone())
+            });
+            assert_eq!(result.unwrap(), expected);
+            costs.push(work);
+        }
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work == costs[0]),
+            "{costs:?}"
+        );
     }
 }

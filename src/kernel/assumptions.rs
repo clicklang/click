@@ -21,6 +21,8 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
+pub(in crate::kernel) use condition_reasoning::uint64_upper_bound_below_sign_bit;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;
@@ -50,7 +52,23 @@ pub(in crate::kernel) fn pointers_equal_with_load_atoms(
     right: &Pointer,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
-    left.block == right.block
+    (left.block == right.block
+        || match (&left.block, &right.block) {
+            (PointerBlock::Symbolic(_), PointerBlock::Symbolic(_)) => {
+                let base = |pointer: &Pointer| Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let (Some(first), Some(second)) = (
+                    super::equality_graph::logical_pointer_read_term(&base(left)),
+                    super::equality_graph::logical_pointer_read_term(&base(right)),
+                ) else {
+                    return false;
+                };
+                terms_equal_with_load_atoms(&first, &second, loads_match)
+            }
+            _ => false,
+        })
         && offsets_equal_with_load_atoms(&left.offset, &right.offset, loads_match)
 }
 
@@ -87,7 +105,7 @@ fn terms_equal_with_load_atoms(
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
     match (left, right) {
-        (Bitvector32Term::MemoryLoad(_, _), Bitvector32Term::MemoryLoad(_, _)) => {
+        (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
             loads_match(left, right)
         }
         // A registered load variable is a load atom too: the same cell named
@@ -101,15 +119,10 @@ fn terms_equal_with_load_atoms(
                 && crate::kernel::is_load_variable(b) =>
         {
             match (
-                crate::kernel::registered_load_origin_for_variable(a),
-                crate::kernel::registered_load_origin_for_variable(b),
+                crate::kernel::registered_load_origin_term_for_variable(a),
+                crate::kernel::registered_load_origin_term_for_variable(b),
             ) {
-                (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) => {
-                    loads_match(
-                        &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer)),
-                        &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
-                    )
-                }
+                (Some(left), Some(right)) => loads_match(&left, &right),
                 _ => false,
             }
         }
@@ -200,9 +213,11 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
 fn load_atoms_equal_ignoring_memories(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     match (left, right) {
         (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
-        ) => pointers_equal_ignoring_memories(left_pointer, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+        ) => {
+            left_kind == right_kind && pointers_equal_ignoring_memories(left_pointer, right_pointer)
+        }
         _ => left == right,
     }
 }
@@ -395,19 +410,20 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
 /// joins equal terms by construction rather than by per-query bridging.
 /// The memory snapshot and cell a load term reads, for a raw load or a
 /// registered load variable.
-fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer)> {
+fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer, LoadKind)> {
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
-            Some(((**memory).clone(), pointer.as_ref().clone()))
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+            Some(((**memory).clone(), pointer.as_ref().clone(), *kind))
         }
         // A load variable's canonical registration carries a placeholder
         // snapshot; its origin registration is the live snapshot it was
         // first minted from, which frame evidence can relate to later
         // snapshots.
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+            let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
             crate::kernel::eval::registered_load_origin_for_variable(variable)
                 .or_else(|| crate::kernel::registered_load_for_variable(variable))
-                .map(|(memory, pointer)| ((*memory).clone(), pointer))
+                .map(|(memory, pointer)| ((*memory).clone(), pointer, kind))
         }
         _ => None,
     }
@@ -825,9 +841,6 @@ thread_local! {
     static NEXT_ASSUMPTIONS_MEMO_ID: Cell<u64> = const { Cell::new(0) };
     static LOGICAL_READ_MEMO_IDS: RefCell<std::collections::HashMap<(u64, u64), u64>> =
         RefCell::new(std::collections::HashMap::new());
-    static EQUAL_FROM_FACTS_MEMO: RefCell<
-        std::collections::HashMap<(u64, Bitvector32Term, Bitvector32Term), bool>,
-    > = RefCell::new(std::collections::HashMap::new());
     static TRANSPORT_EQUAL_MEMO: RefCell<
         std::collections::HashMap<(u64, Bitvector32Term, Bitvector32Term), bool>,
     > = RefCell::new(std::collections::HashMap::new());
@@ -851,7 +864,6 @@ pub(crate) fn clear_assumption_memos() {
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
     LOGICAL_READ_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
-    EQUAL_FROM_FACTS_MEMO.with(|memo| memo.borrow_mut().clear());
     TRANSPORT_EQUAL_MEMO.with(|memo| memo.borrow_mut().clear());
     CONSTANT_NORMALIZATION_MEMO.with(|memo| memo.borrow_mut().clear());
     SIGNED_INTERVAL_MEMO.with(|memo| memo.borrow_mut().clear());
@@ -882,21 +894,81 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
             next.set(id + 1);
             id
         });
-        ids.insert(assumptions.clone(), id);
+        // This table owns identity keys, never contexts used for planning.
+        // Do not keep dependency indexes from every transient restricted
+        // context alive until the next verification boundary. They are
+        // excluded from PureFactContext equality and hashing.
+        let mut key = assumptions.clone();
+        key.atomic_connection_facts = crate::persistent::PersistentMap::default();
+        key.atomic_ground_facts = crate::persistent::PersistentSet::default();
+        key.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        // Lazy query caches may be populated *after* this clone is interned.
+        // The identity table must not own their shared OnceLocks either.
+        key.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        ids.insert(key, id);
         id
     })
+}
+
+#[cfg(test)]
+mod planning_index_memo_lifetime_tests {
+    use super::*;
+
+    #[test]
+    fn memo_identity_does_not_retain_transient_indexes() {
+        clear_assumption_memos();
+        for size in [8u64, 16, 32, 64] {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(size * 1000 + index))),
+                        Box::new(Bitvector32Term::Constant(7)),
+                    ),
+                    true,
+                ));
+            }
+            let cache = std::sync::Arc::downgrade(&context.snapshot_condition_variables);
+            let equality_cache = std::sync::Arc::downgrade(&context.bitvector_equality_facts);
+            let id = assumptions_memo_id(&context);
+            // The identity key exists before the live context populates a
+            // shared cache; dropping only already-built data is insufficient.
+            let _ = context.bitvector_equality_index();
+            assert!(context.bitvector_equality_facts.get().is_some());
+            assert_eq!(assumptions_memo_id(&context), id);
+            let copy = context.clone();
+            assert_eq!(assumptions_memo_id(&copy), id);
+            drop(copy);
+            drop(context);
+            assert!(
+                equality_cache.upgrade().is_none(),
+                "size {size}: memo identity retained a lazy equality index"
+            );
+            assert!(
+                cache.upgrade().is_none(),
+                "size {size}: memo identity retained planning state"
+            );
+        }
+        clear_assumption_memos();
+    }
 }
 
 /// The content-derived memo id of a fact set, never salted by a search
 /// attempt: the identity [`crate::kernel::reasoning::with_closure_failure_memo`]
 /// keys its negative answers by, so one closure's candidates share them.
-pub(super) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
+pub(crate) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
     memo_id_with_logical_reads(assumptions_memo_id(assumptions), assumptions)
 }
 
-/// Logical-load term registration can turn an earlier equality miss into a
-/// hit without adding a proposition. Namespace reasoning memos by that
-/// registration generation; never scan or flush the ambient fact set.
+/// Term registration or a checked read equality can turn an earlier miss into
+/// a hit without adding a proposition. Namespace reasoning memos by their
+/// generation; never scan or flush the ambient fact set.
 fn memo_id_with_logical_reads(base: u64, assumptions: &PureFactContext) -> u64 {
     let generation = assumptions.equality_graph.logical_read_generation();
     if generation == 0 {
@@ -1229,17 +1301,19 @@ fn loads_equal_by_bounded_snapshot_match(left: &Bitvector32Term, right: &Bitvect
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left_load, &right_load)
     else {
         return false;
     };
     left_pointer == right_pointer
+        && left_kind == right_kind
         && !crate::kernel::reasoning::loads_separated_by_recorded_history(
             left_memory,
             right_memory,
             left_pointer,
+            *left_kind,
             &PureFactContext::new(),
         )
         && crate::kernel::reasoning::memories_match_for_pointer_load_under_assumptions(
@@ -1262,7 +1336,7 @@ fn exact_materialized_load_fixed_point(term: &Bitvector32Term) -> Bitvector32Ter
     let mut visited = std::collections::HashSet::new();
     while visited.insert(current.clone()) {
         crate::instrumentation::record_deterministic_work(1);
-        let Bitvector32Term::MemoryLoad(memory, pointer) = &current else {
+        let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = &current else {
             break;
         };
         let Some(CValue::Int32(value)) = memory.known_value(pointer) else {
@@ -1284,7 +1358,11 @@ mod exact_materialization_tests {
         };
         (0..length).fold(Bitvector32Term::Constant(tail), |value, _| {
             let memory = CMemory::new().store(pointer.clone(), CValue::Int32(value));
-            Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
         })
     }
 
@@ -1377,7 +1455,7 @@ impl SignedConstantResolution {
     }
 }
 
-fn memory_blind_pointer_fingerprint(pointer: &Pointer) -> u64 {
+pub(in crate::kernel) fn memory_blind_pointer_fingerprint(pointer: &Pointer) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     hash_memory_blind_pointer(pointer, &mut hasher);
     std::hash::Hasher::finish(&hasher)
@@ -1476,7 +1554,10 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         Bitvector32Term::Int64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::UInt64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::Variable(variable) => std::hash::Hash::hash(variable, hasher),
-        Bitvector32Term::MemoryLoad(_, pointer) => hash_memory_blind_pointer(pointer, hasher),
+        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+            std::hash::Hash::hash(kind, hasher);
+            hash_memory_blind_pointer(pointer, hasher)
+        }
         Bitvector32Term::PointerAddress(pointer) => {
             std::hash::Hash::hash("address", hasher);
             hash_memory_blind_pointer(pointer, hasher)
@@ -1662,7 +1743,7 @@ fn collect_bitvector_memory_load_keys(
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_) => {}
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             keys.insert((
                 pointer.block.clone(),
                 memory_blind_pointer_fingerprint(pointer),
@@ -1975,7 +2056,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_) => Ok(()),
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             if CMemorySnapshotIdentity::of(memory.memory())
                 == CMemorySnapshotIdentity::of(current_memory)
             {
@@ -2732,6 +2813,12 @@ impl PureFactContext {
             let mut index = std::mem::take(&mut self.int64_signed_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.int64_signed_order_bounds = index;
+        } else if let Some((left, right, strict)) =
+            condition_reasoning::condition_as_uint64_order_fact(condition, value)
+        {
+            let mut index = std::mem::take(&mut self.uint64_order_bounds);
+            Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
+            self.uint64_order_bounds = index;
         }
     }
 
@@ -2831,6 +2918,19 @@ impl PureFactContext {
     /// also makes withdrawal a no-op for the fact values that were never
     /// filed.
     fn adjust_pointer_block_alias(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
+            if value && alignment.is_power_of_two() {
+                let key = (pointer.clone(), alignment);
+                if insert {
+                    self.pointer_alignment_facts.insert(key, ());
+                    self.equality_graph.register_alignment(pointer, alignment);
+                } else {
+                    self.pointer_alignment_facts.remove(&key);
+                    self.rebuild_equality_graph();
+                }
+            }
+            return;
+        }
         let ConditionTerm::PointerEqual(left, right) = condition else {
             return;
         };
@@ -2910,6 +3010,9 @@ impl PureFactContext {
                 classes.add_equality(value, &Pointer::loaded_value(memory, address));
             }
         }
+        for ((pointer, alignment), _) in self.pointer_alignment_facts.iter() {
+            classes.register_alignment(pointer, *alignment);
+        }
         self.equality_graph = classes;
     }
 
@@ -2974,7 +3077,7 @@ impl PureFactContext {
             binding @ GeneratedLoadBinding::Exact {
                 variable,
                 pointer: address,
-                load: Bitvector32Term::MemoryLoad(memory, _),
+                load: Bitvector32Term::MemoryLoad(memory, _, kind),
                 typed_pointer_value: Some(value),
                 ..
             },
@@ -2992,6 +3095,7 @@ impl PureFactContext {
             Box::new(Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(address.clone()),
+                *kind,
             )),
         );
         if self.condition_facts.get(&condition) != Some(&true) {
@@ -2999,6 +3103,70 @@ impl PureFactContext {
         }
         self.file_typed_pointer_read(*variable, memory, address, value);
         self
+    }
+
+    /// Publish a typed read's definition and locally checked source equality.
+    /// The graph is part of the trusted kernel. One exact materialization or
+    /// separate store edge is checked here;
+    /// equality queries never search history.
+    /// No proposition or read authority is introduced. Checked unions belong
+    /// only to this persistent proof context; definitions are unconditional.
+    pub(in crate::kernel) fn register_pointer_read(
+        &self,
+        value: &Pointer,
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) {
+        self.equality_graph
+            .register_pointer_read_definition(value, memory, address);
+        self.register_pointer_read_source(memory, address);
+    }
+
+    /// This rule relates load applications only. An execution value's bridge
+    /// remains scoped to its certified binding, including restricted contexts.
+    fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
+        let bytes = crate::kernel::load_access_width_or_widest(memory, address);
+        let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+            .unwrap_or_else(|| memory.clone());
+        let Some(derivation) = start.derivation() else {
+            return;
+        };
+        let source = match derivation.as_ref() {
+            CMemoryDerivation::CellsSeeded { run, .. } => run.read_source(address, bytes),
+            CMemoryDerivation::Store {
+                base,
+                pointer: write,
+                value,
+            } => {
+                // Select over exactly one store. Align to its explicitly
+                // named block using established graph equality, then check
+                // complete byte separation. No search of older snapshots,
+                // ownership frames, or spellings is allowed here.
+                let read = if write.blocks_proven_distinct(address) {
+                    Some(address.clone())
+                } else {
+                    self.equality_graph.pointer_in_block(address, &write.block)
+                };
+                read.filter(|read| {
+                    crate::kernel::reasoning::exact_access_byte_overlap(
+                        write,
+                        value.byte_width(),
+                        read,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                })
+                .map(|_| base.clone())
+            }
+            _ => None,
+        };
+        if let Some(source) = source
+            && bytes == crate::kernel::load_access_width_or_widest(&source, address)
+        {
+            self.equality_graph.add_checked_read_equality(
+                &Pointer::loaded_value(memory, address),
+                &Pointer::loaded_value(&source, address),
+            );
+        }
     }
 
     fn file_typed_pointer_read(
@@ -3024,6 +3192,7 @@ impl PureFactContext {
         self.content_fingerprint ^= Self::typed_pointer_read_fingerprint(variable, &key, value);
         self.equality_graph
             .add_equality(value, &Pointer::loaded_value(memory, address));
+        self.register_pointer_read_source(memory, address);
     }
 
     fn typed_pointer_read_fingerprint(
@@ -3042,10 +3211,14 @@ impl PureFactContext {
             return;
         };
         let definition = match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, address))
-            | (Bitvector32Term::MemoryLoad(memory, address), Bitvector32Term::Variable(variable)) => {
-                (*variable, memory, address.as_ref())
-            }
+            (
+                Bitvector32Term::Variable(variable),
+                Bitvector32Term::MemoryLoad(memory, address, _),
+            )
+            | (
+                Bitvector32Term::MemoryLoad(memory, address, _),
+                Bitvector32Term::Variable(variable),
+            ) => (*variable, memory, address.as_ref()),
             _ => return,
         };
         let (variable, memory, address) = definition;
@@ -3197,65 +3370,6 @@ impl PureFactContext {
             .flat_map(|aliases| aliases.iter().map(|(alias, _)| alias))
     }
 
-    /// Whether exact pointer equalities connect these addresses. Each
-    /// adjacency lookup is keyed by the current pointer or offset, so the
-    /// walk visits only the equality component reachable from `left` rather
-    /// than rescanning every path condition for every separation candidate.
-    pub(in crate::kernel) fn has_indexed_pointer_equality_path(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        // An equality already established by the trusted graph needs no
-        // component walk. For one block, ask the exact offset fragment rather
-        // than expanding the pointer affine fragment's scope here. Skip that
-        // query when there are no term merges, so unrelated owned cells do
-        // not each pay to intern their offsets. The walk remains for mixed
-        // exact offset and block alias chains the graph cannot yet compose.
-        let graph_equal = if left.block == right.block {
-            self.equality_graph.has_term_equivalences()
-                && self
-                    .equality_graph
-                    .are_offsets_equal(&left.offset, &right.offset)
-        } else {
-            self.equality_graph.are_equal(left, right)
-        };
-        if graph_equal {
-            return true;
-        }
-        let matches = |candidate: &Pointer, expected: &Pointer| {
-            candidate == expected
-                || candidate.block == expected.block
-                    && crate::kernel::api::canonicalize_pointer_loads(candidate)
-                        == crate::kernel::api::canonicalize_pointer_loads(expected)
-        };
-        let mut seen = std::collections::BTreeSet::from([left.clone()]);
-        let mut frontier = vec![left.clone()];
-        while let Some(current) = frontier.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            if matches(&current, right) {
-                return true;
-            }
-            for alias in self.exact_pointer_aliases(&current) {
-                if matches(alias, right) {
-                    return true;
-                }
-                if seen.insert(alias.clone()) {
-                    frontier.push(alias.clone());
-                }
-            }
-            for alias in self.exact_pointer_offset_aliases(&current) {
-                if matches(&alias, right) {
-                    return true;
-                }
-                if seen.insert(alias.clone()) {
-                    frontier.push(alias);
-                }
-            }
-        }
-        false
-    }
-
     pub(super) fn rebuild_null_pointer_offsets(&mut self) {
         self.null_pointer_offsets = crate::persistent::PersistentMap::default();
         let facts = self
@@ -3337,6 +3451,7 @@ impl PureFactContext {
     pub(super) fn rebuild_signed_order_bounds(&mut self) {
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
+        self.uint64_order_bounds = crate::persistent::PersistentMap::default();
         let facts = self
             .condition_facts
             .iter()
@@ -3376,6 +3491,7 @@ impl PureFactContext {
         self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
+        self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
@@ -3400,9 +3516,12 @@ impl PureFactContext {
             let ConditionTerm::Bitvector32Equal(left, right) = condition else {
                 continue;
             };
-            let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _)) =
+            let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _, _)) =
                 (left.as_ref(), right.as_ref())
             else {
+                continue;
+            };
+            let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable) else {
                 continue;
             };
             if let Some(definitions) = prior_typed_reads.get(variable) {
@@ -3413,6 +3532,7 @@ impl PureFactContext {
                         Box::new(Bitvector32Term::MemoryLoad(
                             memory.clone(),
                             Box::new(address.clone()),
+                            kind,
                         )),
                     );
                     if self.condition_facts.get(&definition) == Some(&true) {
@@ -3477,6 +3597,7 @@ impl PureFactContext {
             self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         } else {
             crate::instrumentation::record_deterministic_work(variables.len().saturating_sub(1));
+            let indexed = SharedIndexFact::new(condition.clone());
             for variable in variables {
                 let facts = self
                     .condition_facts_by_variable
@@ -3484,9 +3605,9 @@ impl PureFactContext {
                     .cloned()
                     .unwrap_or_default();
                 let facts = if insert {
-                    facts.with_inserted(condition.clone(), value)
+                    facts.with_inserted(indexed.clone(), value)
                 } else {
-                    facts.without_key(condition)
+                    facts.without_key(&indexed)
                 };
                 self.condition_facts_by_variable = if facts.is_empty() {
                     self.condition_facts_by_variable.without_key(&variable)
@@ -3665,7 +3786,7 @@ impl PureFactContext {
         if !exact.is_empty() {
             return exact;
         }
-        let Some((query_memory, pointer)) = load_snapshot_and_pointer(term) else {
+        let Some((query_memory, pointer, kind)) = load_snapshot_and_pointer(term) else {
             return exact;
         };
         let mut transported = Vec::new();
@@ -3674,10 +3795,12 @@ impl PureFactContext {
                 continue;
             };
             for (side, other) in [(left, right), (right, left)] {
-                let Some((fact_memory, fact_pointer)) = load_snapshot_and_pointer(side) else {
+                let Some((fact_memory, fact_pointer, fact_kind)) = load_snapshot_and_pointer(side)
+                else {
                     continue;
                 };
                 if fact_pointer != pointer
+                    || fact_kind != kind
                     || !memories_match_for_pointer_load(&fact_memory, &query_memory, &pointer)
                 {
                     continue;
@@ -3874,6 +3997,7 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
+        self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
@@ -4537,6 +4661,7 @@ impl PureFactContext {
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         if let Proposition::CResourceComposition(resources) = proposition {
             if std::sync::Arc::make_mut(&mut self.resource_compositions).insert(resources.clone()) {
+                self.composition_object_resources.admit(&resources);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
             }
             return;
@@ -4640,6 +4765,9 @@ impl PureFactContext {
             && self
                 .int64_signed_order_bounds
                 .shares_root_with(&other.int64_signed_order_bounds)
+            && self
+                .uint64_order_bounds
+                .shares_root_with(&other.uint64_order_bounds)
             && std::sync::Arc::ptr_eq(
                 &self.memory_load_condition_facts,
                 &other.memory_load_condition_facts,
@@ -4880,6 +5008,41 @@ impl PureFactContext {
                 value,
             );
         }
+        // An unsigned upper bound below the sign bit, `x <u c` with
+        // `c <= 2^31`, is spelled as the biased signed order
+        // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair
+        // `0 <= x` and `x < c` does, so the pair is filed beside it, with the
+        // source's strictness: every reader of signed order facts on `x`
+        // (interval, index range, and element-membership rules) then sees
+        // the range the unsigned test established, through the same indexes
+        // it reads for a signed test. Two facts per bound, both on the
+        // bounded term itself.
+        //
+        // A sixty-four-bit `x <u c` with `c <= 2^31` files the same pair on
+        // the low word `(uint32)x`, which is `x` itself, and the sign-bit
+        // bound `x <=u INT_MAX` an index conversion asks for by key
+        // (`pointer_index_term`).
+        if let Some((term, bound, strict)) =
+            condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
+        {
+            self = self.assume_unsigned_word_range(term.clone(), bound, strict);
+        } else if let Some((term, bound, strict)) =
+            condition_reasoning::uint64_upper_bound_below_sign_bit(&condition, value)
+        {
+            let term = term.clone();
+            let sign_bit_clear = ConditionTerm::uint64_less_equal(
+                term.clone(),
+                Bitvector32Term::UInt64Constant(i32::MAX as u64),
+            );
+            if sign_bit_clear != condition {
+                self = self.assume_condition_uncharged(sign_bit_clear, true);
+            }
+            self = self.assume_unsigned_word_range(
+                Bitvector32Term::uint32_from_64(term),
+                bound,
+                strict,
+            );
+        }
         let old = self.condition_facts.get(&condition).copied();
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
@@ -4927,6 +5090,35 @@ impl PureFactContext {
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
         self
+    }
+
+    /// Files the signed range of a word an unsigned upper bound below the sign
+    /// bit established: `0 <= term`, and `term < bound + 1` (strict source)
+    /// or `term <= bound`.
+    fn assume_unsigned_word_range(
+        mut self,
+        term: Bitvector32Term,
+        bound: u32,
+        strict: bool,
+    ) -> Self {
+        self = self.assume_condition_uncharged(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone()),
+            true,
+        );
+        // A bound of `INT_MAX` says nothing every signed word does not.
+        if bound == i32::MAX as u32 {
+            self
+        } else if strict {
+            self.assume_condition_uncharged(
+                ConditionTerm::signed_less_than(term, Bitvector32Term::Constant(bound + 1)),
+                true,
+            )
+        } else {
+            self.assume_condition_uncharged(
+                ConditionTerm::signed_less_equal(term, Bitvector32Term::Constant(bound)),
+                true,
+            )
+        }
     }
 
     /// This context extended by `proposition`, charged one unit of
@@ -4984,18 +5176,20 @@ impl PureFactContext {
             );
         let mut keys = all_keys.clone();
         let mut covered_variables = 0;
-        if let Proposition::ConditionIs(condition, value) = proposition {
+        if let Proposition::ConditionIs(condition, _) = proposition {
             let has_variables = all_keys
                 .iter()
                 .any(|key| matches!(key, AtomicConnectionKey::Variable(_)));
+            let mut indexed_variables = BTreeSet::new();
+            let deferred = super::reasoning::variable_collection::collect_condition_index_variables(
+                condition,
+                &mut indexed_variables,
+            );
             let covered = all_keys
                 .iter()
                 .filter_map(|key| match key {
                     AtomicConnectionKey::Variable(variable)
-                        if self
-                            .condition_facts_by_variable
-                            .get(variable)
-                            .is_some_and(|facts| facts.get(condition) == Some(value)) =>
+                        if !deferred && indexed_variables.contains(variable) =>
                     {
                         Some(*variable)
                     }
@@ -5019,11 +5213,12 @@ impl PureFactContext {
             keys.len().saturating_sub(1)
         };
         crate::instrumentation::record_deterministic_work(extra_work);
+        let shared = SharedIndexFact::new(proposition.clone());
         if all_keys.is_empty() {
             self.atomic_ground_facts = if insert {
-                self.atomic_ground_facts.with_value(proposition.clone())
+                self.atomic_ground_facts.with_value(shared.clone())
             } else {
-                self.atomic_ground_facts.without_value(proposition)
+                self.atomic_ground_facts.without_value(&shared)
             };
         }
         for key in keys {
@@ -5038,9 +5233,9 @@ impl PureFactContext {
                 &mut bucket.propositions
             };
             *facts = if insert {
-                facts.with_value(proposition.clone())
+                facts.with_value(shared.clone())
             } else {
-                facts.without_value(proposition)
+                facts.without_value(&shared)
             };
             self.atomic_connection_facts =
                 if bucket.conditions.is_empty() && bucket.propositions.is_empty() {
@@ -5051,9 +5246,9 @@ impl PureFactContext {
         }
         if matches!(proposition, Proposition::ForAll { .. }) {
             self.atomic_quantified_facts = if insert {
-                self.atomic_quantified_facts.with_value(proposition.clone())
+                self.atomic_quantified_facts.with_value(shared.clone())
             } else {
-                self.atomic_quantified_facts.without_value(proposition)
+                self.atomic_quantified_facts.without_value(&shared)
             };
         }
     }
@@ -5079,7 +5274,7 @@ impl PureFactContext {
         &self,
         key: &AtomicConnectionKey,
         include_propositions: bool,
-    ) -> (impl Iterator<Item = Proposition>, bool) {
+    ) -> (impl Iterator<Item = AtomicConnectedFact<'_>>, bool) {
         let scalar = match key {
             AtomicConnectionKey::Variable(variable) => {
                 self.condition_facts_by_variable.get(variable)
@@ -5087,9 +5282,9 @@ impl PureFactContext {
             AtomicConnectionKey::Block(_) => None,
         };
         let scalar = scalar.into_iter().flat_map(|facts| {
-            facts
-                .iter()
-                .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), *value))
+            facts.iter().map(|(condition, value)| {
+                AtomicConnectedFact::Condition(condition.as_ref(), *value)
+            })
         });
         let bucket = self.atomic_connection_facts.get(key);
         let has_propositions = bucket.is_some_and(|bucket| !bucket.propositions.is_empty());
@@ -5103,16 +5298,22 @@ impl PureFactContext {
                     .into_iter()
                     .chain(propositions)
                     .flat_map(crate::persistent::PersistentSet::iter)
-                    .cloned(),
+                    .map(|fact| AtomicConnectedFact::Proposition(fact.as_ref())),
             ),
             has_propositions,
         )
+    }
+
+    /// Constant-time cardinalities for a selection drawn from these fact sets.
+    pub(crate) fn fact_counts(&self) -> (usize, usize) {
+        (self.condition_facts.len(), self.prop_facts.len())
     }
 
     pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
         self.atomic_ground_facts
             .iter()
             .chain(self.atomic_quantified_facts.iter())
+            .map(SharedIndexFact::as_ref)
     }
 
     /// The condition facts of this context, in the index's own order.
@@ -5149,13 +5350,14 @@ impl PureFactContext {
                 }
                 let mut variables = BTreeSet::new();
                 collect_condition_bitvector_variables(condition, &mut variables);
+                let indexed = SharedIndexFact::new(condition.clone());
                 for variable in variables {
                     crate::instrumentation::record_deterministic_work(1);
                     let facts = index.get(&variable).cloned().unwrap_or_default();
                     let facts = if let Some(value) = value {
-                        facts.with_inserted(condition.clone(), *value)
+                        facts.with_inserted(indexed.clone(), *value)
                     } else {
-                        facts.without_key(condition)
+                        facts.without_key(&indexed)
                     };
                     index = if facts.is_empty() {
                         index.without_key(&variable)
@@ -5181,7 +5383,7 @@ impl PureFactContext {
                         .into_iter()
                         .flat_map(|facts| facts.iter()),
                 )
-                .map(|(condition, value)| (condition, *value)),
+                .map(|(condition, value)| (condition.as_ref(), *value)),
         )
     }
 
@@ -5577,6 +5779,15 @@ impl PropositionDerivation {
                     && equality.checks(&variable_term, &constant, available)
                     && body.check(available)
             }
+            PropositionDerivationRule::RefutedDisjunction { disjunction } => {
+                let mut cases = Vec::new();
+                collect_or_cases(disjunction, &mut cases);
+                cases.len() >= 2
+                    && available.contains_assumed_exact(disjunction)
+                    && cases.iter().all(|case| {
+                        available.contains_assumed_exact(&Proposition::Not(Box::new(case.clone())))
+                    })
+            }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
                 if !available.prop_facts.contains(disjunction.as_ref()) {
                     return false;
@@ -5846,8 +6057,7 @@ fn exact_less_equal_for_memory_resolution(
     if left == right
         // These are signed int32 endpoint *values*, not exact byte offsets.
         // Equal bitpatterns therefore satisfy `<=` in this same-base check.
-        || (assumptions.equality_graph.has_term_equivalences()
-            && assumptions.equality_graph.are_int32_equal(left, right))
+        || assumptions.int32_values_known_equal(left, right)
         || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
             left.clone(),
             right.clone(),
@@ -6225,7 +6435,7 @@ fn pointer_offsets_match_by_shallow_fact_graph(
                 value: right,
                 byte_width: right_width,
             },
-        ) => left_width == right_width && assumptions.bitvector_terms_equal_from_facts(left, right),
+        ) => left_width == right_width && assumptions.int32_values_known_equal(left, right),
         _ => false,
     }
 }
@@ -6365,8 +6575,8 @@ fn exact_equality_constant(candidate: &Bitvector32Term) -> Option<i64> {
 /// `-1`, and is equally `4294967295`, and is equally `2^32 + 4294967295`.
 /// `exact_signed_constant` accepts one, which is right for the thirty-two-bit
 /// quantities it was written for and wrong for this one. Only a sixty-four-bit
-/// constant term, or a recorded exact sixty-four-bit equality, pins a value
-/// here.
+/// constant term, or arithmetic established through recorded exact
+/// sixty-four-bit equalities, pins a value here.
 ///
 /// `unsigned` says how the scaling reads it, and the two readings are
 /// different numbers: `size_t` `4294967295` displaces forwards by that many
@@ -6388,24 +6598,32 @@ pub(in crate::kernel) fn exact_sixty_four_bit_constant(
     if let Some(value) = constant(term) {
         return Some(value);
     }
-    assumptions
-        .condition_facts
-        .iter()
-        .find_map(|(condition, value)| {
-            if !*value {
-                return None;
-            }
-            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
-                return None;
-            };
-            if left.as_ref() == term {
-                constant(right)
-            } else if right.as_ref() == term {
-                constant(left)
-            } else {
-                None
-            }
-        })
+    // Follow the selected term's indexed 64-bit equality component and
+    // evaluate only its bounded arithmetic. A low-word equality is not
+    // evidence about the full address displacement.
+    let bits = assumptions.wide_constant_from_equalities(term)?;
+    if unsigned {
+        i64::try_from(bits).ok()
+    } else {
+        Some(bits as i64)
+    }
+}
+
+/// Exact constants for the two offset forms admitted by wide constant
+/// congruence. Scaling must fit the offset's signed 64-bit representation.
+pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
+    offset: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> Option<i64> {
+    match offset {
+        PointerOffsetTerm::Constant(value) => Some(*value),
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        } => exact_sixty_four_bit_constant(value, *unsigned, assumptions)?.checked_mul(*byte_width),
+        _ => None,
+    }
 }
 
 fn bitvector_index_in_range_shallow(
@@ -7118,7 +7336,7 @@ impl ExecutionPureFact {
             binding @ GeneratedLoadBinding::Exact {
                 variable,
                 pointer: address,
-                load: Bitvector32Term::MemoryLoad(memory, _),
+                load: Bitvector32Term::MemoryLoad(memory, _, _),
                 typed_pointer_value: Some(value),
                 ..
             },
@@ -7129,9 +7347,7 @@ impl ExecutionPureFact {
         if generated_load_binding_matches_proposition(binding, self.proposition())
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
-            context
-                .equality_graph
-                .register_pointer_read_definition(value, memory, address);
+            context.register_pointer_read(value, memory, address);
         }
     }
 
@@ -7311,7 +7527,7 @@ fn generated_load_binding_matches_proposition(
     };
     let (
         Bitvector32Term::Variable(proposition_variable),
-        Bitvector32Term::MemoryLoad(memory, proposition_pointer),
+        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _),
     ) = (left.as_ref(), right.as_ref())
     else {
         return false;
@@ -7652,7 +7868,11 @@ mod dynamic_current_load_tests {
         let pointer = pointer();
         let memory = CMemory::new();
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
-        let load = Bitvector32Term::MemoryLoad(snapshot, Box::new(pointer.clone()));
+        let load = Bitvector32Term::MemoryLoad(
+            snapshot,
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        );
         let value = Term::CValue(CValue::Int64(load.clone()));
         assert_eq!(
             current_memory_loads_in_term(&value, &memory).unwrap(),

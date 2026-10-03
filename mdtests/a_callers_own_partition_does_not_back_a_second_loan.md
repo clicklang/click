@@ -41,5 +41,5 @@ void caller(int32 a[], int32 n) {
 ```
 
 ```expect
-fail: `caller.contract` tactic 0: `step()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
+fail: `caller.contract` tactic 0: `execute()` could not verify C operation: stable-view a required resource overlaps a live borrowed footprint refused during planning; selected resource `owns g[0..1]`
 ```

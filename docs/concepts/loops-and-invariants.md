@@ -48,7 +48,8 @@ constant-true service loop writes `loop diverges { ... }` and can still have a
 useful invariant even though it has no exit state.
 
 The `decreases` clause is one expression, and what it names decides
-which measure it is: a nonempty int32 ranking expression, a lexicographic
+which measure it is: a nonempty int32, unsigned, or `Integer` ranking
+expression, a lexicographic
 tuple of them, or one of the loop's own resource binders. The same uniform
 rule applies to a C function's own `decreases`; there is no `decreases
 resource` spelling anywhere.
@@ -109,16 +110,17 @@ Termination is also a claim about everything the loop body calls: every
 reachable loop, recursive cycle, and callee needs a checked ranking proof. A
 callee with a contract answers with a verified rule of its own, and an
 `extern` contract is trusted to return exactly as its `ensures` is trusted. A
-header-provided `static inline` helper has no contract boundary — its body
-executes at the call site — so it is read as a node of the caller's own call
-graph instead. A helper whose body is straight-line, with no loop, no
-recursion, and no call to anything not itself terminating, terminates by
-construction, so a ranked loop may call one:
+header-provided `static inline` helper with a contract is such a callee. One
+with no contract has no call boundary, since its body executes at the call
+site, so it is read as a node of the caller's own call graph instead. A
+contract-less helper whose body is straight-line, with no loop, no recursion,
+and no call to anything not itself terminating, terminates by construction,
+so a ranked loop may call one:
 `mdtests/c_decreases_loop_inline_helper.md`, and the rbtree ascent of
 `mdtests/rb_ascending_walk_to_root.md`, which climbs through the unchanged
-Linux `rb_parent` under `decreases c;`. A helper carrying a loop still needs
-that loop ranked and certified, and a recursive helper is a cycle needing a
-checked rule; both are refused otherwise
+Linux `rb_parent` under `decreases c;`. A contract-less helper carrying a
+loop still needs that loop ranked and certified, and a recursive one is a
+cycle needing a checked rule; both are refused otherwise
 (`mdtests/c_decreases_rejects_inline_helper_loop.md` and
 `mdtests/c_decreases_rejects_recursive_inline_helper.md`). A helper's own
 ranked loop is planned under the translation-unit-qualified name its body
@@ -418,9 +420,71 @@ back through that binder's model. A loop that declares no binder has nothing to
 read such a cell through, and the difference is refused naming the cell
 (`mdtests/loop_break_exit_unowned_cell_rejected.md`).
 
+The exits are compared by what they hold, not by how they came to hold it. An
+exit that unfolded and refolded a binder and an exit that left it untouched
+hold the same instance, whatever order their folds ran in
+(`mdtests/loop_break_exit_join_ignores_fold_order.md`), and a cell only some
+exit read, because only that path opened the instance owning it, is knowledge
+the successor does not claim rather than a difference between the exits
+(`mdtests/loop_break_exit_join_sets_aside_unshared_cells.md`).
+
+Two layouts of one state are one state. Memory is compared by its cells, the
+same pointers with the same values, whether the cell cache holds one as a
+written cell or as a slot of the run an `unfold` seeded
+(`mdtests/loop_break_exit_join_compares_cells_not_their_cache.md`). Resources
+are compared after the merges the resource algebra itself defines, so a view
+of a cell that one exit holds twice, because it opened the binder and folded
+it back, is the view the other exit holds once
+(`mdtests/loop_break_exit_join_refolded_and_untouched_binder.md`). Nothing
+else is looked through: a block, a read-only status, a heap lifetime, or an
+owned or lent resource still has to agree
+(`mdtests/loop_break_exit_differing_ownership_rejected.md`).
+
+Exits can also disagree about bookkeeping no C expression observes after the
+loop, and the join reconciles each piece in the direction that claims less:
+
+- A local some exits have initialized and others have not stays declared,
+  with its slot and type, but uninitialized. A read of it after the loop is
+  refused (`mdtests/loop_break_exit_uninitialized_at_one_exit_is_not_read.md`);
+  that read is what this gives up.
+- A path that called a function with a local records that the local's block
+  has ended. The successor keeps every exit's record, so a pointer that may
+  designate such a block is not readable through
+  (`mdtests/loop_break_exit_stale_alias_after_join_is_not_read.md`).
+- The counter that names re-entered declarations takes the largest value any
+  exit reached, so no ended block's identity is issued again.
+- When the exits' memories disagree on what they have forgotten, the
+  successor's memory keeps the cells every exit holds and takes a freshly
+  minted identity with no recorded history
+  (`mdtests/loop_break_exit_after_a_call_with_a_local_joins.md`). A load after
+  the loop of a cell the successor does not hold is then related to no load
+  before or inside the loop; that relation is what this gives up. Cells every
+  exit holds keep their values
+  (`mdtests/loop_break_exit_after_a_call_keeps_cells_every_exit_holds.md`),
+  and a loop whose exits agree keeps its memory's identity and every read
+  equality through it (`mdtests/loop_break_exit_ordinary_join_keeps_post_loop_read.md`).
+
 What every exit states survives the join as an ordinary fact, so a claim that
 does not distinguish the exits needs nothing special
-(`mdtests/loop_break_exit_refold_join.md`). A claim that does distinguish them
+(`mdtests/loop_break_exit_refold_join.md`).
+
+That includes a fact each exit states about its own value for a binder the
+join renamed. The join restates every exit's facts with that exit's value,
+as a term, replaced by the successor's name: an exit that holds `x` at
+`Cell::Missing` and states `Cell::Missing == old(x.model)`, and one that holds
+it at `Cell::Red(identity)` and states `Cell::Red(identity) == old(x.model)`,
+both restate `x.model == old(x.model)` about the successor. On each exit's
+path the name equals that exit's value, so the restated fact holds on that
+path, and a fact every exit restates identically holds whichever exit was
+taken. It is kept as an ordinary fact
+(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`). Nothing is
+searched for or proved again: a fact one exit does not state is not kept
+(`mdtests/loop_break_exit_fact_one_exit_does_not_state_is_dropped.md`), and a
+fact about another binder is not restated about the renamed one
+(`mdtests/loop_break_exit_fact_about_another_binder_is_not_restated.md`).
+Identity is of the kernel's propositions, so two exits that spell a fact
+alike about their own arm bindings state different facts, and neither is
+kept. A claim that does distinguish them
 is read off the exported disjunction with `cases`:
 
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->
@@ -678,6 +742,51 @@ refolding the same model under a fresh instance name is also insufficient:
 progress is strict descent in the finite model, not a change of resource
 identity. `mdtests/loop_decreases_rejects_rebuilt_layer.md` reaches this refusal
 after successfully rebuilding the layer.
+
+### Measures over a binder's model
+
+Some loops re-fold their resource at every step instead of walking into a
+child. The new instance is not contained in the old one, so no structural
+descent exists, yet a number computed from the model still drops. Such a loop
+ranks by a function of the model:
+
+<!-- verified-example: mdtests/loop_measure_reads_a_model_function.md -->
+```click
+loop {
+    owns c: chain(n);
+    decreases chain_len(c.model);
+    invariant n >= 0;
+}
+```
+
+The component is an ordinary `Integer` ranking expression. It is
+built from the loop binders' models and fields, constants, and pure Click
+functions of them. Here `chain_len` is a recursive function with its own
+`decreases`. Its two members join the back-edge invariant bundle like any
+numeric component's: the value at the next head is at least zero, and it is
+strictly less than the value at this head. Both are ordinary goals. The kernel
+does not unfold the function or search for a proof. The usual route is to match
+on the model so that its parts have names. State each side with `have`, by
+`unfold` and `rewrite`. Apply a lemma for nonnegativity, typically one proved
+once by structural `induct`. Then let `arithmetic` close the comparison before
+`close_invariants()`.
+
+A `Nat`-valued function of the model ranks by its Integer image `to_integer`,
+whose nonnegativity is the checked law `nat_integer_nonnegative`. Such a
+measure owes only the decrease
+(`mdtests/loop_measure_reads_a_nat_model_function.md`).
+
+A model measure reads only models. One that also names a C local is refused
+where it is declared, naming the local
+(`mdtests/loop_decreases_model_function_rejects_a_c_local.md`), because the
+local moves independently of the binders it would be ranked with. A model value
+itself, such as `decreases c.model;` for a spec enum, has no order and is
+refused with a pointer to the two spellings that do rank by structure
+(`mdtests/loop_decreases_rejects_an_unordered_model.md`). A back edge that
+leaves the measure unchanged, or one that can drive an `Integer` measure below
+zero, leaves its member open
+(`mdtests/loop_decreases_model_function_must_decrease.md` and
+`mdtests/loop_decreases_model_function_must_stay_nonnegative.md`).
 
 ### Opening a binder's model inside the body
 
@@ -939,8 +1048,8 @@ member's quantified index as the expanded proof writes it.
 
 Successful initialization and preservation proofs certify and apply a
 verified loop rule. The enclosing proof is already at the loop exit when the
-`loop` tactic returns; there is no later `summarize(loop(N))` step and no need
-to reconstruct a path from function entry.
+`loop` tactic returns; there is no later step and no need to reconstruct a path
+from function entry.
 
 Explicit phase tactics keep their own source locations for profiling and
 expansion. Omitted phase automation is attributed to the `loop` keyword.

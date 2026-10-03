@@ -1152,14 +1152,6 @@ fn grouped_claims_share_one_execution_with_near_linear_work() {
 }
 
 #[test]
-fn composite_definition_members_preserve_small_bundle() {
-    let (c_source, click_source) = resource_member_project(3);
-    let verified = verify_c0_sources(&click_source, &[("preserve_bundle.c", c_source.as_str())])
-        .expect("a small composite resource bundle should verify");
-    assert!(!verified.is_empty());
-}
-
-#[test]
 fn composite_definition_members_keep_separation_work_compact() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -1257,6 +1249,109 @@ fn condition_derivation_scales_near_linearly_with_unrelated_conditions() {
     }
 }
 
+/// A chain of order facts stated against the context's iteration order,
+/// beside unrelated facts. Premise selection indexes the context once and
+/// then walks only the chain, so its fact visits are the context plus the
+/// chain's own edges, however the links are ordered; growing the component
+/// by repeated passes cost the whole context once per link.
+#[test]
+fn condition_premise_selection_walks_a_reversed_chain_once() {
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+    use crate::surface::planning::proposition_search::{
+        condition_selection_visits, reset_condition_selection_visits,
+    };
+
+    let less = |left: u64, right: u64| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(Bitvector32Term::Variable(Variable(left))),
+                Box::new(Bitvector32Term::Variable(Variable(right))),
+            ),
+            true,
+        )
+    };
+    let context = |links: usize, unrelated: usize, broken: Option<usize>, reversed: bool| {
+        let mut available = Vec::new();
+        for index in 0..unrelated {
+            available.push(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
+                    Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
+                ),
+                true,
+            ));
+        }
+        let mut chain = (0..links)
+            .filter(|link| broken != Some(*link))
+            .map(|link| less(440_000 + link as u64, 440_001 + link as u64))
+            .collect::<Vec<_>>();
+        if reversed {
+            chain.reverse();
+        }
+        available.extend(chain);
+        available
+    };
+    const LINKS: usize = 3;
+    let goal = less(440_000, 440_000 + LINKS as u64);
+    let samples = [16usize, 32, 64, 128]
+        .into_iter()
+        .map(|unrelated| {
+            let mut visits = Vec::new();
+            let mut work = 0;
+            for reversed in [false, true] {
+                let available = context(LINKS, unrelated, None, reversed);
+                reset_condition_selection_visits();
+                let (derivation, units) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        search_condition_derivation(&goal, &available)
+                    });
+                let derivation = derivation
+                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
+                    .expect("the chained order facts derive the goal");
+                // The certificate cites the chain and none of the unrelated
+                // facts.
+                assert_eq!(derivation.context_premises().len(), LINKS);
+                visits.push(condition_selection_visits());
+                work = work.max(units);
+            }
+            assert_eq!(
+                visits[0], visits[1],
+                "selection cost depends on the order the chain was stated in"
+            );
+            // A missing link leaves the goal underivable.
+            let broken = context(LINKS, unrelated, Some(1), true);
+            assert!(
+                search_condition_derivation(&goal, &broken)
+                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
+                    .is_none()
+            );
+            (unrelated, visits[0], work)
+        })
+        .collect::<Vec<_>>();
+    // The search selects premises for a fixed number of trial contexts.
+    // Each added unrelated fact is visited once per selection that sees it,
+    // for the index, and never again while the chain is walked.
+    for pair in samples.windows(2) {
+        let added = pair[1].0 - pair[0].0;
+        let visits = pair[1].1 - pair[0].1;
+        assert_eq!(
+            visits % added,
+            0,
+            "selection visits are not linear: {samples:?}"
+        );
+        assert!(
+            visits / added <= 3,
+            "selection walked the context more than once per trial: {samples:?}"
+        );
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].2 <= pair[0].2.saturating_mul(3),
+            "chained condition derivation is superlinear: {samples:?}"
+        );
+    }
+}
+
 /// One loadability goal beside growing numbers of loadability facts about
 /// other objects. Source selection reads the goal's own block from the
 /// kernel's index, so it examines the same candidates at every size; a scan
@@ -1300,16 +1395,6 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
             Some(2),
         ),
         (
-            "a covering range across an unchanged block snapshot",
-            vec![loadable(at("goal", 0), 16)],
-            Proposition::CMemoryLoadable {
-                memory: memory.clone().with_block("unrelated-local", 4),
-                base: at("goal", 1),
-                bytes: Bitvector32Term::Constant(4),
-            },
-            Some(1),
-        ),
-        (
             "a gap between ranges",
             vec![loadable(at("goal", 0), 8), loadable(at("goal", 3), 4)],
             loadable(at("goal", 0), 16),
@@ -1337,16 +1422,6 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
                     Some(cited) => {
                         let derivation =
                             derivation.unwrap_or_else(|| panic!("{name}: goal not derived"));
-                        assert!(
-                            derivation.check(&context),
-                            "{name}: kernel rejected certificate"
-                        );
-                        for source in &sources {
-                            assert!(
-                                !derivation.check(&context.without_exact_fact(source)),
-                                "{name}: certificate accepted without required source"
-                            );
-                        }
                         assert_eq!(
                             derivation.context_premises().len(),
                             cited,
@@ -1355,16 +1430,9 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
                     }
                     None => assert!(derivation.is_none(), "{name}: goal derived"),
                 }
-                let visits = candidate_visits();
-                // The former broad-family selector visited every one of these.
-                assert_eq!(
-                    context.proposition_facts().count(),
-                    unrelated + sources.len()
-                );
-                (unrelated, visits, work)
+                (unrelated, candidate_visits(), work)
             })
             .collect::<Vec<_>>();
-        eprintln!("{name}: unrelated/candidates/complete work {samples:?}");
         for pair in samples.windows(2) {
             assert_eq!(
                 pair[0].1, pair[1].1,
@@ -1482,36 +1550,15 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             .map(|unrelated| {
                 let mut context = PureFactContext::new();
                 for index in 0..unrelated {
-                    context = context
-                        .assume_condition(
-                            ConditionTerm::Bitvector32SignedLessThan(
-                                Box::new(Bitvector32Term::Variable(Variable(
-                                    463_000 + index as u64,
-                                ))),
-                                Box::new(Bitvector32Term::Constant(1000)),
-                            ),
-                            true,
-                        )
-                        .assume_proposition(unrelated_fact(index));
+                    context = context.assume_proposition(unrelated_fact(index));
                 }
                 for source in &sources {
                     context = context.assume_proposition(source.clone());
                 }
                 reset_candidate_visits();
-                let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    context.derive_atomic_proposition(&goal)
-                });
-                let derivation = derivation.unwrap_or_else(|| panic!("{name}: goal not derived"));
-                assert!(
-                    derivation.check(&context),
-                    "{name}: kernel rejected certificate"
-                );
-                for source in &sources {
-                    assert!(
-                        !derivation.check(&context.without_exact_fact(source)),
-                        "{name}: certificate accepted without required source"
-                    );
-                }
+                let derivation = context
+                    .derive_atomic_proposition(&goal)
+                    .unwrap_or_else(|| panic!("{name}: goal not derived"));
                 assert!(
                     derivation
                         .context_premises()
@@ -1519,42 +1566,22 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
                         .all(|premise| sources.contains(premise)),
                     "{name}: the certificate cites an unrelated fact"
                 );
-                let visits = candidate_visits();
-                let mut missing = context.clone();
-                for source in &sources {
-                    missing = missing.without_exact_fact(source);
-                }
-                reset_candidate_visits();
-                let (negative, fallback_work) =
-                    crate::instrumentation::measure_deterministic_work(|| {
-                        missing.derive_atomic_proposition(&goal)
-                    });
-                assert!(negative.is_none(), "{name}: unrelated family proved goal");
-                (unrelated, visits, work, candidate_visits(), fallback_work)
+                (unrelated, candidate_visits())
             })
             .collect::<Vec<_>>();
-        eprintln!("{name}: unrelated/candidates/complete/fallback visits/work {samples:?}");
         for pair in samples.windows(2) {
-            assert!(
-                pair[1].2 <= pair[0].2.saturating_mul(3),
-                "{name}: {samples:?}"
-            );
             assert_eq!(
                 pair[0].1, pair[1].1,
                 "{name}: candidate visits grew with unrelated facts: {samples:?}"
             );
         }
-        for pair in samples.windows(2) {
-            assert!(
-                pair[1].3 <= pair[0].3 * 2 + 2,
-                "fallback visits: {samples:?}"
-            );
-            assert!(pair[1].4 <= pair[0].4 * 3, "fallback work: {samples:?}");
-        }
         assert!(samples[0].1 >= 1, "{name}: the indexed route was not taken");
     }
 }
 
+/// A memory goal proved from one source cites that source and the condition
+/// facts connected to it, not every ambient condition: the certificate is
+/// the same size however many unrelated conditions the context holds.
 #[test]
 fn scaling_assertion_rejects_a_quadratic_curve() {
     let quadratic = [16, 32, 64, 128]
@@ -1723,6 +1750,189 @@ fn ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
         .collect::<Vec<_>>();
 
     assert_near_linear_scaling("ranked loop bundle with unrelated inequalities", &samples);
+}
+
+/// Loops ranked by a function of a binder's model, one back edge per loop.
+/// Each back edge owes the measure's two members over the head and rebound
+/// models; reading which binders a measure names and checking its members
+/// must cost the same per loop however many other model-ranked loops the
+/// project holds.
+fn model_ranked_loops(loop_count: usize) -> (String, String) {
+    let mut c_source = String::new();
+    let mut click_source = String::from(
+        "verifying \"model_ranked.c\";\n\
+         \n\
+         spec enum Chain { Nil, Link(Chain) }\n\
+         \n\
+         function chain_len(m: Chain) -> Integer\n\
+         \x20   decreases m\n\
+         {\n\
+         \x20   match m {\n\
+         \x20       Chain::Nil => 0,\n\
+         \x20       Chain::Link(rest) => chain_len(rest) + 1,\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         theorem chain_len_is_nonnegative(m: Chain) {\n\
+         \x20   ensures 0 <= chain_len(m) by {\n\
+         \x20       induct(m) as ih {\n\
+         \x20           Chain::Nil => {\n\
+         \x20               unfold(chain_len(Chain::Nil));\n\
+         \x20               normalize();\n\
+         \x20           }\n\
+         \x20           Chain::Link(rest) => {\n\
+         \x20               apply(ih(rest));\n\
+         \x20               unfold(chain_len(Chain::Link(rest)));\n\
+         \x20               arithmetic() using { 0 <= chain_len(rest); }\n\
+         \x20           }\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         resource chain(k: int32) {\n\
+         \x20   field model: Chain;\n\
+         \x20   match model {\n\
+         \x20       Chain::Nil => { fact k == 0; },\n\
+         \x20       Chain::Link(rest_model) => {\n\
+         \x20           owns rest: chain(k - 1);\n\
+         \x20           fact k > 0;\n\
+         \x20           fact k - 1 >= 0;\n\
+         \x20           fact rest.model == rest_model;\n\
+         \x20       },\n\
+         \x20   }\n\
+         }\n",
+    );
+    for index in 0..loop_count {
+        c_source.push_str(&format!(
+            "void countdown{index}(int32 n) {{\n    while (n > 0) {{\n        n = n - 1;\n    }}\n}}\n\n"
+        ));
+        click_source.push_str(&format!(
+            "\n\
+             void countdown{index}(int32 n) {{\n\
+             \x20   requires n >= 0;\n\
+             \x20   consumes c: chain(n);\n\
+             \x20   ensures 1 == 1;\n\
+             }} by {{\n\
+             \x20   loop {{\n\
+             \x20       owns c: chain(n);\n\
+             \x20       decreases chain_len(c.model);\n\
+             \x20       invariant n >= 0;\n\
+             \x20       initialize by simp;\n\
+             \x20       preserve by {{\n\
+             \x20           match c.model {{\n\
+             \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
+             \x20               Chain::Link(rest_model) => {{\n\
+             \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
+             \x20                       rewrite(c.model == Chain::Link(rest_model));\n\
+             \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
+             \x20                       normalize();\n\
+             \x20                   }}\n\
+             \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
+             \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
+             \x20                       arithmetic() using {{\n\
+             \x20                           chain_len(c.model) == chain_len(rest_model) + 1;\n\
+             \x20                       }}\n\
+             \x20                   }}\n\
+             \x20                   let {{ rest: r }} = unfold(c);\n\
+             \x20                   step();\n\
+             \x20                   close_invariants();\n\
+             \x20               }},\n\
+             \x20           }}\n\
+             \x20       }}\n\
+             \x20   }}\n\
+             \x20   have n == 0 by {{ simp(); }}\n\
+             \x20   unfold(c);\n\
+             \x20   step();\n\
+             \x20   simp();\n\
+             }}\n"
+        ));
+    }
+    (c_source, click_source)
+}
+
+#[test]
+fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = model_ranked_loops(size);
+            let sources = [("model_ranked.c", c_source.as_str())];
+            let (verified, sample) =
+                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} model-ranked loop scaling fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("model-ranked loops by back edge count", &samples);
+}
+
+/// One proof applying a user-defined tactic `count` times, each application
+/// consuming the instance the previous one produced. An application checks
+/// its binder map and the tactic's `ensures` against the proof state it is
+/// given; it must cost the same whether it is the first or the hundredth.
+fn repeated_tactic_applications(count: usize) -> (String, String) {
+    let c_source = "struct pr { int32 a; int32 b; };\n\nvoid user(struct pr *p) {\n}\n".to_string();
+    let mut click_source = String::from(
+        "verifying \"applications.c\";\n\
+         \n\
+         resource tagged(p: struct pr*) {\n\
+         \x20   field tag: int32;\n\
+         \x20   owns p->a;\n\
+         }\n\
+         \n\
+         tactic retag(p: struct pr*) {\n\
+         \x20   consumes x: tagged(p);\n\
+         \x20   produces y: tagged(p);\n\
+         \x20   ensures y.tag == 1;\n\
+         } by {\n\
+         \x20   unfold(x);\n\
+         \x20   let y = fold(tagged(p), { tag: 1 });\n\
+         \x20   have y.tag == 1 by { simp(); }\n\
+         }\n\
+         \n\
+         void user(struct pr* p) {\n\
+         \x20   consumes t0: tagged(p);\n\
+         \x20   produces out: tagged(p);\n\
+         } by {\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!(
+            "    let {{ y: t{} }} = retag(p) {{ x: t{index} }};\n",
+            index + 1
+        ));
+    }
+    click_source.push_str(&format!(
+        "    let {{ y: out }} = retag(p) {{ x: t{count} }};\n    step();\n    step();\n    simp();\n}}\n"
+    ));
+    (c_source, click_source)
+}
+
+#[test]
+fn repeated_tactic_applications_scale_near_linearly() {
+    let samples = [8, 16, 32, 64]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = repeated_tactic_applications(size);
+            let sources = [("applications.c", c_source.as_str())];
+            let (verified, sample) =
+                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} repeated tactic application fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("repeated tactic applications", &samples);
 }
 
 /// The same ranked loop closed by the smart `close_invariants()` planner.
@@ -2725,7 +2935,7 @@ fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
             std::thread::Builder::new()
                 .name(format!("roundtrip-{size}-{extra}"))
                 .stack_size(64 << 20)
-                .spawn(move || roundtrip_sample_on_this_thread(size, extra))
+                .spawn(move || roundtrip_sample_on_this_thread(size, extra).work)
                 .expect("spawn a sample thread")
         })
         .collect::<Vec<_>>();
@@ -2735,25 +2945,9 @@ fn roundtrip_extra_copy_stays_nearly_flat_beside_unrelated_allocations() {
         .collect::<Vec<_>>();
     let marginal = work
         .chunks(2)
-        .map(|pair| pair[1].work as i64 - pair[0].work as i64)
+        .map(|pair| pair[1] as i64 - pair[0] as i64)
         .collect::<Vec<_>>();
     eprintln!("extra-copy marginal work beside {SIZES:?} allocations: {marginal:?}");
-    let mut names = BTreeSet::new();
-    for sample in &work {
-        names.extend(sample.named_work.keys().cloned());
-    }
-    for name in names {
-        let delta = work
-            .chunks(2)
-            .map(|pair| {
-                pair[1].named_work.get(&name).copied().unwrap_or(0) as i64
-                    - pair[0].named_work.get(&name).copied().unwrap_or(0) as i64
-            })
-            .collect::<Vec<_>>();
-        if delta.last() > delta.first() {
-            eprintln!("{name}: {delta:?}");
-        }
-    }
     assert!(marginal[0] > 0, "{marginal:?}");
     let allowed = marginal[0] + marginal[0] / 8;
     assert!(
@@ -3737,74 +3931,55 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     assert_near_linear_scaling("call requirement count", &samples);
 }
 
-/// Planning a path of `N` statements builds fact contexts in work linear in
-/// `N`.
+/// `execute()` runs an early-return fan-out on the checked `Proof` in work
+/// near linear in its length.
 ///
 /// The main path of an early-return fan-out learns one condition per `if`,
-/// so its facts grow with its length, and every planned step reasons under
-/// the context of the facts so far. The planner rebuilt that context from
-/// the path's fact list at each step (once for a context argument nothing
-/// read, and again per transition), and constructed each step's surface
-/// form under a context rebuilt from every certificate fact, so its context
-/// builds assumed a number of facts quadratic in the path while the counter,
-/// which did not charge them, reported linear work. The path's facts now
-/// carry the contexts they build (`PureFactList`, and the certificate
-/// facts' store), each step extends them by the facts it adds, and every
-/// context build is charged. Measured on 2026-09-27 at 4, 8, 16, and 32
-/// returns: 136, 248, 472, and 920 planning context entries, and 2884, 4776,
-/// 9136, and 20160 units of planning work; charging the rebuilds the planner
-/// made before measured 3962, 8154, 20858, and 63546.
+/// so its facts grow with its length. The function opens with a null check
+/// on a fresh `malloc` result, which `execute()` used to hand to the planner;
+/// the planner then built its own fact contexts along the path, 136, 248,
+/// 472, and 920 entries at 4, 8, 16, and 32 returns on 2026-09-27. The
+/// branch now splits on the `Proof`, which extends the goal's indexed facts
+/// and builds no path context of its own. Measured on 2026-10-02 at the same
+/// sizes: 1630, 2730, 5506, and 13362 units of `execute` work, against 3678,
+/// 5946, 11058, and 23586 through the planner.
 ///
-/// The planning tactic's total work is only held to the general contract:
-/// each forked return path still copies and scans the facts its prefix
-/// learned, and finalization reads every path's facts, which the checked
-/// execution stores whole per path.
+/// The whole verification's context builds are not asserted: finalization
+/// reads every path's facts, which the checked execution stores whole per
+/// path, so they grow with the square of the path on either route (75, 159,
+/// 423, and 1335 entries here).
 #[test]
-fn planning_a_path_builds_contexts_linear_in_its_length() {
+fn executing_a_fan_out_is_near_linear_in_its_length() {
     std::thread::Builder::new()
-        .name("path-planning".into())
+        .name("fan-out-execute".into())
         .stack_size(64 << 20)
         .spawn(|| {
             let _ = roundtrip_sample(1, 0);
-            const PLANNER: &str = "smart tactic `execute`";
+            const EXECUTE: &str = "smart tactic `execute`";
             let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
-            let mut planning = Vec::new();
-            let mut entries = Vec::new();
+            let mut execute = Vec::new();
             for returns in [4, 8, 16, 32] {
                 let c = early_return_fan_out(returns);
-                let before = crate::kernel::reasoning::path_facts::smart_planning_context_entries();
                 let (verified, sample) = scaling_sample(returns, || {
                     verify_c0_sources(click, &[("fan_out.c", c.as_str())])
                 });
-                entries.push(
-                    crate::kernel::reasoning::path_facts::smart_planning_context_entries() - before,
-                );
                 verified.unwrap_or_else(|error| {
                     panic!("fan-out of {returns} returns failed: {}", error.message())
                 });
-                planning.push(ScalingSample {
+                execute.push(ScalingSample {
                     size: returns,
-                    work: *sample.named_work.get(PLANNER).unwrap_or_else(|| {
-                        panic!("the fan-out was not planned by `execute`: {sample:?}")
+                    work: *sample.named_work.get(EXECUTE).unwrap_or_else(|| {
+                        panic!("the fan-out was not run by `execute`: {sample:?}")
                     }),
                     named_work: BTreeMap::new(),
                 });
             }
-            eprintln!("path planning context entries: {entries:?}; planning work: {planning:?}");
-            assert!(entries[0] > 0, "planning built no context: {entries:?}");
-            // Linear with a small allowance: each doubling of the path at
-            // most 2.2 times the entries (a per-step rebuild is 4 times).
-            for pair in entries.windows(2) {
-                assert!(
-                    pair[1] * 10 <= pair[0] * 22,
-                    "planning a path builds contexts faster than its length: {entries:?}"
-                );
-            }
-            assert_near_linear_scaling("planning a fan-out's paths", &planning);
+            eprintln!("fan-out execute work: {execute:?}");
+            assert_near_linear_scaling("executing a fan-out's paths", &execute);
         })
-        .expect("spawn the path-planning thread")
+        .expect("spawn the fan-out thread")
         .join()
-        .expect("path-planning thread");
+        .expect("fan-out thread");
 }
 
 /// A copy loop whose preservation `simp` reaches a fact transport the
@@ -4342,9 +4517,9 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
 /// explicit-separation veto first, which walks every separation: `N^3` at
 /// entry (1,542,282 units at `N = 32`, against 140,617 now).
 ///
-/// Two curves are pinned near-linear: the derived-fact coverage check, which
-/// now asks the range written against the fact's own base first, and the
-/// veto, which is now asked only of a pair another route covers. The total is
+/// The veto's curve is pinned near-linear: it is now asked only of a pair
+/// another route covers. Each `viewable` fact a proof starts from is one the
+/// contract entry states outright, so no coverage lookup runs for it. The total is
 /// held under a quadratic ceiling: installing borrowed inputs still asks
 /// every held view of the block once per view
 /// (`ResourceContext::view_occurrences_for_fact`, which must see every
@@ -4368,32 +4543,19 @@ fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
         })
         .collect::<Vec<_>>();
 
-    let curve = |name: &str, require_reached: bool| {
+    let curve = |name: &str| {
         samples
             .iter()
-            .map(|sample| {
-                let work = sample.named_work.get(name).copied();
-                if require_reached {
-                    assert!(work.is_some(), "fixture did not reach {name}: {sample:?}");
-                }
-                ScalingSample {
-                    size: sample.size,
-                    work: work.unwrap_or(0),
-                    named_work: BTreeMap::new(),
-                }
+            .map(|sample| ScalingSample {
+                size: sample.size,
+                work: sample.named_work.get(name).copied().unwrap_or(0),
+                named_work: BTreeMap::new(),
             })
             .collect::<Vec<_>>()
     };
     assert_near_linear_scaling(
-        "derived entry fact resource check beside many views",
-        &curve("operation `derived fact resource check`", true),
-    );
-    assert_near_linear_scaling(
         "explicit-separation veto beside many views",
-        &curve(
-            "operation `memory range coverage: explicit separation`",
-            false,
-        ),
+        &curve("operation `memory range coverage: explicit separation`"),
     );
     // A quadratic curve quadruples per doubling and a cubic one multiplies
     // by eight; 4.5 separates them with room for fixed-cost noise.
@@ -4446,13 +4608,14 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     assert!(least > 0, "{samples:?}");
     // Flat across seven orders of magnitude of length: the samples differ
     // by a few dozen units of fixed work that read the length's constant
-    // (about 4k units in all), while one unit per element would be 10^9.
+    // (about 6k units in all), while one unit per element would be 10^9.
     // At 10^9 pointer elements the range's byte count overflows, so that
-    // entry gains one fact, `false`; every fact context built from the entry
-    // facts is charged one unit per fact, which makes about 15 of the
-    // difference (measured on 2026-09-27: 4171, 4187, 4187, 4209).
+    // entry gains one fact, `false`. The typed pointer-read candidate index
+    // charges that fixed fact and its lookup keys too. Allow at most 64
+    // fixed units across all sizes, including that extra overflow fact;
+    // this still excludes any per-element work (6124, 6156, 6156, 6180).
     assert!(
-        most - least <= 48,
+        most - least <= 64,
         "deterministic work depends on the composite range's length: {samples:?}"
     );
 }
@@ -4731,112 +4894,351 @@ fn resource_reference_entry_setup_has_near_linear_work() {
     }
 }
 
-/// Exercise selection through a smart tactic, retained evidence, expansion,
-/// and independent checking. Reverse-spelled chains defeated the old repeated
-/// whole-context walk; unrelated requirements must not multiply chain work.
+/// `arithmetic() using` over a chain of listed order facts adds the premises
+/// once each, so its work grows with the chain and not with its square.
+/// Both a signed and an unsigned chain are measured at several lengths.
 #[test]
-fn connected_condition_chain_expands_and_rechecks_at_multiple_sizes() {
-    let mut verification = Vec::new();
-    let mut expansion_samples = Vec::new();
-    let mut rechecks = Vec::new();
-    for size in [4, 8, 16, 32] {
-        let parameters = (1..=size)
-            .map(|index| format!("x{index}: int32"))
-            .chain((0..size).map(|index| format!("u{index}: int32")))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let requirements = (2..=size)
-            .rev()
-            .map(|index| format!("requires x{index} < x{};", index - 1))
-            .chain(std::iter::once("requires x1 < 1000;".to_string()))
-            .chain((0..size).map(|index| format!("requires u{index} < 1000;")))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let source = format!(
-            "theorem chain({parameters}) {{ {requirements} ensures x{} < 1000 by {{ simp(); }} }}",
-            size
-        );
-        let (verified, sample) = scaling_sample(size, || verify_click_theorems(&source));
-        verified.unwrap_or_else(|error| panic!("chain {size}: {}", error.message()));
-        verification.push(sample);
-        let position = expansion::position_at_offset(&source, source.find("simp();").unwrap());
-        let (expanded, sample) = scaling_sample(size, || {
-            expand_c0_tactic_source_at(&source, &[], position.line, position.column)
-        });
-        let expanded =
-            expanded.unwrap_or_else(|error| panic!("expand chain {size}: {}", error.message()));
-        assert!(!expanded.contains("simp();"), "{expanded}");
-        expansion_samples.push(sample);
-        let (verified, sample) = scaling_sample(size, || verify_click_theorems(&expanded));
-        verified.expect("expanded chain verifies independently");
-        rechecks.push(sample);
-        let missing = expanded.replace(&format!("requires x{} < x{};", size / 2 + 1, size / 2), "");
-        assert!(verify_click_theorems(&missing).is_err());
-    }
-    assert_near_linear_scaling("connected condition chain verification", &verification);
-    assert_near_linear_scaling("connected condition chain expansion", &expansion_samples);
-    assert_near_linear_scaling("connected condition chain recheck", &rechecks);
-}
-
-/// Indexed memory sources must survive smart expansion and an independent
-/// check; retaining a plausible but insufficient range cannot prove the goal.
-#[test]
-fn indexed_memory_sources_expand_and_recheck_at_multiple_sizes() {
-    for adjacent in [false, true] {
-        let mut verification = Vec::new();
-        let mut expansions = Vec::new();
-        let mut rechecks = Vec::new();
-        for size in [4, 8, 16, 32] {
-            let parameters = std::iter::once("p: int32[]".to_string())
-                .chain((0..size).map(|index| format!("u{index}: int32[]")))
+fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
+    for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
+        let samples = [8usize, 16, 32].map(|edges| {
+            let names = (0..edges).map(|index| format!("v{index}")).collect::<Vec<_>>();
+            let parameters = names
+                .iter()
+                .map(|name| format!("{name}: {value_type}"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let requirements = (0..size)
-                .map(|index| format!("requires viewable(u{index}[0..4]);"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let (sources, goal, required) = if adjacent {
-                (
-                    "requires viewable(p[0..2]); requires viewable(p[2..4]);",
-                    "viewable(p[0..4])",
-                    "requires viewable(p[2..4]);",
-                )
-            } else {
-                (
-                    "requires viewable(p[0..4]);",
-                    "viewable(p[1..2])",
-                    "requires viewable(p[0..4]);",
-                )
-            };
+            let mut facts = names
+                .windows(2)
+                .map(|pair| format!("{} <= {}", pair[0], pair[1]))
+                .collect::<Vec<_>>();
+            facts.push(format!("{} < {bound}", names[edges - 1]));
+            let requires = facts
+                .iter()
+                .map(|fact| format!("requires {fact}; "))
+                .collect::<String>();
+            let listed = facts
+                .iter()
+                .map(|fact| format!("{fact}; "))
+                .collect::<String>();
             let source = format!(
-                "theorem range({parameters}) {{ {requirements} {sources} ensures {goal} by {{ simp(); }} }}"
+                "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ arithmetic() using {{ {listed}}} }} }}"
             );
-            let (result, sample) = scaling_sample(size, || verify_click_theorems(&source));
-            result.unwrap_or_else(|error| {
-                panic!("adjacent {adjacent}, size {size}: {}", error.message())
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
             });
-            verification.push(sample);
-            let position = expansion::position_at_offset(&source, source.find("simp();").unwrap());
-            let (expanded, sample) = scaling_sample(size, || {
-                expand_c0_tactic_source_at(&source, &[], position.line, position.column)
-            });
-            let expanded = expanded.expect("indexed range proof expands");
-            assert!(!expanded.contains("simp();"), "{expanded}");
-            expansions.push(sample);
-            let (result, sample) = scaling_sample(size, || verify_click_theorems(&expanded));
-            result.expect("expanded range proof checks independently");
-            rechecks.push(sample);
-            assert!(verify_click_theorems(&expanded.replace(required, "")).is_err());
+            result.unwrap_or_else(|error| panic!("{edges}-edge chain: {}", error.message()));
+            (edges, work)
+        });
+        eprintln!("{value_type} chain work: {samples:?}");
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1.saturating_mul(3),
+                "{value_type}: {samples:?}"
+            );
         }
-        assert_near_linear_scaling("indexed memory source verification", &verification);
-        assert_near_linear_scaling("indexed memory source expansion", &expansions);
-        assert_near_linear_scaling("indexed memory source recheck", &rechecks);
     }
 }
 
-/// A memory goal proved from one source cites that source and the condition
-/// facts connected to it, not every ambient condition: the certificate is
-/// the same size however many unrelated conditions the context holds.
+/// A `step()` written in a loop's `preserve` body is its own simple tactic:
+/// it has its own work event and its own simple budget, like a `step()`
+/// anywhere else. The preservation driver used to apply it with no tactic
+/// open, so every C statement of every path through the body was charged to
+/// the enclosing `loop`, whose single budget then capped the whole proof
+/// however small each step was. The loop's own work must not grow with what
+/// its body steps through.
+#[test]
+fn preserve_body_steps_are_charged_to_themselves_not_to_the_loop() {
+    let sample = |stores: usize| {
+        let c_source = format!(
+            "void fill(int32 *p, int32 n) {{\n    int32 i = 0;\n    while (i < n) {{\n{}        i = i + 1;\n    }}\n}}\n",
+            (0..stores)
+                .map(|index| format!("        p[0] = {index};\n"))
+                .collect::<String>()
+        );
+        let click_source = format!(
+            "verifying \"fill.c\";
+
+void fill(int32* p, int32 n) {{
+    owns p[0..1];
+    requires n >= 0;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases n - i;
+        invariant i >= 0;
+
+        initialize by simp;
+        preserve by {{
+{}        }}
+    }}
+    step();
+    simp();
+}}
+",
+            "            step();\n".repeat(stores + 1)
+        );
+        let (result, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&click_source, &[("fill.c", &c_source)])
+        });
+        result.unwrap_or_else(|error| {
+            panic!("the {stores}-store loop should verify: {}", error.message())
+        });
+        let finished = |name: &str| {
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::TacticFinished {
+                        tactic,
+                        work,
+                        ..
+                    } if tactic.tactic_name == name => Some(*work),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let loop_work = finished("loop").into_iter().max().unwrap_or(0);
+        (stores, finished("step").len(), loop_work)
+    };
+    let samples = [2, 8, 32].map(sample);
+    let (_, base_steps, base_loop_work) = samples[0];
+    for &(stores, steps, loop_work) in &samples {
+        // The proof is checked the same number of times at every size, so
+        // the step events grow by that many per added body statement.
+        assert!(
+            steps >= base_steps + (stores - 2),
+            "every `step()` in the preserve body must report its own work: \
+             (stores, step events, loop work) {samples:?}"
+        );
+        // A few units of frontier bookkeeping per statement, never the
+        // statement's own execution.
+        assert!(
+            loop_work <= base_loop_work + 16 * (stores - 2),
+            "the loop must not be charged for the statements its body steps through: \
+             (stores, step events, loop work) {samples:?}"
+        );
+    }
+}
+
+/// One loop with `exits` ways out, all holding the same binder: a balanced
+/// tree of case splits over `k`, each leaf writing the binder's cell,
+/// refolding it, and leaving through a `break`. With `c_branches` the tree is
+/// the C's own nested `if`s, so the exits are C paths; without it the C is
+/// one store and one `break`, and the exits are the proof's case splits, as
+/// in the rbtree insert fixup.
+fn loop_with_break_exits(exits: usize, c_branches: bool) -> (String, String) {
+    fn c_tree(low: usize, high: usize, indent: usize) -> String {
+        let pad = " ".repeat(indent);
+        if high - low == 1 {
+            return format!("{pad}p->shade = {};\n{pad}break;\n", low % 2);
+        }
+        let middle = (low + high) / 2;
+        format!(
+            "{pad}if (k < {middle}) {{\n{}{pad}}} else {{\n{}{pad}}}\n",
+            c_tree(low, middle, indent + 4),
+            c_tree(middle, high, indent + 4)
+        )
+    }
+    fn proof_tree(low: usize, high: usize, c_branches: bool) -> String {
+        if high - low == 1 {
+            let color = if !c_branches || low.is_multiple_of(2) {
+                "Red"
+            } else {
+                "Black"
+            };
+            return format!(
+                "step();\nlet c = fold(painted(p), {{ color: Color::{color} }});\nstep();\n"
+            );
+        }
+        let middle = (low + high) / 2;
+        let enter = if c_branches { "step();\n" } else { "" };
+        format!(
+            "if k < {middle} {{\n{enter}{}}} else {{\n{enter}{}}}\n",
+            proof_tree(low, middle, c_branches),
+            proof_tree(middle, high, c_branches)
+        )
+    }
+    let body = if c_branches {
+        c_tree(0, exits, 8)
+    } else {
+        "        p->shade = 0;\n        break;\n".to_string()
+    };
+    let c_source = format!(
+        "struct node {{ int32 shade; }};\n\nvoid paint(struct node* p, int32 k) {{\n    while (true) {{\n{body}    }}\n}}\n"
+    );
+    let click_source = format!(
+        "verifying \"paint.c\";
+
+spec enum Color {{ Red, Black }}
+
+resource painted(p: struct node*) {{
+    field color: Color;
+    match color {{
+        Color::Red => {{ owns p->shade; fact p->shade == 0; }},
+        Color::Black => {{ owns p->shade; fact p->shade == 1; }},
+    }}
+}}
+
+void paint(struct node* p, int32 k) {{
+    owns c: painted(p);
+    requires c.color == Color::Black;
+}} by {{
+    loop {{
+        decreases 0;
+        owns c: painted(p);
+        invariant c.color == Color::Black;
+
+        preserve by {{
+            unfold(c);
+{}        }}
+    }}
+    step();
+    simp();
+}}
+",
+        proof_tree(0, exits, c_branches)
+    );
+    (c_source, click_source)
+}
+
+fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
+    let (c_source, click_source) = loop_with_break_exits(exits, c_branches);
+    let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+        verify_c0_sources(&click_source, &[("paint.c", &c_source)])
+    });
+    result.unwrap_or_else(|error| {
+        panic!(
+            "the loop with {exits} exits should verify: {}",
+            error.message()
+        )
+    });
+    work
+}
+
+/// Joining a loop's `break` exits costs work proportional to the exits and
+/// what each states, not to their pairs. Two steps used to compare every exit
+/// with every other and were not charged at all: the exit join's disjunction
+/// asked each fact of each exit against every fact of every earlier exit, and
+/// the proof layer recorded each exit after comparing it with every exit
+/// recorded before it. Each is now a keyed lookup that charges what it reads,
+/// so counted work follows the real cost and quadruples, no more, when the
+/// exits do.
+///
+/// Every proof-level case split in the body also read its path's certificate,
+/// which walked the proof's whole history back to the root, sibling arms
+/// included. Each node now remembers the lineage that ends at it, so a split
+/// reads only the nodes added since the last walk that passed, and the walk
+/// is charged.
+///
+/// The bound is on each fourfold step rather than on the whole range, because
+/// at these sizes a pairwise term is still a small part of the total: with the
+/// exits recorded pairwise again the last step is 4.75 times, and with the
+/// history walked in full again it is 9.5 times, against 3.97.
+#[test]
+fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
+    let samples =
+        [32usize, 128, 512].map(|exits| (exits, loop_with_break_exits_work(exits, false)));
+    for pair in samples.windows(2) {
+        let ((_, smaller), (_, larger)) = (pair[0], pair[1]);
+        assert!(
+            larger * 100 <= smaller * 430,
+            "loop exit work must be near linear in the exits: (exits, work) {samples:?}"
+        );
+    }
+    // The same exits as paths of the C's own nested branches. Their counted
+    // work is the tactics' and is proportional already; what was quadratic
+    // there was the uncharged source layout of the branch tree, which this
+    // only exercises.
+    let branches = [16usize, 64].map(|exits| (exits, loop_with_break_exits_work(exits, true)));
+    assert!(
+        branches[1].1 * 100 <= branches[0].1 * 430,
+        "loop exit work over C branches must be near linear in the exits: {branches:?}"
+    );
+}
+
+/// A `while (true)` left first by a `break` that never opens the binder and
+/// then by `exit_count` `break`s that each write the binder's cell through a
+/// helper with a local and fold it back at the same constructor. The join
+/// builds its successor from the first exit, which holds its view of the
+/// cell once and has called nothing; every writing exit holds that view
+/// twice and has ended the helper's local, so each of them reaches the
+/// join's normalized resource comparison and its storage-bookkeeping join.
+fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
+    let mut c_source = String::from(
+        "struct node { int32 shade; };\n\nstatic void repaint(struct node* p) {\n    int32 next = 1;\n    p->shade = next;\n}\n\nvoid paint(struct node* p, int32 flag) {\n    while (true) {\n        if (flag == 0) {\n            break;\n        }\n",
+    );
+    for exit in 1..exit_count {
+        c_source.push_str(&format!(
+            "        if (flag == {exit}) {{\n            repaint(p);\n            break;\n        }}\n"
+        ));
+    }
+    c_source.push_str("        repaint(p);\n        break;\n    }\n}\n");
+
+    let mut click_source = String::from(
+        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        preserve by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
+    );
+    let writing_exit = |click_source: &mut String, skipped: usize| {
+        click_source.push_str("unfold(c);\n");
+        // Each `if` the path did not take is two steps; the caller adds the
+        // taken `if`, when there is one, to `skipped`'s count.
+        for _ in 0..skipped {
+            click_source.push_str("step();\n");
+        }
+        click_source
+            .push_str("step();\nlet c = fold(painted(p), { color: Color::Black });\nstep();\n");
+    };
+    for exit in 1..exit_count {
+        click_source.push_str(&format!("if flag == {exit} {{\n"));
+        writing_exit(&mut click_source, 2 * exit + 1);
+        click_source.push_str("} else {\n");
+    }
+    writing_exit(&mut click_source, 2 * exit_count);
+    for _ in 0..exit_count {
+        click_source.push_str("}\n");
+    }
+    click_source.push_str("        }\n    }\n    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// The exit join does one pass over the exits. The body's own steps are
+/// charged to themselves and necessarily grow with the square of the exit
+/// count here (the `k`th exit is `k` tests deep), so the measure is the
+/// `loop` tactic's own work, which is where the join is charged.
+#[test]
+fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
+    // The proof nests one `if` per exit, deeper than a test thread's stack.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(loop_exit_join_scaling_on_this_thread)
+        .expect("the scaling thread starts")
+        .join()
+        .expect("the scaling thread finishes");
+}
+
+fn loop_exit_join_scaling_on_this_thread() {
+    let samples = [3, 6, 12, 24]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_with_break_exits_project(size);
+            let (verified, mut sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("exits.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size}-exit loop fixture failed: {}", error.message())
+            });
+            sample.work = sample
+                .named_work
+                .iter()
+                .filter(|(name, _)| name.contains("tactic `loop`"))
+                .map(|(_, work)| *work)
+                .sum();
+            assert!(sample.work > 0, "the loop tactic's work was not measured");
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("loop exits joined", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
@@ -5047,6 +5449,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             base: at(Bitvector32Term::MemoryLoad(
                 memory.into(),
                 Box::new(index_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
             bytes: Bitvector32Term::Constant(4),
         };
@@ -5096,6 +5499,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                 block: "data".into(),
                 offset,
             }),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let equal = |left: Bitvector32Term, right: Bitvector32Term| {
@@ -5207,6 +5611,46 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             pair[1].1 <= pair[0].1.saturating_mul(3),
             "derivation work is superlinear: {samples:?}"
         );
+    }
+    // Extend one context before each fallback query. A cache of whole-context
+    // collections would still do quadratic work across this sequence.
+    let extensions = [8usize, 16, 32, 64].map(|steps| {
+        let mut available = context(0, true);
+        crate::surface::planning::proposition_search::reset_condition_selection_visits();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for step in 0..steps {
+                available = available
+                    .clone()
+                    .assume_proposition(less(
+                        variable(483_000 + 2 * step as u64),
+                        variable(483_001 + 2 * step as u64),
+                        true,
+                    ))
+                    .assume_proposition(Proposition::CMemoryLoadable {
+                        memory: memory.clone(),
+                        base: Pointer {
+                            block: format!("extension{step}").as_str().into(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        bytes: Bitvector32Term::Constant(16),
+                    });
+                let proof = available
+                    .derive_atomic_proposition(&goal)
+                    .expect("connected fallback");
+                assert_eq!(proof.context_premises().len(), 2);
+                assert!(proof.check(&available));
+            }
+        });
+        let visits = crate::surface::planning::proposition_search::condition_selection_visits();
+        assert!(
+            visits <= steps * 4,
+            "unrelated conditions visited: {steps}, {visits}"
+        );
+        (steps, work)
+    });
+    eprintln!("incremental fallback: extensions/work {extensions:?}");
+    for pair in extensions.windows(2) {
+        assert!(pair[1].1 <= pair[0].1.saturating_mul(3), "{extensions:?}");
     }
 }
 

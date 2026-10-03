@@ -1,0 +1,31 @@
+# A nonnegative population count can still be too large to increment
+
+```c filename=count_defined.c
+struct pool { int32 checked_out; };
+void inspect(struct pool* pool) {}
+```
+
+```click resource_semantics=authority
+resource item(pool: struct pool*, id: int32) {}
+resource control(pool: struct pool*) {
+    owns object(pool);
+    owns authority(item(pool, _));
+    fact 0 <= pool->checked_out;
+    fact pool->checked_out == count(item(pool, _));
+}
+verifying "count_defined.c";
+void inspect(struct pool* pool) {
+    owns control(pool);
+    requires pool->checked_out == 2147483647;
+} by {
+    open(control(pool)) {
+        have count(item(pool, _)) == 2147483647 by simp;
+        have defined(count(item(pool, _)) + 1) by simp;
+    }
+    execute(); simp();
+}
+```
+
+```expect
+fail: Requires defined((count(item(pool, _)) + 1))
+```

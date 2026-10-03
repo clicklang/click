@@ -491,124 +491,92 @@ pub(in crate::kernel) fn evaluate_c_expression(
     Some(path.outcome)
 }
 
-pub(in crate::kernel) fn add_uint8_range_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> Option<()> {
-    add_c_integer_range_execution_pure_facts(facts, assumptions, value, 0, 255)
+thread_local! {
+    /// How many specification-fragment evaluations enclose the current read.
+    static SPECIFICATION_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-pub(in crate::kernel) fn add_int8_range_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> Option<()> {
-    add_c_integer_range_execution_pure_facts(
-        facts,
-        assumptions,
-        value,
-        i32::from(i8::MIN),
-        i32::from(i8::MAX),
-    )
+/// Marks the reads made while it lives as specification reads. A
+/// specification names values the program produced; reading one states
+/// nothing new about it, so it files no range and gains no guard.
+pub(in crate::kernel) struct SpecificationReadScope(());
+
+impl SpecificationReadScope {
+    pub(in crate::kernel) fn enter() -> Self {
+        SPECIFICATION_READS.with(|depth| depth.set(depth.get() + 1));
+        Self(())
+    }
 }
 
-pub(in crate::kernel) fn add_int16_range_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> Option<()> {
-    add_c_integer_range_execution_pure_facts(
-        facts,
-        assumptions,
-        value,
-        i32::from(i16::MIN),
-        i32::from(i16::MAX),
-    )
+impl Drop for SpecificationReadScope {
+    fn drop(&mut self) {
+        SPECIFICATION_READS.with(|depth| depth.set(depth.get() - 1));
+    }
 }
 
-pub(in crate::kernel) fn add_uint16_range_execution_pure_facts(
+/// Files the type range of a narrow integer value where the value is
+/// produced, as certified path facts. The facts are the ones
+/// [`crate::kernel::c_narrow_integer_range_facts`] states, so a parameter's
+/// entry facts and a read value's path facts are one definition.
+///
+/// The range is a consequence, not a premise: every producer of a narrow
+/// value already established it (a conversion's range obligation, a load of
+/// the narrow kind, a callee's return conversion), so the step's theorem
+/// concludes it and no reader of the step owes a derivation of it. Being
+/// public, it reaches every check that reads path facts -- a prerequisite
+/// left to the proof, the owned-footprint check of a store. A range the
+/// context already holds or decides is not refiled.
+pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     facts: &mut Vec<ExecutionPureFact>,
     assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> Option<()> {
-    add_c_integer_range_execution_pure_facts(facts, assumptions, value, 0, i32::from(u16::MAX))
+    value: &CValue,
+) {
+    if SPECIFICATION_READS.with(|depth| depth.get() > 0) {
+        return;
+    }
+    let Some(range_facts) = crate::kernel::c_narrow_integer_range_facts(value) else {
+        return;
+    };
+    for proposition in range_facts {
+        if assumptions.proves_exact(&proposition)
+            || facts.iter().any(|fact| fact.proposition() == &proposition)
+        {
+            continue;
+        }
+        // As for every path fact: one the context already decides adds
+        // nothing, and would only ride along as a guard of whatever the
+        // value is read for (a specification read of a loop counter).
+        if let Proposition::ConditionIs(condition, true) = &proposition
+            && !assumptions.should_defer_non_exact_condition_reasoning()
+            && assumptions.decide(condition) == Some(true)
+        {
+            continue;
+        }
+        facts.push(ExecutionPureFact::certified(proposition));
+    }
 }
 
-fn add_c_integer_range_execution_pure_facts(
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-    lower: i32,
-    upper: i32,
-) -> Option<()> {
-    add_internal_condition_path_fact(
-        facts,
-        assumptions,
-        ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(lower as u32)),
-        true,
-    )?;
-    add_internal_condition_path_fact(
-        facts,
-        assumptions,
-        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(upper as u32)),
-        true,
-    )
-}
-
-pub(in crate::kernel) fn promote_c_int32_path_value(
-    value: CValue,
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-) -> Option<Bitvector32Term> {
+pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
         CValue::Void => None,
         CValue::Bool(value) => Some(value),
         CValue::Int32(value) => Some(value),
-        CValue::Int8(value) => {
-            add_int8_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::Int16(value) => {
-            add_int16_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::UInt8(value) => {
-            add_uint8_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::UInt16(value) => {
-            add_uint16_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
+        CValue::Int8(value) => Some(value),
+        CValue::Int16(value) => Some(value),
+        CValue::UInt8(value) => Some(value),
+        CValue::UInt16(value) => Some(value),
         CValue::UInt32(_) | CValue::Int64(_) | CValue::UInt64(_) => None,
         CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
     }
 }
 
-pub(in crate::kernel) fn promote_c_uint32_path_value(
-    value: CValue,
-    facts: &mut Vec<ExecutionPureFact>,
-    assumptions: &PureFactContext,
-) -> Option<Bitvector32Term> {
+pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
         CValue::Bool(value) | CValue::Int32(value) | CValue::UInt32(value) => Some(value),
-        CValue::Int8(value) => {
-            add_int8_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::Int16(value) => {
-            add_int16_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::UInt8(value) => {
-            add_uint8_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
-        CValue::UInt16(value) => {
-            add_uint16_range_execution_pure_facts(facts, assumptions, &value)?;
-            Some(value)
-        }
+        CValue::Int8(value) => Some(value),
+        CValue::Int16(value) => Some(value),
+        CValue::UInt8(value) => Some(value),
+        CValue::UInt16(value) => Some(value),
         CValue::Void
         | CValue::Int64(_)
         | CValue::UInt64(_)
@@ -1238,11 +1206,17 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             facts: Vec::new(),
             obligations: Vec::new(),
         }],
-        CExpression::Value(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(value.clone()),
-            facts: Vec::new(),
-            obligations: Vec::new(),
-        }],
+        CExpression::Value(value) => {
+            // A value the kernel substituted into an expression is introduced
+            // to it here, as a read introduces a stored one.
+            let mut facts = Vec::new();
+            add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
+            vec![CExpressionPath {
+                outcome: CExpressionOutcome::Value(value.clone()),
+                facts,
+                obligations: Vec::new(),
+            }]
+        }
         CExpression::Variable(name)
             if state.locals.is_array_object(name) || state.locals.is_aggregate_object(name) =>
         {
@@ -1292,15 +1266,19 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct: _,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => evaluate_c_cast_paths(
             state,
             expression,
             *target_type,
+            *integer_mode,
             *pointee_volatile,
             *pointee_constant,
+            *explicit_qualification,
             assumptions,
             budget,
         )?,
@@ -1522,12 +1500,9 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             let mut paths = Vec::new();
             for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
                 match path.outcome {
-                    CExpressionOutcome::Value(value) => paths.extend(apply_c_bitwise_not(
-                        value,
-                        path.facts,
-                        path.obligations,
-                        assumptions,
-                    )),
+                    CExpressionOutcome::Value(value) => {
+                        paths.extend(apply_c_bitwise_not(value, path.facts, path.obligations))
+                    }
                     CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                         paths.push(CExpressionPath {
                             outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
@@ -1570,12 +1545,15 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
     Ok(paths)
 }
 
+#[allow(clippy::too_many_arguments)] // Cast mode and pointee qualifiers are independent.
 fn evaluate_c_cast_paths(
     state: &CState,
     expression: &CExpression,
     target_type: CType,
+    integer_mode: CIntegerCastMode,
     pointee_volatile: bool,
     pointee_constant: bool,
+    explicit_qualification: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
@@ -1583,7 +1561,7 @@ fn evaluate_c_cast_paths(
     for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
         let CExpressionPath {
             outcome,
-            mut facts,
+            facts,
             mut obligations,
         } = path;
         // Converting a freed pointer to an integer (or to `_Bool`) uses its
@@ -1604,16 +1582,21 @@ fn evaluate_c_cast_paths(
             CExpressionOutcome::Value(value) => {
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                let coerced = if target_type == CType::Int32 {
+                let coerced = if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
+                    match (target_type, value) {
+                        (CType::Int64, CValue::UInt64(bits)) => {
+                            Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
+                        }
+                        _ => Err(CRuntimeError::TypeMismatch),
+                    }
+                } else if target_type == CType::Int32 {
                     match value {
                         value @ (CValue::Int8(_)
                         | CValue::Int16(_)
                         | CValue::UInt8(_)
-                        | CValue::UInt16(_)) => {
-                            promote_c_int32_path_value(value, &mut facts, &effective_assumptions)
-                                .map(CValue::Int32)
-                                .ok_or(CRuntimeError::TypeMismatch)
-                        }
+                        | CValue::UInt16(_)) => promote_c_int32_path_value(value)
+                            .map(CValue::Int32)
+                            .ok_or(CRuntimeError::TypeMismatch),
                         value => cast_c_value_to_type(
                             value,
                             target_type,
@@ -1621,6 +1604,18 @@ fn evaluate_c_cast_paths(
                             &effective_assumptions,
                         ),
                     }
+                } else if target_type == CType::UInt32
+                    && matches!(
+                        value,
+                        CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)
+                    )
+                {
+                    // A narrow value's range was filed where the value was
+                    // produced, in both orders for an unsigned type, so the
+                    // widened word needs no fact of its own.
+                    promote_c_uint32_path_value(value)
+                        .map(CValue::UInt32)
+                        .ok_or(CRuntimeError::TypeMismatch)
                 } else {
                     cast_c_value_to_type(
                         value,
@@ -1631,11 +1626,16 @@ fn evaluate_c_cast_paths(
                 };
                 match coerced {
                     Ok(value) => {
+                        // A cast the source wrote yields exactly the
+                        // destination's qualification. Any other cast keeps
+                        // a const source view. Neither affects whether the
+                        // storage itself may be written.
                         let pointee_constant = pointee_constant
-                            || matches!(
-                                &value,
-                                CValue::Pointer(pointer) if pointer.pointee_constant()
-                            );
+                            || (!explicit_qualification
+                                && matches!(
+                                    &value,
+                                    CValue::Pointer(pointer) if pointer.pointee_constant()
+                                ));
                         CExpressionOutcome::Value(
                             value
                                 .with_pointer_pointee_volatile(pointee_volatile)
@@ -2036,7 +2036,45 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
     Ok(paths)
 }
 
+/// Reads an lvalue, filing the type range of each narrow integer value the
+/// read produces.
+///
+/// A narrow value is in its type's range wherever one exists (see
+/// [`crate::kernel::c_narrow_integer_range_facts`]), and a parameter's range
+/// is an entry fact. Every other narrow value an expression can hold -- a
+/// loaded cell, a local a loop or a call gave a fresh value -- enters it
+/// through this read or as a substituted `CExpression::Value`, so the range
+/// is filed at those two points, once where the value is produced, and no
+/// operator that later widens the value restates it. A range the context
+/// already decides is not refiled.
 pub(in crate::kernel) fn read_c_lvalue_paths(
+    state: &CState,
+    outcome: CLValueOutcome,
+    facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    source: Option<&LoadSourceId>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    let mut paths = read_c_lvalue_paths_without_ranges(
+        state,
+        outcome,
+        facts,
+        obligations,
+        source,
+        assumptions,
+        budget,
+    )?;
+    for path in &mut paths {
+        let CExpressionOutcome::Value(value) = &path.outcome else {
+            continue;
+        };
+        add_narrow_integer_range_execution_pure_facts(&mut path.facts, assumptions, value);
+    }
+    Ok(paths)
+}
+
+fn read_c_lvalue_paths_without_ranges(
     state: &CState,
     outcome: CLValueOutcome,
     facts: Vec<ExecutionPureFact>,

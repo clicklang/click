@@ -6,8 +6,8 @@ name its call sites carry. A termination plan is keyed by the executing name,
 so the helper's own `decreases value;` reaches the function the call graph
 mentions instead of a spelling nothing calls.
 
-The call passes a constant, so the helper's loop unrolls concretely at the
-call site; the ranking proof it carries is what certifies its termination.
+The helper's contract is the call boundary, so `run` applies it at the call,
+and the ranking proof the helper carries is what certifies its termination.
 
 ```c filename=include/drain.h
 #ifndef DRAIN_H

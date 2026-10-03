@@ -12,6 +12,10 @@ by `authority_mode_establishes_and_retires_empty_stack_population` in
 The external catalog symbols `memcpy`, `memcmp`, `memset`, and `strlen` are
 verified in `mdtests/stdlib_external_contracts.md`.
 
+The external catalog symbol `__click_constant_p_unknown`, the value of the C
+builtin `__builtin_constant_p`, is verified in
+[`c_builtin_constant_p.md`](c_builtin_constant_p.md).
+
 The modeled-runtime resource `mutex_guard` is verified in
 [`mutex_guard_resource_body.md`](mutex_guard_resource_body.md) and
 [`mutex_guard_conditional_body.md`](mutex_guard_conditional_body.md).
@@ -51,6 +55,13 @@ theorem integer_add_bridge(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
         apply(int32_add_to_integer(left, right));
+    }
+}
+
+theorem integer_equality_bridge(left: int32, right: int32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right by {
+        apply(int32_equal_of_to_integer(left, right));
     }
 }
 
@@ -401,6 +412,114 @@ theorem docs_use_int32_positive_predecessor_strictly_decreases(value: int32) {
 
     ensures value - 1 < value by {
         apply(int32_positive_predecessor_strictly_decreases(value));
+    }
+}
+
+theorem docs_use_uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures value - 1u32 < value by {
+        apply(uint32_positive_predecessor_strictly_decreases(value));
+    }
+}
+
+theorem docs_use_uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value + 1u32 <= upper by {
+        apply(uint32_increment_upper_bound(value, upper));
+    }
+}
+
+theorem docs_use_uint32_increment_strictly_increases(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value < value + 1u32 by {
+        apply(uint32_increment_strictly_increases(value, upper));
+    }
+}
+
+theorem docs_use_uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0u32 < upper - value by {
+        apply(uint32_lt_implies_positive_difference(value, upper));
+    }
+}
+
+theorem docs_use_uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound by {
+        apply(uint32_difference_decreases_after_increment(value, bound));
+    }
+}
+
+theorem docs_use_uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last by {
+        apply(uint32_lt_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint32_le_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last by {
+        apply(uint32_lt_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last by {
+        apply(uint32_le_transitive(first, middle, last));
+    }
+}
+
+theorem docs_use_uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+    requires greater > lower;
+
+    ensures lower < greater by {
+        apply(uint32_gt_implies_reversed_lt(greater, lower));
+    }
+}
+
+theorem docs_use_uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+    requires lower < greater;
+
+    ensures greater > lower by {
+        apply(uint32_lt_implies_reversed_gt(lower, greater));
+    }
+}
+
+theorem docs_use_uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+    requires greater >= lower;
+
+    ensures lower <= greater by {
+        apply(uint32_ge_implies_reversed_le(greater, lower));
+    }
+}
+
+theorem docs_use_uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+    requires lower <= greater;
+
+    ensures greater >= lower by {
+        apply(uint32_le_implies_reversed_ge(lower, greater));
     }
 }
 

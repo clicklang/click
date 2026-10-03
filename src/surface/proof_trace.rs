@@ -68,6 +68,9 @@ pub(super) struct TraceBody {
 pub(super) struct TraceBranch {
     pub header: String,
     pub source_tactic_path: Option<Vec<usize>>,
+    /// How the source spells the two arms: `then`/`else` for an `if`,
+    /// `left`/`right` for `cases` and `both`.
+    pub arm_names: [&'static str; 2],
     pub arms: [(BranchId, Vec<TraceFact>); 2],
 }
 
@@ -131,7 +134,7 @@ impl CertificationTraceState {
 
 fn traced_read(term: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }
         Bitvector32Term::Variable(variable) => {
@@ -627,7 +630,7 @@ fn append_path(
                 if let Some(arm) = selected_arm {
                     detail.push_str(&format!(
                         "\n{indent}{header} ({} arm)",
-                        if arm == 0 { "then" } else { "else" }
+                        branch.arm_names[arm]
                     ));
                     append_added_facts(
                         &mut detail,
@@ -712,7 +715,7 @@ fn append_path(
                     branch.source_tactic_path.as_deref(),
                     tactic_location,
                 ),
-                if arm == 0 { "then" } else { "else" },
+                branch.arm_names[arm],
             ));
             append_added_facts(&mut detail, facts, labels, &format!("{indent}  "));
             depth += 1;
@@ -1095,15 +1098,21 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let Bitvector32Term::Variable(variable) =
-            crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone())
-        else {
+        let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+            memory.clone(),
+            pointer.clone(),
+            crate::kernel::LoadKind::Bits32,
+        ) else {
             panic!("an unresolved external read has a load variable");
         };
         let defining = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(
                 Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::MemoryLoad(memory, Box::new(pointer))),
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory,
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
+                )),
             ),
             true,
         );
@@ -1152,6 +1161,7 @@ mod tests {
                 TraceBranch {
                     header: "source tactic 0: branch".into(),
                     source_tactic_path: Some(vec![0]),
+                    arm_names: ["then", "else"],
                     arms: [
                         (
                             BranchId::ROOT,

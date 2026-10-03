@@ -193,8 +193,9 @@ impl DynamicViewDependencyIndex {
     fn new(
         bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
         unbound_views: &[CResourceFact],
+        assumptions: &PureFactContext,
     ) -> Self {
-        let (bound, inserted) = ResourceContext::new()
+        let (bound, inserted) = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts_and_occurrences(bound_views.iter().map(|(view, _)| view.clone()));
         let bound_dependencies = inserted
             .into_iter()
@@ -204,7 +205,8 @@ impl DynamicViewDependencyIndex {
         Self {
             bound,
             bound_dependencies,
-            unbound: ResourceContext::new().unchecked_with_facts(unbound_views.iter().cloned()),
+            unbound: ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(unbound_views.iter().cloned()),
         }
     }
 }
@@ -1799,7 +1801,8 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         })
         .unwrap_or_default();
     let mut dynamic_dependency = None;
-    let temporary_view_index = DynamicViewDependencyIndex::new(&temporary_views, &[]);
+    let temporary_view_index =
+        DynamicViewDependencyIndex::new(&temporary_views, &[], available_pure_facts.assumptions());
     if let Some(instantiated) = &instantiated {
         for (_, lowered) in &instantiated.declared {
             if let Some(binding) = dynamic_body_fact_dependency(
@@ -1958,7 +1961,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         return Ok(());
     }
     let parent = lower_resource_clause_at_state(resource, parameters, arguments, fact_state)
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
     let parent_subject = resource_clause_subject(resource);
     let mut owned_children = Vec::new();
     for contained in composite_body.contains() {
@@ -1975,7 +1978,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                 )
             })?;
         let lowered = lower_resource_clause_at_state(&contained, parameters, arguments, fact_state)
-            .map_err(|error| error.message().to_string())?;
+            .map_err(|error| error.raw_summary().to_string())?;
         if let Some(child) = lowered.owned_resource() {
             let child_subject = resource_clause_subject(&contained);
             surface_propositions
@@ -1989,7 +1992,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         child: child.clone(),
                     },
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
             owned_children.push((child.clone(), child_subject));
         }
         let (ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment)) = &contained
@@ -1998,7 +2001,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         };
         if let Some(kernel) =
             resource_clause_loadable_prop_at_state(&contained, parameters, arguments, fact_state)
-                .map_err(|error| error.message().to_string())?
+                .map_err(|error| error.raw_summary().to_string())?
         {
             surface_propositions
                 .record_lowering(
@@ -2007,7 +2010,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                     },
                     &kernel,
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         }
     }
     for left_index in 0..owned_children.len() {
@@ -2024,7 +2027,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         right: right.clone(),
                     },
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         }
     }
     for (index, kernel) in &instantiated.declared {
@@ -2042,7 +2045,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         })?;
         surface_propositions
             .record_lowering(&surface, kernel)
-            .map_err(|error| error.message().to_string())?;
+            .map_err(|error| error.raw_summary().to_string())?;
     }
     Ok(())
 }
@@ -2108,7 +2111,7 @@ pub(super) fn record_initial_composite_surface_facts(
     let result = (|| {
         let mut substitutions =
             resource_argument_substitutions(definition, resource, "initial resource projection", 0)
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         extend_substitutions_with_witnesses(
             &mut substitutions,
             definition,
@@ -2123,7 +2126,7 @@ pub(super) fn record_initial_composite_surface_facts(
             click_function_environment,
             None,
         )
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
         let Some(true) = try_select_composite_resource_body(
             definition,
             &substitutions,
@@ -2158,7 +2161,7 @@ pub(super) fn record_initial_composite_surface_facts(
             if available_pure_facts.contains(&kernel) {
                 surface_propositions
                     .record_lowering(&surface, &kernel)
-                    .map_err(|error| error.message().to_string())?;
+                    .map_err(|error| error.raw_summary().to_string())?;
             }
         }
         Ok(())
@@ -2536,13 +2539,14 @@ fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
         // Keep ownership-derived separation lazy. The compact carrier is
         // checked by the kernel when a particular member pair is requested;
         // publishing every pair here makes one composite unfold quadratic.
-        let owned_context = ResourceContext::new().unchecked_with_facts(
-            contained_resources
-                .facts()
-                .iter()
-                .filter(|fact| fact.is_own())
-                .cloned(),
-        );
+        let owned_context = ResourceContext::new_with_equalities(propositions.assumptions())
+            .unchecked_with_facts(
+                contained_resources
+                    .facts()
+                    .iter()
+                    .filter(|fact| fact.is_own())
+                    .cloned(),
+            );
         propositions.insert(Proposition::CResourceComposition(owned_context));
     }
 }
@@ -2575,7 +2579,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
                 "could not project resource `{}` contained `{}` viewability: {}",
                 definition.name(),
                 describe_resource_clause(&contained),
-                error.message()
+                error.raw_summary()
             )
         })?;
     }
@@ -2777,7 +2781,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
                 format!(
                     "could not lower resource `{name}` contained `{}`: {}\n  {}",
                     describe_resource_clause(&contained),
-                    error.message(),
+                    error.raw_summary(),
                     describe_available_facts(&[], resources.facts(), parameters, arguments, &[])
                 )
             })?;
@@ -2854,7 +2858,7 @@ fn resource_value_substitutions_with_witnesses(
             predicate_environment,
             click_function_environment,
         )
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
         &owned_definitions
     };
     let fact = CResourceFact::own(CResource::Composite {
@@ -3245,6 +3249,21 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })
     };
     let already_unfolded = folded_resources.is_none();
+    if already_unfolded
+        && access == ResourceBodyAccess::Open
+        && state.uses_population_authority_semantics()
+    {
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `open({})` Requires {} {}",
+            describe_resource_clause(resource),
+            if abstract_resource.is_view() {
+                "views"
+            } else {
+                "owns"
+            },
+            describe_resource_clause(resource),
+        )));
+    }
     let resources = if let Some(resources) = folded_resources {
         resources
     } else {
@@ -3463,8 +3482,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         } else {
             Vec::new()
         };
-        let temporary_view_index =
-            DynamicViewDependencyIndex::new(&temporary_views, &temporary_unbound_views);
+        let temporary_view_index = DynamicViewDependencyIndex::new(
+            &temporary_views,
+            &temporary_unbound_views,
+            available_pure_facts.assumptions(),
+        );
         if let Some(binding) = dynamic_body_fact_dependency(
             &lowered_fact,
             &fact_state,
@@ -3561,10 +3583,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 .collect::<Vec<_>>();
             state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
         } else {
-            // Population cleanup is certified as the exact exchange of its
-            // units for its body. Do not normalize unrelated framed memory
-            // (for example adjacent mutex storage) during that exchange.
-            let resources = if tracks_population_in_body {
+            // Population cleanup and authority-mode private body opening
+            // are certified as exact exchanges. Preserve adjacent framed
+            // ranges so nested opens have the same delta as the kernel law.
+            let resources = if tracks_population_in_body
+                || (access == ResourceBodyAccess::Open
+                    && state.uses_population_authority_semantics())
+            {
                 state
                     .resources()
                     .clone()
@@ -3669,7 +3694,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
     }
 
-    let unfolded_resources = ResourceContext::new().unchecked_with_facts(unfolded_facts);
+    let unfolded_resources =
+        ResourceContext::new_with_equalities(available_pure_facts.assumptions())
+            .unchecked_with_facts(unfolded_facts);
     append_composite_resource_relation_facts_with_store(
         abstract_resource.resource(),
         &unfolded_resources,
@@ -3778,6 +3805,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         })?;
         let mut closing_view = false;
         let mut authority_closing_fact_state = None;
+        let mut authority_control_definition = None;
         let mut folded_representation_already_present = false;
         let mut folded_authority_occurrence = None;
         let authority_control_body = guard_state.uses_population_authority_semantics()
@@ -3788,8 +3816,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             let CFunctionOutcome::Return { value, state } = &mut outcome else {
                 unreachable!("the return outcome was checked above");
             };
-            let population = lower_resource_clause_at_state_with_result(
-                resource, parameters, arguments, state, value,
+            let population = lower_resource_clause_at_state_with_assumptions(
+                resource,
+                parameters,
+                arguments,
+                state,
+                Some(value),
+                pure_facts.assumptions(),
             )?;
             let quantity = population
                 .owned_quantity_term()
@@ -3869,6 +3902,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             describe_resource_clause(resource)
                         ))
                     })?;
+                authority_control_definition = Some(definition.clone());
             } else if state.uses_population_authority_semantics() {
                 // An ordinary wrapper transfers its existing children without
                 // installing a legacy population ledger.
@@ -3897,8 +3931,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             let CFunctionOutcome::Return { value, state } = &outcome else {
                 unreachable!("the return outcome was checked above");
             };
-            let population = lower_resource_clause_at_state_with_result(
-                resource, parameters, arguments, state, value,
+            let population = lower_resource_clause_at_state_with_assumptions(
+                resource,
+                parameters,
+                arguments,
+                state,
+                Some(value),
+                pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
             if !state.resources().satisfies_fact(&population, assumptions) {
@@ -3983,12 +4022,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                     describe_resource_clause(resource)
                 ))
             })?;
-            let lowered = lower_resource_clause_at_state_with_result(
+            let lowered = lower_resource_clause_at_state_with_assumptions(
                 &contained,
                 parameters,
                 arguments,
                 &guard_state,
-                &guard_result,
+                Some(&guard_result),
+                pure_facts.assumptions(),
             )?;
             if lowered.is_view()
                 && unique_borrowed_resource_dependency(&guard_state, &lowered)
@@ -4002,7 +4042,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                 temporary_unbound_views.push(lowered);
             }
         }
-        let temporary_view_index = DynamicViewDependencyIndex::new(&[], &temporary_unbound_views);
+        let temporary_view_index = DynamicViewDependencyIndex::new(
+            &[],
+            &temporary_unbound_views,
+            pure_facts.assumptions(),
+        );
         for fact in body_facts {
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
                     ClickError::new(format!(
@@ -4162,12 +4206,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?;
-            let mut lowered = lower_resource_clause_at_state_with_result(
+            let mut lowered = lower_resource_clause_at_state_with_assumptions(
                 &contained,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             if lowered.is_view() {
                 let binding = unique_borrowed_resource_dependency(&post_state, &lowered)
@@ -4305,12 +4350,13 @@ fn fold_composite_resources_on_outcome_with_facts(
         post_state = post_state.with_resource_context(resources);
 
         if closure == ResourceBodyClosure::Initialize && !folded_representation_already_present {
-            let abstract_resource = lower_resource_clause_at_state_with_result(
+            let abstract_resource = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             // An owned composite that packages a loan-backed view is a
             // borrowing composite (escaping borrows in docs/internals/stable-views.md). Its head keeps the
@@ -4378,6 +4424,16 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             folded_authority_occurrence = inserted_occurrence;
             post_state = post_state.with_resource_context(resources);
+            if let Some(definition) = authority_control_definition.as_ref() {
+                post_state = post_state
+                    .with_checked_current_control_wrapper(
+                        &abstract_resource,
+                        definition,
+                        &assumptions,
+                    )
+                    .map_err(ClickError::new)?;
+            }
+
             if let (Some(occurrence), Some(binding)) =
                 (folded_authority_occurrence, body_loan_dependency.clone())
             {
@@ -4404,12 +4460,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             && !authority_control_body
             && !lowered_contained.is_empty()
         {
-            let abstract_resource = lower_resource_clause_at_state_with_result(
+            let abstract_resource = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
             let Some(authority_occurrence) = folded_authority_occurrence.or_else(|| {
@@ -4452,12 +4509,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
         }
         if matches!(closure, ResourceBodyClosure::CloseOpen { .. }) {
-            let selected = lower_resource_clause_at_state_with_result(
+            let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
                 selected.resource()
@@ -4830,12 +4888,14 @@ fn extend_substitutions_with_witnesses(
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
         _ => resource,
     };
-    let fact = match result {
-        Some(result) => lower_resource_clause_at_state_with_result(
-            resource, parameters, arguments, state, result,
-        )?,
-        None => lower_resource_clause_at_state(resource, parameters, arguments, state)?,
-    };
+    let fact = lower_resource_clause_at_state_with_assumptions(
+        resource,
+        parameters,
+        arguments,
+        state,
+        result,
+        assumptions,
+    )?;
     let owned_definitions;
     let definitions = if let Some(definitions) = compiled_definitions {
         definitions
@@ -5081,9 +5141,16 @@ fn materialize_composite_resource_cells_from_snapshot(
                         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
                             continue;
                         }
+                        // A pointer field is held as its four-byte words.
+                        let kind = if element_type.is_pointer() {
+                            crate::kernel::LoadKind::Bits32
+                        } else {
+                            crate::surface::lowering::load_kind_of_element(element_type)
+                        };
                         let load = crate::kernel::canonical_form_of_load(
                             crate::kernel::intern_c_memory(naming_memory.clone()),
                             pointer.clone(),
+                            kind,
                         );
                         let value = if element_type.is_pointer() {
                             CValue::Int32(load)
@@ -5138,13 +5205,23 @@ fn materialize_composite_resource_cells_from_snapshot(
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
             continue;
         }
+        // Preserve scalar pointee types, including substituted pointer values.
+        // Pointer cells retain the word representation used for load origins,
+        // and each cell is named as the read of its own kind.
+        let element_type = contract_segment_element_type(parameters, segment);
+        let kind = if !element_type.is_pointer() {
+            crate::surface::lowering::load_kind_of_element(element_type)
+        } else if element_width == 1 {
+            crate::kernel::LoadKind::UInt8
+        } else {
+            crate::kernel::LoadKind::Bits32
+        };
         let load = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_c_memory(naming_memory.clone()),
             pointer.clone(),
+            kind,
         );
-        // Preserve scalar pointee types, including substituted pointer values.
-        // Pointer cells retain the word representation used for load origins.
-        let value = match contract_segment_element_type(parameters, segment) {
+        let value = match element_type {
             element_type if !element_type.is_pointer() => {
                 crate::surface::lowering::symbolic_value_from_load(&pointer, element_type, load)
             }
@@ -5262,7 +5339,7 @@ void child_release(struct child* obj) {
             pointer: range.base().offset_by_bytes(4),
             value_type: CType::Int32,
         };
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[]);
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], assumptions);
         assert!(
             dynamic_body_fact_dependency(&fact, &observed, assumptions, &no_temporary_views,)
                 .is_err(),
@@ -5356,6 +5433,7 @@ void child_release(struct child* obj) {
             Box::new(Bitvector32Term::MemoryLoad(
                 snapshot,
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(0)),
         );
@@ -5402,7 +5480,7 @@ void child_release(struct child* obj) {
             )
             .with_loan_ledger(Some(ledger.clone()))
             .with_loan_participant(Some(lender));
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[]);
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
         let dependency = dynamic_body_fact_dependency(
             &proposition,
             &bound_state,

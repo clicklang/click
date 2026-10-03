@@ -11,7 +11,7 @@ impl PureFactContext {
             Box::new(right.clone()),
         ))
     }
-    fn direct_bitvector_equality_evidence(
+    pub(in crate::kernel) fn direct_bitvector_equality_evidence(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
@@ -93,6 +93,20 @@ impl PureFactContext {
         )))
     }
 
+    fn indexed_exact_int32_constant(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, Box<Proposition>)> {
+        self.exact_constant_equalities
+            .get(term)?
+            .keys()
+            .find_map(|condition| {
+                let source = Proposition::ConditionIs(condition.clone(), true);
+                let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
+                Some((value, Box::new(source)))
+            })
+    }
+
     fn signed_constant_evidence(
         &self,
         term: &Bitvector32Term,
@@ -100,12 +114,19 @@ impl PureFactContext {
         if let Some(value) = signed_bitvector_constant(term) {
             return Some((value, SignedConstantEvidence::Constant));
         }
+        if let Some((value, source)) = self.indexed_exact_int32_constant(term) {
+            return Some((value, SignedConstantEvidence::ExactEquality(source)));
+        }
         let variable = bitvector_variable(term)?;
         let mut lower: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         let mut upper: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         for (endpoint, other, strict, forward) in self.signed_order_bound_entries(term) {
             let source = self.exact_order_bound_source(&endpoint, &other, strict, forward)?;
+            let pinned = self.indexed_exact_int32_constant(&other);
+            let other_value = signed_bitvector_constant(&other)
+                .or_else(|| pinned.as_ref().map(|(value, _)| *value));
             let evidence = IndexedSignedOrderBoundEvidence {
+                other_equality: pinned.map(|(_, source)| source),
                 endpoint,
                 other: other.clone(),
                 strict,
@@ -113,7 +134,7 @@ impl PureFactContext {
                 source: Box::new(source),
             };
             if !forward
-                && let Some(bound) = signed_bitvector_constant(&other)
+                && let Some(bound) = other_value
                 && let Some(bound) = if strict {
                     bound.checked_add(1)
                 } else {
@@ -124,7 +145,7 @@ impl PureFactContext {
                 lower = Some((bound, evidence.clone()));
             }
             if forward
-                && let Some(bound) = signed_bitvector_constant(&other)
+                && let Some(bound) = other_value
                 && let Some(bound) = if strict {
                     bound.checked_sub(1)
                 } else {
@@ -288,6 +309,21 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_small_uint64_index_order(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_indexed_greater_equal(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_masked_order(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_widened_sum_bound(condition) {
+            return Some(value);
+        }
         // Wide comparisons may use a recorded constant equality. Consult only
         // the queried terms' equality components, never unrelated conditions.
         let wide_comparison = match condition {
@@ -302,23 +338,87 @@ impl PureFactContext {
             ConditionTerm::Bitvector64Equal(a, b) => Some((a, b, 8)),
             _ => None,
         };
-        if let Some((left, right, operator)) = wide_comparison
-            && let (Some(left), Some(right)) = (
-                self.wide_constant_from_equalities(left),
-                self.wide_constant_from_equalities(right),
-            )
-        {
-            return Some(match operator {
-                0 => (left as i64) < (right as i64),
-                1 => (left as i64) <= (right as i64),
-                2 => (left as i64) > (right as i64),
-                3 => (left as i64) >= (right as i64),
-                4 => left < right,
-                5 => left <= right,
-                6 => left > right,
-                7 => left >= right,
-                _ => left == right,
-            });
+        if let Some((left, right, operator)) = wide_comparison {
+            if operator == 8 {
+                let left_base = self.bitvector64_identity_base(left);
+                let right_base = self.bitvector64_identity_base(right);
+                if (!std::ptr::eq(left_base, left.as_ref())
+                    || !std::ptr::eq(right_base, right.as_ref()))
+                    && let Some(answer) = self.decide(&ConditionTerm::int64_equal(
+                        left_base.clone(),
+                        right_base.clone(),
+                    ))
+                {
+                    return Some(answer);
+                }
+            }
+            let left_constant = self.wide_constant_from_equalities(left);
+            let right_constant = self.wide_constant_from_equalities(right);
+            // A constant outside the queried operand's signed interval cannot
+            // have the same bits. Consult only that operand's indexed facts;
+            // do not clone pointer or memory terms to try extra comparisons.
+            if operator == 8 {
+                let bounded = match (left_constant, right_constant) {
+                    (None, Some(value)) => self
+                        .int64_interval(left)
+                        .map(|bounds| (bounds, value as i64)),
+                    (Some(value), None) => self
+                        .int64_interval(right)
+                        .map(|bounds| (bounds, value as i64)),
+                    _ => None,
+                };
+                if bounded.is_some_and(|((lower, upper), value)| value < lower || value > upper) {
+                    return Some(false);
+                }
+            }
+            if let (Some(left), Some(right)) = (left_constant, right_constant) {
+                return Some(match operator {
+                    0 => (left as i64) < (right as i64),
+                    1 => (left as i64) <= (right as i64),
+                    2 => (left as i64) > (right as i64),
+                    3 => (left as i64) >= (right as i64),
+                    4 => left < right,
+                    5 => left <= right,
+                    6 => left > right,
+                    7 => left >= right,
+                    _ => left == right,
+                });
+            }
+            // A single constant endpoint also transports an indexed order
+            // fact through an equality (e.g. i < 4, len == 4 => i < len).
+            // Consult only the two equality components, and recurse only if
+            // replacing a nonconstant endpoint makes the goal smaller.
+            let replacement = |term: &Bitvector32Term, value: Option<u64>| {
+                if term.uint64_as_const().is_some() || term.int64_as_const().is_some() {
+                    term.clone()
+                } else if let Some(value) = value {
+                    if operator < 4 {
+                        Bitvector32Term::Int64Constant(value as i64)
+                    } else {
+                        Bitvector32Term::UInt64Constant(value)
+                    }
+                } else {
+                    term.clone()
+                }
+            };
+            let a = replacement(left, left_constant);
+            let b = replacement(right, right_constant);
+            if &a != left.as_ref() || &b != right.as_ref() {
+                let rewritten = match operator {
+                    0 => ConditionTerm::int64_signed_less_than(a, b),
+                    1 => ConditionTerm::int64_signed_less_equal(a, b),
+                    2 => ConditionTerm::int64_signed_greater_than(a, b),
+                    3 => ConditionTerm::int64_signed_greater_equal(a, b),
+                    4 => ConditionTerm::uint64_less_than(a, b),
+                    5 => ConditionTerm::uint64_less_equal(a, b),
+                    6 => ConditionTerm::uint64_greater_than(a, b),
+                    7 => ConditionTerm::uint64_greater_equal(a, b),
+                    _ => ConditionTerm::uint64_equal(a, b),
+                };
+                if let Some(value) = self.decide(&rewritten) {
+                    return Some(value);
+                }
+            }
         }
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => {
@@ -336,8 +436,7 @@ impl PureFactContext {
                     return Some(value);
                 }
                 if let ConditionTerm::Bitvector32Equal(left, right) = condition
-                    && (self.equality_graph.has_term_equivalences()
-                        && self.equality_graph.are_int32_equal(left, right)
+                    && (self.int32_values_known_equal(left, right)
                         || super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                             left,
                             right,
@@ -431,10 +530,10 @@ impl PureFactContext {
     /// pointer the alias indexes connect it to, through block aliases and
     /// same-block offset aliases alike. Each spelling is paired with the
     /// spelling it was reached from, so the equalities a conclusion rests
-    /// on can be taken back through the exact check. This is the walk
-    /// `has_indexed_pointer_equality_path` takes: each adjacency is a keyed
-    /// lookup, and the walk visits only the equality component reachable
-    /// from `start`.
+    /// on can be taken back through the exact check. Evidence-producing
+    /// consumers retain this output-sensitive enumeration; Boolean equality
+    /// queries use `pointers_known_equal` instead. Each adjacency is keyed,
+    /// and the walk visits only the component reachable from `start`.
     pub(in crate::kernel) fn pointer_equality_component(
         &self,
         start: &Pointer,
@@ -1007,7 +1106,7 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> Option<bool> {
-        if left == right || self.equality_graph.are_int32_equal(left, right) {
+        if self.int32_values_known_equal(left, right) {
             return Some(true);
         }
         if let Some(value) =
@@ -1063,14 +1162,48 @@ impl PureFactContext {
         None
     }
 
-    pub(super) fn wide_constant_from_equalities(&self, term: &Bitvector32Term) -> Option<u64> {
+    /// Strip bit-preserving 64-bit conversions and signed additive identities
+    /// through borrowed operands. Each node costs at most its operand's indexed
+    /// query; clone only after the walk, not each remaining subtree.
+    fn bitvector64_identity_base<'a>(&self, mut term: &'a Bitvector32Term) -> &'a Bitvector32Term {
+        loop {
+            term = match term {
+                Bitvector32Term::Int64Add(a, b)
+                    if self.wide_constant_from_equalities(b) == Some(0) =>
+                {
+                    a
+                }
+                Bitvector32Term::Int64Add(a, b)
+                    if self.wide_constant_from_equalities(a) == Some(0) =>
+                {
+                    b
+                }
+                Bitvector32Term::Int64Subtract(a, b)
+                    if self.wide_constant_from_equalities(b) == Some(0) =>
+                {
+                    a
+                }
+                // A signed-to-unsigned 64-bit conversion preserves all bits.
+                Bitvector32Term::UInt64FromInt64(value) => value,
+                _ => return term,
+            };
+        }
+    }
+
+    pub(in crate::kernel) fn wide_constant_from_equalities(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<u64> {
         fn evaluate(
             context: &PureFactContext,
             term: &Bitvector32Term,
-            active: &mut BTreeSet<Bitvector32Term>,
-            memo: &mut BTreeMap<Bitvector32Term, Option<u64>>,
+            active: &mut BTreeSet<usize>,
+            memo: &mut BTreeMap<usize, Option<u64>>,
         ) -> Option<u64> {
-            if let Some(value) = memo.get(term) {
+            // Identities live only for this query. No deep term clone or
+            // structural comparison is needed for the traversal memo.
+            let identity = term as *const Bitvector32Term as usize;
+            if let Some(value) = memo.get(&identity) {
                 return *value;
             }
             // Equality cycles and deeply nested arithmetic are search, not
@@ -1078,13 +1211,43 @@ impl PureFactContext {
             if active.len() >= 128 {
                 return None;
             }
-            if !active.insert(term.clone()) {
+            if !active.insert(identity) {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
             let mut value = match term {
                 Bitvector32Term::UInt64Constant(value) => Some(*value),
                 Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                Bitvector32Term::Int64Add(left, right)
+                | Bitvector32Term::Int64Subtract(left, right)
+                | Bitvector32Term::Int64Multiply(left, right)
+                | Bitvector32Term::Int64Divide(left, right)
+                | Bitvector32Term::Int64Remainder(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .and_then(|(a, b)| {
+                            let (a, b) = (a as i64, b as i64);
+                            match term {
+                                Bitvector32Term::Int64Add(..) => a.checked_add(b),
+                                Bitvector32Term::Int64Subtract(..) => a.checked_sub(b),
+                                Bitvector32Term::Int64Multiply(..) => a.checked_mul(b),
+                                Bitvector32Term::Int64Divide(..) => a.checked_div(b),
+                                _ => a.checked_rem(b),
+                            }
+                            .map(|value| value as u64)
+                        })
+                }
+                Bitvector32Term::Int64From32(inner) | Bitvector32Term::Int64FromUInt32(inner) => {
+                    context
+                        .known_signed_constant_after_normalization(inner)
+                        .map(|a| {
+                            if matches!(term, Bitvector32Term::Int64From32(..)) {
+                                a as i32 as i64 as u64
+                            } else {
+                                u64::from(a as u32)
+                            }
+                        })
+                }
                 Bitvector32Term::UInt64Add(left, right) => evaluate(context, left, active, memo)
                     .zip(evaluate(context, right, active, memo))
                     .map(|(a, b)| a.wrapping_add(b)),
@@ -1098,61 +1261,108 @@ impl PureFactContext {
                         .zip(evaluate(context, right, active, memo))
                         .map(|(a, b)| a.wrapping_mul(b))
                 }
+                Bitvector32Term::UInt64Divide(left, right)
+                | Bitvector32Term::UInt64Remainder(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .and_then(|(a, b)| {
+                            if b == 0 {
+                                return None;
+                            }
+                            Some(if matches!(term, Bitvector32Term::UInt64Divide(..)) {
+                                a / b
+                            } else {
+                                a % b
+                            })
+                        })
+                }
+                Bitvector32Term::UInt64BitwiseAnd(left, right)
+                | Bitvector32Term::UInt64BitwiseOr(left, right)
+                | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .map(|(a, b)| match term {
+                            Bitvector32Term::UInt64BitwiseAnd(..) => a & b,
+                            Bitvector32Term::UInt64BitwiseOr(..) => a | b,
+                            _ => a ^ b,
+                        })
+                }
+                Bitvector32Term::UInt64BitwiseNot(inner) => {
+                    evaluate(context, inner, active, memo).map(|a| !a)
+                }
+                Bitvector32Term::UInt64ShiftLeft(left, right)
+                | Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
+                    let count = context
+                        .known_signed_constant_after_normalization(right)
+                        .map(|a| u64::from(a as u32))
+                        .or_else(|| evaluate(context, right, active, memo));
+                    evaluate(context, left, active, memo)
+                        .zip(count)
+                        .and_then(|(a, b)| {
+                            if b >= 64 {
+                                return None;
+                            }
+                            Some(if matches!(term, Bitvector32Term::UInt64ShiftLeft(..)) {
+                                a.wrapping_shl(b as u32)
+                            } else {
+                                a >> b
+                            })
+                        })
+                }
+                Bitvector32Term::UInt64From32(inner) | Bitvector32Term::UInt64FromInt32(inner) => {
+                    context
+                        .known_signed_constant_after_normalization(inner)
+                        .map(|a| {
+                            if matches!(term, Bitvector32Term::UInt64FromInt32(..)) {
+                                a as i32 as i64 as u64
+                            } else {
+                                u64::from(a as u32)
+                            }
+                        })
+                }
+                Bitvector32Term::UInt64FromInt64(inner) => evaluate(context, inner, active, memo),
+                Bitvector32Term::UInt32From64(inner) => {
+                    evaluate(context, inner, active, memo).map(|a| u64::from(a as u32))
+                }
                 _ => None,
             };
             if value.is_none()
                 && let Some(neighbors) = context.bitvector64_equality_facts.get(term)
             {
-                for (equal, _) in neighbors.iter() {
+                for (equal, fact) in neighbors.iter() {
                     value = evaluate(context, equal, active, memo);
                     if value.is_some() {
+                        record_implicit_reasoning_provenance(
+                            context,
+                            &Proposition::ConditionIs(fact.clone(), true),
+                        );
                         break;
                     }
                 }
             }
-            active.remove(term);
-            memo.insert(term.clone(), value);
+            active.remove(&identity);
+            memo.insert(identity, value);
             value
         }
         evaluate(self, term, &mut BTreeSet::new(), &mut BTreeMap::new())
     }
 
-    pub(in crate::kernel) fn bitvector_terms_equal_from_facts(
+    /// Query wrapping int32 value equality maintained by the trusted graph.
+    /// This performs no fact-component walk, arithmetic search, or snapshot
+    /// transport. `false` means unknown. Equal residues establish exact byte
+    /// offsets only through the separate offset judgment's no-wrap guards.
+    pub(in crate::kernel) fn int32_values_known_equal(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        if left == right {
-            return true;
-        }
-
-        // Memoized only under an enclosing id scope; this search is called
-        // from deep memory-resolution recursions where hashing the fact set
-        // per call would cost more than the search itself.
-        let memo_id = ambient_assumptions_memo_id(self);
-        let memo_key = memo_id.map(|memo_id| (memo_id, left.clone(), right.clone()));
-        if let Some(memo_key) = &memo_key
-            && let Some(hit) =
-                EQUAL_FROM_FACTS_MEMO.with(|memo| memo.borrow().get(memo_key).copied())
-        {
-            return hit;
-        }
-        let result = self.bitvector_terms_equal_from_facts_uncached(left, right);
-        if let Some(memo_key) = memo_key {
-            EQUAL_FROM_FACTS_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= DECIDE_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert(memo_key, result);
-            });
-        }
-        result
+        left == right || self.equality_graph.are_int32_equal(left, right)
     }
 
     /// The other terms exact equality facts join to `term`: its equality
-    /// class in the int32 equality graph, less `term` itself, in canonical
-    /// form. Empty when no equality fact mentions `term`.
+    /// component in the exact-premise adjacency index, less `term` itself,
+    /// in canonical form. This enumerates evidence spellings; Boolean value
+    /// equality uses `int32_values_known_equal`. Empty when no fact mentions it.
     ///
     /// Work is the class the search reaches and the edges inside it, never
     /// the whole fact set once the graph is built, so an index keyed by
@@ -1185,33 +1395,6 @@ impl PureFactContext {
         seen.remove(&start);
         seen.remove(term);
         seen.into_iter().collect()
-    }
-
-    /// The equality-graph search behind [`Self::bitvector_terms_equal_from_facts`].
-    /// This search is pure — it consults no fuel or depth guards — so both
-    /// positive and negative results are memoizable by content identity.
-    fn bitvector_terms_equal_from_facts_uncached(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        let equality_index = self.bitvector_equality_index();
-        let target = equality_graph_term_key(right);
-        let mut seen = BTreeSet::new();
-        let mut stack = vec![equality_graph_term_key(left)];
-        while let Some(term) = stack.pop() {
-            if !seen.insert(term.clone()) {
-                continue;
-            }
-            if term == target {
-                return true;
-            }
-            if let Some(neighbors) = equality_index.get(&term) {
-                stack.extend(neighbors.keys().cloned());
-            }
-        }
-
-        false
     }
 
     /// Retain one deterministic path made only from exact int32 equality
@@ -1291,6 +1474,13 @@ impl PureFactContext {
             return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
                 mirrored_premise,
             )));
+        }
+        if let (Some(left), Some(right)) = (
+            super::super::exact_wide_scaled_offset_constant(left, self),
+            super::super::exact_wide_scaled_offset_constant(right, self),
+        ) && left == right
+        {
+            return Some(PointerOffsetCongruenceEvidence::WideScaledConstant { value: left });
         }
         if let Some(evidence) = self.pointer_offset_element_index_evidence(left, right) {
             return Some(evidence);
@@ -1397,7 +1587,14 @@ impl PureFactContext {
         let (left_memory, left_pointer) = crate::kernel::eval::registered_load_for_variable(left)?;
         let (right_memory, right_pointer) =
             crate::kernel::eval::registered_load_for_variable(right)?;
-        if left_memory != right_memory || left_pointer.block != right_pointer.block {
+        // Congruent addresses in one snapshot name one value only when the two
+        // reads are one kind of read.
+        let left_kind = crate::kernel::eval::registered_load_kind_for_variable(left)?;
+        let right_kind = crate::kernel::eval::registered_load_kind_for_variable(right)?;
+        if left_memory != right_memory
+            || left_kind != right_kind
+            || left_pointer.block != right_pointer.block
+        {
             return None;
         }
         Some(LoadAddressCongruenceEvidence {
@@ -1869,8 +2066,8 @@ impl PureFactContext {
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone())
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(pointer.clone())
@@ -1921,6 +2118,15 @@ impl PureFactContext {
 
         let mut range = IntegerRangeFacts::default();
         for (condition, value) in self.condition_facts.iter() {
+            if let (ConditionTerm::Bitvector32Equal(fact_left, fact_right), false) =
+                (condition, *value)
+                && let Some((fact_variable, excluded)) =
+                    bitvector_variable_and_constant(fact_left, fact_right)
+                && fact_variable == variable
+            {
+                range.excluded.insert(excluded);
+                continue;
+            }
             let Some((fact_left, fact_right, strict)) = condition_as_order_fact(condition, *value)
             else {
                 continue;
@@ -1947,7 +2153,20 @@ impl PureFactContext {
             }
         }
 
-        matches!((range.lower, range.upper), (Some(lower), Some(upper)) if lower == upper && lower == constant)
+        // A bound the variable is known not to equal moves past that value:
+        // `0 <= x < 4` with `x != 0`, `x != 1` and `x != 2` leaves `x == 3`.
+        // Each step consumes one excluded value, so the walk is bounded by
+        // the facts.
+        let (Some(mut lower), Some(mut upper)) = (range.lower, range.upper) else {
+            return false;
+        };
+        while lower < upper && range.excluded.remove(&lower) {
+            lower += 1;
+        }
+        while lower < upper && range.excluded.remove(&upper) {
+            upper -= 1;
+        }
+        lower == upper && lower == constant
     }
 
     pub(in crate::kernel) fn signed_constant_known_equal(
@@ -2104,13 +2323,14 @@ impl PureFactContext {
             return false;
         };
         let (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
         ) = (&left_view, &right_view)
         else {
             return false;
         };
-        pointers_equal_ignoring_memories(left_pointer, right_pointer)
+        left_kind == right_kind
+            && pointers_equal_ignoring_memories(left_pointer, right_pointer)
             && self.bitvector_terms_proven_equal(left, right)
     }
 

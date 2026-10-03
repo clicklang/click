@@ -81,7 +81,7 @@ fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     assert!(ResourceCompositionQueryGuard::enter(first).is_some());
 }
 
-fn insert_resource_index_entry<K: Ord>(
+pub(super) fn insert_resource_index_entry<K: Ord>(
     index: &PersistentMap<K, ResourceEntryIds>,
     key: K,
     entry: ResourceEntryId,
@@ -275,77 +275,6 @@ fn related_memory_base_roots(
     roots
 }
 
-/// Separate an additive address's constant byte displacement from its
-/// symbolic base. Overflow leaves the query unindexed, never wraps an address.
-fn access_base_and_offset(pointer: &Pointer) -> Option<(Pointer, i64)> {
-    let mut pending = vec![&pointer.offset];
-    let mut displacement = 0i64;
-    let mut symbolic = None;
-    while let Some(offset) = pending.pop() {
-        crate::instrumentation::record_deterministic_work(1);
-        if let Some(value) = offset.as_const() {
-            displacement = displacement.checked_add(value)?;
-        } else if let PointerOffsetTerm::Add(left, right) = offset {
-            pending.push(right);
-            pending.push(left);
-        } else {
-            symbolic = Some(match symbolic {
-                None => offset.clone(),
-                Some(base) => PointerOffsetTerm::add(base, offset.clone()),
-            });
-        }
-    }
-    Some((
-        Pointer {
-            block: pointer.block.clone(),
-            offset: symbolic.unwrap_or(PointerOffsetTerm::Constant(0)),
-        },
-        displacement,
-    ))
-}
-
-/// Known spellings of a storage address, including displacement from a
-/// returned pointer whose base has an exact alias. This visits only indexed
-/// aliases of that address/base, never unrelated resources or path facts.
-pub(in crate::kernel) fn storage_pointer_spellings(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Vec<Pointer> {
-    let mut pointers = vec![pointer.clone()];
-    let minted = crate::kernel::reasoning::resolve_minted_load_pointer(pointer, assumptions);
-    if !pointers.contains(&minted) {
-        pointers.push(minted.clone());
-    }
-    let resolved = crate::kernel::reasoning::resolve_symbolic_pointer_alias(&minted, assumptions);
-    if !pointers.contains(&resolved) {
-        pointers.push(resolved.clone());
-    }
-    if let Some((base, offset)) = access_base_and_offset(&resolved) {
-        let aliased = crate::kernel::reasoning::resolve_symbolic_pointer_alias(&base, assumptions);
-        if aliased != base {
-            let shifted = Pointer {
-                block: aliased.block,
-                offset: PointerOffsetTerm::add(aliased.offset, PointerOffsetTerm::Constant(offset)),
-            };
-            if !pointers.contains(&shifted) {
-                pointers.push(shifted);
-            }
-        }
-    }
-    pointers
-}
-
-fn owned_byte_span_key(range: &CMemoryRange) -> Option<(Pointer, i64, i64)> {
-    let (base, offset) = access_base_and_offset(range.base())?;
-    let (Some(start), Some(end)) = signed_range_endpoints(range) else {
-        return None;
-    };
-    let width = i64::from(range.element_width());
-    let start = offset.checked_add(start.checked_mul(width)?)?;
-    let end = offset.checked_add(end.checked_mul(width)?)?;
-    (start < end).then_some((base, start, end))
-}
-
 /// A range's two endpoints as the signed `int32` numbers they are, present
 /// only when both are constant.
 ///
@@ -362,7 +291,7 @@ fn signed_range_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
     )
 }
 
-fn remove_resource_index_entry<K: Ord + Clone>(
+pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
     index: &PersistentMap<K, ResourceEntryIds>,
     key: &K,
     entry: ResourceEntryId,
@@ -473,6 +402,17 @@ impl ResourceContextIndex {
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
+        if let Some(amount) = numeric_population_owned_units(fact) {
+            let prior = result
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .unwrap_or((0, 0));
+            result.numeric_owned_units.insert(
+                fact.resource().clone(),
+                (prior.0 + u128::from(amount), prior.1 + 1),
+            );
+        }
         if matches!(
             fact.resource(),
             CResource::PopulationAuthority(_)
@@ -500,23 +440,12 @@ impl ResourceContextIndex {
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
+            result.structural_memory.update(range.base(), entry, true);
             result
                 .memory_addresses
                 .update(range, fact.is_own(), entry, true, fact);
+            result.memory_objects.update(entry, true, fact);
             if mode {
-                if fact
-                    .owned_quantity_term()
-                    .and_then(Bitvector32Term::as_const)
-                    == Some(0)
-                {
-                    // Zero ownership is the resource identity, not a storage span.
-                } else if let Some(key) = owned_byte_span_key(range) {
-                    result.owned_byte_spans =
-                        insert_resource_index_entry(&result.owned_byte_spans, key, entry);
-                } else if let Some((base, _)) = access_base_and_offset(range.base()) {
-                    result.symbolic_owned_byte_spans =
-                        insert_resource_index_entry(&result.symbolic_owned_byte_spans, base, entry);
-                }
                 result.owned_memory_by_root = insert_resource_index_entry(
                     &result.owned_memory_by_root,
                     memory_base_root(range.base()),
@@ -541,16 +470,6 @@ impl ResourceContextIndex {
                         .with_inserted(block.clone(), ());
                 }
             }
-            result.memory_starts = insert_resource_index_entry(
-                &result.memory_starts,
-                (block.clone(), mode, range.start().clone()),
-                entry,
-            );
-            result.memory_ends = insert_resource_index_entry(
-                &result.memory_ends,
-                (block, mode, range.end().clone()),
-                entry,
-            );
             if let (Some(start), Some(end)) = signed_range_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = insert_resource_index_entry(
@@ -662,6 +581,27 @@ impl ResourceContextIndex {
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
+        if let Some(amount) = numeric_population_owned_units(fact) {
+            let prior = result
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .expect("numeric units indexed");
+            let remaining = (
+                prior
+                    .0
+                    .checked_sub(u128::from(amount))
+                    .expect("numeric units conserved"),
+                prior.1 - 1,
+            );
+            if remaining.1 == 0 {
+                result.numeric_owned_units.remove(fact.resource());
+            } else {
+                result
+                    .numeric_owned_units
+                    .insert(fact.resource().clone(), remaining);
+            }
+        }
         if matches!(
             fact.resource(),
             CResource::PopulationAuthority(_)
@@ -693,26 +633,12 @@ impl ResourceContextIndex {
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
+            result.structural_memory.update(range.base(), entry, false);
             result
                 .memory_addresses
                 .update(range, fact.is_own(), entry, false, fact);
+            result.memory_objects.update(entry, false, fact);
             if mode {
-                if fact
-                    .owned_quantity_term()
-                    .and_then(Bitvector32Term::as_const)
-                    == Some(0)
-                {
-                    // Zero ownership is the resource identity, not a storage span.
-                } else if let Some(key) = owned_byte_span_key(range) {
-                    result.owned_byte_spans =
-                        remove_resource_index_entry(&result.owned_byte_spans, &key, entry);
-                } else if let Some((base, _)) = access_base_and_offset(range.base()) {
-                    result.symbolic_owned_byte_spans = remove_resource_index_entry(
-                        &result.symbolic_owned_byte_spans,
-                        &base,
-                        entry,
-                    );
-                }
                 result.owned_memory_by_root = remove_resource_index_entry(
                     &result.owned_memory_by_root,
                     &memory_base_root(range.base()),
@@ -733,16 +659,6 @@ impl ResourceContextIndex {
                         result.shared_owned_memory_blocks.without_key(&block);
                 }
             }
-            result.memory_starts = remove_resource_index_entry(
-                &result.memory_starts,
-                &(block.clone(), mode, range.start().clone()),
-                entry,
-            );
-            result.memory_ends = remove_resource_index_entry(
-                &result.memory_ends,
-                &(block, mode, range.end().clone()),
-                entry,
-            );
             if let (Some(start), Some(end)) = signed_range_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = remove_resource_index_entry(
@@ -1057,15 +973,15 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match term {
-                    Bitvector32Term::MemoryLoad(memory, pointer) => {
-                        // MemoryLoad is shared by every CValue variant. Only
-                        // the checked source snapshot can provide the loaded
-                        // scalar's ABI width; absent evidence is ambiguous.
+                    Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                        // The checked source snapshot's cell gives the loaded
+                        // scalar's ABI width, and the read is never narrower
+                        // than its own kind; absent evidence is ambiguous.
                         let Some(value) = memory.memory().known_value(pointer) else {
                             *uncertain = true;
                             continue;
                         };
-                        let width = value.byte_width();
+                        let width = value.byte_width().max(kind.byte_width());
                         if width == 0 {
                             *uncertain = true;
                             continue;
@@ -1243,15 +1159,27 @@ impl ResourceContext {
         (quantity.as_const() == Some(1)).then_some(instance)
     }
 
+    /// A structural/unpublished context. Use `new_with_equalities` for a
+    /// fresh kernel proof context that will receive selected resource facts.
+    /// Do not attach an ambient context from a read-only lookup.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Begin a fresh resource lineage in the current trusted equality graph.
+    /// Capturing the empty input is constant work; later inserts maintain its
+    /// paired indexes through deltas. This establishes publication only, not
+    /// resource validity or authority: callers still check their selected facts.
+    pub(crate) fn new_with_equalities(assumptions: &PureFactContext) -> Self {
+        let context = Self::new();
+        context.synchronize_memory_equalities(assumptions);
+        context
     }
 
     /// Whether two resource snapshots are the exact same persistent value.
     ///
     /// Proof joins use this constant-time identity check to retain a resource
     /// context that was untouched in every arm without enumerating it.
-    #[cfg(test)]
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.storage, &other.storage)
     }
@@ -1309,6 +1237,42 @@ impl ResourceContext {
             current = change.parent.as_ref();
         }
         Some(changed)
+    }
+
+    /// New live memory inputs between two retained sibling or ancestor
+    /// checkpoints. Work follows their explicit deltas to the common prefix;
+    /// it never walks the shared history or enumerates the source's frame.
+    pub(super) fn changed_memory_inputs_from(&self, previous: &Self) -> Option<Vec<CResourceFact>> {
+        if !std::sync::Arc::ptr_eq(&self.storage.origin, &previous.storage.origin) {
+            return None;
+        }
+        let mut left = self.storage.history.as_ref();
+        let mut right = previous.storage.history.as_ref();
+        let mut changed = BTreeSet::new();
+        while !Self::history_tail_is(left, right) {
+            crate::instrumentation::record_deterministic_work(1);
+            if left.map_or(0, |change| change.depth) >= right.map_or(0, |change| change.depth) {
+                let change = left?;
+                if change.fact.memory_range().is_some() {
+                    changed.insert(change.fact.clone());
+                }
+                left = change.parent.as_ref();
+            } else {
+                let change = right?;
+                if change.fact.memory_range().is_some() {
+                    changed.insert(change.fact.clone());
+                }
+                right = change.parent.as_ref();
+            }
+        }
+        // History is bookkeeping, not source authority. Only facts actually
+        // present in this admitted composition may supply new object evidence.
+        Some(
+            changed
+                .into_iter()
+                .filter(|fact| self.storage.index.exact.contains_key(fact))
+                .collect(),
+        )
     }
 
     /// Exact multiplicity of one representation, for an opt-in proof trace.
@@ -1613,7 +1577,11 @@ impl ResourceContext {
         Some(common)
     }
 
-    fn iter(&self) -> impl DoubleEndedIterator<Item = &CResourceFact> + ExactSizeIterator {
+    /// Visit an explicitly supplied context at publication or composition.
+    /// Supplier lookups must use retained indexes rather than this iterator.
+    pub(in crate::kernel) fn iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &CResourceFact> + ExactSizeIterator {
         self.storage.facts.iter().map(|(_, fact)| fact)
     }
 
@@ -1923,12 +1891,18 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                depth: self
+                    .storage
+                    .history
+                    .as_ref()
+                    .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, true)),
                 fact,
                 parent: self.storage.history.clone(),
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_published_resource_entries();
     }
 
     fn remove_entry(&mut self, entry: ResourceEntryId) -> CResourceFact {
@@ -2123,12 +2097,18 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                depth: self
+                    .storage
+                    .history
+                    .as_ref()
+                    .map_or(1, |change| change.depth + 1),
                 entry_delta: Some((entry, false)),
                 fact: fact.clone(),
                 parent: self.storage.history.clone(),
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_published_resource_entries();
         if fact.is_own() {
             self.rekey_cached_support_entries(&fact);
         }
@@ -2232,6 +2212,7 @@ impl ResourceContext {
         let mut history = self.storage.history.clone();
         for fact in changed_facts {
             history = Some(std::sync::Arc::new(ResourceContextChange {
+                depth: history.as_ref().map_or(1, |change| change.depth + 1),
                 entry_delta: None,
                 fact,
                 parent: history,
@@ -2401,36 +2382,6 @@ impl ResourceContext {
         !self.storage.index.iterated_by_block.is_empty()
     }
 
-    pub(in crate::kernel) fn memory_block_facts(
-        &self,
-        block: &PointerBlock,
-    ) -> impl Iterator<Item = &CResourceFact> {
-        self.storage
-            .index
-            .memory_by_block
-            .get(block)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| self.fact(*entry))
-    }
-
-    /// The memory facts whose range base is spelled exactly `base`, from the
-    /// base index. A subset of [`Self::memory_block_facts`]: a lookup that
-    /// usually succeeds on the range written against its own base asks these
-    /// first and falls back to the wider scan only on a miss.
-    pub(in crate::kernel) fn memory_base_facts(
-        &self,
-        base: &Pointer,
-    ) -> impl Iterator<Item = &CResourceFact> {
-        self.storage
-            .index
-            .memory_by_base
-            .get(base)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| self.fact(*entry))
-    }
-
     /// Necessary-shape candidates for proof-aware direct resource matching.
     /// Snapshot-insensitive matching cannot change a pointer block, resource
     /// family, composite/token name, or arity, so unrelated facts need not
@@ -2457,6 +2408,14 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<&CResourceFact> {
+        if let Some(range) = required.memory_range() {
+            let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
+            return candidates.entries.iter().find_map(|entry| {
+                let aligned = candidates.requirement(entry, required)?;
+                let available = self.fact(entry);
+                resource_fact_entails(available, &aligned, assumptions).then_some(available)
+            });
+        }
         self.direct_match_candidates(required)
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
@@ -2608,38 +2567,52 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         use_separation: bool,
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
-        let entails = |candidate: &CResourceFact| {
-            if !use_separation
-                && let (Some(available), Some(required)) = (
-                    resource_fact_read_core_range(candidate),
-                    required.memory_view_range(),
-                )
-            {
-                memory_range_covers_with_separation(&available, required, assumptions, false)
-            } else {
-                resource_fact_entails(candidate, required, assumptions)
-            }
-        };
-        // Concrete memory requirements have a monotone start position.  Use
-        // the exact bucket or its immediate predecessor before falling back
-        // to the block bucket; repeated disjoint consumption otherwise
-        // revisits every residual range produced by earlier clauses.
-        if let CResource::Memory(range) = required.resource()
-            && let Some(indexed) = self.concrete_memory_start_candidates(range, true)
-        {
-            for entry in indexed {
+        if let Some(range) = required.memory_range() {
+            let candidates = self.memory_fact_candidates(range, true, assumptions);
+            for entry in candidates.entries.iter() {
+                let Some(aligned) = candidates.requirement(entry, required) else {
+                    continue;
+                };
                 let candidate = self.fact(entry);
-                if entails(candidate) && candidate.is_own() {
+                if Self::memory_support_entails(candidate, &aligned, assumptions, use_separation) {
                     return Some((self.occurrence(entry), candidate));
                 }
             }
+            if required.is_view() && !self.storage.supported_by.is_empty() {
+                let projections = self.memory_fact_candidates(range, false, assumptions);
+                for entry in projections.entries.iter() {
+                    let Some(support_occurrence) =
+                        self.storage.support_occurrence_by_projection.get(&entry)
+                    else {
+                        continue;
+                    };
+                    let Some(support) = self.owned_fact_for_occurrence(*support_occurrence) else {
+                        continue;
+                    };
+                    if self.storage.supported_by.get(&entry) != Some(support) {
+                        continue;
+                    }
+                    let Some(aligned) = projections.requirement(entry, required) else {
+                        continue;
+                    };
+                    if Self::memory_support_entails(
+                        self.fact(entry),
+                        &aligned,
+                        assumptions,
+                        use_separation,
+                    ) {
+                        return Some((*support_occurrence, support));
+                    }
+                }
+            }
+            return None;
         }
-        self.owned_support_candidate_positions(required)
+        self.direct_match_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .filter_map(|entry| {
                 let candidate = self.fact(*entry);
-                if !entails(candidate) {
+                if !resource_fact_entails(candidate, required, assumptions) {
                     return None;
                 }
                 if candidate.is_own() {
@@ -2663,6 +2636,24 @@ impl ResourceContext {
             .next()
     }
 
+    fn memory_support_entails(
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        use_separation: bool,
+    ) -> bool {
+        if !use_separation
+            && let (Some(available), Some(required)) = (
+                resource_fact_read_core_range(available),
+                required.memory_view_range(),
+            )
+        {
+            memory_range_covers_with_separation(&available, required, assumptions, false)
+        } else {
+            resource_fact_entails(available, required, assumptions)
+        }
+    }
+
     /// Whether another owned occurrence besides `excluded` directly supports
     /// this fact. The lookup stays within the same indexed candidate frontier
     /// as `directly_supporting_owned_entry` so provenance checks do not scan
@@ -2673,6 +2664,40 @@ impl ResourceContext {
         excluded: ResourceOccurrenceId,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Some(range) = required.memory_range() {
+            for owned in [true, false] {
+                if !owned && (!required.is_view() || self.storage.supported_by.is_empty()) {
+                    break;
+                }
+                let candidates = self.memory_fact_candidates(range, owned, assumptions);
+                for entry in candidates.entries.iter() {
+                    let support = if self.fact(entry).is_own() {
+                        Some(self.occurrence(entry))
+                    } else {
+                        self.storage
+                            .support_occurrence_by_projection
+                            .get(&entry)
+                            .copied()
+                            .filter(|support| {
+                                self.owned_fact_for_occurrence(*support)
+                                    .is_some_and(|live| {
+                                        self.storage.supported_by.get(&entry) == Some(live)
+                                    })
+                            })
+                    };
+                    if support.is_some_and(|support| support != excluded)
+                        && candidates
+                            .requirement(entry, required)
+                            .is_some_and(|aligned| {
+                                resource_fact_entails(self.fact(entry), &aligned, assumptions)
+                            })
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
         let supports_other = |entry: ResourceEntryId| {
             let candidate = self.fact(entry);
             if !resource_fact_entails(candidate, required, assumptions) {
@@ -2699,52 +2724,11 @@ impl ResourceContext {
             support.is_some_and(|support| support != excluded)
         };
 
-        if let CResource::Memory(range) = required.resource()
-            && let Some(indexed) = self.concrete_memory_start_candidates(range, true)
-            && indexed.into_iter().any(&supports_other)
-        {
-            return true;
-        }
-        self.owned_support_candidate_positions(required)
+        self.direct_match_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .copied()
             .any(supports_other)
-    }
-
-    /// The candidates [`Self::directly_supporting_owned_entry`] and
-    /// [`Self::has_other_directly_supporting_owned_entry`] must ask, in the
-    /// order of [`Self::direct_match_candidate_positions`].
-    ///
-    /// Both answer from a candidate of two kinds only: an owned fact, or a
-    /// projection with a recorded owned support (`supported_by`). A
-    /// candidate of any other kind is asked for entailment and then
-    /// discarded whatever the answer. When this context records no
-    /// projection support at all, every candidate that can answer is owned,
-    /// and for a memory requirement the owned candidates are exactly the
-    /// owned bucket of its block: `owned_memory_by_block` files an entry
-    /// under its block if and only if `memory_by_block` does and the fact is
-    /// owned (`ResourceContextIndex::with_inserted` and `without_entry`).
-    /// That bucket is the block bucket with the discarded entries removed,
-    /// in the same (entry-id) order,
-    /// so the first answer and the existence of another answer are
-    /// unchanged. Without it, a contract with `N` views beside `M` owners
-    /// asked every view of the shared parameter block once per view: `N^2`
-    /// coverage queries at entry where `N * M` decide the same thing.
-    fn owned_support_candidate_positions(
-        &self,
-        required: &CResourceFact,
-    ) -> Option<&ResourceEntryIds> {
-        if self.storage.supported_by.is_empty()
-            && let CResource::Memory(range) = required.resource()
-        {
-            return self
-                .storage
-                .index
-                .owned_memory_by_block
-                .get(&range.base().block);
-        }
-        self.direct_match_candidate_positions(required)
     }
 
     pub(crate) fn owned_fact_for_occurrence(
@@ -2756,29 +2740,75 @@ impl ResourceContext {
         fact.is_own().then_some(fact)
     }
 
-    fn concrete_memory_start_candidates(
-        &self,
-        range: &CMemoryRange,
-        owned: bool,
-    ) -> Option<Vec<ResourceEntryId>> {
-        (range.start().as_const().is_some() && range.end().as_const().is_some()).then(|| {
-            let key = (range.base().block.clone(), owned, range.start().clone());
-            self.storage
-                .index
-                .memory_starts
-                .get(&key)
-                .into_iter()
-                .chain(
-                    self.storage
-                        .index
-                        .memory_starts
-                        .get_less_than(&key)
-                        .map(|(_, entries)| entries),
-                )
-                .flat_map(ResourceEntryIds::iter)
-                .copied()
-                .collect()
-        })
+    /// Reserve a concrete owned footprint from its live byte fragments. Each
+    /// step checks and consumes the actual indexed occurrence; a view, gap,
+    /// stale occurrence, or unsupported coordinate proves no ownership. The
+    /// returned provenance retains every supplier rather than inventing a
+    /// single owner for the joined range. Work follows the consumed fragments,
+    /// with logarithmic queries and edits, not unrelated memory in the block.
+    pub(crate) fn reserve_owned_memory_fragments(
+        mut self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
+        if required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let range = required.memory_own_range()?;
+        let (mut cursor, end) = concrete_memory_range_bounds(range)?;
+        let mut supports = Vec::new();
+        while cursor < end {
+            let pointer = Pointer {
+                block: range.base().block.clone(),
+                offset: PointerOffsetTerm::Constant(cursor),
+            };
+            let entries = self.owned_fragment_candidates(&pointer, assumptions)?;
+            let mut selected = None;
+            for entry in entries {
+                crate::instrumentation::record_deterministic_work(1);
+                let candidate = self.fact(entry);
+                let Some(available) = candidate.memory_own_range() else {
+                    continue;
+                };
+                let Some(base) = assumptions
+                    .equality_graph
+                    .pointer_in_block(&pointer, &available.base().block)
+                else {
+                    continue;
+                };
+                let Some(at) = base.offset.as_const() else {
+                    continue;
+                };
+                let Some((_, available_end)) = concrete_memory_range_bounds(available) else {
+                    continue;
+                };
+                let Some(bytes) = available_end
+                    .checked_sub(at)
+                    .map(|bytes| bytes.min(end - cursor))
+                    .filter(|bytes| *bytes > 0)
+                    .and_then(|bytes| u32::try_from(bytes).ok())
+                else {
+                    continue;
+                };
+                let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base,
+                    0u32.into(),
+                    bytes.into(),
+                    1,
+                ));
+                if resource_fact_entails(candidate, &piece, assumptions) {
+                    selected = Some((entry, self.occurrence(entry), piece, bytes));
+                    break;
+                }
+            }
+            let (entry, support, piece, bytes) = selected?;
+            if !self.consume_fact_from_candidates(&piece, assumptions, std::iter::once(entry)) {
+                return None;
+            }
+            supports.push(support);
+            cursor = cursor.checked_add(i64::from(bytes))?;
+        }
+        Some((self, supports))
     }
 
     /// Return indexed view occurrences that entail `required`. The caller
@@ -3896,8 +3926,10 @@ impl ResourceContext {
     /// Adds a resource fact without checking validity or normalizing the
     /// context.
     ///
-    /// Prefer `try_compose_with_fact` when proposition assumptions are
-    /// available.
+    /// Prefer `try_compose_with_fact` when validity must be checked. A trusted
+    /// producer assembling already selected facts should start with
+    /// `new_with_equalities` so these deltas retain graph publication. This
+    /// method never publishes an unrelated ambient input.
     pub fn unchecked_with_fact(mut self, fact: CResourceFact) -> Self {
         self.insert_fact(fact);
         self
@@ -3906,8 +3938,10 @@ impl ResourceContext {
     /// Adds resource facts without checking validity or normalizing the
     /// context.
     ///
-    /// Prefer `try_compose_with_facts` when proposition assumptions are
-    /// available.
+    /// Prefer `try_compose_with_facts` when validity must be checked. These
+    /// deltas preserve an existing graph attachment; they do not publish an
+    /// unrelated ambient input. Start a fresh trusted assembly with
+    /// `new_with_equalities`.
     pub fn unchecked_with_facts(mut self, facts: impl IntoIterator<Item = CResourceFact>) -> Self {
         for fact in facts {
             self.insert_fact(fact);
@@ -4102,6 +4136,11 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                depth: self
+                    .storage
+                    .history
+                    .as_ref()
+                    .map_or(1, |change| change.depth + 1),
                 entry_delta: None,
                 fact: support.clone(),
                 parent: self.storage.history.clone(),
@@ -4291,6 +4330,12 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
+        // Construction owns initial attachment. In particular, prepare an
+        // empty input before insertion so it shares the already closed graph;
+        // a later read must not register or scan the resource input.
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let mut inserted = Vec::new();
         for fact in facts {
             let entry = self.storage.next_entry_id;
@@ -4301,6 +4346,7 @@ impl ResourceContext {
         if let Some(error) = context.validity_error(assumptions) {
             return Err(error);
         }
+        context.advance_prepared_memory_equalities(assumptions);
         Ok((context, inserted))
     }
 
@@ -4333,6 +4379,9 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = CResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let first_new = self.storage.next_entry_id;
         for fact in facts {
             self.insert_fact(fact);
@@ -4429,6 +4478,7 @@ impl ResourceContext {
                 }
             }
         }
+        self.advance_prepared_memory_equalities(assumptions);
         Ok(self)
     }
 
@@ -4537,6 +4587,9 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let facts = facts.into_iter().collect::<Vec<_>>();
         for fact in &facts {
             self.clone()
@@ -4545,7 +4598,9 @@ impl ResourceContext {
                     assumptions,
                 )?;
         }
-        Ok(self.unchecked_with_facts_and_occurrences(facts))
+        let (context, inserted) = self.unchecked_with_facts_and_occurrences(facts);
+        context.advance_prepared_memory_equalities(assumptions);
+        Ok((context, inserted))
     }
 
     pub fn facts(&self) -> &[CResourceFact] {
@@ -4659,7 +4714,12 @@ impl ResourceContext {
                 ordered.sort_by_key(|(start, end, _, _)| (*start, *end));
                 let mut furthest: Option<(i64, &CResourceFact)> = None;
                 for (_, end, fact, _) in ordered {
-                    crate::instrumentation::record_deterministic_work(1);
+                    // A checkpoint, not only a charge: an exhausted run stops
+                    // here with no proven overlap, as a limited `decide`
+                    // does, and the pending limit fails the run.
+                    if crate::instrumentation::deadline_exceeded() {
+                        return None;
+                    }
                     if let Some((furthest_end, left)) = furthest {
                         if let Some(error) = pair_validity_error_with_separation(
                             left,
@@ -4683,6 +4743,9 @@ impl ResourceContext {
             // pair order of a pairwise scan.
             let mut pairs = BTreeSet::new();
             for (right_entry, right_range) in &owned_entries {
+                if crate::instrumentation::deadline_exceeded_with_work(0) {
+                    return None;
+                }
                 let right_entry = *right_entry;
                 for left_entry in self.owned_validity_candidates(right_range, None, assumptions) {
                     if left_entry >= right_entry {
@@ -4692,7 +4755,9 @@ impl ResourceContext {
                 }
             }
             for (left_entry, right_entry) in pairs {
-                crate::instrumentation::record_deterministic_work(1);
+                if crate::instrumentation::deadline_exceeded() {
+                    return None;
+                }
                 let left = self.fact(left_entry);
                 let right = self.fact(right_entry);
                 if let Some(error) =
@@ -4849,6 +4914,53 @@ impl ResourceContext {
         {
             return true;
         }
+        if let Some(range) = fact.memory_range() {
+            if memory_range_is_proven_empty(range, assumptions)
+                || fact.owned_quantity_term().is_some_and(|quantity| {
+                    resource_quantity_resolves_to_zero(quantity, assumptions)
+                })
+            {
+                return true;
+            }
+            let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
+            if candidates.entries.iter().any(|entry| {
+                candidates.requirement(entry, fact).is_some_and(|aligned| {
+                    resource_fact_entails(self.fact(entry), &aligned, assumptions)
+                })
+            }) {
+                return true;
+            }
+            return self
+                .normalized_memory_suppliers(
+                    &candidates.entries.iter().collect::<Vec<_>>(),
+                    assumptions,
+                )
+                .is_some_and(|joined| {
+                    joined.directly_supporting_fact(fact, assumptions).is_some()
+                });
+        }
+        if let Some(required) = numeric_population_owned_units(fact) {
+            let (units, entries) = self
+                .storage
+                .index
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .unwrap_or((0, 0));
+            if units >= u128::from(required) {
+                return true;
+            }
+            // If every possible support is already in this constant tally,
+            // failure is exact too. Symbolic quantities and proved aliases
+            // keep the existing proof-aware entailment route below.
+            if self
+                .direct_match_candidate_positions(fact)
+                .map_or(0, |candidates| candidates.len())
+                == entries
+            {
+                return false;
+            }
+        }
         if crate::instrumentation::measure_operation(
             "kernel",
             "resource satisfaction",
@@ -4871,39 +4983,7 @@ impl ResourceContext {
         {
             return true;
         }
-        // A required fact may span several adjacent held resources; merge
-        // them and retry once. Only memory resources have a split/merge
-        // algebra: token and composite entailment is decided one fact at a
-        // time above. Normalizing an unrelated ambient memory context while
-        // looking for a missing token or composite makes an exact resource
-        // query depend on every symbolic range the caller happens to hold.
-        if fact.family() != ResourceFamily::Memory {
-            return false;
-        }
-        // Normalization can only merge facts within one access mode. A
-        // viewed context cannot acquire ownership by normalizing, so avoid
-        // scanning unrelated composite views for an impossible owned-memory
-        // query.
-        if fact.is_own()
-            && !self
-                .direct_match_candidates(fact)
-                .any(CResourceFact::is_own)
-        {
-            return false;
-        }
-        let normalized = crate::instrumentation::measure_operation(
-            "kernel",
-            "resource satisfaction",
-            "resource satisfaction: normalization fallback",
-            || {
-                self.clone()
-                    .normalized_around_facts(std::slice::from_ref(fact), assumptions)
-            },
-        );
-        normalized.storage.facts.len() < self.storage.facts.len()
-            && normalized
-                .direct_match_candidates(fact)
-                .any(|available| resource_fact_entails(available, fact, assumptions))
+        false
     }
 
     pub fn is_empty(&self) -> bool {
@@ -4925,8 +5005,14 @@ impl ResourceContext {
         let Some(required) = fact.memory_range() else {
             return false;
         };
-        self.memory_block_facts(&required.base().block)
-            .any(|available| {
+        let bytes =
+            memory_equality_index::read_extent(fact).and_then(|bytes| u32::try_from(bytes).ok());
+        let start = required
+            .base()
+            .offset_by_elements(required.start().clone(), required.element_width());
+        self.structural_memory_entries(required.base(), &start, bytes)
+            .any(|entry| {
+                let available = self.fact(entry);
                 let available = if fact.is_own() {
                     available.memory_own_range().cloned()
                 } else {
@@ -4944,157 +5030,49 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        if let Some(mut entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
-            let exact = entries.exact();
-            return entries.any(|entry| {
+        if let Some(mut entries) = self.read_access_entries(pointer, byte_width, assumptions) {
+            while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
-                let Some(range) = resource_fact_read_core_range(resource) else {
-                    return false;
+                let Some(address) = entries.address(entry) else {
+                    continue;
                 };
-                let address = if exact {
-                    // The typed address class justifies using this occurrence's
-                    // own start. Coverage and authority remain checked below.
-                    range
-                        .base()
-                        .offset_by_elements(range.start().clone(), range.element_width())
-                } else {
-                    let Some(address) = assumptions
-                        .equality_graph
-                        .pointer_in_block(pointer, &range.base().block)
-                    else {
-                        return false;
-                    };
-                    address
-                };
-                memory_resource_fact_permits_read(resource, &address, byte_width, assumptions)
-            });
-        }
-        // A contract expression can reload a pointer-valued field after an
-        // opaque call. Match that kernel-minted name to the resource's
-        // retained load origin before consulting the block and range
-        // indexes, just as the write lookup below does. The indexed
-        // structural check then answers from the exact supporting resource
-        // instead of comparing every historical range through call havoc.
-        //
-        // A proved pointer equality names the same cell two ways: a frame's
-        // identity payload (symbolic) and the C value loaded for it
-        // (external plus an offset). The facts sit under whichever spelling
-        // the unfold that published them used, so the lookup consults both;
-        // resolving to one spelling and looking only there refused a read
-        // of a cell the state plainly owned.
-        let spellings = self.pointer_spellings(pointer, assumptions);
-        if spellings.iter().any(|pointer| {
-            self.permits_memory_read_structurally(pointer, byte_width, assumptions)
-                || self.memory_block_facts(&pointer.block).any(|resource| {
-                    memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-                })
-        }) {
-            return true;
-        }
-        // The indexed lookups answer every read whose pointer names the
-        // owning fact's block. A pointer proved equal to one in another
-        // block is decided by the range check under the assumptions, as
-        // the write lookup below already does; this is reached only when
-        // the indexed answer was no, so a permitted read pays for it only
-        // through an alias.
-        spellings.iter().any(|pointer| {
-            self.iter().any(|resource| {
-                memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-            })
-        })
-    }
-
-    /// The spellings of one address a resource lookup consults: the pointer
-    /// itself, its retained load origin when it is a kernel-minted name,
-    /// and the non-symbolic side of a proved pointer equality when it is a
-    /// symbolic block. At most three, deduplicated, in that order.
-    fn pointer_spellings(&self, pointer: &Pointer, assumptions: &PureFactContext) -> Vec<Pointer> {
-        let mut spellings = vec![pointer.clone()];
-        let minted = crate::kernel::reasoning::resolve_minted_load_pointer(pointer, assumptions);
-        if !spellings.contains(&minted) {
-            spellings.push(minted.clone());
-        }
-        let aliased =
-            crate::kernel::reasoning::resolve_symbolic_pointer_alias(&minted, assumptions);
-        if !spellings.contains(&aliased) {
-            spellings.push(aliased);
-        }
-        spellings
-    }
-
-    pub(in crate::kernel) fn permits_memory_read_structurally(
-        &self,
-        pointer: &Pointer,
-        byte_width: u32,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        for resource in self.memory_block_facts(&pointer.block) {
-            let Some(range) = resource_fact_read_core_range(resource) else {
-                continue;
-            };
-            if pointer_has_structural_range_base(pointer, range.base())
-                && memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-            {
-                return true;
+                if memory_resource_fact_permits_read(resource, &address, byte_width, assumptions) {
+                    return true;
+                }
             }
+            return false;
         }
         false
     }
 
-    /// Bounded owner lookup for a storage operation. Constant spans use a
-    /// predecessor index; the resource entailment check remains authoritative.
-    /// A single symbolic span at the selected base can use bounds facts;
-    /// ambiguous symbolic partitions require a directly stated footprint.
-    /// This is an authority query, not an implicit resource-normalization search.
+    /// Storage authority uses the same retained occurrence and graph alignment
+    /// as resource support. Equality selects the owner; quantity and the entire
+    /// byte footprint remain ordinary resource entailment obligations.
     pub(in crate::kernel) fn owns_storage_access(
         &self,
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        for pointer in storage_pointer_spellings(pointer, assumptions) {
-            let Some((base, offset)) = access_base_and_offset(&pointer) else {
+        let Some(mut entries) = self.write_access_entries(pointer, bytes, assumptions) else {
+            return false;
+        };
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            if !self.fact(entry).has_proven_positive_quantity(assumptions) {
+                continue;
+            }
+            let Some(address) = entries.address(entry) else {
                 continue;
             };
-            let Some(end) = offset.checked_add(i64::from(bytes)) else {
-                continue;
-            };
-            let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                pointer.clone(),
+            let aligned = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                address,
                 0u32.into(),
                 bytes.into(),
                 1,
             ));
-            let entails = |entry: &ResourceEntryId| {
-                let available = self.fact(*entry);
-                available
-                    .owned_quantity_term()
-                    .is_some_and(|quantity| resource_quantity_is_positive(quantity, assumptions))
-                    && resource_fact_entails(available, &required, assumptions)
-            };
-            let Some(after_start) = offset.checked_add(1) else {
-                continue;
-            };
-            if let Some(((candidate_base, start, limit), entries)) = self
-                .storage
-                .index
-                .owned_byte_spans
-                .get_less_than(&(base.clone(), after_start, i64::MIN))
-                && candidate_base == &base
-                && *start <= offset
-                && end <= *limit
-                && entries.iter().any(entails)
-            {
-                return true;
-            }
-            if let Some(entries) = self.storage.index.symbolic_owned_byte_spans.get(&base)
-                && entries.len() == 1
-                && entries.iter().any(|entry| {
-                    crate::instrumentation::record_deterministic_work(1);
-                    entails(entry)
-                })
-            {
+            if resource_fact_entails(self.fact(entry), &aligned, assumptions) {
                 return true;
             }
         }
@@ -5107,34 +5085,23 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
-        // A kernel-minted address resolves to its load term first, so it
-        // matches owned ranges still written through loads; a proved
-        // pointer equality's other spelling is consulted as for reads.
-        let spellings = self.pointer_spellings(pointer, assumptions);
-        for pointer in &spellings {
-            for resource in self.memory_block_facts(&pointer.block) {
-                let CResourceFact::Own(CResource::Memory(range), _) = resource else {
+        if let Some(mut entries) = self.write_access_entries(pointer, byte_width, assumptions) {
+            while let Some(entry) = entries.next() {
+                crate::instrumentation::record_deterministic_work(1);
+                let resource = self.fact(entry);
+                let Some(range) = resource.memory_own_range() else {
                     continue;
                 };
-                if pointer_has_structural_range_base(pointer, range.base())
-                    && memory_resource_fact_permits_write(
-                        resource,
-                        pointer,
-                        byte_width,
-                        assumptions,
-                    )
-                {
+                let Some(address) = entries.address(entry) else {
+                    continue;
+                };
+                if memory_resource_fact_permits_write(resource, &address, byte_width, assumptions) {
                     return Some(range);
                 }
             }
+            return None;
         }
-        spellings.iter().find_map(|pointer| {
-            self.iter().find_map(|resource| {
-                memory_resource_fact_permits_write(resource, pointer, byte_width, assumptions)
-                    .then(|| resource.memory_own_range())
-                    .flatten()
-            })
-        })
+        None
     }
 
     pub fn without_fact(self, fact: &CResourceFact, assumptions: &PureFactContext) -> Option<Self> {
@@ -5151,14 +5118,10 @@ impl ResourceContext {
             .then_some(self)
     }
 
-    /// Consumes one fact while normalizing only its indexed candidate bucket.
-    ///
-    /// Direct algebraic consumption is the common path. If several retained
-    /// representations must be combined first, this operation rebuilds only
-    /// the exact-resource bucket and then, if equality-aware matching is
-    /// needed, the resource's necessary-shape bucket. Unrelated resources are
-    /// neither scanned nor materialized, and the returned snapshot preserves
-    /// this context's mutation ancestry.
+    /// Consume from retained memory suppliers, composing only selected fragments
+    /// when no single supplier suffices. Nonmemory resources use their local
+    /// exact/shape indexes. Neither route materializes unrelated holdings;
+    /// persistent edits preserve this context's mutation ancestry.
     pub(crate) fn without_fact_incrementally(
         self,
         fact: &CResourceFact,
@@ -5177,76 +5140,75 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        let entries = self.equal_address_entries(range, fact.is_own(), assumptions);
-        // Equality selects existing occurrences; the resource algebra still
-        // checks access mode, quantity and range coverage before consuming.
+        let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
-        if selected.consume_memory_from_indexed_candidates(fact, assumptions, &entries) {
-            return Some(selected);
+        for entry in candidates.entries.iter() {
+            if let Some(required) = candidates.requirement(entry, fact)
+                && selected.consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            {
+                return Some(selected);
+            }
         }
-        if let Some(consumed) = selected
-            .clone()
-            .without_fact_from_local_indexes(fact, assumptions)
-        {
-            return Some(consumed);
+        let mut joined = selected.normalized_memory_suppliers(
+            &candidates.entries.iter().collect::<Vec<_>>(),
+            assumptions,
+        )?;
+        let support = joined.memory_fact_candidates(range, fact.is_own(), assumptions);
+        let mut consumed = false;
+        for entry in support.entries.iter() {
+            if let Some(required) = support.requirement(entry, fact)
+                && joined.consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            {
+                consumed = true;
+                break;
+            }
         }
-        if entries.is_empty() {
+        if !consumed {
             return None;
         }
-        // Several fractions at the selected address may together supply the
-        // requirement. Normalize only that output bucket, never its aliases.
-        let mut candidates = ResourceContext::new();
-        for entry in &entries {
-            candidates.insert_fact(selected.fact(*entry).clone());
-        }
-        candidates = candidates.normalized(assumptions);
-        if !candidates.consume_fact_without_normalizing(fact, assumptions) {
-            return None;
-        }
-        let residual = candidates.iter().cloned().collect::<Vec<_>>();
-        for entry in entries {
-            // An owner can retire supported observations in this bucket too.
+        for entry in candidates.entries.iter() {
             if selected.storage.facts.contains_key(&entry) {
                 selected.remove_entry(entry);
             }
         }
-        for fact in residual {
-            selected.insert_fact(fact);
+        for residual in joined.iter() {
+            selected.insert_fact(residual.clone());
         }
         Some(selected)
     }
 
-    fn consume_memory_from_indexed_candidates(
-        &mut self,
-        fact: &CResourceFact,
-        assumptions: &PureFactContext,
+    /// Join only the suppliers selected for the explicit footprint. Loan-bound
+    /// observations keep their original occurrences and cannot be coalesced.
+    /// This is proportional to selected input, never the ambient context.
+    fn normalized_memory_suppliers(
+        &self,
         entries: &[ResourceEntryId],
-    ) -> bool {
-        for entry in entries {
-            let Some(available) = self.fact(*entry).memory_range() else {
-                continue;
-            };
-            let CResource::Memory(range) = fact.resource() else {
-                return false;
-            };
-            let Some(base) = assumptions
-                .equality_graph
-                .pointer_in_block(range.base(), &available.base().block)
-            else {
-                continue;
-            };
-            let mut range = range.clone();
-            range.base = base;
-            let required = if let CResourceFact::Own(_, quantity) = fact {
-                CResourceFact::Own(CResource::Memory(range), quantity.clone())
-            } else {
-                CResourceFact::View(CResource::Memory(range))
-            };
-            if self.consume_fact_from_candidates(&required, assumptions, std::iter::once(*entry)) {
-                return true;
-            }
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if entries.len() < 2
+            || entries.iter().any(|entry| {
+                self.storage.supported_by.contains_key(entry)
+                    || self
+                        .loan_dependencies
+                        .map
+                        .contains_key(&self.occurrence(*entry))
+            })
+        {
+            return None;
         }
-        false
+        let mut suppliers = Self::new_with_equalities(assumptions);
+        for entry in entries {
+            suppliers.insert_fact(self.fact(*entry).clone());
+        }
+        Some(suppliers.normalized(assumptions))
     }
 
     fn without_fact_from_local_indexes(
@@ -5254,6 +5216,10 @@ impl ResourceContext {
         fact: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        debug_assert!(
+            fact.memory_range().is_none(),
+            "memory consumption uses retained graph suppliers"
+        );
         if !fact.has_valid_exclusive_access() {
             return None;
         }
@@ -5263,23 +5229,6 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        // An empty range is the unit of memory ownership: it names no cell,
-        // so requiring it consumes nothing. Without this a body such as
-        // `owns data[start..next]` could not fold at `next == start` unless an
-        // empty fact happened to be lying around from an earlier split.
-        if let CResource::Memory(range) = fact.resource()
-            && memory_range_is_proven_empty(range, assumptions)
-        {
-            return Some(self);
-        }
-
-        if let CResource::Memory(range) = fact.resource()
-            && let Some(candidates) = self.concrete_memory_start_candidates(range, fact.is_own())
-            && self.consume_fact_from_candidates(fact, assumptions, candidates)
-        {
-            return Some(self);
-        }
-
         let exact_resource_entries = self.storage.index.by_resource.get(fact.resource()).cloned();
         if exact_resource_entries.as_ref().is_some_and(|entries| {
             self.consume_fact_from_candidates(fact, assumptions, entries.iter().copied())
@@ -5662,10 +5611,13 @@ impl ResourceContext {
                 i += 1;
             }
         }
-        if changed_facts.is_empty() {
-            return self;
+        if !changed_facts.is_empty() {
+            self.replace_facts(slots.into_iter().flatten(), changed_facts);
         }
-        self.replace_facts(slots.into_iter().flatten(), changed_facts);
+        // Normalization already visits the complete input, so it is an
+        // attachment boundary even when no resource representation changed.
+        // Delta-only composition must never do this for an ambient context.
+        self.synchronize_memory_equalities(assumptions);
         self
     }
 
@@ -6266,14 +6218,7 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    range.start() == range.end()
-        || quantity_condition_holds(
-            assumptions,
-            ConditionTerm::Bitvector32Equal(
-                Box::new(range.start().clone()),
-                Box::new(range.end().clone()),
-            ),
-        )
+    assumptions.int32_values_known_equal(range.start(), range.end())
 }
 
 pub(in crate::kernel) fn quantity_condition_holds(
@@ -6311,7 +6256,7 @@ fn constant_quantity_is_positive(quantity: &Bitvector32Term) -> bool {
     signed_bitvector_constant(quantity).is_some_and(|value| value > 0)
 }
 
-fn resource_quantity_is_positive(
+pub(super) fn resource_quantity_is_positive(
     quantity: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -6384,6 +6329,23 @@ pub(in crate::kernel) fn population_quantity_sum(
     .then(|| Bitvector32Term::add(left.clone(), right.clone()))
 }
 
+/// Only families with ordinary unit quantities participate. A memory share,
+/// an acquisition, or an authority cannot be added into a population unit.
+fn numeric_population_owned_units(fact: &CResourceFact) -> Option<u32> {
+    let CResourceFact::Own(resource, quantity) = fact else {
+        return None;
+    };
+    if !matches!(
+        resource,
+        CResource::Composite { .. } | CResource::Token { .. }
+    ) {
+        return None;
+    }
+    quantity
+        .as_const()
+        .filter(|q| *q > 0 && *q <= i32::MAX as u32)
+}
+
 fn resource_quantity_is_zero(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
         || assumptions.proves_exact(&Proposition::ConditionIs(
@@ -6426,6 +6388,61 @@ mod zero_quantity_graph_tests {
     }
 
     #[test]
+    fn separately_retained_units_entail_their_exact_quantity() {
+        let assumptions = PureFactContext::new();
+        let one = required(Bitvector32Term::Constant(1));
+        let two = required(Bitvector32Term::Constant(2));
+        let three = required(Bitvector32Term::Constant(3));
+        let context = ResourceContext::new().unchecked_with_facts([one.clone(), one.clone()]);
+        assert!(context.satisfies_fact(&two, &assumptions));
+        assert!(!context.satisfies_fact(&three, &assumptions));
+        let after = context.clone().without_exact_representation(&one).unwrap();
+        assert!(!after.satisfies_fact(&two, &assumptions));
+        assert!(
+            context
+                .without_fact_incrementally(&two, &assumptions)
+                .unwrap()
+                .is_empty()
+        );
+        let views = ResourceContext::new()
+            .unchecked_with_facts([CResourceFact::View(one.resource().clone()), one.clone()]);
+        assert!(!views.satisfies_fact(&two, &assumptions));
+        let large = required(Bitvector32Term::Constant(2_000_000_000));
+        let oversized = ResourceContext::new().unchecked_with_facts([large.clone(), large]);
+        assert!(oversized.satisfies_fact(&two, &assumptions));
+        assert!(oversized.satisfies_fact(
+            &required(Bitvector32Term::Constant(i32::MAX as u32)),
+            &assumptions,
+        ));
+    }
+
+    #[test]
+    fn quantity_query_work_is_indexed_over_separately_retained_units() {
+        let assumptions = PureFactContext::new();
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let context = ResourceContext::new()
+                .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::Constant(1))));
+            let ((), work) = crate::persistent::measure_persistent_work(|| {
+                assert!(
+                    context
+                        .satisfies_fact(&required(Bitvector32Term::Constant(size)), &assumptions)
+                );
+                assert!(
+                    !context.satisfies_fact(
+                        &required(Bitvector32Term::Constant(size + 1)),
+                        &assumptions
+                    )
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 16 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn zero_ownership_uses_graph_with_snapshot_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let before = crate::kernel::intern_c_memory(CMemory::new().with_block("zero-quantity", 8));
@@ -6437,6 +6454,7 @@ mod zero_quantity_graph_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 memory,
             ))
@@ -7247,7 +7265,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
             .all(|(a, b)| term_equal(a, b))
 }
 
-fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
+pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
     match resource.core()? {
         CResourceFact::View(CResource::Memory(range)) => Some(range),
         CResourceFact::View(
@@ -7290,14 +7308,17 @@ fn memory_resource_fact_permits_write(
     assumptions: &PureFactContext,
 ) -> bool {
     match resource {
-        CResourceFact::Own(CResource::Memory(range), _) => assumptions.pointer_access_in_range(
-            pointer,
-            byte_width,
-            range.base(),
-            range.start(),
-            range.end(),
-            range.element_width(),
-        ),
+        CResourceFact::Own(CResource::Memory(range), quantity) => {
+            resource_quantity_is_positive(quantity, assumptions)
+                && assumptions.pointer_access_in_range(
+                    pointer,
+                    byte_width,
+                    range.base(),
+                    range.start(),
+                    range.end(),
+                    range.element_width(),
+                )
+        }
         CResourceFact::Own(
             CResource::Composite { .. }
             | CResource::Token { .. }
@@ -7312,6 +7333,50 @@ fn memory_resource_fact_permits_write(
         )
         | CResourceFact::View(_) => false,
     }
+}
+
+/// The partition check of a block holding many owned ranges at distinct
+/// bases (a program-entry struct array is one range per field of every
+/// element) compares candidate pairs. Each candidate charges a unit; each
+/// range is also a checkpoint, so an exhausted run stops after one range's
+/// candidates instead of finishing every pair past its budget.
+#[cfg(test)]
+#[test]
+fn a_many_range_partition_check_stops_at_an_exhausted_run_budget() {
+    let ranges = 1_000u32;
+    let block = CMemory::global_pointer("pool").block;
+    let mut context = ResourceContext::new();
+    for index in 0..ranges {
+        context = context.unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+                },
+                0u32.into(),
+                1u32.into(),
+                4,
+            ),
+        ));
+    }
+    let assumptions = PureFactContext::new();
+    let ((), unbounded) = crate::instrumentation::measure_deterministic_work(|| {
+        assert!(context.validity_error(&assumptions).is_none());
+    });
+    let limit = 10_000;
+    assert!(
+        unbounded > 50 * limit,
+        "the check must cost far more than the budget: {unbounded}"
+    );
+    let used = crate::instrumentation::with_run_work_limit(limit, || {
+        assert!(context.validity_error(&assumptions).is_none());
+        assert!(crate::instrumentation::deadline_exceeded());
+        crate::instrumentation::run_work_used().expect("a run budget is installed")
+    });
+    assert!(
+        used <= limit + 4 * ranges as usize,
+        "the check spent {used} units under a {limit}-unit budget (unbounded {unbounded})"
+    );
 }
 
 #[cfg(test)]
@@ -7334,37 +7399,11 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
     let connected = facts
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(b, c), true);
-    assert!(connected.pointer_equality_in_graph(&a, &d));
+    assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
     assert!(!owner.permits_memory_read(&d, 12, &connected));
     assert!(!owner.permits_memory_read(&d, 4, &facts));
-}
-
-fn pointer_has_structural_range_base(pointer: &Pointer, base: &Pointer) -> bool {
-    if pointer.block != base.block {
-        return false;
-    }
-    if crate::kernel::assumptions::pointers_equal_ignoring_memories(pointer, base) {
-        return true;
-    }
-    matches!(
-        &pointer.offset,
-        PointerOffsetTerm::Add(left, right)
-            if crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: left.as_ref().clone(),
-                },
-                base,
-            ) || crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: right.as_ref().clone(),
-                },
-                base,
-            )
-    )
 }
 
 /// Range endpoints compare like ordinary terms, and additionally two loads
@@ -7385,10 +7424,11 @@ fn range_endpoint_terms_equal(
         assumptions: &PureFactContext,
     ) -> bool {
         if let (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
         ) = (left, right)
             && left_pointer == right_pointer
+            && left_kind == right_kind
         {
             return crate::kernel::explicit_atomic_equality_from_memory_derivations(
                 left,
@@ -8633,10 +8673,12 @@ mod support_removal_tests {
         let short_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(short_pointer.clone()),
+            crate::kernel::LoadKind::Int16,
         );
         let wide_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(wide_pointer.clone()),
+            crate::kernel::LoadKind::Float64,
         );
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {
@@ -8674,10 +8716,12 @@ mod support_removal_tests {
         let first_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&first),
             Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         );
         let second_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&second),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {
@@ -8705,6 +8749,7 @@ mod support_removal_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
         let mut nested = load;
         for _ in 0..(MAX_MEMORY_LOAD_FOOTPRINT_DEPTH + 8) {

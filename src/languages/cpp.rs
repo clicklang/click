@@ -4,9 +4,15 @@
 //! This module validates and locks that typed output; it deliberately does not
 //! feed C++ text or generated C through the C parser.
 
+mod budget;
 mod import;
+mod interface;
+mod lifetime;
 mod lowering;
+mod names;
+mod scalar;
 mod schema;
+mod validity;
 
 pub use import::{PreparedCppImport, load_import, refresh_import};
 pub use lowering::{LoweredCppFunction, lower_import};

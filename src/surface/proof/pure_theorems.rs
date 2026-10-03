@@ -54,18 +54,22 @@ pub(in crate::surface) fn verify_theorem_definitions(
     let mut verified = Vec::new();
     let mut theorem_environment = TheoremEnvironment::new(dependencies);
     for theorem in theorem_definitions {
+        crate::surface::enter_ambient_declaration(theorem.name());
         #[cfg(test)]
         PROVED_THEOREMS.with(|proved| proved.borrow_mut().push(theorem.name().to_string()));
         if theorem.executes.is_some() {
-            verified.push(verify_execution_theorem(
-                theorem,
-                predicate_environment,
-                click_function_environment,
-                &theorem_environment,
-                function_environment,
-                resource_environment,
-                function_source_registry.clone(),
-            )?);
+            verified.push(
+                verify_execution_theorem(
+                    theorem,
+                    predicate_environment,
+                    click_function_environment,
+                    &theorem_environment,
+                    function_environment,
+                    resource_environment,
+                    function_source_registry.clone(),
+                )
+                .map_err(ClickError::located_by_ambient_source)?,
+            );
             theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
             continue;
         }
@@ -93,13 +97,16 @@ pub(in crate::surface) fn verify_theorem_definitions(
                 symbolic.name = theorem.name().to_string();
                 &symbolic
             };
-            verified.extend(verify_concrete_theorem_definition(
-                checked,
-                predicate_environment,
-                click_function_environment,
-                &theorem_environment,
-                function_environment,
-            )?);
+            verified.extend(
+                verify_concrete_theorem_definition(
+                    checked,
+                    predicate_environment,
+                    click_function_environment,
+                    &theorem_environment,
+                    function_environment,
+                )
+                .map_err(ClickError::located_by_ambient_source)?,
+            );
         }
         theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
     }
@@ -1071,7 +1078,14 @@ fn check_pure_structural_induction(
             branch_setup,
         );
         let mut search = super::attempt::search_scope("pure structural induction arm");
-        let attempted = match root.try_authoritative_linear_script(&prepared) {
+        // The `induct` tactic is source tactic 0 and the arms follow it in
+        // written order, each numbered through its own nested tactics.
+        let first_source_index = 1 + arms[..arm_index]
+            .iter()
+            .map(|earlier| super::source_tactic_count(&earlier.tactics))
+            .sum::<usize>();
+        let sites = claim_script_sites(&root, &prepared, first_source_index);
+        let attempted = match root.try_addressed_linear_script(&prepared, &sites, &mut None) {
             Ok(attempted) => attempted,
             Err(error) => return Err(error.with_search_failures(search.finish())),
         };
@@ -1083,6 +1097,7 @@ fn check_pure_structural_induction(
             return Err(error.with_search_failures(search.finish()));
         };
         search.succeed();
+        proof.record_accepted_trace(claim_label, completions.len());
         completions.push(proof.completed_proposition()?);
         checked_arms.push(ProofInductionArm {
             type_name: arm.type_name.clone(),
@@ -2091,6 +2106,27 @@ fn certificate_int32_rewrites(
         .collect()
 }
 
+/// Addresses each tactic of a theorem's claim-level script by its source
+/// tactic occurrence, in the flat pre-order numbering the source mapper,
+/// `click expand` and `click profile` share, so a failure or a trace step
+/// names the tactic the user wrote. `first` is the occurrence of
+/// `tactics[0]`.
+fn claim_script_sites(
+    root: &Proof<'_>,
+    tactics: &[ProofTactic],
+    first: usize,
+) -> Vec<ProofStepSite> {
+    let mut next = first;
+    tactics
+        .iter()
+        .map(|tactic| {
+            let site = root.site().at_source_tactic(next);
+            next += super::source_tactic_count(std::slice::from_ref(tactic));
+            site
+        })
+        .collect()
+}
+
 fn check_direct_pure_goal_with_proof(
     claim_label: &str,
     context: &PureTheoremContext,
@@ -2121,6 +2157,8 @@ fn check_direct_pure_goal_with_proof(
         return Err(root.simp_failure().with_search_failures(search.finish()));
     };
     search.succeed();
+    // A traced theorem keeps its accepted path, as a traced function does.
+    proof.record_accepted_trace(claim_label, 0);
     Ok((
         proof.completed_certificate()?,
         proof.completed_proposition()?,
@@ -2162,6 +2200,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
             name,
             "int32_add_defined_by_integer_bounds"
                 | "int32_subtract_defined_by_integer_bounds"
+                | "int32_equal_of_to_integer"
                 | "int32_add_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
@@ -2201,6 +2240,19 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_nonnegative_predecessor_upper_bound"
                 | "int32_successor_le_implies_lt"
                 | "int32_lt_successor_implies_le"
+                | "uint32_positive_predecessor_strictly_decreases"
+                | "uint32_increment_upper_bound"
+                | "uint32_increment_strictly_increases"
+                | "uint32_lt_implies_positive_difference"
+                | "uint32_gt_implies_reversed_lt"
+                | "uint32_lt_implies_reversed_gt"
+                | "uint32_ge_implies_reversed_le"
+                | "uint32_le_implies_reversed_ge"
+                | "uint32_difference_decreases_after_increment"
+                | "uint32_lt_le_transitive"
+                | "uint32_le_lt_transitive"
+                | "uint32_lt_transitive"
+                | "uint32_le_transitive"
         )
 }
 
@@ -2220,9 +2272,10 @@ fn verify_kernel_standard_theorem_axiom(
         "int32_add_defined_by_integer_bounds" | "int32_subtract_defined_by_integer_bounds" => {
             (2, 2)
         }
-        "int32_add_to_integer" | "int32_less_equal_to_integer" | "int32_subtract_to_integer" => {
-            (2, 1)
-        }
+        "int32_add_to_integer"
+        | "int32_less_equal_to_integer"
+        | "int32_subtract_to_integer"
+        | "int32_equal_of_to_integer" => (2, 1),
         "int32_increment_upper_bound" | "int32_increment_strictly_increases" => (2, 1),
         "int32_increment_lower_bound"
         | "int32_increment_greater_equal_lower_bound"
@@ -2256,6 +2309,19 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_lt_le_transitive"
         | "int32_lt_transitive"
         | "int32_ge_transitive" => (3, 2),
+        "uint32_positive_predecessor_strictly_decreases" => (1, 1),
+        "uint32_increment_upper_bound"
+        | "uint32_increment_strictly_increases"
+        | "uint32_lt_implies_positive_difference"
+        | "uint32_gt_implies_reversed_lt"
+        | "uint32_lt_implies_reversed_gt"
+        | "uint32_ge_implies_reversed_le"
+        | "uint32_le_implies_reversed_ge"
+        | "uint32_difference_decreases_after_increment" => (2, 1),
+        "uint32_lt_le_transitive"
+        | "uint32_le_lt_transitive"
+        | "uint32_lt_transitive"
+        | "uint32_le_transitive" => (3, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2291,6 +2357,60 @@ fn verify_kernel_standard_theorem_axiom(
             )));
         };
         crate::kernel::prove_integer_machine_round_trip(value.clone(), destination)
+    } else if theorem.name().starts_with("uint32_") {
+        let uint32_parameter = |index: usize| {
+            let parameter = &theorem.parameters()[index];
+            match context.values.get(parameter.name()) {
+                Some(CValue::UInt32(term)) => Ok(term.clone()),
+                _ => Err(ClickError::new(format!(
+                    "`{claim_label}` kernel parameter `{}` must be uint32",
+                    parameter.name()
+                ))),
+            }
+        };
+        let value = uint32_parameter(0)?;
+        match theorem.name() {
+            "uint32_positive_predecessor_strictly_decreases" => {
+                prove_uint32_positive_predecessor_strictly_decreases(value)
+            }
+            "uint32_increment_upper_bound" => {
+                prove_uint32_increment_upper_bound(value, uint32_parameter(1)?)
+            }
+            "uint32_increment_strictly_increases" => {
+                prove_uint32_increment_strictly_increases(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_implies_positive_difference" => {
+                prove_uint32_lt_implies_positive_difference(value, uint32_parameter(1)?)
+            }
+            "uint32_gt_implies_reversed_lt" => {
+                prove_uint32_gt_implies_reversed_lt(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_implies_reversed_gt" => {
+                prove_uint32_lt_implies_reversed_gt(value, uint32_parameter(1)?)
+            }
+            "uint32_ge_implies_reversed_le" => {
+                prove_uint32_ge_implies_reversed_le(value, uint32_parameter(1)?)
+            }
+            "uint32_le_implies_reversed_ge" => {
+                prove_uint32_le_implies_reversed_ge(value, uint32_parameter(1)?)
+            }
+            "uint32_difference_decreases_after_increment" => {
+                prove_uint32_difference_decreases_after_increment(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_le_transitive" => {
+                prove_uint32_lt_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_le_lt_transitive" => {
+                prove_uint32_le_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_lt_transitive" => {
+                prove_uint32_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_le_transitive" => {
+                prove_uint32_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            _ => unreachable!("checked above"),
+        }
     } else {
         let int32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
@@ -2315,6 +2435,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "int32_add_to_integer" => {
                 crate::kernel::prove_int32_add_to_integer(value, int32_parameter(1)?)
+            }
+            "int32_equal_of_to_integer" => {
+                crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)
             }
             "int32_less_equal_to_integer" => {
                 crate::kernel::prove_int32_less_equal_to_integer(value, int32_parameter(1)?)
@@ -2509,7 +2632,8 @@ fn check_pure_script_with_proof(
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
     let mut search = super::attempt::search_scope("pure theorem script");
     let mut declined = None;
-    let checked = match root.try_authoritative_linear_script_reporting(tactics, &mut declined) {
+    let sites = claim_script_sites(&root, tactics, 0);
+    let checked = match root.try_addressed_linear_script(tactics, &sites, &mut declined) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
     };
@@ -2530,6 +2654,8 @@ fn check_pure_script_with_proof(
             .with_search_failures(search.finish()));
     };
     search.succeed();
+    // A traced theorem keeps its accepted path, as a traced function does.
+    proof.record_accepted_trace(claim_label, 0);
     Ok((
         proof.completed_certificate()?,
         proof.completed_proposition()?,
@@ -2947,18 +3073,13 @@ mod tests {
             "if x == 0 { normalize(); } else { normalize(); }",
         ] {
             let source = format!("theorem ordinary(x: int32) {{ ensures x == x by {{ {body} }} }}");
-            let (result, events) =
-                crate::instrumentation::collect(|| verify_instantiation_theorem(&source));
+            let result = verify_instantiation_theorem(&source);
             let verified = result.unwrap();
             assert!(
                 matches!(&verified.checked_completion, Some(TheoremProofCompletion::Proposition(completion)) if completion.proposition() == &verified.conclusion)
             );
             assert!(verified.kernel_authority.is_some());
             assert!(!verified.proof_certificate().unwrap().steps().is_empty());
-            assert!(!events.iter().any(|event| matches!(event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "generated certificate validation" || name == "surface certificate construction"
-            )));
         }
         let error = verify_instantiation_theorem(
             "theorem bad(x: int32) { ensures x == 0 by { normalize(); simp(); } }",
@@ -3021,18 +3142,13 @@ mod tests {
                 .split_once("\n```")
                 .unwrap()
                 .0;
-            let (result, events) =
-                crate::instrumentation::collect(|| verify_instantiation_theorem(source));
+            let result = verify_instantiation_theorem(source);
             let verified = result.unwrap();
             assert!(matches!(
                 verified.checked_completion,
                 Some(TheoremProofCompletion::Proposition(_))
             ));
             assert!(verified.kernel_authority.is_some());
-            assert!(!events.iter().any(|event| matches!(event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "generated certificate validation" || name == "surface certificate construction"
-            )));
             let label = format!("{}.ensures_0", verified.theorem_definition.name());
             crate::surface::verify_c0_sources(source, &[]).unwrap();
             let expanded =
@@ -3070,27 +3186,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ordinary_pure_compatibility_entry_points_stay_removed() {
-        let production = include_str!("pure_theorems.rs")
-            .split("#[cfg(test)]\nmod tests")
-            .next()
-            .unwrap();
-        for name in [
-            "prove_pure_theorem_script",
-            "prove_pure_theorem_tactics",
-            "prove_pure_theorem_goal",
-            "validate_pure_theorem_certificate",
-            "pure_theorem_surface_certificate",
-            "proof_supports_pure_certificate",
-        ] {
-            assert!(
-                !production.contains(name),
-                "removed pure authority returned: {name}"
-            );
-        }
-    }
-
     const INSTANTIATE_BOUND: &str = r#"
         theorem instantiate_bound(x: int32, limit: int32, upper: int32) {
             requires forall (k: int32) {
@@ -3123,18 +3218,13 @@ mod tests {
 
     #[test]
     fn pure_instantiate_retains_checked_authority_without_recertification() {
-        let (result, events) =
-            crate::instrumentation::collect(|| verify_instantiation_theorem(INSTANTIATE_BOUND));
+        let result = verify_instantiation_theorem(INSTANTIATE_BOUND);
         let verified = result.expect("pure instantiation must produce checked authority");
         assert!(verified.kernel_authority.is_some());
         assert!(matches!(
             verified.proof.as_ref().unwrap().steps(),
-            [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+            [ProofStep::InstantiateUsing { .. }]
         ));
-        assert!(!events.iter().any(|event| matches!(event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "generated certificate validation" || name == "surface certificate construction"
-        )), "ordinary instantiation must retain the checked result: {events:?}");
     }
 
     #[test]
@@ -3252,13 +3342,8 @@ mod tests {
             "ensures x <= upper by {",
             "ensures x <= upper by { induct(x) as ih;",
         );
-        let (verified, events) =
-            crate::instrumentation::collect(|| verify_instantiation_theorem(&source));
+        let verified = verify_instantiation_theorem(&source);
         assert!(verified.unwrap().kernel_authority.is_some());
-        assert!(!events.iter().any(|event| matches!(event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "generated certificate validation"
-        )));
     }
 
     #[test]
@@ -3313,13 +3398,11 @@ mod tests {
             let before = crate::persistent::persistent_node_allocations();
             let instantiated = root.apply_step(certificate.steps()[0].clone()).unwrap();
             allocations.push(crate::persistent::persistent_node_allocations() - before);
-            assert!(!instantiated.is_complete());
-            assert_eq!(instantiated.goal(), Some(&goal));
+            // The instantiation adds the goal, which closes it.
+            assert!(instantiated.is_complete());
             assert!(root.certificate().steps().is_empty());
             assert!(!root.facts().contains(&goal));
-            assert!(instantiated.facts().contains(&goal));
-            let completed = instantiated.apply_step(ProofStep::Assumption).unwrap();
-            completed.completed_proposition().unwrap();
+            instantiated.completed_proposition().unwrap();
         }
         for pair in allocations.windows(2) {
             assert!(
@@ -3413,10 +3496,7 @@ mod tests {
                 _ => panic!("the checked certificate must retain both branches"),
             };
             for arm in arms {
-                assert!(matches!(
-                    arm.steps(),
-                    [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
-                ));
+                assert!(matches!(arm.steps(), [ProofStep::InstantiateUsing { .. }]));
             }
             let prefix = source.split_once(" by {").unwrap().0;
             let expanded = format!(

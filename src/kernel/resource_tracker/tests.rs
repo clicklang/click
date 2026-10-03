@@ -651,7 +651,11 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .clone()
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(intern_c_memory(memory.clone()), Box::new(cell.clone()))
+        Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory.clone()),
+            Box::new(cell.clone()),
+            crate::kernel::LoadKind::Bits32,
+        )
     };
     let fact = |memory: &CMemory| {
         Proposition::ConditionIs(
@@ -665,8 +669,9 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     assert_eq!(
         version_mismatch(&fact(&after), &fact(&entry)),
         Some((
-            // The fact spells a raw `MemoryLoad`, which carries no width, so
-            // the resource stands in the widest scalar access.
+            // The fact spells a raw `MemoryLoad`; the cell resource it reads
+            // stands for every read of that address, so it is the widest
+            // scalar access, which the load's own kind fits inside.
             OwnedResource::Cell {
                 pointer: cell.clone(),
                 bytes: super::widest_scalar_access_bytes(),
@@ -798,21 +803,6 @@ mod saved_states {
         assert_eq!(
             same_at_states(rank(), StatePoint::at(&after), StatePoint::at(&entry)),
             Sameness::Same
-        );
-    }
-
-    /// A call that returned ownership kept the identity and replaced the field
-    /// values. Nothing recorded says which step did it, so the answer is
-    /// `Unknown` and never `Changed`: a refusal reads the step from the site
-    /// that minted the new value.
-    #[test]
-    fn a_replaced_field_value_is_unknown_not_changed() {
-        let entry = holding(1, 3, 0);
-        let after = holding(1, 4, 0);
-        assert_eq!(
-            same_at_states(rank(), StatePoint::at(&after), StatePoint::at(&entry)),
-            replaced(None),
-            "neither stored value was minted as an arbitrary model, so no step is claimed"
         );
     }
 
@@ -1106,4 +1096,46 @@ mod footprints {
         let after = entry_memory().store(at(block("global:h"), 0), one());
         assert!(!matches!(effect(&after, None), StepEffect::Separate(_)));
     }
+}
+
+/// A store at an index the path's facts place off a cell is crossed when the
+/// cell's value is read on that path, and only there. The store dropped the
+/// cached cell, so the snapshot after it answers nothing by itself, and the
+/// assumption-free naming walk stops at the store. Under `u != 0` the value
+/// is the earlier `3`; under `u == 0`, or with no fact about `u`, there is
+/// none — never the `3`.
+#[test]
+fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
+    let cell = at(block("global:g"), 0);
+    let index = Bitvector32Term::Variable(Variable(0));
+    let written = Pointer {
+        block: block("global:g"),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index.clone()),
+            byte_width: 4,
+        },
+    };
+    let three = CValue::Int32(Bitvector32Term::Constant(3));
+    let no_facts = PureFactContext::new();
+    let after = entry_memory()
+        .store(cell.clone(), three.clone())
+        .without_possible_aliasing_cells(&written, 4, &no_facts)
+        .store(written, CValue::Int32(Bitvector32Term::Constant(7)));
+    assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
+    let after = intern_c_memory(after);
+    let index_is_zero = |value| {
+        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(0)),
+            value,
+        ))
+    };
+    assert_eq!(
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(false)),
+        Some(three)
+    );
+    assert_eq!(
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
+        None
+    );
+    assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }

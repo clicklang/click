@@ -50,12 +50,6 @@ pub(super) const CONTRACT_LET_CHAIN_LIMIT: usize = 128;
 /// recursive, so keep that separate nesting path deliberately small.
 const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 
-/// The memory-range fact was spelled `loadable(...)` before it was named after
-/// the `views` clause it shadows. There is no compatibility alias, so a source
-/// still using the old spelling is refused by name rather than reported as an
-/// unknown call.
-const RETIRED_LOADABLE_SPELLING: &str = "`loadable(...)` was renamed `viewable(...)`";
-
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
 /// types, so the element type travels with the name to give a byte or
@@ -97,6 +91,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
         aggregate_objects_by_function,
         aggregate_array_objects_by_function,
         global_array_shapes_by_function,
+        None,
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.qualified_objects = Some(qualified_objects);
@@ -113,7 +108,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
 /// does not tokenize) counts as an entry, so a module is never skipped by
 /// mistake for a file that owns a proof.
 pub(super) fn declares_only_definitions(source: &str) -> bool {
-    let Ok((tokens, _)) = tokenizer::tokenize(source) else {
+    let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
         return false;
     };
     let mut depth = 0_usize;
@@ -158,6 +153,7 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
+    line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
@@ -174,17 +170,9 @@ pub(super) fn parse_file_items_for_module(
         aggregate_objects_by_function,
         aggregate_array_objects_by_function,
         global_array_shapes_by_function,
+        Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-    let filename: std::sync::Arc<str> = std::sync::Arc::from(identity);
-    for position in &mut parser.positions {
-        *position = crate::source::SourcePosition::with_origin(
-            position.line,
-            position.column,
-            filename.clone(),
-            position.line,
-        );
-    }
     for definition in imported_algebraic_types {
         for variant in definition.variants() {
             parser.algebraic_variant_fields.insert(
@@ -196,6 +184,20 @@ pub(super) fn parse_file_items_for_module(
     parser.qualified_objects = Some(qualified_objects);
     parser.local_struct_pointers_by_function = local_struct_pointers_by_function;
     parser.parse_file_items()
+}
+
+/// Whether `name` is the leading word of a built-in tactic or proof form, which
+/// a user-defined tactic may not shadow.
+fn is_builtin_tactic_spelling(name: &str) -> bool {
+    matches!(name, "let" | "by" | "sorry")
+        || crate::surface::PUBLIC_TACTIC_FORMS.iter().any(|form| {
+            form.id != "user-tactic"
+                && form
+                    .syntax
+                    .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+                    .next()
+                    == Some(name)
+        })
 }
 
 fn is_tactic_name(name: &str) -> bool {
@@ -248,6 +250,14 @@ enum Token {
     Caret,
     Tilde,
     Pipe,
+}
+
+/// Diagnostics print a token as [`Token::describe`] spells it, never as its
+/// Debug form.
+impl std::fmt::Display for Token {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.describe())
+    }
 }
 
 impl Token {
@@ -385,6 +395,13 @@ struct Parser {
     source_aliases: BTreeMap<String, String>,
     qualified_objects: Option<BTreeMap<String, BTreeMap<String, parser::QualifiedCObject>>>,
     pending_contract_name: Option<String>,
+    /// Set while a `tactic` declaration's signature is parsed: the name
+    /// follows directly, the parameters use Click's `name: type` spelling,
+    /// and the implicit result is `void`.
+    pending_tactic_signature: bool,
+    /// Every user-defined tactic declared so far in this file, so a proof
+    /// can tell `name(args)` applying one from other syntax.
+    tactic_names: BTreeSet<String>,
     contract_resource_parameters: BTreeMap<String, ResourceClause>,
     contract_proof_bindings: BTreeMap<String, Vec<(String, Variable, String)>>,
     next_resource_identity: u64,
@@ -669,6 +686,7 @@ impl Parser {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            None,
         )
     }
 
@@ -679,13 +697,16 @@ impl Parser {
         aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
+        container: Option<&crate::source::SourceContainer>,
     ) -> Result<Self, ClickError> {
-        let (tokens, positions) = tokenize(source)?;
+        let (tokens, positions) = tokenize(source, container)?;
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),
             qualified_objects: None,
             pending_contract_name: None,
+            pending_tactic_signature: false,
+            tactic_names: BTreeSet::new(),
             contract_resource_parameters: BTreeMap::new(),
             contract_proof_bindings: BTreeMap::new(),
             next_resource_identity: 0,
@@ -734,12 +755,22 @@ impl Parser {
 
     fn parse_file(mut self) -> Result<ClickFile, ClickError> {
         let file = self.parse_file_items()?;
-        let mut file = super::validation::expand_declared_resource_clauses(file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-        super::validation::validate_click_definitions(&file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-        super::lowering::check_resource_field_schemas(&mut file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
+        let mut file =
+            super::validation::expand_declared_resource_clauses(file).map_err(|error| {
+                error
+                    .with_kind(ClickErrorKind::Type)
+                    .located_by_ambient_declaration()
+            })?;
+        super::validation::validate_click_definitions(&file).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
+        super::lowering::check_resource_field_schemas(&mut file).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
         Ok(file)
     }
 
@@ -816,6 +847,7 @@ impl Parser {
         let mut deferred_theorems = Vec::new();
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
+        let mut tactic_definitions = Vec::new();
 
         while self.peek().is_some() {
             if self.peek_ident() == Some("import") {
@@ -871,13 +903,14 @@ impl Parser {
                 }
             } else if self.peek_ident() == Some("contract") {
                 contract_definitions.push(self.parse_contract_definition()?);
+            } else if self.peek_ident() == Some("tactic")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
+            {
+                tactic_definitions.push(self.parse_tactic_definition()?);
             } else if self.peek_ident() == Some("abstract") {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
                 resource_definitions.push(self.parse_resource_definition(false)?);
-            } else if self.peek_ident() == Some("counted") {
-                return Err(self
-                    .error("`counted resource` has been removed; declare an ordinary `resource`"));
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
             } else {
@@ -911,6 +944,7 @@ impl Parser {
             theorem_definitions,
             contract_definitions,
             function_blocks,
+            tactic_definitions,
             declaration_owners: BTreeMap::new(),
             entry_module: None,
         };
@@ -925,6 +959,70 @@ impl Parser {
         let path = self.expect_string("Click module path")?;
         self.expect(Token::Semicolon)?;
         Ok(ImportDeclaration { path, position })
+    }
+
+    /// `tactic name(p: type, ...) { clauses } by { proof }`.
+    ///
+    /// The clauses are a function contract's, parsed by the function-block
+    /// parser so binders, `old`, and `decreases` mean what they mean there.
+    /// A tactic runs no code, so it has no result, no exceptional outcome,
+    /// and may not diverge; it must be proved by its own `by` block.
+    fn parse_tactic_definition(&mut self) -> Result<TacticDefinition, ClickError> {
+        self.expect_ident_spelling("tactic")?;
+        let start = self.error_context();
+        if is_builtin_tactic_spelling(self.peek_ident().unwrap_or_default()) {
+            return Err(self.error(format!(
+                "tactic `{}` would shadow the built-in tactic of the same name",
+                self.peek_ident().unwrap_or_default()
+            )));
+        }
+        // A tactic's own name is applicable inside its body: a recursive
+        // application is the induction hypothesis, ranked by its `decreases`.
+        // Only earlier tactics and itself are applicable, so tactics cannot
+        // be mutually recursive.
+        let declared_name = self.peek_ident().unwrap_or_default().to_string();
+        if !self.tactic_names.insert(declared_name.clone()) {
+            return Err(self.error_at(
+                start.clone(),
+                format!("tactic `{declared_name}` is declared twice"),
+            ));
+        }
+        self.pending_tactic_signature = true;
+        let function_block = self.parse_function_block(false);
+        self.pending_tactic_signature = false;
+        let function_block = function_block?;
+        let name = function_block.signature().name().to_string();
+        let refuse = |parser: &Self, message: &str| {
+            Err(parser.error_at(start.clone(), format!("tactic `{name}`: {message}")))
+        };
+        if function_block.signature().diverges() {
+            return refuse(
+                self,
+                "a tactic may not declare `diverges`; a tactic that need not terminate could prove anything",
+            );
+        }
+        if function_block.grouped_proof().is_none() {
+            return refuse(self, "a tactic must be proved by a `by { ... }` block");
+        }
+        if !function_block.constructs().is_empty()
+            || !function_block.exceptional_ensures().is_empty()
+        {
+            return refuse(
+                self,
+                "a tactic runs no code, so it has no `constructs` or `exceptional ensures` clauses",
+            );
+        }
+        if function_block
+            .ensures()
+            .iter()
+            .any(|clause| !matches!(clause.proof(), SourceProof::Default))
+        {
+            return refuse(
+                self,
+                "an `ensures` of a tactic is proved by the tactic's `by` block, not by its own",
+            );
+        }
+        Ok(TacticDefinition::new(function_block))
     }
 
     fn parse_contract_definition(&mut self) -> Result<ContractDefinition, ClickError> {
@@ -975,9 +1073,7 @@ impl Parser {
                 .collect::<BTreeSet<_>>();
             let mut owned_parameters = BTreeSet::new();
             for requirement in function_block.requires() {
-                if let Requirement::Resource(ResourceClause::Named { binding, .. }) =
-                    requirement.inner()
-                {
+                if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
                     if !identities.contains(&binding.identity) {
                         return Err(self.error(format!(
                             "resource `{}` must be declared in the contract proof-parameter list",
@@ -1321,9 +1417,11 @@ impl Parser {
             Some(target_type) => CExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             },
             None => expression.clone(),
         }
@@ -1477,7 +1575,7 @@ impl Parser {
                 return Err(self.error("an `abstract resource` cannot have a body"));
             }
             Some(token) => {
-                return Err(self.error(format!("expected resource body, got {token:?}")));
+                return Err(self.error(format!("expected resource body, got {token}")));
             }
             None => {
                 return Err(self.error("expected resource body, got end of input"));
@@ -2042,7 +2140,7 @@ impl Parser {
                     ));
                 }
                 Some(token) => {
-                    return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                    return Err(self.error(format!("expected `,` or `)`, got {token}")));
                 }
                 None => return Err(self.error("expected `,` or `)`, got end of input")),
             }
@@ -2609,11 +2707,6 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                 }
-                Some("immutable" | "mutable") => {
-                    return Err(self.error(
-                        "effect clauses were removed; declare ownership with `owns` and `views` (a narrow write is `views X; owns Y;`)",
-                    ));
-                }
                 Some("constructs") => {
                     self.position += 1;
                     let resource = self.parse_owned_resource_target()?;
@@ -2717,7 +2810,7 @@ impl Parser {
             && (!constructs.is_empty()
                 || requires
                     .iter()
-                    .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)))
+                    .any(|requirement| matches!(requirement, Requirement::Resource(_)))
                 || ensures
                     .iter()
                     .any(|ensure| matches!(ensure.ensure(), Ensure::Resource(_))))
@@ -2811,21 +2904,14 @@ impl Parser {
                 .into_iter()
                 .map(Requirement::Proposition),
         );
-        let requirement_label_indices = requires
-            .iter()
-            .enumerate()
-            .filter_map(|(index, requirement)| {
-                requirement.label().map(|label| (label.to_string(), index))
-            })
-            .collect();
 
         Ok(FunctionBlock {
             signature,
             external,
             one_call_proof: false,
+            tactic_procedure: false,
             requires,
             requirement_source_clauses,
-            requirement_label_indices,
             decreases,
             structural_clauses: Vec::new(),
             constructs,
@@ -2880,6 +2966,43 @@ impl Parser {
     }
 
     fn parse_function_signature(&mut self) -> Result<ParsedFunctionSignature, ClickError> {
+        if std::mem::take(&mut self.pending_tactic_signature) {
+            let name = self.expect_ident("tactic name")?;
+            self.expect(Token::LParen)?;
+            let parsed_parameters = self.parse_click_parameters()?;
+            self.expect(Token::RParen)?;
+            if let Some(parameter) = parsed_parameters
+                .parameters
+                .iter()
+                .find(|parameter| parameter.click_type().c_type().is_none())
+            {
+                return Err(self.error(format!(
+                    "tactic parameter `{}` has a mathematical type; tactic parameters are C \
+                     scalars and pointers in this release",
+                    parameter.name()
+                )));
+            }
+            if matches!(self.peek_ident(), Some("throws" | "diverges")) {
+                return Err(self.error(format!(
+                    "a tactic runs no code, so its signature cannot declare `{}`",
+                    self.peek_ident().unwrap_or_default()
+                )));
+            }
+            return Ok(ParsedFunctionSignature {
+                signature: FunctionSignature {
+                    return_type: C0Type::Void,
+                    return_pointee_constant: false,
+                    name,
+                    parameters: parsed_parameters.parameters,
+                    exceptional_type: None,
+                    diverges: false,
+                    declared_loadable_bytes: parsed_parameters.declared_loadable_bytes,
+                },
+                struct_params: parsed_parameters.struct_params,
+                struct_array_params: parsed_parameters.struct_array_params,
+                return_struct_name: None,
+            });
+        }
         let parsed_return_type = self.parse_type()?;
         if parsed_return_type.constant {
             return Err(
@@ -3015,7 +3138,7 @@ impl Parser {
                     });
                 }
                 Some(token) => {
-                    return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                    return Err(self.error(format!("expected `,` or `)`, got {token}")));
                 }
                 None => return Err(self.error("expected `,` or `)`, got end of input")),
             }
@@ -3360,7 +3483,7 @@ impl Parser {
                     Some(Token::RParen) => break,
                     Some(token) => {
                         return Err(self.error(format!(
-                            "expected `,` or `)` in function-pointer parameter list, got {token:?}"
+                            "expected `,` or `)` in function-pointer parameter list, got {token}"
                         )));
                     }
                     None => return Err(self.error(
@@ -3503,16 +3626,8 @@ impl Parser {
 
     fn parse_requirement(&mut self) -> Result<Requirement, ClickError> {
         self.expect_ident_spelling("requires")?;
-        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
-            return Err(
-                self.error("named `requires` facts were removed; write `requires proposition;`")
-            );
-        }
         let requirement = match (self.peek_ident(), self.peek_next()) {
             (Some("viewable"), Some(Token::LParen)) => self.parse_loadable_requirement()?,
-            (Some("loadable"), Some(Token::LParen)) => {
-                return Err(self.error(RETIRED_LOADABLE_SPELLING));
-            }
             _ => {
                 let proposition = self.parse_proposition()?;
                 self.expect(Token::Semicolon)?;
@@ -3630,8 +3745,17 @@ impl Parser {
     fn parse_call_binder_transport(
         &mut self,
         output: Option<CallOutputPattern>,
+        tactic: bool,
     ) -> Result<CallBinderTransport, ClickError> {
-        let callee = self.expect_ident("call step callee")?;
+        let callee = self.expect_ident(if tactic {
+            "tactic name"
+        } else {
+            "call step callee"
+        })?;
+        // A call step writes `step(callee(...), { ... })`; a tactic
+        // application writes `name(...) { ... }`, where the map is optional
+        // when the tactic supplies no binder.
+        let form = if tactic { "name(...)" } else { "step(...)" };
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         while self.peek() != Some(&Token::RParen) {
@@ -3642,17 +3766,24 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RParen)?;
-        self.expect(Token::Comma)?;
+        let has_map = if tactic {
+            self.peek() == Some(&Token::LBrace)
+        } else {
+            self.expect(Token::Comma)?;
+            true
+        };
         let mut declared = self
             .callee_resource_binders
             .get(&callee)
             .cloned()
             .unwrap_or_default();
-        self.expect(Token::LBrace)?;
+        if has_map {
+            self.expect(Token::LBrace)?;
+        }
         let mut binders: Vec<CallBinderBinding> = Vec::new();
         let mut bound = BTreeSet::new();
         let mut instances = BTreeSet::new();
-        while self.peek() != Some(&Token::RBrace) {
+        while has_map && self.peek() != Some(&Token::RBrace) {
             let binder = self.expect_ident("callee resource binder")?;
             self.expect(Token::Colon)?;
             let instance = self.expect_ident("caller resource instance")?;
@@ -3664,7 +3795,7 @@ impl Parser {
             };
             if declaration.kind == CalleeResourceBinderKind::Produced {
                 return Err(self.error(format!(
-                    "`{callee}` produces `{binder}`; introduce it with `let {binder} = step(...)`"
+                    "`{callee}` produces `{binder}`; introduce it with `let {{ {binder}: name }} = {form}`"
                 )));
             }
             if !bound.insert(binder.clone()) {
@@ -3699,7 +3830,9 @@ impl Parser {
             }
             self.position += 1;
         }
-        self.expect(Token::RBrace)?;
+        if has_map {
+            self.expect(Token::RBrace)?;
+        }
         // An empty mutex has no protected resource to deposit. Its named
         // initialization still produces ordinary lifetime authority.
         if callee == "pthread_mutex_init" && !bound.contains("state") {
@@ -3765,7 +3898,7 @@ impl Parser {
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(self.error(format!(
-                    "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = step(...)`"
+                    "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
             // The legacy single-name form binds the only produced instance,
@@ -4184,19 +4317,10 @@ impl Parser {
                 self.expect(Token::Semicolon)?;
                 Ok(vec![StructuralItem { claim: proposition }])
             }
-            Some(Token::Ident(kind))
-                if kind == "immutable" || kind == "mutable" || kind == "step" =>
-            {
-                Err(self.error(
-                    "loop effect clauses were removed; a loop frames by ownership by default, or declares `owns`/`views` of its own",
-                ))
+            Some(Token::Ident(kind)) => {
+                Err(self.error(format!("expected `invariant`, got `{kind}`")))
             }
-            Some(Token::Ident(kind)) => Err(self.error(format!(
-                "expected `invariant`, got `{kind}`"
-            ))),
-            Some(token) => Err(self.error(format!(
-                "expected `invariant`, got {token:?}"
-            ))),
+            Some(token) => Err(self.error(format!("expected `invariant`, got {token}"))),
             None => Err(self.error("expected `invariant`, got end of input")),
         }
     }
@@ -4541,10 +4665,6 @@ impl Parser {
             return Ok(ClickProposition::Loadable { segment });
         }
 
-        if self.peek_ident() == Some("loadable") && self.peek_next() == Some(&Token::LParen) {
-            return Err(self.error(RETIRED_LOADABLE_SPELLING));
-        }
-
         if self.peek_ident() == Some("aligned") && self.peek_next() == Some(&Token::LParen) {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -4557,7 +4677,7 @@ impl Parser {
                 Some(Token::Number(alignment)) if alignment.is_power_of_two() => alignment,
                 Some(token) => {
                     return Err(self.error(format!(
-                        "aligned expects a power-of-two byte alignment, got {token:?}"
+                        "aligned expects a power-of-two byte alignment, got {token}"
                     )));
                 }
                 None => {
@@ -4936,7 +5056,7 @@ impl Parser {
                     }
                     Some(Token::RParen) => break,
                     Some(token) => {
-                        return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                        return Err(self.error(format!("expected `,` or `)`, got {token}")));
                     }
                     None => return Err(self.error("expected `,` or `)`, got end of input")),
                 }
@@ -4977,7 +5097,7 @@ impl Parser {
             Token::BangEqual => Ok(ComparisonOperator::NotEqual),
             Token::Ident(operator) if operator == "in" => Ok(ComparisonOperator::In),
             token => Err(self.error(format!(
-                "expected comparison operator in `{clause}`, got {token:?}"
+                "expected comparison operator in `{clause}`, got {token}"
             ))),
         }
     }
@@ -5195,10 +5315,18 @@ impl Parser {
                             "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
                         ));
             }
-            let transport = self.parse_call_binder_transport(Some(output))?;
+            let transport = self.parse_call_binder_transport(Some(output), false)?;
             self.expect(Token::RParen)?;
             self.expect(Token::Semicolon)?;
             return Ok(ProofTactic::StepCall(transport));
+        }
+        if let Some(name) = self.peek_ident()
+            && self.tactic_names.contains(name)
+            && self.peek_next() == Some(&Token::LParen)
+        {
+            let application = self.parse_call_binder_transport(Some(output), true)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::UserTactic(application));
         }
         if self.peek_ident() == Some("unfold") {
             let CallOutputPattern::Named(bindings) = output else {
@@ -5460,29 +5588,17 @@ impl Parser {
     // and leaf syntax at every child-proof level.
     #[inline(never)]
     fn parse_other_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
-        if let Some(replacement) = match name.as_str() {
-            "conjunction" => Some("`conjunction()` was renamed to `split()`"),
-            "apply_loop_summary" | "summarize" => Some(
-                "detached loop summaries were removed; use a frontier-local `loop { ... }` tactic",
-            ),
-            "execute_rest" | "symbolic_execute" => Some("this tactic was renamed to `execute()`"),
-            "execute_step" => Some("`execute_step()` was replaced by smart `step()`"),
-            "execute_then_step" | "execute_else_step" => Some(
-                "branch-specific execution tactics were removed; use smart `step()` or proof-level `if`",
-            ),
-            "bounded_execute" => Some(
-                "`bounded_execute()` was removed; use `execute()` or `by auto;` and configure the tool budget",
-            ),
-            "calculate" => Some("use `simp() using { ... }` to constrain simplification"),
-            "double_negation" => {
-                Some("`double_negation()` was removed; use `intro(); contradiction(P);`")
-            }
-            "vacuous" => Some("`vacuous()` was removed; use `intro(); contradiction(antecedent);`"),
-            _ => None,
-        } {
-            return Err(self.error(replacement));
-        }
         if name == "have" {
+            // A `have` fact has no name: a later step cites it by restating
+            // its proposition. `name:` is never the start of a proposition,
+            // so refuse a label with the spelling to write instead.
+            if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next())
+            {
+                return Err(self.error(format!(
+                    "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
+                     cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+                )));
+            }
             let proposition = self.parse_proposition()?;
             let proof = self.parse_by_clause()?;
             if self.peek() == Some(&Token::Semicolon) {
@@ -5806,13 +5922,21 @@ impl Parser {
     // parsing. Expanded both/if/closure scopes can nest while reading terms.
     #[inline(never)]
     fn parse_named_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
+        if self.tactic_names.contains(&name) && self.peek() == Some(&Token::LParen) {
+            // The name was consumed by the dispatcher; the application
+            // parser reads it again as the tactic it applies.
+            self.position -= 1;
+            let application = self.parse_call_binder_transport(None, true)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::UserTactic(application));
+        }
         let tactic = match name.as_str() {
             "step" => {
                 self.expect(Token::LParen)?;
                 let step = if self.peek() == Some(&Token::RParen) {
                     ProofTactic::Step
                 } else if self.call_binder_transport_follows() {
-                    ProofTactic::StepCall(self.parse_call_binder_transport(None)?)
+                    ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
                     let name = self.expect_ident("call contract name")?;
                     let arguments = if self.peek() == Some(&Token::LParen) {
@@ -5860,11 +5984,6 @@ impl Parser {
                 let region_ref = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::ExecuteUntil(region_ref)
-            }
-            "frame" => {
-                return Err(self.error(
-                    "`frame` was removed; ownership frames untouched memory with no tactic",
-                ));
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -6002,11 +6121,6 @@ impl Parser {
                 let value = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::Witness(ProofWitness { name, value })
-            }
-            "choose" => {
-                return Err(self.error(
-                    "`choose` was removed; write `let (name: Type) satisfy { proposition };` after proving that existential",
-                ));
             }
             "assumption" => {
                 self.expect_empty_tactic_args(&name)?;
@@ -6286,7 +6400,7 @@ impl Parser {
                     Some(Token::Comma) => self.position += 1,
                     Some(Token::RParen) => break,
                     Some(token) => {
-                        return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                        return Err(self.error(format!("expected `,` or `)`, got {token}")));
                     }
                     None => return Err(self.error("expected `,` or `)`, got end of input")),
                 }
@@ -6317,7 +6431,7 @@ impl Parser {
             if self.peek() == Some(&Token::RParen) {
                 return Err(self.error("authority expects one declared resource type"));
             }
-            resource_type_arguments.push(self.parse_declared_resource_call()?);
+            resource_type_arguments.push(self.parse_resource_count_pattern()?);
             if self.peek() != Some(&Token::RParen) {
                 return Err(self.error("authority expects exactly one declared resource type"));
             }
@@ -6524,6 +6638,23 @@ impl Parser {
                     let result = self.parse_proposition()?;
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::FloatReflexive { finite, result });
+                }
+                "unsigned_sum_bound" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds = self.parse_certificate_index_list("unsigned sum bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
+                }
+                "integer_product_bounds" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer product bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerProductBounds { bounds, result });
                 }
                 "int32_defined" | "int64_defined" => {
                     let width = if keyword == "int32_defined" {
@@ -7099,7 +7230,7 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got {token:?}"
+                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
                 "expected code region `function`, `loop(N)`, `statement(N)`, or label, got end of input",
@@ -7110,17 +7241,12 @@ impl Parser {
     fn parse_tactic(&mut self) -> Result<SmartTactic, ClickError> {
         let tactic = match self.next() {
             Some(Token::Ident(name)) if name == "auto" => SmartTactic::Auto,
-            Some(Token::Ident(name)) if name == "frame" => {
-                return Err(self.error(
-                    "`frame` was removed; ownership frames untouched memory with no tactic",
-                ));
-            }
             Some(Token::Ident(name)) if name == "simp" => SmartTactic::Simp,
             Some(Token::Ident(name)) => {
                 return Err(self.error(format!("expected tactic, got `{name}`")));
             }
             Some(token) => {
-                return Err(self.error(format!("expected tactic, got {token:?}")));
+                return Err(self.error(format!("expected tactic, got {token}")));
             }
             None => return Err(self.error("expected tactic, got end of input")),
         };
@@ -8456,13 +8582,15 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(operand),
                 target_type: CType::Int32Pointer,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
+                explicit_qualification: false,
             }));
         }
         if self.peek() == Some(&Token::LParen)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "uint32")
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64"))
         {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
@@ -8478,9 +8606,11 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(expression),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }));
         }
         if self.peek() == Some(&Token::Minus) {
@@ -8658,7 +8788,7 @@ impl Parser {
                                     indexes.len()
                                 )));
                             }
-                            flatten_array_indices(indexes, &shape)
+                            flatten_array_indices(indexes.clone(), &shape)
                         } else {
                             index
                         };
@@ -8666,10 +8796,14 @@ impl Parser {
                             Box::new(offset),
                             Box::new(CExpression::Value(int32(element_width))),
                         );
-                        expression = ContractExpression::CFragment(CExpression::Add(
-                            Box::new(base),
-                            Box::new(stride),
-                        ));
+                        // Keep the subscripts as written beside the element
+                        // address, so the access prints back as `a[i]`
+                        // rather than as the byte arithmetic it lowers to.
+                        expression = ContractExpression::ArrayIndex {
+                            base: Box::new(expression),
+                            indexes,
+                            lowered: CExpression::Add(Box::new(base), Box::new(stride)),
+                        };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
                         let mut indexes =
@@ -8699,11 +8833,27 @@ impl Parser {
                                 indexes.len()
                             )));
                         }
-                        let offset = flatten_array_indices(indexes, &shape);
-                        expression = ContractExpression::Index(
-                            Box::new(expression),
-                            Box::new(ContractExpression::CFragment(offset)),
-                        );
+                        let offset = flatten_array_indices(indexes.clone(), &shape);
+                        // Keep the source rank of a multidimensional field
+                        // access, as a global array access does: the
+                        // flattened index alone prints as one subscript,
+                        // which does not parse back.
+                        expression = match contract_expression_as_c_fragment(&expression) {
+                            Some(lowered_base) if indexes.len() > 1 => {
+                                ContractExpression::ArrayIndex {
+                                    base: Box::new(expression),
+                                    indexes,
+                                    lowered: CExpression::Index(
+                                        Box::new(lowered_base),
+                                        Box::new(offset),
+                                    ),
+                                }
+                            }
+                            _ => ContractExpression::Index(
+                                Box::new(expression),
+                                Box::new(ContractExpression::CFragment(offset)),
+                            ),
+                        };
                         struct_name = None;
                         union_name = None;
                         struct_array_element_width = None;
@@ -9095,9 +9245,11 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }));
         }
 
@@ -9112,7 +9264,7 @@ impl Parser {
                 Some(Token::Number(bytes)) => bytes,
                 Some(token) => {
                     return Err(self.error(format!(
-                        "byte offset expects a nonnegative byte count, got {token:?}"
+                        "byte offset expects a nonnegative byte count, got {token}"
                     )));
                 }
                 None => {
@@ -9231,7 +9383,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(expression)
             }
-            Some(token) => Err(self.error(format!("expected contract expression, got {token:?}"))),
+            Some(token) => Err(self.error(format!("expected contract expression, got {token}"))),
             None => Err(self.error("expected contract expression, got end of input")),
         }
     }
@@ -9272,7 +9424,7 @@ impl Parser {
                 Some(Token::RBracket) => {}
                 Some(token) => {
                     return Err(self.error(format!(
-                        "expected `,` or `]` after sequence element, got {token:?}"
+                        "expected `,` or `]` after sequence element, got {token}"
                     )));
                 }
                 None => return Err(self.error("expected `]` after sequence element")),
@@ -9712,6 +9864,7 @@ impl Parser {
                         struct_name: Some(cast.struct_name),
                         pointee_volatile: false,
                         pointee_constant: cast.pointee_constant,
+                        explicit_qualification: false,
                     });
                 }
                 self.position += 1;
@@ -9719,7 +9872,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(expression)
             }
-            Some(token) => Err(self.error(format!("expected result expression, got {token:?}"))),
+            Some(token) => Err(self.error(format!("expected result expression, got {token}"))),
             None => Err(self.error("expected result expression, got end of input")),
         }
     }
@@ -9995,13 +10148,16 @@ fn typed_load_type_from_name(name: Option<&str>) -> Option<CType> {
     match name {
         Some("load_int32") => Some(CType::Int32),
         Some("load_uint8") => Some(CType::UInt8),
+        Some("load_uint16") => Some(CType::UInt16),
         Some("load_uint32") => Some(CType::UInt32),
         Some("load_int64") => Some(CType::Int64),
         Some("load_uint64") => Some(CType::UInt64),
         Some("load_int32_pointer") => Some(CType::Int32Pointer),
         Some("load_uint8_pointer") => Some(CType::UInt8Pointer),
+        Some("load_uint16_pointer") => Some(CType::UInt16Pointer),
         Some("load_int32_pointer_pointer") => Some(CType::Int32PointerPointer),
         Some("load_uint8_pointer_pointer") => Some(CType::UInt8PointerPointer),
+        Some("load_uint16_pointer_pointer") => Some(CType::UInt16PointerPointer),
         _ => None,
     }
 }
@@ -10041,13 +10197,6 @@ fn expand_aggregate_resource_clause(resource: ResourceClause) -> Vec<ResourceCla
 
 fn expand_aggregate_requirement(requirement: Requirement) -> Vec<Requirement> {
     match requirement {
-        Requirement::Labeled { label, requirement } => expand_aggregate_requirement(*requirement)
-            .into_iter()
-            .map(|requirement| Requirement::Labeled {
-                label: label.clone(),
-                requirement: Box::new(requirement),
-            })
-            .collect(),
         Requirement::Resource(resource) => expand_aggregate_resource_clause(resource)
             .into_iter()
             .map(Requirement::Resource)
@@ -10119,7 +10268,10 @@ fn named_place_base(expression: &CExpression) -> Option<&String> {
     }
 }
 
-fn flatten_array_indices(indexes: Vec<CExpression>, dimensions: &[u32]) -> CExpression {
+pub(in crate::surface) fn flatten_array_indices(
+    indexes: Vec<CExpression>,
+    dimensions: &[u32],
+) -> CExpression {
     let mut terms = Vec::with_capacity(indexes.len());
     for (index, expression) in indexes.into_iter().enumerate() {
         let stride = dimensions[index + 1..]
@@ -10374,9 +10526,11 @@ fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition
             Box::new(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             })),
             Box::new(uint64(alignment - 1)),
         ),
@@ -10413,9 +10567,6 @@ fn requirement_object_alignment_facts(
     out: &mut Vec<ClickProposition>,
 ) {
     match requirement {
-        Requirement::Labeled { requirement, .. } => {
-            requirement_object_alignment_facts(requirement, struct_layouts, out);
-        }
         Requirement::Resource(clause) => out.extend(object_alignment_fact(clause, struct_layouts)),
         Requirement::LoadableSegment { .. } | Requirement::Proposition(_) => {}
     }

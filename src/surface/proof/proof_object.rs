@@ -24,15 +24,6 @@ thread_local! {
     static CHECKED_EXECUTION_INTERFACE_JOINS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static SOURCE_CERTIFICATE_CHECKS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-    static EXECUTION_CONTEXT_EXPORTS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-    static COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS: std::cell::RefCell<Option<Vec<String>>> = const {
-        std::cell::RefCell::new(None)
-    };
     static CHECKED_EXPANDED_EXECUTION_IFS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
@@ -60,26 +51,6 @@ pub(in crate::surface) fn count_checked_execution_interface_joins<R>(
 }
 
 #[cfg(test)]
-pub(in crate::surface) fn count_source_certificate_checks<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, usize) {
-    let before = SOURCE_CERTIFICATE_CHECKS.with(std::cell::Cell::get);
-    let result = operation();
-    let after = SOURCE_CERTIFICATE_CHECKS.with(std::cell::Cell::get);
-    (result, after - before)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn count_execution_context_exports<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, usize) {
-    let before = EXECUTION_CONTEXT_EXPORTS.with(std::cell::Cell::get);
-    let result = operation();
-    let after = EXECUTION_CONTEXT_EXPORTS.with(std::cell::Cell::get);
-    (result, after - before)
-}
-
-#[cfg(test)]
 pub(in crate::surface) fn count_finalization_view_constructions<R>(
     operation: impl FnOnce() -> R,
 ) -> (R, usize) {
@@ -87,27 +58,6 @@ pub(in crate::surface) fn count_finalization_view_constructions<R>(
     let result = operation();
     let after = FINALIZATION_VIEW_CONSTRUCTIONS.with(std::cell::Cell::get);
     (result, after - before)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn collect_execution_context_export_labels<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, Vec<String>) {
-    COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS.with(|labels| {
-        assert!(
-            labels.borrow().is_none(),
-            "execution-export label collectors cannot nest"
-        );
-        *labels.borrow_mut() = Some(Vec::new());
-    });
-    let result = operation();
-    let labels = COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS.with(|labels| {
-        labels
-            .borrow_mut()
-            .take()
-            .expect("the active execution-export label collector was retained")
-    });
-    (result, labels)
 }
 
 #[cfg(test)]
@@ -976,7 +926,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         let Obligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        let source = crate::surface::printing::source_click_proposition(goal.surface.as_deref()?);
+        let surface = goal.surface.as_deref()?;
+        let source = crate::surface::diagnostics::with_refusal_spelling(|| {
+            crate::surface::printing::source_click_proposition(surface)
+        });
         (!source.contains("__click_")).then_some(source)
     }
 
@@ -1201,14 +1154,39 @@ impl Proof<'_> {
         if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
             return;
         }
-        let location = self
-            .site()
-            .path()
-            .unwrap_or_else(|| format!("checked branch {}", marker.depth));
         let then_source = crate::surface::printing::source_click_proposition(condition);
         let else_source = crate::surface::printing::source_click_proposition(
             &ClickProposition::Not(Box::new(condition.clone())),
         );
+        self.record_trace_split(
+            marker,
+            arms,
+            path_facts,
+            "branch",
+            ["then", "else"],
+            [Some(then_source), Some(else_source)],
+        );
+    }
+
+    /// Records a two-arm split for the trace: the tactic that opened it, how
+    /// its arms are spelled, and the facts each arm assumes. `arm_sources`
+    /// spells each arm's first fact as the user wrote it.
+    fn record_trace_split(
+        &self,
+        marker: &Arc<ProofNode>,
+        arms: [BranchId; 2],
+        path_facts: &[Vec<Proposition>; 2],
+        kind: &str,
+        arm_names: [&'static str; 2],
+        arm_sources: [Option<String>; 2],
+    ) {
+        if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
+            return;
+        }
+        let location = self
+            .site()
+            .path()
+            .unwrap_or_else(|| format!("checked branch {}", marker.depth));
         let facts = |index: usize| {
             let focused = self.focus_branch(arms[index]).ok();
             path_facts[index]
@@ -1227,12 +1205,10 @@ impl Proof<'_> {
                             surface_view: None,
                         }
                     };
-                    if fact_index == 0 {
-                        fact.source = Some(if index == 0 {
-                            then_source.clone()
-                        } else {
-                            else_source.clone()
-                        });
+                    if fact_index == 0
+                        && let Some(source) = &arm_sources[index]
+                    {
+                        fact.source = Some(source.clone());
                     }
                     fact
                 })
@@ -1241,8 +1217,9 @@ impl Proof<'_> {
         crate::surface::proof_trace::record_branch(
             Arc::as_ptr(marker) as usize,
             crate::surface::proof_trace::TraceBranch {
-                header: format!("{location}: branch"),
+                header: format!("{location}: {kind}"),
                 source_tactic_path: self.site().source_tactic_path(),
+                arm_names,
                 arms: [(arms[0], facts(0)), (arms[1], facts(1))],
             },
         );
@@ -1291,6 +1268,7 @@ impl Proof<'_> {
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: branch"),
                 source_tactic_path: self.site().source_tactic_path(),
+                arm_names: ["then", "else"],
                 arms: [(then_id, facts(0)), (else_id, facts(1))],
             },
         );
@@ -1341,7 +1319,6 @@ pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) click_function_environment: &'p ClickFunctionEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'p TheoremEnvironment,
     pub(in crate::surface::proof) original_requirements: &'p [Requirement],
-    pub(in crate::surface::proof) requirement_label_indices: Option<&'p BTreeMap<String, usize>>,
     pub(in crate::surface::proof) requirement_facts: &'p [Proposition],
 }
 
@@ -1364,7 +1341,6 @@ impl<'p> FixedStateOperationView<'p> {
             click_function_environment: context.click_function_environment,
             theorem_environment: context.theorem_environment,
             original_requirements: context.original_requirements,
-            requirement_label_indices: context.requirement_label_indices,
             requirement_facts: context.requirement_facts,
         }
     }
@@ -1983,6 +1959,18 @@ impl<'a> Proof<'a> {
         goal: Proposition,
         surface_goal: Option<ClickProposition>,
     ) -> Result<Self, ClickError> {
+        self.focus_fixed_state_goal_for_claim(goal, surface_goal, None)
+    }
+
+    /// Focuses `goal` as a new proposition proof. With `claim_goal`, the
+    /// obligation is the kernel's goal for a contract claim and keeps that
+    /// claim's identity.
+    pub(super) fn focus_fixed_state_goal_for_claim(
+        &self,
+        goal: Proposition,
+        surface_goal: Option<ClickProposition>,
+        claim_goal: Option<&crate::kernel::CClaimGoal>,
+    ) -> Result<Self, ClickError> {
         let fixed_state_context = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             && matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
         // A function-outcome goal is itself a result-aware fixed-state proof context:
@@ -2020,13 +2008,19 @@ impl<'a> Proof<'a> {
                     surface_bindings: PersistentMap::default(),
                     ..PropositionPresentation::default()
                 };
-                let obligation = match outcome.clone() {
-                    Some(outcome) => PropositionObligation::at_outcome(goal, presentation, outcome),
-                    None => PropositionObligation::new(goal, presentation),
+                let obligation = match (claim_goal, outcome.clone()) {
+                    (Some(claim_goal), outcome) => {
+                        PropositionObligation::for_claim_goal(claim_goal, presentation, outcome)
+                    }
+                    (None, Some(outcome)) => {
+                        PropositionObligation::at_outcome(goal, presentation, outcome)
+                    }
+                    (None, None) => PropositionObligation::new(goal, presentation),
                 };
                 OpenBranch::new(Obligation::Proposition(obligation), context)
             }),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -2060,7 +2054,7 @@ impl<'a> Proof<'a> {
         &self,
         goals: &[ClickProposition],
     ) -> Result<ProofCertificate, ClickError> {
-        self.complete_fixed_state_obligations_inner(None, goals)
+        self.complete_fixed_state_obligations_inner(None, goals, &[])
             .map(|(certificate, _)| certificate)
     }
 
@@ -2075,6 +2069,7 @@ impl<'a> Proof<'a> {
         &self,
         since: &ProofCheckpoint<'a>,
         goals: &[ClickProposition],
+        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,
@@ -2082,13 +2077,14 @@ impl<'a> Proof<'a> {
         ),
         ClickError,
     > {
-        self.complete_fixed_state_obligations_inner(Some(since), goals)
+        self.complete_fixed_state_obligations_inner(Some(since), goals, claim_goals)
     }
 
     fn complete_fixed_state_obligations_inner(
         &self,
         since: Option<&ProofCheckpoint<'a>>,
         goals: &[ClickProposition],
+        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,
@@ -2116,10 +2112,22 @@ impl<'a> Proof<'a> {
             None => self.certificate().steps().to_vec(),
         };
         let mut checked_propositions = Vec::with_capacity(goals.len());
-        for goal in goals {
-            let closer = self
-                .focus_fixed_state_surface_goal(goal)?
-                .apply_step(ProofStep::Assumption)?;
+        for (index, goal) in goals.iter().enumerate() {
+            // Close the kernel's own goal for the claim when the accumulated
+            // facts state it, so the completed proposition names its claim.
+            let claim_closer = claim_goals.get(index).and_then(|forms| {
+                forms.iter().find_map(|form| {
+                    self.focus_kernel_claim_goal(form, goal)
+                        .and_then(|focused| focused.apply_step(ProofStep::Assumption))
+                        .ok()
+                })
+            });
+            let closer = match claim_closer {
+                Some(closer) => closer,
+                None => self
+                    .focus_fixed_state_surface_goal(goal)?
+                    .apply_step(ProofStep::Assumption)?,
+            };
             checked_propositions.push(closer.completed_proposition()?);
             steps.extend_from_slice(closer.certificate().steps());
         }
@@ -2312,6 +2320,9 @@ impl<'a> Proof<'a> {
     /// source tactic occurrence. This is diagnostic addressing only: no goal,
     /// fact, execution state, or provenance node changes.
     pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
+        if index != usize::MAX {
+            crate::surface::note_ambient_source_tactic(self.context.claim_label(), index);
+        }
         if self.site.addresses_source_tactic(index) {
             return self.clone();
         }
@@ -2410,7 +2421,7 @@ impl<'a> NestedTacticCaptureGuard<'a> {
         let occurrence = after
             .certificate_after_node(Some(&self.checkpoint.node))
             .map(|certificate| certificate.to_proof_tactics())
-            .map_err(|error| error.message().to_string());
+            .map_err(|error| error.raw_summary().to_string());
         self.capture.finish(occurrence);
         self.finished = true;
     }
@@ -2439,6 +2450,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Right => "right()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => "step",
+        ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",

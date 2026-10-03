@@ -28,7 +28,9 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Nested disjunction case splits allowed inside one derivation.
 const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
@@ -432,6 +434,23 @@ impl PropositionSearch for PureFactContext {
                 return Some((exact, premises_id, evidence));
             }
         }
+        if let Proposition::ConditionIs(condition, _) = proposition
+            && let Some(selected) = self.widened_unsigned_sum_bound_premises(condition)
+        {
+            let candidate = selected
+                .into_iter()
+                .fold(PureFactContext::new(), |context, premise| {
+                    context.assume_proposition(premise)
+                });
+            let (evidence, premises_id) =
+                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            if matches!(
+                evidence,
+                Some(AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound)
+            ) {
+                return evidence.map(|evidence| (candidate, premises_id, evidence));
+            }
+        }
         let condition_goal = match proposition {
             Proposition::ConditionIs(_, _) => true,
             Proposition::Not(body) => matches!(body.as_ref(), Proposition::ConditionIs(_, _)),
@@ -453,8 +472,9 @@ impl PropositionSearch for PureFactContext {
         }
         let mut condition_sources = Vec::new();
         if condition_goal {
-            let selected = connected_condition_premises(self, proposition, exclude_exact_goal)?;
-            let candidate = self.restricted_to_facts(&selected, &[]);
+            let (selected, _, _, _) =
+                connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;
+            let candidate = atomic_context_from_facts(self, &selected, &[]);
             let (evidence, premises_id) =
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
             if let Some(evidence) = evidence {
@@ -1082,7 +1102,7 @@ impl PropositionSearch for PureFactContext {
         for_simp: bool,
     ) -> Option<PropositionDerivationRule> {
         let mut variables = BTreeSet::new();
-        collect_proposition_bitvector_variables(proposition, &mut variables);
+        collect_proposition_connection_variables(proposition, &mut variables);
         let (variable, value, equality) = variables
             .into_iter()
             .filter_map(|variable| {
@@ -1138,6 +1158,14 @@ impl PropositionSearch for PureFactContext {
             collect_or_cases(disjunction, &mut cases);
             if cases.len() < 2 {
                 continue;
+            }
+            if cases
+                .iter()
+                .all(|case| self.contains_assumed_exact(&Proposition::Not(Box::new(case.clone()))))
+            {
+                return Some(PropositionDerivationRule::RefutedDisjunction {
+                    disjunction: Box::new(disjunction.clone()),
+                });
             }
             // A branch retains the disjunction and adds its chosen case.
             // Once a case is present, splitting this disjunction again adds
@@ -1219,7 +1247,7 @@ impl PropositionSearch for PureFactContext {
 
     fn proves_by_singleton_substitution(&self, proposition: &Proposition) -> bool {
         let mut variables = BTreeSet::new();
-        collect_proposition_bitvector_variables(proposition, &mut variables);
+        collect_proposition_connection_variables(proposition, &mut variables);
         let Some((variable, value)) = variables
             .into_iter()
             .filter_map(|variable| {
@@ -1301,9 +1329,28 @@ mod monotone_forall_tests {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static CONDITION_SELECTION_VISITS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// How many condition facts premise selection has examined on this thread
+/// since the last reset, counted apart from the kernel's checking work.
+#[cfg(test)]
+pub(crate) fn condition_selection_visits() -> usize {
+    CONDITION_SELECTION_VISITS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_condition_selection_visits() {
+    CONDITION_SELECTION_VISITS.with(|visits| visits.set(0));
+}
+
 /// Follow the variable/fact graph through the context's adjacency indexes.
 /// Scalar facts are indexed incrementally; snapshot-dependent facts use a
 /// complete, lazy index. Each reachable variable and fact is expanded once.
+#[cfg(test)]
 fn connected_condition_premises(
     context: &PureFactContext,
     proposition: &Proposition,
@@ -1321,6 +1368,8 @@ fn connected_condition_premises(
         }
         // The cooperative checkpoint charges this variable visit.
         for (condition, value) in context.condition_facts_mentioning_variable(variable)? {
+            #[cfg(test)]
+            CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
             if simp_reasoning_interrupted() {
                 return None;
             }
@@ -1460,7 +1509,11 @@ mod condition_premise_tests {
             },
             CValue::Int32(term(70)),
         );
-        let load = Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer));
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(pointer),
+            LoadKind::Bits32,
+        );
         let fact = ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(term(50)));
         let context = PureFactContext::new()
             .assume_condition(fact.clone(), true)
@@ -1550,6 +1603,7 @@ mod condition_premise_tests {
                             block: "other".into(),
                             offset: PointerOffsetTerm::Constant(index as i64 * 4),
                         }),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 );
                 context = context.assume_condition(condition.clone(), true);
@@ -1595,6 +1649,7 @@ mod condition_premise_tests {
                         block: "other".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 )),
             );
             let extended = scalar_branch.assume_condition(extra, true);
@@ -1757,8 +1812,10 @@ fn connected_atomic_premises(
     let _timing =
         crate::instrumentation::OperationTiming::new("", "", "atomic dependency selection");
     let mut selected = BTreeSet::new();
+    let mut visited = BTreeSet::new();
     let mut reached = collect_atomic_connection_keys(goal);
     let mut select = |fact: &Proposition| {
+        visited.insert((1, fact as *const Proposition as usize));
         reached.extend(collect_atomic_connection_keys(fact));
         selected.insert(fact.clone());
     };
@@ -1796,13 +1853,21 @@ fn connected_atomic_premises(
             context.atomic_facts_connected_to(&key, include_propositions);
         joint_adds |= has_propositions;
         for fact in facts {
+            #[cfg(test)]
+            if fact.is_condition() {
+                CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
+            }
             if simp_reasoning_interrupted() {
                 return None;
             }
-            if (exclude_exact_goal && &fact == goal)
-                || (!include_propositions && !matches!(fact, Proposition::ConditionIs(..)))
-                || !selected.insert(fact.clone())
+            if !visited.insert(fact.identity())
+                || (exclude_exact_goal && fact.matches(goal))
+                || (!include_propositions && !fact.is_condition())
             {
+                continue;
+            }
+            let fact = fact.to_proposition();
+            if selected.contains(&fact) {
                 continue;
             }
             for next in collect_atomic_connection_keys(&fact) {
@@ -1811,6 +1876,7 @@ fn connected_atomic_premises(
                     pending.push(next);
                 }
             }
+            selected.insert(fact);
         }
     }
     let mut conditions = Vec::new();
@@ -1851,5 +1917,60 @@ fn atomic_context_from_facts(
     conditions: &[(ConditionTerm, bool)],
     propositions: &[Proposition],
 ) -> PureFactContext {
-    available.restricted_to_facts(conditions, propositions)
+    // Selections consist of distinct facts drawn from `available`. When
+    // every fact was selected, preserve the persistent context and its
+    // derived reasoning indexes rather than rebuilding equivalent state.
+    if available.fact_counts() == (conditions.len(), propositions.len()) {
+        available.clone()
+    } else {
+        available.restricted_to_facts(conditions, propositions)
+    }
+}
+
+#[cfg(test)]
+mod shared_atomic_premise_tests {
+    use super::*;
+
+    #[test]
+    fn wide_atomic_premise_cloning_scales_with_its_syntax() {
+        let mut samples = Vec::new();
+        for size in [8u64, 16, 32, 64] {
+            let predicate = |index| Proposition::Predicate {
+                name: "wide-index".to_string(),
+                arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(
+                    800_000 + index,
+                )))],
+            };
+            let mut body = predicate(0);
+            for index in 1..size {
+                body = Proposition::And(Box::new(body), Box::new(predicate(index)));
+            }
+            let source = Proposition::ForAll {
+                var: Variable(900_000),
+                sort: Sort::CInt32,
+                body: Box::new(body),
+            };
+            let (context, clones) = crate::kernel::count_proposition_clone_nodes(|| {
+                let context = PureFactContext::new().assume_proposition(source.clone());
+                let (_, selected, _, _) =
+                    connected_atomic_premises(&context, &predicate(0), &[], true, false, false)
+                        .expect("all variable buckets must lead to the same wide premise");
+                assert_eq!(selected, vec![source.clone()]);
+                let proof = context
+                    .derive_atomic_proposition(&source)
+                    .expect("the stated premise is available");
+                assert!(proof.check(&context));
+                assert!(!proof.check(&context.without_exact_fact(&source)));
+                context
+            });
+            assert!(context.proves_exact(&source));
+            samples.push((size, clones));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 3,
+                "deep premise cloning became superlinear: {samples:?}"
+            );
+        }
+    }
 }

@@ -171,7 +171,7 @@ fn call_havoc_preserves_initialization_of_a_heap_scalar() {
     assert!(
         after_call
             .memory()
-            .has_initialized_cell_at(pointer.pointer(), 4)
+            .has_initialized_bytes_at(pointer.pointer(), 4)
     );
     let read = evaluate_c_expression_paths(
         &after_call,
@@ -197,7 +197,11 @@ fn naming_an_uninitialized_heap_cell_does_not_initialize_it() {
     };
     let address = pointer.pointer().clone();
     let memory = allocated.memory().clone();
-    let name = canonical_form_of_load(intern_c_memory(memory.clone()), address.clone());
+    let name = canonical_form_of_load(
+        intern_c_memory(memory.clone()),
+        address.clone(),
+        crate::kernel::LoadKind::Bits32,
+    );
     let named = allocated.with_memory(memory.materialize_named_cell(address, CValue::Int32(name)));
     let read = evaluate_c_expression_paths(
         &named,
@@ -232,12 +236,16 @@ fn naming_an_initialized_heap_cell_preserves_its_initialization() {
     let havoc =
         stored.with_call_memory_havoc(Variable(902), &[range], &PureFactContext::new(), None);
     assert!(!havoc.has_known_cell_at(&address));
-    let name = canonical_form_of_load(intern_c_memory(havoc.clone()), address.clone());
+    let name = canonical_form_of_load(
+        intern_c_memory(havoc.clone()),
+        address.clone(),
+        crate::kernel::LoadKind::Bits32,
+    );
     let named = havoc
         .clone()
         .materialize_named_cell(address.clone(), CValue::Int32(name));
     assert!(named.has_known_cell_at(&address));
-    assert_eq!(named.heap.initialized_cells, havoc.heap.initialized_cells);
+    assert_eq!(named.heap.initialized, havoc.heap.initialized);
 }
 
 #[test]
@@ -823,6 +831,7 @@ fn scoped_call_borrows_end_before_free() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let statement = c_seq(
         c_call_assign("observed", "read_borrow", vec![c_variable("p")]),
@@ -1435,6 +1444,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
 
     let null = CValue::pointer(Pointer::null());
@@ -1963,12 +1973,10 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         pointer: address,
         value_type: CType::Int32,
     };
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &assumptions,
-            &stale
-        )
-    );
+    assert!(!crate::kernel::PureFactContext::settles_exactly(
+        &assumptions,
+        &stale
+    ));
 }
 
 #[test]
@@ -2188,7 +2196,11 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new().with_block("local:uninitialized", 4);
-    let name = canonical_form_of_load(intern_c_memory(memory.clone()), address.clone());
+    let name = canonical_form_of_load(
+        intern_c_memory(memory.clone()),
+        address.clone(),
+        crate::kernel::LoadKind::Bits32,
+    );
     let named = memory.materialize_named_cell(address.clone(), CValue::Int32(name));
     let state = CState::new()
         .with_memory(named)
@@ -2260,10 +2272,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             value_type: CType::Int32,
         };
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::api::contract_certification::certification_proves_proposition(
-                &assumptions,
-                &goal,
-            )
+            crate::kernel::PureFactContext::settles_exactly(&assumptions, &goal)
         });
         assert!(proved, "failure to allocate must preserve an existing read");
         samples.push(work);
@@ -2282,5 +2291,67 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
         "{samples:?}"
+    );
+}
+
+/// `p[0] = 5; p[1] = 5; p[u] = 7;` under `0 <= u < 2` over fresh heap
+/// storage, as the statement executor writes it: the unplaced store forgets
+/// both cached elements and, a store never de-initializing, keeps their
+/// initialization marks. A read of `p[0]` is then an initialized element on
+/// both alias cases; a read of the never-written `p[2]` stays undefined.
+#[test]
+fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
+    let allocated = successful_heap_allocation_state();
+    let Some(CValue::Pointer(pointer)) = allocated.locals().get("p") else {
+        panic!("allocation should assign a pointer");
+    };
+    let base = pointer.pointer().clone();
+    let index = Bitvector32Term::Variable(Variable(925_001));
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(index.clone(), Bitvector32Term::Constant(2)),
+            true,
+        );
+    let unplaced = Pointer {
+        block: base.block.clone(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let store = |memory: CMemory, pointer: Pointer, value: u32| {
+        memory
+            .without_possible_aliasing_cells(&pointer, 4, &assumptions)
+            .store_with_context(pointer, int32(value), &assumptions)
+    };
+    let memory = store(allocated.memory().clone(), base.clone(), 5);
+    let memory = store(memory, base.offset_by_bytes(4), 5);
+    let memory = store(memory, unplaced, 7);
+    assert!(!memory.has_known_cell_at(&base));
+    let state = allocated.clone().with_memory(memory);
+    let read = |element: u32| {
+        evaluate_c_expression_paths(
+            &state,
+            &c_index(c_variable("p"), c_int32_literal(element)),
+            &assumptions,
+            &mut ExecutionBudget::default(),
+        )
+        .expect("the read evaluates")
+    };
+    let first = read(0);
+    assert_eq!(first.len(), 2, "the read splits on the alias: {first:?}");
+    assert!(
+        first
+            .iter()
+            .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_))),
+        "an initialized element whose value is forgotten reads as a value: {first:?}"
+    );
+    assert!(
+        read(2).iter().any(|path| matches!(
+            path.outcome,
+            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+        )),
+        "a never-written element stays uninitialized"
     );
 }

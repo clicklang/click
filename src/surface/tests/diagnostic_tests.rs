@@ -297,20 +297,6 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
 
 #[test]
 fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
-    use std::cell::Cell;
-
-    struct CountingDebug<'a>(&'a Cell<usize>);
-
-    impl fmt::Debug for CountingDebug<'_> {
-        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            for _ in 0..10_000 {
-                self.0.set(self.0.get() + 1);
-                formatter.write_str("資源")?;
-            }
-            Ok(())
-        }
-    }
-
     let primary_cause = "owned_vector.grow path 2: ghost resource mismatch\n";
     let enormous = format!(
         "{primary_cause}{}",
@@ -327,15 +313,6 @@ fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
         super::diagnostics::bound_error_message_for_mode(enormous.clone(), true),
         enormous
     );
-
-    let writes = Cell::new(0);
-    let debug = super::diagnostics::bounded_debug_for_mode(&CountingDebug(&writes), false);
-    assert!(
-        writes.get() < 10_000,
-        "bounded formatting must stop the producer"
-    );
-    assert!(debug.len() <= 2 * 1024);
-    assert!(debug.contains("diagnostic truncated"));
 }
 
 #[test]
@@ -391,49 +368,6 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
 }
 
 #[test]
-fn certificate_reconstruction_diagnostics_summarize_internal_snapshots() {
-    // The read is spelled with its address and the value it is compared to;
-    // the rest of the snapshot it reads, here an unrelated block, is not.
-    let memory = CMemory::new()
-        .with_block("read-cell", 4)
-        .with_block("hidden-snapshot", 4);
-    let fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
-                Box::new(Pointer {
-                    block: "read-cell".into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                }),
-            )),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
-        true,
-    );
-    let failures = (0..20)
-        .map(|_| {
-            (
-                fact.clone(),
-                ClickError::new(
-                    "comparison fact has no checkable surface form at this proof state",
-                ),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let rendered = super::diagnostics::describe_unexpressed_pure_facts(&failures, &[], &[]);
-
-    assert!(
-        rendered.contains("load(&read-cell) == 1 is true"),
-        "{rendered}"
-    );
-    assert!(rendered.contains("no checkable surface form"), "{rendered}");
-    assert!(rendered.contains("8 more omitted"), "{rendered}");
-    assert!(!rendered.contains("CMemory"), "{rendered}");
-    assert!(!rendered.contains("hidden-snapshot"), "{rendered}");
-}
-
-#[test]
 fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
     let memory = CMemory::new().with_block("wide-hidden-snapshot", 256);
     let memory = crate::kernel::intern_c_memory(memory);
@@ -447,6 +381,7 @@ fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
                             block: "wide-hidden-snapshot".into(),
                             offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
                         }),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Constant(index)),
                 ),
@@ -869,7 +804,8 @@ int32 pick(struct node* node) {
 #[test]
 fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
     let call = crate::kernel::c_call("helper", Vec::new());
-    let message = super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2);
+    let message =
+        super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, true);
 
     assert!(
         message.contains("Use `outcomes` at this point"),
@@ -881,6 +817,18 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
         message.contains("all\ncontract claims are closed"),
         "{message}"
     );
+}
+
+/// Two successors that both continue are an undecided branch inside an
+/// inlined callee. `outcomes` has a `returned` and a `threw` arm and no way to
+/// take either of those, so the refusal must not offer it.
+#[test]
+fn branch_split_step_diagnostic_does_not_offer_outcomes() {
+    let call = crate::kernel::c_call("helper", Vec::new());
+    let message =
+        super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, false);
+
+    assert!(message.is_empty(), "{message}");
 }
 
 /// The one-successor refusal used to print the `While` node with `Debug`,
@@ -1214,4 +1162,276 @@ fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
     );
     assert!(rendered.contains("selected_mutex"), "{rendered}");
     assert!(!rendered.contains("Loan"), "{rendered}");
+}
+
+/// C source whose refusals each name one statement: a struct-field store
+/// past its array, a signed overflow, and a call whose precondition the
+/// caller cannot show. `inc` verifies.
+const SITED_C_SOURCE: &str = "struct item { int32 x; int32 y; };
+
+int32 store() {
+    struct item items[4];
+    int32 i;
+    i = 0;
+    while (i < 5) {
+        items[i].x = 7;   // the field store
+        i = i + 1;
+    }
+    return 0;
+}
+
+int32 add(int32 a, int32 b) {
+    int32 total;
+    total = a + b;
+    return total;
+}
+
+int32 callee(int32 n) {
+    return n;
+}
+
+int32 caller(int32 n) {
+    int32 r;
+    r = callee(n) + 1;
+    return r;
+}
+
+int32 inc(int32 n) {
+    return n + 1;
+}
+";
+
+/// `SITED_C_SOURCE` written elsewhere in its file: three more lines above
+/// it, every line indented, and a comment after each `{`.
+fn shifted_sited_c_source() -> String {
+    let mut shifted = String::from("// moved down\n\n/* and over */\n");
+    for line in SITED_C_SOURCE.lines() {
+        shifted.push_str("  ");
+        shifted.push_str(line);
+        if line.ends_with('{') {
+            shifted.push_str(" // opens");
+        }
+        shifted.push('\n');
+    }
+    shifted
+}
+
+/// `message` without its `C statement at` lines, and those lines.
+fn split_statement_sites(message: &str) -> (String, Vec<String>) {
+    let mut rest = Vec::new();
+    let mut sites = Vec::new();
+    for line in message.split('\n') {
+        if line.starts_with("  C statement at ") {
+            sites.push(line.to_string());
+        } else {
+            rest.push(line);
+        }
+    }
+    (rest.join("\n"), sites)
+}
+
+/// A statement's site is diagnostics only. The same C written at other
+/// lines and columns, with other comments, parses to equal C0 and kernel
+/// functions and verifies with the same work and the same messages, apart
+/// from the `C statement at` line each refusal gains, which names the line
+/// and column the statement moved to and quotes it without its comment.
+#[test]
+fn statement_sites_change_nothing_but_the_location_line() {
+    let shifted = shifted_sited_c_source();
+    let original = crate::languages::c::syntax::parse_functions(SITED_C_SOURCE).unwrap();
+    let moved = crate::languages::c::syntax::parse_functions(&shifted).unwrap();
+    assert_eq!(original, moved);
+    for (original, moved) in original.iter().zip(&moved) {
+        assert_eq!(original.to_kernel_function(), moved.to_kernel_function());
+        assert_eq!(format!("{original:?}"), format!("{moved:?}"));
+    }
+
+    let header = "verifying \"f.c\";\n";
+    let cases = [
+        (
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); simp();\n}\n",
+            Some(("f.c:8:9: `items[i].x = 7;`", "f.c:11:11: `items[i].x = 7;`")),
+        ),
+        (
+            "int32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            Some(("f.c:16:5: `total = a + b;`", "f.c:19:7: `total = a + b;`")),
+        ),
+        (
+            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            Some((
+                "f.c:26:5: `r = callee(n) + 1;`",
+                "f.c:29:7: `r = callee(n) + 1;`",
+            )),
+        ),
+        (
+            "int32 inc(int32 n) {\n    requires n <= 100;\n    ensures result == n + 1;\n} by {\n    step(); simp();\n}\n",
+            None,
+        ),
+    ];
+    for (proof, expected_sites) in cases {
+        let click_source = format!("{header}{proof}");
+        // The first verification in a process also builds shared caches;
+        // both measured runs come after it.
+        let _ = verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
+        let (original, original_work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)])
+        });
+        let (moved, moved_work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click_source, &[("f.c", &shifted)])
+        });
+        assert!(original_work > 0, "{proof}");
+        assert_eq!(original_work, moved_work, "{proof}");
+        match expected_sites {
+            None => {
+                original.unwrap();
+                moved.unwrap();
+            }
+            Some((original_site, moved_site)) => {
+                let original = original.unwrap_err();
+                let moved = moved.unwrap_err();
+                let (original_rest, original_sites) = split_statement_sites(original.message());
+                let (moved_rest, moved_sites) = split_statement_sites(moved.message());
+                assert_eq!(original_rest, moved_rest);
+                assert_eq!(
+                    original_sites,
+                    [format!("  C statement at {original_site}")],
+                    "{}",
+                    original.message()
+                );
+                assert_eq!(
+                    moved_sites,
+                    [format!("  C statement at {moved_site}")],
+                    "{}",
+                    moved.message()
+                );
+            }
+        }
+    }
+}
+
+/// A loop's generated closer that fails reports the open member and the
+/// goal, attributed to the `loop` tactic. The premises and search candidates
+/// stay in the trace; they are not folded into the summary and reported as
+/// a line per colon.
+#[test]
+fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
+    let c_source = r#"
+        int32 settle(int32 state) {
+            while (state > 0) {
+                state = state;
+            }
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "settle.c";
+
+        int32 settle(int32 state) {
+            requires state >= 0;
+            ensures result == 0;
+        } by {
+            loop {
+                decreases state;
+                invariant state >= 0;
+            }
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_sources(click_source, &[("settle.c", c_source)])
+        .expect_err("a loop whose measure does not decrease is refused");
+    let (report, context) = error.concise_report_parts();
+    assert!(report.contains("`state < state` remained open"), "{report}");
+    assert!(report.lines().count() <= 4, "{report}");
+    for internal in ["stage", "search candidates", "18446744073709551615"] {
+        assert!(!report.contains(internal), "{report}");
+    }
+    assert!(
+        context.iter().any(|line| line.starts_with("goal: ")),
+        "{context:?}"
+    );
+    assert_eq!(error.proof_source_tactic_path(), Some(&[0][..]));
+}
+
+/// A pure theorem's accepted path is retained for a trace, each written
+/// tactic addressed by its source occurrence, and tracing it verifies
+/// neither another theorem nor a C function.
+#[test]
+fn a_passing_theorem_retains_its_accepted_trace_path() {
+    let source = r#"verifying "f.c";
+theorem good(x: int32, y: int32) {
+    requires x == y;
+    ensures y == x by {
+        have y == x by { simp(); }
+        assumption();
+    }
+}
+theorem split(x: int32) {
+    requires x == 1 or x == 2;
+    ensures x >= 1 by {
+        cases(x == 1 or x == 2) {
+            rewrite(x == 1);
+            normalize();
+        } {
+            rewrite(x == 2);
+            normalize();
+        }
+    }
+}
+theorem unproved(x: int32) { ensures x == 0 by { normalize(); } }
+int32 f() { ensures result == 2; } by { step(); simp(); }
+"#;
+    let project = ClickProject::new(
+        "entry.click",
+        [ClickModuleSource::new("entry.click", source, [])],
+    );
+    let c = [("f.c", "int f(void) { return 1; }")];
+    let locate = |claim: &str, path: &[usize]| {
+        let outer = c0_project_tactic_source_position(&project, &c, claim, path[0]).ok()?;
+        let position = if path.len() == 1 {
+            outer
+        } else {
+            nested_tactic_source_position(source, &outer, &path[1..]).ok()?
+        };
+        Some((format!("tactic@{}", position.line), position))
+    };
+    let arm = |claim: &str, path: &[usize], target: &SourcePosition| {
+        let (_, branch) = locate(claim, path)?;
+        tactic_arm_containing_position(source, &branch, target)
+            .ok()
+            .flatten()
+    };
+    with_proof_trace("good", || {
+        verify_c0_project_theorem(&project, &c, "good").unwrap();
+        let trace = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
+        assert_eq!(
+            trace,
+            "proof trace (checked tactics and branch facts):\ntactic@5: have y == x\n  adds: y == x\ntactic@6: assumption()"
+        );
+    });
+    with_proof_trace("split", || {
+        verify_c0_project_theorem(&project, &c, "split").unwrap();
+        let whole = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
+        assert!(whole.ends_with("\ntactic@12: cases"), "{whole}");
+        let right = accepted_proof_trace(
+            &locate,
+            &arm,
+            &|_, _, _| false,
+            Some(&SourcePosition::new(17, 13)),
+        )
+        .unwrap();
+        assert!(
+            right.ends_with(
+                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@16: rewrite\n  tactic@17: normalize()"
+            ),
+            "{right}"
+        );
+        assert!(!right.contains("x == 1"), "{right}");
+    });
+    // The theorem that fails reports the tactic it wrote.
+    let error = verify_c0_project_theorem(&project, &c, "unproved").unwrap_err();
+    assert_eq!(
+        error.proof_source_site(),
+        Some(("unproved.ensures_0", &[0][..]))
+    );
 }

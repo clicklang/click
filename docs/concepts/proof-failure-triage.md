@@ -39,7 +39,13 @@ obligation and is not an adequate primary explanation.
 
 Show a bounded, relevant selection of available evidence and explain the
 specific mismatch. Include the C and contract/proof locations when known;
-do not invent missing locations or provenance. Equal resource arguments do not
+do not invent missing locations or provenance. A refusal of a C step follows
+its `C operation` line, which spells the operation as Click checked it, with
+a `C statement at file:line:column` line quoting the statement as written.
+The C frontend records each statement's site beside its source execution
+layout, keyed by statement index, and a step names the site of the statement
+it checks (`CStatementSiteScope`); a site never takes part in statement
+equality, so it cannot change what a proof checks or how much work it does. Equal resource arguments do not
 necessarily identify the same resource occurrence: preserve source binders such
 as `g` and `next` when that distinction matters. Internal subsystem names may
 supplement the explanation, but must not replace it.
@@ -215,3 +221,8 @@ An issue should preserve enough information to test the classification:
 Do not leave the only reproduction inside a large example or an uncommitted
 worktree. If reduction changes the source pattern that caused the failure, it
 is not yet an adequate regression.
+
+An explicit `apply(...)` inside `open(...)` reports an unavailable theorem
+premise through the same checker used outside the scope. A `have f by simp`
+that cannot establish its fact reports `Requires f`; neither refusal means
+that resource scopes themselves are unsupported.

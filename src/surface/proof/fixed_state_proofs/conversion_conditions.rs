@@ -319,8 +319,10 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Variable(_), Bitvector32Term::MemoryLoad(_, pointer))
-        | (Bitvector32Term::MemoryLoad(_, pointer), Bitvector32Term::Variable(_)) => Some(pointer),
+        (Bitvector32Term::Variable(_), Bitvector32Term::MemoryLoad(_, pointer, _))
+        | (Bitvector32Term::MemoryLoad(_, pointer, _), Bitvector32Term::Variable(_)) => {
+            Some(pointer)
+        }
         _ => None,
     }
 }
@@ -440,7 +442,7 @@ fn describe_refusal(
     assumptions: &PureFactContext,
     site: &StatedSite<'_>,
 ) -> String {
-    let mut labels = render::SnapshotLabels::default();
+    let mut labels = render::SnapshotLabels::ambient();
     let mut conjuncts = Vec::new();
     let mut pending = vec![obligation];
     while let Some(proposition) = pending.pop() {
@@ -573,7 +575,7 @@ pub(in crate::surface::proof) fn describe_dropped_fold_body(
     assumptions: &PureFactContext,
     site: &StatedSite<'_>,
 ) -> String {
-    let mut labels = render::SnapshotLabels::default();
+    let mut labels = render::SnapshotLabels::ambient();
     let written = written_range_fold(&site.form);
     let item = written.as_ref().map_or_else(
         || "the fold's item".to_string(),

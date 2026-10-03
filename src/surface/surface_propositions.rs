@@ -254,11 +254,6 @@ fn surface_children(proposition: &ClickProposition) -> Children<'_, ClickProposi
     }
 }
 
-/// Whether a kernel proposition is a logical connective rather than an atom.
-pub(in crate::surface) fn is_kernel_connective(proposition: &Proposition) -> bool {
-    kernel_children(proposition).is_some()
-}
-
 /// The node at preorder position `target`, one step per level from the root.
 fn preorder_node<'a, T>(
     root: &'a T,
@@ -907,7 +902,7 @@ impl SurfacePropositionMap {
                             };
                         }
                         if matches!(base, ContractExpression::QualifiedC { .. })
-                            && let Bitvector32Term::MemoryLoad(_, pointer) = term.as_ref()
+                            && let Bitvector32Term::MemoryLoad(_, pointer, _) = term.as_ref()
                             && !storage
                                 .qualified_load_sources
                                 .contains_key(pointer.as_ref())
@@ -1125,11 +1120,6 @@ impl SurfacePropositionMap {
         in_proposition_order(self.storage.universal_kernels.iter().map(|(_, node)| node))
     }
 
-    /// Whether this exact kernel proposition has a recorded surface form.
-    pub(in crate::surface) fn has_kernel_fact(&self, kernel: &Proposition) -> bool {
-        self.kernel_forms(kernel).is_some()
-    }
-
     pub fn available_kernel(
         &self,
         surface: &ClickProposition,
@@ -1191,15 +1181,28 @@ impl SurfacePropositionMap {
                 Ok(lowered) if &lowered == kernel => {
                     return Ok(clone_click_proposition_iteratively(surface));
                 }
-                Ok(lowered) => last_mismatch = Some(format!("{surface:?} -> {lowered:?}")),
-                Err(error) => last_mismatch = Some(format!("{surface:?} -> {}", error.message())),
+                Ok(lowered) => {
+                    last_mismatch = Some(format!(
+                        "`{}` -> `{}`",
+                        crate::surface::diagnostics::describe_click_proposition(surface),
+                        crate::surface::proof_diagnostics::render::render_proposition(&lowered)
+                    ))
+                }
+                Err(error) => {
+                    last_mismatch = Some(format!(
+                        "`{}` -> {}",
+                        crate::surface::diagnostics::describe_click_proposition(surface),
+                        error.raw_summary()
+                    ))
+                }
             }
         }
         Err(ClickError::new(format!(
-            "none of the recorded surface forms lower to the proposition at the current proof state{}; expected {kernel:?}",
+            "none of the recorded surface forms lower to the proposition at the current proof state{}; expected `{}`",
             last_mismatch
                 .map(|mismatch| format!(" (last mismatch: {mismatch})"))
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            crate::surface::proof_diagnostics::render::render_proposition(kernel),
         )))
     }
 }

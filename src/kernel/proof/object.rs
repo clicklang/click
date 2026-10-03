@@ -101,8 +101,8 @@ pub(crate) struct ProofSplit<L, O, E> {
 pub(crate) enum PropositionSplitError {
     Completed,
     NotProposition,
-    MissingDisjunction(Proposition),
-    ExpectedDisjunction(Proposition),
+    MissingDisjunction,
+    ExpectedDisjunction,
     NonComplementaryCases,
 }
 
@@ -120,9 +120,9 @@ pub(crate) enum FrontierSplitError {
     NotFrontier,
     MissingExecution,
     #[cfg(test)]
-    MissingDisjunction(Proposition),
+    MissingDisjunction,
     #[cfg(test)]
-    ExpectedDisjunction(Proposition),
+    ExpectedDisjunction,
     NonComplementaryCases,
 }
 
@@ -577,7 +577,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             goal.proposition().clone(),
             self.state.open_branches.root_branch().state.facts.clone(),
             goal.outcome.as_deref().map(|outcome| outcome.core.clone()),
+            goal.claim().cloned(),
         ))
+    }
+
+    /// Closes the focused proposition goal when the step that produced this
+    /// state added it as a fact. A goal that was already available before
+    /// the step stays open; only `assumption` closes that.
+    pub(crate) fn closed_if_goal_was_added(&self) -> Option<Self> {
+        let (goal, _) = self.focused_proposition()?;
+        self.state
+            .added_facts
+            .contains(goal.proposition())
+            .then(|| self.closed_focused())
     }
 
     fn focused_proposition(
@@ -1049,15 +1061,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        let presentation = presentation(&goal.presentation);
-        let obligation = match goal.outcome.clone() {
-            Some(outcome) => super::PropositionObligation::at_outcome(
-                goal.proposition().clone(),
-                presentation,
-                outcome,
-            ),
-            None => super::PropositionObligation::new(goal.proposition().clone(), presentation),
-        };
+        let obligation = goal.with_presentation(presentation(&goal.presentation));
         Some(Self::new(
             ProofState {
                 locals: self.state.locals.clone(),
@@ -1308,10 +1312,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err(PropositionSplitError::NotProposition);
         };
         if !branch.state.facts.contains(&disjunction) {
-            return Err(PropositionSplitError::MissingDisjunction(disjunction));
+            return Err(PropositionSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
-            return Err(PropositionSplitError::ExpectedDisjunction(disjunction));
+            return Err(PropositionSplitError::ExpectedDisjunction);
         };
         let arm = |disjunct: Proposition| {
             ProofBranch::new(
@@ -2005,10 +2009,10 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             .clone()
             .ok_or(FrontierSplitError::MissingExecution)?;
         if !branch.state.facts.contains(&disjunction) {
-            return Err(FrontierSplitError::MissingDisjunction(disjunction));
+            return Err(FrontierSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
-            return Err(FrontierSplitError::ExpectedDisjunction(disjunction));
+            return Err(FrontierSplitError::ExpectedDisjunction);
         };
         let introduced_facts = [vec![left.as_ref().clone()], vec![right.as_ref().clone()]];
         let arm = |disjunct: Proposition| {

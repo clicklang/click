@@ -8,9 +8,10 @@ use click::cli::read_click_project;
 use click::instrumentation::{self, VerificationEvent};
 use click::languages::cpp::{load_import, refresh_import};
 use click::surface::{
-    C0VerificationSession, cpp_prepared_project_smart_tactic_source_sites,
-    cpp_prepared_project_tactic_source_position, expand_cpp_prepared_project_claim_source_by_label,
-    expand_cpp_prepared_project_tactic_source_at, verify_cpp_prepared_project,
+    C0VerificationSession, expand_program_prepared_project_claim_source_by_label,
+    expand_program_prepared_project_tactic_source_at,
+    program_prepared_project_smart_tactic_source_sites,
+    program_prepared_project_tactic_source_position, verify_program_prepared_project,
 };
 use sha2::{Digest, Sha256};
 
@@ -21,6 +22,171 @@ const PROVENANCE: &str =
 const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
+
+fn check_upstream_fee_frac(selected: &str, name: &str, source: &str) {
+    check_upstream_cpp(
+        selected,
+        name,
+        source,
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+    );
+}
+
+fn check_upstream_cpp(
+    selected: &str,
+    name: &str,
+    source: &str,
+    logical_source: &str,
+    integer_header: &str,
+) {
+    assert_eq!(
+        sha256(ARCHIVE),
+        "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
+    );
+    let root = std::env::temp_dir().join(format!(
+        "click-bitcoin-fee-frac-{name}-{}",
+        std::process::id()
+    ));
+    fs::create_dir(&root).unwrap();
+    let archive_path = root.join("input-closure.tar.gz");
+    fs::write(&archive_path, ARCHIVE).unwrap();
+    let result = Command::new("tar")
+        .args([
+            "-xzf",
+            archive_path.to_str().unwrap(),
+            "-C",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert_eq!(
+        sha256(&fs::read(root.join("bitcoin-src/src/util/feefrac.h")).unwrap()),
+        "213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9"
+    );
+    assert_eq!(
+        sha256(&fs::read(root.join("bitcoin-src/src/serialize.h")).unwrap()),
+        "87a273aa8cb9aeea82cd8038bb85284a5782c8abc35f8c826eb60f1a01e06775"
+    );
+    fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
+    let clang = pinned_clang();
+    let database = COMMAND
+        .replace("@ROOT@", root.to_str().unwrap())
+        .replace("@CLANGXX@", clang.to_str().unwrap())
+        .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]));
+    fs::write(root.join("compile_commands.json"), database).unwrap();
+    let config = serde_json::json!({
+        "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
+        "exceptions": true, "rtti": true,
+        "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
+        "compilation_database": "compile_commands.json", "working_directory": ".",
+        "source": "bitcoin-src/src/policy/feerate.cpp", "logical_source": logical_source,
+        "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
+        "function": selected, "artifact": format!("{name}.click-cpp.json")
+    });
+    let config_path = root.join(format!("{name}.click.import.json"));
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let sidecar = root.join(format!("{name}.click"));
+    fs::write(&sidecar, source).unwrap();
+    refresh_import(&config_path).unwrap_or_else(|error| panic!("{selected}: {error}"));
+    let import = load_import(&config_path).unwrap();
+    assert_eq!(import.export().preprocessor_files.len(), 320);
+    assert!(import.export().reachable_functions.is_empty());
+    let project = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&project, &import)
+        .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+    if selected == "GetSizeOfCompactSize" {
+        let sites = program_prepared_project_smart_tactic_source_sites(&project, &import).unwrap();
+        let first = sites.first().unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &project,
+            &import,
+            &first.claim_label,
+            first.source_index,
+        )
+        .unwrap();
+        let expanded = expand_program_prepared_project_tactic_source_at(
+            &project,
+            &import,
+            position.line,
+            position.column,
+        )
+        .unwrap();
+        let rewritten = project.with_entry_source(expanded.clone());
+        verify_program_prepared_project(&rewritten, &import)
+            .expect("expanded CompactSize proof reverifies");
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
+        let sites =
+            program_prepared_project_smart_tactic_source_sites(&rewritten, &import).unwrap();
+        let first = sites.first().unwrap();
+        let position = program_prepared_project_tactic_source_position(
+            &rewritten,
+            &import,
+            &first.claim_label,
+            first.source_index,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, position.line, position.column)
+            .expect("CompactSize retained audit agrees");
+        let false_source = source.replace("ensures result ==", "ensures result !=");
+        let false_project = read_click_project(&sidecar, &false_source).unwrap();
+        let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
+        assert!(
+            error.message().contains("unclosed goal"),
+            "{}",
+            error.message()
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::IsEmpty",
+        "FeeFracIsEmpty",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator+=",
+        "FeeFracAdd",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracAdd.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator+=",
+        "FeeFracAddSelf",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracAddSelf.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator-=",
+        "FeeFracSubtract",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracSubtract.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator-=",
+        "FeeFracSubtractSelf",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracSubtractSelf.click"),
+    );
+}
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -173,7 +339,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     // The one integration fixture owes termination evidence like every other
     // corpus fixture; it has no loop and no callee, so it owes no measure.
     let (verification, profile) =
-        instrumentation::collect(|| verify_cpp_prepared_project(&project, &imported));
+        instrumentation::collect(|| verify_program_prepared_project(&project, &imported));
     verification.expect("verify the exact inclusive range contract and four boundary calls");
     let finished_claims = profile
         .iter()
@@ -192,7 +358,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
             .any(|event| matches!(event, VerificationEvent::TacticFinished { .. }))
     );
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&project, &imported).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&project, &imported).unwrap();
     assert_eq!(
         sites.len(),
         14,
@@ -200,7 +366,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     );
     for event in &profile {
         if let VerificationEvent::TacticFinished { tactic, .. } = event {
-            cpp_prepared_project_tactic_source_position(
+            program_prepared_project_tactic_source_position(
                 &project,
                 &imported,
                 &tactic.claim,
@@ -233,17 +399,17 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         );
     }
     let mut session_checks = Vec::new();
-    let expanded_contract = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded_contract = expand_program_prepared_project_claim_source_by_label(
         &project,
         &imported,
         "MoneyRange.contract",
     )
     .expect("the documented claim expansion must use the locked upstream import");
-    verify_cpp_prepared_project(&project.with_entry_source(expanded_contract), &imported)
+    verify_program_prepared_project(&project.with_entry_source(expanded_contract), &imported)
         .expect("the documented expanded range claim must reverify");
     for site in sites {
         let claim = site.claim_label.as_str();
-        let position = cpp_prepared_project_tactic_source_position(
+        let position = program_prepared_project_tactic_source_position(
             &project,
             &imported,
             claim,
@@ -255,7 +421,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         } else {
             claim.to_owned()
         };
-        let profiled_position = cpp_prepared_project_tactic_source_position(
+        let profiled_position = program_prepared_project_tactic_source_position(
             &project,
             &imported,
             &profiled_claim,
@@ -263,7 +429,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         )
         .expect("the profiler must resolve the same upstream tactic location");
         assert_eq!(profiled_position, position);
-        let expanded = expand_cpp_prepared_project_tactic_source_at(
+        let expanded = expand_program_prepared_project_tactic_source_at(
             &project,
             &imported,
             position.line,
@@ -272,12 +438,12 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
         .expect("expand a tactic against the same locked import");
         assert_ne!(expanded, SIDECAR);
         let rewritten = project.with_entry_source(expanded.clone());
-        let remaining = cpp_prepared_project_smart_tactic_source_sites(&rewritten, &imported)
+        let remaining = program_prepared_project_smart_tactic_source_sites(&rewritten, &imported)
             .expect("expanded proof remains source-inventoriable")
             .into_iter()
             .filter(|candidate| candidate.claim_label == claim)
             .count();
-        let original = cpp_prepared_project_smart_tactic_source_sites(&project, &imported)
+        let original = program_prepared_project_smart_tactic_source_sites(&project, &imported)
             .unwrap()
             .into_iter()
             .filter(|candidate| candidate.claim_label == claim)
@@ -286,15 +452,15 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
             remaining < original,
             "expansion must remove the audited smart site"
         );
-        verify_cpp_prepared_project(&rewritten, &imported)
+        verify_program_prepared_project(&rewritten, &imported)
             .expect("expanded certificate must reverify against the upstream import");
-        let next = cpp_prepared_project_tactic_source_position(&rewritten, &imported, claim, 0)
+        let next = program_prepared_project_tactic_source_position(&rewritten, &imported, claim, 0)
             .expect("the audited claim remains source-selectable");
         session_checks.push((expanded, next));
     }
     // A retained session's environment names its own kernel tables, which
     // every verification above replaces, so the session starts after them.
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&project, &imported)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&project, &imported)
         .expect("start a retained audit session on the same import");
     for (expanded, next) in &session_checks {
         session
@@ -313,7 +479,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     assert_ne!(false_source, source_contract);
     fs::write(&sidecar, &false_source).unwrap();
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let false_error = verify_cpp_prepared_project(&false_project, &imported)
+    let false_error = verify_program_prepared_project(&false_project, &imported)
         .expect_err("an exclusive upper bound must not prove the upstream function");
     assert!(
         false_error.message().contains("MoneyRange.contract")
@@ -398,4 +564,48 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     fs::write(&config_path, config_bytes).unwrap();
     load_import(&config_path).expect("the original selector and lock remain valid");
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_upstream_compact_size_1_reexports_and_verifies() {
+    check_upstream_cpp(
+        "GetSizeOfCompactSize",
+        "CompactSize1",
+        include_str!("../integrations/bitcoin-core-money-range/CompactSize1.click"),
+        "bitcoin-src/src/serialize.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+    );
+}
+
+#[test]
+fn pinned_upstream_compact_size_3_reexports_and_verifies() {
+    check_upstream_cpp(
+        "GetSizeOfCompactSize",
+        "CompactSize3",
+        include_str!("../integrations/bitcoin-core-money-range/CompactSize3.click"),
+        "bitcoin-src/src/serialize.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+    );
+}
+
+#[test]
+fn pinned_upstream_compact_size_5_reexports_and_verifies() {
+    check_upstream_cpp(
+        "GetSizeOfCompactSize",
+        "CompactSize5",
+        include_str!("../integrations/bitcoin-core-money-range/CompactSize5.click"),
+        "bitcoin-src/src/serialize.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+    );
+}
+
+#[test]
+fn pinned_upstream_compact_size_9_reexports_and_verifies() {
+    check_upstream_cpp(
+        "GetSizeOfCompactSize",
+        "CompactSize9",
+        include_str!("../integrations/bitcoin-core-money-range/CompactSize9.click"),
+        "bitcoin-src/src/serialize.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+    );
 }

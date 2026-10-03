@@ -1,10 +1,11 @@
 # Open issues
 
 Agents must not create new issue files or issue-list entries unless the user
-explicitly asks them to. Discovering a problem during other work is not
-authorization; report it to the user instead. This applies to bugs, design
-gaps, deferred work, and tooling blockers, even when another document
-recommends filing an issue.
+explicitly asks them to. Discovering a roadmap gap during other work is not
+authorization; report it to the user instead. This applies to missing
+features, design gaps, deferred work, and new milestones, even when another
+document recommends filing an issue. Defects with a reproduction are not
+issues: anyone may file those in [`bugs/`](../bugs/README.md) without asking.
 
 When requested, use one `.md` file per independent open problem. Each issue
 contains a small intended regression, the violated invariant, and acceptance criteria. Delete
@@ -24,7 +25,7 @@ the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
 an issue, scope it narrowly to the evidence.
 
-## P1: before launch (6)
+## P1: before launch (7)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -56,18 +57,19 @@ them. A gap that only a different program would hit is normally P2. The
 remaining concurrency and shared-heap milestones are also P1: they check the
 architecture before launch while rbtree remains the key demo. The selected
 control-flow, byte-representation, arena, and basic C++ milestones have
-landed with bounded support claims; broader language, synchronization, and
-graph coverage remain P2.
+landed with bounded support claims. The selected safe-Rust and shared C/Rust
+checksum milestones are P1 by user direction; broader language,
+synchronization, and graph coverage remain P2.
 
 Soundness and kernel shape:
 
 - [Authority migration: explicit population authority and removal of guarded_by](authority-migration.md)
 - [Design resource invariants for sequential and concurrent shared heaps](shared-heap-graph-demo.md)
-- [Use kernel equality for rbtree pointer reads and folds](egraph.md)
 
 Program import and execution:
 
 - [Verify a concurrency demo with threads, mutexes, and publication](concurrency-demo.md)
+- [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. The unchanged
@@ -96,11 +98,10 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (25)
+## P2: after launch (18)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
-- [Lower a dependent composite argument in every tactic position](dependent-composite-argument-in-tactics.md)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -118,14 +119,15 @@ C language coverage:
 - [Give private static storage sound ownership across helper calls](private-static-helper-ownership.md)
 - [Extend bounded control flow](control-flow.md)
 - [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
-- [Model variadic functions](variadic-functions.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 - [Model signed eight-bit integers](signed-byte-integers.md)
 
+Additional languages:
+
+- [Extend C++ support toward Bitcoin Core](cpp-support.md)
+
 Semantics and reasoning:
 
-- [Add Euclidean division and remainder for `Integer`](integer-division-and-remainder.md)
-- [Extend the resource algebra: fractions, persistent tokens, mutual recursion, symbolic coefficients](resource-algebra-extensions.md)
 - [Recursion](recursion.md)
 
 Proof language and tooling:
@@ -133,4 +135,3 @@ Proof language and tooling:
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
-- [Add a smart tactic for dynamic range framing](dynamic-range-frame.md)

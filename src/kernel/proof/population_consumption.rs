@@ -120,7 +120,7 @@ pub(super) fn prepare(
     // Prove every invariant from the input facts at the decreased count, before
     // ordinary folding can expose any declaration facts. This also checks the
     // shared body's live ownership/loan requirements on the unchanged memory.
-    let singleton = ResourceContext::new().unchecked_with_fact(unit);
+    let singleton = ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(unit);
     if let Some(ledger) = before.loan_ledger() {
         let body = crate::kernel::functions::expand_composite_resource_fact(
             &singleton,
@@ -148,7 +148,7 @@ pub(super) fn prepare(
     .ok_or("cannot evaluate the population invariant after consumption")?;
     for obligation in obligations {
         if obligation.is_body_fact
-            && !crate::kernel::api::contract_certification::certification_proves_proposition(
+            && !crate::kernel::PureFactContext::settles_exactly(
                 assumptions,
                 &obligation.proposition,
             )

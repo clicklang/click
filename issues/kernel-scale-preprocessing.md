@@ -564,22 +564,173 @@ compiler binary identities, and 222 concrete dependency hashes are recorded in
 Two preprocessing runs in an environment cleared to the recorded allowlist
 produced identical bytes: 637,604 bytes, 16,371 lines, 1,552 line markers, SHA-256
 `19a1f6aee08bc6b0b4e5c0f8959cf986da569547a227db2241974b5e446173e7`.
-Line-marker filenames are not the dependency inventory. The live source/build
-tree is `/tmp/click-linux-pinned`; captured output is
-`/tmp/rbtree-v6.8.12-controlled-a.i`. The evidence JSON is an investigation
+Line-marker filenames are not the dependency inventory. The source/build
+tree and captured output lived under `/tmp` on the capturing machine; the
+checked-in closure described below replaces them. The evidence JSON is an investigation
 record, not a validated importer lock or a complete toolchain distribution.
 
-The first ordinary parser rejection after decoding only structured line markers
-is `include/linux/panic.h:12`, the variadic declaration of `panic`. Further
-retained forms include `_Generic`, attributes, anonymous aggregates, and
-effectful x86 assembly. Concrete examples include `cli` in
-`arch/x86/include/asm/irqflags.h:37`, and export-generated pointer storage plus
-`.export_symbol` assembly at `lib/rbtree.c:415` (and eleven further exports).
-Neither disabling interrupts nor allocating export storage qualifies as harmless
-metadata. The actual compiler vector also includes options such as
+The first rejection Stage 0 recorded was `include/linux/panic.h:12`, the
+variadic declaration of `panic`. That came from the C tokenizer, which then
+rejected any `...` in the artifact before parsing began, so it located the
+first `...` and said nothing about the declarations before it. Body-less
+variadic prototypes are now retained as uncallable declarations
+(`docs/reference/language/c0.md`, `mdtests/c_variadic_*.md`).
+
+The actual compiler vector includes options such as
 `-ftrivial-auto-var-init=zero`, `-fshort-wchar`, and `-fno-strict-overflow` that
 require explicit target-policy review. Do not remove those options to make the
-kernel input fit the first importer profile.
+kernel input fit the first importer profile. Neither disabling interrupts
+(`cli` in `arch/x86/include/asm/irqflags.h:37`) nor allocating export storage
+qualifies as harmless metadata.
+
+### Pinned closure and measured frontier, 2026-10-02
+
+The capture was reproduced on a second machine from the release archive. The
+input closure is checked in at `integrations/linux-rbtree/` with its
+provenance, and two library tests gate it
+(`src/languages/c/linux_rbtree_tests.rs`). Preprocessing the extracted closure
+alone yields the recorded 637,604 bytes and SHA-256. Three corrections to the
+Stage 0 record:
+
+- The compilation reads 224 files, not 222. Stage 0 took its list from
+  Kbuild's dependency file, from which Kbuild removes
+  `include/generated/autoconf.h`, and it did not list `lib/rbtree.c`.
+- The reproduced `.config` does not hash to the recorded `config_sha256`. The
+  compilation does not read `.config`; the object and the preprocessed output
+  match. What Stage 0 hashed is unknown.
+- The kernel build needs `flex`, `bison`, and libelf headers on the host.
+
+The gate pins the first rejection on each route:
+
+- Import route: `click import lock` locks the recorded configuration under
+  the `linux-6.8-x86_64-kbuild` option profile (see "Option profile",
+  below); the lock and artifact are committed and load offline. `HOME`
+  stays outside the importer's environment allowlist.
+- C frontend, on the reproduced artifact:
+  `././include/linux/compiler_types.h:172`, `expected union name`, the
+  anonymous union member of the artifact's first declaration. Before octal
+  and hexadecimal escapes were modeled, the pin was the lexical rejection of
+  `'\001'` at `printk.h:21`; the artifact has no lexical rejection now.
+
+The inventory below was measured at the commit that accepted the kernel's
+`inline` attributes and unnamed prototype parameters, and its closure table
+again at the commit that accepted the `WRITE_ONCE` store, with
+`CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
+declaration is parsed after the accepted ones before it; a rejected one is
+blanked. A declaration reports only its first rejection, and a declaration
+that needs a rejected one is rejected too, so the counts include cascades.
+A rejection can hide others in the same declaration, so every count is a
+lower bound on the work.
+
+The artifact has 2,575 file-scope declarations from 138 files. The frontend
+accepts 1,244 and rejects 1,331 (it rejected 1,817 before those two forms
+were accepted):
+
+| Count | First rejection | Notes |
+| ---: | --- | --- |
+| 368 | unknown type name | `__signed__` and cascades through the fixed-width typedef chain, `atomic_long_t`, `atomic64_t`, `va_list` |
+| 200 | file-scope form (`expected function declaration`) | mostly cascades from unknown return types; file-scope `asm(...)` 12 (the exports), `_Static_assert` 9, `register ... asm("rsp")` 1 |
+| 178 | declarator form (`expected type ..., got ...`) | function-pointer declarators and pointer returns of rejected types |
+| 80 | statement form (`expected statement`) | inline `asm` statements 70, others 10 |
+| 67 | unsupported file-scope object form | includes the twelve `extern typeof(fn) fn;` export redeclarations |
+| 64 | unsupported builtin | `__builtin_constant_p` 56, `__builtin_bswap32` 4, `__builtin_bswap16` 2, `__builtin_mul_overflow` 2 |
+| 58 | function attribute | `__format__` 26, `section` 14, `__warn_unused_result__` 4, `__externally_visible__` 4, `__error__` 4, `nocf_check` 2, `__alloc_size__` 2, `__pure__` 1, `__malloc__` 1 |
+| 57 | unknown or embedded struct | cascades |
+| 53 | undeclared identifier | `__noreturn__` 14 (block-scope declarations from `compiletime_assert`); the rest cascade |
+| 42 | field access through an incomplete struct | cascades |
+| 45 | declarator tail (`expected ;` and similar) | attribute between type and declarator (the export pointers), bitfields, array bounds with arithmetic or `sizeof` |
+| 12 | function-pointer typedef name | |
+| 11 | anonymous `union` or `struct` member | first at `compiler_types.h:172`, the first unsupported declaration in the artifact and the gate's pin |
+| 96 | further forms, at most nine each | call sequencing, casts, enum parameters and returns, `packed`, empty structs, const forms, conditional typing |
+
+Most of that graph is not rbtree. A token-level estimate of the declarations
+that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
+in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
+enumeration in `stddef.h`, and the `uintptr_t` typedef in `types.h`. The
+estimate is heuristic and was not checked by a compiler. Of those 80, 44 are
+accepted today: every type, prototype, inline helper, and function
+definition of the rbtree code. The 36 rejected are the twelve exports, three
+declarations each: `extern typeof(fn) fn;`, a `static void *` with
+`__used__` and `__section__(".discard.addressable")` initialized to the
+function's address, and a file-scope `asm` that emits the `.export_symbol`
+record. No verified function depends on them, so the projection excludes
+them and they are outside the claim.
+
+Forms accepted on the way here, each of which surfaced only after the one
+before it was accepted: the kernel's `inline` attributes, unnamed prototype
+parameters, `static` non-inline functions, explicit casts that drop `const`,
+conditionals with a null pointer constant, chained simple assignments,
+`compiletime_assert`'s block-scope `error` declaration with its unreachable
+call, `sizeof(expression)`, `__builtin_constant_p` as an unknown 0 or 1, the
+empty `memory` barrier assembly, and the store through a cast to a pointer
+cell that `WRITE_ONCE` expands to.
+
+Accepted means parsed and lowered declaration by declaration. No proof has
+run against these bodies.
+
+The dependency-closure projection (`docs/reference/cli/import.md`) is now
+implemented as an import option. On the pinned artifact it keeps 32 of the
+2,575 file-scope declarations, omits 2,543 including the twelve export
+triples, and the kept unit parses and lowers as a whole: 26 functions, the
+12 definitions in `lib/rbtree.c` that have external linkage plus 14
+translation-unit-local helpers from it and its two rbtree headers. The gate pins that inventory. The unprojected
+artifact still stops at `compiler_types.h:172`, and the gate pins that too.
+
+The import route is complete: the projected unit has a committed lock, and
+the sidecars can attach.
+
+Option profile, 2026-10-02. The configuration now carries the recorded
+vector unchanged except for `-E` and the source operand, which the importer
+supplies, and selects the named option profile `linux-6.8-x86_64-kbuild`. The
+classification table and each option's reason are in
+`docs/reference/cli/import.md`; a test keeps the table and the profile's
+exact-spelling lists equal. Of the 83 recorded options outside the base
+preprocessing options and the target's fixed four, 79 spellings are distinct,
+and all are accepted: `-mno-sse` and `-mno-sse2` only beside `-mno-80387`,
+since alone they move floating point to the x87 with excess precision, and
+`-O2` only beside `-fno-strict-aliasing`, `-fno-strict-overflow`, and
+`-fno-delete-null-pointer-checks`. `-O2` was first rejected: GCC 13 at `-O2` deletes a `nonnull` parameter's null check even
+with `-fno-delete-null-pointer-checks`, merges `const` calls across a store,
+and drops the code after a `noreturn` call. The frontend accepts all three
+attributes without modeling them, and at `-O0` GCC does none of these, so
+ignoring `-O2` could make Click accept a program the compiler treats
+differently. The owner's decision, 2026-10-02: under an optimizing profile
+the frontend refuses every attribute and qualifier GCC's optimizer trusts as
+an unchecked promise (`nonnull`, `const`, `leaf`, `access`, `noreturn`,
+`returns_twice`, `restrict`; the others were never accepted), allowing
+`noreturn` only on `compiletime_assert`'s block-scope `error` declaration,
+whose calls Click proves unreachable. The list and the GCC 13 experiments
+behind it are in `docs/reference/cli/import.md`. The projected rbtree unit
+contains none of them besides that declaration, and parses with them
+refused.
+
+`HOME`: the recorded capture environment set `HOME=/tmp`. Neither the GCC 13
+driver nor `cc1` contains the string `HOME`, a traced run of the recorded
+preprocessing with `HOME` set to an unused path opens nothing under it, and
+the preprocessed output is the recorded 637,604 bytes and SHA-256 with `HOME`
+unset, `/tmp`, a nonexistent directory, or a real home directory. The
+importer-style invocation (the target's fixed arguments first, then the
+configured vector, `-x c -E -MD -MF`, with `HOME` unset) also reproduces the
+recorded output. Preprocessing does not read `HOME`, so it stays outside the
+allowlist: allowing it would add an ambient input to the invocation identity
+without selecting anything.
+
+`typeof`, statement expressions, and `__builtin_expect` do not appear as
+rejections.
+
+Decisions, 2026-10-02. Click imports a checked dependency closure of the
+functions it verifies, not the whole artifact: the closure is computed from
+the names those functions reference, anything unsupported inside it is
+rejected with a located diagnostic, and declarations outside it are neither
+parsed for semantics nor claimed. Until that projection lands, the gate's pin
+stays at the first unsupported declaration of the whole artifact.
+`__builtin_constant_p` is to be an unknown 0 or 1, so both arms are checked.
+Exactly the empty-template `barrier()` assembly is to be a no-op in the
+sequential semantics; every other assembly stays rejected. The recorded
+compiler options are to be accepted one by one where ignoring the option
+cannot make Click accept a program the compiler would treat differently.
+This arrangement is sized for the rbtree demo; it is not general
+kernel-scale import machinery.
 
 The earlier `/tmp/linux-6.8.12` tree and `/tmp/rbtree-6.8.12.i` combined upstream
 sources with host-generated headers and failed compiler validation. They are

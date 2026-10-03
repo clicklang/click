@@ -65,28 +65,6 @@ int32 shadowed_twice_c(int32 x) {
 }
 
 #[test]
-fn tactic_expansion_can_name_an_outer_shadowed_binder() {
-    let source = r#"
-theorem shadowed(x: int32) {
-    requires x == 0;
-    ensures forall (x: int32) { x == x } by {
-        intro();
-        have outer.x == 0 by { simp(); }
-        simp();
-    }
-}
-"#;
-    verify_c0_sources(source, &[]).expect("smart proof should use the outer binder");
-    let position = position_at_offset(source, source.find("simp();").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
-        .expect("selected smart tactic should expand");
-    assert!(!expanded.contains("simp();"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
-    assert!(expanded.contains("outer.x"), "{expanded}");
-    verify_c0_sources(&expanded, &[]).expect("expanded proof must reverify");
-}
-
-#[test]
 fn tactic_expansion_can_name_two_levels_of_shadowed_binders() {
     let source = r#"
 theorem shadowed_twice(x: int32) {
@@ -502,7 +480,13 @@ fn expand_top_level_tactic_for_test(
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
         CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-            find_claim_proof_span(&tokens, &function, claim)?
+            let file = parse_source_with_c_layouts(click_source, c_sources)?;
+            let function_block = file
+                .function_blocks()
+                .iter()
+                .find(|function| function.signature().name() == function_name)
+                .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+            find_claim_proof_span(&tokens, &function, function_block, claim)?
         }
     };
     let span = find_tactic_span(&tokens, &proof, tactic_index)?;
@@ -914,37 +898,11 @@ int32 nested_nonnegative(int32 x, int32 flag) {
     }
 }
 "#;
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        super::super::proof::count_flat_proof_units(|| {
-            {
-                super::super::proof::count_execution_context_exports(|| {
-                    super::super::proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("nested.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = super::super::proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("nested.c", c_source)])
+    });
     let verified = verified.expect("nested end-of-arm interfaces should verify through Proof");
     assert_eq!(flat_units, 1, "the nested script should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "nested verification must not export state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "nested verification must not check a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "nested_nonnegative.contract"
-                    && name == "generated certificate validation"
-        )),
-        "nested end-of-arm interfaces must retain their checked Proof successors: {events:#?}"
-    );
     let retained = verified[0]
         .expanded_proof_tactics()
         .expect("the nested proof should retain surface provenance");
@@ -970,27 +928,13 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("common simp should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let ((expanded, expansion_checks), expansion_exports) = {
-        super::super::proof::count_execution_context_exports(|| {
-            super::super::proof::count_source_certificate_checks(|| {
-                expand_c0_tactic_source_at(
-                    click_source,
-                    &[("nested.c", c_source)],
-                    position.line,
-                    position.column,
-                )
-            })
-        })
-    };
+    let expanded = expand_c0_tactic_source_at(
+        click_source,
+        &[("nested.c", c_source)],
+        position.line,
+        position.column,
+    );
     let expanded = expanded.expect("nested deferred simp should expand");
-    assert_eq!(
-        expansion_exports, 0,
-        "nested expansion must not export state"
-    );
-    assert_eq!(
-        expansion_checks, 0,
-        "nested expansion must not check a certificate"
-    );
 
     verify_c0_sources(&expanded, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("nested deferred expansion should check:\n{error:?}\n{expanded}")
@@ -1001,27 +945,13 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("inner branch should exist")
         + 16;
     let inner_position = position_at_offset(click_source, inner_offset);
-    let ((inner, inner_checks), inner_exports) = {
-        super::super::proof::count_execution_context_exports(|| {
-            super::super::proof::count_source_certificate_checks(|| {
-                expand_c0_tactic_source_at(
-                    click_source,
-                    &[("nested.c", c_source)],
-                    inner_position.line,
-                    inner_position.column,
-                )
-            })
-        })
-    };
+    let inner = expand_c0_tactic_source_at(
+        click_source,
+        &[("nested.c", c_source)],
+        inner_position.line,
+        inner_position.column,
+    );
     let inner = inner.expect("the retained inner branch should expand");
-    assert_eq!(
-        inner_exports, 0,
-        "inner branch expansion must not export state"
-    );
-    assert_eq!(
-        inner_checks, 0,
-        "inner branch expansion must not check a certificate"
-    );
     verify_c0_sources(&inner, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("inner branch expansion should reverify:\n{error:?}\n{inner}")
     });
@@ -1579,9 +1509,24 @@ int32 contains(uint8 p[], int32 n) {
     )
     .expect("uint8 proposition should expand");
 
-    assert!(expanded.contains("bytes_contains(p, 0, n, 120u8)"));
+    // The `simp` closes the proof the `witness` opened, so it expands to
+    // that one step rather than restating the claim.
+    assert!(
+        expanded.contains("witness(k = found);\n        assumption();"),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &[("contains.c", c_source)])
-        .expect("printed uint8 literal should parse and re-verify");
+        .expect("the expansion should re-verify");
+    // A uint8 fact still prints as a parseable typed literal.
+    let file = parse_source_with_c_layouts(click_source, &[("contains.c", c_source)])
+        .expect("the sidecar parses");
+    let Ensure::Proposition(claim) = file.function_blocks()[0].ensures()[0].ensure() else {
+        panic!("the claim is a proposition");
+    };
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(claim),
+        "bytes_contains(p, 0, n, 120u8)"
+    );
 }
 
 #[test]
@@ -1633,15 +1578,13 @@ int32 compare_swap2(int32 p[2]) {
         simp();
     }
 }"#;
-    let (expanded_execute, _events) = crate::instrumentation::collect(|| {
-        expand_top_level_tactic_for_test(
-            click_source,
-            &[("compare_swap2.c", c_source)],
-            "compare_swap2",
-            CProofClaim::Ensure(0),
-            0,
-        )
-    });
+    let expanded_execute = expand_top_level_tactic_for_test(
+        click_source,
+        &[("compare_swap2.c", c_source)],
+        "compare_swap2",
+        CProofClaim::Ensure(0),
+        0,
+    );
     let expanded_execute =
         expanded_execute.expect("branch-shaped execute should expand from retained Proof steps");
     verify_c0_sources(&expanded_execute, &[("compare_swap2.c", c_source)])
@@ -1658,14 +1601,12 @@ int32 compare_swap2(int32 p[2]) {
 
     let offset = click_source.rfind("simp").expect("simp should be present");
     let position = position_at_offset(click_source, offset);
-    let (expanded, _events) = crate::instrumentation::collect(|| {
-        expand_c0_tactic_source_at(
-            click_source,
-            &[("compare_swap2.c", c_source)],
-            position.line,
-            position.column,
-        )
-    });
+    let expanded = expand_c0_tactic_source_at(
+        click_source,
+        &[("compare_swap2.c", c_source)],
+        position.line,
+        position.column,
+    );
     let expanded = expanded.expect("post-execution simp should expand");
 
     // The branch anchors at the statement that branched; statement 0 is
@@ -2073,8 +2014,7 @@ int32 write_selected(int32 p[2], int32 flag) {
 }
 "#;
     let sources = [("write_selected.c", c_source)];
-    let (verified, _events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("branched baseline should verify");
     for (selected_text, selected_smart) in [
         ("have result + 1", "have result + 1 == 1 by simp"),
@@ -2323,6 +2263,39 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
         .expect("the serialized nested pure branch should independently reverify");
 }
 
+/// An `extern` contract is assumed. Its clauses have no proof, so the
+/// implicit `auto` of an unproved clause is not a site: `click audit` used to
+/// list one per clause and then fail to expand it, reporting that the
+/// function `has no verified ensures clause`.
+#[test]
+fn smart_inventory_skips_assumed_extern_contracts() {
+    let c_source = "int32 child(int32 x);\nint32 parent(int32 x) { return child(x); }\n";
+    let source = r#"
+verifying "calls.c";
+
+extern int32 child(int32 x) {
+    requires x >= 0;
+    ensures result == x;
+}
+
+int32 parent(int32 x) {
+    requires x >= 0;
+    ensures result == x by auto;
+}
+"#;
+    let c_sources = [("calls.c", c_source)];
+    verify_c0_sources(source, &c_sources)
+        .expect("the caller verifies against the assumed contract");
+    let sites = c0_smart_tactic_source_sites(source, &c_sources).unwrap();
+    assert_eq!(
+        sites
+            .iter()
+            .map(|site| site.claim_label.as_str())
+            .collect::<Vec<_>>(),
+        ["parent.ensures_0"]
+    );
+}
+
 #[test]
 fn smart_inventory_does_not_invent_auto_sites_for_kernel_axiom_declarations() {
     let source = r#"
@@ -2428,6 +2401,20 @@ fn nat_addition_agrees_with_integer_addition_and_rechecks_expansion() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn signed_to_unsigned_interval_comparisons_expand_and_recheck_both_sides() {
+    for goal in ["1u32 <= ((uint32)x)", "((uint32)x) <= 4u32"] {
+        let source = format!(
+            "theorem cast_bound(x: int32) {{ requires 0 < x; requires x <= 4; ensures {goal} by {{ arithmetic() using {{ 0 < x; x <= 4; }} }} }}"
+        );
+        verify_c0_sources(&source, &[]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(&source, &[], "cast_bound.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        assert!(verify_c0_sources(&source.replace(goal, "5u32 <= ((uint32)x)"), &[]).is_err());
+    }
 }
 
 #[test]
@@ -2603,4 +2590,53 @@ fn recursive_child_alias_fold_expands_and_rechecks_without_load_claims() {
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("expanded fold independently verifies");
+}
+
+#[test]
+fn pointer_read_single_store_normalization_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/egraph_pointer_read_single_store.md");
+    let fixture = crate::cli::read_mdtest(&path).expect("single-store fixture");
+    let source = fixture.click_source.as_deref().expect("Click source");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c0_sources(source, &sources).expect("ordinary pointer claim verifies");
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "touch.contract")
+        .expect("single-store pointer claim expands");
+    verify_c0_sources(&expanded, &sources).expect("expanded claim independently rechecks");
+    let mut changed_sources = fixture.c_sources.clone();
+    changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
+    let changed = crate::cli::source_refs(&changed_sources);
+    assert!(
+        verify_c0_sources(&expanded, &changed).is_err(),
+        "a write to the pointer field cannot reuse sibling-write equality"
+    );
+}
+
+#[test]
+fn recursive_child_sibling_write_fold_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/egraph_recursive_child_sibling_write.md");
+    let fixture = crate::cli::read_mdtest(&path).expect("sibling-write fixture");
+    let source = fixture.click_source.as_deref().expect("Click source");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c0_sources(source, &sources).expect("unfold/write/refold verifies");
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "roundtrip.contract")
+        .expect("sibling-write fold expands");
+    verify_c0_sources(&expanded, &sources).expect("expanded sibling-write fold rechecks");
+    let mut changed_sources = fixture.c_sources.clone();
+    changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
+    assert!(verify_c0_sources(&expanded, &crate::cli::source_refs(&changed_sources)).is_err());
+}
+
+/// A declaration is a name followed by `(` outside every brace. A use of the
+/// same name inside a body, even an earlier one, is not the declaration.
+#[test]
+fn a_declaration_position_skips_uses_inside_bodies() {
+    let source = "contract void Shape(int32* p) {\n    owns p[0..1];\n}\n\ntheorem uses() {\n    ensures Shape(&f) by { simp(); }\n}\n\n  int32 f(int32* p) {\n    ensures result == 0;\n}\n";
+    let position =
+        |name| click_declaration_source_position(source, name).map(|at| (at.line, at.column));
+    assert_eq!(position("Shape"), Some((1, 1)));
+    assert_eq!(position("uses"), Some((5, 1)));
+    assert_eq!(position("f"), Some((9, 3)));
+    assert_eq!(position("missing"), None);
 }

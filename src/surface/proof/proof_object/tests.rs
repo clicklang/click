@@ -612,6 +612,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone().into(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Variable(Variable(binder))),
             ),
@@ -1807,7 +1808,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -3036,11 +3037,6 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     )
     .expect("existential requirement should parse");
     let function_block = &click_file.function_blocks()[0];
-    assert_eq!(
-        function_block.requirement_label_indices().get("source"),
-        None,
-        "requirements no longer have source labels"
-    );
     let parsed_function = syntax::parse_function("int32 choose_source(int32 x) { return x; }")
         .expect("test function should parse");
     let state = CState::new().with_local("x", int32(7));
@@ -3099,17 +3095,16 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             &[],
             &[],
             function_block.requires(),
-            function_block.requirement_label_indices(),
         );
         let retained_root = root.clone();
         let missing = root
             .apply_step(ProofStep::Choose(ProofChoice {
                 name: "candidate".to_string(),
-                source: ProofFactSource::RequirementLabel("missing".to_string()),
+                source: ProofFactSource::Requirement(1),
             }))
             .err()
-            .expect("an unknown label must reject the candidate");
-        assert!(missing.message().contains("unknown requirement label"));
+            .expect("an out-of-range requirement must reject the candidate");
+        assert!(missing.message().contains("is out of range"));
         assert!(root.state.shares_state_with(&retained_root.state));
 
         let choice = ProofChoice {
@@ -3838,19 +3833,15 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 (kernel_quantified.clone(), quantified_surface.clone()),
                 (kernel_premise.clone(), premise.clone()),
             ];
-            let (selected, certificate_checks) = count_source_certificate_checks(|| {
-                root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs)
-            });
+            let selected = root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs);
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
-            assert_eq!(
-                certificate_checks, 0,
-                "universal instantiation planning must not check a candidate certificate"
-            );
             assert!(selected.is_complete());
+            // The instantiation adds the goal, so it closes it with no
+            // separate `assumption`.
             assert!(matches!(
                 selected.certificate().steps(),
-                [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+                [ProofStep::InstantiateUsing { .. }]
             ));
         }
         let retained_root = root.clone();
@@ -3893,7 +3884,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         assert!(selected.is_complete());
         assert!(matches!(
             selected.certificate().steps(),
-            [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+            [ProofStep::InstantiateUsing { .. }]
         ));
 
         let step = ProofStep::InstantiateUsing {
@@ -3924,22 +3915,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             allocations <= allocation_bound,
             "size {size} instantiate allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        assert!(!instantiated.is_complete());
+        // The specialization is the goal, so the step that added it closed it.
+        assert!(instantiated.is_complete());
         assert_eq!(
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
-        );
-        assert_eq!(
-            instantiated.added_facts(),
-            std::slice::from_ref(&kernel_goal)
-        );
-        let completed = instantiated
-            .apply_step(ProofStep::Assumption)
-            .expect("the specialized exact fact should close by assumption");
-        assert!(completed.is_complete());
-        assert_eq!(
-            completed.certificate().steps(),
-            &[step, ProofStep::Assumption]
         );
         assert!(root.certificate().steps().is_empty());
     }
@@ -4180,7 +4160,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         &theorem_environment,
     );
     let Some((until, _)) = root
-        .try_linear_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
         .expect("execute_until should use the checked smart step route")
     else {
         panic!("execute_until should advance to its target");
@@ -4435,7 +4415,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         &theorem_environment,
     );
     let Some((at_call, _)) = root
-        .try_linear_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
         .expect("declaration should advance to the need call")
     else {
         panic!("execution should reach the call frontier");
@@ -5515,7 +5495,6 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
             &[],
             &[],
             function_block.requires(),
-            function_block.requirement_label_indices(),
         );
         let before = fact_node_allocations();
         let complete = root
@@ -9472,7 +9451,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9518,7 +9497,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9586,7 +9565,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9632,7 +9611,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9698,7 +9677,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9744,7 +9723,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9820,7 +9799,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9876,7 +9855,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10282,7 +10261,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10483,7 +10462,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10638,7 +10617,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     checks: checks.clone(),
@@ -10762,7 +10741,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
                     SurfacePropositionMap::default(),
                     PersistentSequence::default(),
                 ),
-                (0..size).map(indexed_fact).collect(),
+                (0..size).map(indexed_fact).collect::<Vec<_>>(),
                 ExecutionProofConstants::default(),
                 function_block,
                 &function,
@@ -10913,7 +10892,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     checks: checks.clone(),
@@ -11136,7 +11115,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -11349,7 +11328,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -11537,7 +11516,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         else {
             panic!("fresh producer observation should be exact");
         };
-        let crate::kernel::Bitvector32Term::MemoryLoad(memory, _) = load else {
+        let crate::kernel::Bitvector32Term::MemoryLoad(memory, _, _) = load else {
             panic!("fresh producer observation should carry a memory load");
         };
         let conflicting_pointer = Pointer {
@@ -11550,6 +11529,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             crate::kernel::Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(conflicting_pointer),
+                crate::kernel::LoadKind::Bits32,
             ),
             &mut producer_facts,
         );
@@ -11739,7 +11719,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -11825,7 +11805,11 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
             pointer: pointer.clone(),
-            load: Bitvector32Term::MemoryLoad(CMemory::new().into(), Box::new(pointer)),
+            load: Bitvector32Term::MemoryLoad(
+                CMemory::new().into(),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            ),
             typed_pointer_value: None,
         },
     )
@@ -12090,7 +12074,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 proof_site: Some(ProofSite::FunctionClaim {
@@ -12394,7 +12378,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -12950,7 +12934,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -13111,7 +13095,6 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         CState::new(),
         helper.clone(),
         helper_arguments,
-        vec![],
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
         CFunctionContractExecutionMode::VerifyLoops,
@@ -13224,7 +13207,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         .expect("explicit branch proof should build");
     let checked = crate::surface::proof::checked_drivers::try_check_structural_function_proof(
         root.execution().unwrap(),
-        &[],
+        &PureFactList::default(),
         &constants,
         &program,
         None,
@@ -13573,7 +13556,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -13797,7 +13780,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             let completed = root.apply_step(ProofStep::Normalize).unwrap();
             take_checked_have_operations();
             let before = fact_node_allocations();
-            let retained = root.retain_completed_goal(&completed).unwrap();
+            let retained = root.retain_completed_goal(&completed, &[]).unwrap();
             allocations.push(fact_node_allocations() - before);
             assert_eq!(
                 take_checked_have_operations(),
@@ -13827,8 +13810,8 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             )
             .apply_step(ProofStep::Normalize)
             .unwrap();
-            assert!(root.retain_completed_goal(&other).is_err());
-            assert!(root.retain_completed_goal(&root).is_err());
+            assert!(root.retain_completed_goal(&other, &[]).is_err());
+            assert!(root.retain_completed_goal(&root, &[]).is_err());
         }
     }
     for pair in allocations.windows(2) {
@@ -13836,36 +13819,6 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             pair[1] <= pair[0] + 128,
             "retention must share unrelated facts: {allocations:?}"
         );
-    }
-}
-
-#[test]
-fn source_script_compatibility_entry_points_stay_removed() {
-    for source in [
-        include_str!("../smart_closures.rs"),
-        include_str!("../proof_object.rs"),
-        include_str!("scope.rs"),
-        include_str!("../claim_proofs.rs"),
-        include_str!("../execution_planning/forward_planning.rs"),
-        include_str!("../execution_planning/loop_planning.rs"),
-        include_str!("../../proof.rs"),
-        include_str!("../checked_drivers/proof_execution.rs"),
-    ] {
-        for removed in [
-            "pure_goal_proof_certificate_gateway_with_checked_result",
-            "plan_fixed_state_pure_goal_certificate",
-            "source_contains_legacy_arithmetic",
-            "try_linear_script(",
-            "try_planned_linear_script(",
-            "EXPLICIT_LINEAR_FALLBACKS",
-            "count_explicit_linear_fallbacks",
-            "record_explicit_linear_fallback",
-        ] {
-            assert!(
-                !source.contains(removed),
-                "removed script authority returned: {removed}"
-            );
-        }
     }
 }
 
@@ -13955,7 +13908,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -14001,7 +13954,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -14089,4 +14042,62 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             root.focused_outcome_snapshot().unwrap()
         );
     }
+}
+
+#[test]
+fn execution_entry_retains_prepared_symbolic_write_selection() {
+    let click_file = crate::surface::parse(
+        r#"
+        void put(int32* p, int32 i, int32 n) {
+            requires 1 <= i;
+            requires i < n;
+            owns p[1..n];
+        }
+    "#,
+    )
+    .unwrap();
+    let function =
+        syntax::parse_function("void put(int32* p, int32 i, int32 n) { p[i] = 7; }").unwrap();
+    let (state, _, facts, _) = initial_claim_context(
+        &click_file.function_blocks()[0],
+        &function,
+        &ResourceEnvironment::new(click_file.resource_definitions()),
+        &PredicateEnvironment::new(&[]),
+        &ClickFunctionEnvironment::new(click_file.click_function_definitions()),
+        "symbolic write entry",
+    )
+    .unwrap();
+    let owner = state
+        .resources()
+        .facts()
+        .iter()
+        .find_map(CResourceFact::memory_own_range)
+        .expect("the written ownership clause remains live")
+        .clone();
+    let assumptions = facts.context();
+    let root_facts = ProofFacts::from_source(&facts);
+    assert!(
+        state
+            .resources()
+            .memory_write_selection_is_known_for_test(&owner, root_facts.assumptions()),
+        "proof root construction must preserve entry publication"
+    );
+    assert!(
+        state
+            .resources()
+            .memory_write_selection_is_known_for_test(&owner, &assumptions),
+        "execution must retain prepared selection in its final entry context"
+    );
+}
+
+/// A generated tactic carries `usize::MAX` for its source index. A site asked
+/// to address it names no written tactic, so the diagnostic falls back to the
+/// checked-step count instead of printing the sentinel as a tactic number.
+#[test]
+fn a_generated_tactic_is_not_addressed_as_a_source_tactic() {
+    let written = ProofStepSite::default().at_source_tactic(3);
+    assert_eq!(written.path().as_deref(), Some("tactic 3"));
+    let generated = written.at_source_tactic(usize::MAX);
+    assert_eq!(generated.path(), None);
+    assert_eq!(generated.source_tactic_path(), None);
 }

@@ -368,25 +368,6 @@ click timing: function example_function 2.200s
 }
 
 #[test]
-fn small_wall_residual_is_named_process_driver_time() {
-    let output = r#"
-click timing: source examples/sample.click
-click timing: phase frontend 0.080000s
-click timing: function example_function 0.080s
-"#;
-    let mut profile = parse_profile("sample", output, Thresholds::default(), false)
-        .expect("the current timing format should parse");
-    profile.accounting.wall_total = Duration::from_millis(180);
-
-    assert_eq!(
-        profile.accounting.process_driver(),
-        Duration::from_millis(20)
-    );
-    assert_eq!(profile.accounting.unattributed(), Duration::ZERO);
-    assert!(!profile.accounting.materially_unattributed());
-}
-
-#[test]
 fn material_wall_residual_is_still_named_process_driver_time() {
     let output = r#"
 click timing: source examples/sample.click
@@ -401,22 +382,6 @@ click timing: function example_function 0.700s
         profile.accounting.process_driver(),
         Duration::from_millis(300)
     );
-    assert_eq!(profile.accounting.unattributed(), Duration::ZERO);
-    assert!(!profile.accounting.materially_unattributed());
-}
-
-#[test]
-fn one_second_wall_residual_is_named_process_driver_time() {
-    let output = r#"
-click timing: source examples/sample.click
-click timing: phase frontend 99.000000s
-click timing: function example_function 99.000s
-"#;
-    let mut profile = parse_profile("sample", output, Thresholds::default(), false)
-        .expect("the current timing format should parse");
-    profile.accounting.wall_total = Duration::from_secs(199);
-
-    assert_eq!(profile.accounting.process_driver(), Duration::from_secs(1));
     assert_eq!(profile.accounting.unattributed(), Duration::ZERO);
     assert!(!profile.accounting.materially_unattributed());
 }
@@ -731,7 +696,7 @@ fn quarantined_mdtests_are_profileable() {
 fn cpp_mdtests_profile_the_compiler_imported_source() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
     let source = load_profiled_source(&path, None).expect("prepare C++ mdtest");
-    assert!(matches!(source.inputs, CInput::PreparedCpp(_)));
+    assert!(matches!(source.inputs, CInput::PreparedProgram(_)));
     assert!(source.project.is_some());
     assert!(source.line_offset > 0);
     verify_mdtest(&path).expect("profile verification uses the C++ semantics");

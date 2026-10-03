@@ -58,7 +58,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     // A bare `step()` executes in the whole proof context: prerequisites
     // are proved from it, and nothing is transported per step because the
     // kernel keeps cell names it can prove unwritten from that context.
-    let tactic_name = "step()";
+    let tactic_name = proof_context.step_tactic_name;
     let loop_step_policy = LoopStepPolicy::EnterBody;
     // Resuming from a completed branch region reaches this statement without
     // recording its entry snapshot. Later facts may still name this boundary.

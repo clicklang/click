@@ -1496,15 +1496,19 @@ impl<'a> TermRewrite<'a> {
             CExpression::Cast {
                 expression,
                 target_type,
+                integer_mode,
                 pointee_struct,
                 pointee_volatile,
                 pointee_constant,
+                explicit_qualification,
             } => CExpression::Cast {
                 expression: Box::new(self.rewrite_c_expression(expression)?),
                 target_type: *target_type,
+                integer_mode: *integer_mode,
                 pointee_struct: pointee_struct.clone(),
                 pointee_volatile: *pointee_volatile,
                 pointee_constant: *pointee_constant,
+                explicit_qualification: *explicit_qualification,
             },
             CExpression::Conditional {
                 condition,
@@ -1877,7 +1881,11 @@ mod tests {
         // The visible C term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be
         // reserved before a C binder is freshened.
-        let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let source = Variable(100);
         let binder = Variable(99);
         let free_integer = Variable(0);

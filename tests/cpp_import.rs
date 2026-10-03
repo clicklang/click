@@ -16,9 +16,10 @@ use click::languages::cpp::{
     refresh_import,
 };
 use click::surface::{
-    C0VerificationSession, VerifiedClaim, cpp_prepared_project_smart_tactic_source_sites,
-    cpp_prepared_project_tactic_source_position, expand_cpp_prepared_project_claim_source_by_label,
-    expand_cpp_prepared_project_tactic_source_at, verify_cpp_prepared_project,
+    C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
+    expand_program_prepared_project_tactic_source_at,
+    program_prepared_project_smart_tactic_source_sites,
+    program_prepared_project_tactic_source_position, verify_program_prepared_project,
 };
 
 const SOURCE: &str = include_str!("../examples/basic-cpp/increment.cpp");
@@ -508,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 20);
+    assert_eq!(prepared.export().schema, 36);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -819,11 +820,11 @@ fn included_header_definition_is_selected_locked_and_validated() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the selected header function through the ordinary workflow");
 
     let stale = Project::header_function();
@@ -885,11 +886,11 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the normal-only function through the ordinary workflow");
 
     let graph = Project::direct_call();
@@ -938,13 +939,13 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("a source throw must establish the declared exceptional outcome");
 
     let missing_signature = "verifying \"increment.cpp\";\n\
         int32 increment(int32* value) { ensures result == 0; }\n";
     let missing_signature_project = read_click_project(&sidecar, missing_signature).unwrap();
-    verify_cpp_prepared_project(&missing_signature_project, &prepared)
+    verify_program_prepared_project(&missing_signature_project, &prepared)
         .expect_err("a source throw cannot cross an undeclared exceptional boundary");
 }
 
@@ -980,20 +981,20 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, sidecar_source).unwrap();
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the caller must preserve the helper's exceptional exit");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.exceptional_ensures_0",
     )
     .expect("expand the caller's exceptional proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded exceptional proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&rewritten, &prepared)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded scalar exception environment");
-    let site = cpp_prepared_project_tactic_source_position(
+    let site = program_prepared_project_tactic_source_position(
         &rewritten,
         &prepared,
         "caller.exceptional_ensures_0",
@@ -1014,7 +1015,7 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
         "exceptional ensures exception == 8;",
     );
     let false_project = read_click_project(&sidecar, &false_caller_claim).unwrap();
-    verify_cpp_prepared_project(&false_project, &prepared)
+    verify_program_prepared_project(&false_project, &prepared)
         .expect_err("the caller cannot claim a different exception payload");
 }
 
@@ -1074,9 +1075,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.ensures_0",
@@ -1100,13 +1101,17 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         "distinct exact path closers should retain returned/threw certificates: {expanded}"
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded handler proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&rewritten, &prepared)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded handler environment");
-    let site =
-        cpp_prepared_project_tactic_source_position(&rewritten, &prepared, "caller.ensures_0", 0)
-            .expect("locate the expanded handler proof");
+    let site = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &prepared,
+        "caller.ensures_0",
+        0,
+    )
+    .expect("locate the expanded handler proof");
     session
         .verify_at_project(&expanded, site.line, site.column)
         .expect("retained audit must accept the handler proof");
@@ -1121,7 +1126,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     );
     assert_ne!(false_claim, sidecar_source);
     let false_project = read_click_project(&sidecar, &false_claim).unwrap();
-    verify_cpp_prepared_project(&false_project, &prepared)
+    verify_program_prepared_project(&false_project, &prepared)
         .expect_err("the handler cannot prove a false result claim");
 }
 
@@ -1210,25 +1215,124 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the mixed conditional cleanup join should verify");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.contract",
     )
     .expect("expand the mixed outcome proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded mixed outcome proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &prepared)
-        .expect("retain the mixed outcome verification environment");
-    let site =
-        cpp_prepared_project_tactic_source_position(&rewritten, &prepared, "caller.contract", 0)
-            .expect("locate the rewritten branch proof");
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
+            .expect("retain the mixed outcome verification environment");
+    let site = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &prepared,
+        "caller.contract",
+        0,
+    )
+    .expect("locate the rewritten branch proof");
     session
         .verify_at_project(&expanded, site.line, site.column)
         .expect("retained audit must accept the expanded mixed outcome proof");
+}
+
+#[test]
+fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() {
+    for size in [4usize, 16, 64] {
+        let parameters = (0..size)
+            .map(|index| format!("int unused{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let locals = (0..size)
+            .map(|index| format!("int local{index} = {index};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let calls = "read(value);\n".repeat(size);
+        let cpp = format!(
+            "int read(int& value) noexcept {{ return value; }}\nint many({parameters}, int& value) noexcept {{ {locals} {calls} return value; }}"
+        );
+        let project = Project::with_fixture("places.cpp", "many", &cpp);
+        refresh_import(&project.config())
+            .expect("export growing caller parameters and local declarations");
+        let import = load_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let parameters = (0..size)
+            .map(|index| format!("int32 unused{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            r#"verifying "places.cpp";
+int32 read(int32* value) {{ owns value[0..1]; ensures result == old(value[0]); ensures value[0] == old(value[0]); }} by {{ execute(); simp(); }}
+int32 many({parameters}, int32* value) {{ owns value[0..1]; requires value[0] == 7; ensures result == 7; ensures value[0] == 7; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        // Refuse the false result with a simple closer, rather than spending
+        // the smart search budget trying to synthesize an impossible proof.
+        let hostile = source
+            .replace("ensures result == 7;", "ensures result == 8;")
+            .replace(
+                "ensures value[0] == 7; } by { execute(); simp(); }",
+                "ensures value[0] == 7; } by { execute(); assumption(); }",
+            );
+        let sidecar = project.directory.join("bad.click");
+        fs::write(&sidecar, &hostile).unwrap();
+        let parsed = read_click_project(&sidecar, &hostile).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import)
+            .expect_err("indexed reference calls must preserve the loaded value");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn catch_binding_names_do_not_escape_the_handler_scope() {
+    let cpp = "int helper(bool fail) { if (fail) { throw 7; } return 7; }
+        int caller(bool fail) { try { helper(fail); } catch (int caught) { return caught; }
+        int caught = 7; return caught; }";
+    let project = Project::with_fixture("caller.cpp", "caller", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("caller", "caller.cpp", true, "scalar_int32");
+    refresh_import(&project.config())
+        .expect("a later local may reuse a finished catch binding name");
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "caller.cpp";
+int32 helper(bool fail) throws int32 { ensures result == 7; exceptional ensures exception == 7; }
+int32 caller(bool fail) { ensures result == 7; }
+"#;
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&parsed, &import, "caller.ensures_0")
+            .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "caller.ensures_0", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let hostile = source.replace(
+        "int32 caller(bool fail) { ensures result == 7; }",
+        "int32 caller(bool fail) { ensures result == 8; }",
+    );
+    let hostile = read_click_project(&sidecar, &hostile).unwrap();
+    verify_program_prepared_project(&hostile, &import)
+        .expect_err("neither the local nor the caught payload is eight");
 }
 
 #[test]
@@ -1317,7 +1421,7 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("normal and caught exceptional paths must restore the original value");
 }
 
@@ -1431,7 +1535,7 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
 
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the unmodified conditional cleanup proof must pass");
 
     let cases = [
@@ -1496,7 +1600,7 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         );
         let hostile_project = read_click_project(&sidecar, &hostile_source).unwrap();
         assert!(
-            verify_cpp_prepared_project(&hostile_project, &prepared).is_err(),
+            verify_program_prepared_project(&hostile_project, &prepared).is_err(),
             "{expectation}: {name} unexpectedly verified"
         );
     }
@@ -1642,7 +1746,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1696,12 +1800,12 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     assert!(lowered.kernel_function().parameters()[0].pointee_is_constant());
 
     let click_project = read_click_project(&sidecar, INT64_PREDICATE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the signed-64 comparison through the offline artifact");
 
     let false_source = INT64_PREDICATE_SIDECAR.replace(">= 0i64", "> 0i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1710,15 +1814,15 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
 }
 
 #[test]
-fn signed_int64_predicate_rejects_broader_comparisons_and_disjunction() {
+fn signed_int64_predicate_rejects_inequality_and_disjunction() {
     let less_than = Project::int64_predicate();
     fs::write(
         less_than.source(),
-        INT64_PREDICATE_SOURCE.replace("nValue >= 0", "nValue < 0"),
+        INT64_PREDICATE_SOURCE.replace("nValue >= 0", "nValue != 0"),
     )
     .unwrap();
     let error = refresh_import(&less_than.config()).unwrap_err();
-    assert!(error.contains("signed 64-bit <= and >="), "{error}");
+    assert!(error.contains("unsupported binary operator"), "{error}");
 
     let disjunction = Project::int64_predicate();
     fs::write(
@@ -1757,7 +1861,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1809,12 +1913,12 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     let lowered = lower_import(&import).expect("lower the constexpr predicate directly");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_COIN_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the constexpr comparison through the offline artifact");
 
     let false_source = CONSTEXPR_COIN_SIDECAR.replace(">= 100000000i64", "> 100000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1868,7 +1972,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1906,13 +2010,13 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     let lowered = lower_import(&import).expect("lower the dependent constexpr predicate");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the dependent constexpr comparison offline");
 
     let false_source =
         CONSTEXPR_MAX_MONEY_SIDECAR.replace(">= 2100000000000000i64", "> 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1929,7 +2033,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1952,13 +2056,13 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     let lowered = lower_import(&import).expect("lower signed-64 less-equal directly");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_LE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive MAX_MONEY upper bound offline");
 
     let false_source =
         CONSTEXPR_MAX_MONEY_LE_SIDECAR.replace("<= 2100000000000000i64", "< 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1975,7 +2079,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2025,13 +2129,13 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
             ..
         }) if matches!(expression.as_ref(), CExpression::And(_, _))));
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_RANGE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive range contract offline");
 
     let false_source = CONSTEXPR_MAX_MONEY_RANGE_SIDECAR
         .replace("<= 2100000000000000i64", "< 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -2040,7 +2144,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
 }
 
 #[test]
-fn built_in_cpp_logical_and_rejects_non_boolean_operand() {
+fn built_in_cpp_logical_and_accepts_checked_integer_to_bool_conversion() {
     let project = Project::constexpr_max_money_range();
     fs::write(
         project.source(),
@@ -2050,12 +2154,12 @@ fn built_in_cpp_logical_and_rejects_non_boolean_operand() {
         ),
     )
     .unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("unsupported implicit conversion"), "{error}");
+    refresh_import(&project.config()).unwrap();
+    lower_import(&load_import(&project.config()).unwrap()).unwrap();
 }
 
 #[test]
-fn constexpr_max_money_rejects_broader_constant_and_runtime_arithmetic() {
+fn constexpr_max_money_accepts_deeper_constant_graphs_and_rejects_new_initializer_semantics() {
     let addition = Project::constexpr_max_money();
     fs::write(
         addition.source(),
@@ -2076,8 +2180,10 @@ fn constexpr_max_money_rejects_broader_constant_and_runtime_arithmetic() {
         )
         .replace("value >= MAX_MONEY", "value >= TOO_MUCH");
     fs::write(third.source(), source).unwrap();
-    let error = refresh_import(&third.config()).unwrap_err();
-    assert!(error.contains("at most two reachable constants"), "{error}");
+    refresh_import(&third.config()).unwrap();
+    let import = load_import(&third.config()).unwrap();
+    assert_eq!(import.export().constants.len(), 3);
+    lower_import(&import).unwrap();
 
     let runtime_multiply = Project::constexpr_max_money();
     fs::write(
@@ -2085,11 +2191,8 @@ fn constexpr_max_money_rejects_broader_constant_and_runtime_arithmetic() {
         CONSTEXPR_MAX_MONEY_SOURCE.replace("value >= MAX_MONEY", "value >= MAX_MONEY * 1"),
     )
     .unwrap();
-    let error = refresh_import(&runtime_multiply.config()).unwrap_err();
-    assert!(
-        error.contains("multiplication is supported only in a checked constant initializer"),
-        "{error}"
-    );
+    refresh_import(&runtime_multiply.config()).unwrap();
+    lower_import(&load_import(&runtime_multiply.config()).unwrap()).unwrap();
 }
 
 #[test]
@@ -2144,11 +2247,8 @@ fn exception_enabled_profile_rejects_exception_and_object_semantics() {
     object.write_exception_enabled_compilation_database();
     object.write_config_with_profile("increment", "increment.cpp", true);
     let error = refresh_import(&object.config()).unwrap_err();
-    assert!(error.contains("increment.cpp:1"), "{error}");
-    assert!(
-        error.contains("limited to an object-free normal-only graph"),
-        "{error}"
-    );
+    assert!(error.contains("increment.cpp:3"), "{error}");
+    assert!(error.contains("borrowed records only"), "{error}");
     assert!(!object.artifact().exists());
 }
 
@@ -2162,11 +2262,11 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify the directly lowered C++ function");
     assert_eq!(
         verified
@@ -2228,11 +2328,11 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify both C++ return paths against one contract");
     assert_eq!(
         verified
@@ -2246,7 +2346,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         "both return paths certify returned ownership and both postconditions"
     );
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2254,10 +2355,14 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "choose.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "choose.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2265,12 +2370,12 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     )
     .expect("expand the branch execution into a checkable source proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded branch proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the original branch verification environment");
     let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "choose.contract", 0)
+        program_prepared_project_tactic_source_position(&rewritten, &import, "choose.contract", 0)
             .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
@@ -2320,11 +2425,11 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("one owned cell should authorize an aliased mutable write and const read");
     assert_eq!(
         verified
@@ -2338,7 +2443,8 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         "the proof returns ownership and checks both postconditions without an inferred view"
     );
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2346,14 +2452,14 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "write_then_read.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2361,11 +2467,11 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     )
     .expect("expand the aliased reference execution into a checkable proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded const-reference proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the const-reference verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "write_then_read.contract",
@@ -2380,7 +2486,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         CONST_REFERENCE_SIDECAR.replace("const int32* readable", "int32* readable");
     fs::write(&sidecar, &mutable_signature).unwrap();
     let mismatched_project = read_click_project(&sidecar, &mutable_signature).unwrap();
-    let error = verify_cpp_prepared_project(&mismatched_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&mismatched_project, &import).unwrap_err();
     assert!(
         error
             .message()
@@ -2601,7 +2707,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2626,11 +2732,12 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify the helper and caller through shared modular call rules");
     assert_eq!(verified.len(), 6);
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2638,14 +2745,14 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
             .collect::<Vec<_>>(),
         vec!["execute", "simp", "execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "call_set_seven.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2653,11 +2760,11 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     )
     .expect("expand the caller's modular execution proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded modular C++ proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the modular C++ verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "call_set_seven.contract",
@@ -2678,7 +2785,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2743,18 +2850,18 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify local initialization through the shared call-result rule");
     assert_eq!(verified.len(), 5);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "relay_value.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2762,13 +2869,17 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     )
     .expect("expand the scalar-local caller proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded scalar-local proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the scalar-local verification environment");
-    let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "relay_value.contract", 0)
-            .unwrap();
+    let next = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        "relay_value.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
         .expect("retained audit session must accept the expanded local proof");
@@ -2779,7 +2890,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false claim about the captured call result must be rejected");
 }
 
@@ -2792,7 +2903,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2884,31 +2995,31 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify pointer load/store and reference address through shared rules");
     assert_eq!(verified.len(), 6);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "bump_reference.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the pointer caller proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded pointer proof must reverify");
 
     let missing_ownership = POINTER_SIDECAR.replacen("    owns pointer[0..1];\n", "", 1);
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_ownership_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_ownership_project, &import)
+    verify_program_prepared_project(&missing_ownership_project, &import)
         .expect_err("dereferencing without memory authority must not verify");
 
     let false_contract = POINTER_SIDECAR.replace(
@@ -2917,7 +3028,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false pointer-mediated memory effect must be rejected");
 }
 
@@ -2930,7 +3041,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -2958,7 +3069,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     assert!(matches!(
         &function.parameters[0].value_type,
         CppType::LvalueReference { pointee }
-            if matches!(pointee.as_ref(), CppType::Record { name, declaration_id }
+            if matches!(pointee.as_ref(), CppType::Record { name, declaration_id, .. }
                 if name == "RestoreState" && declaration_id == &record.declaration_id)
     ));
     assert!(matches!(
@@ -2988,38 +3099,38 @@ fn record_reference_member_loads_and_stores_verify_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify field access and the loaded pointer through shared memory rules");
     assert_eq!(verified.len(), 7);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "stage_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the record execution proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded record proof must reverify");
 
     let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns &state->pointer;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("writing a field without its memory authority must not verify");
 
     let false_contract =
         STRUCT_MEMBER_SIDECAR.replace("ensures value[0] == 7;", "ensures value[0] == 8;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false pointer-mediated member effect must be rejected");
 }
 
@@ -3032,7 +3143,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3064,7 +3175,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     };
     assert!(matches!(
         &local.value_type,
-        CppType::Record { declaration_id, name }
+        CppType::Record { declaration_id, name, .. }
             if declaration_id == &record.declaration_id && name == "RestoreState"
     ));
     assert!(matches!(
@@ -3088,38 +3199,38 @@ fn brace_initialized_local_aggregate_verifies_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify local aggregate initialization and later field reads");
     assert_eq!(verified.len(), 3);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "stage_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the local aggregate execution proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded local aggregate proof must reverify");
 
     let missing_ownership = LOCAL_AGGREGATE_SIDECAR.replace("    owns value[0..1];\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("the initializer and later pointer write require input memory authority");
 
     let false_contract =
         LOCAL_AGGREGATE_SIDECAR.replace("ensures result == old(value[0]);", "ensures result == 7;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false claim about the saved initialized field must be rejected");
 }
 
@@ -3132,7 +3243,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3226,26 +3337,30 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the constructor body and its implicit local invocation modularly");
 
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "capture.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "capture.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the caller proof across construction");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded constructor caller proof must reverify");
 
     let missing_field_ownership = CONSTRUCTOR_LOCAL_SIDECAR.replace("    owns self->saved;\n", "");
     fs::write(&sidecar, &missing_field_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_field_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("constructor member initialization requires field authority");
 
     let false_constructor_contract = CONSTRUCTOR_LOCAL_SIDECAR.replace(
@@ -3254,7 +3369,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     );
     fs::write(&sidecar, &false_constructor_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_constructor_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false constructor field effect must be rejected");
 }
 
@@ -3267,7 +3382,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3362,20 +3477,24 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify captured result and restored caller memory");
 
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "capture.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "capture.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across terminal cleanup");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
@@ -3384,7 +3503,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_destructor).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("implicit cleanup requires a checked destructor contract");
 
     let false_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
@@ -3393,14 +3512,14 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     fs::write(&sidecar, &false_destructor).unwrap();
     let false_project = read_click_project(&sidecar, &false_destructor).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false destructor restore effect must be rejected");
 
     let wrong_capture = TERMINAL_DESTRUCTOR_SIDECAR
         .replace("ensures result == 7;", "ensures result == old(value[0]);");
     fs::write(&sidecar, &wrong_capture).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_capture).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the return value must be captured before destruction");
 }
 
@@ -3413,7 +3532,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let destructor = import
         .export()
         .reachable_functions
@@ -3465,7 +3584,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify both captured results and both restored-memory paths");
     let ensure_indices = verified
         .iter()
@@ -3479,21 +3598,21 @@ fn every_return_after_construction_runs_the_checked_destructor() {
         "both caller return paths must certify ownership, the captured result, and restoration: {ensure_indices:?}"
     );
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "with_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both cleanup edges");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded early-return cleanup proof must reverify");
 
     let wrong_early_result = EARLY_RETURN_DESTRUCTOR_SIDECAR.replace(
@@ -3502,7 +3621,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     );
     fs::write(&sidecar, &wrong_early_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_early_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("cleanup must not overwrite the value captured by the early return");
 }
 
@@ -3550,16 +3669,16 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     );
 
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("the caller must receive 7 or 9 and still own an unchanged 41");
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "call_with_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -3567,11 +3686,11 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     )
     .expect("expand the caller's checked modular execution");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded RAII caller proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the caller's original verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "call_with_restore.contract",
@@ -3586,7 +3705,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         RESTORE_CALLER_SIDECAR.replace("ensures value[0] == 41;", "ensures value[0] == 42;");
     fs::write(&sidecar, &false_restoration).unwrap();
     let false_project = read_click_project(&sidecar, &false_restoration).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("the caller cannot claim a different post-call value");
 }
 
@@ -3599,7 +3718,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3650,40 +3769,46 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify both return values and reverse-order restoration");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "restore_twice.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both ordered cleanup lists");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded reverse-cleanup proof must reverify");
 
-    let rejected = Project::reverse_destructor_order();
+    let growing = Project::reverse_destructor_order();
     fs::write(
-        rejected.source(),
+        growing.source(),
         REVERSE_DESTRUCTOR_SOURCE.replace(
             "Restore second(&value);",
             "Restore second(&value);\n    Restore third(&value);",
         ),
     )
     .unwrap();
-    let error = refresh_import(&rejected.config()).unwrap_err();
-    assert!(error.contains("restore_twice.cpp"), "{error}");
-    assert!(
-        error.contains("exactly two destructible objects"),
-        "{error}"
+    refresh_import(&growing.config()).expect("a third destructible local is supported");
+    let growing_import = load_import(&growing.config()).unwrap();
+    assert_eq!(
+        destructor_object_order(
+            lower_import(&growing_import)
+                .unwrap()
+                .kernel_function()
+                .body(),
+            "Restore_destructor"
+        ),
+        ["third", "second", "first", "third", "second", "first"]
     );
 }
 
@@ -3696,7 +3821,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 20);
+    assert_eq!(import.export().schema, 36);
     let destructor = import
         .export()
         .reachable_functions
@@ -3755,24 +3880,24 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify early exit and normal exit from the nested scope");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "scoped_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both nested-scope cleanup edges");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded nested-scope proof must reverify");
 
     let wrong_fallthrough = NESTED_SCOPE_DESTRUCTOR_SIDECAR.replace(
@@ -3781,7 +3906,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     );
     fs::write(&sidecar, &wrong_fallthrough).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_fallthrough).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("fallthrough destruction must occur before the outer return");
 }
 
@@ -3882,24 +4007,24 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify independent cleanup and restoration in both sibling scopes");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "sibling_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both sibling lifetime boundaries");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded sibling-scope proof must reverify");
 
     let wrong_final = SIBLING_SCOPE_DESTRUCTORS_SIDECAR.replace(
@@ -3908,25 +4033,46 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     );
     fs::write(&sidecar, &wrong_final).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_final).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the second scope must clean up before the final outer return");
 
-    let rejected = Project::sibling_scope_destructors();
+    let growing = Project::sibling_scope_destructors();
     fs::write(
-        rejected.source(),
+        growing.source(),
         SIBLING_SCOPE_DESTRUCTORS_SOURCE.replace(
             "    return value;\n}",
             "    {\n        Restore guard(&value);\n        value = 13;\n    }\n    return value;\n}",
         ),
     )
     .unwrap();
-    let error = refresh_import(&rejected.config()).unwrap_err();
-    assert!(error.contains("sibling_restore.cpp"), "{error}");
-    assert!(
-        error.contains("at most two sibling cleanup scopes"),
-        "{error}"
+    refresh_import(&growing.config()).expect("a third sibling scope is supported");
+    let growing_import = load_import(&growing.config()).unwrap();
+    assert_eq!(
+        growing_import
+            .export()
+            .function
+            .body
+            .iter()
+            .filter(|statement| matches!(statement, CppStatement::Scope { .. }))
+            .count(),
+        3
     );
-    assert!(!rejected.artifact().exists());
+    let (contracts, _) = SIBLING_SCOPE_DESTRUCTORS_SIDECAR
+        .rsplit_once("} by {")
+        .unwrap();
+    let proof = r#"step(); step();
+    branch { then { execute(); simp(); } else { } }
+    step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    step(); step();
+    branch { then { execute(); simp(); } else { } }
+    step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    step(); step(); step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    execute(); simp();"#;
+    let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
+    check_return_call_sidecar(&growing, &growing_import, &source);
 }
 
 #[test]
@@ -4011,31 +4157,31 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify inner-then-outer cleanup and memory restoration");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "overlap_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across overlapping cleanup lifetimes");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded overlapping-cleanup proof must reverify");
 
     let wrong_result = OVERLAPPING_SCOPE_DESTRUCTORS_SIDECAR
         .replace("ensures result == 7;", "ensures result == 11;");
     fs::write(&sidecar, &wrong_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("inner fallthrough cleanup must restore 7 before the final return");
 }
 
@@ -4139,25 +4285,25 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import).expect(
+    verify_program_prepared_project(&click_project, &import).expect(
         "verify cleanup on constructed paths without calling the destructor on the skipped path",
     );
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "conditional_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across the conditional lifetime");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded conditional-construction proof must reverify");
 
     let wrong_skipped_result = CONDITIONAL_CONSTRUCTION_SIDECAR.replace(
@@ -4166,7 +4312,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     );
     fs::write(&sidecar, &wrong_skipped_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_skipped_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the skipped-construction path must return the untouched input");
 }
 
@@ -4290,13 +4436,6 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
-                "RestoreState state(&value);\n    return value;",
-                "return value;\n    RestoreState state(&value);\n    return value;",
-            ),
-            "returns before automatic object construction",
-        ),
-        (
-            TERMINAL_DESTRUCTOR_SOURCE.replace(
                 "return value;",
                 "int result = value;\n    return result;\n    value = 9;",
             ),
@@ -4334,7 +4473,7 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
         ),
         (
             "struct RestoreState { int* pointer; int saved; };\nint stage_restore(int& value) noexcept {\n    RestoreState first{&value, value};\n    RestoreState second{&value, value};\n    return value;\n}\n",
-            "one aggregate object or exactly two destructible objects",
+            "multiple aggregate objects only when all require destruction",
         ),
     ] {
         fs::write(project.source(), source).unwrap();
@@ -4376,7 +4515,10 @@ fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:2"), "{error}");
-    assert!(error.contains("must resolve to mutable int"), "{error}");
+    assert!(
+        error.contains("must resolve to mutable signed/unsigned 32/64-bit integer"),
+        "{error}"
+    );
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -4391,17 +4533,19 @@ fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
 }
 
 #[test]
-fn cpp_record_slice_rejects_methods_bitfields_inheritance_and_multiple_types() {
+fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
     let project = Project::struct_member();
 
     fs::write(
         project.source(),
-        "struct RestoreState {\n    int saved;\n    int read() noexcept { return saved; }\n};\n\nint stage_restore(RestoreState& state, int& value) noexcept {\n    return state.saved;\n}\n",
+        "struct RestoreState {\n    int saved;\n    int read() noexcept;\n};\n\nint stage_restore(RestoreState& state, int& value) noexcept {\n    state.read();\n    return state.saved;\n}\n",
     )
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("stage_restore.cpp:3"), "{error}");
-    assert!(error.contains("ordinary methods"), "{error}");
+    assert!(
+        error.contains("no reachable function definition"),
+        "{error}"
+    );
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -4429,10 +4573,19 @@ fn cpp_record_slice_rejects_methods_bitfields_inheritance_and_multiple_types() {
         "struct First { int value; };\nstruct Second { int value; };\n\nint stage_restore(First& first, Second& second) noexcept {\n    first.value = second.value;\n    return first.value;\n}\n",
     )
     .unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("stage_restore.cpp:2"), "{error}");
-    assert!(error.contains("exactly one record type"), "{error}");
-    assert!(!project.artifact().exists());
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 2);
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "stage_restore.cpp";
+int32 stage_restore(struct First* first, struct Second* second) {
+ owns first->value; owns second->value;
+ ensures result == old(second->value); ensures first->value == old(second->value);
+} by { execute(); simp(); }
+"#,
+    );
 }
 
 #[test]
@@ -4446,7 +4599,8 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -4454,14 +4608,14 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "increment.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -4470,13 +4624,17 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     .unwrap();
     assert_ne!(expanded, click_source);
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
+    verify_program_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
 
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("start the retained audit session");
-    let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "increment.contract", 0)
-            .unwrap();
+    let next = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        "increment.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
         .expect("retained session must verify the rewritten C++ proof");
@@ -4493,7 +4651,7 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, &wrong_source).unwrap();
     let click_project = read_click_project(&sidecar, &wrong_source).unwrap();
-    let error = verify_cpp_prepared_project(&click_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&click_project, &import).unwrap_err();
     assert!(
         error
             .message()
@@ -4505,7 +4663,7 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
     let wrong_signature = SIDECAR.replace("int32* value", "uint32* value");
     fs::write(&sidecar, &wrong_signature).unwrap();
     let click_project = read_click_project(&sidecar, &wrong_signature).unwrap();
-    let error = verify_cpp_prepared_project(&click_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&click_project, &import).unwrap_err();
     assert!(
         error
             .message()
@@ -4714,7 +4872,10 @@ fn cpp_scalar_locals_reject_uninitialized_reference_and_nested_declarations() {
     .unwrap();
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("relay_value.cpp:2"), "{error}");
-    assert!(error.contains("must resolve to mutable int"), "{error}");
+    assert!(
+        error.contains("must resolve to mutable signed/unsigned 32/64-bit integer"),
+        "{error}"
+    );
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -4796,4 +4957,3058 @@ fn exporter_path_is_not_needed_by_offline_load() {
     fs::remove_file(&project.exporter).unwrap();
     assert!(!Path::new(&project.exporter).exists());
     load_import(&project.config()).unwrap();
+}
+
+#[test]
+fn ordinary_value_methods_import_with_const_receiver_and_mixed_width_fields() {
+    let source = include_str!("fixtures/cpp-verification/value-methods/value_methods.cpp");
+    for (selected, sidecar_source) in [
+        (
+            "FeeFrac::IsEmpty",
+            include_str!("fixtures/cpp-verification/value-methods/is_empty.click"),
+        ),
+        (
+            "FeeFrac::operator+=",
+            include_str!("fixtures/cpp-verification/value-methods/add_disjoint.click"),
+        ),
+        (
+            "double_size",
+            include_str!("fixtures/cpp-verification/value-methods/add_self.click"),
+        ),
+        (
+            "double_size_direct",
+            include_str!("fixtures/cpp-verification/value-methods/add_self.click"),
+        ),
+    ] {
+        let project = Project::with_fixture("value_methods.cpp", selected, source);
+        refresh_import(&project.config()).expect("export the selected value method graph");
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().records[0].fields[0].size_bytes, 8);
+        assert_eq!(import.export().records[0].fields[1].size_bytes, 4);
+        lower_import(&import).expect("lower the value method graph");
+        let sidecar_source = if selected == "double_size_direct" {
+            sidecar_source.replace("double_size(", "double_size_direct(")
+        } else {
+            sidecar_source.to_owned()
+        };
+        let sidecar = project.directory.join("demo.click");
+        fs::write(&sidecar, &sidecar_source).unwrap();
+        let parsed = read_click_project(&sidecar, &sidecar_source).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+        let sites = program_prepared_project_smart_tactic_source_sites(&parsed, &import).unwrap();
+        let site = sites.first().unwrap();
+        let site = program_prepared_project_tactic_source_position(
+            &parsed,
+            &import,
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
+        let expanded = expand_program_prepared_project_tactic_source_at(
+            &parsed,
+            &import,
+            site.line,
+            site.column,
+        )
+        .unwrap();
+        let rewritten = parsed.with_entry_source(expanded.clone());
+        verify_program_prepared_project(&rewritten, &import)
+            .expect("expanded method proof reverifies");
+        let (session, _) =
+            C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+        let next_sites =
+            program_prepared_project_smart_tactic_source_sites(&rewritten, &import).unwrap();
+        let next = next_sites.first().unwrap();
+        let next = program_prepared_project_tactic_source_position(
+            &rewritten,
+            &import,
+            &next.claim_label,
+            next.source_index,
+        )
+        .unwrap();
+        session
+            .verify_at_project(&expanded, next.line, next.column)
+            .expect("audit session checks the expanded method proof");
+    }
+}
+
+#[test]
+fn value_methods_reject_false_claims_missing_authority_and_overflow() {
+    let source = include_str!("fixtures/cpp-verification/value-methods/value_methods.cpp");
+    let add = include_str!("fixtures/cpp-verification/value-methods/add_disjoint.click");
+    let empty = include_str!("fixtures/cpp-verification/value-methods/is_empty.click");
+    for (selector, proof, expected) in [
+        ("FeeFrac::IsEmpty", empty.replace("if old(self->size) == 0", "if old(self->size) == 1"), "unclosed goal"),
+        ("FeeFrac::operator+=", add.replace("ensures self->fee == old(self->fee) + old(other->fee);", "ensures self->fee == old(self->fee);"), "unclosed goal"),
+        ("FeeFrac::operator+=", add.replace("    owns self->fee;\n", ""), "missing resource fact"),
+        ("FeeFrac::operator+=", add.replace("    requires -4611686018427387904 <= self->fee;\n    requires self->fee <= 4611686018427387903;\n", ""), "overflow"),
+        ("FeeFrac::operator+=", add.replace("    requires -1073741824 <= self->size;\n    requires self->size <= 1073741823;\n", ""), "overflow"),
+    ] {
+        let project = Project::with_fixture("value_methods.cpp", selector, source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let sidecar = project.directory.join("demo.click");
+        fs::write(&sidecar, &proof).unwrap();
+        let parsed = read_click_project(&sidecar, &proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(error.message().contains(expected), "{selector}: {}", error.message());
+    }
+}
+
+const SIGNED_ARITHMETIC_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/signed-arithmetic/arithmetic.cpp");
+
+fn check_arithmetic_sidecar(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+) {
+    check_sidecar_tactic(project, import, source, None);
+}
+
+fn check_return_call_sidecar(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+) {
+    let prefix = format!("{}.", import.export().function.name);
+    check_sidecar_tactic(project, import, source, Some(&prefix));
+}
+
+fn check_sidecar_tactic(
+    project: &Project,
+    import: &click::languages::cpp::PreparedCppImport,
+    source: &str,
+    claim_prefix: Option<&str>,
+) {
+    let sidecar = project.directory.join("arithmetic.click");
+    let source = source.replace(
+        "-9223372036854775808i64",
+        "(-9223372036854775807i64 - 1i64)",
+    );
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    verify_program_prepared_project(&parsed, import)
+        .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+    let sites = program_prepared_project_smart_tactic_source_sites(&parsed, import).unwrap();
+    let first = match claim_prefix {
+        Some(prefix) => sites
+            .iter()
+            .find(|site| site.claim_label.starts_with(prefix))
+            .expect("selected caller tactic"),
+        None => sites.first().unwrap(),
+    };
+    let position = program_prepared_project_tactic_source_position(
+        &parsed,
+        import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
+        &parsed,
+        import,
+        position.line,
+        position.column,
+    )
+    .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, import)
+        .expect("expanded arithmetic certificate reverifies");
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
+    let sites = program_prepared_project_smart_tactic_source_sites(&rewritten, import).unwrap();
+    let first = match claim_prefix {
+        Some(prefix) => sites
+            .iter()
+            .find(|site| site.claim_label.starts_with(prefix))
+            .expect("selected caller tactic"),
+        None => sites.first().unwrap(),
+    };
+    let position = program_prepared_project_tactic_source_position(
+        &rewritten,
+        import,
+        &first.claim_label,
+        first.source_index,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .expect("retained audit accepts arithmetic certificate");
+}
+
+#[test]
+fn signed_scalar_arithmetic_verifies_through_the_shared_kernel_and_modular_calls() {
+    for (selector, source) in [
+        (
+            "quotient",
+            include_str!("fixtures/cpp-verification/signed-arithmetic/quotient.click"),
+        ),
+        (
+            "remainder",
+            include_str!("fixtures/cpp-verification/signed-arithmetic/remainder.click"),
+        ),
+        (
+            "multiply",
+            include_str!("fixtures/cpp-verification/signed-arithmetic/multiply.click"),
+        ),
+        (
+            "relay",
+            include_str!("fixtures/cpp-verification/signed-arithmetic/relay.click"),
+        ),
+    ] {
+        let project = Project::with_fixture("arithmetic.cpp", selector, SIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        lower_import(&import).unwrap();
+        check_arithmetic_sidecar(&project, &import, source);
+    }
+}
+
+#[test]
+fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
+    let project =
+        Project::with_fixture("arithmetic.cpp", "rounded_divide", SIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for (n, d, down, result) in [
+        (7i64, 3, true, 2i64),
+        (7, 3, false, 3),
+        (-7, 3, true, -3),
+        (-7, 3, false, -2),
+        (6, 3, true, 2),
+        (6, 3, false, 2),
+        (-6, 3, true, -2),
+        (-6, 3, false, -2),
+        (0, 1, true, 0),
+        (0, 1, false, 0),
+        (i64::MAX, 1, false, i64::MAX),
+        (i64::MIN, 1, true, i64::MIN),
+        (i64::MAX, i32::MAX, false, 4294967299),
+        (i64::MIN, i32::MAX, true, -4294967299),
+    ] {
+        let source = format!(
+            "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}} by {{ execute(); simp(); }}\n",
+            i32::from(down)
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
+    for (selector, parameters, preconditions, claim, expected) in [
+        (
+            "quotient",
+            "int64 n, int64 d",
+            "requires n == 7i64; requires d == 3i64;",
+            "result == 3i64",
+            "unclosed goal",
+        ),
+        (
+            "rounded_divide",
+            "int64 n, int32 d, bool round_down",
+            "requires n == -7i64; requires d == 3; requires round_down == 1;",
+            "result == -2i64",
+            "unclosed goal",
+        ),
+        (
+            "quotient",
+            "int64 n, int64 d",
+            "requires d == 0i64;",
+            "result == 0i64",
+            "division by zero",
+        ),
+        (
+            "remainder",
+            "int64 n, int64 d",
+            "requires d == 0i64;",
+            "result == 0i64",
+            "division by zero",
+        ),
+        (
+            "quotient",
+            "int64 n, int64 d",
+            "requires n == -9223372036854775808i64; requires d == -1i64;",
+            "result == 0i64",
+            "overflow",
+        ),
+        (
+            "remainder",
+            "int64 n, int64 d",
+            "requires n == -9223372036854775808i64; requires d == -1i64;",
+            "result == 0i64",
+            "overflow",
+        ),
+        (
+            "multiply",
+            "int64 a, int64 b",
+            "requires a == 2i64;",
+            "result == a * b",
+            "overflow",
+        ),
+        (
+            "negate",
+            "int64 n",
+            "requires n == -9223372036854775808i64;",
+            "result == 0i64",
+            "overflow",
+        ),
+    ] {
+        let project = Project::with_fixture("arithmetic.cpp", selector, SIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arithmetic.cpp\";\nint64 {selector}({parameters}) {{ {preconditions} ensures {claim}; }} by {{ execute(); simp(); }}\n"
+        );
+        let source = source.replace(
+            "-9223372036854775808i64",
+            "(-9223372036854775807i64 - 1i64)",
+        );
+        fs::write(project.directory.join("arithmetic.click"), &source).unwrap();
+        let parsed =
+            read_click_project(&project.directory.join("arithmetic.click"), &source).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains(expected),
+            "{selector}: {}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
+    for (selector, cpp_source, parameters, preconditions, result_type, expected) in [
+        (
+            "narrow",
+            SIGNED_ARITHMETIC_SOURCE,
+            "int64 n",
+            "requires n == 4294967297i64;",
+            "int32",
+            "1",
+        ),
+        (
+            "narrow",
+            SIGNED_ARITHMETIC_SOURCE,
+            "int64 n",
+            "requires n == 2147483648i64;",
+            "int32",
+            "-2147483648",
+        ),
+        (
+            "truth",
+            "bool truth(long n) noexcept { return bool(n); }",
+            "int64 n",
+            "requires n == 4294967296i64;",
+            "bool",
+            "1",
+        ),
+        (
+            "truth",
+            "bool truth(long n) noexcept { return bool(n); }",
+            "int64 n",
+            "requires n == 0i64;",
+            "bool",
+            "0",
+        ),
+        (
+            "negate",
+            SIGNED_ARITHMETIC_SOURCE,
+            "int64 n",
+            "requires n == 9223372036854775807i64;",
+            "int64",
+            "-9223372036854775807i64",
+        ),
+    ] {
+        let project = Project::with_fixture("arithmetic.cpp", selector, cpp_source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arithmetic.cpp\";\n{result_type} {selector}({parameters}) {{ {preconditions} ensures result == {expected}; }} by {{ execute(); simp(); }}\n"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+    let project = Project::with_fixture(
+        "arithmetic.cpp",
+        "relay",
+        "long quotient(long n, long d) noexcept { return n / d; }\nlong relay(long n, long d, int& untouched) noexcept { int captured = quotient(n, d); return captured; }",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("call capture requires matching"), "{error}");
+}
+
+#[test]
+fn subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_memory() {
+    let project = Project::with_fixture(
+        "subtract_methods.cpp",
+        "clear_value",
+        include_str!("fixtures/cpp-verification/subtract-methods/subtract_methods.cpp"),
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = include_str!("fixtures/cpp-verification/subtract-methods/clear_value.click");
+    check_arithmetic_sidecar(&project, &import, proof);
+    for (source, expected) in [
+        (
+            proof.replace("ensures self->fee == 0i64", "ensures self->fee == 1i64"),
+            "unclosed goal",
+        ),
+        (
+            proof.replace("    owns self->fee;\n", ""),
+            "missing resource fact",
+        ),
+    ] {
+        fs::write(project.directory.join("arithmetic.click"), &source).unwrap();
+        let parsed =
+            read_click_project(&project.directory.join("arithmetic.click"), &source).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(error.message().contains(expected), "{}", error.message());
+    }
+}
+
+#[test]
+fn arithmetic_profile_rejects_narrow_and_wide_integer_semantics() {
+    for source in [
+        "__int128 wide(__int128 n) noexcept { return n / 3; }",
+        "unsigned short wide(unsigned short n) noexcept { return n / 3; }",
+    ] {
+        let project = Project::with_fixture("arithmetic.cpp", "wide", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("signed/unsigned 32/64-bit integers"),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn signed_scalar_return_and_parameters_retain_locked_header_aliases() {
+    let mut project = Project::with_fixture(
+        "arithmetic.cpp",
+        "quotient",
+        "#include <cstdint>\nint64_t quotient(int64_t n, int64_t d) noexcept { return n / d; }",
+    );
+    fs::write(
+        project.directory.join("cstdint"),
+        CONSTEXPR_MAX_MONEY_CSTDINT,
+    )
+    .unwrap();
+    project.dependencies.push("cstdint".into());
+    project.write_exception_enabled_compilation_database_with_local_include();
+    project.write_config_with_profile("quotient", "arithmetic.cpp", true);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let CppType::Integer { source_aliases, .. } = &import.export().function.return_type else {
+        panic!("missing signed return type")
+    };
+    assert_eq!(source_aliases[0].name, "int64_t");
+    assert_eq!(source_aliases[0].span.file, "cstdint");
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        include_str!("fixtures/cpp-verification/signed-arithmetic/quotient.click"),
+    );
+}
+
+const UNSIGNED_ARITHMETIC_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/unsigned-arithmetic/arithmetic.cpp");
+
+#[test]
+fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
+    for (name, params, requires, result_type, expected) in [
+        ("maximum", "", "", "uint64", "18446744073709551615u64"),
+        (
+            "mixed",
+            "int64 a, uint32 b",
+            "requires a == -1i64; requires b == 1u32;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "mixed",
+            "int64 a, uint32 b",
+            "requires a == -1i64; requires b == 1u32;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "add64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 1u64;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "sub64",
+            "uint64 a, uint64 b",
+            "requires a == 0u64; requires b == 1u64;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "mul64",
+            "uint64 a, uint64 b",
+            "requires a == 9223372036854775808u64; requires b == 2u64;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "div64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 2u64;",
+            "uint64",
+            "9223372036854775807u64",
+        ),
+        (
+            "rem64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 2u64;",
+            "uint64",
+            "1u64",
+        ),
+        (
+            "neg64",
+            "uint64 a",
+            "requires a == 1u64;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "add32",
+            "uint32 a, uint32 b",
+            "requires a == 4294967295u32; requires b == 1u32;",
+            "uint32",
+            "0u32",
+        ),
+        (
+            "signed_to_unsigned",
+            "int32 a",
+            "requires a == -1;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "narrow_unsigned",
+            "int64 a",
+            "requires a == -1i64;",
+            "uint32",
+            "4294967295u32",
+        ),
+        (
+            "narrow_signed",
+            "uint64 a",
+            "requires a == 18446744073709551615u64;",
+            "int32",
+            "-1",
+        ),
+        (
+            "widen_unsigned",
+            "uint32 a",
+            "requires a == 4294967295u32;",
+            "int64",
+            "4294967295i64",
+        ),
+        (
+            "truth",
+            "uint64 a",
+            "requires a == 4294967296u64;",
+            "bool",
+            "1",
+        ),
+    ] {
+        let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"unsigned.cpp\";\n{result_type} {name}({params}) {{ {requires} ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() {
+    let project = Project::with_fixture("unsigned.cpp", "relay", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "unsigned.cpp";
+uint64 add64(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
+uint64 relay(uint64 a, uint64 b, int32* untouched) {
+ owns untouched[0..1];
+ ensures result == a + b;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+    let project = Project::with_fixture("unsigned.cpp", "add64", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "unsigned.cpp";
+uint64 add64(uint64 a, uint64 b) {
+ requires a == 18446744073709551615u64; requires b == 1u64;
+ ensures result == 1u64;
+} by { execute(); simp(); }
+"#;
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.message().contains("unclosed goal"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn unsigned_division_rejects_zero() {
+    for name in ["div64", "rem64"] {
+        let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"unsigned.cpp\"; uint64 {name}(uint64 a, uint64 b) {{ requires b == 0u64; ensures result == 0u64; }} by {{ execute(); simp(); }}"
+        );
+        fs::write(project.directory.join("bad.click"), &source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &source).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("division by zero"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn compiler_constants_retain_their_origin_and_reject_runtime_calls() {
+    let project = Project::with_fixture(
+        "constants.cpp",
+        "size",
+        "unsigned int size() noexcept { return sizeof(unsigned long) + sizeof(unsigned short); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(
+        fs::read_to_string(project.artifact())
+            .unwrap()
+            .contains("compiler_constant")
+    );
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"constants.cpp\"; uint32 size() { ensures result == 10u32; } by { execute(); simp(); }",
+    );
+    let project = Project::with_fixture(
+        "constants.cpp",
+        "size",
+        "unsigned long runtime() noexcept; unsigned long size() noexcept { return runtime(); }",
+    );
+    assert!(refresh_import(&project.config()).is_err());
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn unsigned_positive_divisor_contract_expands_and_reverifies() {
+    let project = Project::with_fixture("unsigned.cpp", "div64", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
+    // Exact fast-path expressions from EvaluateFee; return the unsigned
+    // intermediate; signed-result conversion is covered by signed-conversion fixtures.
+    let cpp = include_str!("fixtures/cpp-verification/unsigned-arithmetic/fee_fast_path.cpp");
+    for (name, up) in [("down", false), ("up", true)] {
+        let project = Project::with_fixture("fast_path.cpp", name, cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for (fee, at_size, size) in [
+            (0i64, 0i32, 1i32),
+            (7, 3, 5),
+            (8, 3, 6),
+            (8589934591, 2147483647, 2147483647),
+        ] {
+            let numerator = fee as u64 * at_size as u64;
+            let expected = if up {
+                numerator.div_ceil(size as u64)
+            } else {
+                numerator / size as u64
+            };
+            let proof = format!(
+                "verifying \"fast_path.cpp\"; uint64 {name}(int64 fee, int32 at_size, int32 size) {{ requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64; }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+    }
+}
+
+#[test]
+fn mixed_unsigned_return_preserves_signed_intermediate_overflow() {
+    let project = Project::with_fixture("unsigned.cpp", "mixed", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = "verifying \"unsigned.cpp\"; uint64 mixed(int64 a, uint32 b) { requires a == 9223372036854775807i64; requires b == 4294967295u32; ensures result == 0u64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn compiler_constant_calls_preserve_runtime_constant_evaluation_context() {
+    // A constexpr function can distinguish constant evaluation from a runtime
+    // call. The exporter must fold the latter meaning in an imported body.
+    let cpp = "namespace std { template<class T> struct numeric_limits { static constexpr unsigned long max() noexcept { return __builtin_is_constant_evaluated() ? 1UL : 2UL; } }; } unsigned long probe() noexcept { return std::numeric_limits<unsigned long>::max(); }";
+    let project = Project::with_fixture("constant_context.cpp", "probe", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 2u64; } by { execute(); simp(); }",
+    );
+    let bad = "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 1u64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), bad).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), bad).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+const TEMPLATE_INSTANCE_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/template-instances/instances.cpp");
+
+#[test]
+fn concrete_template_instances_have_distinct_identities_and_modular_contracts() {
+    let project = Project::with_fixture("instances.cpp", "both", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    assert_eq!(helpers.len(), 2);
+    assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
+    assert_eq!(helpers[0].name, "choose__bool_true");
+    assert_eq!(helpers[1].name, "choose__bool_false");
+    for (helper, chosen_then) in [(&helpers[0], true), (&helpers[1], false)] {
+        let CppStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+            span,
+        } = &helper.body[0]
+        else {
+            panic!("constexpr selection must retain its conditional span");
+        };
+        assert_eq!(span.file, "instances.cpp");
+        assert_eq!(span.start_line, 4);
+        assert_eq!(then_branch.is_empty(), !chosen_then);
+        assert_eq!(else_branch.is_empty(), chosen_then);
+        let CppExpression::IntegralCast { value, .. } = condition else {
+            panic!("typed Boolean selection")
+        };
+        assert!(matches!(
+            value.as_ref(),
+            CppExpression::CompilerConstant { .. }
+        ));
+    }
+    let sidecar = r#"verifying "instances.cpp";
+int32 choose__bool_true(int32 a, int32 b) {
+ requires a >= -1073741824; requires a <= 1073741823;
+ ensures result == a; ensures result >= -1073741824; ensures result <= 1073741823;
+} by { execute(); simp(); }
+int32 choose__bool_false(int32 a, int32 b) {
+ requires b >= -1073741824; requires b <= 1073741823;
+ ensures result == b; ensures result >= -1073741824; ensures result <= 1073741823;
+} by { execute(); simp(); }
+int32 both(int32 a, int32 b, int32* untouched) {
+ requires a >= -1073741824; requires a <= 1073741823;
+ requires b >= -1073741824; requires b <= 1073741823;
+ owns untouched[0..1];
+ ensures result == a + b;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace("ensures result == b;", "ensures result == a;");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn concrete_scalar_type_template_instances_preserve_width_and_signedness() {
+    let project = Project::with_fixture("instances.cpp", "widths", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().reachable_functions[0].name, "identity__int");
+    assert_eq!(
+        import.export().reachable_functions[1].name,
+        "identity__unsigned_long"
+    );
+    let sidecar = r#"verifying "instances.cpp";
+int32 identity__int(int32 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 widths(int32 a, uint64 b) {
+ requires a == 1; requires b == 18446744073709551615u64;
+ ensures result == 0u64;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+}
+
+#[test]
+fn concrete_member_template_instances_preserve_receiver_authority() {
+    let project = Project::with_fixture("instances.cpp", "member", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "instances.cpp";
+int64 Value_select__bool_true(const struct Value* self) {
+ views self->fee;
+ ensures result == self->fee;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+int64 Value_select__bool_false(const struct Value* self) {
+ views self->fee;
+ ensures result == 0i64;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+int64 member(const struct Value* value) {
+ owns value->fee;
+ ensures result == value->fee;
+ ensures value->fee == old(value->fee);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace(" owns value->fee;", "");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn constexpr_discards_only_the_compiler_selected_arm() {
+    let project = Project::with_fixture("instances.cpp", "accepted", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().reachable_functions.len(), 1);
+    let sidecar = r#"verifying "instances.cpp";
+int32 bounded__bool_true(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 accepted(int32 value) { ensures result == value; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let rejected = Project::with_fixture("instances.cpp", "rejected", TEMPLATE_INSTANCE_SOURCE);
+    let error = refresh_import(&rejected.config()).unwrap_err();
+    assert!(
+        error.contains("unsupported") || error.contains("reachable"),
+        "{error}"
+    );
+    assert!(!rejected.artifact().exists());
+}
+
+#[test]
+fn template_type_identity_does_not_merge_equal_width_cpp_types() {
+    let project = Project::with_fixture("instances.cpp", "exact_types", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    assert_eq!(helpers[0].name, "identity__unsigned_long");
+    assert_eq!(helpers[1].name, "identity__unsigned_long_long");
+    assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
+    let source = r#"verifying "instances.cpp";
+uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity__unsigned_long_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 exact_types(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn constexpr_conditions_use_constant_context_and_allow_absent_else() {
+    for (selected, params, expected) in [
+        ("constant_context", "", "1"),
+        ("discarded_without_else", "int32 value", "value"),
+    ] {
+        let project = Project::with_fixture("instances.cpp", selected, TEMPLATE_INSTANCE_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert!(import.export().reachable_functions.is_empty());
+        let source = format!(
+            "verifying \"instances.cpp\"; int32 {selected}({params}) {{ ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+    let project = Project::with_fixture("instances.cpp", "runtime_if", TEMPLATE_INSTANCE_SOURCE);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("no reachable function definition"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn substituted_boolean_template_arguments_are_typed_values() {
+    let project = Project::with_fixture("instances.cpp", "get_flag", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "instances.cpp";
+int32 flag__bool_true() { ensures result == 1; } by { execute(); simp(); }
+int32 get_flag() { ensures result == 1; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
+    for (selected, source, diagnostic) in [
+        (
+            "call",
+            "template<int N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
+            "template arguments require Boolean",
+        ),
+        (
+            "call",
+            "template<class T> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<int*>(value); return result; }",
+            "template type arguments require",
+        ),
+        (
+            "call",
+            "template<class... T> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<int>(value); return result; }",
+            "template arguments require Boolean",
+        ),
+        (
+            "f",
+            "template<bool B> int f(int value) noexcept { return value; }",
+            "dependent template pattern",
+        ),
+    ] {
+        let project = Project::with_fixture("unsupported.cpp", selected, source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
+    for (fee, at_size, size) in [
+        (0u64, 1u64, 3u64),
+        (7, 2, 3),
+        (8, 2, 4),
+        (8589934591, 2147483647, 2147483647),
+    ] {
+        for (selected, instance, expected) in [
+            ("fee_down", "fee_fast_path__bool_true", fee * at_size / size),
+            (
+                "fee_up",
+                "fee_fast_path__bool_false",
+                (fee * at_size).div_ceil(size),
+            ),
+        ] {
+            let project =
+                Project::with_fixture("instances.cpp", selected, TEMPLATE_INSTANCE_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let contract = format!(
+                "requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64;"
+            );
+            let source = format!(
+                "verifying \"instances.cpp\"; uint64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} uint64 {selected}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+            let hostile = source.replace(
+                &format!("result == {expected}u64"),
+                &format!("result == {}u64", expected + 1),
+            );
+            fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+            let parsed =
+                read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn class_template_instances_remain_explicitly_unsupported() {
+    let source = "template<class T> struct Box { int value; }; int call(const Box<int>& box) noexcept { return box.value; }";
+    let project = Project::with_fixture("unsupported.cpp", "call", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("class template instances are unsupported"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+const SIGNED_CONVERSION_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/signed-conversion/conversion.cpp");
+
+#[test]
+fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
+    for value in [
+        0u64,
+        1,
+        i32::MAX as u64,
+        u32::MAX as u64,
+        i64::MAX as u64,
+        1u64 << 63,
+        (1u64 << 63) + 1,
+        u64::MAX,
+    ] {
+        for selected in ["explicit_cast", "implicit_cast"] {
+            let project =
+                Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let expected = value as i64;
+            let source = format!(
+                "verifying \"conversion.cpp\"; int64 {selected}(uint64 value) {{ requires value == {value}u64; ensures result == {expected}i64; }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+            let hostile = source.replace(
+                &format!("result == {expected}i64"),
+                &format!("result == {}i64", expected.wrapping_add(1)),
+            );
+            fs::write(
+                project.directory.join("bad.click"),
+                hostile.replace(
+                    "-9223372036854775808i64",
+                    "(-9223372036854775807i64 - 1i64)",
+                ),
+            )
+            .unwrap();
+            let bad = fs::read_to_string(project.directory.join("bad.click")).unwrap();
+            let parsed = read_click_project(&project.directory.join("bad.click"), &bad).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn cpp20_signed_unsigned_round_trips_verify_without_input_bounds() {
+    for (selected, value_type) in [
+        ("signed_round_trip", "int64"),
+        ("unsigned_round_trip", "uint64"),
+    ] {
+        let project = Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"conversion.cpp\"; {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
+    let project = Project::with_fixture("conversion.cpp", "relay", SIGNED_CONVERSION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "conversion.cpp";
+int64 explicit_cast(uint64 value) { ensures ((uint64)result) == value; } by { execute(); simp(); }
+int64 relay(uint64 value, int32* untouched) {
+ owns untouched[0..1];
+ ensures ((uint64)result) == value;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn cpp20_conversion_keeps_following_signed_overflow_obligations() {
+    let project = Project::with_fixture("conversion.cpp", "arithmetic", SIGNED_CONVERSION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 18446744073709551615u64; ensures result == 0i64; } by { execute(); simp(); }",
+    );
+    let source = "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 9223372036854775807u64; ensures result == 0i64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
+    for (fee, at_size, size) in [
+        (0u64, 1u64, 3u64),
+        (7, 2, 3),
+        (8, 2, 4),
+        (8589934591, 2147483647, 2147483647),
+    ] {
+        for (selected, instance, expected) in [
+            ("fee_down", "fee__bool_true", (fee * at_size / size) as i64),
+            (
+                "fee_up",
+                "fee__bool_false",
+                (fee * at_size).div_ceil(size) as i64,
+            ),
+        ] {
+            let project =
+                Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let contract = format!(
+                "requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}i64;"
+            );
+            let caller_contract = contract.replace("requires fee ==", "requires fee_value ==");
+            let source = format!(
+                "verifying \"conversion.cpp\"; int64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int64 fee_value, int32 at_size, int32 size) {{ {caller_contract} }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+        }
+    }
+}
+
+const RETURN_CALL_SOURCE: &str = include_str!("fixtures/cpp-verification/return-call/relay.cpp");
+
+#[test]
+fn direct_return_calls_verify_modular_contracts_and_frame_memory() {
+    let project = Project::with_fixture("relay.cpp", "relay", RETURN_CALL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::ReturnCall {
+            callee,
+            arguments,
+            value_type,
+            cleanups,
+            span,
+        },
+    ] = import.export().function.body.as_slice()
+    else {
+        panic!("retain a typed direct return call");
+    };
+    assert_eq!(callee.name, "echo");
+    assert_eq!(
+        callee.declaration_id,
+        import.export().reachable_functions[0].declaration_id
+    );
+    assert_eq!(arguments.len(), 1);
+    assert!(matches!(
+        value_type,
+        CppType::Integer {
+            bits: 32,
+            signed: true,
+            ..
+        }
+    ));
+    assert!(cleanups.is_empty());
+    assert_eq!(span.file, "relay.cpp");
+    let source = r#"verifying "relay.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(int32 value, int32* untouched) {
+ owns untouched[0..1];
+ ensures result == value;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+}
+
+#[test]
+fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
+    for (selected, helper, value_type) in [
+        ("relay64", "echo64", "int64"),
+        ("relay_u32", "echo_u32", "uint32"),
+        ("relay_u64", "echo_u64", "uint64"),
+        ("relay_bool", "echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture("relay.cpp", selected, RETURN_CALL_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"relay.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+    let project = Project::with_fixture("relay.cpp", "choose", RETURN_CALL_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 choose(bool first, int32 value) {
+ ensures first != 0 implies result == value;
+ ensures first == 0 implies result == 7;
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+}
+
+#[test]
+fn direct_return_calls_keep_internal_capture_names_fresh_and_reject_false_results() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int echo(int value) noexcept { return value; } int relay(int __click_cpp_return_value) noexcept { return echo(__click_cpp_return_value); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(int32 __click_cpp_return_value) { ensures result == __click_cpp_return_value; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace("result == __click_cpp_return_value", "result == 7");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn direct_return_calls_preserve_fee_method_template_wrappers() {
+    for (selected, instance, expected) in [
+        (
+            "FeeFrac::EvaluateFeeDown",
+            "FeeFrac_EvaluateFee__bool_true",
+            4i64,
+        ),
+        (
+            "FeeFrac::EvaluateFeeUp",
+            "FeeFrac_EvaluateFee__bool_false",
+            5i64,
+        ),
+    ] {
+        let project = Project::with_fixture("relay.cpp", selected, RETURN_CALL_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof_name = selected.replace("::", "_");
+        let contract = format!(
+            "views self->fee; views self->size; requires self->fee == 7i64; requires self->size == 3; requires at_size == 2; ensures result == {expected}i64; ensures self->fee == old(self->fee); ensures self->size == old(self->size);"
+        );
+        let source = format!(
+            "verifying \"relay.cpp\"; int64 {instance}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }} int64 {proof_name}(const struct FeeFrac* self, int32 at_size) {{ {contract} }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace(
+            &format!("result == {expected}i64"),
+            &format!("result == {}i64", expected + 1),
+        );
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_graphs() {
+    for (source, diagnostic) in [
+        (
+            "int echo(int value) noexcept { return value; } long relay(int value) noexcept { return echo(value); }",
+            "unsupported expression",
+        ),
+        (
+            "int echo(int value) noexcept; int relay(int value) noexcept { return echo(value); }",
+            "no reachable function definition",
+        ),
+        (
+            "int relay(int value) noexcept { return relay(value); }",
+            "recursive C++ calls",
+        ),
+    ] {
+        let project = Project::with_fixture("relay.cpp", "relay", source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn direct_return_calls_capture_typed_results_before_destructors() {
+    let cpp = include_str!("fixtures/cpp-verification/return-call/cleanup.cpp");
+    for (selected, helper, value_type, helper_parameters, helper_contract, expected) in [
+        (
+            "capture",
+            "read",
+            "int32",
+            "int32* slot",
+            "owns slot[0..1]; ensures result == slot[0]; ensures slot[0] == old(slot[0]);",
+            "7",
+        ),
+        (
+            "capture_nested",
+            "read",
+            "int32",
+            "int32* slot",
+            "owns slot[0..1]; ensures result == slot[0]; ensures slot[0] == old(slot[0]);",
+            "7",
+        ),
+        (
+            "capture_wide",
+            "wide",
+            "int64",
+            "",
+            "ensures result == 4294967303i64;",
+            "4294967303i64",
+        ),
+        (
+            "capture_bool",
+            "is_seven",
+            "bool",
+            "int32* slot",
+            "owns slot[0..1]; requires slot[0] == 7; ensures result == 1; ensures slot[0] == old(slot[0]);",
+            "1",
+        ),
+        ("ordinary_wide", "", "int64", "", "", "4294967303i64"),
+        ("ordinary_bool", "", "bool", "", "", "1"),
+    ] {
+        let project = Project::with_fixture("cleanup.cpp", selected, cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let helper_definition = if helper.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "{value_type} {helper}({helper_parameters}) {{ {helper_contract} }} by {{ execute(); simp(); }}"
+            )
+        };
+        let nested_helper = if selected == "capture_nested" {
+            "int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }"
+        } else {
+            ""
+        };
+        let source = format!(
+            r#"verifying "cleanup.cpp";
+void Restore_constructor(struct Restore* self, int32* slot) {{
+ owns &self->p; owns self->saved; owns slot[0..1];
+ ensures self->p == slot; ensures self->saved == old(slot[0]); ensures slot[0] == 7;
+ ensures separate(memory(object(self)), memory(self->p[0..1]));
+}} by {{ execute(); simp(); }}
+void Restore_destructor(struct Restore* self) {{
+ requires separate(memory(object(self)), memory(self->p[0..1]));
+ owns &self->p; owns self->saved; owns self->p[0..1];
+ ensures self->p == old(self->p); ensures self->saved == old(self->saved);
+ ensures self->p[0] == old(self->saved);
+}} by {{ execute(); simp(); }}
+{helper_definition}
+{nested_helper}
+{value_type} {selected}(int32* value) {{
+ owns value[0..1]; ensures result == {expected}; ensures value[0] == old(value[0]);
+}} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace(
+            &format!("ensures result == {expected}; ensures value[0]"),
+            "ensures result == 0; ensures value[0]",
+        );
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cleanup() {
+    let cpp = include_str!("fixtures/cpp-verification/return-call/unwind.cpp");
+    for selected in ["caught", "caught_value"] {
+        let project = Project::with_fixture("unwind.cpp", selected, cpp);
+        project.write_exception_enabled_compilation_database();
+        project.write_config_with_exception_behavior(selected, "unwind.cpp", true, "scalar_int32");
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("return from a guarded try region"),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+
+    // Uncaught cleanup edges are checked structurally: resource-bearing
+    // exceptional contracts remain outside the existing surface slice.
+    let escaping = Project::with_fixture("unwind.cpp", "escaping", cpp);
+    escaping.write_exception_enabled_compilation_database();
+    escaping.write_config_with_exception_behavior("escaping", "unwind.cpp", true, "scalar_int32");
+    refresh_import(&escaping.config()).unwrap();
+    let lowered = lower_import(&load_import(&escaping.config()).unwrap()).unwrap();
+    fn has_unwind_cleanup(statement: &CStatement) -> bool {
+        match statement {
+            CStatement::TryCatchInt32 {
+                handler,
+                cleanup_unwind: true,
+                ..
+            } => {
+                matches!(handler.as_ref(), CStatement::Seq(cleanup, rethrow) if contains_call(cleanup, "Restore_destructor") && matches!(rethrow.as_ref(), CStatement::Throw(_)))
+            }
+            CStatement::Seq(first, second) => {
+                has_unwind_cleanup(first) || has_unwind_cleanup(second)
+            }
+            _ => false,
+        }
+    }
+    assert!(has_unwind_cleanup(lowered.kernel_function().body()));
+}
+
+#[test]
+fn direct_return_calls_propagate_object_free_exception_contracts() {
+    let project = Project::with_fixture(
+        "relay.cpp",
+        "relay",
+        "int helper(bool should_throw) { if (should_throw) { throw 7; } return 5; } int relay(bool should_throw) { return helper(should_throw); }",
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "relay.cpp";
+int32 helper(bool should_throw) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 relay(bool should_throw) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace(
+        "exceptional ensures exception == 7 by",
+        "exceptional ensures exception == 8 by",
+    );
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn nested_return_calls_verify_scalar_types_and_fresh_captures() {
+    let cpp = include_str!("fixtures/cpp-verification/return-call/nested.cpp");
+    for (selected, helper, value_type) in [
+        ("nested", "echo", "int32"),
+        ("nested64", "echo64", "int64"),
+        ("nested_u32", "echo_u32", "uint32"),
+        ("nested_u64", "echo_u64", "uint64"),
+        ("nested_bool", "echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture("nested.cpp", selected, cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { arguments, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain return call");
+        };
+        let [
+            CppCallArgument::Call {
+                callee,
+                value_type: capture_type,
+                span,
+                ..
+            },
+        ] = arguments.as_slice()
+        else {
+            panic!("retain nested call");
+        };
+        assert_eq!(callee.name, helper);
+        assert_eq!(span.file, "nested.cpp");
+        assert_eq!(capture_type, &import.export().function.return_type);
+        let source = format!(
+            "verifying \"nested.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let mut hostile = source.clone();
+        let result_claim = hostile.rfind("result == value").unwrap();
+        hostile.replace_range(
+            result_claim..result_claim + "result == value".len(),
+            "result != value",
+        );
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+    let project = Project::with_fixture("nested.cpp", "collision", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "nested.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value_1) {
+ ensures result == __click_cpp_nested_value_0;
+} by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
+    for (cpp, diagnostic) in [
+        (
+            "int echo(int x) noexcept { return x; } int pair(int x, int y) noexcept { return x; } int relay(int x) noexcept { return pair(echo(x), echo(x)); }",
+            "preserve evaluation order",
+        ),
+        (
+            "int echo(int x) noexcept { return x; } long wide(long x) noexcept { return x; } long relay(int x) noexcept { return wide(echo(x)); }",
+            "unsupported expression",
+        ),
+        (
+            "int echo(int x) noexcept { return x; } int relay(int x) noexcept { return echo(relay(x)); }",
+            "recursive C++ calls",
+        ),
+    ] {
+        let project = Project::with_fixture("nested.cpp", "relay", cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn nested_return_calls_propagate_inner_exceptions_without_evaluating_outer_call() {
+    let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int value) { return value; } int relay(bool fail) { return outer(inner(fail)); }";
+    let project = Project::with_fixture("nested.cpp", "relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "nested.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "nested.cpp";
+int32 inner(bool fail) throws int32 {
+ ensures result == 5 by { execute(); simp(); }
+ exceptional ensures exception == 7 by { execute(); simp(); }
+}
+int32 outer(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(bool fail) throws int32 {
+ ensures result == 5 by { execute(); simp(); }
+ exceptional ensures exception == 7 by { execute(); simp(); }
+}
+"#,
+    );
+}
+
+#[test]
+fn nested_return_calls_use_distinct_capture_types_across_branches() {
+    let project = Project::with_fixture(
+        "nested.cpp",
+        "choose",
+        include_str!("fixtures/cpp-verification/return-call/nested.cpp"),
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "nested.cpp";
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int64 echo64(int64 value) { ensures result == value; } by { execute(); simp(); }
+int64 outer32(int32 value) { requires value == 7; ensures result == 7i64; } by { execute(); simp(); }
+int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7i64; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
+    for size in [2usize, 4, 8, 16] {
+        let locals = (0..size)
+            .map(|index| format!("int __click_cpp_nested_value_{index} = 0;"))
+            .collect::<String>();
+        let nested = format!("{}value{}", "echo(".repeat(size + 1), ")".repeat(size + 1));
+        let cpp = format!(
+            "int echo(int value) noexcept {{ return value; }} int relay(int value) noexcept {{ {locals} return {nested}; }}"
+        );
+        let project = Project::with_fixture("nested.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(
+            work >= 2 * size && work <= 5 * size + 32,
+            "{size} calls and collisions: {work} work"
+        );
+    }
+}
+
+const MULTIPLE_ARGUMENTS_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/return-call/multiple-arguments.cpp");
+
+#[test]
+fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts() {
+    for (selected, outer, slot) in [
+        ("nested_first", "first", "a"),
+        ("literal_siblings", "first", "a"),
+        ("nested_second", "second", "b"),
+        ("nested_third", "third", "c"),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let [CppStatement::ReturnCall { arguments, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain return call");
+        };
+        assert_eq!(arguments.len(), 3);
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|arg| matches!(arg, CppCallArgument::Call { .. }))
+                .count(),
+            1
+        );
+    }
+    for (selected, outer, inner, value_type) in [
+        (
+            "nested_unsigned",
+            "pick_unsigned",
+            "echo_unsigned",
+            "uint32",
+        ),
+        ("nested_bool", "pick_bool", "echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arguments.cpp\"; {value_type} {inner}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {outer}({value_type} left, {value_type} right) {{ ensures result == right; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value, int32 other) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
+    for (fee, round_down, expected) in [
+        (7, true, 4),
+        (7, false, 5),
+        (-7, true, -5),
+        (-7, false, -4),
+        (10, true, 6),
+        (10, false, 6),
+    ] {
+        let project =
+            Project::with_fixture("arguments.cpp", "EvaluateFee", MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let product = fee * 3;
+        let down = i32::from(round_down);
+        let source = format!(
+            r#"verifying "arguments.cpp";
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 EvaluateFee(int64 fee, int32 at_size, int32 divisor, bool round_down) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let mut hostile = source.clone();
+        let claim = format!("result == {expected}i64");
+        let start = hostile.rfind(&claim).unwrap();
+        hostile.replace_range(
+            start..start + claim.len(),
+            &format!("result == {}i64", expected + 1),
+        );
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn nested_calls_reject_sibling_memory_reads_effects_arithmetic_and_other_calls() {
+    for cpp in [
+        "int mutate(int& x) noexcept { x = 7; return x; } int pair(int a, int b) noexcept { return a; } int relay(int& x) noexcept { return pair(mutate(x), x); }",
+        "int mutate(int* x) noexcept { *x = 7; return *x; } int pair(int a, int b) noexcept { return a; } int relay(int* x) noexcept { return pair(mutate(x), *x); }",
+        "struct Box { int value; }; int mutate(Box& box) noexcept { box.value = 7; return box.value; } int pair(int a, int b) noexcept { return a; } int relay(Box& box) noexcept { return pair(mutate(box), box.value); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), echo(x)); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), x + 1); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), ++x); }",
+    ] {
+        let project = Project::with_fixture("arguments.cpp", "relay", cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains("preserve evaluation order"), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn nested_calls_with_stable_siblings_propagate_inner_exceptions() {
+    let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int left, int value, bool flag) { return value; } int relay(bool fail, int left) { return outer(left, inner(fail), fail); }";
+    let project = Project::with_fixture("arguments.cpp", "relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "arguments.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 outer(int32 left, int32 value, bool flag) { ensures result == value; } by { execute(); simp(); }
+int32 relay(bool fail, int32 left) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#,
+    );
+}
+
+#[test]
+fn nested_argument_lowering_scales_with_arity() {
+    for size in [2usize, 8, 32, 128] {
+        let parameters = (0..size)
+            .map(|i| format!("int a{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = std::iter::once("inner()".to_string())
+            .chain((1..size).map(|_| "7".to_string()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cpp = format!(
+            "int inner() noexcept {{ return 7; }} int outer({parameters}) noexcept {{ return a0; }} int relay() noexcept {{ return outer({arguments}); }}"
+        );
+        let project = Project::with_fixture("arguments.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(
+            work >= size && work <= 3 * size + 32,
+            "{size} arguments: {work} work"
+        );
+    }
+}
+
+#[test]
+fn stable_siblings_remain_valid_when_the_nested_call_writes_memory() {
+    let project = Project::with_fixture(
+        "arguments.cpp",
+        "effectful_inner",
+        MULTIPLE_ARGUMENTS_SOURCE,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 write_seven(int32* slot) {
+ owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
+} by { execute(); simp(); }
+int32 second(int32 a, int32 b, int32 c) { ensures result == b; } by { execute(); simp(); }
+int32 effectful_inner(int32* slot, int32 snapshot) {
+ owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
+} by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn fee_pattern_contracts_reject_zero_divisors_and_unproved_product_bounds() {
+    for (selected, source) in [
+        (
+            "Div",
+            "verifying \"arguments.cpp\"; int64 Div(int64 n, int32 d, bool round_down) { requires n == 21i64; requires d == 0; ensures result == result; } by { execute(); simp(); }",
+        ),
+        (
+            "Mul",
+            "verifying \"arguments.cpp\"; int64 Mul(int64 fee, int32 at_size) { requires fee == 9223372036854775807i64; requires at_size == 3; ensures result == result; } by { execute(); simp(); }",
+        ),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        fs::write(project.directory.join("bad.click"), source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn stable_constant_siblings_reject_external_linkage_and_mutable_globals() {
+    for declaration in ["inline constexpr long value = 7;", "long value = 7;"] {
+        let cpp = format!(
+            "{declaration} int inner() noexcept {{ return 5; }} long outer(int first, long second) noexcept {{ return second; }} long relay() noexcept {{ return outer(inner(), value); }}"
+        );
+        let project = Project::with_fixture("arguments.cpp", "relay", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(!project.artifact().exists());
+        assert!(
+            error.contains("constexpr") || error.contains("preserve evaluation order"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn scalar_local_siblings_survive_nested_memory_effects() {
+    let project =
+        Project::with_fixture("arguments.cpp", "local_sibling", MULTIPLE_ARGUMENTS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 write_seven(int32* slot) { owns slot[0..1]; ensures slot[0] == 7; ensures result == 7; } by { execute(); simp(); }
+int32 first(int32 a, int32 b, int32 c) { ensures result == a; } by { execute(); simp(); }
+int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0] == 7; ensures result == value; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers() {
+    for (selected, down, fee, expected) in [
+        ("fee_down", 1, 7, 4),
+        ("fee_up", 0, 7, 5),
+        ("fee_down", 1, -7, -5),
+        ("fee_up", 0, -7, -4),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain template return call");
+        };
+        let instance = &callee.name;
+        let product = fee * 3;
+        let source = format!(
+            r#"verifying "arguments.cpp";
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+const STATIC_HELPERS_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/return-call/static-helpers.cpp");
+
+#[test]
+fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
+    for (member, value_type) in [
+        ("echo", "int32"),
+        ("echo64", "int64"),
+        ("echo_u32", "uint32"),
+        ("echo_u64", "uint64"),
+        ("echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture(
+            "static.cpp",
+            &format!("Scalar::{member}"),
+            STATIC_HELPERS_SOURCE,
+        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert!(matches!(&import.export().function.function_kind,
+            CppFunctionKind::StaticMethod { record_name, record_declaration_id }
+            if record_name == "Scalar" && !record_declaration_id.is_empty()));
+        assert_eq!(import.export().function.parameters.len(), 1);
+        assert!(import.export().records.is_empty());
+        let source = format!(
+            "verifying \"static.cpp\"; {value_type} Scalar_{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace("result == value", "result != value");
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn static_helpers_support_modular_nested_and_initializer_calls() {
+    for selected in ["static_chain", "static_local"] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "static.cpp";
+int32 Scalar_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int32 Other_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+"#
+        );
+        // The local caller reaches only Scalar_echo.
+        let source = if selected == "static_local" {
+            source.replace("int32 Other_echo(int32 value) { ensures result == value; } by { execute(); simp(); }\n", "")
+        } else {
+            source
+        };
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn static_helpers_preserve_nested_fee_rounding_template_shape() {
+    for (selected, down, fee, expected) in [
+        ("static_fee_down", 1, 7, 4),
+        ("static_fee_up", 0, 7, 5),
+        ("static_fee_down", 1, -7, -5),
+        ("static_fee_up", 0, -7, -4),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("static template call");
+        };
+        let product = fee * 3;
+        let instance = &callee.name;
+        let source = format!(
+            r#"verifying "static.cpp";
+int64 FeeMath_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 FeeMath_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn static_helpers_reject_object_dispatch_reference_parameters_and_recursion() {
+    for (cpp, selected, diagnostic) in [
+        (
+            "struct H { int storage; static int echo(int x) noexcept { return x; } }; int relay(H& h, int x) noexcept { return h.echo(x); }",
+            "relay",
+            "class-qualified or unqualified",
+        ),
+        (
+            "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return H{}.echo(x); }",
+            "relay",
+            "unsupported expression",
+        ),
+        (
+            "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return ((void)++x, H{}).echo(x); }",
+            "relay",
+            "unsupported expression",
+        ),
+        (
+            "struct H { static int read(const int& x) noexcept { return x; } };",
+            "H::read",
+            "by-value scalar",
+        ),
+        (
+            "struct H { static int read(int* x) noexcept { return *x; } };",
+            "H::read",
+            "by-value scalar",
+        ),
+        (
+            "struct H { static int recurse(int x) noexcept { return recurse(x); } };",
+            "H::recurse",
+            "recursive C++ calls",
+        ),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn static_helpers_propagate_scalar_exceptions_through_nested_calls() {
+    let cpp = "struct H { static int inner(bool fail) { if (fail) { throw 7; } return 5; } static int outer(int value) { return value; } static int relay(bool fail) { return outer(inner(fail)); } };";
+    let project = Project::with_fixture("static.cpp", "H::relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("H::relay", "static.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "static.cpp";
+int32 H_inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 H_outer(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 H_relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#,
+    );
+}
+
+#[test]
+fn static_helpers_called_from_value_methods_preserve_field_authority() {
+    let project = Project::with_fixture("static.cpp", "FeeValue::Evaluate", STATIC_HELPERS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "static.cpp";
+int64 FeeMath_Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
+int64 FeeValue_Evaluate(const struct FeeValue* self, int32 at_size) {
+ owns self->fee;
+ requires self->fee == 7i64;
+ requires at_size == 3;
+ ensures result == 21i64;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace(" owns self->fee;\n", "");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn static_helpers_cannot_skip_arithmetic_definedness_with_trivial_postconditions() {
+    for (selected, contract) in [
+        (
+            "FeeMath::Mul",
+            "int64 FeeMath_Mul(int64 fee, int32 at_size) { ensures result == result; } by { execute(); simp(); }",
+        ),
+        (
+            "FeeMath::Div",
+            "int64 FeeMath_Div(int64 n, int32 d, bool round_down) { ensures result == result; } by { execute(); simp(); }",
+        ),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!("verifying \"static.cpp\"; {contract}");
+        fs::write(project.directory.join("bad.click"), &source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &source).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+const NORMALIZED_EVALUATION_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/return-call/normalized-evaluation.cpp");
+
+#[test]
+fn normalized_scalar_calls_agree_across_returns_initializers_and_discarded_results() {
+    for (selected, contract) in [
+        (
+            "direct",
+            "int32 direct(int32 value, int32 sibling) { ensures result == value; } by { execute(); simp(); }",
+        ),
+        (
+            "initialized",
+            "int32 initialized(int32 value, int32 sibling) { ensures result == value; } by { execute(); simp(); }",
+        ),
+        (
+            "discarded",
+            "int32 discarded(int32 value) { ensures result == value; } by { execute(); simp(); }",
+        ),
+    ] {
+        let project =
+            Project::with_fixture("evaluation.cpp", selected, NORMALIZED_EVALUATION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let helpers = if selected == "discarded" {
+            ""
+        } else {
+            "int32 first(int32 value, int32 sibling) { ensures result == value; } by { execute(); simp(); }"
+        };
+        let source = format!(
+            "verifying \"evaluation.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} {helpers} {contract}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace("ensures result == value", "ensures result != value");
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn normalized_initializer_calls_preserve_scalar_types_and_static_helpers() {
+    for (selected, helper, value_type) in [
+        ("initialized64", "echo64", "int64"),
+        ("initialized_u32", "echo_u32", "uint32"),
+        ("initialized_u64", "echo_u64", "uint64"),
+        ("Helper::initialized", "Helper_echo", "int32"),
+    ] {
+        let project =
+            Project::with_fixture("evaluation.cpp", selected, NORMALIZED_EVALUATION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let caller = &import.export().function.name;
+        let source = format!(
+            "verifying \"evaluation.cpp\"; {value_type} {helper}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {caller}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn normalized_initializer_calls_capture_before_normal_cleanup() {
+    let project = Project::with_fixture(
+        "evaluation.cpp",
+        "initialized_cleanup",
+        NORMALIZED_EVALUATION_SOURCE,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    // Reuse the existing independently checked constructor/destructor contracts.
+    let source = r#"verifying "evaluation.cpp";
+void Restore_constructor(struct Restore* self, int32* value) {
+ owns &self->slot; owns self->saved; owns value[0..1];
+ ensures self->slot == value;
+ ensures self->saved == old(value[0]);
+ ensures value[0] == 7;
+ ensures separate(memory(object(self)), memory(self->slot[0..1]));
+} by { execute(); simp(); }
+void Restore_destructor(struct Restore* self) {
+ requires separate(memory(object(self)), memory(self->slot[0..1]));
+ owns &self->slot; owns self->saved; owns self->slot[0..1];
+ ensures self->slot == old(self->slot);
+ ensures self->saved == old(self->saved);
+ ensures self->slot[0] == old(self->saved);
+} by { execute(); simp(); }
+int32 read(int32* slot) { owns slot[0..1]; ensures result == old(slot[0]); ensures slot[0] == old(slot[0]); } by { execute(); simp(); }
+int32 echo(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 initialized_cleanup(int32* value) { owns value[0..1]; ensures result == 7; ensures value[0] == old(value[0]); } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let lowered = lower_import(&import).unwrap();
+    assert_eq!(
+        lowered.contract_functions().len(),
+        import.export().reachable_functions.len() + 1
+    );
+    assert!(lowered.record_layouts().contains_key("Restore"));
+    let caller = lowered
+        .contract_functions()
+        .iter()
+        .find(|f| f.name() == "initialized_cleanup")
+        .unwrap();
+    assert_eq!(
+        caller
+            .local_struct_values()
+            .get("guard")
+            .map(String::as_str),
+        Some("Restore")
+    );
+}
+
+#[test]
+fn normalized_call_order_rejections_are_independent_of_source_context() {
+    for body in [
+        "return first(echo(value), *slot);",
+        "int captured = first(echo(value), *slot); return captured;",
+        "first(echo(value), *slot); return value;",
+    ] {
+        let cpp = format!(
+            "int echo(int value) noexcept {{ return value; }} int first(int value, int sibling) noexcept {{ return value; }} int relay(int value, int* slot) noexcept {{ {body} }}"
+        );
+        let project = Project::with_fixture("evaluation.cpp", "relay", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains("preserve evaluation order"), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn normalized_initializer_calls_propagate_inner_exceptions() {
+    let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int value) { return value; } int relay(bool fail) { int captured = outer(inner(fail)); return captured; }";
+    let project = Project::with_fixture("evaluation.cpp", "relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "evaluation.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "evaluation.cpp";
+int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 outer(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#,
+    );
+}
+
+#[test]
+fn normalized_initializer_and_return_work_scales_with_argument_arity() {
+    for size in [2usize, 8, 32, 128] {
+        let parameters = (0..size)
+            .map(|i| format!("int value{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = (0..size)
+            .map(|i| {
+                if i == size / 2 {
+                    "echo(value)".into()
+                } else {
+                    "value".into()
+                }
+            })
+            .collect::<Vec<String>>()
+            .join(", ");
+        let cpp = format!(
+            "int echo(int value) noexcept {{ return value; }} int first({parameters}) noexcept {{ return value0; }} int direct(int value) noexcept {{ return first({arguments}); }} int initialized(int value) noexcept {{ int captured = first({arguments}); return captured; }}"
+        );
+        let mut measured = Vec::new();
+        for selected in ["direct", "initialized"] {
+            let project = Project::with_fixture("evaluation.cpp", selected, &cpp);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let (lowered, work) =
+                click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+            let lowered = lowered.unwrap();
+            assert_eq!(lowered.contract_functions().len(), 3);
+            assert!(
+                work >= size && work <= 3 * size + 32,
+                "{selected}, arity {size}: {work}"
+            );
+            measured.push(work);
+        }
+        assert_eq!(
+            measured[0] + 1,
+            measured[1],
+            "the initializer adds one lifetime-planning source event at arity {size}"
+        );
+    }
+}
+
+#[test]
+fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
+    let cpp =
+        include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
+    let project = Project::with_fixture("restore_twice.cpp", "construction_prefix", cpp);
+    refresh_import(&project.config()).expect("export an early return before a later construction");
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::Declare { .. },
+        CppStatement::If { then_branch, .. },
+        CppStatement::Declare { .. },
+        CppStatement::Assign { .. },
+        CppStatement::Return {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().function.body.as_slice()
+    else {
+        panic!("construction events must retain their source order");
+    };
+    let [
+        CppStatement::Return {
+            cleanups: early_cleanups,
+            ..
+        },
+    ] = then_branch.as_slice()
+    else {
+        panic!("early return cleanup edge");
+    };
+    assert_eq!(early_cleanups.len(), 1);
+    assert_eq!(final_cleanups.len(), 2);
+    let source = REVERSE_DESTRUCTOR_SIDECAR.replace("restore_twice(", "construction_prefix(");
+    check_return_call_sidecar(&project, &import, &source);
+    let false_claim = source.replace(
+        "early != 0 implies result == 7",
+        "early != 0 implies result == 9",
+    );
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, &false_claim).unwrap();
+    let false_project = read_click_project(&sidecar, &false_claim).unwrap();
+    verify_program_prepared_project(&false_project, &import)
+        .expect_err("a future object cannot change the early return result");
+}
+
+#[test]
+fn lifetime_return_before_any_construction_has_no_cleanup() {
+    let cpp =
+        include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
+    let project = Project::with_fixture("restore_twice.cpp", "before_construction", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::If { then_branch, .. },
+        CppStatement::Declare { .. },
+        CppStatement::Return {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().function.body.as_slice()
+    else {
+        panic!("source construction order");
+    };
+    let [CppStatement::Return { cleanups, .. }] = then_branch.as_slice() else {
+        panic!("early return");
+    };
+    assert!(cleanups.is_empty());
+    assert_eq!(final_cleanups.len(), 1);
+    let source = REVERSE_DESTRUCTOR_SIDECAR
+        .replace("restore_twice(", "before_construction(")
+        .replace(
+            "early != 0 implies result == 7",
+            "early != 0 implies result == old(value[0])",
+        )
+        .replace(
+            "early == 0 implies result == 9",
+            "early == 0 implies result == 7",
+        );
+    check_return_call_sidecar(&project, &import, &source);
+}
+
+#[test]
+fn resolved_declaration_identities_bind_overloads_scopes_and_equal_width_types() {
+    let project = Project::with_fixture(
+        "identity.cpp",
+        "relay",
+        include_str!("fixtures/cpp-verification/declaration-identity/identity.cpp"),
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let helpers = &import.export().reachable_functions;
+    assert_eq!(helpers.len(), 6);
+    let names = helpers
+        .iter()
+        .map(|function| lowered.contract_name(&function.declaration_id).unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(names.len(), helpers.len());
+    assert_eq!(lowered.kernel_function().name(), "relay");
+    let mut sidecar = String::from("verifying \"identity.cpp\";\n");
+    for helper in helpers {
+        let [
+            CppStatement::Return {
+                value: CppExpression::IntegerLiteral { value, .. },
+                ..
+            },
+        ] = helper.body.as_slice()
+        else {
+            panic!("constant helper body: {:?}", helper.body);
+        };
+        let name = lowered.contract_name(&helper.declaration_id).unwrap();
+        let parameter_type = match helper.parameters[0].value_type {
+            CppType::Integer {
+                bits: 64,
+                signed: true,
+                ..
+            } => "int64",
+            _ => "int32",
+        };
+        sidecar.push_str(&format!("int32 {name}({parameter_type} x) {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n"));
+        assert!(
+            lowered
+                .contract_functions()
+                .iter()
+                .any(|function| function.name() == name)
+        );
+        assert!(
+            lowered
+                .reachable_kernel_functions()
+                .iter()
+                .any(|function| function.name() == name)
+        );
+    }
+    sidecar.push_str("int32 relay(int64 x, int64 y, int32 z) { ensures result == 76; } by { execute(); simp(); }\n");
+    check_return_call_sidecar(&project, &import, &sidecar);
+    let false_claim = sidecar.replace("result == 76", "result == 74");
+    let path = project.directory.join("wrong.click");
+    fs::write(&path, &false_claim).unwrap();
+    let parsed = read_click_project(&path, &false_claim).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn qualified_namespace_selection_has_an_ordinary_readable_contract_name() {
+    let project = Project::with_fixture(
+        "namespace.cpp",
+        "A::Nested::echo",
+        "namespace A { namespace Nested { int echo(int x) noexcept { return x; } } } int echo(int x) noexcept { return 3; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    assert_eq!(lowered.kernel_function().name(), "A_Nested_echo");
+    check_return_call_sidecar(
+        &project,
+        &import,
+        "verifying \"namespace.cpp\"; int32 A_Nested_echo(int32 x) { ensures result == x; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn selected_function_collision_uses_the_same_identity_binding_as_its_helper() {
+    let project = Project::with_fixture(
+        "selected.cpp",
+        "H_same",
+        "struct H { static int same(int x) noexcept { return 5; } }; int H_same(int x) noexcept { return H::same(x); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let selected = lowered
+        .contract_name(&import.export().function.declaration_id)
+        .unwrap();
+    let helper = lowered
+        .contract_name(&import.export().reachable_functions[0].declaration_id)
+        .unwrap();
+    assert_ne!(selected, helper);
+    assert_eq!(lowered.kernel_function().name(), selected);
+    let sidecar = format!(
+        "verifying \"selected.cpp\"; int32 {helper}(int32 x) {{ ensures result == 5; }} by {{ execute(); simp(); }} int32 {selected}(int32 x) {{ ensures result == 5; }} by {{ execute(); simp(); }}"
+    );
+    check_sidecar_tactic(&project, &import, &sidecar, Some(&format!("{selected}.")));
+}
+
+#[test]
+fn anonymous_namespace_helper_has_a_valid_identity_based_contract_name() {
+    let project = Project::with_fixture(
+        "anonymous.cpp",
+        "relay",
+        "namespace { int same(int x) noexcept { return x; } } int relay(int x) noexcept { return same(x); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lowered = lower_import(&import).unwrap();
+    let name = lowered
+        .contract_name(&import.export().reachable_functions[0].declaration_id)
+        .unwrap();
+    assert!(name.starts_with("__click_cpp_decl_"));
+    let sidecar = format!(
+        "verifying \"anonymous.cpp\"; int32 {name}(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }} int32 relay(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}"
+    );
+    check_return_call_sidecar(&project, &import, &sidecar);
+}
+
+#[test]
+fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
+    for size in [4usize, 16, 64, 256] {
+        let mut cpp =
+            String::from("static constexpr long long C0 = 1; static constexpr long long C1 = 3;\n");
+        for index in 2..size {
+            cpp.push_str(&format!(
+                "static constexpr long long C{index} = 1 * C{};\n",
+                index - 2
+            ));
+        }
+        cpp.push_str(&format!(
+            "long long total() noexcept {{ return C{} + C{}; }}\n",
+            size - 2,
+            size - 1
+        ));
+        let project = Project::with_fixture("forest.cpp", "total", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let (import, validation_work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert_eq!(import.export().constants.len(), size);
+        let artifact_bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        assert!(
+            validation_work >= artifact_bytes && validation_work <= artifact_bytes + 8 * size + 100,
+            "{size} constants: {validation_work} work for {artifact_bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(
+            work >= size && work <= 3 * size + 32,
+            "{size} constants: {work} lowering work"
+        );
+        check_return_call_sidecar(
+            &project,
+            &import,
+            "verifying \"forest.cpp\"; int64 total() { ensures result == 4i64; } by { execute(); simp(); }",
+        );
+    }
+}
+
+#[test]
+fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
+    for size in [2usize, 8, 32, 128] {
+        let mut cpp = String::new();
+        let mut sidecar = String::from("verifying \"records.cpp\";\n");
+        for index in 0..size {
+            cpp.push_str(&format!("struct R{index} {{ int value; }}; int read{index}(int x) noexcept {{ R{index} local{{x}}; return local.value; }}\n"));
+            sidecar.push_str(&format!("int32 read{index}(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}\n"));
+        }
+        cpp.push_str("int relay(int x) noexcept {\n");
+        for index in 0..size {
+            cpp.push_str(&format!("int y{index} = read{index}(x);\n"));
+        }
+        cpp.push_str(&format!("return y{}; }}\n", size - 1));
+        sidecar
+            .push_str("int32 relay(int32 x) { ensures result == x; } by { execute(); simp(); }\n");
+        let project = Project::with_fixture("records.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().records.len(), size);
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        let lowered = lowered.unwrap();
+        assert_eq!(lowered.record_layouts().len(), size);
+        assert!(
+            work >= size && work <= 24 * size + 32,
+            "{size} records/functions: {work} work"
+        );
+        // Small graphs exercise certificates and audit; larger graphs measure the
+        // frontend inventory representation without duplicating every proof run.
+        if size <= 8 {
+            check_return_call_sidecar(&project, &import, &sidecar);
+            if size == 2 {
+                let false_claim = sidecar.replace(
+                    "int32 relay(int32 x) { ensures result == x; }",
+                    "int32 relay(int32 x) { requires x == 7; ensures result == 8; }",
+                );
+                let path = project.directory.join("wrong.click");
+                fs::write(&path, &false_claim).unwrap();
+                let parsed = read_click_project(&path, &false_claim).unwrap();
+                assert!(verify_program_prepared_project(&parsed, &import).is_err());
+            }
+        }
+    }
+}
+
+#[test]
+fn exporter_reports_named_inventory_budgets_and_keeps_outputs_atomic() {
+    let declarations = (0..1025usize)
+        .map(|index| {
+            if index == 0 {
+                "static constexpr long long C0 = 1;\n".to_owned()
+            } else {
+                format!(
+                    "static constexpr long long C{index} = 1 * C{};\n",
+                    index - 1
+                )
+            }
+        })
+        .collect::<String>();
+    let project = Project::with_fixture(
+        "budget.cpp",
+        "total",
+        &format!("{declarations}long long total() noexcept {{ return C1024; }}"),
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("artifact budget exhausted: constant declarations"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}
+
+#[test]
+fn exporter_bounds_record_and_function_discovery_independently() {
+    for (size, records, expected) in [
+        (257usize, true, "record declarations"),
+        (1024, false, "function declarations"),
+    ] {
+        let mut cpp = String::new();
+        for index in 0..size {
+            if records {
+                cpp.push_str(&format!("struct R{index} {{ int value; }}; int f{index}(int x) noexcept {{ R{index} local{{x}}; return local.value; }}\n"));
+            } else {
+                cpp.push_str(&format!("int f{index}(int x) noexcept {{ return x; }}\n"));
+            }
+        }
+        cpp.push_str("int relay(int x) noexcept {\n");
+        for index in 0..size {
+            cpp.push_str(&format!("f{index}(x);\n"));
+        }
+        cpp.push_str("return x; }");
+        let project = Project::with_fixture("budget.cpp", "relay", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains(&format!("artifact budget exhausted: {expected}")),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
+    let project = Project::with_fixture(
+        "layouts.cpp",
+        "choose",
+        "struct First { int value; }; struct Second { int padding; long long value; }; long long choose(First& first, Second& second) noexcept { first.value = 7; return second.value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 2);
+    let first = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "First")
+        .unwrap();
+    let second = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "Second")
+        .unwrap();
+    assert_eq!(
+        (
+            first.size_bytes,
+            first.fields[0].offset_bytes,
+            first.fields[0].size_bytes
+        ),
+        (4, 0, 4)
+    );
+    assert_eq!(
+        (
+            second.size_bytes,
+            second.fields[1].offset_bytes,
+            second.fields[1].size_bytes
+        ),
+        (16, 8, 8)
+    );
+    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First* first, struct Second* second) { owns first->value; owns second->value; ensures first->value == 7; ensures result == old(second->value); ensures second->value == old(second->value); } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, sidecar);
+    let missing_authority = sidecar.replace("owns second->value;", "");
+    let path = project.directory.join("wrong.click");
+    fs::write(&path, &missing_authority).unwrap();
+    let parsed = read_click_project(&path, &missing_authority).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+const GROWING_GUARD_SOURCE: &str = "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } };\n";
+
+#[test]
+fn growing_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
+    for mode in ["top", "siblings", "block"] {
+        for size in [3usize, 8, 32, 128] {
+            let mut body = String::new();
+            if mode == "block" {
+                body.push_str("{\n");
+            }
+            for index in 0..size {
+                if mode == "siblings" {
+                    body.push_str("{ Guard guard(value);\n");
+                } else {
+                    body.push_str(&format!("Guard g{index}(value);\n"));
+                }
+                if index == 0 {
+                    body.push_str("if (early) { return value; }\n");
+                }
+                if mode == "siblings" {
+                    body.push_str("}\n");
+                }
+            }
+            if mode == "block" {
+                body.push_str("}\n");
+            }
+            let cpp = format!(
+                "{GROWING_GUARD_SOURCE}int many(bool early, int value) noexcept {{ {body} return value; }}"
+            );
+            let project = Project::with_fixture("guards.cpp", "many", &cpp);
+            refresh_import(&project.config()).unwrap();
+            let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+            let (import, validation_work) =
+                click::instrumentation::measure_deterministic_work(|| {
+                    load_import(&project.config())
+                });
+            let import = import.unwrap();
+            assert!(
+                validation_work <= bytes + 64 * size + 256,
+                "{mode}, {size}: {validation_work} validation work for {bytes} bytes"
+            );
+            let (lowered, work) =
+                click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+            let lowered = lowered.unwrap();
+            assert!(
+                work <= 32 * size + 128,
+                "{mode}, {size}: {work} lowering work"
+            );
+            let order =
+                destructor_object_order(lowered.kernel_function().body(), "Guard_destructor");
+            let expected = if mode == "siblings" {
+                vec!["guard".to_string(); size + 1]
+            } else {
+                std::iter::once("g0".to_string())
+                    .chain((0..size).rev().map(|index| format!("g{index}")))
+                    .collect()
+            };
+            assert_eq!(order, expected);
+            // Larger inventories check importer/lowering work; small ones also
+            // exercise complete proofs, rewritten certificates, and audit.
+            if size <= 8 {
+                let source = r#"verifying "guards.cpp";
+void Guard_constructor(struct Guard* self, int32 initial) { owns self->value; ensures self->value == initial; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
+"#;
+                check_return_call_sidecar(&project, &import, source);
+                let hostile = source.replace(
+                    "ensures result == value; } by { execute(); simp(); }",
+                    "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
+                );
+                let sidecar = project.directory.join("bad.click");
+                fs::write(&sidecar, &hostile).unwrap();
+                let parsed = read_click_project(&sidecar, &hostile).unwrap();
+                let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+                assert!(
+                    !error.message().contains("budget exhausted"),
+                    "{}",
+                    error.message()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn exporter_enforces_named_lifetime_budgets_and_keeps_outputs_atomic() {
+    for (kind, boundary) in [("locals", 1024usize), ("scopes", 256)] {
+        for size in [boundary, boundary + 1] {
+            let body = if kind == "locals" {
+                (0..size)
+                    .map(|index| format!("int n{index} = 0;\n"))
+                    .collect::<String>()
+            } else {
+                "{ Guard guard(value); }\n".repeat(size)
+            };
+            let cpp = format!(
+                "{GROWING_GUARD_SOURCE}int many(int value) noexcept {{ {body} return value; }}"
+            );
+            let project = Project::with_fixture("budget.cpp", "many", &cpp);
+            if size == boundary {
+                refresh_import(&project.config()).unwrap();
+                load_import(&project.config()).unwrap();
+            } else {
+                let error = refresh_import(&project.config()).unwrap_err();
+                let expected = if kind == "locals" {
+                    "local declarations per function"
+                } else {
+                    "cleanup scopes per function"
+                };
+                assert!(
+                    error.contains(&format!("artifact budget exhausted: {expected}")),
+                    "{error}"
+                );
+                assert!(!project.artifact().exists());
+                assert!(!project.lock().exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
+    for (cpp, signature, precondition, expected) in [
+        (
+            "long convert(unsigned long n) noexcept { return static_cast<long>(n); }",
+            "int64 convert(uint64 n)",
+            "n == 18446744073709551615u64",
+            "-1i64",
+        ),
+        (
+            "long convert(bool n) noexcept { return static_cast<long>(n); }",
+            "int64 convert(bool n)",
+            "n == 1",
+            "1i64",
+        ),
+        (
+            "unsigned convert(bool n) noexcept { return static_cast<unsigned>(n); }",
+            "uint32 convert(bool n)",
+            "n == 0",
+            "0u32",
+        ),
+    ] {
+        let project = Project::with_fixture("scalar.cpp", "convert", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = format!(
+            "verifying \"scalar.cpp\"; {signature} {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        let false_value = if signature.starts_with("int64") {
+            "2i64"
+        } else {
+            "2u32"
+        };
+        let hostile = proof.replace(
+            &format!("ensures result == {expected};"),
+            &format!("ensures result == {false_value};"),
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("conversion must reject a false claim");
+    }
+}
+
+#[test]
+fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
+    let cpp = "struct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint guarded(int n) noexcept { Guard guard(n); __builtin_assume(n > 0); return n; }";
+    let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[1],
+        CppStatement::Assume { .. }
+    ));
+    let contracts = r#"verifying "assume.cpp";
+void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+"#;
+    let source = format!(
+        "{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }} by {{ execute(); simp(); }}"
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    for requires in ["", "requires n == 0;"] {
+        let hostile = source.replace("requires n > 0;", requires);
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("__builtin_assume"),
+            "{}",
+            error.message()
+        );
+    }
+    let hostile = source.replace("ensures result == n;", "ensures result == n + 1;");
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a proved assumption cannot prove a false result");
+}
+
+#[test]
+fn compiler_assumptions_cover_total_predicates_and_scale_with_statements() {
+    for size in [4usize, 16, 64, 256] {
+        let body = "__builtin_assume(n > 0 && bool(n));\n".repeat(size);
+        let cpp = format!("int guarded(int n) noexcept {{ {body} return n; }}");
+        let project = Project::with_fixture("assume.cpp", "guarded", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 64 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work <= 32 * size + 128, "{size}: {work}");
+        if size == 4 {
+            let proof = "verifying \"assume.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+            check_return_call_sidecar(&project, &import, proof);
+        }
+    }
+}
+
+#[test]
+fn compiler_assumptions_reject_unevaluated_effects_and_partial_or_memory_conditions() {
+    for (parameters, condition) in [
+        ("int n", "++n > 0"),
+        ("int n", "(n = 1) > 0"),
+        ("int n", "n + 1 > 0"),
+        ("int n", "1 / n > 0"),
+        ("int& n", "n > 0"),
+        ("int* n", "*n > 0"),
+    ] {
+        let cpp = format!(
+            "int guarded({parameters}) noexcept {{ __builtin_assume({condition}); return 1; }}"
+        );
+        let project = Project::with_fixture("assume.cpp", "guarded", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("total scalar condition"),
+            "{condition}: {error}"
+        );
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn user_named_assume_calls_are_not_compiler_assumptions() {
+    let cpp = "void Assume(bool condition) noexcept { int ignored = 0; }\nint guarded(int n) noexcept { Assume(n > 0); return n; }";
+    let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::Call { .. }
+    ));
+    let proof = "verifying \"assume.cpp\"; void Assume(bool condition) { ensures condition == condition; } by { execute(); simp(); } int32 guarded(int32 n) { ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let hostile = proof.replace("ensures result == n;", "ensures n > 0;");
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a library spelling cannot introduce a compiler assumption");
+}
+
+#[test]
+fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability() {
+    for (cpp, requires) in [
+        (
+            "int guarded(int n) noexcept { if (n > 0) { __builtin_assume(n > 0); } return n; }",
+            "",
+        ),
+        (
+            "constexpr long LIMIT = 5; int guarded(int n) noexcept { __builtin_assume(n < LIMIT); return n; }",
+            "requires n == 3;",
+        ),
+    ] {
+        let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(
+            import.export().constants.len(),
+            usize::from(cpp.starts_with("constexpr"))
+        );
+        let proof = format!(
+            "verifying \"assume.cpp\"; int32 guarded(int32 n) {{ {requires} ensures result == n; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+    }
+}
+
+#[test]
+fn isolated_nested_calls_snapshot_field_siblings_in_every_scalar_context() {
+    let cpp = include_str!("fixtures/cpp-verification/return-call/field-siblings.cpp");
+    for (selected, outer, slot, claim) in [
+        ("field_first", "first", "a", "box->value"),
+        ("field_second", "second", "b", "box->value"),
+        ("field_third", "third", "c", "box->value"),
+        ("field_initializer", "second", "b", "box->other"),
+        ("field_discarded", "first", "a", "box->other"),
+        ("field_cast", "second", "b", "1"),
+    ] {
+        let project = Project::with_fixture("fields.cpp", selected, cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let requires = if selected == "field_cast" {
+            "requires box->other == 7;"
+        } else {
+            ""
+        };
+        let proof = format!(
+            "verifying \"fields.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(const struct Box* box) {{ owns box->value; owns box->other; {requires} ensures result == {claim}; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        for hostile in [
+            proof.replace("owns box->other;", ""),
+            proof.replace(
+                &format!("ensures result == {claim};"),
+                &format!("ensures result == {claim} + 1;"),
+            ),
+        ] {
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            verify_program_prepared_project(&parsed, &import)
+                .expect_err("field snapshots need authority and cannot prove false results");
+        }
+    }
+}
+
+#[test]
+fn field_siblings_preserve_fee_template_rounding_and_static_helper_shape() {
+    let cpp = include_str!("fixtures/cpp-verification/return-call/field-fee-rounding.cpp");
+    for (selected, down, fee, divisor, expected) in [
+        ("Down", 1, 7, 5, 4),
+        ("Up", 0, 7, 5, 5),
+        ("Down", 1, -7, 5, -5),
+        ("Up", 0, -7, 5, -4),
+        ("Down", 1, 7, 3, 7),
+        ("Up", 0, -7, 3, -7),
+    ] {
+        let project = Project::with_fixture("fields.cpp", &format!("Fee::{selected}"), cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain method template call");
+        };
+        let instance = &callee.name;
+        let product = fee * 3;
+        let proof = format!(
+            r#"verifying "fields.cpp";
+int64 Fee_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 Fee_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == {divisor}; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(const struct Fee* self, int32 at_size) {{ owns self->fee; owns self->size; requires self->fee == {fee}i64; requires self->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 Fee_{selected}(const struct Fee* self, int32 at_size) {{ owns self->fee; owns self->size; requires self->fee == {fee}i64; requires self->size == {divisor}; requires at_size == 3; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        let hostile = proof.replace(
+            &format!("ensures result == {expected}i64;"),
+            &format!("ensures result == {}i64;", expected + 1),
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("field ordering does not prove false rounding");
+    }
+}
+
+#[test]
+fn field_sibling_authority_is_checked_even_when_inner_call_throws() {
+    let cpp = "struct Box { int value; }; int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int a, int b) { return b; } int relay(bool fail, const Box& box) { return outer(inner(fail), box.value); }";
+    let project = Project::with_fixture("fields.cpp", "relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "fields.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "fields.cpp";
+int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 outer(int32 a, int32 b) { ensures result == b; } by { execute(); simp(); }
+int32 relay(bool fail, const struct Box* box) throws int32 {
+ requires fail == true;
+ ensures result == result by { execute(); simp(); }
+ exceptional ensures exception == 7 by { execute(); simp(); }
+}
+"#;
+    let path = project.directory.join("hostile.click");
+    fs::write(&path, proof).unwrap();
+    let parsed = read_click_project(&path, proof).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a throwing call cannot hide an unchecked sibling read");
+}
+
+#[test]
+fn isolated_field_siblings_reject_hidden_aliases_and_other_memory_reads() {
+    for cpp in [
+        "struct Box { int value; }; int mutate(Box& box) noexcept { box.value = 7; return 7; } int echo(int n) noexcept { return n; } int outer(int a, int b) noexcept { return b; } int relay(Box& box) noexcept { return outer(echo(mutate(box)), box.value); }",
+        "struct Box { int value; }; int inner(int* slot) noexcept { *slot = 7; return 7; } int outer(int a, int b) noexcept { return b; } int relay(Box& box, int* slot) noexcept { return outer(inner(slot), box.value); }",
+        "struct Box { int value; }; int echo(int n) noexcept { return n; } int outer(int a, int b) noexcept { return b; } int relay(Box& box) noexcept { return outer(echo(1), box.value + 1); }",
+    ] {
+        let project = Project::with_fixture("fields.cpp", "relay", cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains("preserve evaluation order"), "{error}");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn field_sibling_normalization_work_scales_with_argument_arity() {
+    for size in [2usize, 8, 32, 128] {
+        let parameters = (0..size)
+            .map(|i| format!("int a{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = std::iter::once("echo(box.value)".to_owned())
+            .chain((1..size).map(|_| "box.value".to_owned()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cpp = format!(
+            "struct Box {{ int value; }}; int echo(int n) noexcept {{ return n; }} int outer({parameters}) noexcept {{ return a0; }} int relay(const Box& box) noexcept {{ return outer({arguments}); }}"
+        );
+        let project = Project::with_fixture("fields.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 32 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work >= size && work <= 8 * size + 64, "{size}: {work}");
+    }
 }

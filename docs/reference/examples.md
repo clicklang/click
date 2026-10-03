@@ -5,7 +5,7 @@ self-contained, with inline C and `.click` blocks. Prefer copying a nearby
 mdtest instead of inventing syntax from memory.
 
 Larger example projects live directly under `examples/`. They contain ordinary
-`.c` or `.cpp` files and `.click` sidecars, and are verified by
+`.c`, `.cpp`, or `.rs` files and `.click` sidecars, and are verified by
 `tests/examples.rs`.
 
 `examples/basic-cpp/` is the first C++ example project. Its small reference
@@ -14,6 +14,10 @@ restores the referenced value after either return path; a modular caller
 starting with 41 proves the helper returns 7 or 9 while restoring 41. The
 project's README gives the pinned compiler-import setup and ordinary
 verification commands.
+
+`examples/rust-chunks-exact/` verifies stored shared byte-chunk iteration and
+its fixed remainder. The proof tracks the cursor and remaining complete range
+without a generated processed count; chunk reads use the original byte views.
 
 `examples/multifile-registry/` specifies a registry across four C translation
 units and two headers. It covers shared updates, independent same-named private
@@ -71,15 +75,11 @@ opaque calls.
 ## Pure theorems
 
 - `mdtests/pure_theorem.md`: theorem-only `.click` file with no C source.
-- `mdtests/pure_theorem_unfold.md`: pure theorem proof script with predicate
-  unfolding.
 - `mdtests/pure_theorem_apply.md`: pure theorem proof script applying an
   earlier theorem.
 - `mdtests/condition_search_explicit_decomposition.md`: an explicit
   `simp() using` proof constrains smart condition search to named premises and
   expands to explicit rewrites.
-- `mdtests/pure_theorem_rejects_execution_tactic.md`: theorem proofs reject C
-  execution tactics.
 - `mdtests/pure_theorem_rejects_observe_tactic.md`: theorem proofs reject
   resource fact-observation tactics.
 - `mdtests/theorem_apply_in_function_proof.md`: execution proof applying a pure
@@ -278,13 +278,9 @@ opaque calls.
 ## Effects and frames
 
 - `mdtests/immutable_stack_locals.md`: stack-local writes with nothing owned.
-- `mdtests/count_to_three_loop_immutable.md`: a loop that owns no caller memory.
-- `mdtests/fill_n_mutable_segment.md`: a symbolic owned function segment.
 - `mdtests/fill_n_loop_mutable_segment.md`: a loop over an owned segment.
 - `mdtests/loop_frame_segment_shapes.md`: shifted, growing, and multi-segment
   loop effects.
-- `mdtests/shifted_loop_effect_subset.md`: loop effect composes into function
-  effect.
 - `mdtests/shifted_loop_effect_preserves_prefix.md`: effect summary preserves
   prefix.
 - `mdtests/resource_context_write.md`: first owned-memory resource-context
@@ -309,8 +305,6 @@ opaque calls.
   one `uint8[]` element does not cover another.
 - `mdtests/resource_summary_requires_returned_write.md`: helper call consumes a
   write resource unless its summary returns it.
-- `mdtests/resource_summary_read_does_not_consume_write.md`: helper read
-  requirement does not consume caller write permission.
 - `mdtests/resource_summary_splits_write_range.md`: helper call receives a
   subrange while the caller keeps and rejoins the residue.
 - `mdtests/resource_summary_splits_symbolic_write_range.md`: helper call
@@ -333,8 +327,6 @@ sequence:
   write permission when it does not return it.
 - `mdtests/permission_call_returns_write.md`: a helper returns write permission
   to its caller.
-- `mdtests/permission_call_split_rejoin.md`: a caller splits a write range for
-  a helper call and rejoins it afterward.
 - `mdtests/token_resource_borrow_return.md`: exact-match token
   resource can be borrowed and returned.
 - `mdtests/token_resource_consumed_by_call.md`: exact-match token
@@ -706,9 +698,19 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   `mdtests/rb_ascent_parent_link_guard.md` are the same ascent under
   `rb_next`'s short-circuit guard, the second reading the parent's link through
   the folded frame.
-- `mdtests/rb_next_conjunctive_guard.md`: the verbatim `rb_next` ascent guard,
-  pinned as unsupported. Its `while ((parent = rb_parent(node)) && ...)` uses
-  an assignment expression, which the supported C0 subset does not parse.
+- `mdtests/rb_next.md`: the unchanged Linux `rb_next` with its successor
+  contract, certified. The descent and the ascent loop are written out, each
+  with a checked structural measure, and the section after the ascent hands
+  back the node the walk stopped at.
+  `mdtests/rb_next_rejects_a_dropped_context.md` is its negative;
+  `mdtests/rb_next_conjunctive_guard.md` keeps the guard's own refusal for a
+  proof that never opens the entry node; and
+  `mdtests/rb_next_const_signature.md` keeps the `const` signature Linux
+  declares, which C0 refuses at the cast that returns the node.
+- `mdtests/rb_prev.md`: the Linux `rb_prev` with its predecessor contract,
+  certified, the mirror of `rb_next.md` with its own list lemmas where the
+  model's are not symmetric; `mdtests/rb_prev_rejects_a_dropped_context.md` is
+  its negative.
 - `mdtests/rb_augment_callbacks_table.md` and the neighboring
   `rb_augment_callbacks_helper*.md` fixtures: the augmented-rbtree callback
   suite as a const table of function pointers, with the effect and ownership

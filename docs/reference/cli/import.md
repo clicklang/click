@@ -77,13 +77,14 @@ assembly are silently deleted to make an import pass.
 
 The preliminary C++ frontend boundary accepts one C++20 translation unit
 selected by exactly one entry in a JSON compilation database, with one
-selected free function and the uniquely named free-function definitions
+selected free function or ordinary method and the uniquely named definitions
 reachable from its supported direct call statements. In the baseline profile,
 exceptions are disabled and every selected or reachable function must declare
 `noexcept`. A second, deliberately smaller profile may retain the compilation
-command's enabled exception mode: free functions may omit `noexcept`, but the
-entire closed reachable graph must remain object-free and contain only Click's
-already checked normal-returning operations.
+command's enabled exception mode: free functions and ordinary methods may omit
+`noexcept`, but the closed reachable graph must contain only Click's checked
+normal-returning operations. This profile permits borrowed trivial records,
+while local object construction remains outside it.
 The selected definitions may be written in the `.cpp` translation unit or in
 one configured `.h` project header included by that translation unit. All
 lowered declarations and source spans must come from that one logical source.
@@ -100,7 +101,7 @@ Its baseline import configuration explicitly sets `"language": "c++"`, the
 standard to `c++20`, target to `x86_64-unknown-linux-gnu`, exceptions and RTTI to false,
 and paths for the pinned exporter, compilation database, working directory,
 `.cpp` translation unit, logical source, selected function, and semantic
-artifact. These booleans may also be true for an object-free, normal-only
+artifact. These booleans may also be true for a supported normal-only
 reachable graph; the observed Clang profile must match the configuration.
 `click import lock` executes the repository-owned Clang 19.1.7
 LibTooling exporter with that entry and records the database bytes, exact parsed
@@ -154,12 +155,13 @@ For a compilation command with exceptions enabled, the config instead sets
 `"exceptions": true`; the observed Clang profile must agree. The semantic
 artifact records `exception_behavior: "normal_only"` independently from each
 function's `declared_noexcept` value. This is not exception handling support:
-reachable `throw`, `try`/`catch`, unresolved calls, and every record/object use
-are rejected locally. Because the artifact contains the complete supported
+reachable `throw`, `try`/`catch`, unresolved calls, and local object construction
+are rejected locally. Borrowed references to the supported trivially destructible
+record may use its checked fields and ordinary methods. Because the artifact contains the complete supported
 direct-call closure and has no throwing operation, ordinary verification may
 check its normal behavior without inventing an exceptional proof outcome.
-An RTTI-enabled profile is similarly allowed only for the currently supported
-object-free graph; this does not add `typeid` or `dynamic_cast` semantics.
+An RTTI-enabled profile also permits those borrowed records; this does not add
+virtual dispatch, `typeid`, or `dynamic_cast` semantics.
 
 The separate `"exception_behavior": "scalar_int32"` config requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
@@ -233,9 +235,10 @@ into C text. The `const-reference-alias` fixture writes through an `int&` and
 reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
-currently by-value `bool`, `int&`, `const int&`, mutable `int*`, one `const`
-signed-64 reference, and a mutable reference to the one supported simple record
-type. Selected functions return `int` or `bool`.
+currently by-value `bool` or signed/unsigned 32/64-bit integers, `int&`, `const int&`,
+mutable `int*`, one `const` signed-64 reference, and mutable or const references
+to supported simple record types with distinct proof-facing names. Selected functions return `int`,
+signed/unsigned 64-bit integers, `unsigned int`, `bool`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a
@@ -290,8 +293,9 @@ These fixtures do not claim the host C++ standard library: their header is a
 pinned input containing only the needed `int64_t` typedef. Mutable or
 non-`constexpr` globals, undeclared header dependencies, broader or unordered
 constant graphs, other constant expressions, mutable signed-64 references,
-unsigned 64-bit aliases, other relational operators, `||`, overloaded logical
-operators, and non-Boolean `&&` operands remain outside the boundary.
+`!=`, `||`, and overloaded logical operators remain
+outside the boundary. Signed integer operands in a Boolean context use the
+checked nonzero conversion; they are not truncated to 32 bits first.
 
 The `direct-call` fixture selects a caller and captures the transitive closure
 of definitions reached by discarded-result direct call statements. Each call
@@ -300,11 +304,89 @@ retain their parameter identity, and all captured functions lower into the
 ordinary modular call environment. Each definition has its own sidecar
 contract and proof. The artifact rejects recursion, ambiguous reachable names,
 and missing definitions. Reachable functions that omit `noexcept` are accepted
-only in an exception-enabled, object-free profile; the baseline profile
+only in an exception-enabled normal-only profile (including borrowed trivial records); the baseline profile
 continues to reject them. Omitting `noexcept` does not itself declare a Click
 exception.
 
-The `scalar-local` fixture adds mutable automatic `int` locals declared directly
+The `return-call` fixtures add direct `return helper(...)` for matching signed
+or unsigned 32/64-bit and Boolean return types, including concrete function and
+method template instances. The typed `return_call` node retains the callee's
+Clang identity, typed arguments, result type, source span, and cleanup chain.
+Implicit calls on `this` retain the existing checked receiver interface; arbitrary
+pointer dispatch remains outside the slice. Lowering captures the result in a
+fresh local of its actual type before destroying automatic objects, then returns
+that captured value. The synthetic fee wrappers keep Bitcoin's direct method
+return-call shape and signed fast-path results; the full upstream wide fallback
+is still unsupported.
+
+Regressions prove arbitrary scalar forwarding, branch results, memory framing,
+Boolean and wide results before normal cleanup, and object-free normal/exceptional
+propagation. Caller proofs agree across verification, expansion/reverification,
+and retained audit. Artifact checks reject return-type mismatches, invalid call
+graphs, and missing or misordered cleanups. Uncaught return-call cleanup edges
+reuse the existing scalar exception lowering and have structural coverage;
+resource-bearing exceptional contracts and returns from guarded `try` regions
+remain outside the supported surface slice.
+
+A direct free-function return call accepts one nested call argument, including
+chains such as `return echo(echo(echo(value)));`. Other arguments must be stable
+scalars: literals, locked compiler/constexpr constants, by-value scalar parameters
+or scalar locals, and supported integer/Boolean casts of these values. Their
+value cannot change across the nested call, and their evaluation is total, so
+all C++ argument orders agree. Namespace-scope signed-64 `constexpr` constants
+with internal linkage are accepted with or without explicit `static`, under the
+existing bounded constant-graph checks. Concrete Boolean template substitutions
+also retain their resolved constant value. Field reads and supported casts of
+field reads are also admitted when the one nested call has only scalar value
+inputs, with no reference/pointer arguments or further input calls. In this
+closed profile, mutable globals and external calls are rejected, so such a
+callee cannot acquire an alias to the caller's storage. Its field siblings are
+checked and captured before the call; their values agree in every argument
+order, and a throwing call cannot skip a read's authority check. This covers
+`Div(Mul(fee, at_size), size, RoundDown)` with field-backed `fee` and `size`.
+General alias analysis is not provided. Reference reads, dereferences,
+arithmetic, additional calls, and side effects in sibling arguments fail import.
+No unsafe sibling operation can be hidden by selecting an argument order that
+skips it. Resource-bearing exceptional contracts remain outside the proof
+surface slice.
+
+Each nested result has a checked typed capture; an inner exception skips the
+outer call and uses the return's cleanup edge. Verification, selected-caller
+expansion/reverification, and retained audit cover all supported scalar types,
+argument positions, casts, mixed-width branches, memory writes by the inner
+call, normal destruction, and object-free exception propagation. Name allocation
+and argument lowering have deterministic scaling coverage. Artifact validation
+checks every nested callee, capture type, and sibling storage type and rejects
+recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
+normalization and ordering checks as return calls. Calls in general value
+expressions, converted call results, and returned references or objects remain
+unsupported.
+
+Scalar evaluation is normalized within the C++ frontend into explicit
+statements followed by a typed value. Initializer and return artifact wrappers
+retain source context; they do not select separate evaluation semantics.
+The same ordering policy applies to integer-local initializer, return,
+and discarded call arguments. Constructor arguments remain outside nested-call
+support. Regressions cover scalar widths/signedness, initializer capture before
+cleanup, exception propagation, unsafe siblings in each source position, and
+verification/expansion/reverification/audit agreement.
+
+The frontend also prepares contract-facing signatures, Clang layouts, and
+local-object metadata alongside kernel execution. C++ and Rust feed the same
+prepared execution package to the verifier, using the signature/layout
+vocabulary shared with plain C. The shared verifier does not reinterpret C++
+artifacts or re-traverse C++ bodies; the original source and locked semantic
+identity remain attached to the prepared input.
+
+The synthetic fee fixture preserves `Div(Mul(fee, at_size), divisor, round_down)`
+and verifies concrete positive/negative rounding and exact division with
+64-bit helpers. It rejects hostile rounding claims, zero divisors, and unproved
+product bounds. This does not import upstream Bitcoin fee evaluation: its
+`__int128`, `Assume` annotations, and field-reading sibling
+arguments still need support.
+
+The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
+32/64-bit integer locals declared directly
 in the function body. Each local requires an initializer, which may be an
 already-supported integer expression or a supported direct call. Local
 declaration identity comes from Clang; direct-call initialization lowers to the
@@ -321,7 +403,7 @@ sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
 
 The `struct-member` fixture accepts one named, public, non-inheriting aggregate
-`struct` whose fields are mutable `int` or mutable `int*`. Clang supplies the
+`struct` whose fields are mutable `int`, signed 64-bit integers, or mutable `int*`. Clang supplies the
 record and field declaration identities plus the exact LP64 size, alignment,
 field offsets, and field widths. A function may receive an existing object by
 mutable reference and read or write those fields with `object.field`; a pointer
@@ -329,6 +411,242 @@ loaded from a field may use the already-supported checked dereference rules.
 The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
+
+Static scalar methods use a distinct `static_method` artifact kind with their
+class and declaration identities, without an implicit receiver or object-layout
+requirement. Select an ordinary declaration with `Class::helper`; reachable
+concrete function-template instances retain their existing distinct names.
+Class-qualified and unqualified calls support the existing scalar initializer
+and return-call positions, including one nested call with stable scalar siblings.
+Parameters and results must be supported by-value integer or Boolean scalars.
+Object-qualified static calls are rejected, including calls whose receiver has
+side effects. Virtual dispatch and reference/pointer helper signatures remain
+outside this slice. An unrelated unsupported field does not block a static
+helper that never accesses object storage.
+
+The synthetic `static-helpers.cpp` fixture preserves static `Mul`, `Div`, and
+Boolean template forwarding, with positive and negative rounding proofs.
+Selected-caller verification, expansion/reverification, and retained audit
+agree. Regressions cover every scalar type, distinct classes, initializer calls,
+scalar exception propagation, false claims, and malformed artifact identities
+and signatures. This removes the static-helper prerequisite; Bitcoin's wide
+arithmetic, checked `Assume`, and field-reading sibling arguments remain open.
+
+The `value-methods` fixtures add non-static, non-virtual ordinary methods on
+that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
+`"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
+them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
+`FeeFrac_operator_subtract_assign`, with an explicit first
+parameter `self`. Const methods use `const struct FeeFrac* self`; const record
+reference parameters retain the same qualification. This restricts writes
+through that parameter without forbidding an alias through a mutable parameter.
+Unused member functions, constructors, templates, and nested declarations are
+not imported into the execution graph. Reachable definitions and the record's
+complete supported field layout are still checked. Overloaded proof names and
+reachable unsupported bodies fail import.
+
+Direct `object.method(...)`, explicit `operator+=`/`operator-=`, and
+`object += other`/`object -= other` calls bind that receiver to the selected declaration identity. Call arguments
+must be direct supported references or the existing value arguments; pointer
+receivers, virtual dispatch, other overloaded operators, and call results
+outside the scalar-local initializer and direct scalar return-call slices remain unsupported.
+Same-width signed field `+=` and `-=` use checked loads, arithmetic, and
+stores. Compound updates with side effects or mixed-width conversions remain
+unsupported. Overflow obligations apply to each field's
+width. The fixtures prove disjoint-object addition, self-addition with one set
+of field resources, and preservation of unrelated caller memory; they reject
+false claims and missing authority or overflow bounds.
+
+The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
+verifies these same properties for unchanged upstream `FeeFrac` methods under
+the real project profile. This does not prove the class's other methods or
+its documented application invariant. The typed artifact schema is now 36;
+previous artifacts require an explicit lock refresh.
+
+The offline checker validates recursive function metadata before checking the
+supported semantic profile. It checks source spans, declaration metadata, and
+type-alias provenance and cycles throughout both branch arms, scopes, handlers,
+initializers, calls, and cleanup lists. A malformed node inside an unsupported
+lifetime arrangement reports a metadata error first. Supported widths, operand
+types, lexical visibility, and cleanup ordering are checked separately; valid
+metadata alone does not make a construct supported.
+
+Artifact resource limits are independent of the supported C++ semantic profile:
+
+| Budget | Limit |
+| --- | ---: |
+| Record declarations | 256 |
+| Constant declarations | 1,024 |
+| Function declarations, including the selected root | 1,024 |
+| Call graph depth, including the selected root | 64 |
+| Local declarations per function, including catch bindings | 1,024 |
+| Cleanup scopes per function | 256 |
+| Serialized JSON object/array nesting | 96 |
+| Serialized JSON objects and arrays | 65,536 |
+| Preprocessor files | 4,096 |
+
+Exhaustion names the budget. Serialized bounds are checked before decoding;
+the pinned exporter also bounds declaration discovery. Structural checks still
+reject duplicate IDs, missing or mismatched references, invalid layouts, and
+declarations outside the selected graph. Recursive calls remain unsupported
+semantics. Acyclic constant forests may have multiple leaves and longer chains;
+each initializer retains the supported literal-leaf or literal-times-prior-constant
+form, and the checker independently recomputes every evaluated value. Multiple
+record layouts reuse the existing field-type, explicit ABI, and ownership rules.
+Local and scope budgets count both branch arms; parameters do not count as
+local declarations. The exporter and checker enforce these counts independently.
+Lifetime combination restrictions described below remain semantic-profile rules.
+
+C++ graph validation indexes each function's parameter, local, and catch-binding
+identities once. Reference arguments and destructor edges use borrowed type
+lookups. Reusing a declaration ID anywhere in the function is rejected, including
+across sibling scopes. Equal local names in disjoint scopes remain distinct
+when their declaration IDs differ. Separate lexical and lifetime validation
+checks visibility, construction, and cleanup order.
+
+C++ calls and contracts bind through Clang declaration IDs. Unique readable
+names are preserved; free namespace names replace `::` with `_`. If reachable
+declarations share a readable name, each contract name is `__click_cpp_decl_`
+plus the full lowercase hexadecimal UTF-8 declaration ID from the artifact.
+This prefix is reserved: source declarations beginning with it also receive
+encoded names, as do spellings that are not valid sidecar identifiers
+(such as anonymous namespace members). The lowered-import API exposes
+`contract_name(declaration_id)`.
+Reachable overloads are supported; selecting an overloaded declaration directly
+still fails until a signature selector is available.
+
+A direct statement `__builtin_assume(condition)` creates a checked proof
+obligation at its source location. The condition must be proved from contracts
+or preceding control flow; the importer never inserts it as a trusted fact.
+Lowering uses the common kernel's labeled assertion operation. A missing or
+false condition fails verification even when the function's result claim would
+otherwise hold. Normal returns and destructor cleanup remain unchanged.
+
+Clang identifies the intrinsic by builtin declaration identity. An ordinary
+function named `Assume` has ordinary call semantics. The builtin does not
+evaluate its operand, so this slice accepts only total predicates over by-value
+scalar parameters/locals and locked constants: supported casts, comparisons,
+and logical conjunction. Reference/pointer/field reads, runtime calls, arithmetic,
+and side effects are rejected. Compiler-folded constants retain the existing
+pinned-Clang constant policy. Bitcoin's library `Assume` macro and general
+assertion/abort behavior remain unsupported. Schema 36 requires an explicit
+refresh of earlier locks.
+
+Scalar interpretation is shared by the artifact validator, execution lowering,
+and proof-facing signatures. It distinguishes mutable and const qualification
+from the five supported value kinds: Boolean, int32, int64, uint32, and uint64.
+Integer literals use one checked parser in validation and lowering. Source
+aliases preserve provenance without changing the value kind. Reference and
+record-field restrictions remain specific to their positions in the profile.
+Explicit integral casts use one C++ conversion policy over the common kernel;
+the frontend does not re-infer promotions from source syntax.
+
+The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
+`%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked
+kernel. Clang's integral promotions and signed casts are explicit artifact
+nodes; mixed-width operands require those conversions. Signed 64-to-32
+narrowing follows C++20's modulo semantics using the kernel's unsigned bit
+conversion and signed reinterpretation. Boolean conversion preserves the
+nonzero meaning of all 64 bits. Division truncates towards zero, and remainder
+has the dividend's sign. Zero divisors and the `MIN / -1` and `MIN % -1`
+overflow pair fail verification. Addition, subtraction, multiplication, and
+negation retain their signed-overflow obligations. Scalar local call captures
+require the same return width as the declaration; casts around calls remain
+outside this slice.
+
+The fixture preserves Bitcoin's quotient/remainder correction expression with
+a signed 64-bit dividend. It checks both rounding directions for positive and
+negative dividends, exact division, zero, signed extrema, and the largest
+positive int32 divisor, together with expansion and retained audit sessions.
+These are concrete rounding cases, not a general rounding theorem. General
+quotient/remainder contracts and a modular caller with unrelated memory also
+verify. Bitcoin's actual rounding helper uses `__int128`; wider integers
+remain unsupported.
+
+Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
+same-type arithmetic/comparisons now use the common unsigned kernel types.
+Addition, subtraction, multiplication and negation wrap modulo the width;
+division and remainder require a nonzero divisor. Clang exports the usual
+arithmetic conversions explicitly, so mixed signed/unsigned source expressions
+retain their C++ meaning. Signed-to-unsigned conversion is modulo the target
+width; unsigned-to-int32 narrowing reinterprets the low 32 bits. Uint32-to-int64
+is an exact widening. C++20 uint64-to-int64 conversion preserves all 64 bits:
+values through `INT64_MAX` retain their value, and higher values denote the
+congruent signed value modulo 2^64. The importer selects the explicit kernel
+`UInt64BitsToInt64` cast mode; ordinary C casts retain their existing checks and
+supported slice. Subsequent signed operations retain overflow obligations.
+Unsigned references and record fields, runtime narrow/wide integer types,
+bitwise operations, and general templates remain outside this slice.
+
+The `unsigned-arithmetic` fixtures check wraparound, extrema, casts, modular
+caller framing, division guards, and both unsigned fee fast-path expressions.
+Those fast-path cases return the unsigned intermediate and do not prove
+upstream `EvaluateFee`. The kernel strengthens unsigned constant bounds using
+only the queried endpoint's index, including negated bounds and values above
+the signed sign bit; deterministic regressions grow unrelated fact populations.
+
+The `signed-conversion` fixtures verify explicit and implicit conversions at
+the sign bit and both extrema, both round trips for arbitrary inputs, a modular
+bit-preservation contract with unrelated memory, and subsequent signed overflow.
+They preserve the instantiated fee fast-path expressions and signed return type
+and verify concrete rounding/boundary cases. The complete upstream `EvaluateFee`
+implementation and a general rounding theorem remain open. Conversion proofs
+agree across ordinary verification, expansion/reverification, and retained audit;
+false signed results are rejected. The shared bitvector representation preserves
+source bits and uses typed signed operators for subsequent computation. Indexed
+bit-preserving equality rules have fact-population and expression-depth scaling
+regressions.
+
+The pinned Clang exporter evaluates constant `sizeof` expressions and static
+zero-argument constexpr `std::numeric_limits::max()` calls in selected expression
+positions. These produce distinct `compiler_constant` nodes with a checked
+32/64-bit value/type and the original source span. The exporter preserves runtime
+expression semantics under the pinned target and locked preprocessor input
+closure. Standard-library semantics remain part of the trusted compiler input.
+Runtime calls are never folded by this allowlist. General constexpr calls in
+runtime expression positions, unsigned namespace constants, and local
+call-capture initializer forms outside the ordinary call slice remain unsupported. The unchanged Bitcoin `GetSizeOfCompactSize` proof covers every
+uint64 input in four disjoint ranges, checks expansion and retained audit, and
+rejects false encoded-length claims. It proves encoded length, not serialized
+bytes or a round trip.
+
+Concrete function-template instances are supported when reached through an
+ordinary selected caller and their instantiated operations fit the existing
+profile. Boolean value arguments and unqualified builtin `bool`, `int`,
+`unsigned int`, `long`, `unsigned long`, `long long`, and `unsigned long long`
+type arguments are accepted. Each instance keeps its distinct Clang USR.
+Sidecar names append argument tokens in order, such as `choose__bool_true`,
+`identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
+canonical builtin token; equal-width types such as `long` and `long long`
+retain different names. Name collisions remain explicit import errors.
+
+For `if constexpr`, pinned Clang chooses the instantiated arm in constant
+evaluation context. The artifact retains an ordinary constant Boolean `if`,
+the selected arm, an empty discarded arm, and the original statement and
+condition spans. The condition uses a distinct `compiler_constant` under a
+Boolean conversion. Discarded code contributes no runtime calls, accesses,
+or cleanup. A selected unsupported arm fails import. Ordinary `if` statements
+continue to import both arms. Return validation checks the reachable arm of a
+closed constant Boolean condition and both arms of an unknown condition.
+
+The `template-instances` fixture checks modular callers, receiver authority,
+framing, false contracts, same-width type identities, Boolean substitution,
+constant-evaluation context, and unsupported arguments. Its instantiated fee
+fast paths retain the unsigned expressions and cover both rounding directions
+with expansion/reverification and retained audit. They remain synthetic
+prerequisite proofs, not verification of upstream `EvaluateFee`. Selecting a
+dependent template pattern, packs, other non-type arguments, class templates,
+qualified or non-scalar type arguments, and calls in unsupported expression
+positions remain outside this slice. Template substitution and constexpr
+selection are trusted compiler operations under the locked input profile;
+selected function implementations still require verified sidecar contracts.
+
+The shared signed-64 reasoning rules also verify `x + z` and `x - z` across
+the full signed range when a modular helper establishes `z == 0`. They retain
+the equality's proof provenance, read only the queried operands' fact indexes,
+and strip chains of zero additions through borrowed operands. Deterministic
+regressions check unrelated fact populations and increasing expression depth;
+the C `int64_returned_zero_identity` fixture covers the common kernel path.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -353,38 +671,53 @@ checked destructor, then returns the captured value. The fixture proves that
 the destructor restores caller memory while the result retains the value seen
 before cleanup; missing and false destructor contracts are rejected.
 
+Lifetime planning derives each destructor from the typed local and record
+identity, independently of the artifact's cleanup lists. A scoped construction
+stack supplies cleanup for returns, lexical fallthrough, and exceptional exits;
+validation checks that exported lists match the live objects in reverse order.
+An initializer's exceptional continuation never activates its destination.
+Catch boundaries delimit unwinding, while returning captures the result before
+destruction. This replaces arrangement-specific lowering and final-return-based
+destructor discovery. Constructors remain nonthrowing in this profile; partial
+construction, temporaries, copy/move, and wider exceptions remain unsupported.
+
 The `early-return-destructor` fixture permits structured `if` statements after
 one destructible object has been constructed directly in the function body.
 Every return edge captures its result and then invokes that same checked
 destructor. It verifies the original two-path `Restore` example: the early path
 returns 7, the final path returns 9, and both restore the referenced integer to
-its entry value. A return before construction is rejected rather than assigned
-a cleanup for an object that is not alive.
+its entry value. Returns before construction carry no cleanup for the future
+object. The `construction_prefix` fixture also returns between two constructions;
+each return destroys only its successfully constructed prefix.
 The `examples/basic-cpp/` project also selects a modular caller starting with
 41: either captured result is retained while the referenced cell is 41 after
 the call.
 
-The `reverse-destructor-order` fixture permits exactly two such top-level
-objects when both use the supported constructor and destructor. Both objects
-must be constructed before any return. Each return records the second object's
+Multiple top-level objects are supported when all require destruction and use
+the supported constructor and destructor, within the local declaration budget.
+The `reverse-destructor-order` fixture demonstrates two objects. Both objects
+are activated individually after successful initialization. A return after both
+constructions records the second object's
 destructor before the first object's destructor, and lowering checks those
 calls in that order. The fixture makes the ordering observable: the second
 guard restores 7 before the first guard restores the caller's entry value.
 
 The `nested-scope-destructor` fixture alternatively permits one explicit block
-directly in a free-function body, with exactly one directly constructed
-destructible object and no other block local. A return from the block captures
+directly in a free-function body. Such a block may contain multiple directly
+constructed destructible objects, within the declaration budget, and no other
+block locals. The fixture demonstrates one object. A return from the block captures
 its value before running the destructor, while normal fallthrough runs the
 same checked cleanup before the next outer statement. The artifact retains
 that lexical boundary as a `scope` statement; the outer return consequently
 has no cleanup for the already-destroyed object.
 
-The `sibling-scope-destructors` fixture composes up to two such blocks when
-their object lifetimes do not overlap. Each sibling carries its own return and
+Sibling blocks are supported within the cleanup-scope and declaration budgets
+when their object lifetimes do not overlap. The `sibling-scope-destructors`
+fixture demonstrates two such blocks. Each sibling carries its own return and
 fallthrough cleanup, and the next block begins only after the preceding
 destructor. The fixture deliberately reuses the source name `guard`; distinct
 Clang declaration identities and the kernel's sequential local-lifetime rule
-keep the two objects separate.
+keep those objects separate.
 
 The `overlapping-scope-destructors` fixture instead composes exactly one outer
 destructible object with exactly one inner cleanup scope. A return from the
@@ -406,14 +739,15 @@ destructor synthesized on the path where no object exists. Objects in both
 arms, combination with another aggregate or cleanup scope, and deeper
 conditional construction remain rejected.
 
-Copies and moves, default or partial aggregate initialization, multiple or
-more than two top-level destructible local objects, broader nested lifetimes,
-ordinary methods, inheritance, private fields, bit-fields, nested records, and
-multiple record types remain explicit errors.
+Copies and moves, default or partial aggregate initialization, multiple
+non-destructible aggregate locals, broader nested lifetime combinations,
+virtual dispatch, inheritance, private fields, bit-fields, nested record values,
+and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
 pointer call, pointer locals, pointer arithmetic, null pointers, multiple
-indirection, call results outside a local initializer, indirect calls, loops,
+indirection, call results outside the supported initializer and return-call slices,
+indirect calls, loops,
 external specifications, and broader C++ syntax also remain outside this
 end-to-end subset.
 
@@ -454,8 +788,9 @@ supply their actual selected roots. Lock preparation may succeed while Click's
 C parser still refuses an unsupported declaration in a real system header.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
-preprocessing inputs. Unsupported compiler options, response files, plugins,
-and execution hooks are rejected. The compiler runs with a cleared environment;
+preprocessing inputs. Other compiler options are rejected unless a named option
+profile, described below, lists their exact spelling. Response files, plugins,
+and execution hooks are always rejected. The compiler runs with a cleared environment;
 only the configuration's supported variables are supplied. Use explicit
 `SOURCE_DATE_EPOCH` when source depends on date/time macros.
 
@@ -480,6 +815,216 @@ Compiler imports initially reject incremental `--changed-since` requests and
 do not use verification markers. Their proofs are checked through the same
 engine used for ordinary verification, profiling, audit, and expansion.
 
+### Option profile `linux-6.8-x86_64-kbuild`
+
+A configuration may set `"option_profile"` to a named option profile. The
+profile admits further options beside the preprocessing options above, and
+only for its target. The lock records the profile name beside each source's
+complete argument vector, and loading refuses a lock whose profile differs
+from the configuration's.
+
+The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
+Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
+GCC 13, for the `x86_64-linux-kernel` target. It exists for that in-repository
+import. An option is accepted only where ignoring it cannot make Click accept
+a program the compiler treats differently: the option affects only
+preprocessing, whose result is the locked artifact, or only diagnostics, or
+only code generation, or it makes the compiler's semantics stricter than
+Click's or no weaker. The list is closed and keyed to exact spellings. A
+different value, an unlisted sibling, or an unknown option is refused with its
+source and argument position, for example
+``source `lib/rbtree.c`: unsupported compiler argument 50 `-O3`; ...``. Some
+options are accepted only beside others that make them safe; without them the
+option is refused with the missing one named.
+
+Besides `-E` and the source operand, which the importer supplies itself, the
+recorded vector has 102 options: 15 base preprocessing options, 4 that the
+target fixes, and 83 others with 79 distinct spellings. All 79 are accepted:
+`-mno-sse` and `-mno-sse2` only beside `-mno-80387`, and `-O2` only beside
+`-fno-strict-aliasing`, `-fno-strict-overflow`, and
+`-fno-delete-null-pointer-checks`, with the optimizer promises below refused
+in the imported source.
+
+| Recorded option | Verdict | Reason |
+| --- | --- | --- |
+| `-I<dir>` (7) | Base | Include search; the files read are in the lock. |
+| `-include <file>` (3) | Base | Forced include; the files read are in the lock. |
+| `-D<macro>` (5) | Base | Macro definition; its effect is in the artifact. |
+| `-nostdinc` | Fixed | The target's own argument. |
+| `-std=gnu11` | Fixed | The target's own argument; Click's kernel C is GNU C11. |
+| `-funsigned-char` | Fixed | The target's own argument; Click's plain `char` is unsigned. |
+| `-m64` | Fixed | The target's own argument; Click's ABI is LP64. |
+| `-fmacro-prefix-map=./=` | Accepted | Rewrites the paths `__FILE__` expands to, in the artifact; Click refuses `__builtin_FILE`. |
+| `-Wall` | Accepted | Diagnostics only. |
+| `-Werror` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=date-time` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=designated-init` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=implicit-function-declaration` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=implicit-int` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=incompatible-pointer-types` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=return-type` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=strict-prototypes` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Wcast-function-type` | Accepted | Diagnostics only. |
+| `-Wenum-conversion` | Accepted | Diagnostics only. |
+| `-Wframe-larger-than=2048` | Accepted | Diagnostics only. |
+| `-Wimplicit-fallthrough=5` | Accepted | Diagnostics only. |
+| `-Wmissing-declarations` | Accepted | Diagnostics only. |
+| `-Wmissing-prototypes` | Accepted | Diagnostics only. |
+| `-Wundef` | Accepted | Diagnostics only. |
+| `-Wvla` | Accepted | Diagnostics only. |
+| `-Wno-address-of-packed-member` | Accepted | Diagnostics only. |
+| `-Wno-alloc-size-larger-than` | Accepted | Diagnostics only. |
+| `-Wno-array-bounds` | Accepted | Diagnostics only. |
+| `-Wno-dangling-pointer` | Accepted | Diagnostics only. |
+| `-Wno-format-overflow` | Accepted | Diagnostics only. |
+| `-Wno-format-security` | Accepted | Diagnostics only. |
+| `-Wno-format-truncation` | Accepted | Diagnostics only. |
+| `-Wno-frame-address` | Accepted | Diagnostics only. |
+| `-Wno-main` | Accepted | Diagnostics only. |
+| `-Wno-maybe-uninitialized` | Accepted | Diagnostics only. |
+| `-Wno-missing-field-initializers` | Accepted | Diagnostics only. |
+| `-Wno-override-init` | Accepted | Diagnostics only. |
+| `-Wno-packed-not-aligned` | Accepted | Diagnostics only. |
+| `-Wno-pointer-sign` | Accepted | Diagnostics only. |
+| `-Wno-restrict` | Accepted | Diagnostics only. |
+| `-Wno-shift-negative-value` | Accepted | Diagnostics only. |
+| `-Wno-sign-compare` (twice) | Accepted | Diagnostics only. |
+| `-Wno-stringop-overflow` | Accepted | Diagnostics only. |
+| `-Wno-stringop-truncation` | Accepted | Diagnostics only. |
+| `-Wno-trigraphs` | Accepted | Diagnostics only; GNU C11 does not replace trigraphs. |
+| `-Wno-type-limits` | Accepted | Diagnostics only. |
+| `-Wno-unused-but-set-variable` (twice) | Accepted | Diagnostics only. |
+| `-Wno-unused-const-variable` (twice) | Accepted | Diagnostics only. |
+| `-fno-common` | Accepted | GCC 13's default; a tentative definition is one zero-initialized definition, as Click models it. |
+| `-fno-delete-null-pointer-checks` | Accepted | Stops GCC assuming that a dereferenced pointer is not null; Click refuses any access through a possibly null pointer. |
+| `-fno-strict-aliasing` | Accepted | Removes GCC's type-based alias assumptions; Click never assumes them, and refuses accesses that do not fit the cell. |
+| `-fno-strict-overflow` | Accepted | Makes signed and pointer overflow wrap; Click treats both as undefined, which is stricter. |
+| `-fshort-wchar` | Accepted | Changes `wchar_t` and the wide-literal element type; the predefines are in the artifact and Click has no wide literals. |
+| `-fstrict-flex-arrays=3` | Accepted | Only `[]` is a flexible member; Click has no flexible or zero-length members and bounds every struct array by its declared length. |
+| `-ftrivial-auto-var-init=zero` | Accepted | Zeroes uninitialized automatic storage; Click refuses any read of uninitialized storage. |
+| `-fno-allow-store-data-races` | Accepted | GCC 13's default; forbids invented stores, so it only removes transformations. |
+| `-falign-functions=16` | Accepted | Code layout only. |
+| `-falign-jumps=1` | Accepted | Code layout only. |
+| `-falign-loops=1` | Accepted | Code layout only. |
+| `-fcf-protection=branch` | Accepted | Adds `endbr64` landing pads; its `__CET__` predefine acts only through preprocessing. |
+| `-fconserve-stack` | Accepted | Inlining and frame-size heuristics only. |
+| `-fno-PIE` | Accepted | Position-dependent code; dropping `__pie__` and `__PIE__` acts only through preprocessing. |
+| `-fno-asynchronous-unwind-tables` | Accepted | Omits unwind tables only. |
+| `-fno-jump-tables` (twice) | Accepted | Switch lowering only. |
+| `-fno-stack-check` | Accepted | Stack probing only. |
+| `-fno-stack-clash-protection` | Accepted | Stack probing only. |
+| `-fomit-frame-pointer` | Accepted | Frame layout only; Click refuses `__builtin_frame_address`. |
+| `-fpatchable-function-entry=16,16` | Accepted | Padding before function entry only. |
+| `-fstack-protector-strong` | Accepted | Adds stack canaries; Click refuses the overflows they detect. |
+| `-mcmodel=kernel` | Accepted | Code and data addresses in the top 2 GiB; Click assumes nothing about address values beyond null. |
+| `-mfunction-return=thunk-extern` | Accepted | Return thunks only. |
+| `-mindirect-branch-cs-prefix` | Accepted | Instruction encoding only. |
+| `-mindirect-branch-register` | Accepted | Indirect-branch code generation only. |
+| `-mindirect-branch=thunk-extern` | Accepted | Indirect-branch thunks only. |
+| `-mno-3dnow` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-80387` | Accepted | Floating point uses no x87; it fails to compile or calls libgcc's IEEE routines, without excess precision. |
+| `-mno-avx` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-fp-ret-in-387` | Accepted | Return convention for x87 values, which Click has no operations on. |
+| `-mno-mmx` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-red-zone` | Accepted | Stack layout only. |
+| `-mno-sse` | Accepted with `-mno-80387` | Alone it moves floating point to the x87 with excess precision (`__FLT_EVAL_METHOD__` 2), which Click does not model. |
+| `-mno-sse2` | Accepted with `-mno-80387` | Alone it moves `double` to the x87 with excess precision (`__FLT_EVAL_METHOD__` -1), which Click does not model. |
+| `-mpreferred-stack-boundary=3` | Accepted | Stack alignment only; GCC realigns frames that need more. |
+| `-mskip-rax-setup` | Accepted | Variadic-call register setup only. |
+| `-mtune=generic` | Accepted | Instruction scheduling only. |
+| `-O2` | Accepted with `-fno-strict-aliasing`, `-fno-strict-overflow`, `-fno-delete-null-pointer-checks` | Optimization preserves the meaning of a program without undefined behavior, which is what Click proves; GCC's remaining unchecked assumptions are refused in the source (see "Optimizer promises"), and `__builtin_constant_p` is an unknown 0 or 1. |
+
+### Optimizer promises
+
+Under an option profile that accepts optimization, the frontend refuses, with
+the attribute's location and the reason, every attribute and qualifier that
+GCC's optimizer trusts as a promise from the programmer, because Click does not
+check those promises. Without such a profile, GCC 13 does not act on them and
+they are accepted and ignored as before.
+
+| Construct | Under `linux-6.8-x86_64-kbuild` | Reason |
+| --- | --- | --- |
+| `nonnull` | Refused | GCC deletes the parameter's null checks, even with `-fno-delete-null-pointer-checks`. |
+| `const` | Refused | GCC merges calls and assumes the function touches no memory. |
+| `leaf` | Refused | GCC assumes the call leaves the unit's unescaped static data unchanged. |
+| `access` | Refused | A promise about how the pointed-to object is accessed; not observed exploited by GCC 13, but unchecked. |
+| `noreturn` | Refused, except on `compiletime_assert`'s block-scope `error` declaration | GCC emits nothing after the call. Every call to an `error` declaration lowers to a check that fails on any path reaching it, so Click proves it unreachable. |
+| `returns_twice` | Refused | A second return needs a control-flow model Click does not have. |
+| `restrict` | Refused | GCC assumes restrict pointers do not alias. |
+| `pure`, `returns_nonnull`, `malloc`, `alloc_size`, `alloc_align`, `assume_aligned` | Refused in every mode | Unchecked promises the frontend never accepted. |
+| `__builtin_unreachable`, `__builtin_assume`, `assume` statement attribute | Refused in every mode | Unchecked promises the frontend never accepted. |
+| `cold`, `hot`, `noinline`, `warn_unused_result`, `nonstring` | Refused in every mode | Harmless to the optimizer's semantics (layout, inlining, and diagnostics only), but not supported by the frontend. |
+| `always_inline`, `gnu_inline`, `nothrow`, `weak`, `deprecated`, `unused`, `no_instrument_function` | Accepted | Inlining choice, linkage, or diagnostics; C has no exceptions for `nothrow` to promise about. |
+| `__builtin_expect` | Accepted | A branch-probability hint; its value is its first operand. |
+
+The list comes from GCC 13's attribute documentation and from these
+measurements with the recorded `x86_64-linux-gnu-gcc-13`. Each lying
+declaration is in a separate object file, so GCC cannot see the body, and each
+program prints the same values at `-O0` and differs at `-O2` with the three
+safety options:
+
+- `nonnull(1)` on a definition with `if (!p) return -1;`: `-O0` returns -1
+  for a null argument, `-O2` dereferences it and crashes.
+- `const`, and `pure` on a function that increments a counter: two calls
+  differ by 1 at `-O0`, and by 0 at `-O2`.
+- `leaf` on a function that calls back into the unit and changes a static
+  variable: `-O0` sees the change, `-O2` does not.
+- `noreturn` on a function that returns: `-O0` continues after the call,
+  `-O2` runs off the end of the caller and crashes.
+- `restrict` parameters passed the same address: `-O0` reads the second
+  store, `-O2` the first.
+- `malloc` on a function returning an existing object's address: `-O2`
+  misses the store through the result.
+- `assume_aligned(16)` on a misaligned pointer: `-O2` folds the low bits to 0.
+- `__builtin_unreachable` and `assume` statement attributes: `-O2` folds
+  the condition they assert.
+- `returns_nonnull` returning null: the check is deleted at `-O2` without
+  `-fno-delete-null-pointer-checks` and kept with it.
+- `access(read_only, 1)` on a function that writes, and `__builtin_expect`:
+  no difference.
+
+GCC does not assume that loops terminate when compiling C (`-ffinite-loops`
+is off), and `-O2` otherwise exploits only undefined behavior, such as
+signed overflow, null or out-of-bounds access, and reads of uninitialized
+storage, which Click refuses to prove. The three safety options turn off the
+remaining assumptions Click does not make: type-based aliasing, overflow, and
+null-check deletion.
+
+## Dependency-closure projection
+
+A source entry may set `"projection": "dependency-closure"`. Click then
+imports only part of the locked artifact: every function definition written
+in the translation unit's own source file (the file the first line marker
+names), and, transitively, every file-scope declaration that defines a name a
+kept declaration mentions. That includes types, struct, union, and enum tags,
+enumeration constants, typedefs, objects, prototypes, and inline helpers.
+Everything kept is parsed, lowered, and checked as usual, so an unsupported
+construct inside the closure is still rejected with its original location.
+Declarations outside the closure are not parsed, and nothing is claimed about
+them.
+
+Two rules keep the omission checked rather than permissive:
+
+- An exact `extern typeof(f) f;` redeclaration is never needed to type a use
+  of `f`, because it repeats `f`'s own type with nothing added. The Linux
+  `EXPORT_SYMBOL` macro emits one per exported function, beside its export
+  storage and `.export_symbol` assembly, which nothing names. Export storage
+  and export assembly are therefore outside the claim.
+- If an omitted declaration carries the `constructor` or `destructor`
+  attribute, the projection is refused, because such a function runs
+  without being named.
+
+Every other declaration that defines a needed name is kept, including
+redeclarations that add attributes such as `weak`. Omitted declarations are
+blanked in place, so line numbers and original-source locations are
+unchanged. The option is part of the import configuration and therefore of
+the lock's identity.
+
+This is a bounded arrangement for importing one kernel translation unit
+whose headers declare far more than its functions use. It is not a general
+statement that omitted header declarations are harmless, and it does not
+validate them.
+
 ## Locations and trust boundary
 
 Structured compiler line markers preserve original filenames and line numbers
@@ -493,10 +1038,13 @@ Reproducing its invocation is not a formal proof that its preprocessing is
 correct. It supplies neither executable C semantics nor proof authority to
 Click: those remain in Click's frontend and independent kernel checker.
 
-The captured Linux 6.8.12 rbtree translation unit is not yet supported by this
-first profile. Its full header graph includes unsupported C forms, effectful
-assembly, storage-producing exports, and additional compiler options. The
-kernel capture records those gaps; it is not a passing verification fixture.
+The captured Linux 6.8.12 rbtree translation unit is locked in
+`integrations/linux-rbtree/`. Its configuration selects the
+`linux-6.8-x86_64-kbuild` option profile and the dependency-closure
+projection. Its full header graph includes unsupported C forms, effectful
+assembly, and storage-producing exports, which the projection leaves out. The
+lock and artifact load offline once the checked input closure is extracted;
+no proof runs against the imported bodies yet.
 
 ## Options and exit status
 

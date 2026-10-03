@@ -38,6 +38,7 @@ same(resource, left: &ProgramPoint, right: &ProgramPoint) -> Sameness
 explain(resource, here, there) -> Explanation
 explain_last_same(resource, here) -> Explanation
 last_same_point(resource, at) -> Option<ProgramPoint>        // the naming path
+cell_value_on_path(at, pointer, bytes, facts) -> Option<CValue> // a C read, on one path
 ```
 
 `Sameness` is `Same`, `Changed { at, by }` or `Unknown { at, why }`. `Stop`
@@ -153,6 +154,21 @@ the same as, and an array argument carries the oldest snapshot that still
 agrees about its block, so equal names mean equal terms. The stop information
 is *computed from the point the walk stopped at* rather than recorded along the
 way, which is why naming pays nothing for it.
+
+`cell_value_on_path` is the one question asked under a path's facts, and it
+names nothing. A store at an address the facts could not place when it ran —
+`buf[u] = 7` — drops the cached cells it may write, so a later C read of
+`buf[0]` finds no cell even on a path that has since learned `u != 0`, and the
+naming walk, being assumption-free, stops at that store. The C load asks this
+before it mints a load term: where the naming walk stops, `affects` is asked
+about the stopping step under the path's facts, and on a separate answer the
+memoized naming walk resumes from the step's base. The answer is the value the
+snapshot it lands on caches at exactly the read's pointer; with no fact that
+places the store, or one that puts it on the cell, there is none. The work is
+one memoized naming lookup and one separation check per step the naming walk
+cannot cross. A file-scope array used to get the same answer by accident: its
+reduced memory re-interned as the snapshot before the store, which a heap
+store's initialization record prevents.
 
 ## What it is not
 
@@ -567,6 +583,72 @@ those are exactly the pairs the range rungs exist to decide. The rule's `Store`
 arm, `CMemory::without_possible_aliasing_cells` and the snapshot comparisons
 all conjoin it, which is what keeps one store from being separate at one site
 and overlapping at the next.
+
+Overlapping is also not *supplying*. A walk that stops at a store because the
+store writes bytes the read returns has learned that the cell changed, not what
+it now holds: a one-byte store of `7` inside a four-byte read is one of that
+read's bytes, and a four-byte store around a one-byte read holds three bytes
+the read does not return. The routes that read a value off the history —
+`resolve_load_along_memory_derivations`, the stored-value arms of
+`explicit_atomic_equality_from_memory_derivations` and of the load-equality
+walks, the pointer-offset resolution, and the stored-origin load equality —
+take a store's value only through `write_supplies_read`
+(`src/kernel/resource_tracker/cell_source.rs`): the store starts at the read's
+address and is exactly as wide. Click has no rule that extracts a narrower read
+from a wider store or assembles a wider read from narrower ones, so any other
+overlapping store stops the walk at the snapshot it produced, which is what the
+read is then known to read (`mdtests/a_byte_store_is_not_the_value_of_the_wide_read_it_lands_in.md`).
+The walk itself is asked about the access width recorded at the read's address,
+and a width nobody recorded is the widest scalar, which no narrower store
+supplies. Whether the store or a cell the stopping snapshot materialized is the
+read's *value* is the read's kind's question, below.
+
+#### A load term carries its read's kind
+
+A load term is a value, and what a read returns depends on more than its
+address: a byte of `0xFF` is `-1` read as `int8` and `255` read as `uint8`, and
+an `int32` read at the same address returns all four bytes. A
+`Bitvector32Term::MemoryLoad` therefore carries a `LoadKind`
+(`src/kernel/primitives.rs`) beside its snapshot and address: `Int8`, `UInt8`,
+`Int16`, `UInt16`, `Bits32`, `Bits64`, `Float32` or `Float64`. Four- and
+eight-byte integer reads keep their bit pattern in the term and let the
+`CValue` wrapper choose signed or unsigned, so `int32` and `uint32` are one
+kind; narrower reads hold the extended value, which signedness changes. A
+pointer read is a `Bits32` read, because Click names a pointer value by the
+four-byte word at its address, as a materialized pointer field's cells hold it.
+
+Before the kind was part of the term, two reads of one address in one snapshot
+were one term whatever they read, and every route that equates loads equated
+them: `s[i] == u[i]` through a `signed char*` and an `unsigned char*` view, and
+`q[i] == u[4 * i]` for an `int32` and its low byte, were provable, in a body, in
+a contract, across a call and through `at(...)`
+(`mdtests/a_signed_and_an_unsigned_byte_read_are_two_values.md` and its
+neighbours). The load variable is named by the term, so its identity, its
+registry entry (`registered_load_kind_for_variable`) and its defining equation
+carry the kind too.
+
+The kind is checked in three kinds of place:
+
+- every route that equates two load terms compares their kinds along with
+  their addresses — the history walks (`LoadCellWalks`, keyed and memoized by
+  kind), the origin, call-event and stored-value equalities, the
+  load-address congruence (`load_address_congruence_evidence`), the
+  pointer-load signature in the equality graph, and the snapshot comparisons
+  that transport a load between states;
+- every route that answers a load term from a value — a store the walk stopped
+  at, a cell a snapshot holds (`MemoryDagCell::resolved_value`,
+  `resolve_memory_load_value`, the deep canonical form, exact-load
+  normalization, `memory_materializes_atomic_load`) — asks
+  `LoadKind::reads_value`: the value is exactly what a read of this kind
+  returns;
+- the int32 equality graph takes a load variable as an int32 load only when its
+  kind is `Bits32`. Its recorded width is the widest access seen at the
+  address, so a byte read beside an `int32` read used to qualify
+  (`mdtests/a_byte_read_is_not_the_int32_read_at_its_address.md`).
+
+A refusal whose two sides are reads of one address of different kinds says so
+(`describe_load_kind_mismatch`), rather than naming a store in between that is
+not the cause.
 
 #### A load whose own block the verifier cannot resolve
 

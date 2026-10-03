@@ -95,12 +95,13 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
 ];
 
 use crate::instrumentation::{TacticEvent, VerificationEvent};
+use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::source as c_source;
-use crate::languages::cpp::PreparedCppImport;
 use crate::surface::verifying_source_paths;
 use crate::surface::{
-    CProjectProfile, ClickModuleSource, ClickProject, ResourceSemanticsMode, click_import_sites,
+    CProjectProfile, ClickModuleSource, ClickProject, ResourceSemanticsMode, SourceContainer,
+    click_import_sites,
 };
 
 /// Parses a one-based `PATH:LINE:COLUMN` source location.
@@ -585,12 +586,12 @@ pub fn read_verifying_sources_for_target(
 pub enum CInput {
     Bundle(Vec<(String, String)>),
     Prepared(Vec<PreparedCImport>),
-    PreparedCpp(PreparedCppImport),
+    PreparedProgram(PreparedProgram),
 }
 
 impl CInput {
     pub fn is_prepared(&self) -> bool {
-        matches!(self, Self::Prepared(_) | Self::PreparedCpp(_))
+        matches!(self, Self::Prepared(_) | Self::PreparedProgram(_))
     }
 }
 
@@ -641,7 +642,10 @@ fn read_c_inputs_for_target(
             return crate::languages::load_compiler_import(&config).map(|imports| match imports {
                 crate::languages::PreparedCompilerImport::C(imports) => CInput::Prepared(imports),
                 crate::languages::PreparedCompilerImport::Cpp(import) => {
-                    CInput::PreparedCpp(import)
+                    CInput::PreparedProgram(PreparedProgram::Cpp(import))
+                }
+                crate::languages::PreparedCompilerImport::Rust(import) => {
+                    CInput::PreparedProgram(PreparedProgram::Rust(import))
                 }
             });
         }
@@ -727,6 +731,16 @@ fn read_c_project_profile(
 pub fn read_click_project(sidecar: &Path, click_source: &str) -> Result<ClickProject, String> {
     let root = containing_directory(sidecar);
     read_click_project_at_root(sidecar, click_source, root)
+}
+
+/// Loads a lone sidecar under the project root `click verify` selects for it
+/// ([`lone_sidecar_project_root`]), so an entry that imports a sibling
+/// project's model loads the same way in every command.
+pub fn read_lone_sidecar_project(
+    sidecar: &Path,
+    click_source: &str,
+) -> Result<ClickProject, String> {
+    read_click_project_at_root(sidecar, click_source, &lone_sidecar_project_root(sidecar)?)
 }
 
 /// Loads an entry sidecar and its transitive local Click imports within an
@@ -1249,8 +1263,11 @@ pub fn load_target_inputs(
         .clone()
         .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
     let inputs = prepare_mdtest_inputs(&mdtest)?;
-    let project =
-        apply_mdtest_resource_semantics(path, &mdtest, read_click_project(path, &click_source)?)?;
+    let project = apply_mdtest_resource_semantics(
+        path,
+        &mdtest,
+        read_mdtest_click_project(path, &mdtest, &click_source)?,
+    )?;
     Ok(LoadedTarget {
         click_source,
         project,
@@ -1309,6 +1326,9 @@ pub fn files_with_extension(directory: &Path, extension: &str) -> Result<Vec<Pat
 pub struct MdTest {
     /// `(filename, source)` for every ```c block, in file order.
     pub c_sources: Vec<(String, String)>,
+    /// The one-based line in the `.md` file of each ```c block's first body
+    /// line, parallel to `c_sources`.
+    pub c_start_lines: Vec<usize>,
     /// The compiler-imported C++ translation unit, when this is a C++ mdtest.
     pub cpp_source: Option<CppMdTestSource>,
     /// The single ```click block, if the file has one.
@@ -1402,6 +1422,7 @@ pub enum MdTestExpectation {
 pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
     let mut mdtest = MdTest {
         c_sources: Vec::new(),
+        c_start_lines: Vec::new(),
         cpp_source: None,
         click_source: None,
         resource_semantics: None,
@@ -1449,6 +1470,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
                 mdtest.c_sources.push((filename, body));
+                mdtest.c_start_lines.push(start_line);
             }
             Some(BlockKind::Cpp {
                 filename,
@@ -1537,13 +1559,37 @@ pub fn read_mdtest_project_if_needed(
     if has_imports
         || has_config
         || mdtest.resource_semantics.is_some()
-        || matches!(inputs, CInput::PreparedCpp(_))
+        || matches!(inputs, CInput::PreparedProgram(_))
     {
-        apply_mdtest_resource_semantics(path, &mdtest, read_click_project(path, click_source)?)
-            .map(Some)
+        apply_mdtest_resource_semantics(
+            path,
+            &mdtest,
+            read_mdtest_click_project(path, &mdtest, click_source)?,
+        )
+        .map(Some)
     } else {
         Ok(None)
     }
+}
+
+/// Loads an mdtest's Click project with each fenced block placed in the
+/// markdown file, so diagnostics in the ```click and ```c blocks name the
+/// line of the `.md` file that holds them rather than a line of the block.
+fn read_mdtest_click_project(
+    path: &Path,
+    mdtest: &MdTest,
+    click_source: &str,
+) -> Result<ClickProject, String> {
+    let mut project = read_click_project(path, click_source)?
+        .with_entry_line_offset(mdtest.click_start_line.saturating_sub(1));
+    let entry = project.entry().to_owned();
+    for ((filename, _), start_line) in mdtest.c_sources.iter().zip(&mdtest.c_start_lines) {
+        project = project.with_c_source_container(
+            filename.clone(),
+            SourceContainer::new(entry.as_str(), start_line.saturating_sub(1)),
+        );
+    }
+    Ok(project)
 }
 
 fn apply_mdtest_resource_semantics(
@@ -1662,7 +1708,7 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
     .map_err(|error| format!("failed to materialize C++ import config: {error}"))?;
     crate::languages::cpp::refresh_import(&config_path)?;
     let import = crate::languages::cpp::load_import(&config_path)?;
-    Ok(CInput::PreparedCpp(import))
+    Ok(CInput::PreparedProgram(PreparedProgram::Cpp(import)))
 }
 
 enum BlockKind {

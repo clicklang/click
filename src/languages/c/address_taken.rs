@@ -200,7 +200,7 @@ fn walk_expression(expression: &C0Expression, summary: &mut AddressTakenSummary)
 
 /// Every name an expression mentions, at any depth and through any form,
 /// including the names its embedded statements declare and read.
-fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
+pub(super) fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
     match expression {
         C0Expression::Variable(name) | C0Expression::Assignment { name, .. } => {
             names.insert(name.clone());
@@ -373,13 +373,13 @@ fn child_statements<'a>(
             expressions.extend(arguments.iter());
         }
         C0Statement::HeapAllocate { bytes, .. } => expressions.push(bytes),
-        C0Statement::HeapFree { pointer } => expressions.push(pointer),
+        C0Statement::HeapFree { pointer, .. } => expressions.push(pointer),
         C0Statement::Assert { condition, .. } => expressions.push(condition),
         C0Statement::Seq(first, second) => {
             statements.push(first);
             statements.push(second);
         }
-        C0Statement::Return(value) => expressions.push(value),
+        C0Statement::Return(value, _) => expressions.push(value),
         C0Statement::Store { pointer, value, .. } => {
             expressions.push(pointer);
             expressions.push(value);
@@ -403,12 +403,18 @@ fn child_statements<'a>(
             condition,
             then_branch,
             else_branch,
+            ..
         } => {
             expressions.push(condition);
             statements.push(then_branch);
             statements.push(else_branch);
         }
-        C0Statement::While { condition, body } | C0Statement::DoWhile { condition, body } => {
+        C0Statement::While {
+            condition, body, ..
+        }
+        | C0Statement::DoWhile {
+            condition, body, ..
+        } => {
             expressions.push(condition);
             statements.push(body);
         }
@@ -417,13 +423,16 @@ fn child_statements<'a>(
             condition,
             step,
             body,
+            ..
         } => {
             statements.push(initializer);
             expressions.push(condition);
             statements.push(step);
             statements.push(body);
         }
-        C0Statement::Switch { expression, cases } => {
+        C0Statement::Switch {
+            expression, cases, ..
+        } => {
             expressions.push(expression);
             statements.extend(cases.iter().map(C0SwitchCase::body));
         }

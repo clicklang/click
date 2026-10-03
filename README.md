@@ -53,11 +53,16 @@ Fork [clicklang/click](https://github.com/clicklang/click), develop on a task
 branch in your fork, and open a pull request against upstream `master` when
 the change is ready. This applies to humans and agents, including maintainers
 with upstream write access. Push development branches to your fork to keep
-the upstream branch list focused.
+the upstream branch list focused. For an agent authenticated as `lacker` and
+authorized to deliver a change, request **Merge when ready** immediately with
+`gh pr merge <PR> --auto`, while checks are still running. On follow-up work,
+update the same open PR or open a new one if it has merged. Required checks and
+review rules still apply.
 
 See the [contribution workflow](docs/internals/contributing.md) for remote
-setup, worktree isolation, and validation, and [AGENTS.md](AGENTS.md) for the
-repository's working rules.
+setup, worktree isolation, validation, and the full
+[Lacker agent merge-queue loop](docs/internals/contributing.md#lacker-and-agent-merge-queue-loop),
+and [AGENTS.md](AGENTS.md) for the repository's working rules.
 
 ## Technical documentation
 

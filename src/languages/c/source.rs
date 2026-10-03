@@ -68,6 +68,10 @@ impl ExpandedCSource {
 pub struct ExpandedLineMap {
     origins: Vec<Option<Arc<SourceOrigin>>>,
     builtin_pthread_lines: BTreeSet<usize>,
+    /// The line as written, for each emitted line a macro expansion
+    /// rewrote, so a diagnostic can quote the expansion site rather than
+    /// the replacement text. Keyed by one-based emitted line.
+    written_lines: BTreeMap<usize, Arc<str>>,
 }
 
 impl ExpandedLineMap {
@@ -75,6 +79,7 @@ impl ExpandedLineMap {
         Self {
             origins: Vec::new(),
             builtin_pthread_lines: BTreeSet::new(),
+            written_lines: BTreeMap::new(),
         }
     }
 
@@ -82,8 +87,33 @@ impl ExpandedLineMap {
         self.origins.push(origin);
     }
 
+    /// The text each one-based emitted line a macro expansion rewrote had
+    /// before expansion.
+    pub(crate) fn written_lines(&self) -> &BTreeMap<usize, Arc<str>> {
+        &self.written_lines
+    }
+
     pub(crate) fn is_builtin_pthread_line(&self, line: usize) -> bool {
         self.builtin_pthread_lines.contains(&line)
+    }
+
+    /// The same map with each origin in a source extracted from a larger
+    /// file, such as a ```c block of an mdtest, moved to its line in that
+    /// file. Other origins are unchanged.
+    pub(crate) fn in_containers(
+        &self,
+        containers: &BTreeMap<String, crate::source::SourceContainer>,
+    ) -> std::borrow::Cow<'_, Self> {
+        if containers.is_empty() {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut relocated = self.clone();
+        for origin in relocated.origins.iter_mut().flatten() {
+            if let Some(container) = containers.get(origin.filename.as_ref()) {
+                *origin = Arc::new(container.origin(origin.line));
+            }
+        }
+        std::borrow::Cow::Owned(relocated)
     }
 
     /// Maps an expanded-TU position to its bundle origin. Lines with no
@@ -378,6 +408,11 @@ fn expand_source<'a>(
                 );
                 expanded.push_str(&expanded_line);
                 line_map.push(Some(origin_for(origin_names, source_path, line_number)));
+                if expanded_line != line {
+                    line_map
+                        .written_lines
+                        .insert(line_map.origins.len(), Arc::from(line));
+                }
                 if builtin_pthread {
                     line_map
                         .builtin_pthread_lines

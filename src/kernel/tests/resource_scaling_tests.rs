@@ -735,7 +735,7 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
             ),
         ]);
         assert_eq!(warm.normalized(&assumptions).facts().len(), 1);
-        assert!(assumptions.bitvector_terms_equal_from_facts(
+        assert!(assumptions.int32_values_known_equal(
             &Bitvector32Term::Variable(Variable(end)),
             &Bitvector32Term::Variable(Variable(start)),
         ));
@@ -1363,6 +1363,7 @@ fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
                 crate::kernel::eval::canonical_form_of_load(
                     crate::kernel::intern_c_memory_ref(source),
                     cell.clone(),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 4,
             ),

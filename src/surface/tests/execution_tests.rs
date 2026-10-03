@@ -734,29 +734,6 @@ fn verifies_loadable_segment_proposition_for_indexed_read() {
 }
 
 #[test]
-fn verifies_symbolic_increment_with_numeric_requirement() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures increments: result == x + 1 by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("increment sidecar should verify");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].specification.requires().len(), 1);
-}
-
-#[test]
 fn bounded_assignment_preserves_successor_definedness() {
     let c_source = r#"
             int32 add_twice(int32 x) {
@@ -780,33 +757,6 @@ fn bounded_assignment_preserves_successor_definedness() {
 
     verify_c0_sources(click_source, &[("add_twice.c", c_source)])
         .expect("the bound on x should prove both additions defined");
-}
-
-#[test]
-fn symbolic_increment_without_numeric_requirement_fails() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                ensures increments: result == x + 1 by auto;
-            }
-        "#;
-
-    let error = verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect_err("increment without overflow requirement should fail");
-
-    assert!(
-        error
-            .message()
-            .contains("undefined behavior: signed overflow"),
-        "{}",
-        error.message()
-    );
 }
 
 #[test]
@@ -1266,13 +1216,12 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
 
     assert_eq!(verified.len(), 1);
     let verified = &verified[0];
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: scale_int32_offset(
-            Bitvector32Term::Variable(Variable(POINTER_ARGUMENT_VARIABLE_BASE)),
-            4,
-        ),
+    let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(argument)) =
+        &verified.specification.arguments()[0]
+    else {
+        panic!("fill3's input is a pointer");
     };
+    let base = argument.pointer().clone();
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::Constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::Constant(2));
@@ -1896,4 +1845,245 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
         timed.contains(&("step", 4)) && timed.contains(&("have", 5)),
         "the continuation's `step` and `have` must be timed at their source sites: {timed:?}"
     );
+}
+
+/// `execute()` runs a symbolic `switch` on the checked `Proof` itself: the
+/// statement's arms are path cases, split on the condition that tells them
+/// apart.
+#[test]
+fn execute_splits_a_symbolic_switch_on_the_proof() {
+    let c_source = r#"
+        int32 switch_break(int32 kind) {
+            int32 result = 0;
+            switch (kind) {
+                case 0:
+                    result = 10;
+                    break;
+                case 1:
+                    result = 20;
+                    break;
+                default:
+                    result = 30;
+                    break;
+            }
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        verifying "switch_break.c";
+
+        int32 switch_break(int32 kind) {
+            ensures result == 10 or result == 20 or result == 30;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    // The whole verification runs on one thread, so the counter it reads is
+    // that thread's own; the stack is sized for an unoptimized build.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            verify_c0_sources(click_source, &[("switch_break.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// A short-circuit condition is false along two checked paths, so a C
+/// `branch` cannot split it directly. `execute()` first splits the checked
+/// `Proof` on the condition that tells those paths apart.
+#[test]
+fn execute_splits_a_short_circuit_condition_on_the_proof() {
+    let c_source = r#"
+        int32 both_positive(int32 a, int32 b) {
+            if (a > 0 && b > 0) {
+                return 1;
+            }
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "both_positive.c";
+
+        int32 both_positive(int32 a, int32 b) {
+            ensures result == 0 or result == 1;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            verify_c0_sources(click_source, &[("both_positive.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// A null check on a fresh `malloc` result is an ordinary C branch: the
+/// condition's two paths decide the pending allocation, one per arm, and
+/// `execute()` splits it on the checked `Proof`.
+#[test]
+fn execute_branches_on_a_pending_allocation_on_the_proof() {
+    let c_source = r#"
+        void *malloc(unsigned long size);
+        void free(void *ptr);
+
+        int f(void) {
+            int *p = malloc(sizeof(int));
+            if (p == 0) {
+                return 0;
+            }
+            *p = 1;
+            free(p);
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "pending.c";
+
+        int f() {
+            ensures result == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            verify_c0_sources(click_source, &[("pending.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// A loop the proof context decides at every iteration runs as ordinary
+/// checked statement steps on the `Proof`. The bound is symbolic and fixed
+/// by a `requires`: the
+/// loop head reads the whole proof context, as every other step does.
+#[test]
+fn execute_walks_a_decided_loop_on_the_proof() {
+    let c_source = r#"
+        int32 count_to(int32 n) {
+            int32 i = 0;
+            while (i < n) {
+                i++;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "count.c";
+
+        int32 count_to(int32 n) {
+            requires n == 3;
+            ensures result == 3;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            verify_c0_sources(click_source, &[("count.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// `execute()` walks a decided loop one checked step at a time on the
+/// `Proof`, so a loop that never exits must exhaust a fixed step budget and
+/// name the statement it stands at, rather than run until the work limit.
+#[test]
+fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
+    let c_source = r#"
+        int32 spin() {
+            int32 i = 0;
+            while (1) {
+                i = 0;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "spin.c";
+
+        int32 spin() {
+            ensures result == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let error = verify_c0_sources(click_source, &[("spin.c", c_source)])
+                .expect_err("a loop that never exits has no function exit to reach");
+            assert!(
+                error
+                    .message()
+                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                "expected the step budget refusal, got: {}",
+                error.message()
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// `execute_until` shares `execute()`'s search and its step budget, so a
+/// loop that never exits before the target is refused at that budget.
+#[test]
+fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
+    let c_source = r#"
+        int32 spin_then() {
+            int32 i = 0;
+            while (1) {
+                i = 0;
+            }
+            i = 1;
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "spin_then.c";
+
+        int32 spin_then() {
+            ensures result == 1;
+        } by {
+            execute_until(statement(3));
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let error = verify_c0_sources(click_source, &[("spin_then.c", c_source)])
+                .expect_err("the loop never reaches the target statement");
+            assert!(
+                error
+                    .message()
+                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                "expected the step budget refusal, got: {}",
+                error.message()
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }

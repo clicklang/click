@@ -40,9 +40,53 @@ pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
     source_names: HashMap<Variable, String>,
     anonymous_names: HashMap<Variable, String>,
+    /// The parameters or locals a diagnostic spells addresses through, with
+    /// their values, when the caller has them.
+    naming: Option<std::rc::Rc<NamingTables>>,
 }
 
 impl SnapshotLabels {
+    /// Labels that read a scalar the tables name as that name, and an
+    /// address inside an object the tables name as its source spelling.
+    pub(crate) fn naming(
+        parameters: &[crate::languages::c::syntax::C0Parameter],
+        arguments: &[crate::kernel::CExpression],
+    ) -> Self {
+        let mut labels = Self::default();
+        for (parameter, argument) in parameters.iter().zip(arguments) {
+            let crate::kernel::CExpression::Value(value) = argument else {
+                continue;
+            };
+            let term = match value {
+                crate::kernel::CValue::Bool(term)
+                | crate::kernel::CValue::Int8(term)
+                | crate::kernel::CValue::Int16(term)
+                | crate::kernel::CValue::Int32(term)
+                | crate::kernel::CValue::UInt8(term)
+                | crate::kernel::CValue::UInt16(term)
+                | crate::kernel::CValue::UInt32(term)
+                | crate::kernel::CValue::Int64(term)
+                | crate::kernel::CValue::UInt64(term) => term,
+                _ => continue,
+            };
+            if let Bitvector32Term::Variable(variable) = term {
+                labels.source_name(*variable, parameter.name().to_string());
+            }
+        }
+        labels.naming = Some(std::rc::Rc::new((parameters.to_vec(), arguments.to_vec())));
+        labels
+    }
+
+    /// Labels naming what the function being verified declares, when one is.
+    pub(crate) fn ambient() -> Self {
+        let Some(tables) = AMBIENT_NAMING.with(|naming| naming.borrow().clone()) else {
+            return Self::default();
+        };
+        let mut labels = Self::naming(&tables.0, &tables.1);
+        labels.naming = Some(tables);
+        labels
+    }
+
     pub(crate) fn source_name(&mut self, variable: Variable, name: String) {
         self.source_names.entry(variable).or_insert(name);
     }
@@ -116,12 +160,36 @@ pub(crate) fn render_simple_click_fact_labeled(
         ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right, ">=", "<"),
         _ => return None,
     };
+    let operator = if *polarity { positive } else { negative };
+    // A 32-bit unsigned order is the signed order of both operands with
+    // their sign bit flipped, a constant operand arriving already flipped.
+    // It is spelled as the unsigned comparison it means.
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
+            if sign.as_const() == Some(SIGN_BIT) =>
+        {
+            operand(value, labels)
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| term.as_const().map(|value| (value ^ SIGN_BIT).to_string()))
+    };
+    let ordered = !matches!(condition, ConditionTerm::Bitvector32Equal(_, _));
+    let unsigned = match (flipped(left), flipped(right)) {
+        _ if !ordered => None,
+        (Some(left), Some(right)) => Some((left, right)),
+        (Some(left), None) => unflipped(right).map(|right| (left, right)),
+        (None, Some(right)) => unflipped(left).map(|left| (left, right)),
+        (None, None) => None,
+    };
+    if let Some((left, right)) = unsigned {
+        return Some(format!("{left} {operator} {right} (unsigned)"));
+    }
     let left = operand(left, labels)?;
     let right = operand(right, labels)?;
-    Some(format!(
-        "{left} {} {right}",
-        if *polarity { positive } else { negative }
-    ))
+    Some(format!("{left} {operator} {right}"))
 }
 
 fn alphabetic_label(mut index: usize) -> String {
@@ -140,7 +208,33 @@ fn alphabetic_label(mut index: usize) -> String {
 /// Render one proposition without allowing its shape or attached snapshots to
 /// determine the size of the error message.
 pub(crate) fn render_proposition(proposition: &Proposition) -> String {
-    render_proposition_labeled(proposition, &mut SnapshotLabels::default())
+    render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())
+}
+
+type NamingTables = (
+    Vec<crate::languages::c::syntax::C0Parameter>,
+    Vec<crate::kernel::CExpression>,
+);
+
+thread_local! {
+    /// The parameters of the C function being verified and their entry
+    /// values. Diagnostics only: nothing reads it to decide a proof.
+    static AMBIENT_NAMING: std::cell::RefCell<Option<std::rc::Rc<NamingTables>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Starts verifying a C function whose parameters hold `arguments`.
+pub(crate) fn enter_ambient_naming(
+    parameters: &[crate::languages::c::syntax::C0Parameter],
+    arguments: &[crate::kernel::CExpression],
+) {
+    AMBIENT_NAMING.with(|naming| {
+        *naming.borrow_mut() = Some(std::rc::Rc::new((parameters.to_vec(), arguments.to_vec())));
+    });
+}
+
+pub(crate) fn clear_ambient_naming() {
+    AMBIENT_NAMING.with(|naming| *naming.borrow_mut() = None);
 }
 
 /// A bounded view of one exact resource representation for a proof trace.
@@ -215,7 +309,7 @@ pub(crate) fn render_proposition_labeled(
 /// elimination, so its `Debug` reaches the same datatype schemas a
 /// proposition's does.
 pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
-    let mut labels = SnapshotLabels::default();
+    let mut labels = SnapshotLabels::ambient();
     let mut renderer = Renderer {
         output: String::with_capacity(128),
         nodes: 0,
@@ -231,11 +325,38 @@ pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
     renderer.output
 }
 
+/// Render `left operator right` under one set of labels, so two distinct
+/// unnamed values on the two sides are told apart and one value read on both
+/// sides keeps one name. Rendering each side on its own restarts the labels
+/// and spells a model at the loop head and the rebound model alike.
+pub(crate) fn render_integer_comparison(
+    left: &IntegerTerm,
+    operator: &str,
+    right: &IntegerTerm,
+) -> String {
+    let mut labels = SnapshotLabels::ambient();
+    let mut renderer = Renderer {
+        output: String::with_capacity(128),
+        nodes: 0,
+        depth: 0,
+        truncated: false,
+        labels: &mut labels,
+        bound_names: Vec::new(),
+    };
+    renderer.integer(left);
+    renderer.push(&format!(" {operator} "));
+    renderer.integer(right);
+    if renderer.truncated {
+        renderer.output.push('…');
+    }
+    renderer.output
+}
+
 /// Compact binder sort spelling shared by traces and ordinary diagnostics.
 /// The kernel's `Debug` for an algebraic sort embeds its entire constructor
 /// schema, which obscures the proposition that follows the binder.
 pub(crate) fn render_sort(sort: &Sort) -> String {
-    let mut labels = SnapshotLabels::default();
+    let mut labels = SnapshotLabels::ambient();
     let mut renderer = Renderer {
         output: String::with_capacity(64),
         nodes: 0,
@@ -859,6 +980,40 @@ impl Renderer<'_> {
         }
     }
     fn binary_condition_bv(&mut self, a: &Bitvector32Term, b: &Bitvector32Term, label: &str) {
+        // A signed order of sign-flipped operands is the unsigned order of
+        // the operands themselves; a constant operand arrives already
+        // flipped. Render what it means, not the bias.
+        const SIGN_BIT: u32 = 0x8000_0000;
+        fn flipped(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+            match term {
+                Bitvector32Term::BitwiseXor(value, sign)
+                | Bitvector32Term::BitwiseXor(sign, value)
+                    if sign.as_const() == Some(SIGN_BIT) =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            }
+        }
+        let unflipped = |term: &Bitvector32Term| {
+            flipped(term).cloned().or_else(|| {
+                term.as_const()
+                    .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+            })
+        };
+        if let Some(order) = label.strip_prefix("int32 ").filter(|order| *order != "=")
+            && (flipped(a).is_some() || flipped(b).is_some())
+            && let (Some(a), Some(b)) = (unflipped(a), unflipped(b))
+        {
+            self.push("uint32 ");
+            self.push(order);
+            self.push("(");
+            self.bitvector(&a);
+            self.push(", ");
+            self.bitvector(&b);
+            self.push(")");
+            return;
+        }
         self.push(label);
         self.push("(");
         self.bitvector(a);
@@ -997,7 +1152,7 @@ impl Renderer<'_> {
             return;
         }
         self.depth += 1;
-        if let Bitvector32Term::MemoryLoad(snapshot, pointer) = v {
+        if let Bitvector32Term::MemoryLoad(snapshot, pointer, _) = v {
             // `memory` prints its own `snapshot=` prefix.
             self.push("load(");
             self.memory(snapshot.as_ref());
@@ -1152,6 +1307,16 @@ impl Renderer<'_> {
         }
     }
     fn pointer(&mut self, p: &Pointer) {
+        // An address inside an object the caller's tables name reads as its
+        // source spelling, not as a block and an offset.
+        if let Some(tables) = self.labels.naming.clone() {
+            let (parameters, arguments) = &*tables;
+            let spelled = crate::surface::diagnostics::describe_pointer(p, parameters, arguments);
+            if !spelled.contains("the pointer value at this program point") {
+                self.push(&spelled);
+                return;
+            }
+        }
         self.push("pointer(");
         match &p.block {
             crate::kernel::PointerBlock::Concrete(s) | crate::kernel::PointerBlock::Function(s) => {
@@ -1193,6 +1358,11 @@ impl Renderer<'_> {
                         self.push(", ");
                     }
                     self.algebraic_value(argument);
+                }
+                if let Some(arity) = description.population_arity() {
+                    for _ in 1..arity {
+                        self.push(", _");
+                    }
                 }
                 self.push("))");
             }
@@ -1250,6 +1420,11 @@ impl Renderer<'_> {
                         self.push(", ");
                     }
                     self.algebraic_value(argument);
+                }
+                if let Some(arity) = description.population_arity() {
+                    for _ in 1..arity {
+                        self.push(", _");
+                    }
                 }
                 self.push("))");
             }

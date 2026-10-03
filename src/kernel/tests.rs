@@ -13,8 +13,16 @@ fn checked_memory_load_equality(
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
-        &Bitvector32Term::MemoryLoad(intern_c_memory_ref(left), Box::new(pointer.clone())),
-        &Bitvector32Term::MemoryLoad(intern_c_memory_ref(right), Box::new(pointer.clone())),
+        &Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(left),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ),
+        &Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(right),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ),
         assumptions,
     )
 }
@@ -23,7 +31,6 @@ mod canonicalization_tests;
 mod contract_execution_tests;
 mod execution_tests;
 mod expression_tests;
-mod fact_publication_tests;
 mod memory_reasoning_tests;
 mod proof_reasoning_tests;
 mod representation_copy_tests;
@@ -78,7 +85,6 @@ fn certify_contract_with_kernel_artifacts(
         state,
         function,
         arguments,
-        derived_entry_facts,
         environment,
         execution_semantics,
         mode,
@@ -232,10 +238,12 @@ fn arc_pointer(offset: i64) -> Pointer {
     }
 }
 
+mod external_array_tests;
 mod iterated_ownership_tests;
 mod memory_dag_tests;
 mod memory_scaling_tests;
 mod resource_scaling_tests;
+mod scalar_array_tests;
 
 mod heap_tests;
 mod loan_model_tests;

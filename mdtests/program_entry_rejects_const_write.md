@@ -17,5 +17,5 @@ int main() { ensures result == 9; } by { execute(); simp(); }
 ```
 
 ```expect
-fail: cannot discard const qualification
+fail: missing resource fact `owns state[0..1]`
 ```

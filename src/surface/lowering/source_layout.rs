@@ -1,6 +1,8 @@
 use super::*;
 use crate::surface::syntax::flatten_direct_c0_statements;
 
+type Site = std::sync::Arc<syntax::C0StatementSite>;
+
 pub(in crate::surface) fn count_loops(statement: &syntax::C0Statement) -> usize {
     match statement {
         syntax::C0Statement::Seq(first, second) => count_loops(first) + count_loops(second),
@@ -26,7 +28,31 @@ pub(in crate::surface) fn count_loops(statement: &syntax::C0Statement) -> usize 
 }
 
 pub(in crate::surface) fn count_loop_regions(function: &syntax::C0Function) -> usize {
-    count_loops(function.body()) + usize::from(function.natural_control_loop().is_some())
+    let Some(kernel) = function.prelowered_kernel_function() else {
+        return count_loops(function.body())
+            + usize::from(function.natural_control_loop().is_some());
+    };
+    let mut pending = vec![kernel.body()];
+    let mut count = 0;
+    while let Some(statement) = pending.pop() {
+        match statement {
+            CStatement::Seq(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
+            CStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => pending.extend([try_body.as_ref(), handler.as_ref()]),
+            CStatement::While { body, .. } => {
+                count += 1;
+                pending.push(body);
+            }
+            _ => {}
+        }
+    }
+    count + usize::from(function.natural_control_loop().is_some())
 }
 
 #[derive(Clone, Default)]
@@ -49,6 +75,16 @@ struct SourceExecutionLayoutData {
     /// statement ends. Statically derived, so branch-region exits need no
     /// runtime continuation bookkeeping.
     exited_branch_regions: BTreeMap<usize, Vec<usize>>,
+    /// The inverse of `exited_branch_regions`, kept while the layout is
+    /// built: for each `if`, the statements whose completion completes its
+    /// region. Redirecting an arm that ends in an `if` needs exactly these,
+    /// and finding them by scanning every statement's list made the build
+    /// quadratic in the statements of a nested branch tree.
+    arm_lasts_by_exited_region: BTreeMap<usize, Vec<usize>>,
+    /// Where each C statement was written, by statement index: diagnostics
+    /// only, read by a refusal to name the line it refused. Statements a
+    /// frontend generated with no source statement of their own are absent.
+    sites: BTreeMap<usize, std::sync::Arc<syntax::C0StatementSite>>,
 }
 
 #[derive(Clone, Copy)]
@@ -77,6 +113,8 @@ pub(in crate::surface) enum SourceStatementKind {
         try_statement_index: usize,
         handler_statement_index: usize,
         after_try_statement_index: usize,
+        try_last_statement_index: usize,
+        handler_last_statement_index: usize,
     },
 }
 
@@ -100,18 +138,42 @@ impl SourceExecutionLayout {
                 return;
             };
             region.continuation_node = continuation_node;
+            let try_lasts = if let SourceStatementKind::Try {
+                after_try_statement_index,
+                try_last_statement_index,
+                handler_last_statement_index,
+                ..
+            } = &mut region.kind
+            {
+                *after_try_statement_index = continuation_node;
+                Some([*try_last_statement_index, *handler_last_statement_index])
+            } else {
+                None
+            };
             layout
                 .exited_branch_regions
                 .entry(last_statement_index)
                 .or_default()
                 .push(exited_if_index);
-            if let SourceStatementKind::If { .. } = region.kind {
-                let arm_lasts: Vec<usize> = layout
-                    .exited_branch_regions
-                    .iter()
-                    .filter(|(_, exited)| exited.contains(&last_statement_index))
-                    .map(|(index, _)| *index)
-                    .collect();
+            layout
+                .arm_lasts_by_exited_region
+                .entry(exited_if_index)
+                .or_default()
+                .push(last_statement_index);
+            if let Some(lasts) = try_lasts {
+                for last in lasts {
+                    redirect_control_successor(layout, last, exited_if_index, continuation_node);
+                }
+            } else if let SourceStatementKind::If { .. } = region.kind {
+                // In statement order, each statement once: what the scan of
+                // every statement's list returned.
+                let mut arm_lasts: Vec<usize> = layout
+                    .arm_lasts_by_exited_region
+                    .get(&last_statement_index)
+                    .cloned()
+                    .unwrap_or_default();
+                arm_lasts.sort_unstable();
+                arm_lasts.dedup();
                 for arm_last in arm_lasts {
                     redirect_control_successor(
                         layout,
@@ -169,8 +231,23 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                CStatement::While { .. } | CStatement::Switch { .. } => Err(ClickError::new(
-                    "typed-frontend source layout does not yet support loop or switch statements",
+                CStatement::While { body, .. } => {
+                    let statement_index = *next_statement_index;
+                    *next_statement_index += 1;
+                    let loop_index = layout.loop_bodies.len();
+                    layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    visit(body, next_statement_index, layout)?;
+                    layout.statements.insert(
+                        statement_index,
+                        SourceStatementRegion {
+                            continuation_node: *next_statement_index,
+                            kind: SourceStatementKind::Loop { loop_index },
+                        },
+                    );
+                    Ok(statement_index)
+                }
+                CStatement::Switch { .. } => Err(ClickError::new(
+                    "typed-frontend source layout does not yet support switch statements",
                 )),
                 CStatement::TryCatchInt32 {
                     try_body, handler, ..
@@ -190,6 +267,8 @@ impl SourceExecutionLayout {
                                 try_statement_index,
                                 handler_statement_index,
                                 after_try_statement_index: continuation_node,
+                                try_last_statement_index: try_last,
+                                handler_last_statement_index: handler_last,
                             },
                         },
                     );
@@ -203,7 +282,7 @@ impl SourceExecutionLayout {
                     if let Some(region) = layout.statements.get_mut(&handler_last) {
                         region.continuation_node = continuation_node;
                     }
-                    Ok(try_last)
+                    Ok(statement_index)
                 }
                 _ => {
                     let statement_index = *next_statement_index;
@@ -256,19 +335,59 @@ impl SourceExecutionLayout {
         natural_exit_target: Option<crate::kernel::CControlTargetId>,
         natural_exit_label: Option<&str>,
     ) -> Self {
+        /// Records where the statement at `index` was written and returns
+        /// that site. A labeled statement is one layout statement written
+        /// where its body is; a statement with no site of its own (`break`,
+        /// `continue`, `goto`, an empty statement) is named by the statement
+        /// enclosing it, whose step it completes.
+        fn record_site(
+            layout: &mut SourceExecutionLayoutData,
+            index: usize,
+            mut statement: &syntax::C0Statement,
+            enclosing: Option<&Site>,
+        ) -> Option<Site> {
+            while let syntax::C0Statement::Label {
+                statement: body, ..
+            } = statement
+            {
+                statement = body;
+            }
+            let site = statement
+                .site()
+                .and_then(syntax::C0Site::get)
+                .or(enclosing)
+                .cloned()?;
+            layout.sites.insert(index, site.clone());
+            Some(site)
+        }
+
         /// Visits one subtree and returns the pre-order index of its last
         /// top-level statement, so an enclosing `if` can redirect its arms'
         /// control successors past the sibling arm to its own continuation.
+        /// `enclosing` is the site of the nearest enclosing statement.
         fn visit(
             statement: &syntax::C0Statement,
             next_statement_index: &mut usize,
             next_loop_index: &mut usize,
             layout: &mut SourceExecutionLayoutData,
+            enclosing: Option<&Site>,
         ) -> usize {
             match statement {
                 syntax::C0Statement::Seq(first, second) => {
-                    visit(first, next_statement_index, next_loop_index, layout);
-                    visit(second, next_statement_index, next_loop_index, layout)
+                    visit(
+                        first,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        enclosing,
+                    );
+                    visit(
+                        second,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        enclosing,
+                    )
                 }
                 syntax::C0Statement::If {
                     then_branch,
@@ -276,13 +395,24 @@ impl SourceExecutionLayout {
                     ..
                 } => {
                     let statement_index = *next_statement_index;
+                    let own = record_site(layout, statement_index, statement, enclosing);
                     *next_statement_index += 1;
                     let then_statement_index = *next_statement_index;
-                    let then_last =
-                        visit(then_branch, next_statement_index, next_loop_index, layout);
+                    let then_last = visit(
+                        then_branch,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        own.as_ref(),
+                    );
                     let else_statement_index = *next_statement_index;
-                    let else_last =
-                        visit(else_branch, next_statement_index, next_loop_index, layout);
+                    let else_last = visit(
+                        else_branch,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        own.as_ref(),
+                    );
                     let continuation_node = *next_statement_index;
                     layout.statements.insert(
                         statement_index,
@@ -314,11 +444,18 @@ impl SourceExecutionLayout {
                 syntax::C0Statement::While { body, .. }
                 | syntax::C0Statement::DoWhile { body, .. } => {
                     let statement_index = *next_statement_index;
+                    let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
-                    visit(body, next_statement_index, next_loop_index, layout);
+                    visit(
+                        body,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        own.as_ref(),
+                    );
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -334,14 +471,34 @@ impl SourceExecutionLayout {
                     step,
                     ..
                 } => {
-                    visit(initializer, next_statement_index, next_loop_index, layout);
+                    let for_site = statement.site().and_then(syntax::C0Site::get).or(enclosing);
+                    visit(
+                        initializer,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        for_site,
+                    );
                     let statement_index = *next_statement_index;
+                    let own = record_site(layout, statement_index, statement, enclosing);
                     let loop_index = *next_loop_index;
                     *next_statement_index += 1;
                     *next_loop_index += 1;
                     layout.loop_bodies.insert(loop_index, *next_statement_index);
-                    visit(body, next_statement_index, next_loop_index, layout);
-                    visit(step, next_statement_index, next_loop_index, layout);
+                    visit(
+                        body,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        own.as_ref(),
+                    );
+                    visit(
+                        step,
+                        next_statement_index,
+                        next_loop_index,
+                        layout,
+                        own.as_ref(),
+                    );
                     layout.statements.insert(
                         statement_index,
                         SourceStatementRegion {
@@ -353,6 +510,7 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
+                    record_site(layout, statement_index, statement, enclosing);
                     *next_statement_index += 1;
                     layout.statements.insert(
                         statement_index,
@@ -385,13 +543,21 @@ impl SourceExecutionLayout {
                 .entry(last_statement_index)
                 .or_default()
                 .push(exited_if_index);
+            layout
+                .arm_lasts_by_exited_region
+                .entry(exited_if_index)
+                .or_default()
+                .push(last_statement_index);
             if let SourceStatementKind::If { .. } = region.kind {
-                let arm_lasts: Vec<usize> = layout
-                    .exited_branch_regions
-                    .iter()
-                    .filter(|(_, exited)| exited.contains(&last_statement_index))
-                    .map(|(index, _)| *index)
-                    .collect();
+                // In statement order, each statement once: what the scan of
+                // every statement's list returned.
+                let mut arm_lasts: Vec<usize> = layout
+                    .arm_lasts_by_exited_region
+                    .get(&last_statement_index)
+                    .cloned()
+                    .unwrap_or_default();
+                arm_lasts.sort_unstable();
+                arm_lasts.dedup();
                 for arm_last in arm_lasts {
                     redirect_control_successor(
                         layout,
@@ -427,6 +593,7 @@ impl SourceExecutionLayout {
                     &mut next_statement_index,
                     &mut next_loop_index,
                     &mut data,
+                    None,
                 );
             }
             let cycle_tail = exit_label_index.unwrap_or(statements.len());
@@ -436,6 +603,7 @@ impl SourceExecutionLayout {
                     &mut next_statement_index,
                     &mut next_loop_index,
                     &mut data,
+                    None,
                 );
             }
             if let (Some(exit_target), Some(exit_label_index)) =
@@ -453,6 +621,7 @@ impl SourceExecutionLayout {
                     &mut next_statement_index,
                     &mut next_loop_index,
                     &mut data,
+                    None,
                 );
             }
             data.statements.insert(
@@ -463,7 +632,7 @@ impl SourceExecutionLayout {
                 },
             );
         } else {
-            visit(statement, &mut 0, &mut 0, &mut data);
+            visit(statement, &mut 0, &mut 0, &mut data, None);
         }
         collect_automatic_exits(statement, &mut data);
         Self {
@@ -493,8 +662,26 @@ impl SourceExecutionLayout {
         self.data.statements.get(&index).copied()
     }
 
-    pub(in crate::surface) fn statement_count(&self) -> usize {
-        self.data.statements.len()
+    /// Where the C statement at `index` was written, when it records it.
+    pub(in crate::surface) fn site(
+        &self,
+        index: usize,
+    ) -> Option<&std::sync::Arc<syntax::C0StatementSite>> {
+        self.data.sites.get(&index)
+    }
+
+    pub(in crate::surface) fn execution_region_entry(
+        &self,
+        region: CodeRegion,
+    ) -> Result<usize, String> {
+        match region {
+            CodeRegion::Statement(index) => Ok(index),
+            CodeRegion::Loop(index) => self.loop_body_entry(index)
+                .and_then(|body| body.checked_sub(1))
+                .filter(|head| matches!(self.statement(*head).map(|r| r.kind), Some(SourceStatementKind::Loop { loop_index }) if loop_index == index))
+                .ok_or_else(|| format!("`execute_until` cannot resolve loop({index})")),
+            _ => Err("`execute_until` expects a statement or loop region".into()),
+        }
     }
 
     pub(in crate::surface) fn loop_body_entry(&self, loop_index: usize) -> Option<usize> {
@@ -706,7 +893,7 @@ fn collect_automatic_exits(source: &syntax::C0Statement, layout: &mut SourceExec
                 scope(body, index, scopes, Some(head), layout);
                 vec![head]
             }
-            S::Break | S::Continue | S::Return(_) | S::Goto { .. } => {
+            S::Break | S::Continue | S::Return(_, _) | S::Goto { .. } => {
                 let mut names = Vec::new();
                 for (declared, loop_head) in scopes.iter().rev() {
                     names.extend(declared.iter().cloned());
@@ -770,12 +957,14 @@ mod source_execution_layout_tests {
                 natural_exit_targets: BTreeMap::new(),
                 natural_exit_statement_indices: BTreeMap::new(),
                 exited_branch_regions: BTreeMap::new(),
+                arm_lasts_by_exited_region: BTreeMap::new(),
+                sites: BTreeMap::new(),
             }),
         };
         let cloned = layout.clone();
 
         assert!(std::sync::Arc::ptr_eq(&layout.data, &cloned.data));
-        assert_eq!(cloned.statement_count(), 4096);
+        assert_eq!(cloned.data.statements.len(), 4096);
         assert_eq!(
             cloned
                 .statement(4095)

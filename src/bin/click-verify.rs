@@ -13,29 +13,30 @@ use click::cli::{
     lone_sidecar_project_root, looks_like_mdtest, looks_like_source_location, parse_duration,
     parse_source_location, parse_work_limit, select_sidecars, source_refs, with_run_limits,
 };
+use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
 use click::languages::c::target::CTarget;
 #[cfg(test)]
 use click::surface::verify_c0_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, VerifiedCTheorem, accepted_proof_trace,
-    c0_incremental_selection, c0_prepared_project_external_dependencies,
-    c0_prepared_project_selected_proof_count, c0_prepared_project_selected_proof_names,
-    c0_prepared_project_tactic_source_position, c0_project_external_dependencies,
-    c0_project_selected_proof_count, c0_project_selected_proof_names,
-    c0_project_tactic_source_position, cpp_prepared_project_external_dependencies,
-    cpp_prepared_project_selected_proof_count, cpp_prepared_project_tactic_source_position,
-    nested_tactic_source_position, selected_c_target, tactic_arm_containing_position,
-    tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_starts_on_line, verify_c0_prepared_project, verify_c0_prepared_project_at,
-    verify_c0_prepared_project_functions, verify_c0_project, verify_c0_project_at,
-    verify_c0_project_functions, verify_cpp_prepared_project, verify_cpp_prepared_project_at,
-    verifying_source_paths, with_proof_trace,
+    c0_incremental_selection, c0_prepared_project_selected_proof_names,
+    c0_prepared_project_summary, c0_prepared_project_tactic_source_position,
+    c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_position,
+    nested_tactic_source_position, program_prepared_project_summary,
+    program_prepared_project_tactic_source_position, selected_c_target,
+    tactic_arm_containing_position, tactic_have_body_contains_position,
+    tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
+    verify_c0_prepared_project, verify_c0_prepared_project_at,
+    verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem, verify_c0_project,
+    verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
+    verify_program_prepared_project, verify_program_prepared_project_at, verifying_source_paths,
+    with_proof_trace,
 };
 
 const USAGE: &str = "\
 usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <FUNCTION> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify --trace-proof <PROOF> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
        click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 
@@ -60,11 +61,12 @@ units on any machine under any load. `--time-limit` (default 10m) is only a
 wall-clock crash-containment bound for a hung or CPU-starved run; a run it
 stops says so, and that is not a verdict about the proof.
 
-`--trace-proof FUNCTION` verifies one C function and shows checked fact and
-resource changes on the path to the failing tactic, or an accepted path when
-the proof succeeds. `--trace-to` selects a written tactic by source line (and
-column when the line has several tactics) within the selected proof.
-Ordinary proof errors suggest this command with the failing function filled in.
+`--trace-proof PROOF` verifies one C function or one pure theorem of the
+sidecar, by name, and shows checked fact and resource changes on the path to
+the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
+selects a written tactic by source line (and column when the line has several
+tactics) within the selected proof.
+Ordinary proof errors suggest this command with the failing proof filled in.
 
 `--allow-sorry` enables the dev-only `sorry` proof hole: a proof unit whose
 body is exactly `sorry();` is admitted without checking. This is purely a
@@ -221,7 +223,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             trace_proof = Some(
                 arguments
                     .next()
-                    .ok_or_else(|| format!("missing function after `--trace-proof`\n{USAGE}"))?,
+                    .ok_or_else(|| format!("missing proof name after `--trace-proof`\n{USAGE}"))?,
             );
         } else if parse_options && argument == "--trace-to" {
             if trace_to.is_some() {
@@ -366,103 +368,26 @@ fn verify_changed(
     for sidecar in sidecars {
         let sidecar = fs::canonicalize(&sidecar)
             .map_err(|error| format!("failed to resolve `{}`: {error}", sidecar.display()))?;
-        let (click_source, project, inputs) = load_sidecar_inputs(&sidecar, Some(project_root))?;
-        if inputs.is_prepared() {
-            return Err(
-                "`--changed-since` is not supported for compiler-prepared projects".to_string(),
-            );
-        }
-        let sources = match &inputs {
-            CInput::Bundle(sources) => sources.clone(),
-            CInput::Prepared(_) | CInput::PreparedCpp(_) => unreachable!(),
-        };
-        let refs = source_refs(&sources);
-        let baseline_attested = has_full_verification_marker(
-            &repo,
-            &baseline_commit,
-            &sidecar,
-            click::surface::selected_project_c_target(&project).map_err(click_message)?,
-        )?;
-        let mut full_rebuild = !baseline_attested;
-        let mut reasons = if !baseline_attested {
-            vec![format!(
-                "baseline commit {baseline_commit} has no valid full-verification marker for this sidecar and verifier binary"
-            )]
-        } else {
-            Vec::new()
-        };
-        if let Some(reason) = imported_project_rebuild_reason(&project) {
-            full_rebuild = true;
-            reasons = vec![reason.to_string()];
-        }
-        let (selected, reused) = if full_rebuild {
-            (
-                c0_project_selected_proof_names(&project, &refs).map_err(click_message)?,
-                Vec::new(),
-            )
-        } else if let Some((baseline_click, baseline_sources)) =
-            load_baseline_sidecar(&repo, &baseline_commit, &sidecar)?
-        {
-            let baseline_refs = source_refs(&baseline_sources);
-            let selection =
-                c0_incremental_selection(&click_source, &refs, &baseline_click, &baseline_refs)
-                    .map_err(click_message)?;
-            full_rebuild = selection.full_rebuild;
-            reasons = selection.reasons;
-            (selection.selected_functions, selection.reused_functions)
-        } else {
-            full_rebuild = true;
-            reasons.push(
-                "sidecar or one of its declared C sources is absent at the baseline".to_string(),
-            );
-            (
-                c0_project_selected_proof_names(&project, &refs).map_err(click_message)?,
-                Vec::new(),
-            )
-        };
-
-        print_incremental_selection(
-            &sidecar,
-            revision,
-            &selected,
-            &reused,
-            &reasons,
-            full_rebuild,
-        );
-        if explain_only {
-            continue;
-        }
-        if !full_rebuild && selected.is_empty() {
-            skipped += 1;
-            continue;
-        }
-        let dependencies =
-            c0_project_external_dependencies(&project, &refs).map_err(click_message)?;
-        let verified_theorems = with_run_limits("click verify", limits, || {
-            if full_rebuild {
-                verify_c0_project(&project, &refs)
-            } else {
-                verify_c0_project_functions(&project, &refs, selected.clone())
-            }
-            .map_err(|error| {
-                proof_error_report(&error, &sidecar, false, &project, &inputs, 0, None)
-            })
-        })?;
-        print_external_dependencies(&dependencies, &verified_theorems);
-        if full_rebuild
-            && project.modules().len() == 1
-            && project.c_profile().is_none()
-            && let Err(message) = record_full_verification(
+        // Loading, selection, the dependency summary, and verification of
+        // one sidecar all run inside that sidecar's limits.
+        let outcome = with_run_limits("click verify", limits, || {
+            verify_changed_sidecar(
                 &sidecar,
-                &click_source,
-                &sources,
-                std::slice::from_ref(&baseline_commit),
+                project_root,
+                &repo,
+                &baseline_commit,
+                revision,
+                explain_only,
             )
-        {
-            eprintln!("click-verify: warning: could not record incremental baseline: {message}");
+        })?;
+        match outcome {
+            ChangedSidecar::Explained => {}
+            ChangedSidecar::Skipped => skipped += 1,
+            ChangedSidecar::Verified => {
+                verified += 1;
+                println!("  result: verified");
+            }
         }
-        verified += 1;
-        println!("  result: verified");
     }
     if explain_only {
         println!("dry run: no proofs were executed");
@@ -472,6 +397,121 @@ fn verify_changed(
         );
     }
     Ok(())
+}
+
+/// What `--changed-since` did with one sidecar.
+enum ChangedSidecar {
+    Explained,
+    Skipped,
+    Verified,
+}
+
+fn verify_changed_sidecar(
+    sidecar: &Path,
+    project_root: &Path,
+    repo: &Path,
+    baseline_commit: &str,
+    revision: &str,
+    explain_only: bool,
+) -> Result<ChangedSidecar, String> {
+    let (click_source, project, inputs) = {
+        let _phase = VerificationPhase::new("project loading");
+        load_sidecar_inputs(sidecar, Some(project_root))?
+    };
+    if inputs.is_prepared() {
+        return Err(
+            "`--changed-since` is not supported for compiler-prepared projects".to_string(),
+        );
+    }
+    let sources = match &inputs {
+        CInput::Bundle(sources) => sources.clone(),
+        CInput::Prepared(_) | CInput::PreparedProgram(_) => unreachable!(),
+    };
+    let refs = source_refs(&sources);
+    let baseline_attested = has_full_verification_marker(
+        repo,
+        baseline_commit,
+        sidecar,
+        click::surface::selected_project_c_target(&project).map_err(click_message)?,
+    )?;
+    let mut full_rebuild = !baseline_attested;
+    let mut reasons = if !baseline_attested {
+        vec![format!(
+            "baseline commit {baseline_commit} has no valid full-verification marker for this sidecar and verifier binary"
+        )]
+    } else {
+        Vec::new()
+    };
+    if let Some(reason) = imported_project_rebuild_reason(&project) {
+        full_rebuild = true;
+        reasons = vec![reason.to_string()];
+    }
+    let (selected, reused) = if full_rebuild {
+        (
+            c0_project_selected_proof_names(&project, &refs)
+                .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
+            Vec::new(),
+        )
+    } else if let Some((baseline_click, baseline_sources)) =
+        load_baseline_sidecar(repo, baseline_commit, sidecar)?
+    {
+        let baseline_refs = source_refs(&baseline_sources);
+        let selection =
+            c0_incremental_selection(&click_source, &refs, &baseline_click, &baseline_refs)
+                .map_err(click_message)?;
+        full_rebuild = selection.full_rebuild;
+        reasons = selection.reasons;
+        (selection.selected_functions, selection.reused_functions)
+    } else {
+        full_rebuild = true;
+        reasons
+            .push("sidecar or one of its declared C sources is absent at the baseline".to_string());
+        (
+            c0_project_selected_proof_names(&project, &refs)
+                .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
+            Vec::new(),
+        )
+    };
+
+    print_incremental_selection(
+        sidecar,
+        revision,
+        &selected,
+        &reused,
+        &reasons,
+        full_rebuild,
+    );
+    if explain_only {
+        return Ok(ChangedSidecar::Explained);
+    }
+    if !full_rebuild && selected.is_empty() {
+        return Ok(ChangedSidecar::Skipped);
+    }
+    let summary = {
+        let _phase = VerificationPhase::new("external dependency summary");
+        c0_project_summary(&project, &refs)
+            .map_err(|error| located_click_message(error, sidecar, &project, 0))?
+    };
+    let verified_theorems = if full_rebuild {
+        verify_c0_project(&project, &refs)
+    } else {
+        verify_c0_project_functions(&project, &refs, selected.clone())
+    }
+    .map_err(|error| proof_error_report(&error, sidecar, false, &project, &inputs, 0, None))?;
+    print_external_dependencies(&summary.external_dependencies, &verified_theorems);
+    if full_rebuild
+        && project.modules().len() == 1
+        && project.c_profile().is_none()
+        && let Err(message) = record_full_verification(
+            sidecar,
+            &click_source,
+            &sources,
+            &[baseline_commit.to_string()],
+        )
+    {
+        eprintln!("click-verify: warning: could not record incremental baseline: {message}");
+    }
+    Ok(ChangedSidecar::Verified)
 }
 
 fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static str> {
@@ -487,6 +527,66 @@ fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static st
 
 fn click_message(error: click::surface::ClickError) -> String {
     error.concise_report()
+}
+
+/// Where the declaration a failure is about is written: the one the failure
+/// records, or else the last name its message quotes that the source
+/// declares. A check that fails outside the per-declaration pass still names
+/// what it refused (``resource `cell` has fields``, ``in theorem `t` ``), and
+/// the declaration it names is the source to show.
+fn failure_declaration_position(
+    error: &ClickError,
+    report: &str,
+    source: &str,
+) -> Option<click::surface::SourcePosition> {
+    let recorded = || {
+        error.proof_declaration().and_then(|declaration| {
+            click::surface::click_declaration_source_position(source, declaration)
+        })
+    };
+    // A proof failure records the declaration it arose in. A declaration
+    // check records only which declaration was being visited, which a check
+    // made between visits does not update, so what its message names wins.
+    if error.kind() == ClickErrorKind::Proof
+        && let Some(position) = recorded()
+    {
+        return Some(position);
+    }
+    report
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .filter(|quoted| {
+            !quoted.is_empty()
+                && quoted
+                    .chars()
+                    .all(|character| character.is_alphanumeric() || character == '_')
+        })
+        .find_map(|name| click::surface::click_declaration_source_position(source, name))
+        .or_else(recorded)
+}
+
+/// [`click_message`], followed by where the declaration the failure is about
+/// is written when the failure records one. A declaration that fails its
+/// checks is reported before any proof runs, so it has no tactic to show.
+fn located_click_message(
+    error: click::surface::ClickError,
+    sidecar: &Path,
+    project: &ClickProject,
+    line_offset: usize,
+) -> String {
+    let mut report = error.concise_report();
+    if let Some(source) = project.entry_source()
+        && let Some(position) = failure_declaration_position(&error, &report, source)
+        && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+    {
+        report.push_str("\n\n");
+        report.push_str(&excerpt);
+    }
+    report
 }
 
 fn shell_word(value: &str) -> String {
@@ -523,6 +623,38 @@ fn proof_error_report(
             has_full_tactic = true;
         }
         if !has_full_tactic
+            && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+        {
+            context.push(excerpt);
+        }
+    }
+    if context.is_empty()
+        || !context
+            .iter()
+            .any(|line| line.starts_with("tactic@") || line.starts_with("  --> "))
+    {
+        // No tactic of the proof could be shown. A failure that knows its
+        // declaration, or at least its claim, shows where that is written.
+        let declaration = error.proof_declaration().or_else(|| {
+            error
+                .proof_claim_label()
+                .and_then(|claim| claim.split_once('.'))
+                .map(|(declaration, _)| declaration)
+        });
+        if matches!(error.kind(), ClickErrorKind::Proof | ClickErrorKind::Type)
+            && let Some(source) = project.entry_source()
+            && let Some(position) = declaration
+                .filter(|_| error.kind() == ClickErrorKind::Proof)
+                .and_then(|declaration| {
+                    click::surface::click_declaration_source_position(source, declaration)
+                })
+                // A failure that names a C statement is located already; one
+                // that names nothing else shows the declaration it quotes.
+                .or_else(|| {
+                    (!report.contains("C statement at"))
+                        .then(|| failure_declaration_position(error, &report, source))
+                        .flatten()
+                })
             && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
         {
             context.push(excerpt);
@@ -602,18 +734,73 @@ fn proof_error_report(
         }
         return report;
     }
+    // The hint is printed only for a command that `--trace-proof` accepts:
+    // both resolve the name through `trace_unit`.
     if error.kind() == ClickErrorKind::Proof
-        && let Some(function) = error
+        && let Some((declaration, _)) = error
             .proof_claim_label()
             .and_then(|claim| claim.split_once('.'))
+        && let Ok(unit) = trace_unit(declaration, project, inputs)
     {
         report.push_str(&format!(
             "\n\nTo get a trace:\n  click verify --trace-proof {} {}",
-            shell_word(function.0),
+            shell_word(unit.name()),
             shell_word(&sidecar.display().to_string())
         ));
     }
     report
+}
+
+/// The one proof unit `--trace-proof` verifies and traces.
+enum TraceUnit {
+    Function(String),
+    Theorem(String),
+}
+
+impl TraceUnit {
+    fn name(&self) -> &str {
+        match self {
+            Self::Function(name) | Self::Theorem(name) => name,
+        }
+    }
+}
+
+/// Resolves a `--trace-proof` argument against the proofs the sidecar
+/// selects: a C function or an entry-module theorem, by name. Validation
+/// refuses a name declared as both, so the name alone identifies the proof.
+/// The error says why the name cannot be traced.
+fn trace_unit(
+    requested: &str,
+    project: &ClickProject,
+    inputs: &CInput,
+) -> Result<TraceUnit, String> {
+    let names = match inputs {
+        CInput::Bundle(sources) => c0_project_selected_proof_names(project, &source_refs(sources))
+            .map_err(click_message)?,
+        CInput::Prepared(imports) => {
+            c0_prepared_project_selected_proof_names(project, imports).map_err(click_message)?
+        }
+        CInput::PreparedProgram(_) => {
+            return Err(
+                "`--trace-proof` currently supports C sidecars, not typed compiler inputs".into(),
+            );
+        }
+    };
+    let selects = |kind: &str, name: &str| {
+        names.iter().any(|selected| {
+            selected
+                .strip_prefix(kind)
+                .and_then(|rest| rest.strip_prefix(':'))
+                == Some(name)
+        })
+    };
+    if selects("function", requested) {
+        Ok(TraceUnit::Function(requested.to_owned()))
+    } else if selects("theorem", requested) {
+        Ok(TraceUnit::Theorem(requested.to_owned()))
+    } else {
+        Err(format!("`{requested}` is not a selected proof"))
+    }
 }
 
 fn format_source_tactic(
@@ -667,8 +854,7 @@ fn proof_source_position(
     inputs: &CInput,
     source: &str,
 ) -> Option<click::surface::SourcePosition> {
-    let claim = error.proof_claim_label()?;
-    let path = error.proof_source_tactic_path()?;
+    let (claim, path) = error.proof_source_site()?;
     proof_source_position_for_path(claim, path, project, inputs, source)
 }
 
@@ -687,8 +873,8 @@ fn proof_source_position_for_path(
         CInput::Prepared(imports) => {
             c0_prepared_project_tactic_source_position(project, imports, claim, source_index)
         }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_tactic_source_position(project, import, claim, source_index)
+        CInput::PreparedProgram(import) => {
+            program_prepared_project_tactic_source_position(project, import, claim, source_index)
         }
     }
     .ok()?;
@@ -1119,7 +1305,24 @@ fn verify_file(
     // A previous failed sidecar may have left admissions behind; each file
     // reports only its own.
     let _ = click::surface::take_sorry_admissions();
-    let target = load_target_inputs(click_path, project_root)?;
+    // Every phase of the run, from loading its sources and building the
+    // external-dependency summary to counting its selected proofs, runs
+    // inside the run's work budget and crash-containment bound.
+    with_run_limits("click verify", limits, || {
+        verify_file_within_limits(click_path, project_root, trace_proof, trace_to)
+    })
+}
+
+fn verify_file_within_limits(
+    click_path: &Path,
+    project_root: Option<&Path>,
+    trace_proof: Option<&str>,
+    trace_to: Option<&TraceTo>,
+) -> Result<(), String> {
+    let target = {
+        let _phase = VerificationPhase::new("project loading");
+        load_target_inputs(click_path, project_root)?
+    };
     let line_offset = target.line_offset();
     let LoadedTarget {
         click_source,
@@ -1127,59 +1330,53 @@ fn verify_file(
         inputs,
         mdtest,
     } = target;
-    if let Some(function) = trace_proof {
-        let names = match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_selected_proof_names(&project, &source_refs(sources))
-                    .map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_selected_proof_names(&project, imports)
-                    .map_err(click_message)?
-            }
-            CInput::PreparedCpp(_) => {
-                return Err(
-                    "`--trace-proof` currently supports C sidecars, not prepared C++ inputs".into(),
-                );
-            }
-        };
-        if !names
-            .iter()
-            .any(|name| name == &format!("function:{function}"))
-        {
-            return Err(format!(
-                "`{function}` is not a selected proof in `{}`",
-                click_path.display()
-            ));
-        }
-    }
+    let trace_unit = trace_proof
+        .map(|requested| {
+            trace_unit(requested, &project, &inputs)
+                .map_err(|message| {
+                    format!(
+                        "{message} in `{}`; `--trace-proof` takes the name of a C function or theorem the sidecar proves",
+                        click_path.display()
+                    )
+                })
+        })
+        .transpose()?;
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
-    let dependencies = match &inputs {
-        CInput::Bundle(sources) => {
-            c0_project_external_dependencies(&project, &source_refs(sources))
-                .map_err(click_message)?
-        }
-        CInput::Prepared(imports) => {
-            c0_prepared_project_external_dependencies(&project, imports).map_err(click_message)?
-        }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
+    let summary = {
+        let _phase = VerificationPhase::new("external dependency summary");
+        match &inputs {
+            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
+                .map_err(|error| {
+                located_click_message(error, click_path, &project, line_offset)
+            })?,
         }
     };
-    let (verified, successful_trace) = with_run_limits("click verify", limits, || {
-        let run_selected = || match (&inputs, trace_proof) {
-            (CInput::Bundle(sources), Some(function)) => {
-                verify_c0_project_functions(&project, &source_refs(sources), [function.to_owned()])
+    let (verified, successful_trace) = {
+        let run_selected = || match (&inputs, &trace_unit) {
+            (CInput::Bundle(sources), Some(TraceUnit::Function(function))) => {
+                verify_c0_project_functions(&project, &source_refs(sources), [function.clone()])
             }
-            (CInput::Prepared(imports), Some(function)) => {
-                verify_c0_prepared_project_functions(&project, imports, [function.to_owned()])
+            (CInput::Prepared(imports), Some(TraceUnit::Function(function))) => {
+                verify_c0_prepared_project_functions(&project, imports, [function.clone()])
             }
-            (CInput::PreparedCpp(_), Some(_)) => unreachable!(),
+            (CInput::Bundle(sources), Some(TraceUnit::Theorem(theorem))) => {
+                verify_c0_project_theorem(&project, &source_refs(sources), theorem)
+            }
+            (CInput::Prepared(imports), Some(TraceUnit::Theorem(theorem))) => {
+                verify_c0_prepared_project_theorem(&project, imports, theorem)
+            }
+            (CInput::PreparedProgram(_), Some(_)) => unreachable!(),
             (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
             (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
-            (CInput::PreparedCpp(import), None) => verify_cpp_prepared_project(&project, import),
+            (CInput::PreparedProgram(import), None) => {
+                verify_program_prepared_project(&project, import)
+            }
         };
         let report = |error: ClickError| {
             proof_error_report(
@@ -1192,21 +1389,34 @@ fn verify_file(
                 trace_target.as_ref(),
             )
         };
-        match trace_proof {
-            Some(function) => with_proof_trace(function, || {
+        match &trace_unit {
+            Some(unit) => with_proof_trace(unit.name(), || {
                 let verified = run_selected().map_err(report)?;
+                // The renderer asks for one step's location several times.
+                let located = RefCell::new(HashMap::<
+                    (String, Vec<usize>),
+                    Option<(String, click::surface::SourcePosition)>,
+                >::new());
                 let locate = |claim: &str, path: &[usize]| {
-                    let source = project.entry_source()?;
-                    let position =
-                        proof_source_position_for_path(claim, path, &project, &inputs, source)?;
-                    let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
-                    let line = position.line + line_offset;
-                    let label = if multiple {
-                        format!("tactic@{line}:{}", position.column)
-                    } else {
-                        format!("tactic@{line}")
-                    };
-                    Some((label, position))
+                    let key = (claim.to_owned(), path.to_vec());
+                    if let Some(cached) = located.borrow().get(&key) {
+                        return cached.clone();
+                    }
+                    let label = (|| {
+                        let source = project.entry_source()?;
+                        let position =
+                            proof_source_position_for_path(claim, path, &project, &inputs, source)?;
+                        let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
+                        let line = position.line + line_offset;
+                        let label = if multiple {
+                            format!("tactic@{line}:{}", position.column)
+                        } else {
+                            format!("tactic@{line}")
+                        };
+                        Some((label, position))
+                    })();
+                    located.borrow_mut().insert(key, label.clone());
+                    label
                 };
                 let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
                     let source = project.entry_source()?;
@@ -1245,7 +1455,7 @@ fn verify_file(
                 .map(|verified| (verified, None))
                 .map_err(report),
         }
-    })?;
+    }?;
     if trace_proof.is_some() {
         let trace = successful_trace.ok_or_else(|| {
             trace_to.map_or_else(
@@ -1260,24 +1470,13 @@ fn verify_file(
         })?;
         println!("{trace}\n");
     }
-    print_external_dependencies(&dependencies, &verified);
+    print_external_dependencies(&summary.external_dependencies, &verified);
+    // The count comes from the summary's resolution of the sources, so
+    // reporting it does not parse every source again after verification.
     let selected = if trace_proof.is_some() {
         1
     } else {
-        match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_selected_proof_count(&project, &source_refs(sources))
-                    .map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_selected_proof_count(&project, imports)
-                    .map_err(click_message)?
-            }
-            CInput::PreparedCpp(import) => {
-                cpp_prepared_project_selected_proof_count(&project, import)
-                    .map_err(click_message)?
-            }
-        }
+        summary.selected_proof_count
     };
     println!("{selected} selected proof{} verified", plural(selected));
     let admissions = click::surface::take_sorry_admissions();
@@ -1315,8 +1514,22 @@ fn verify_location(
     column: usize,
     limits: RunLimits,
 ) -> Result<(), String> {
+    // As in `verify_file`, loading is inside the run's limits.
+    with_run_limits("click verify", limits, || {
+        verify_location_within_limits(click_path, line, column)
+    })
+}
+
+fn verify_location_within_limits(
+    click_path: &Path,
+    line: usize,
+    column: usize,
+) -> Result<(), String> {
     let project_root = lone_sidecar_project_root(click_path)?;
-    let target = load_target_inputs(click_path, Some(&project_root))?;
+    let target = {
+        let _phase = VerificationPhase::new("project loading");
+        load_target_inputs(click_path, Some(&project_root))?
+    };
     let line_offset = target.line_offset();
     // An mdtest location names a line of the markdown file; the verifier
     // selects by lines of the extracted Click block.
@@ -1329,19 +1542,20 @@ fn verify_location(
     let LoadedTarget {
         project, inputs, ..
     } = target;
-    let dependencies = match &inputs {
-        CInput::Bundle(sources) => {
-            c0_project_external_dependencies(&project, &source_refs(sources))
-                .map_err(click_message)?
-        }
-        CInput::Prepared(imports) => {
-            c0_prepared_project_external_dependencies(&project, imports).map_err(click_message)?
-        }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
+    let summary = {
+        let _phase = VerificationPhase::new("external dependency summary");
+        match &inputs {
+            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
+                .map_err(|error| {
+                located_click_message(error, click_path, &project, line_offset)
+            })?,
         }
     };
-    let verified = with_run_limits("click verify", limits, || {
+    let verified = {
         let result = match &inputs {
             CInput::Bundle(sources) => {
                 verify_c0_project_at(&project, &source_refs(sources), line, column)
@@ -1349,8 +1563,8 @@ fn verify_location(
             CInput::Prepared(imports) => {
                 verify_c0_prepared_project_at(&project, imports, line, column)
             }
-            CInput::PreparedCpp(import) => {
-                verify_cpp_prepared_project_at(&project, import, line, column)
+            CInput::PreparedProgram(import) => {
+                verify_program_prepared_project_at(&project, import, line, column)
             }
         };
         result.map_err(|error| {
@@ -1364,8 +1578,8 @@ fn verify_location(
                 None,
             )
         })
-    })?;
-    print_external_dependencies(&dependencies, &verified);
+    }?;
+    print_external_dependencies(&summary.external_dependencies, &verified);
     println!("1 selected proof verified");
     Ok(())
 }
@@ -1714,6 +1928,191 @@ mod tests {
         assert_eq!(selection.projects.len(), 1);
         assert!(!selection.projects[0].sidecars.is_empty());
         assert_eq!(selection.project_root, Path::new("examples"));
+    }
+
+    /// Writes one sidecar project into a fresh temporary directory and
+    /// returns the directory and the sidecar path.
+    fn temporary_project(label: &str, c_source: &str, click_source: &str) -> (PathBuf, PathBuf) {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "click-verify-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("temporary verification directory should be creatable");
+        fs::write(root.join("program.c"), c_source).expect("C source should be writable");
+        let click_path = root.join("program.click");
+        fs::write(&click_path, click_source).expect("Click sidecar should be writable");
+        (root, click_path)
+    }
+
+    /// Program-entry storage is as large as the program's static objects.
+    /// Building it (once for the external-dependency summary, then again for
+    /// the frontend) once ran before the run's limits were installed and without
+    /// a checkpoint, so a 10,000-element zeroed struct pool ran for over an
+    /// hour past both the work budget and the ten-minute crash bound. Zeroed
+    /// struct arrays are now strided runs, but an explicit initializer list
+    /// still stores and partitions one element at a time. Storage charges
+    /// and checks per element and per range, inside the run's limits, so the
+    /// work budget stops it in that phase, at the same unit on every run.
+    #[test]
+    fn a_large_program_entry_stops_at_the_work_budget_in_its_storage_phase() {
+        let initializers = (0..5000)
+            .map(|index| format!("{{{}, 0}}", index % 97))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (root, click_path) = temporary_project(
+            "large-entry",
+            &format!(
+                "struct node {{ int32 key; struct node *next; }};\n\
+                 struct node pool[5000] = {{{initializers}}};\n\
+                 int main(void) {{ return pool[0].key; }}\n"
+            ),
+            "verifying \"program.c\";\n\
+             int main() {\n\
+                 ensures result == 0;\n\
+             } by {\n\
+                 execute();\n\
+                 simp();\n\
+             }\n",
+        );
+        let run = || {
+            entry_with([
+                "--work-limit".to_string(),
+                "60000".to_string(),
+                click_path.display().to_string(),
+            ])
+            .expect_err("sixty thousand units cannot build a 5,000-element initialized entry")
+        };
+        // The first run in a process also fills process-wide caches, so it
+        // spends a few more units (a fresh `click verify` process always
+        // spends the first run's); later runs in one process agree.
+        run();
+        let first = run();
+        let second = run();
+        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
+        assert!(
+            first.contains("(60000 limit) while running frontend > program-entry storage phase")
+                && !first.contains("crash-containment"),
+            "{first}"
+        );
+        assert_eq!(first, second, "a work-budget verdict is deterministic");
+    }
+
+    /// The project summary (external dependencies and the selected proof
+    /// count) reads function names, signatures, and call graphs. It once
+    /// built `main`'s whole program-entry storage too and dropped it, which
+    /// doubled the setup cost of a program with large static objects. It now
+    /// enters no program-entry storage phase, and beyond resolving the
+    /// sources it spends the same work whatever a static array's
+    /// initializer holds, while verification still builds that storage.
+    #[test]
+    fn the_project_summary_builds_no_program_entry_storage() {
+        use click::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+        let costs = [100usize, 2000].map(|elements| {
+            let initializers = (0..elements)
+                .map(|index| format!("{{{}, 0}}", index % 97))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let (root, click_path) = temporary_project(
+                "summary-entry",
+                &format!(
+                    "struct node {{ int32 key; struct node *next; }};\n\
+                     struct node pool[{elements}] = {{{initializers}}};\n\
+                     int main(void) {{ return pool[0].key; }}\n"
+                ),
+                "verifying \"program.c\";\n\
+                 int main() {\n\
+                     ensures result == 0;\n\
+                 } by {\n\
+                     execute();\n\
+                     simp();\n\
+                 }\n",
+            );
+            let LoadedTarget {
+                project, inputs, ..
+            } = load_target_inputs(&click_path, Some(&root)).expect("the project loads");
+            let CInput::Bundle(sources) = &inputs else {
+                panic!("a plain C project is a source bundle");
+            };
+            let refs = source_refs(sources);
+            // Warm the process-wide caches so both sizes are measured alike.
+            click::surface::c0_project_function_names(&project, &refs)
+                .expect("the sources resolve");
+            let ((summary, summary_events), summary_work) =
+                measure_deterministic_work(|| collect(|| c0_project_summary(&project, &refs)));
+            let (resolution, resolution_work) = measure_deterministic_work(|| {
+                click::surface::c0_project_function_names(&project, &refs)
+            });
+            let (verified, verify_events) = collect(|| verify_c0_project(&project, &refs));
+            fs::remove_dir_all(&root)
+                .expect("temporary verification directory should be removable");
+            let summary = summary.expect("the summary resolves");
+            resolution.expect("the sources resolve");
+            verified.expect("the program verifies");
+            let builds_storage = |events: &[VerificationEvent]| {
+                events.iter().any(|event| {
+                    matches!(
+                        event,
+                        VerificationEvent::PhaseStarted("program-entry storage")
+                    )
+                })
+            };
+            assert!(
+                !builds_storage(&summary_events),
+                "the summary built entry storage"
+            );
+            assert!(
+                builds_storage(&verify_events),
+                "verification builds entry storage"
+            );
+            assert_eq!(summary.selected_proof_count, 1);
+            assert!(summary.external_dependencies.is_empty());
+            summary_work as i64 - resolution_work as i64
+        });
+        assert_eq!(
+            costs[0], costs[1],
+            "beyond resolution, the summary's work grew with the initializer: {costs:?}"
+        );
+    }
+
+    /// The crash-containment bound is installed before the run loads its
+    /// sources, so even the first C parse, for the external-dependency
+    /// summary, stops at a checkpoint once the bound has expired.
+    #[test]
+    fn the_crash_bound_covers_source_loading_and_parsing() {
+        let functions = (0..4000)
+            .map(|index| format!("int32 f{index}(int32 x) {{ return x; }}\n"))
+            .collect::<String>();
+        let (root, click_path) = temporary_project(
+            "slow-frontend",
+            &functions,
+            "verifying \"program.c\";\n\
+             int32 f0(int32 x) {\n\
+                 ensures result == x;\n\
+             } by {\n\
+                 execute();\n\
+                 simp();\n\
+             }\n",
+        );
+        let error = entry_with([
+            "--time-limit".to_string(),
+            "1ms".to_string(),
+            click_path.display().to_string(),
+        ])
+        .expect_err("one millisecond cannot parse four thousand functions");
+        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
+        assert!(
+            error.starts_with("click verify was stopped after")
+                && error.contains("by the 1ms wall-clock crash-containment bound")
+                && error.contains("C parsing stopped")
+                && error.contains(
+                    "external dependency summary > source resolution phase, stopped by the 1ms"
+                ),
+            "{error}"
+        );
     }
 
     #[test]

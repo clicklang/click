@@ -6,9 +6,60 @@ use crate::surface::validation::describe_click_type;
 use std::fmt::Write;
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
-const DEBUG_VALUE_BYTE_LIMIT: usize = 2 * 1024;
 const TRUNCATION_SUFFIX: &str =
     "\n… <diagnostic truncated; set CLICK_FULL_DIAGNOSTICS=1 for full internal state>";
+
+thread_local! {
+    /// Where each C statement being stepped was written, innermost last; see
+    /// [`CStatementSiteScope`].
+    static C_STATEMENT_SITES: std::cell::RefCell<
+        Vec<Option<std::sync::Arc<crate::languages::c::syntax::C0StatementSite>>>,
+    > = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// While alive, names the C statement a step is checking, so a refusal that
+/// prints its C operation also names the line it was written on and quotes
+/// it. Diagnostics only: nothing a check decides reads it, and a refusal
+/// built outside any scope (or for a statement with no recorded site) simply
+/// prints no location.
+#[must_use]
+pub(in crate::surface) struct CStatementSiteScope(());
+
+impl CStatementSiteScope {
+    /// Enters the site the source layout records for `statement_index`.
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+        statement_index: usize,
+    ) -> Self {
+        let site = layout.site(statement_index).cloned();
+        C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
+        Self(())
+    }
+}
+
+impl Drop for CStatementSiteScope {
+    fn drop(&mut self) {
+        C_STATEMENT_SITES.with(|sites| {
+            sites.borrow_mut().pop();
+        });
+    }
+}
+
+/// The line naming where the C statement being stepped was written, as
+/// "\n  C statement at f.c:6:9: `items[i] = 7;`", or nothing when no step
+/// scope records one. It follows a refusal's "C operation" line, which
+/// spells the checked kernel operation; this line is the source a person
+/// edits.
+pub(in crate::surface) fn describe_c_statement_site() -> String {
+    C_STATEMENT_SITES.with(|sites| {
+        sites
+            .borrow()
+            .last()
+            .and_then(Option::as_ref)
+            .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
+            .unwrap_or_default()
+    })
+}
 
 pub(super) fn bound_error_message(message: String) -> String {
     bound_error_message_for_mode(message, std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some())
@@ -36,46 +87,6 @@ fn truncate_utf8_with_suffix(message: &str, limit: usize, suffix: &str) -> Strin
     bounded
 }
 
-struct BoundedDebugWriter {
-    output: String,
-    content_limit: usize,
-}
-
-impl Write for BoundedDebugWriter {
-    fn write_str(&mut self, value: &str) -> fmt::Result {
-        let remaining = self.content_limit.saturating_sub(self.output.len());
-        if value.len() <= remaining {
-            self.output.push_str(value);
-            return Ok(());
-        }
-        let mut boundary = remaining.min(value.len());
-        while !value.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        self.output.push_str(&value[..boundary]);
-        Err(fmt::Error)
-    }
-}
-
-pub(super) fn bounded_debug(value: &impl fmt::Debug) -> String {
-    bounded_debug_for_mode(value, std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some())
-}
-
-pub(super) fn bounded_debug_for_mode(value: &impl fmt::Debug, full_internal_state: bool) -> String {
-    if full_internal_state {
-        return format!("{value:?}");
-    }
-    let content_limit = DEBUG_VALUE_BYTE_LIMIT.saturating_sub(TRUNCATION_SUFFIX.len());
-    let mut writer = BoundedDebugWriter {
-        output: String::with_capacity(DEBUG_VALUE_BYTE_LIMIT),
-        content_limit,
-    };
-    if write!(&mut writer, "{value:?}").is_err() {
-        writer.output.push_str(TRUNCATION_SUFFIX);
-    }
-    writer.output
-}
-
 fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String) -> String {
     if items.is_empty() {
         return "[]".to_string();
@@ -92,7 +103,7 @@ fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String)
     format!("[{}]", entries.join(", "))
 }
 
-fn diagnostic_item_limit() -> usize {
+pub(super) fn diagnostic_item_limit() -> usize {
     if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
         usize::MAX
     } else {
@@ -150,20 +161,6 @@ pub(super) fn describe_pure_facts(pure_facts: &[Proposition]) -> String {
     }
 
     describe_bounded_list(pure_facts, |fact| describe_pure_fact(fact, &[], &[]))
-}
-
-pub(super) fn describe_unexpressed_pure_facts(
-    facts: &[(Proposition, ClickError)],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> String {
-    describe_bounded_list(facts, |(fact, error)| {
-        format!(
-            "{}: {}",
-            describe_pure_fact(fact, parameters, arguments),
-            error.message()
-        )
-    })
 }
 
 /// Describes one fact, and for a refused concrete named-contract formation
@@ -436,7 +433,7 @@ pub(super) fn describe_pure_fact(
                 _ => format!("malformed named contract fact `{contract}`"),
             }
         }
-        _ => describe_unclassified_pure_fact(fact),
+        _ => describe_unclassified_pure_fact(fact, parameters, arguments),
     }
 }
 
@@ -451,11 +448,20 @@ pub(super) fn describe_pure_fact(
 /// `proof_diagnostics::render` spells the same proposition in its source
 /// vocabulary under node, depth, and byte bounds; `CLICK_FULL_DIAGNOSTICS`
 /// still yields the developer dump.
-fn describe_unclassified_pure_fact(fact: &Proposition) -> String {
+fn describe_unclassified_pure_fact(
+    fact: &Proposition,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
     if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
         return format!("{fact:?}");
     }
-    crate::surface::proof_diagnostics::render::render_proposition(fact)
+    crate::surface::proof_diagnostics::render::render_proposition_labeled(
+        fact,
+        &mut crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
+            parameters, arguments,
+        ),
+    )
 }
 
 pub(super) fn describe_execution_pure_facts(facts: &[ExecutionPureFact]) -> String {
@@ -616,11 +622,18 @@ pub(super) fn describe_undecided_statement_successors(
     format!("undecided condition:\n{}\n", lines.join("\n"))
 }
 
+/// `outcomes` splits a call into its returning and its throwing edge, so it
+/// is offered only where the two successors are exactly those: `one_throws`
+/// says one of them is a `Throw`. Two successors that both continue are an
+/// undecided branch inside an inlined callee, which the case-split guidance
+/// above already answers; `outcomes` has no arm for either of them.
 pub(super) fn describe_multiple_statement_successors_guidance(
     statement: &CStatement,
     successor_count: usize,
+    one_throws: bool,
 ) -> String {
     if successor_count != 2
+        || !one_throws
         || !matches!(
             statement,
             CStatement::Call { .. } | CStatement::CallAssign { .. }
@@ -704,27 +717,41 @@ fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Prop
         .collect()
 }
 
-/// The header of the proof context an unclosed goal lists: the facts bearing
-/// on that goal (`pure_facts_relevant_to`). Unlike the whole-context
+/// The header of the proof context an unclosed goal lists: the path's case
+/// and the facts bearing on that goal (`pure_facts_relevant_to`). Unlike the whole-context
 /// `proof context:` other refusals carry, the command line shows it.
 pub(crate) const GOAL_PROOF_CONTEXT_HEADER: &str = "proof context for the goal:";
 
-/// The proof context of an unclosed goal: the pure facts bearing on `goal`
-/// (every fact when the goal has no kernel form) and the held resources,
-/// each list bounded by the diagnostic item limit.
+/// The proof context of an unclosed goal: the case this path is (`case_facts`,
+/// the conditions its branches and case splits assumed), the pure facts
+/// bearing on `goal` (every fact when the goal has no kernel form), and the
+/// held resources, each list bounded by the diagnostic item limit.
 pub(super) fn describe_goal_proof_context(
     goal: Option<&Proposition>,
     pure_facts: &[Proposition],
+    case_facts: &[Proposition],
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
-    let relevant = match goal {
+    let mut relevant = match goal {
         Some(goal) => pure_facts_relevant_to(goal, pure_facts),
         None => pure_facts.to_vec(),
     };
+    relevant.retain(|fact| !case_facts.contains(fact));
+    // A case condition often shares no term with the goal -- `u == 0` false
+    // after a split on whether a store wrote the cell a load reads -- yet it
+    // says which case the claim fails in, so it gets its own line.
+    let case = if case_facts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n  case: {}",
+            describe_context_pure_and_execution_facts(case_facts, &[], parameters, arguments)
+        )
+    };
     format!(
-        "{GOAL_PROOF_CONTEXT_HEADER}\n  pure facts: {}\n  resource facts: {}",
+        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {}\n  resource facts: {}",
         describe_context_pure_and_execution_facts(&relevant, &[], parameters, arguments),
         describe_resource_facts(resource_facts, parameters, arguments)
     )
@@ -773,6 +800,88 @@ pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefus
         .map(|context| format!(" ({context})"))
         .unwrap_or_default();
     format!("missing loop-head prerequisite{context}: `{fact}`")
+}
+
+/// One contract claim clause as its source wrote it: the proposition of an
+/// `ensures`, or the `owns`/`produces` resource clause, with its guard.
+pub(super) fn describe_ensure_clause(clause: &EnsureClause) -> String {
+    match clause.ensure() {
+        Ensure::Proposition(proposition) => describe_click_proposition(proposition),
+        Ensure::Resource(resource) => {
+            let verb = if clause.borrowed() {
+                "owns"
+            } else {
+                "produces"
+            };
+            let spelling = format!(
+                "{verb} {}",
+                crate::surface::validation::describe_resource_clause(resource)
+            );
+            clause.condition().map_or(spelling.clone(), |guard| {
+                format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
+            })
+        }
+    }
+}
+
+/// The contract claims certification did not establish, each named by its
+/// claim label and spelled as the source clause wrote it, bounded by the
+/// diagnostic item limit.
+pub(super) fn describe_unverified_contract_claims(
+    function_block: &FunctionBlock,
+    keys: &[crate::kernel::CFunctionContractClaimKey],
+) -> String {
+    use crate::kernel::CFunctionContractClaimKey;
+    let function_name = function_block.signature().name();
+    let describe_clause = |label: String, clause: &EnsureClause| {
+        format!("{label} `{}`", describe_ensure_clause(clause))
+    };
+    let item_limit = diagnostic_item_limit();
+    let mut described = keys
+        .iter()
+        .take(item_limit)
+        .map(|key| match key {
+            CFunctionContractClaimKey::BodySafety => format!("{function_name} body safety"),
+            CFunctionContractClaimKey::Effect(index) => {
+                format!("{function_name} effect clause {index}")
+            }
+            CFunctionContractClaimKey::Ensure(index) => {
+                function_block.ensures().get(*index).map_or_else(
+                    || format!("{function_name}.ensures_{index}"),
+                    |clause| {
+                        describe_clause(
+                            crate::surface::verification::function_claim_label(
+                                function_name,
+                                &crate::surface::proof::FunctionClaimRef::Ensure(*index, clause),
+                            ),
+                            clause,
+                        )
+                    },
+                )
+            }
+            CFunctionContractClaimKey::ExceptionalEnsure(index) => function_block
+                .exceptional_ensures()
+                .get(*index)
+                .map_or_else(
+                    || format!("{function_name}.exceptional_ensures_{index}"),
+                    |clause| {
+                        describe_clause(
+                            crate::surface::verification::function_claim_label(
+                                function_name,
+                                &crate::surface::proof::FunctionClaimRef::ExceptionalEnsure(
+                                    *index, clause,
+                                ),
+                            ),
+                            clause,
+                        )
+                    },
+                ),
+        })
+        .collect::<Vec<_>>();
+    if keys.len() > item_limit {
+        described.push(format!("… {} more omitted", keys.len() - item_limit));
+    }
+    described.join(", ")
 }
 
 /// A fact as a proof would state it, spelled over `state`'s locals: the
@@ -989,10 +1098,18 @@ pub(super) fn describe_runtime_error(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"
         ),
         crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => format!(
-            "cannot verify call through function pointer `{name}`: no matching named contract is available for this value"
+            "cannot verify call through {}: no matching named contract is available for this value",
+            if is_call_result_temporary(name) {
+                "a function pointer loaded from memory".to_string()
+            } else {
+                format!("function pointer `{name}`")
+            }
         ),
         crate::kernel::CRuntimeError::FunctionContract(message) => {
-            format!("function contract could not be applied: {message}")
+            format!(
+                "function contract could not be applied: {}",
+                name_string_literal_storage(message)
+            )
         }
         crate::kernel::CRuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
@@ -1270,12 +1387,7 @@ pub(super) fn describe_resource_fact(
         | CResourceFact::View(CResource::PopulationAuthority(description)) => format!(
             "{} authority({})",
             if resource.is_own() { "owns" } else { "views" },
-            format_declared_resource(
-                description.family(),
-                description.arguments(),
-                parameters,
-                arguments,
-            )
+            format_population_description(description, parameters, arguments)
         ),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => format!(
@@ -1427,12 +1539,7 @@ fn describe_c_resource(
         CResource::MutexUse(identity) => format_mutex_use(identity, parameters, arguments),
         CResource::PopulationAuthority(description) => format!(
             "authority({})",
-            format_declared_resource(
-                description.family(),
-                description.arguments(),
-                parameters,
-                arguments,
-            )
+            format_population_description(description, parameters, arguments)
         ),
         CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameters, arguments),
     }
@@ -1509,7 +1616,21 @@ pub(super) fn describe_memory_range(
     // not at a pointer to it.
     let base = match named_object_block(&range.base().block, parameters, arguments) {
         Some(name) if range.base().offset == PointerOffsetTerm::Constant(0) => name,
-        _ => describe_pointer(range.base(), parameters, arguments),
+        _ => {
+            let cell = describe_pointer(range.base(), parameters, arguments);
+            // One element at an address spelled as a member or a byte offset
+            // is that cell; `p->data[2][0..1]` would read as a second index.
+            // A bare name or an elided address keeps its range.
+            let compound = cell.starts_with("(char *)")
+                || cell.contains("->")
+                || cell.contains("].")
+                || cell.ends_with(']');
+            if compound && range.start().as_const() == Some(0) && range.end().as_const() == Some(1)
+            {
+                return cell;
+            }
+            cell
+        }
     };
     format!(
         "{}[{}..{}]",
@@ -1743,6 +1864,76 @@ pub(super) fn describe_missing_range_end_note(
 /// The snapshot and pointer a still-unresolved comparison side loads from, if
 /// that side is exactly one load. A resolved side is a value and reads
 /// nothing.
+/// The explanation for two evaluated sides that are reads of one address of
+/// different kinds: a byte and a word, or a signed and an unsigned byte. They
+/// are two values at any program point, so no step of the history explains
+/// them apart, and a sentence about what changed in between would send the
+/// reader after a store that is not the cause.
+pub(in crate::surface) fn describe_load_kind_mismatch(
+    left: &CValue,
+    right: &CValue,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let (_, left_load) = unresolved_load(left)?;
+    let (_, right_load) = unresolved_load(right)?;
+    let left_kind = unresolved_load_kind(left)?;
+    let right_kind = unresolved_load_kind(right)?;
+    if left_load != right_load || left_kind == right_kind {
+        return None;
+    }
+    let named = match describe_source_cell(&left_load, parameters, arguments) {
+        Some(cell) => format!("`{}`", cell.text()),
+        None => "one address".to_string(),
+    };
+    Some(format!(
+        "the two sides read {named} as different kinds of value, the left as {} and the right \
+         as {}. A read's width and signedness are part of the value it names, so these are two \
+         values at any point of the program.",
+        describe_load_kind(left_kind),
+        describe_load_kind(right_kind),
+    ))
+}
+
+/// The kind of read a still-unresolved comparison side is, when that side is
+/// exactly one load.
+fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
+    let term = match value {
+        CValue::Int8(term)
+        | CValue::Bool(term)
+        | CValue::Int16(term)
+        | CValue::Int32(term)
+        | CValue::UInt8(term)
+        | CValue::UInt16(term)
+        | CValue::UInt32(term)
+        | CValue::Int64(term)
+        | CValue::UInt64(term) => term,
+        _ => return None,
+    };
+    match term {
+        Bitvector32Term::MemoryLoad(_, _, kind) => Some(*kind),
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::registered_load_kind_for_variable(variable)
+        }
+        _ => None,
+    }
+}
+
+/// A read's kind in the reader's words.
+fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
+    use crate::kernel::LoadKind;
+    match kind {
+        LoadKind::Int8 => "a signed byte",
+        LoadKind::UInt8 => "an unsigned byte",
+        LoadKind::Int16 => "a signed two-byte integer",
+        LoadKind::UInt16 => "an unsigned two-byte integer",
+        LoadKind::Bits32 => "a four-byte word",
+        LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Float32 => "a `float32`",
+        LoadKind::Float64 => "a `float64`",
+    }
+}
+
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value {
         CValue::Int8(term) => term,
@@ -1757,7 +1948,7 @@ pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)
         _ => return None,
     };
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }
         Bitvector32Term::Variable(variable) => {
@@ -2039,6 +2230,9 @@ pub(super) fn describe_two_sided_version_mismatch(
     let (right_memory, right_load) = unresolved_load(right)?;
     if left_load != right_load {
         return None;
+    }
+    if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameters, arguments) {
+        return Some(mismatch);
     }
     let explanation = resource_tracker::explain(
         resource_tracker::Resource::Cell {
@@ -3004,7 +3198,7 @@ fn bitvector_is_source_spelled(
 
 /// The whole object a block names, spelled as the source declares it: a
 /// parameter whose argument points into it, or a file-scope declaration.
-fn describe_memory_block(
+pub(super) fn describe_memory_block(
     block: &PointerBlock,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
@@ -3168,7 +3362,38 @@ fn scalar_element_width(c_type: C0Type) -> Option<i64> {
     }
 }
 
-pub(super) fn describe_pointer(
+thread_local! {
+    /// How many addresses are being spelled inside one another's indices.
+    static NESTED_ADDRESS_SPELLINGS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// An index inside an address spelling. It is named through the tables,
+/// so a local reads as its name and a loaded value as the cell it was
+/// loaded from. Naming a load spells its address, whose own index can be a
+/// load again, and one address can be reached from itself that way; past a
+/// small nesting the index is spelled without the tables, which ends it.
+fn describe_address_index(
+    index: &Bitvector32Term,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    const NESTING_LIMIT: u32 = 2;
+    let depth = NESTED_ADDRESS_SPELLINGS.with(std::cell::Cell::get);
+    if depth >= NESTING_LIMIT {
+        return describe_bitvector(index);
+    }
+    struct Leave(u32);
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            NESTED_ADDRESS_SPELLINGS.with(|nested| nested.set(self.0));
+        }
+    }
+    NESTED_ADDRESS_SPELLINGS.with(|nested| nested.set(depth + 1));
+    let _leave = Leave(depth);
+    describe_bitvector_with_context(index, parameters, arguments)
+}
+
+pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
@@ -3179,6 +3404,7 @@ pub(super) fn describe_pointer(
     // through the parameter the address actually belongs to, and picking it is
     // deterministic.
     let mut best: Option<String> = None;
+    let mut byte_offset: Option<String> = None;
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
@@ -3196,15 +3422,69 @@ pub(super) fn describe_pointer(
             let spelled = if index == Bitvector32Term::Constant(0) {
                 parameter.name().to_string()
             } else {
-                format!("{}[{}]", parameter.name(), describe_bitvector(&index))
+                format!(
+                    "{}[{}]",
+                    parameter.name(),
+                    describe_address_index(&index, parameters, arguments)
+                )
             };
             if best.as_ref().is_none_or(|best| spelled.len() < best.len()) {
                 best = Some(spelled);
             }
+        } else if let Some(member) = describe_parameter_struct_member(
+            pointer,
+            parameter,
+            base.pointer(),
+            parameters,
+            arguments,
+        ) {
+            if best.as_ref().is_none_or(|best| member.len() < best.len()) {
+                best = Some(member);
+            }
+        } else if let Some(bytes) = pointer.offset_from_base(base.pointer()) {
+            // An address inside the parameter's object that is no whole
+            // element of it -- a byte of a wider cell, say -- is still a
+            // byte offset from the parameter, as a named object's is below.
+            let spelled = format!(
+                "(char *){} + {}",
+                parameter.name(),
+                describe_pointer_offset(&bytes)
+            );
+            if byte_offset
+                .as_ref()
+                .is_none_or(|best: &String| spelled.len() < best.len())
+            {
+                byte_offset = Some(spelled);
+            }
         }
     }
-    if let Some(best) = best {
+    if let Some(best) = best.or(byte_offset) {
         return best;
+    }
+    // A by-value aggregate parameter is two objects: the callee's copy,
+    // which the tables name, and the argument it was copied from, which a
+    // claim about the parameter reads. The second is the caller's.
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(copy)) = argument else {
+            continue;
+        };
+        let Some(source) = crate::kernel::registered_aggregate_argument_source(&copy.block) else {
+            continue;
+        };
+        // A pointer the argument holds in a field is that field's value,
+        // the same in the copy and in the argument it was copied from.
+        if let Some(field) = describe_parameter_struct_field_pointer(pointer, parameter, &source) {
+            return field.replacen("->", ".", 1);
+        }
+        let name = format!("the caller's {}", parameter.name());
+        if let Some(member) = describe_struct_member_from(
+            pointer, parameter, &source, &name, ".", parameters, arguments,
+        ) {
+            return member;
+        }
+        if *pointer == source {
+            return name;
+        }
     }
     match &pointer.block {
         // External argument blocks are verifier-owned lowering artifacts. Do
@@ -3248,7 +3528,7 @@ fn describe_parameter_struct_field_pointer(
         return None;
     };
     let loaded_at = match value.as_ref() {
-        Bitvector32Term::MemoryLoad(_, loaded_at) => loaded_at.as_ref().clone(),
+        Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
         Bitvector32Term::Variable(variable) => {
             crate::kernel::registered_load_for_variable(variable)?.1
         }
@@ -3270,6 +3550,99 @@ fn describe_parameter_struct_field_pointer(
     })
 }
 
+/// An address inside the struct a parameter points to, spelled through the
+/// parameter: `p->field` for a member of `*p`, `p[i].field` for a member of
+/// element `i`, and `p->field[k]` for an element of an array member.
+///
+/// The address is the parameter's own plus at most one index scaled by the
+/// struct's size plus a constant inside the struct. Anything else has no
+/// member spelling here.
+///
+/// The index is spelled by [`describe_address_index`].
+fn describe_parameter_struct_member(
+    pointer: &Pointer,
+    parameter: &syntax::C0Parameter,
+    base: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    describe_struct_member_from(
+        pointer,
+        parameter,
+        base,
+        parameter.name(),
+        "->",
+        parameters,
+        arguments,
+    )
+}
+
+/// [`describe_parameter_struct_member`] against an object spelled `name`
+/// whose members are selected with `select` (`->` through a pointer, `.` on
+/// a value).
+fn describe_struct_member_from(
+    pointer: &Pointer,
+    parameter: &syntax::C0Parameter,
+    base: &Pointer,
+    name: &str,
+    select: &str,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let layout = parameter
+        .pointee_struct_layout()
+        .or_else(|| parameter.struct_layout())?;
+    let size = i64::from(layout.size_bytes());
+    if size == 0 {
+        return None;
+    }
+    let mut constant = 0i64;
+    let mut element: Option<&Bitvector32Term> = None;
+    let rest = pointer.offset_from_base(base)?;
+    let mut pending = vec![&rest];
+    while let Some(term) = pending.pop() {
+        match term {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            PointerOffsetTerm::Constant(bytes) => constant = constant.checked_add(*bytes)?,
+            PointerOffsetTerm::Int32Scaled { value, byte_width }
+            | PointerOffsetTerm::Int64Scaled {
+                value, byte_width, ..
+            } if *byte_width == size && element.is_none() => element = Some(value),
+            _ => return None,
+        }
+    }
+    // A constant past the first struct selects a later element.
+    let (whole, inside) = (constant.div_euclid(size), constant.rem_euclid(size));
+    let selected = match (element, whole) {
+        (None, 0) => None,
+        (None, whole) => Some(whole.to_string()),
+        (Some(index), 0) => Some(describe_address_index(index, parameters, arguments)),
+        (Some(index), whole) => Some(format!(
+            "{} + {whole}",
+            describe_address_index(index, parameters, arguments)
+        )),
+    };
+    let fields = layout.fields();
+    let (field_name, field) = fields
+        .iter()
+        .filter(|(_, field)| i64::from(field.offset_bytes()) <= inside)
+        .max_by_key(|(_, field)| field.offset_bytes())?;
+    let within = inside - i64::from(field.offset_bytes());
+    let member = match &selected {
+        Some(index) => format!("{name}[{index}].{field_name}"),
+        None => format!("{name}{select}{field_name}"),
+    };
+    if within == 0 {
+        return Some(member);
+    }
+    let width = scalar_element_width(field.c_type())
+        .or_else(|| field.array_element_width().map(i64::from))?;
+    (within % width == 0).then(|| format!("{member}[{}]", within / width))
+}
+
 fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
     match c_type {
         C0Type::Bool | C0Type::Char | C0Type::UInt8 => 1,
@@ -3283,6 +3656,11 @@ fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
 }
 
 pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter) -> i64 {
+    // A pointer to (or array of) one scalar type is indexed by that scalar's
+    // width, whatever the pointer itself occupies.
+    if let Some(width) = scalar_element_width(parameter.c_type()) {
+        return width;
+    }
     match parameter.c_type() {
         C0Type::Void => 0,
         C0Type::Bool => 1,
@@ -3386,6 +3764,21 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             value,
             byte_width: actual_width,
         } if *actual_width == byte_width => Some(value.as_ref().clone()),
+        // An index widened to 64 bits before scaling (a `uint32` index, or
+        // an `int32` one on a wide address) is still the index the source
+        // wrote. The widening decides the address, not the element's name.
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width: actual_width,
+            ..
+        } if *actual_width == byte_width => Some(match value.as_ref() {
+            // These widenings keep the value, so the element is named by
+            // the narrow index, as a signed 32-bit index names it.
+            Bitvector32Term::Int64From32(narrow)
+            | Bitvector32Term::UInt64From32(narrow)
+            | Bitvector32Term::Int64FromUInt32(narrow) => narrow.as_ref().clone(),
+            wide => wide.clone(),
+        }),
         PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
@@ -3402,6 +3795,21 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
     }
 }
 
+/// A value of a narrow or unsigned type as a refusal spells it. A literal
+/// takes its type suffix (`5u32`), which is how the source writes one. A
+/// name or a compound expression is already a typed source term, and a
+/// suffix glued to it (`xu32`) would read as a different identifier.
+fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
+    let magnitude = spelled.strip_prefix('-').unwrap_or(&spelled);
+    let literal = magnitude.starts_with(|first: char| first.is_ascii_digit())
+        && magnitude.parse::<f64>().is_ok();
+    if literal {
+        format!("{spelled}{suffix}")
+    } else {
+        spelled
+    }
+}
+
 pub(super) fn describe_c_value(
     value: &CValue,
     parameters: &[syntax::C0Parameter],
@@ -3409,65 +3817,47 @@ pub(super) fn describe_c_value(
 ) -> String {
     match value {
         CValue::Void => "void".to_string(),
-        CValue::Bool(value) => format!(
-            "{}bool",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::Bool(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "bool",
         ),
-        CValue::Int8(value) => {
-            format!(
-                "{}i8",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::Int16(value) => {
-            format!(
-                "{}i16",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
+        CValue::Int8(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i8",
+        ),
+        CValue::Int16(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i16",
+        ),
         CValue::Int32(value) => describe_bitvector_with_context(value, parameters, arguments),
-        CValue::UInt8(value) => {
-            format!(
-                "{}u8",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::UInt32(value) => {
-            format!(
-                "{}u32",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::UInt16(value) => {
-            format!(
-                "{}u16",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        // A 64-bit constant already carries its suffix.
-        CValue::Int64(value) => {
-            let inner = describe_bitvector_with_context(value, parameters, arguments);
-            if inner.ends_with("i64") {
-                inner
-            } else {
-                format!("{inner}i64")
-            }
-        }
-        CValue::UInt64(value) => {
-            let inner = describe_bitvector_with_context(value, parameters, arguments);
-            if inner.ends_with("u64") {
-                inner
-            } else {
-                format!("{inner}u64")
-            }
-        }
-        CValue::Float32(value) => format!(
-            "{}f32",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::UInt8(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u8",
         ),
-        CValue::Float64(value) => format!(
-            "{}f64",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::UInt32(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u32",
+        ),
+        CValue::UInt16(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u16",
+        ),
+        // A 64-bit constant already carries its suffix.
+        CValue::Int64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i64",
+        ),
+        CValue::UInt64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u64",
+        ),
+        CValue::Float32(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "f32",
+        ),
+        CValue::Float64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "f64",
         ),
         CValue::Pointer(pointer) => describe_pointer(pointer, parameters, arguments),
     }
@@ -3505,6 +3895,32 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
         ContractSegmentState::Current => current,
         ContractSegmentState::Old => format!("old({current})"),
     }
+}
+
+/// A string literal's storage reads as "a string literal": its block name
+/// is one the lowering generated, not one the source has.
+fn name_string_literal_storage(message: &str) -> String {
+    let Some(start) = message.find("`string:") else {
+        return message.to_string();
+    };
+    let Some(length) = message[start + 1..].find('`') else {
+        return message.to_string();
+    };
+    let end = start + 1 + length;
+    if !message[start..end].contains("__click_string_literal") {
+        return message.to_string();
+    }
+    format!(
+        "{}a string literal{}",
+        &message[..start],
+        &message[end + 1..]
+    )
+}
+
+/// Whether `name` is a temporary the C lowering introduced for the result of
+/// a call or load nested inside a larger expression.
+pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
+    name.starts_with("__click_call_result")
 }
 
 pub(super) fn describe_c_expression(expression: &CExpression) -> String {
@@ -3696,11 +4112,15 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
         }
         CStatement::Declare { name, .. } => format!("declaration of `{name}`"),
         CStatement::DeclareAggregate { name, .. } => format!("aggregate declaration of `{name}`"),
-        CStatement::CopyAggregate { target, source, .. } => format!(
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => format!(
             "{} = {};",
             describe_c_expression(target),
             describe_c_expression(source)
         ),
+        CStatement::Assign { name, expression } if is_call_result_temporary(name) => {
+            format!("{};", describe_c_expression(expression))
+        }
         CStatement::Assign { name, expression } => {
             format!("{name} = {};", describe_c_expression(expression))
         }
@@ -3708,15 +4128,24 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             function_name,
             arguments,
-        } => format!(
-            "{target} = {function_name}({});",
-            describe_c_expression_list(arguments)
-        ),
+        } => {
+            let call = format!(
+                "{}({});",
+                describe_called_function(function_name),
+                describe_c_expression_list(arguments)
+            );
+            if is_call_result_temporary(target) {
+                call
+            } else {
+                format!("{target} = {call}")
+            }
+        }
         CStatement::Call {
             function_name,
             arguments,
         } => format!(
-            "{function_name}({});",
+            "{}({});",
+            describe_called_function(function_name),
             describe_c_expression_list(arguments)
         ),
         CStatement::HeapAllocate {
@@ -3788,6 +4217,16 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
         }
     };
     truncate_utf8_with_suffix(&head, MAX_STATEMENT_HEAD_BYTES, "…")
+}
+
+/// The callee as the C names it; a function pointer the lowering loaded into
+/// a temporary has no name there.
+pub(in crate::surface) fn describe_called_function(function_name: &str) -> &str {
+    if is_call_result_temporary(function_name) {
+        "(the loaded function pointer)"
+    } else {
+        function_name
+    }
 }
 
 /// A guard already sits inside the parentheses the statement writes, so drop
@@ -4214,6 +4653,85 @@ fn aligned_comparison_sugar<'a>(
         .then_some((pointer.as_ref(), alignment))
 }
 
+thread_local! {
+    /// Whether propositions are being spelled for a refusal a person reads,
+    /// rather than as Click source that must parse back.
+    static REFUSAL_SPELLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Spells propositions inside `spell` for a refusal. The source form is
+/// what an expansion writes into a proof, so it keeps every term literal;
+/// a refusal may instead print a term as what it means, such as an
+/// unsigned order, in a form that is not Click source.
+pub(in crate::surface) fn with_refusal_spelling<T>(spell: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            REFUSAL_SPELLING.with(|mode| mode.set(self.0));
+        }
+    }
+    let _restore = Restore(REFUSAL_SPELLING.with(|mode| mode.replace(true)));
+    spell()
+}
+
+/// A 32-bit unsigned order written the way the kernel states it: the signed
+/// order of both operands with their sign bit flipped, a constant operand
+/// arriving already flipped. It is spelled as the unsigned comparison it
+/// means, marked `(unsigned)` as [`describe_unsigned_comparison`] marks the
+/// kernel form, so it never reads as the signed comparison of the same
+/// operands.
+fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
+    const SIGN_BIT: &str = "-2147483648";
+    let ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    } = proposition
+    else {
+        return None;
+    };
+    if !matches!(
+        operator,
+        ComparisonOperator::LessThan
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterThan
+            | ComparisonOperator::GreaterEqual
+    ) {
+        return None;
+    }
+    let flipped = |expression: &ContractExpression| match expression {
+        ContractExpression::BitwiseXor(sign, value)
+            if describe_contract_expression(sign) == SIGN_BIT =>
+        {
+            Some(describe_contract_expression(value))
+        }
+        ContractExpression::BitwiseXor(value, sign)
+            if describe_contract_expression(sign) == SIGN_BIT =>
+        {
+            Some(describe_contract_expression(value))
+        }
+        _ => None,
+    };
+    let unflipped = |expression: &ContractExpression| {
+        flipped(expression).or_else(|| {
+            let constant = describe_contract_expression(expression)
+                .parse::<i64>()
+                .ok()?;
+            let bits = i32::try_from(constant).ok()? as u32;
+            Some((bits ^ 0x8000_0000).to_string())
+        })
+    };
+    // At least one side carries the flip itself; two bare constants are an
+    // ordinary signed comparison.
+    let (left, right) = match (flipped(left), flipped(right)) {
+        (Some(left), Some(right)) => (left, right),
+        (Some(left), None) => (left, unflipped(right)?),
+        (None, Some(right)) => (unflipped(left)?, right),
+        (None, None) => return None,
+    };
+    Some(format!("{left} {operator} {right} (unsigned)"))
+}
+
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
     if let Some((pointer, alignment)) = aligned_sugar(proposition) {
         return format!("aligned({}, {alignment})", describe_c_expression(pointer));
@@ -4224,6 +4742,11 @@ pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> Stri
             describe_snapshot_selector(selector),
             describe_c_expression(pointer)
         );
+    }
+    if REFUSAL_SPELLING.with(std::cell::Cell::get)
+        && let Some(unsigned) = unsigned_order_sugar(proposition)
+    {
+        return unsigned;
     }
     match proposition {
         ClickProposition::Comparison {
@@ -4596,7 +5119,7 @@ pub(super) fn describe_bitvector_with_context(
             format!("{name}(<typed Click arguments>)")
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             format!("load({})", describe_pointer(pointer, parameters, arguments))
         }
         Bitvector32Term::PointerAddress(pointer) => {
@@ -4780,11 +5303,7 @@ fn describe_integer_comparison(
     operator: &str,
     right: &crate::kernel::SharedIntegerTerm,
 ) -> String {
-    format!(
-        "{} {operator} {}",
-        describe_integer_term(left),
-        describe_integer_term(right)
-    )
+    crate::surface::proof_diagnostics::render::render_integer_comparison(left, operator, right)
 }
 
 fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
@@ -5081,4 +5600,25 @@ fn describe_float_condition(condition: &CFloatCondition) -> String {
             value,
         } => format!("is{classification:?}({})", describe_bitvector(value)),
     }
+}
+
+fn format_population_description(
+    description: &crate::kernel::ResourceDescription,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[crate::kernel::CExpression],
+) -> String {
+    let mut result = format_declared_resource(
+        description.family(),
+        description.arguments(),
+        parameters,
+        arguments,
+    );
+    if let Some(arity) = description.population_arity() {
+        result.pop();
+        for _ in 1..arity {
+            result.push_str(", _");
+        }
+        result.push(')');
+    }
+    result
 }

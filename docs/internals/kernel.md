@@ -155,9 +155,16 @@ Opaque function rules have a narrower boundary:
 - the rule is bound to the complete `CFunction`, including its lowered body,
   contract, exact claim targets, resource definitions, and execution metadata;
 - `CFunctionContractExecution` can only be created by the kernel from the
-  exact function's entry state and contract-derived assumptions. Proposed
-  elaboration facts are admitted only when the kernel re-derives them from
-  that canonical entry, so callers cannot inject hypotheses;
+  exact function's entry state and contract-derived assumptions. The kernel
+  builds the contract entry (`c_function_contract_entry`): its lowering of
+  each `requires` clause, the parameters' ranges, and what the entry
+  resources state, each fact tagged with its origin. A proof starts from
+  that entry, seen through the source spelling the proof side recorded, with
+  facts nested inside a resource or a predicate body out of view until the
+  proof observes or unfolds them. A caller applying the rule discharges the
+  same lowering, so the body is proved from what its callers establish.
+  Certification reuses a proof's execution when the entry states each of its
+  assumptions, which is a lookup;
 - contract execution mode is explicit. `VerifyLoops` checks annotated loop
   rules, while `ExecuteLoops` independently repeats a bounded concrete
   execution trace;
@@ -372,8 +379,9 @@ equality a C component gets, because the whole-function plan is built before
 specification lowering has an environment. The weaker match is not soundness
 relevant. Termination evidence is the certified loop's own back-edge bundle,
 which discharged `0 <= m` and `m_post < m_pre` for the component the kernel
-holds on that rule's loop head; a loop with a nonnegative int32 quantity that
-strictly descends on every back edge terminates whichever quantity it was.
+holds on that rule's loop head; a loop with a nonnegative int32 quantity, or
+an unsigned machine quantity under unsigned order, that strictly descends on
+every back edge terminates whichever quantity it was.
 The plan only says which loop to point at, and a rule is bound to its source
 loop by index and executable shape, a comparison that ignores the measure.
 Matching the measures on top of that turns a plan describing one measure and a
@@ -458,8 +466,30 @@ In `src/kernel/`:
 
 The current integer conversion slice is deliberately small. `eval.rs` promotes
 `int8`, `int16`, `uint8`, and `uint16` rvalues to `int32` terms for arithmetic, ordered
-comparisons, shifts, and bitwise operators, assignments, and returns, adding
-internal range facts for the promoted term when an expression needs them.
+comparisons, shifts, and bitwise operators, assignments, and returns.
+
+A narrow value is in its type's range wherever one exists, because every
+conversion into a narrow type owes that range as an obligation. The range
+(`0 <= x` and `x <= 255` for `uint8`, with the unsigned bound beside them for
+an unsigned type) has one definition, `c_narrow_integer_range_facts`, and is
+stated where the value is introduced, never where it is used:
+
+- a narrow parameter's range is an entry fact of the function, as a `_Bool`
+  parameter's `flag == 0 or flag == 1` is, so a claim may name the parameter
+  without any C use of it;
+- every other narrow value a program expression holds (a loaded cell, a local
+  a loop or a call gave a fresh value) enters it through the lvalue read
+  (`read_c_lvalue_paths`) or as a value the kernel substituted into the
+  expression (`CExpression::Value`). Those two points file the range as
+  certified path facts unless the context already holds or decides it.
+
+The read's facts are certified: the step's theorem concludes them, and no
+reader of the step owes a derivation of them. They are also public, so a
+prerequisite a step leaves to the proof (a file-scope subscript check, the
+owned-footprint check of a store) reads the range beside the source's own
+tests. A specification read names a value the program produced and files
+nothing. Promotions, casts, and the return conversion state no range of their
+own.
 Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit term
 representation without signed overflow obligations. Unsigned division and

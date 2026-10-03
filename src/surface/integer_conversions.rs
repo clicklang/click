@@ -51,6 +51,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scalar_casts_keep_byte_read_width_in_definedness() {
+        let c = "int32 read(const uint8* p) { return (int32)p[0]; }";
+        let source = "verifying \"read.c\"; int32 read(const uint8* p) { views p[0..1]; ensures defined((int32)p[0]); } by { execute(); simp(); }";
+        verify_c0_sources(source, &[("read.c", c)]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[("read.c", c)], "read.contract").unwrap();
+        verify_c0_sources(&expanded, &[("read.c", c)]).unwrap();
+        assert!(
+            verify_c0_sources(
+                &source.replace(
+                    "ensures defined((int32)p[0])",
+                    "ensures defined((int32)p[1])"
+                ),
+                &[("read.c", c)]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn integer_conversion_domains_survive_datatype_wrappers() {
         for value in [
             "Box::Wrapped(to_integer(x + 1))",

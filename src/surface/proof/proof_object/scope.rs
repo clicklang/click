@@ -401,15 +401,17 @@ impl<'a> ProofScope<'a> {
         self.body.certificate_since(checkpoint)
     }
 
-    /// Runs the narrow linear `execute` search inside this scope.
+    /// Runs the `execute()` search inside this scope.
     ///
     /// Each selected statement is checked and retained by
     /// `Proof::try_statement_step`; the search never mutates a second
     /// semantic context or reconstructs steps from its aftermath. A partial
     /// advance is discarded unless the checked descendant reaches function
     /// exit, so unsupported frontiers return a bounded miss to the caller.
-    pub(in crate::surface::proof) fn try_linear_execute(&self) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) = self.body.try_linear_execute_descendant()? else {
+    pub(in crate::surface::proof) fn try_execute_to_exit(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some((body, added_facts)) = self.body.try_execute_to_exit_descendant()? else {
             return Ok(None);
         };
         let mut introduced_facts = self.introduced_facts.clone();
@@ -424,19 +426,18 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs bare theorem-application search on the scope's current checked
-    /// body and retains only the accepted explicit theorem step. Function-exit
-    /// applications remain outcome-local ordered-finalization operations.
-    pub(in crate::surface::proof) fn try_theorem_application(
+    /// Checks an explicit theorem application on the scope's current body.
+    /// Preserve a missing-premise diagnostic instead of treating the written
+    /// application as a search miss. Function-exit applications remain
+    /// outcome-local ordered-finalization operations.
+    pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<Option<Self>, ClickError> {
         if self.body.is_at_function_exit() {
             return Ok(None);
         }
-        let Some(body) = self.body.try_theorem_application(application)? else {
-            return Ok(None);
-        };
+        let body = self.body.apply_theorem_application(application)?;
         let mut next = self.clone();
         if matches!(self.structure.as_ref(), ProofScopeStructure::Open { .. }) {
             for fact in body.added_facts() {
@@ -473,14 +474,13 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs the narrow straight-line `execute_until` search on checked
-    /// descendants and stops before the selected source statement.
-    pub(in crate::surface::proof) fn try_linear_execute_until(
+    /// Runs `execute_until` on checked descendants and stops before the
+    /// selected source statement.
+    pub(in crate::surface::proof) fn try_execute_until(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) = self.body.try_linear_execute_until_descendant(region)?
-        else {
+        let Some((body, added_facts)) = self.body.try_execute_until_descendant(region)? else {
             return Ok(None);
         };
         let mut introduced_facts = self.introduced_facts.clone();
@@ -686,11 +686,6 @@ impl<'a> ProofScope<'a> {
             .presentation
             .surface_propositions
             .record_lowering(proposition, kernel)?;
-        execution
-            .presentation
-            .surface_record
-            .certificate_facts
-            .insert(kernel.clone());
         execution.presentation.surface_record.retained_have_facts = execution
             .presentation
             .surface_record
@@ -827,6 +822,7 @@ impl<'a> ProofScope<'a> {
                     context: self.root.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.root.node.clone()),
                         step: Some(Arc::new(ProofStep::Have {
                             proposition,
@@ -1044,6 +1040,7 @@ impl<'a> ProofScope<'a> {
                     context: self.root.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.root.node.clone()),
                         step: Some(Arc::new(ProofStep::Open {
                             resource,
@@ -1063,9 +1060,18 @@ impl<'a> Proof<'a> {
     /// Retain a completed descendant of this focused proposition goal as a `have`.
     /// The checked descendant supplies the evidence; its certificate is only
     /// serialized provenance and is never executed again.
+    ///
+    /// `conclusions` are the completed application's other guarantees as the
+    /// caller would write them, in the order the application produced them.
+    /// An application adds every guarantee of its theorem, so each one the
+    /// completed step actually added is retained beside the goal as its own
+    /// `have` over the same body. Nothing is checked again: a conclusion is
+    /// published only when it is one of the facts the checked step reported
+    /// adding, matched in one ordered pass.
     pub(in crate::surface::proof) fn retain_completed_goal(
         &self,
         completed: &Self,
+        conclusions: &[ClickProposition],
     ) -> Result<Self, ClickError> {
         if !Arc::ptr_eq(&self.context, &completed.context)
             || self.focused_branch_id() != completed.focused_branch_id()
@@ -1103,20 +1109,72 @@ impl<'a> Proof<'a> {
                 vec![kernel],
             )
             .map_err(|_| self.step_error("application parent has no open goal"))?;
-        Ok(Self {
+        let mut retained = Self {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(ProofStep::Have {
                     proposition,
-                    proof: Box::new(body),
+                    proof: Box::new(body.clone()),
                 })),
                 focused_branch: self.focused_branch_id(),
                 depth: self.node.depth + 1,
                 split_branches: Vec::new(),
             }),
-        })
+        };
+
+        // The step reports its added facts in conclusion order, omitting any
+        // the context already held, so one forward pass pairs each written
+        // conclusion with the fact it produced.
+        let mut added = completed.state.added_facts().iter().peekable();
+        for conclusion in conclusions {
+            let Some(fact) = added.peek() else {
+                break;
+            };
+            let Ok(lowered) = self.lower_surface_proposition(conclusion, "retained application")
+            else {
+                continue;
+            };
+            if &lowered != *fact {
+                continue;
+            }
+            added.next();
+            if retained.facts().contains(&lowered) {
+                continue;
+            }
+            let branch = retained
+                .focused_branch()
+                .ok_or_else(|| self.step_error("application parent has no open branch"))?;
+            let state = retained
+                .state
+                .publish_checked_focused_transition(
+                    retained.focused_obligation().cloned().unwrap(),
+                    retained.facts().with_kernel_checked_fact(lowered.clone()),
+                    branch.state.execution.clone(),
+                    vec![lowered.clone()],
+                    vec![lowered],
+                )
+                .map_err(|_| self.step_error("application parent has no open goal"))?;
+            retained = Self {
+                site: retained.site.clone(),
+                context: retained.context.clone(),
+                state,
+                node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
+                    parent: Some(retained.node.clone()),
+                    step: Some(Arc::new(ProofStep::Have {
+                        proposition: conclusion.clone(),
+                        proof: Box::new(body.clone()),
+                    })),
+                    focused_branch: retained.focused_branch_id(),
+                    depth: retained.node.depth + 1,
+                    split_branches: Vec::new(),
+                }),
+            };
+        }
+        Ok(retained)
     }
 }

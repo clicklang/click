@@ -191,15 +191,7 @@ fn bitvectors_match_for_resource_check(
     }
     // Memory-range endpoints are int32 values. Their equality does not
     // identify byte offsets or grant access to either range.
-    if assumptions.equality_graph.has_term_equivalences()
-        && assumptions.equality_graph.are_int32_equal(left, right)
-    {
-        return true;
-    }
-    if assumptions.bitvector_terms_equal_from_facts(left, right) {
-        return true;
-    }
-    false
+    assumptions.int32_values_known_equal(left, right)
 }
 
 pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
@@ -226,7 +218,7 @@ pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
             },
         ) => {
             left_width == right_width
-                && (assumptions.bitvector_terms_equal_from_facts(left, right)
+                && (assumptions.int32_values_known_equal(left, right)
                     || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
                     || explicit_atomic_equality_from_memory_derivations(left, right, assumptions))
         }
@@ -473,6 +465,38 @@ pub(crate) struct CheckedLoadEquality {
     evidence: CheckedLoadEqualityEvidence,
 }
 
+/// A bounded candidate path through aliases indexed under the endpoints.
+/// Each retained edge is checked against its exact named premise on checking.
+fn selected_pointer_alias_path(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<Vec<(Pointer, Pointer)>> {
+    let equal = |first: &Pointer, second: &Pointer| {
+        first == second
+            || assumptions.proves_exact(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(first.clone(), second.clone()),
+                true,
+            ))
+            || assumptions.proves_exact(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(second.clone(), first.clone()),
+                true,
+            ))
+    };
+    for middle in assumptions.exact_pointer_aliases(left).take(8) {
+        if !equal(left, middle) {
+            continue;
+        }
+        if equal(middle, right) {
+            return Some(vec![
+                (left.clone(), middle.clone()),
+                (middle.clone(), right.clone()),
+            ]);
+        }
+    }
+    None
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CheckedLoadEqualityEvidence {
     OriginStoredValue {
@@ -495,6 +519,16 @@ enum CheckedLoadEqualityEvidence {
         left: OriginLoadEndpoint,
         right: OriginLoadEndpoint,
         offset: PointerOffsetCongruenceEvidence,
+    },
+    /// Equal-width scalar reads at one execution snapshot, with one exact
+    /// pointer equality retained as their address witness. The source load
+    /// names remain distinct, so explicit proof rewrites keep their addresses.
+    OriginAliasedSnapshot {
+        left: OriginLoadEndpoint,
+        right: OriginLoadEndpoint,
+        alias: Box<Proposition>,
+        alias_path: Option<Vec<(Pointer, Pointer)>>,
+        snapshots: Option<Box<CheckedLoadEquality>>,
     },
     /// The two source-level load terms meet along the recorded memory DAG
     /// when viewed at their original execution snapshots.
@@ -522,20 +556,45 @@ enum CheckedLoadEqualityEvidence {
 struct OriginLoadEndpoint {
     memory: SharedCMemory,
     pointer: Pointer,
+    kind: LoadKind,
+}
+
+fn origin_load_width(term: &Bitvector32Term) -> Option<u32> {
+    match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_bytes_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => Some(
+            crate::kernel::load_term_access_width(memory, pointer, *kind),
+        ),
+        _ => None,
+    }
 }
 
 impl OriginLoadEndpoint {
     fn for_term(term: &Bitvector32Term) -> Option<Self> {
-        let (memory, pointer) = match term {
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                (memory.clone(), pointer.as_ref().clone())
+        let (memory, pointer, kind) = match term {
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                (memory.clone(), pointer.as_ref().clone(), *kind)
             }
             Bitvector32Term::Variable(variable) => {
-                crate::kernel::eval::registered_load_origin_for_variable(variable)?
+                let (memory, pointer) =
+                    crate::kernel::eval::registered_load_origin_for_variable(variable)?;
+                let kind = crate::kernel::eval::registered_load_kind_for_variable(variable)?;
+                (memory, pointer, kind)
             }
             _ => return None,
         };
-        Some(Self { memory, pointer })
+        Some(Self {
+            memory,
+            pointer,
+            kind,
+        })
+    }
+
+    /// The access width a walk from this endpoint uses.
+    fn bytes(&self) -> u32 {
+        crate::kernel::load_term_access_width(&self.memory, &self.pointer, self.kind)
     }
 
     fn matches_term(&self, term: &Bitvector32Term) -> bool {
@@ -543,7 +602,11 @@ impl OriginLoadEndpoint {
     }
 
     fn as_term(&self) -> Bitvector32Term {
-        Bitvector32Term::MemoryLoad(self.memory.clone(), Box::new(self.pointer.clone()))
+        Bitvector32Term::MemoryLoad(
+            self.memory.clone(),
+            Box::new(self.pointer.clone()),
+            self.kind,
+        )
     }
 }
 
@@ -734,26 +797,26 @@ fn checked_call_load_equality_evidence(
     assumptions: &PureFactContext,
 ) -> Option<CheckedCallLoadEqualityEvidence> {
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return None;
     };
-    if left_pointer != right_pointer {
+    if left_pointer != right_pointer || left_kind != right_kind {
         return None;
     }
     let left = memory_dag_cell_source(
         left_memory,
         left_pointer,
-        crate::kernel::load_access_width_or_widest(left_memory, left_pointer),
+        crate::kernel::load_term_access_width(left_memory, left_pointer, *left_kind),
         assumptions,
         true,
     )?;
     let right = memory_dag_cell_source(
         right_memory,
         right_pointer,
-        crate::kernel::load_access_width_or_widest(right_memory, right_pointer),
+        crate::kernel::load_term_access_width(right_memory, right_pointer, *right_kind),
         assumptions,
         true,
     )?;
@@ -840,8 +903,8 @@ impl CheckedLoadEquality {
         assumptions: &PureFactContext,
         allow_canonical_fallback: bool,
     ) -> Option<Self> {
-        if !matches!(left, Bitvector32Term::MemoryLoad(_, _))
-            || !matches!(right, Bitvector32Term::MemoryLoad(_, _))
+        if !matches!(left, Bitvector32Term::MemoryLoad(_, _, _))
+            || !matches!(right, Bitvector32Term::MemoryLoad(_, _, _))
         {
             return None;
         }
@@ -913,26 +976,27 @@ impl CheckedLoadEquality {
                 let Some(derivation) = cell.node().derivation() else {
                     return false;
                 };
-                let Some((pointer, CValue::Int32(stored))) = stored_write_reaching(
+                let bytes = endpoint.bytes();
+                let Some((pointer, written @ CValue::Int32(_))) = stored_write_reaching(
                     derivation.as_ref(),
                     &endpoint.pointer,
-                    crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer),
+                    bytes,
                     assumptions,
                 ) else {
                     return false;
                 };
-                let (pointer, stored) = (&pointer, &stored);
+                let CValue::Int32(stored) = &written else {
+                    unreachable!("matched as an int32 store")
+                };
+                let pointer = &pointer;
                 endpoint.matches_term(load)
                     && cell.has_only_typed_hops()
-                    && cell.checks_walk_from(
-                        &endpoint.memory,
-                        &endpoint.pointer,
-                        crate::kernel::load_access_width_or_widest(
-                            &endpoint.memory,
-                            &endpoint.pointer,
-                        ),
-                        assumptions,
-                    )
+                    // The stored value is the read's only when the store is
+                    // exactly the read's kind; the address half is `offset`
+                    // below.
+                    && endpoint.kind.reads_value(&written)
+                    && written.byte_width() == bytes
+                    && cell.checks_walk_from(&endpoint.memory, &endpoint.pointer, bytes, assumptions)
                     && pointer.block == endpoint.pointer.block
                     && offset.checks(&pointer.offset, &endpoint.pointer.offset, assumptions)
                     && stored == value
@@ -955,6 +1019,7 @@ impl CheckedLoadEquality {
             } => {
                 left.matches_term(&self.left)
                     && right.matches_term(&self.right)
+                    && left.kind == right.kind
                     && left.pointer.block == right.pointer.block
                     && offset.checks(&left.pointer.offset, &right.pointer.offset, assumptions)
                     && memories_match_for_pointer_load(&left.memory, &right.memory, &left.pointer)
@@ -973,6 +1038,78 @@ impl CheckedLoadEquality {
                         ),
                         assumptions,
                     )
+            }
+            CheckedLoadEqualityEvidence::OriginAliasedSnapshot {
+                left,
+                right,
+                alias,
+                alias_path,
+                snapshots,
+            } => {
+                left.matches_term(&self.left)
+                    && right.matches_term(&self.right)
+                    && left.kind == right.kind
+                    && match snapshots {
+                        None => left.memory == right.memory,
+                        Some(equality) => {
+                            let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &equality.left
+                            else {
+                                return false;
+                            };
+                            memory == &left.memory
+                                && *kind == left.kind
+                                && (pointer.as_ref() == &left.pointer
+                                    || pointer.as_ref() == &right.pointer)
+                                && equality.right
+                                    == Bitvector32Term::MemoryLoad(
+                                        right.memory.clone(),
+                                        pointer.clone(),
+                                        right.kind,
+                                    )
+                                && equality.checks_with_call_events(assumptions, call_events)
+                        }
+                    }
+                    && origin_load_width(&self.left) == Some(4)
+                    && origin_load_width(&self.right) == Some(4)
+                    && (alias.as_ref()
+                        == &Proposition::ConditionIs(
+                            ConditionTerm::pointer_equal(
+                                left.pointer.clone(),
+                                right.pointer.clone(),
+                            ),
+                            true,
+                        )
+                        || alias.as_ref()
+                            == &Proposition::ConditionIs(
+                                ConditionTerm::pointer_equal(
+                                    right.pointer.clone(),
+                                    left.pointer.clone(),
+                                ),
+                                true,
+                            ))
+                    && match alias_path {
+                        None => assumptions.proves_exact(alias),
+                        Some(path) => {
+                            path.first().is_some_and(|step| step.0 == left.pointer)
+                                && path.last().is_some_and(|step| step.1 == right.pointer)
+                                && path.windows(2).all(|steps| steps[0].1 == steps[1].0)
+                                && path.iter().all(|step| {
+                                    assumptions.proves_exact(&Proposition::ConditionIs(
+                                        ConditionTerm::pointer_equal(
+                                            step.0.clone(),
+                                            step.1.clone(),
+                                        ),
+                                        true,
+                                    )) || assumptions.proves_exact(&Proposition::ConditionIs(
+                                        ConditionTerm::pointer_equal(
+                                            step.1.clone(),
+                                            step.0.clone(),
+                                        ),
+                                        true,
+                                    ))
+                                })
+                        }
+                    }
             }
             CheckedLoadEqualityEvidence::OriginEffectSummary {
                 left,
@@ -997,28 +1134,25 @@ impl CheckedLoadEquality {
                 left.matches_term(&self.left)
                     && right.matches_term(&self.right)
                     && left.pointer == right.pointer
+                    && left.kind == right.kind
                     && left.memory.memory() == expected_left
                     && right.memory.memory() == expected_right
                     && assumptions.contains_assumed_exact(summary)
                     && ranges.len() == mutable_ranges.len()
                     && ranges.iter().zip(mutable_ranges).all(|(evidence, range)| {
-                        evidence.checks(
-                            range,
-                            &left.pointer,
-                            crate::kernel::load_access_width_or_widest(&left.memory, &left.pointer),
-                            assumptions,
-                        )
+                        evidence.checks(range, &left.pointer, left.bytes(), assumptions)
                     })
             }
             CheckedLoadEqualityEvidence::SameCheckedCallEvent(evidence) => {
                 let (
-                    Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-                    Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+                    Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+                    Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
                 ) = (&self.left, &self.right)
                 else {
                     return false;
                 };
                 left_pointer == right_pointer
+                    && left_kind == right_kind
                     && left_pointer.as_ref() == &evidence.pointer
                     && call_events.contains(&evidence.event)
                     && call_events.contains_view(&evidence.event, evidence.left.node())
@@ -1034,13 +1168,21 @@ impl CheckedLoadEquality {
                     && evidence.left.checks_walk_from(
                         left_memory,
                         left_pointer,
-                        crate::kernel::load_access_width_or_widest(left_memory, left_pointer),
+                        crate::kernel::load_term_access_width(
+                            left_memory,
+                            left_pointer,
+                            *left_kind,
+                        ),
                         assumptions,
                     )
                     && evidence.right.checks_walk_from(
                         right_memory,
                         right_pointer,
-                        crate::kernel::load_access_width_or_widest(right_memory, right_pointer),
+                        crate::kernel::load_term_access_width(
+                            right_memory,
+                            right_pointer,
+                            *right_kind,
+                        ),
                         assumptions,
                     )
             }
@@ -1054,6 +1196,7 @@ impl CheckedLoadEquality {
             CheckedLoadEqualityEvidence::Canonical
             | CheckedLoadEqualityEvidence::OriginStoredValue { .. }
             | CheckedLoadEqualityEvidence::OriginDirectSnapshot { .. }
+            | CheckedLoadEqualityEvidence::OriginAliasedSnapshot { .. }
             | CheckedLoadEqualityEvidence::OriginMemoryDag { .. }
             | CheckedLoadEqualityEvidence::OriginEffectSummary { .. }
             | CheckedLoadEqualityEvidence::SameCheckedCallEvent(_) => None,
@@ -1130,7 +1273,7 @@ pub(crate) fn checked_stored_origin_equality(
             memory_dag_cell_source(
                 &endpoint.memory,
                 &endpoint.pointer,
-                crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer),
+                endpoint.bytes(),
                 assumptions,
                 true,
             )
@@ -1150,16 +1293,27 @@ pub(crate) fn checked_stored_origin_equality(
             stored_write_reaching(
                 derivation.as_ref(),
                 &endpoint.pointer,
-                crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer),
+                endpoint.bytes(),
                 assumptions,
             )
         });
         EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
-        let Some((pointer, CValue::Int32(stored))) = written else {
+        let Some((pointer, written @ CValue::Int32(_))) = written else {
             continue;
         };
-        let (pointer, stored) = (&pointer, &stored);
-        if stored != value || pointer.block != endpoint.pointer.block {
+        let CValue::Int32(stored) = &written else {
+            unreachable!("matched as an int32 store")
+        };
+        let pointer = &pointer;
+        // Exactly the read's kind and as wide as the walk, as
+        // `write_supplies_read` asks of every stored value; the address half
+        // is the offset congruence below.
+        let bytes = endpoint.bytes();
+        if stored != value
+            || pointer.block != endpoint.pointer.block
+            || !endpoint.kind.reads_value(&written)
+            || written.byte_width() != bytes
+        {
             continue;
         }
         let Some(offset) = assumptions
@@ -1206,7 +1360,76 @@ pub(crate) fn checked_origin_load_equality(
     ) else {
         return false;
     };
+    if left_endpoint.kind != right_endpoint.kind {
+        return false;
+    }
     if left_endpoint.pointer.block != right_endpoint.pointer.block {
+        if origin_load_width(left) == Some(4) && origin_load_width(right) == Some(4) {
+            for (first, second) in [
+                (&left_endpoint.pointer, &right_endpoint.pointer),
+                (&right_endpoint.pointer, &left_endpoint.pointer),
+            ] {
+                let alias = Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(first.clone(), second.clone()),
+                    true,
+                );
+                let alias_path = if assumptions.proves_exact(&alias) {
+                    None
+                } else {
+                    if first != &left_endpoint.pointer {
+                        continue;
+                    }
+                    let Some(path) = selected_pointer_alias_path(first, second, assumptions) else {
+                        continue;
+                    };
+                    Some(path)
+                };
+                {
+                    let snapshots = if left_endpoint.memory == right_endpoint.memory {
+                        None
+                    } else {
+                        let mut selected = None;
+                        for pointer in [&left_endpoint.pointer, &right_endpoint.pointer] {
+                            let first = Bitvector32Term::MemoryLoad(
+                                left_endpoint.memory.clone(),
+                                Box::new(pointer.clone()),
+                                left_endpoint.kind,
+                            );
+                            let second = Bitvector32Term::MemoryLoad(
+                                right_endpoint.memory.clone(),
+                                Box::new(pointer.clone()),
+                                right_endpoint.kind,
+                            );
+                            let capture = CheckedLoadEqualityCapture::start_with_call_events(
+                                &active_checked_call_events(),
+                            );
+                            let equal = checked_origin_load_equality(&first, &second, assumptions);
+                            let mut evidence = capture.finish();
+                            if equal && evidence.len() == 1 {
+                                selected = evidence.pop().map(Box::new);
+                                break;
+                            }
+                        }
+                        let Some(selected) = selected else {
+                            continue;
+                        };
+                        Some(selected)
+                    };
+                    retain_checked_load_equality(CheckedLoadEquality {
+                        left: left.clone(),
+                        right: right.clone(),
+                        evidence: CheckedLoadEqualityEvidence::OriginAliasedSnapshot {
+                            left: left_endpoint.clone(),
+                            right: right_endpoint.clone(),
+                            alias: Box::new(alias),
+                            alias_path,
+                            snapshots,
+                        },
+                    });
+                    return true;
+                }
+            }
+        }
         return false;
     }
     // The arms below compare the two origin snapshots' cell maps, and a cell
@@ -1217,6 +1440,7 @@ pub(crate) fn checked_origin_load_equality(
             &left_endpoint.memory,
             &right_endpoint.memory,
             &left_endpoint.pointer,
+            left_endpoint.kind,
             assumptions,
         )
     {
@@ -1511,8 +1735,8 @@ impl AtomicMemoryLoadEqualityEvidence {
             return false;
         };
         let (
-            Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-            Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+            Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
         ) = (left.as_ref(), right.as_ref())
         else {
             return false;
@@ -1530,17 +1754,18 @@ impl AtomicMemoryLoadEqualityEvidence {
             None => right_memory,
         };
         left_pointer == right_pointer
+            && left_kind == right_kind
             && left_evidence.node() == right_evidence.node()
             && left_evidence.checks_walk_from(
                 left_start,
                 left_pointer,
-                crate::kernel::load_access_width_or_widest(left_start, left_pointer),
+                crate::kernel::load_term_access_width(left_start, left_pointer, *left_kind),
                 assumptions,
             )
             && right_evidence.checks_walk_from(
                 right_start,
                 right_pointer,
-                crate::kernel::load_access_width_or_widest(right_start, right_pointer),
+                crate::kernel::load_term_access_width(right_start, right_pointer, *right_kind),
                 assumptions,
             )
     }
@@ -1557,13 +1782,13 @@ fn typed_canonical_projection_load_equality_evidence(
     assumptions: &PureFactContext,
 ) -> Option<AtomicMemoryLoadEqualityEvidence> {
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return None;
     };
-    if left_pointer != right_pointer {
+    if left_pointer != right_pointer || left_kind != right_kind {
         return None;
     }
     let left_projection = CanonicalLoadProjectionEvidence::for_endpoint(left_memory, left_pointer);
@@ -1584,9 +1809,13 @@ fn typed_canonical_projection_load_equality_evidence(
         let right_start = right_selected
             .map(|projection| &projection.source)
             .unwrap_or(right_memory);
-        let Some(equality) =
-            memory_load_equality_evidence_at(left_start, right_start, left_pointer, assumptions)
-        else {
+        let Some(equality) = memory_load_equality_evidence_at(
+            left_start,
+            right_start,
+            left_pointer,
+            *left_kind,
+            assumptions,
+        ) else {
             continue;
         };
         let evidence = AtomicMemoryLoadEqualityEvidence::SameCellViaCanonicalProjection {
@@ -1781,8 +2010,29 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     ) {
         return None;
     }
+    // A single stated equality can give an opaque read the spelling used by
+    // the range index. Membership retains and checks that equality; this
+    // lookup grants neither a separation nor memory access on its own.
+    let resolved_write = assumptions
+        .exact_pointer_aliases(write)
+        .find(|alias| {
+            !matches!(
+                alias.block,
+                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+            )
+        })
+        .unwrap_or(write);
+    let resolved_load = assumptions
+        .exact_pointer_aliases(pointer)
+        .find(|alias| {
+            !matches!(
+                alias.block,
+                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+            )
+        })
+        .unwrap_or(pointer);
     let stated = assumptions
-        .memory_separation_candidates(&write.block, &pointer.block)
+        .memory_separation_candidates(&resolved_write.block, &resolved_load.block)
         .find_map(|(proposition, left, right)| {
             if !matches!(
                 proposition,
@@ -1982,27 +2232,20 @@ pub(crate) fn pointer_load_offset_proven_equal(
         return false;
     };
     let load = match value.as_ref() {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
-            Some((memory.clone(), pointer.as_ref().clone()))
-        }
+        load @ Bitvector32Term::MemoryLoad(_, _, _) => Some(load.clone()),
         Bitvector32Term::Variable(variable) => {
-            crate::kernel::eval::registered_load_origin_for_variable(variable)
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
         }
         _ => None,
     };
-    let Some((memory, pointer)) = load else {
+    let Some(Bitvector32Term::MemoryLoad(memory, pointer, kind)) = load else {
         return false;
     };
-    let Some(cell) = memory_dag_cell_source(
-        &memory,
-        &pointer,
-        crate::kernel::load_access_width_or_widest(&memory, &pointer),
-        assumptions,
-        true,
-    ) else {
+    let bytes = crate::kernel::load_term_access_width(&memory, &pointer, kind);
+    let Some(cell) = memory_dag_cell_source(&memory, &pointer, bytes, assumptions, true) else {
         return false;
     };
-    let Some(CValue::Pointer(stored)) = cell.resolved_value(&pointer) else {
+    let Some(CValue::Pointer(stored)) = cell.resolved_value(&pointer, kind) else {
         return false;
     };
     crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
@@ -2095,12 +2338,13 @@ pub(super) fn memory_load_equality_evidence_at(
     left_memory: &SharedCMemory,
     right_memory: &SharedCMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagLoadEqualityEvidence> {
     if let Some(common) = one_snapshot_equality_evidence(left_memory, right_memory) {
         return Some(common);
     }
-    LoadCellWalks::run(left_memory, right_memory, pointer, assumptions)?.equality(pointer)
+    LoadCellWalks::run(left_memory, right_memory, pointer, kind, assumptions)?.equality(pointer)
 }
 
 /// The equality two identical snapshots have without walking anything.
@@ -2135,6 +2379,9 @@ struct LoadCellWalks {
     right: MemoryDagCell,
     left_stop: CellWalkStop,
     right_stop: CellWalkStop,
+    /// The kind of the read both loads are, which is the only kind a walk's
+    /// resolved value may answer for.
+    kind: LoadKind,
 }
 
 impl LoadCellWalks {
@@ -2142,19 +2389,17 @@ impl LoadCellWalks {
         left_memory: &SharedCMemory,
         right_memory: &SharedCMemory,
         pointer: &Pointer,
+        kind: LoadKind,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        let (left, left_stop) = memory_dag_cell_source_with_stop(
-            left_memory,
-            pointer,
-            crate::kernel::load_access_width_or_widest(left_memory, pointer),
-            assumptions,
-            true,
-        )?;
+        let left_bytes = crate::kernel::load_term_access_width(left_memory, pointer, kind);
+        let right_bytes = crate::kernel::load_term_access_width(right_memory, pointer, kind);
+        let (left, left_stop) =
+            memory_dag_cell_source_with_stop(left_memory, pointer, left_bytes, assumptions, true)?;
         let (right, right_stop) = memory_dag_cell_source_with_stop(
             right_memory,
             pointer,
-            crate::kernel::load_access_width_or_widest(right_memory, pointer),
+            right_bytes,
             assumptions,
             true,
         )?;
@@ -2163,6 +2408,7 @@ impl LoadCellWalks {
             right,
             left_stop,
             right_stop,
+            kind,
         })
     }
 
@@ -2173,8 +2419,8 @@ impl LoadCellWalks {
             return Some(MemoryDagLoadEqualityReason::CommonSource);
         }
         match (
-            self.left.resolved_value(pointer),
-            self.right.resolved_value(pointer),
+            self.left.resolved_value(pointer, self.kind),
+            self.right.resolved_value(pointer, self.kind),
         ) {
             (Some(left_value), Some(right_value)) if left_value == right_value => {
                 Some(MemoryDagLoadEqualityReason::EqualResolvedValue(left_value))
@@ -2229,12 +2475,13 @@ impl LoadCellWalks {
                 .equality(pointer)
                 .map(AtomicMemoryLoadEqualityEvidence::SameCell);
         }
+        let kind = self.kind;
         let load = |memory: &SharedCMemory| {
-            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind)
         };
         let pins = |cell: &MemoryDagCell, other: &Bitvector32Term| {
             matches!(
-                cell.resolved_value(pointer),
+                cell.resolved_value(pointer, kind),
                 Some(
                     CValue::Int8(value) | CValue::Int16(value)
                         | CValue::Int32(value)
@@ -2324,16 +2571,22 @@ pub(super) fn atomic_memory_load_equality_evidence(
     assumptions: &PureFactContext,
 ) -> Option<AtomicMemoryLoadEqualityEvidence> {
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return None;
     };
-    if left_pointer != right_pointer {
+    if left_pointer != right_pointer || left_kind != right_kind {
         return None;
     }
-    match recorded_load_history(left_memory, right_memory, left_pointer, assumptions) {
+    match recorded_load_history(
+        left_memory,
+        right_memory,
+        left_pointer,
+        *left_kind,
+        assumptions,
+    ) {
         LoadHistory::OneVersion(evidence) => Some(evidence),
         LoadHistory::DifferentVersions | LoadHistory::Undecided => None,
     }
@@ -2370,6 +2623,7 @@ pub(in crate::kernel) fn recorded_load_history(
     left_memory: &SharedCMemory,
     right_memory: &SharedCMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> LoadHistory {
     // The same (snapshot, snapshot, pointer) triple is asked thousands of
@@ -2391,6 +2645,7 @@ pub(in crate::kernel) fn recorded_load_history(
             left_memory: left_memory.arena_id(),
             right_memory: right_memory.arena_id(),
             pointer: pointer.clone(),
+            kind,
         });
     if let Some(key) = &memo_key
         && let Some(evidence) =
@@ -2412,7 +2667,8 @@ pub(in crate::kernel) fn recorded_load_history(
             LoadHistory::Undecided
         };
     }
-    let result = recorded_load_history_uncached(left_memory, right_memory, pointer, assumptions);
+    let result =
+        recorded_load_history_uncached(left_memory, right_memory, pointer, kind, assumptions);
     if let Some(key) = memo_key {
         match &result {
             LoadHistory::OneVersion(evidence) => {
@@ -2443,12 +2699,14 @@ fn recorded_load_history_uncached(
     left_memory: &SharedCMemory,
     right_memory: &SharedCMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> LoadHistory {
     if let Some(common) = one_snapshot_equality_evidence(left_memory, right_memory) {
         return LoadHistory::OneVersion(AtomicMemoryLoadEqualityEvidence::SameCell(common));
     }
-    let Some(walks) = LoadCellWalks::run(left_memory, right_memory, pointer, assumptions) else {
+    let Some(walks) = LoadCellWalks::run(left_memory, right_memory, pointer, kind, assumptions)
+    else {
         return LoadHistory::Undecided;
     };
     let separated = walks.cross_an_affecting_step();
@@ -2481,45 +2739,31 @@ fn recorded_load_history_uncached(
 pub(crate) fn resolve_load_along_memory_derivations(
     memory: &SharedCMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> Option<Bitvector32Term> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
     let result = with_extended_dag_bridging(|| {
-        match memory_dag_cell_source(
-            memory,
-            pointer,
-            crate::kernel::load_access_width_or_widest(memory, pointer),
-            assumptions,
-            true,
-        )? {
-            MemoryDagCell::Stored { value, .. } => match value {
-                CValue::Int8(value) => Some(value),
-                CValue::Int16(value)
+        let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
+        let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
+        if let Some(value) = cell.resolved_value(pointer, kind) {
+            return match value {
+                CValue::Int8(value)
+                | CValue::Int16(value)
                 | CValue::Int32(value)
                 | CValue::UInt8(value)
                 | CValue::UInt16(value)
                 | CValue::UInt32(value) => Some(value),
                 _ => None,
-            },
-            MemoryDagCell::Unwritten { node, .. } => {
-                if let Some(value) = node.memory().known_value(pointer) {
-                    return match value {
-                        CValue::Int8(value) => Some(value),
-                        CValue::Int16(value)
-                        | CValue::Int32(value)
-                        | CValue::UInt8(value)
-                        | CValue::UInt16(value)
-                        | CValue::UInt32(value) => Some(value),
-                        _ => None,
-                    };
-                }
-                crate::kernel::eval::load_variable_for_term(&Bitvector32Term::MemoryLoad(
-                    node,
-                    Box::new(pointer.clone()),
-                ))
-                .map(|(variable, _)| Bitvector32Term::Variable(variable))
-            }
+            };
+        }
+        match cell {
+            MemoryDagCell::Stored { .. } => None,
+            MemoryDagCell::Unwritten { node, .. } => crate::kernel::eval::load_variable_for_term(
+                &Bitvector32Term::MemoryLoad(node, Box::new(pointer.clone()), kind),
+            )
+            .map(|(variable, _)| Bitvector32Term::Variable(variable)),
         }
     });
     EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
@@ -2541,11 +2785,13 @@ pub(crate) fn resolve_prerequisite_loads_along_memory_derivations(
         if !crate::kernel::is_load_variable(&variable) {
             continue;
         }
-        let Some((origin, pointer)) = crate::kernel::registered_load_origin_for_variable(&variable)
+        let Some(Bitvector32Term::MemoryLoad(origin, pointer, kind)) =
+            crate::kernel::registered_load_origin_term_for_variable(&variable)
         else {
             continue;
         };
-        let Some(form) = resolve_load_along_memory_derivations(&origin, &pointer, assumptions)
+        let Some(form) =
+            resolve_load_along_memory_derivations(&origin, &pointer, kind, assumptions)
         else {
             continue;
         };
@@ -2572,12 +2818,13 @@ pub(crate) fn explicit_atomic_equality_from_memory_derivations(
             return true;
         }
         let resolves_to = |load: &Bitvector32Term, value: &Bitvector32Term| {
-            let Bitvector32Term::MemoryLoad(memory, pointer) = load else {
+            let Bitvector32Term::MemoryLoad(memory, pointer, kind) = load else {
                 return false;
             };
+            let bytes = crate::kernel::load_term_access_width(memory, pointer, *kind);
             matches!(
-                memory_dag_cell_source(memory, pointer, crate::kernel::load_access_width_or_widest(memory, pointer), assumptions, true)
-                    .and_then(|cell| cell.resolved_value(pointer)),
+                memory_dag_cell_source(memory, pointer, bytes, assumptions, true)
+                    .and_then(|cell| cell.resolved_value(pointer, *kind)),
                 Some(CValue::Int8(resolved) | CValue::Int16(resolved) | CValue::Int32(resolved) | CValue::UInt8(resolved) | CValue::UInt16(resolved) | CValue::UInt32(resolved))
                     if resolved == *value
             )
@@ -2604,6 +2851,7 @@ struct DagLoadEqualityMemoKey {
     left_memory: (u32, u32),
     right_memory: (u32, u32),
     pointer: Pointer,
+    kind: LoadKind,
 }
 
 thread_local! {
@@ -2718,6 +2966,7 @@ fn c_memory_load_is_directly_unchanged(
     before: &CMemory,
     after: &CMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -2737,7 +2986,7 @@ fn c_memory_load_is_directly_unchanged(
                 writes,
             } => {
                 (effect_before == before
-                    || memory_materializes_atomic_load(effect_before, before, pointer)
+                    || memory_materializes_atomic_load(effect_before, before, pointer, kind)
                     || directly_matched_effect_endpoint(
                         effect_before,
                         before,
@@ -2756,7 +3005,8 @@ fn c_memory_load_is_directly_unchanged(
                             write,
                             *bytes,
                             pointer,
-                            crate::kernel::eval::load_access_width_at_address_or_widest(pointer),
+                            crate::kernel::eval::load_access_width_at_address_or_widest(pointer)
+                                .max(kind.byte_width()),
                             assumptions,
                         )
                     })
@@ -2933,21 +3183,36 @@ fn differing_cell_pointers_possibly_aliasing(
         .collect()
 }
 
+/// Whether `materialized` holds, at `pointer`, exactly the `kind` read of
+/// `pointer` that `symbolic` holds: a cell whose value is that read, taken
+/// from a snapshot that agrees with `symbolic` there.
+///
+/// The cell answers for the read only when it is the read: the value is of
+/// the read's kind and is itself a load of that kind. A cell of another width
+/// holds other bytes than the read returns, and one of the other signedness
+/// holds another number.
 fn memory_materializes_atomic_load(
     materialized: &CMemory,
     symbolic: &CMemory,
     pointer: &Pointer,
+    kind: LoadKind,
 ) -> bool {
-    matches!(
-        materialized.known_value(pointer),
-        Some(CValue::Int8(Bitvector32Term::MemoryLoad(source, source_pointer)) | CValue::Int16(Bitvector32Term::MemoryLoad(source, source_pointer))
-            | CValue::Int32(Bitvector32Term::MemoryLoad(source, source_pointer))
-            | CValue::UInt8(Bitvector32Term::MemoryLoad(source, source_pointer))
-            | CValue::UInt16(Bitvector32Term::MemoryLoad(source, source_pointer))
-            | CValue::UInt32(Bitvector32Term::MemoryLoad(source, source_pointer)))
-            if source_pointer.as_ref() == pointer
-                && memories_match_for_pointer_load(&source, symbolic, pointer)
-    )
+    let Some(value) = materialized.known_value(pointer) else {
+        return false;
+    };
+    kind.reads_value(&value)
+        && matches!(
+            value,
+            CValue::Int8(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                | CValue::Int16(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                | CValue::Int32(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                | CValue::UInt8(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                | CValue::UInt16(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                | CValue::UInt32(Bitvector32Term::MemoryLoad(source, source_pointer, source_kind))
+                if source_pointer.as_ref() == pointer
+                    && source_kind == kind
+                    && memories_match_for_pointer_load(&source, symbolic, pointer)
+        )
 }
 
 /// Certifies the narrow frame rule used by execution proofs for ordinary C
@@ -3169,11 +3434,16 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             | CValue::UInt32(term) => term.clone(),
             _ => continue,
         };
+        // The store's value is the read of its own kind at its own address.
+        let Some(kind) = LoadKind::of_value(&store.value) else {
+            continue;
+        };
         equations.push((
             canonicalize_atomic_loads(&value_term),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(store.after.clone()),
                 Box::new(store.pointer.clone()),
+                kind,
             ),
         ));
     }
@@ -3323,7 +3593,7 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &Bitvector32Term) -> bo
                 | Bitvector32Term::Variable(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_) => {}
-                Bitvector32Term::MemoryLoad(_, pointer) => {
+                Bitvector32Term::MemoryLoad(_, pointer, _) => {
                     pending.push(Node::Offset(&pointer.offset, depth + 1));
                 }
                 Bitvector32Term::PointerAddress(pointer) => {
@@ -3529,6 +3799,37 @@ enum AtomicCanonicalizationTask<'a> {
     },
 }
 
+/// The integer a snapshot's own cell at `pointer` gives a `kind` read there,
+/// when the cell is exactly that read and holds something other than `load`
+/// itself. A cell of another kind holds other bytes or another number than
+/// the read returns, so it answers nothing.
+fn cell_integer_for_read(
+    memory: &CMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+    load: &Bitvector32Term,
+) -> Option<Bitvector32Term> {
+    let CExpressionOutcome::Value(cell) = memory.load(pointer) else {
+        return None;
+    };
+    if !kind.reads_value(&cell) {
+        return None;
+    }
+    match cell {
+        CValue::Int8(value)
+        | CValue::Int16(value)
+        | CValue::Int32(value)
+        | CValue::UInt8(value)
+        | CValue::UInt16(value)
+        | CValue::UInt32(value)
+            if &value != load =>
+        {
+            Some(value)
+        }
+        _ => None,
+    }
+}
+
 /// Deep, assumption-free canonical form for a term: every load resolves its
 /// cached cell or canonicalizes its snapshot and pointer, at every depth,
 /// including inside conditionals, folds, and pointer offsets. Two forms
@@ -3575,29 +3876,12 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_) => results.push(term.clone()),
                     Bitvector32Term::PointerAddress(_) => results.push(term.clone()),
-                    Bitvector32Term::MemoryLoad(memory, pointer) => {
+                    Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                        let kind = *kind;
                         let canonical_pointer = canonicalize_pointer_loads(pointer);
-                        let resolved = match memory.load(&canonical_pointer) {
-                            CExpressionOutcome::Value(
-                                CValue::Int8(value)
-                                | CValue::Int16(value)
-                                | CValue::Int32(value)
-                                | CValue::UInt8(value)
-                                | CValue::UInt16(value)
-                                | CValue::UInt32(value),
-                            ) if &value != term => Some(value),
-                            _ => match memory.load(pointer) {
-                                CExpressionOutcome::Value(
-                                    CValue::Int8(value)
-                                    | CValue::Int16(value)
-                                    | CValue::Int32(value)
-                                    | CValue::UInt8(value)
-                                    | CValue::UInt16(value)
-                                    | CValue::UInt32(value),
-                                ) if &value != term => Some(value),
-                                _ => None,
-                            },
-                        };
+                        let resolved =
+                            cell_integer_for_read(memory, &canonical_pointer, kind, term)
+                                .or_else(|| cell_integer_for_read(memory, pointer, kind, term));
                         let Some(mut value) = resolved else {
                             // Name the cell by its DAG epoch before restricting
                             // the snapshot: the restriction is a fresh intern
@@ -3608,15 +3892,17 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                             let epoch = cell_version_point(
                                 memory,
                                 &canonical_pointer,
-                                crate::kernel::load_access_width_or_widest(
+                                crate::kernel::load_term_access_width(
                                     memory,
                                     &canonical_pointer,
+                                    kind,
                                 ),
                             );
                             let epoch = epoch.as_ref().unwrap_or(memory);
                             results.push(Bitvector32Term::MemoryLoad(
                                 canonical_projected_load_memory(epoch, &canonical_pointer),
                                 Box::new(canonical_pointer),
+                                kind,
                             ));
                             continue;
                         };
@@ -3627,33 +3913,23 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                         // cell. Composite recorded values re-enter the normal
                         // structural worklist below.
                         loop {
-                            let Bitvector32Term::MemoryLoad(next_memory, next_pointer) = &value
+                            let Bitvector32Term::MemoryLoad(next_memory, next_pointer, next_kind) =
+                                &value
                             else {
                                 results.push(canonicalize_atomic_loads_deep(&value));
                                 break;
                             };
+                            let next_kind = *next_kind;
                             let canonical_pointer = canonicalize_pointer_loads(next_pointer);
-                            let resolved = match next_memory.load(&canonical_pointer) {
-                                CExpressionOutcome::Value(
-                                    CValue::Int8(next)
-                                    | CValue::Int16(next)
-                                    | CValue::Int32(next)
-                                    | CValue::UInt8(next)
-                                    | CValue::UInt16(next)
-                                    | CValue::UInt32(next),
-                                ) if next != value => Some(next),
-                                _ => match next_memory.load(next_pointer) {
-                                    CExpressionOutcome::Value(
-                                        CValue::Int8(next)
-                                        | CValue::Int16(next)
-                                        | CValue::Int32(next)
-                                        | CValue::UInt8(next)
-                                        | CValue::UInt16(next)
-                                        | CValue::UInt32(next),
-                                    ) if next != value => Some(next),
-                                    _ => None,
-                                },
-                            };
+                            let resolved = cell_integer_for_read(
+                                next_memory,
+                                &canonical_pointer,
+                                next_kind,
+                                &value,
+                            )
+                            .or_else(|| {
+                                cell_integer_for_read(next_memory, next_pointer, next_kind, &value)
+                            });
                             if let Some(next) = resolved {
                                 value = next;
                                 continue;
@@ -3661,15 +3937,17 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
                             let epoch = cell_version_point(
                                 next_memory,
                                 &canonical_pointer,
-                                crate::kernel::load_access_width_or_widest(
+                                crate::kernel::load_term_access_width(
                                     next_memory,
                                     &canonical_pointer,
+                                    next_kind,
                                 ),
                             );
                             let epoch = epoch.as_ref().unwrap_or(next_memory);
                             results.push(Bitvector32Term::MemoryLoad(
                                 canonical_projected_load_memory(epoch, &canonical_pointer),
                                 Box::new(canonical_pointer),
+                                next_kind,
                             ));
                             break;
                         }
@@ -4399,6 +4677,7 @@ mod condition_fact_graph_equivalence_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 memory,
             ))
@@ -4527,11 +4806,14 @@ pub(crate) fn certified_store_equations(facts: &[ExecutionPureFact]) -> Vec<Prop
                     return None;
                 }
             };
+            // What the store wrote is the read of its own kind there.
+            let kind = LoadKind::of_value(&store.value)?;
             Some(Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(store.after.clone()),
                         Box::new(store.pointer.clone()),
+                        kind,
                     )),
                     Box::new(value),
                 ),
@@ -4582,7 +4864,7 @@ pub(crate) fn c_condition_fact_memories(fact: &Proposition) -> Vec<CMemory> {
 pub(crate) fn c_condition_fact_has_memory(fact: &Proposition) -> bool {
     fn bitvector_has_memory(term: &Bitvector32Term) -> bool {
         match term {
-            Bitvector32Term::MemoryLoad(_, _) => true,
+            Bitvector32Term::MemoryLoad(_, _, _) => true,
             Bitvector32Term::PointerAddress(pointer) => offset_has_memory(&pointer.offset),
             Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
@@ -4774,9 +5056,20 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             collect_pointer_offset_memories(left, memories);
             collect_pointer_offset_memories(right, memories);
         }
+        ConditionTerm::PointerEqual(left, right) => {
+            for pointer in [left, right] {
+                if let PointerBlock::Symbolic(variable) = &pointer.block
+                    && let Some((origin, _)) =
+                        crate::kernel::eval::registered_load_origin_for_variable(variable)
+                    && !memories.contains(&origin)
+                {
+                    memories.push(origin);
+                }
+                collect_pointer_offset_memories(&pointer.offset, memories);
+            }
+        }
         ConditionTerm::Constant(_)
         | ConditionTerm::Variable(_)
-        | ConditionTerm::PointerEqual(_, _)
         | ConditionTerm::IntegerLessThan(_, _)
         | ConditionTerm::IntegerLessEqual(_, _)
         | ConditionTerm::IntegerGreaterThan(_, _)
@@ -4807,7 +5100,7 @@ fn collect_bitvector_memories(term: &Bitvector32Term, memories: &mut Vec<SharedC
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::PointerAddress(_) => {}
-        Bitvector32Term::MemoryLoad(memory, _) => {
+        Bitvector32Term::MemoryLoad(memory, _, _) => {
             if !memories.contains(memory) {
                 memories.push(memory.clone());
             }
@@ -5029,14 +5322,8 @@ fn transport_framed_atomic_condition(
             transport_framed_atomic_pointer_offset(right, after, assumptions)?,
         ),
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
-            Pointer {
-                block: left.block.clone(),
-                offset: transport_framed_atomic_pointer_offset(&left.offset, after, assumptions)?,
-            },
-            Pointer {
-                block: right.block.clone(),
-                offset: transport_framed_atomic_pointer_offset(&right.offset, after, assumptions)?,
-            },
+            transport_framed_atomic_pointer(left, after, assumptions)?,
+            transport_framed_atomic_pointer(right, after, assumptions)?,
         ),
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
         // Mathematical integers carry no snapshot-dependent loads, so this
@@ -5047,6 +5334,34 @@ fn transport_framed_atomic_condition(
         | ConditionTerm::IntegerGreaterEqual(_, _)
         | ConditionTerm::IntegerEqual(_, _)
         | ConditionTerm::IntegerNotEqual(_, _) => return None,
+    })
+}
+
+fn transport_framed_atomic_pointer(
+    pointer: &Pointer,
+    after: &CMemory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<Pointer> {
+    let block = if let PointerBlock::Symbolic(variable) = &pointer.block {
+        // An opaque pointer-typed read puts its load identity in the block,
+        // rather than in an offset within the storage object's provenance.
+        // Transport that identity using the same checked load-frame rule as
+        // scalar load variables. Ordinary symbolic pointers have no producer
+        // metadata and stay unchanged.
+        match transport_framed_atomic_bitvector(
+            &Bitvector32Term::Variable(*variable),
+            after,
+            assumptions,
+        )? {
+            Bitvector32Term::Variable(variable) => PointerBlock::Symbolic(variable),
+            _ => return None,
+        }
+    } else {
+        pointer.block.clone()
+    };
+    Some(Pointer {
+        block,
+        offset: transport_framed_atomic_pointer_offset(&pointer.offset, after, assumptions)?,
     })
 }
 
@@ -5112,8 +5427,8 @@ fn transport_framed_atomic_bitvector(
             // The registry's origin is the first live snapshot the variable
             // was minted from: DAG-connected and cell-comparable to `after`,
             // which is what the frame checks below relate.
-            let named_load = crate::kernel::eval::registered_load_origin_for_variable(variable)
-                .map(|(memory, pointer)| Bitvector32Term::MemoryLoad(memory, Box::new(pointer)));
+            let named_load =
+                crate::kernel::eval::registered_load_origin_term_for_variable(variable);
             if let Some(load) = named_load {
                 let transported = transport_framed_atomic_bitvector(&load, after, assumptions)?;
                 if transported != load
@@ -5128,7 +5443,7 @@ fn transport_framed_atomic_bitvector(
                 term.clone()
             }
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             let transported_pointer = Pointer {
                 block: pointer.block.clone(),
                 offset: transport_framed_atomic_pointer_offset(
@@ -5138,18 +5453,26 @@ fn transport_framed_atomic_bitvector(
                 )?,
             };
             if memories_match_for_pointer_load(memory, after, pointer)
-                || memory_materializes_atomic_load(after, memory, pointer)
+                || memory_materializes_atomic_load(after, memory, pointer, *kind)
                 || assumptions.is_some_and(|(assumptions, direct)| {
                     if direct {
-                        c_memory_load_is_directly_unchanged(memory, after, pointer, assumptions)
+                        c_memory_load_is_directly_unchanged(
+                            memory,
+                            after,
+                            pointer,
+                            *kind,
+                            assumptions,
+                        )
                     } else {
                         let left = Bitvector32Term::MemoryLoad(
                             memory.clone(),
                             Box::new(pointer.as_ref().clone()),
+                            *kind,
                         );
                         let right = Bitvector32Term::MemoryLoad(
                             crate::kernel::intern_c_memory(after.clone()),
                             Box::new(transported_pointer.clone()),
+                            *kind,
                         );
                         checked_atomic_load_equality(&left, &right, assumptions)
                     }
@@ -5158,6 +5481,7 @@ fn transport_framed_atomic_bitvector(
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(after.clone()),
                     Box::new(transported_pointer),
+                    *kind,
                 )
             } else {
                 term.clone()
@@ -5897,16 +6221,22 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     | Bitvector32Term::AlgebraicMatch { .. }
                     | Bitvector32Term::IntegerToMachine { .. } => results.push(term),
                     Bitvector32Term::PointerAddress(_) => results.push(term),
-                    load @ Bitvector32Term::MemoryLoad(_, _) => {
+                    load @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         if !active_loads.insert(load.clone()) {
                             results.push(load);
                             continue;
                         }
-                        let Bitvector32Term::MemoryLoad(memory, pointer) = &load else {
+                        let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &load else {
                             unreachable!()
                         };
+                        // The snapshot's own cell answers only a read of its
+                        // kind: an `int32` cell is not a byte read's value.
                         let resolved = match memory.known_value(pointer) {
-                            Some(CValue::Int32(value)) if value != load => Some(value),
+                            Some(CValue::Int32(value))
+                                if *kind == LoadKind::Bits32 && value != load =>
+                            {
+                                Some(value)
+                            }
                             _ => assumptions.resolve_memory_load_term(&load),
                         };
                         let Some(resolved) = resolved else {
@@ -5993,7 +6323,11 @@ mod exact_load_normalization_tests {
         };
         (0..length).fold(Bitvector32Term::Constant(tail), |value, _| {
             let memory = CMemory::new().store(pointer.clone(), CValue::Int32(value));
-            Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
         })
     }
 
@@ -6001,6 +6335,85 @@ mod exact_load_normalization_tests {
         (0..length).fold(tail, |term, _| {
             Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(0)), Box::new(term))
         })
+    }
+
+    /// A snapshot's own cell answers a load term only when the cell is that
+    /// read: a word cell is not the value of a byte read at its address, and
+    /// a signed byte cell is not the value of an unsigned byte read. Every
+    /// route that resolves a load against the snapshot it names — exact-load
+    /// normalization, the deep canonical form, and the materialized-load
+    /// frame — asks the same question, so one table pins all of them.
+    #[test]
+    fn a_snapshot_cell_answers_only_a_read_of_its_own_kind() {
+        use crate::kernel::LoadKind;
+        let pointer = Pointer {
+            block: "kind-checked-cell".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let load = |memory: &CMemory, kind| {
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                kind,
+            )
+        };
+        let word = CMemory::new().with_block("kind-checked-cell", 4).store(
+            pointer.clone(),
+            CValue::Int32(Bitvector32Term::Constant(256)),
+        );
+        let signed_byte = CMemory::new().with_block("kind-checked-cell", 4).store(
+            pointer.clone(),
+            CValue::Int8(Bitvector32Term::Constant(u32::MAX)),
+        );
+        let context = PureFactContext::new();
+        for (memory, own, other, value) in [
+            (
+                &word,
+                LoadKind::Bits32,
+                LoadKind::UInt8,
+                Bitvector32Term::Constant(256),
+            ),
+            (
+                &signed_byte,
+                LoadKind::Int8,
+                LoadKind::UInt8,
+                Bitvector32Term::Constant(u32::MAX),
+            ),
+        ] {
+            assert_eq!(
+                canonicalize_atomic_loads_deep(&load(memory, own)),
+                value,
+                "the cell is the value of a read of its own kind"
+            );
+            assert_ne!(
+                canonicalize_atomic_loads_deep(&load(memory, other)),
+                value,
+                "the cell is not the value of a read of another kind"
+            );
+            assert_ne!(
+                normalize_exact_memory_loads_in_bitvector(&load(memory, other), &context),
+                value,
+                "exact normalization answers only a read of the cell's kind"
+            );
+        }
+        // A cell holding a read of another kind does not materialize this
+        // read: storing the signed read back is not the unsigned read's cell.
+        let source = CMemory::new().with_block("kind-checked-cell", 4);
+        let materialized = source
+            .clone()
+            .store(pointer.clone(), CValue::Int8(load(&source, LoadKind::Int8)));
+        assert!(memory_materializes_atomic_load(
+            &materialized,
+            &source,
+            &pointer,
+            LoadKind::Int8
+        ));
+        assert!(!memory_materializes_atomic_load(
+            &materialized,
+            &source,
+            &pointer,
+            LoadKind::UInt8
+        ));
     }
 
     #[test]
@@ -6039,6 +6452,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
         value: Box::new(Bitvector32Term::MemoryLoad(
             intern_c_memory(memory),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         )),
         byte_width: 4,
     };
@@ -6169,18 +6583,6 @@ pub(super) fn condition_with_canonicalized_loads(
     })
 }
 
-/// Returns a condition fact with its loads in canonical form. Forms that
-/// differ only in redundant cached cells canonicalize identically.
-pub(crate) fn c_condition_fact_with_canonicalized_loads(fact: &Proposition) -> Proposition {
-    let Proposition::ConditionIs(condition, value) = fact else {
-        return fact.clone();
-    };
-    match condition_with_canonicalized_loads(condition) {
-        Some(canonical) => Proposition::ConditionIs(canonical, *value),
-        None => fact.clone(),
-    }
-}
-
 /// Never-inlined endpoint matcher for the effect arms: the direct-unchanged
 /// check participates in transport recursion where added frame bytes
 /// overflow the stack. The fact's snapshot handles may differ from the
@@ -6195,4 +6597,106 @@ fn directly_matched_effect_endpoint(
     assumptions: &PureFactContext,
 ) -> bool {
     memories_directly_match_for_pointer_load(effect_side, side, pointer, assumptions)
+}
+
+#[cfg(test)]
+mod opaque_pointer_frame_tests {
+    use super::*;
+
+    fn setup() -> (Pointer, Pointer, Pointer, Proposition, Proposition) {
+        let field = Pointer {
+            block: PointerBlock::Concrete("local:opaque-frame".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let write = Pointer::symbolic(Variable(9_880_001));
+        let argument = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(128),
+        };
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(write.clone(), argument.clone()),
+            true,
+        );
+        let separation = Proposition::CResourceSeparate {
+            left: CResource::Memory(CMemoryRange::new_with_element_width(
+                field.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+                8,
+            )),
+            right: CResource::Memory(CMemoryRange::new_with_element_width(
+                argument.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+                4,
+            )),
+        };
+        (field, write, argument, alias, separation)
+    }
+
+    #[test]
+    fn aliased_store_frame_retains_and_rechecks_exact_alias_and_separation() {
+        let (field, write, _, alias, separation) = setup();
+        let assumptions = PureFactContext::new()
+            .assume_proposition(alias.clone())
+            .assume_proposition(separation.clone());
+        let step = CMemoryDerivation::Store {
+            base: intern_c_memory(CMemory::default()),
+            pointer: write.clone(),
+            value: CValue::Int32(Bitvector32Term::Constant(7)),
+        };
+        let proof = typed_store_separated_ranges_evidence(&write, &field, &assumptions)
+            .expect("one exact alias must select the stated range separation");
+        assert!(proof.checks(&step, &field, 8, &assumptions));
+        for missing in [alias, separation] {
+            assert!(!proof.checks(&step, &field, 8, &assumptions.without_exact_fact(&missing)));
+        }
+        let wrong_step = CMemoryDerivation::Store {
+            base: intern_c_memory(CMemory::default()),
+            pointer: field.clone(),
+            value: CValue::Int32(Bitvector32Term::Constant(7)),
+        };
+        assert!(!proof.checks(&wrong_step, &field, 8, &assumptions));
+    }
+
+    #[test]
+    fn opaque_pointer_transport_requires_unchanged_field_bytes() {
+        let (field, _, argument, _, separation) = setup();
+        let before = intern_c_memory(CMemory::default().with_block("local:opaque-frame", 8));
+        let read =
+            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits32);
+        let variable = crate::kernel::eval::load_variable_for_term(&read)
+            .unwrap()
+            .0;
+        let pointer = Pointer::symbolic(variable);
+        let source = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(pointer.clone(), argument.clone()),
+            true,
+        );
+        let assumptions = PureFactContext::new()
+            .assume_proposition(source.clone())
+            .assume_proposition(separation.clone());
+        let after = before
+            .memory()
+            .clone()
+            .store(pointer, CValue::Int32(Bitvector32Term::Constant(7)));
+        let theorem = prove_c_condition_fact_transport(&source, &after, &assumptions)
+            .expect("unchanged pointer identity transports across an aliased store");
+        assert!(
+            c_condition_fact_transport_target_in_context(&theorem, &source, &assumptions).is_some()
+        );
+        assert!(
+            c_condition_fact_transport_target_in_context(
+                &theorem,
+                &source,
+                &assumptions.without_exact_fact(&separation)
+            )
+            .is_none()
+        );
+        let changed = before
+            .memory()
+            .clone()
+            .store(field, CValue::pointer(argument));
+        assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
 }

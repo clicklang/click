@@ -286,12 +286,16 @@ fn loads_unchanged(
         return true;
     }
     let (
-        Bitvector32Term::MemoryLoad(_, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return false;
     };
+    // Reads of one address are one value only when they are one kind.
+    if left_kind != right_kind {
+        return false;
+    }
     // Two spellings of one address: with its inner reads shown unchanged,
     // the right side's load at the left side's address has the right side's
     // value.
@@ -303,7 +307,7 @@ fn loads_unchanged(
         return false;
     }
     let right_at_left_address =
-        Bitvector32Term::MemoryLoad(right_memory.clone(), left_pointer.clone());
+        Bitvector32Term::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
     crate::kernel::memory_provenance::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,

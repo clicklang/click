@@ -38,10 +38,11 @@ impl PureFactContext {
             left == right
                 || match (left, right) {
                     (
-                        Bitvector32Term::MemoryLoad(_, left_pointer),
-                        Bitvector32Term::MemoryLoad(_, right_pointer),
+                        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+                        Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
                     ) => {
                         left_pointer == right_pointer
+                            && left_kind == right_kind
                             && crate::kernel::explicit_atomic_equality_from_memory_derivations(
                                 left, right, self,
                             )
@@ -89,21 +90,17 @@ impl PureFactContext {
             return true;
         }
         // This resolver also handles 8-bit, 16-bit, and 64-bit loads. Only a
-        // load recorded as four bytes may use the int32 graph for its value.
+        // four-byte integer read may use the int32 graph for its value.
         let is_four_byte_load = |load: &Bitvector32Term| match load {
             Bitvector32Term::Variable(variable) => {
-                crate::kernel::registered_load_bytes_for_variable(variable) == Some(4)
+                crate::kernel::registered_load_kind_for_variable(variable) == Some(LoadKind::Bits32)
             }
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                crate::kernel::eval::recorded_load_access_width(memory, pointer) == Some(4)
-            }
+            Bitvector32Term::MemoryLoad(_, _, kind) => *kind == LoadKind::Bits32,
             _ => false,
         };
         let graph_proves_resolved_int32 =
             |load: &Bitvector32Term, resolved: &Bitvector32Term, other: &Bitvector32Term| {
-                is_four_byte_load(load)
-                    && self.equality_graph.has_term_equivalences()
-                    && self.equality_graph.are_int32_equal(resolved, other)
+                is_four_byte_load(load) && self.int32_values_known_equal(resolved, other)
             };
         if let Some(resolved_left) = self.resolve_memory_load_term(left) {
             if resolved_left == *right || graph_proves_resolved_int32(left, &resolved_left, right) {
@@ -113,21 +110,16 @@ impl PureFactContext {
             // when neither value equals the other load's opaque name.
             if is_four_byte_load(left)
                 && is_four_byte_load(right)
-                && self.equality_graph.has_term_equivalences()
                 && let Some(resolved_right) = self.resolve_memory_load_term(right)
-                && self
-                    .equality_graph
-                    .are_int32_equal(&resolved_left, &resolved_right)
+                && self.int32_values_known_equal(&resolved_left, &resolved_right)
             {
                 return true;
             }
-            return self.bitvector_terms_equal_from_facts(&resolved_left, right)
-                || checked_load_equality(&resolved_left, right);
+            return checked_load_equality(&resolved_left, right);
         }
         if let Some(resolved_right) = self.resolve_memory_load_term(right) {
             return *left == resolved_right
                 || graph_proves_resolved_int32(right, &resolved_right, left)
-                || self.bitvector_terms_equal_from_facts(left, &resolved_right)
                 || checked_load_equality(left, &resolved_right);
         }
         false
@@ -228,17 +220,10 @@ impl PureFactContext {
         // created without them. The result is canonical so a resolution
         // to an earlier snapshot's load compares by canonical form.
         let viewed = crate::kernel::eval::viewed_as_memory_load(term)?;
-        let Bitvector32Term::MemoryLoad(memory, pointer) = &viewed else {
+        let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &viewed else {
             return None;
         };
-        let byte_width = match term {
-            Bitvector32Term::Variable(variable) => {
-                crate::kernel::eval::registered_load_bytes_for_variable(variable)
-            }
-            _ => None,
-        }
-        .or_else(|| crate::kernel::eval::recorded_load_access_width(memory, pointer))?;
-        let value = match self.resolve_memory_load_value(memory, pointer, byte_width)? {
+        let value = match self.resolve_memory_load_value(memory, pointer, *kind)? {
             CValue::Int8(value) => value,
             CValue::Bool(value)
             | CValue::Int16(value)
@@ -260,14 +245,19 @@ impl PureFactContext {
         (&value != term && value != viewed).then_some(value)
     }
 
+    /// The value a `kind` read at `pointer` returns in `memory`: the cell
+    /// proven at that address when it is exactly that read
+    /// ([`LoadKind::reads_value`]), or else the read itself as a load term of
+    /// the same kind, when no cell may alias it.
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
         memory: &CMemory,
         pointer: &Pointer,
-        byte_width: u32,
+        kind: LoadKind,
     ) -> Option<CValue> {
+        let byte_width = kind.byte_width();
         if let Some(value) = memory.known_value(pointer) {
-            return (value.byte_width() == byte_width).then_some(value);
+            return kind.reads_value(&value).then_some(value);
         }
 
         // The first cell, in pointer order, proven at `pointer` answers; short
@@ -370,7 +360,7 @@ impl PureFactContext {
                     .is_some_and(|(equal, _)| equal == cell_pointer);
         }
         if let Some((_, value)) = first_equal {
-            return (value.byte_width() == byte_width).then_some(value);
+            return kind.reads_value(&value).then_some(value);
         }
 
         if unresolved_alias {
@@ -380,12 +370,14 @@ impl PureFactContext {
         if !memory.is_loadable_concretely(pointer, byte_width) {
             return None;
         }
-        match byte_width {
-            1 => Some(memory.symbolic_uint8_load(pointer)),
-            2 => Some(memory.symbolic_uint16_load(pointer)),
-            4 => Some(memory.symbolic_int32_load(pointer)),
-            8 => Some(memory.symbolic_int64_load(pointer)),
-            _ => None,
+        match kind {
+            LoadKind::Int8 => Some(memory.symbolic_int8_load(pointer)),
+            LoadKind::UInt8 => Some(memory.symbolic_uint8_load(pointer)),
+            LoadKind::Int16 => Some(memory.symbolic_int16_load(pointer)),
+            LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
+            LoadKind::Bits32 => Some(memory.symbolic_int32_load(pointer)),
+            LoadKind::Bits64 => Some(memory.symbolic_int64_load(pointer)),
+            LoadKind::Float32 | LoadKind::Float64 => None,
         }
     }
 }

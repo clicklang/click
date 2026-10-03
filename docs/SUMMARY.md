@@ -20,6 +20,7 @@
 - [Standard library](reference/library/index.md)
 - [Glossary](reference/glossary.md)
 - [Examples](reference/examples.md)
+- [Experimental Rust imports](reference/rust.md)
 
 # Concepts
 
@@ -67,6 +68,7 @@
 - [Object-anchored population authority](internals/authority-establishment-review.md)
 - [Concurrency contracts and diagnostics (proposal)](internals/concurrency-contracts-and-diagnostics.md)
 - [Resource arguments and mutex associations (design)](internals/resource-parameters.md)
+- [User-defined tactics (design)](internals/user-defined-tactics.md)
 - [Mutex operations as resource contracts (proposal)](internals/mutex-resource-contracts.md)
 - [Byte representation](internals/byte-representation.md)
 - [Memory derivation DAG](internals/memory-dag.md)

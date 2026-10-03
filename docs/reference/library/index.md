@@ -105,15 +105,48 @@ one population of the declared resource type `reference(p)`. The empty
 population may be established with `fold(authority(reference(p)))` only in the
 execution proof that created `p`'s storage. It may be retired with
 `unfold(authority(reference(p)))` only when its member count is zero. The
-current authority mode also admits exact field-free members with private owned
-memory, their current `count(...)`, and direct authority/member helper
-contracts. An ordinary field-free resource can package owned counter memory,
-one authority, and a fact such as `p[0] == count(reference(p))`; opening it
-exposes both permissions, and closing it checks the fact at the updated count.
-Packaged control transfer through a helper contract and broader member shapes
-remain pending.
+authority mode admits exact field-free members with private owned memory,
+their current `count(...)`, and direct authority/member helper contracts. An
+ordinary field-free control can package counter memory, authorities, and facts
+relating the memory to population counts. Ordinary helper contracts transfer
+these controls, concrete members, and checked symbolic groups.
+
+Local families can also have C or integer proof fields. For example,
+`authority(ticket(p))` governs separately named `ticket(p)` instances; their
+identities and field values remain distinct even when their arguments agree.
+`let first = fold(ticket(p), { serial: 1 });` creates one member, and
+`unfold(first)` consumes that exact member. Both operations require the matching
+owned authority. `count(ticket(p))` observes the population total, not field
+values or ownership of individual members. Retirement requires zero members.
+A wildcard authority such as `authority(ticket(pool, _))` governs all exact
+arguments of that local family. Both aggregate and exact counts include separate
+occurrences with equal arguments. Private bodies remain exclusive even when
+instances share their family arguments.
+
+Preserving helpers take a named member through ordinary `owns` contracts and
+retain its proof fields through explicit postconditions. They can unfold and
+restore its private body while the caller keeps the authority control closed;
+the same population occurrence stays reserved across the preserving call. A
+member alone does not permit observing `count(...)`. Helper creation or
+consumption of named population members needs a checked authority-effect
+boundary and remains unsupported. Symbolic quantities of heterogeneous named
+instances are also unsupported. Legacy mode retains its field-count restriction.
+
+**Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
+
+**Verified use:** [`mdtests/authority_named_field_private_helper.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_private_helper.md).
 
 **Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
+
+A count and an equal C counter can have different checked term representations.
+To transfer increment definedness, explicitly rewrite the count to the counter
+using the control's equality and establish the nonnegative bound as needed.
+For example, `rewrite(count(item(pool, _)) == pool->checked_out)` can transport
+`defined(pool->checked_out + 1)` inside an opened control. Nonnegativity alone
+does not establish increment safety: the count can still be `2147483647`.
+
+**Verified use:** [`authority_count_defined_through_control.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_through_control.md)
+and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_at_max_rejected.md).
 
 ## Allocation authority
 
@@ -1122,6 +1155,25 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int32_equal_of_to_integer`
+
+```click
+theorem int32_equal_of_to_integer(left: int32, right: int32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+The signed `int32` observation is injective: equal mathematical observations
+identify the same machine value. This bridge needs the exact equality premise;
+an order comparison or an observation of a different carrier is insufficient.
+It introduces no conversion back to a machine value and needs no overflow
+premise. Use it after checked machine-to-`Integer` arithmetic bridges when
+restoring a machine-valued invariant.
+
+**Verified use:** [`mdtests/int32_equality_from_integer_observations.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_equality_from_integer_observations.md),
+[`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_less_equal_to_integer`
 
 ```click
@@ -1214,6 +1266,218 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 ```
 
 **Meaning:** Given its listed requirements, proves `value - 1 < value`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_positive_predecessor_strictly_decreases`
+
+```click
+theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures value - 1u32 < value;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `value - 1u32 < value`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_increment_upper_bound`
+
+```click
+theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value + 1u32 <= upper;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `value + 1u32 <= upper`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_increment_strictly_increases`
+
+```click
+theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value < value + 1u32;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `value < value + 1u32`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_implies_positive_difference`
+
+```click
+theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0u32 < upper - value;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `0u32 < upper - value`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_difference_decreases_after_increment`
+
+```click
+theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `(0u32 - value) + (bound - 1u32) < (0u32 - value) + bound`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_le_transitive`
+
+```click
+theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_le_lt_transitive`
+
+```click
+theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_transitive`
+
+```click
+theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_le_transitive`
+
+```click
+theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first <= last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_gt_implies_reversed_lt`
+
+```click
+theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+    requires greater > lower;
+
+    ensures lower < greater;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `lower < greater`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_implies_reversed_gt`
+
+```click
+theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+    requires lower < greater;
+
+    ensures greater > lower;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `greater > lower`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_ge_implies_reversed_le`
+
+```click
+theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+    requires greater >= lower;
+
+    ensures lower <= greater;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `lower <= greater`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_le_implies_reversed_ge`
+
+```click
+theorem uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+    requires lower <= greater;
+
+    ensures greater >= lower;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `greater >= lower`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -1796,6 +2060,23 @@ theorem cstr_len_has_terminator(bytes: uint8[], len: int32) {
 These declarations cover the narrow byte-oriented libc slice supported by C0.
 They are body-less assumptions: callers must satisfy their requirements, and
 Click does not verify an implementation of the external function.
+
+### `__click_constant_p_unknown`
+
+```click
+extern int32 __click_constant_p_unknown() {
+    ensures result == 0 or result == 1;
+}
+```
+
+**Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
+frontend lowers to a call of this function. Whether the compiler folds the
+builtin's operand to a constant depends on optimization, so nothing is known
+about the result beyond its being 0 or 1, and a proof covers both.
+
+**Kind:** external C contract. The declaration is an explicit verification assumption.
+
+**Verified use:** [`mdtests/c_builtin_constant_p.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_constant_p.md) checks that a claim must hold for both values.
 
 ### `memcpy`
 

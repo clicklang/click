@@ -186,6 +186,173 @@ mod tests {
         }
     }
 
+    /// A store Click steps over itself while preserving a loop's invariants
+    /// is refused at the `loop` tactic that owns that phase, not at the
+    /// claim's first tactic (the phase proof's own tactics count from zero),
+    /// and the missing `can-store` is stated as the index bound over the
+    /// source local with the facts consulted, never in kernel spelling.
+    #[test]
+    fn verify_names_the_loop_phase_and_index_bound_of_a_refused_loop_body_store() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-loop-body-store-bound-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 f() {\n    int32 items[4];\n    int32 i;\n    i = 0;\n    while (i < 5) {\n        items[i] = 7;\n        i = i + 1;\n    }\n    return 0;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let write_proof = |preserve: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    execute(); simp();\n}}\n"
+                ),
+            )
+            .unwrap();
+        };
+        let bound = "  `step()` is missing prerequisite\n  the store to `items[i]` may write outside `items`\n  could not show `0 <= i && i < 4` from the facts `i <= 4`, `i >= 0`\n  C operation\n  *(items + i) = 7;\n  C statement at f.c:6:9\n  `items[i] = 7;`";
+
+        write_proof("");
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.starts_with(&format!(
+                "proof error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+            )),
+            "{error}"
+        );
+
+        write_proof(" preserve by { step(); step(); simp(); }");
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.starts_with(&format!(
+                "proof error:\n  `f.contract` tactic 3 (`loop`), `preserve` tactic 0\n{bound}"
+            )),
+            "{error}"
+        );
+        for kernel_spelling in ["can-store(", "snapshot#", "local:items", "value A"] {
+            assert!(!error.contains(kernel_spelling), "{error}");
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A refused C step names the file, line, and column of the statement it
+    /// checked and quotes the statement as written, not as Click lowered it:
+    /// a struct-field store reads `items[i].x = 7;` rather than a byte
+    /// offset, without its comment. A call names the call statement, an
+    /// overflow names the statement whose arithmetic overflowed, a macro
+    /// names and quotes its expansion site, and a header's inline body names
+    /// the header line.
+    #[test]
+    fn verify_names_and_quotes_the_c_statement_a_step_refused() {
+        let directory =
+            std::env::temp_dir().join(format!("click-c-statement-sites-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("sum.h"),
+            "#define SUM(a, b) ((a) + (b))\n\nstatic inline int32 twice(int32 x) {\n    int32 r;\n    r = x + x;\n    return r;\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "#include \"sum.h\"\n\nstruct item { int32 x; int32 y; };\n\nint32 store() {\n    struct item items[4];\n    int32 i;\n    i = 0;\n    while (i < 5) {\n        items[i].x = 7;   // the field store\n        i = i + 1;\n    }\n    return 0;\n}\n\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n\nint32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 summed(int32 a, int32 b) {\n    int32 total;\n    total = SUM(a, b);\n    return total;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let verify = |proof: &str| {
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{proof}")).unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err()
+        };
+        let three_steps = "} by {\n    step(); step(); step(); simp();\n}\n";
+
+        let store = verify(
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); simp();\n}\n",
+        );
+        assert!(
+            store.contains(
+                "could not show `i >= 0 && i < 4` from the facts `i <= 4`, `i >= 0`\n  C statement at f.c:10:9\n  `items[i].x = 7;`"
+            ),
+            "{store}"
+        );
+        assert!(!store.contains("the field store"), "{store}");
+
+        let overflow = verify(&format!(
+            "int32 add(int32 a, int32 b) {{\n    ensures result == a + b;\n{three_steps}"
+        ));
+        assert!(
+            overflow.contains(
+                "`step()` produced undefined behavior\n  signed overflow\n  C statement at f.c:18:5\n  `total = a + b;`\n"
+            ),
+            "{overflow}"
+        );
+
+        let call = verify(&format!(
+            "int32 callee(int32 n) {{\n    requires n >= 0;\n    ensures result == n;\n}}\nint32 caller(int32 n) {{\n    ensures result == n + 1;\n{three_steps}"
+        ));
+        assert!(
+            call.contains("`step()` is missing prerequisite (callee precondition)"),
+            "{call}"
+        );
+        assert!(
+            call.contains("\n  C statement at f.c:28:5\n  `r = callee(n) + 1;`\n"),
+            "{call}"
+        );
+
+        let macro_site = verify(&format!(
+            "int32 summed(int32 a, int32 b) {{\n    ensures result == a + b;\n{three_steps}"
+        ));
+        assert!(
+            macro_site.contains("\n  C statement at f.c:34:5\n  `total = SUM(a, b);`\n"),
+            "{macro_site}"
+        );
+
+        let header = verify(&format!(
+            "int32 twice(int32 x) {{\n    ensures result == x + x;\n{three_steps}"
+        ));
+        assert!(
+            header.contains("\n  C statement at sum.h:5:5\n  `r = x + x;`\n"),
+            "{header}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// In an mdtest the refused statement is named at its line of the
+    /// markdown file, the line a person edits.
+    #[test]
+    fn mdtest_c_statement_sites_name_the_markdown_line() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-mdtest-statement-sites-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("located.md");
+        // The C block body starts on line 6; `total = a + b;` is line 8.
+        fs::write(
+            &path,
+            "# Located\n\nProse before the blocks.\n\n```c filename=add.c\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n```\n\n```click\nverifying \"add.c\";\nint32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); simp();\n}\n```\n\n```expect\nfail: signed overflow\n```\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains(
+                "\n  signed overflow\n  C statement at located.md:8:5\n  `total = a + b;`\n"
+            ),
+            "{error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     /// `click verify` takes an mdtest as `profile`, `expand`, and `audit` do:
     /// it verifies the fenced Click and C blocks, and every location it reads
     /// or reports is a line of the markdown file.
@@ -411,6 +578,40 @@ mod tests {
                 "{name}: {error}"
             );
         }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A type error names the declaration it rejects, so the report shows
+    /// that declaration's line rather than no location at all.
+    #[test]
+    fn verify_locates_a_type_error_at_its_declaration() {
+        let directory =
+            std::env::temp_dir().join(format!("click-type-locations-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("apply.c"),
+            "int32 keep(int32 x) { return x; }\nint32 apply(int32 (*callback)(int32), int32 value) {\n    return callback(value);\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("apply.click");
+        fs::write(
+            &sidecar,
+            "verifying \"apply.c\";\n\ncontract int32 Binary(int32 left, int32 right) {\n    ensures result == left + right;\n}\n\nint32 keep(int32 x) {\n    ensures result == x;\n}\n\nint32 apply(int32 (*callback)(int32), int32 value) {\n    requires Binary(callback);\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("expects int32 (*)(int32, int32), got int32 (*)(int32)"),
+            "{error}"
+        );
+        assert!(
+            error.contains("apply.click:11:1")
+                && error.contains("11 | int32 apply(int32 (*callback)(int32), int32 value) {"),
+            "{error}"
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -769,6 +970,166 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A goal refused inside one case of a proof `if` names that case, even
+    /// though the case condition shares no term with the goal; an unrelated
+    /// `requires` still stays out.
+    #[test]
+    fn an_unclosed_goal_in_a_proof_if_case_names_the_case() {
+        let directory =
+            std::env::temp_dir().join(format!("click-goal-case-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("case.c"),
+            "int32 pick(int32 x, int32 y, int32 z) { return x; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("case.click");
+        fs::write(
+            &sidecar,
+            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { execute(); simp(); } else { execute(); simp(); }\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("\n  proof context\n  case: [y > 3]\n  pure facts: [x < 10]"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("z > 3") && !error.contains("3 < z"),
+            "{error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// The command a failing theorem's report suggests is accepted, and a
+    /// theorem is traced like a function: checked steps at their written
+    /// lines up to the failing tactic, a `--trace-to` target in a passing
+    /// proof, and only the named theorem verified.
+    #[test]
+    fn trace_proof_accepts_a_pure_theorem() {
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-theorem-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+theorem good(x: int32, y: int32) {
+    requires x == y;
+    ensures y == x by {
+        have y == x by { simp(); }
+        assumption();
+    }
+}
+theorem bad(x: int32, y: int32) {
+    requires x == y;
+    ensures x == 0 by {
+        have y == x by { simp(); }
+        have x == 0 by { normalize(); }
+        assumption();
+    }
+}
+theorem arms(x: int32) {
+    ensures x == x by {
+        if x == 0 {
+            have x == 0 by { assumption(); }
+        } else {
+            have x != 0 by { assumption(); }
+        }
+        normalize();
+    }
+}
+int32 f() { ensures result == 2; } by { step(); simp(); }
+"#,
+        )
+        .unwrap();
+        let path = sidecar.display().to_string();
+        let trace = |arguments: &[&str]| {
+            entry(
+                ["verify", "--trace-proof"]
+                    .iter()
+                    .chain(arguments)
+                    .map(|argument| argument.to_string())
+                    .chain([path.clone()]),
+            )
+        };
+
+        let error = entry(["verify".to_string(), path.clone()]).unwrap_err();
+        assert!(error.contains("tactic@13:26:\n  normalize();"), "{error}");
+        let hint = error
+            .split_once("\n\nTo get a trace:\n  click ")
+            .expect("a failing theorem suggests a trace")
+            .1;
+        assert_eq!(hint, format!("verify --trace-proof bad {path}"));
+        // The suggested command, exactly as printed, is accepted.
+        let traced = entry(hint.split(' ').map(str::to_string)).unwrap_err();
+        assert!(!traced.contains("is not a selected proof"), "{traced}");
+        assert!(
+            traced.contains("\n\nproof trace (checked tactics and branch facts):\ntactic@12: have y == x\n  adds: y == x"),
+            "{traced}"
+        );
+        assert!(traced.contains("tactic@13:26:\n  normalize();"), "{traced}");
+        assert!(!traced.contains("tactic@14"), "{traced}");
+        assert!(!traced.contains("To get a trace:"), "{traced}");
+        assert!(traced.len() < 2_000, "{traced}");
+
+        // A passing theorem is traced without verifying `bad` or `f`, whose
+        // proofs fail.
+        trace(&["good"]).expect("only the named theorem is verified");
+        trace(&["good", "--trace-to", "6"]).expect("a written tactic of the theorem");
+        trace(&["good", "--trace-to", "5:26"]).expect("a tactic inside a `have` body");
+        let elsewhere = trace(&["good", "--trace-to", "12"]).unwrap_err();
+        assert!(
+            elsewhere.contains("tactic@12 has no recorded checked step on an accepted path"),
+            "{elsewhere}"
+        );
+        // Both arms of a proof `if`, and the tactic after it, are reachable.
+        trace(&["arms", "--trace-to", "20"]).expect("the then arm");
+        trace(&["arms", "--trace-to", "22"]).expect("the else arm");
+        trace(&["arms", "--trace-to", "24"]).expect("the tactic after the `if`");
+
+        let wrong = trace(&["missing"]).unwrap_err();
+        assert!(
+            wrong.contains("`missing` is not a selected proof in ")
+                && wrong.contains("takes the name of a C function or theorem"),
+            "{wrong}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// The trace hint and `--trace-proof` resolve a name alike, which relies
+    /// on one name never being both a C function and a theorem.
+    #[test]
+    fn a_name_is_not_both_a_c_function_and_a_theorem() {
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-name-kinds-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); simp(); }\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("`f` is defined as both a theorem and a C function spec"),
+            "{error}"
+        );
+        assert!(!error.contains("To get a trace:"), "{error}");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_verifies_only_the_named_function() {
         let directory = std::env::temp_dir().join(format!(
@@ -831,6 +1192,69 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A syntax error inside an mdtest block names the line of the markdown
+    /// file a person edits, not the line inside its fenced block.
+    #[test]
+    fn mdtest_syntax_errors_name_the_markdown_line() {
+        let directory =
+            std::env::temp_dir().join(format!("click-mdtest-lines-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let mdtest = |c_body: &str, click_body: &str| {
+            format!(
+                "# Located\n\nProse before the blocks.\n\n```c filename=inc.c\n{c_body}\n```\n\nMore prose.\n\n```click\n{click_body}\n```\n\n```expect\npass\n```\n"
+            )
+        };
+        let valid_c = "int32 inc(int32 x) {\n    return x;\n}";
+        let path = directory.join("located.md");
+        let verify = || entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+
+        // The C block body starts on line 6; its `return x +;` is line 7.
+        fs::write(
+            &path,
+            mdtest(
+                "int32 inc(int32 x) {\n    return x +;\n}",
+                "verifying \"inc.c\";",
+            ),
+        )
+        .unwrap();
+        let c_error = verify();
+        assert!(c_error.starts_with("syntax error:"), "{c_error}");
+        assert!(c_error.contains("\n  located.md:7\n"), "{c_error}");
+
+        // The Click block body starts on line 14; the labeled `have` is
+        // its third line, line 16 of the file.
+        fs::write(
+            &path,
+            mdtest(
+                valid_c,
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have same: x == x by { simp(); } step(); simp(); }\n}",
+            ),
+        )
+        .unwrap();
+        let click_error = verify();
+        assert!(click_error.starts_with("syntax error:"), "{click_error}");
+        assert!(click_error.contains("\n  located.md:16\n"), "{click_error}");
+
+        // A token the tokenizer refuses is located the same way.
+        fs::write(
+            &path,
+            mdtest(
+                valid_c,
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures !x;\n}",
+            ),
+        )
+        .unwrap();
+        let token_error = verify();
+        assert!(
+            token_error.contains("\n  located.md:16\n  expected `!=`"),
+            "{token_error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn dispatches_import_help_without_spawning() {
         entry(["import".to_string(), "--help".to_string()]).unwrap();
@@ -887,6 +1311,49 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
             .expect("click audit should reach the same expansion fixed point");
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn integer_product_bounds_tools_agree_on_wide_ranges_and_retained_audit() {
+        let mdtest = click::cli::parse_mdtest(
+            std::path::Path::new("integer_product_bounds.md"),
+            include_str!("../../mdtests/integer_product_bounds.md"),
+        )
+        .unwrap();
+        let source = mdtest.click_source.unwrap();
+        with_supported_boundary(
+            "integer-product-bounds",
+            source,
+            |source_path, expanded_path| {
+                for (name, source) in &mdtest.c_sources {
+                    fs::write(source_path.parent().unwrap().join(name), source).unwrap();
+                }
+                entry(["verify".to_string(), source_path.display().to_string()])?;
+                entry([
+                    "expand".to_string(),
+                    "--claim".to_string(),
+                    "bounded_identity.contract".to_string(),
+                    "--output".to_string(),
+                    expanded_path.display().to_string(),
+                    source_path.display().to_string(),
+                ])?;
+                let expanded = fs::read_to_string(expanded_path).unwrap();
+                assert!(expanded.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
+                assert!(
+                    !expanded.contains("execute();"),
+                    "the selected execution must expand"
+                );
+                entry(["verify".to_string(), expanded_path.display().to_string()])?;
+                entry(["profile".to_string(), source_path.display().to_string()])?;
+                entry([
+                    "audit".to_string(),
+                    "--claim".to_string(),
+                    "bounded_identity.contract".to_string(),
+                    source_path.display().to_string(),
+                ])?;
+                Ok(())
+            },
+        );
     }
 
     fn with_supported_boundary(
@@ -1313,6 +1780,87 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         assert!(
             !error.contains("stack overflow"),
             "{command} on {family} reported a stack overflow: {error}"
+        );
+    }
+
+    /// A contract that cannot be set up at entry fails before any tactic or C
+    /// statement, so the report shows where the contract is written.
+    #[test]
+    fn a_contract_setup_failure_shows_the_contract_declaration() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-setup-failure-location-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "void release(int32 *x, int32 i, int32 j) {\n    return;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n} by {\n    execute();\n    simp();\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(
+            error.starts_with("proof error:\n  `release.contract` setup failed\n"),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!(
+                "\n  --> {}:3:1\n  3 | void release(int32 *x, int32 i, int32 j) {{\n",
+                sidecar.display()
+            )),
+            "{error}"
+        );
+    }
+
+    /// A proof failure with no site of its own is located by what was being
+    /// verified: the written tactic being checked, or else the declaration.
+    #[test]
+    fn a_proof_failure_without_a_site_shows_the_tactic_or_the_declaration() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-ambient-failure-location-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 leak() {\n    int32* item = malloc(4);\n    if (item == 0) {\n        return -1;\n    }\n    return 0;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n} by {\n    execute();\n    simp();\n}\n",
+        )
+        .unwrap();
+        let leak = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(leak.contains("neither returned nor freed"), "{leak}");
+        assert!(leak.contains("\n\ntactic@7:\n  simp();"), "{leak}");
+
+        fs::write(
+            &sidecar,
+            "theorem unequal(left: int32, right: int32) {\n    ensures left == right;\n}\n",
+        )
+        .unwrap();
+        let theorem = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(
+            theorem.contains(&format!(
+                "\n  --> {}:1:1\n  1 | theorem unequal(left: int32, right: int32) {{\n",
+                sidecar.display()
+            )),
+            "{theorem}"
         );
     }
 }

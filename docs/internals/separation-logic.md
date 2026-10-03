@@ -282,9 +282,7 @@ backing range. This is an observation supported by the owner the same context
 holds, not a borrow: it is one step, it does not unfold or consume the owned
 composite, and it cannot satisfy another contract's `views` clause.
 
-`execute()` advances the current execution frontier to function exit. The former
-`execute_rest()` and `symbolic_execute()` spellings are rejected with a
-migration message.
+`execute()` advances the current execution frontier to function exit.
 
 ## Observable facts
 

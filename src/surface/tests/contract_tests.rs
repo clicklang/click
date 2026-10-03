@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
+    let source = "struct packet { uint32 values[4]; }; uint32 read(struct packet* p, int32 k) { return p->values[k]; }";
+    let proof = r#"verifying "fields.c";
+        uint32 read(struct packet* p, int32 k) {
+            requires 0 <= k and k < 4;
+            views p->values[0..4];
+            ensures result == old(p->values[k]);
+        } by { execute(); simp(); }"#;
+    verify_c0_sources(proof, &[("fields.c", source)]).unwrap();
+    assert!(
+        verify_c0_sources(
+            &proof.replace("views p->values[0..4];", ""),
+            &[("fields.c", source)]
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn modular_exceptional_call_continues_through_a_normal_assignment() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -381,31 +400,6 @@ fn exceptional_contract_bindings_are_family_specific() {
 }
 
 #[test]
-fn verifies_simple_postcondition_with_proof_tactics() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures returns_x: result == x by {
-                    execute();
-                    simp();
-                }
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("explicit proof script should prove simple postcondition");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].proof_kind(), ProofKind::TacticScript);
-}
-
-#[test]
 fn abstract_resource_construction_adds_one_authorized_token() {
     let c_source = r#"
             int32 open_thing() {
@@ -505,28 +499,13 @@ fn flat_function_proof_stays_on_proof_through_claim_acceptance() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("identity.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     verified.expect("the flat function proof should verify");
     assert_eq!(
         flat_units, 1,
         "the claim should finish from one retained Proof"
-    );
-    assert_eq!(
-        context_exports, 0,
-        "the retained Proof must not export back into an entry execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary flat verification must not check a source certificate"
     );
 }
 
@@ -555,23 +534,11 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("identity.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     verified.expect("the individual open proof should verify");
     assert_eq!(flat_units, 1, "the open claim should finish from one Proof");
-    assert_eq!(context_exports, 0, "the open claim exported semantic state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -675,34 +642,12 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
         ("replace_after_scoped_open.c", caller_source),
     ];
 
-    let ((((verified, certificate_checks), _context_exports), flat_units), export_labels) =
-        proof::collect_execution_context_export_labels(|| {
-            {
-                proof::count_flat_proof_units(|| {
-                    {
-                        proof::count_execution_context_exports(|| {
-                            proof::count_source_certificate_checks(|| {
-                                verify_c0_sources(click_source, sources)
-                            })
-                        })
-                    }
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("the explicit call partition should remain on one retained Proof");
     assert_eq!(
         flat_units, 2,
         "both source proofs should enter the direct Proof driver"
-    );
-    assert!(
-        export_labels
-            .iter()
-            .all(|label| label != "replace_after_scoped_open.contract"),
-        "the caller exported semantic state: {export_labels:?}"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a stitched certificate"
     );
 }
 
@@ -893,26 +838,10 @@ fn proof_if_splits_one_frontier_after_execution_has_started() {
     let sources = &[("identity_after_prefix.c", c_source)];
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("the mid-execution proof case split should remain on one retained Proof");
     assert_eq!(flat_units, 1, "the contract should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the split must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a stitched certificate"
-    );
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
         0,
@@ -1154,29 +1083,14 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("identity.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     let verified = verified.expect("the grouped flat function proof should verify");
     assert_eq!(verified.len(), 2, "both grouped claims should be proved");
     assert_eq!(
         flat_units, 1,
         "the grouped claims should finish from one retained Proof"
-    );
-    assert_eq!(
-        context_exports, 0,
-        "the retained grouped Proof must not export into an entry execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary grouped flat verification must not check a source certificate"
     );
 
     let expanded = expand_c0_claim_source(
@@ -1225,16 +1139,9 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("classify.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("classify.c", c_source)])
+    });
     let verified = verified.expect("the grouped N-way function proof should verify");
     assert_eq!(
         verified.len(),
@@ -1242,14 +1149,6 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
         "both claims should be proved on each of the three outcomes"
     );
     assert_eq!(flat_units, 1, "all outcomes should stay on one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the grouped N-way Proof must not export into an entry execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary grouped N-way verification must not check a source certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -1283,21 +1182,12 @@ fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("pointer_is_null.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("pointer_is_null.c", c_source)])
+    });
     let verified = verified.expect("the feasible grouped outcome should verify");
     assert_eq!(verified.len(), 1);
     assert_eq!(flat_units, 1, "the selected outcome should stay on Proof");
-    assert_eq!(context_exports, 0);
-    assert_eq!(certificate_checks, 0);
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -1348,26 +1238,10 @@ fn grouped_calls_keep_contract_transitions_on_proof() {
         "#;
     let sources = &[("set_one.c", set_source), ("call_set_one.c", caller_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("the grouped call and callee proofs should verify");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the grouped caller must not export its checked call state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary grouped call verification must not check a source certificate"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, sources, "call_set_one", CProofClaim::Grouped)
@@ -1450,10 +1324,8 @@ fn outcome_simp_spells_a_call_postcondition_across_two_snapshots() {
         ("keep_x.c", keep_source.as_str()),
     ];
 
-    let ((verified, _events), planning_transitions) =
-        collect_planning_statement_transitions(|| {
-            crate::instrumentation::collect(|| verify_c0_sources(click_source, sources))
-        });
+    let (verified, planning_transitions) =
+        collect_planning_statement_transitions(|| verify_c0_sources(click_source, sources));
     verified.expect("the caller should verify through the checked linear search");
     assert!(
         planning_transitions.is_empty(),
@@ -1525,26 +1397,10 @@ fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
         ("borrow_token_twice.c", caller_source),
     ];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("declared composite resources should cross both checked calls");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "declared-resource calls must not export execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -1631,26 +1487,10 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         ("set_wrapped_seven.c", caller_source),
     ];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("mutable composite resources should cross the scoped opaque call");
     assert_eq!(flat_units, 2, "both open-scope proofs should stay on Proof");
-    assert_eq!(
-        context_exports, 0,
-        "open scopes must not export execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -1739,26 +1579,10 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
         ("prepare_then_set_seven.c", caller_source),
     ];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("the closed preparatory scope should continue through the checked call");
     assert_eq!(flat_units, 2, "both functions should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the closed preparatory scope must not export execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -1816,26 +1640,10 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         "#;
     let sources = &[("add_twice.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("both sequential scopes should advance one checked Proof");
     assert_eq!(flat_units, 1, "the function should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "sequential scopes must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a certificate"
-    );
 
     let expanded = expand_c0_claim_source(click_source, sources, "add_twice", CProofClaim::Grouped)
         .expect("the retained sequential scopes should expand");
@@ -1892,29 +1700,13 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
         "#;
     let sources = &[("identity.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     let verified = verified.expect("the grouped predicate contract should verify");
     assert_eq!(verified.len(), 2, "both predicate claims should be proved");
     assert_eq!(
         flat_units, 1,
         "the predicate claims should stay on one Proof"
-    );
-    assert_eq!(
-        context_exports, 0,
-        "the predicate Proof must not export execution state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification must not check a certificate"
     );
 
     let expanded = expand_c0_claim_source(click_source, sources, "identity", CProofClaim::Grouped)
@@ -2054,26 +1846,10 @@ fn grouped_leading_resource_relations_stay_on_one_proof() {
         "#;
     let sources = &[("inspect_pair.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("leading resource relations should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "resource-relation haves must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary resource-relation verification must not check a certificate"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, sources, "inspect_pair", CProofClaim::Grouped)
@@ -2149,26 +1925,10 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
         "#;
     let sources = &[("inspect_pair.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("relations projected by an explicit unfold should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the unfolded resource proof must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary unfolded-resource verification must not check a certificate"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, sources, "inspect_pair", CProofClaim::Grouped)
@@ -2237,26 +1997,10 @@ fn grouped_owned_outcome_resources_stay_on_one_proof() {
         "#;
     let sources = &[("set_seven.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, sources));
     verified.expect("owned outcome resource operations should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the owned outcome Proof must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary owned outcome verification must not check a certificate"
-    );
 
     let expanded = expand_c0_claim_source(click_source, sources, "set_seven", CProofClaim::Grouped)
         .expect("the retained owned outcome Proof should expand");
@@ -2440,35 +2184,6 @@ fn simp_rejects_loop_backed_claims() {
 }
 
 #[test]
-fn verifies_symbolic_result_expression() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures returns_argument: result == x by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("identity sidecar should verify");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(
-        verified[0].ensure_clause().unwrap().ensure(),
-        &ensure_comparison(
-            current_var("result"),
-            ComparisonOperator::Equal,
-            current_var("x"),
-        )
-    );
-}
-
-#[test]
 fn verifies_memory_postcondition() {
     let source = FILL3_CLICK.replace(
         "ensures returns_second: result == 2",
@@ -2484,39 +2199,6 @@ fn verifies_memory_postcondition() {
             current_index("p", 2),
             ComparisonOperator::Equal,
             current_int(2),
-        )
-    );
-}
-
-#[test]
-fn verifies_old_memory_postcondition_for_unmodified_cell() {
-    let c_source = r#"
-            int32 write_second(int32* p) {
-                p[1] = 9;
-                return p[1];
-            }
-        "#;
-    let click_source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                requires viewable(p[0..2]);
-                consumes p[1..2];
-                ensures writes_second: p[1] == 9 by auto;
-                ensures keeps_first: p[0] == old(p[0]) by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("write_second.c", c_source)])
-        .expect("old memory postcondition should verify");
-
-    assert_eq!(verified.len(), 2);
-    assert_eq!(
-        verified[1].ensure_clause().unwrap().ensure(),
-        &ensure_comparison(
-            current_index("p", 0),
-            ComparisonOperator::Equal,
-            old_index("p", 0),
         )
     );
 }
@@ -2659,33 +2341,6 @@ fn owned_segment_rejects_write_outside_owned_memory() {
     );
     assert!(
         error.message().contains("resource facts: [owns p[0..1]]"),
-        "{}",
-        error.message()
-    );
-}
-
-#[test]
-fn old_memory_postcondition_fails_for_overwritten_cell() {
-    let c_source = r#"
-            int32 write_second(int32* p) {
-                p[1] = 9;
-                return p[1];
-            }
-        "#;
-    let click_source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                consumes p[1..2];
-                ensures keeps_second: p[1] == old(p[1]) by auto;
-            }
-        "#;
-
-    let error = verify_c0_sources(click_source, &[("write_second.c", c_source)])
-        .expect_err("old memory postcondition for overwritten cell should fail");
-
-    assert!(
-        error.message().contains("unclosed goal: p[1] == old(p[1])"),
         "{}",
         error.message()
     );

@@ -1008,9 +1008,13 @@ fn signed_addition_matches_interval_facts_across_unchanged_snapshots() {
     let before_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before),
         Box::new(cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let after_load =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(cell));
+    let after_load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), before_load.clone()),
@@ -1270,6 +1274,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let statement = c_seq(
         c_call_assign("result", "opaque_helper", vec![c_int32_literal(5)]),
@@ -1369,6 +1374,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
         CState::new(),
@@ -1440,6 +1446,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
         CState::new().with_memory(CMemory::new().with_block("heap", 8).store(stored, int32(0))),
@@ -1495,6 +1502,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let execution = prove_symbolic_c_execution_paths_with_environment(
         CState::new(),
@@ -1563,6 +1571,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let statement = c_seq(
         c_call_assign("first", "opaque_identity", vec![c_int32_literal(5)]),
@@ -1621,6 +1630,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let mut budget = ExecutionBudget::default();
 
@@ -1858,11 +1868,11 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
     assert_eq!(goals.len(), 1);
     assert!(
         matches!(
-            &goals[0].0,
+            goals[0].proposition(),
             Proposition::ConditionIs(ConditionTerm::Constant(true), true)
         ),
         "unexpected exceptional goal: {:?}",
-        goals[0].0
+        goals[0].proposition()
     );
 
     assert_eq!(
@@ -2780,7 +2790,6 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
         state,
         function.clone(),
         Vec::new(),
-        Vec::new(),
         environment,
         semantics,
         mode,
@@ -2817,7 +2826,6 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
     let fallback = prove_c_function_contract_execution_paths_with_checked_artifacts(
         CState::new(),
         function.clone(),
-        Vec::new(),
         Vec::new(),
         CExecutionEnvironment::new(),
         semantics,
@@ -2884,7 +2892,6 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
         state,
         function,
         arguments,
-        Vec::new(),
         environment,
         CExecutionSemantics::EXECUTE_BODIES,
         CFunctionContractExecutionMode::VerifyLoops,
@@ -2951,7 +2958,6 @@ fn contract_certification_reuses_complementary_checked_entry_partitions() {
         state.clone(),
         function.clone(),
         arguments.clone(),
-        Vec::new(),
         environment.clone(),
         semantics,
         mode,
@@ -2969,7 +2975,6 @@ fn contract_certification_reuses_complementary_checked_entry_partitions() {
         state,
         function.clone(),
         arguments,
-        Vec::new(),
         environment,
         semantics,
         mode,
@@ -3045,7 +3050,6 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
         contract_state,
         function.clone(),
         Vec::new(),
-        Vec::new(),
         environment,
         semantics,
         mode,
@@ -3084,7 +3088,6 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
     let recursive_execution = prove_c_function_contract_execution_paths_with_checked_artifacts(
         CState::new().with_resource_context(contract_resources),
         recursive_function.clone(),
-        Vec::new(),
         Vec::new(),
         CExecutionEnvironment::new(),
         semantics,
@@ -3205,6 +3208,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         reuse_context_facts: Vec::new(),
         checked_call_events: Default::default(),
         loop_semantics: CLoopSemantics::Verify,
+        applied_tactics: Default::default(),
     };
 
     assert!(
@@ -3305,6 +3309,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
                 reuse_context_facts: Vec::new(),
                 checked_call_events: Default::default(),
                 loop_semantics: CLoopSemantics::Verify,
+                applied_tactics: Default::default(),
             },
         )
         .is_some()
@@ -3391,6 +3396,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         reuse_context_facts: Vec::new(),
         checked_call_events: Default::default(),
         loop_semantics: CLoopSemantics::Verify,
+        applied_tactics: Default::default(),
     };
 
     assert!(
@@ -4445,6 +4451,45 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
 }
 
 #[test]
+fn condition_evidence_cannot_decide_a_do_while_before_its_body() {
+    // `do { return 1; } while (0); return 0;` runs its body first. Evidence
+    // that decides the loop's `0` at the head would select the tail and
+    // skip the body, so the proof object refuses it: at a `do`-`while`
+    // head the next statement is the body's first.
+    let function = c_function(
+        CType::Int32,
+        "runs_body",
+        Vec::new(),
+        c_seq(
+            crate::kernel::c_do_while(c_int32_literal(0), c_return(c_int32_literal(1))),
+            c_return(c_int32_literal(0)),
+        ),
+    );
+    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+        .expect("a parameterless function binds its entry state");
+    let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
+        CState::new(),
+        crate::kernel::proof::ExecutionFrontier::default(),
+    );
+    assert_eq!(
+        core.record_condition_transition(
+            &function,
+            &[],
+            Theorem::new(Proposition::CConditionEvaluates {
+                state: entry_state,
+                condition: c_int32_literal(0),
+                outcome: crate::kernel::CConditionOutcome::Value(false),
+            }),
+            PureFactContext::new(),
+            &[],
+            &[],
+        )
+        .map_err(|refusal| refusal.reason),
+        Err("condition evidence does not decide the frontier's next `if` or `while`")
+    );
+}
+
+#[test]
 fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
     // The proof object validates its chain from the theorems alone: the
     // next theorem must start from the state the recorded evidence
@@ -4879,6 +4924,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function: helper,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         });
     let state = CState::new().with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))));
     let execution = prove_symbolic_c_execution_paths_with_environment(
@@ -4958,6 +5004,7 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
         .with_verified_function_rule(CVerifiedFunctionRule {
             function,
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         })
 }
 
@@ -5073,6 +5120,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
             .with_verified_function_rule(CVerifiedFunctionRule {
                 function: other,
                 loop_semantics: CLoopSemantics::Verify,
+                applied_tactics: Default::default(),
             }),
         &drain,
         &symbolic_caller_state(),
@@ -5479,9 +5527,7 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
     );
     let fact = path_exists_at_snapshot(&ty, 100, 100, before.clone(), 0);
     let facts = PureFactContext::new().assume_proposition(fact);
-    let proves = |goal| {
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal)
-    };
+    let proves = |goal| crate::kernel::PureFactContext::settles_exactly(&facts, &goal);
     assert!(proves(path_exists_at_snapshot(
         &ty,
         200,
@@ -5498,6 +5544,16 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
         "a free path is not the existential binder"
     );
     assert!(
+        !facts.proves_atomic_without_search(&path_exists_at_snapshot(
+            &ty,
+            200,
+            100,
+            before.clone(),
+            0
+        )),
+        "the atomic existential rule must not match a free path either"
+    );
+    assert!(
         !proves(path_exists_at_snapshot(&ty, 200, 200, before.clone(), 1)),
         "the endpoint must match"
     );
@@ -5510,79 +5566,6 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
             0
         )),
         "the witness sort must match"
-    );
-}
-
-#[test]
-fn certification_generalization_keeps_facts_about_an_outer_variable() {
-    let outer = Variable(100);
-    let other = Variable(101);
-    let equal = |left, right| {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-            true,
-        )
-    };
-    let old_is_zero = equal(
-        Bitvector32Term::Variable(outer),
-        Bitvector32Term::Constant(0),
-    );
-    let old_equals_other = equal(
-        Bitvector32Term::Variable(outer),
-        Bitvector32Term::Variable(other),
-    );
-    let facts = PureFactContext::new()
-        .assume_proposition(old_is_zero.clone())
-        .assume_proposition(old_equals_other);
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(equal(
-            Bitvector32Term::Variable(other),
-            Bitvector32Term::Constant(0),
-        )),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal)
-    );
-
-    let invalid = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(old_is_zero),
-    };
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &facts, &invalid,
-        )
-    );
-}
-
-#[test]
-fn certification_generalization_handles_nested_binders() {
-    let outer = Variable(120);
-    let inner = Variable(121);
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(outer)),
-            Box::new(Bitvector32Term::Variable(outer)),
-        ),
-        true,
-    );
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::ForAll {
-            var: inner,
-            sort: Sort::CInt32,
-            body: Box::new(equality),
-        }),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(
-            &PureFactContext::new(),
-            &goal,
-        )
     );
 }
 
@@ -5611,11 +5594,9 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         )),
     };
     let facts = PureFactContext::new().assume_proposition(assumed);
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &facts, &goal
-        )
-    );
+    assert!(!crate::kernel::PureFactContext::settles_exactly(
+        &facts, &goal
+    ));
 }
 
 #[test]
@@ -5624,44 +5605,6 @@ fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
     let second = Variable::allocate_fresh().expect("another fresh identity");
     assert_ne!(first, second);
     assert_ne!(first, Variable(first.0));
-}
-
-#[test]
-fn certification_generalization_retains_outer_facts_for_a_binder_dependent_body() {
-    let outer = Variable(140);
-    let other = Variable(141);
-    let equal = |left, right| {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-            true,
-        )
-    };
-    let facts = PureFactContext::new()
-        .assume_proposition(equal(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::Constant(0),
-        ))
-        .assume_proposition(equal(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::Variable(other),
-        ));
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::And(
-            Box::new(equal(
-                Bitvector32Term::Variable(outer),
-                Bitvector32Term::Variable(outer),
-            )),
-            Box::new(equal(
-                Bitvector32Term::Variable(other),
-                Bitvector32Term::Constant(0),
-            )),
-        )),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal,)
-    );
 }
 
 #[test]
@@ -5692,12 +5635,8 @@ fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
         let missing = path_exists_at_snapshot(&ty, 200, 200, memory, 1_000);
         let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &goal,
-                ),
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &missing,
-                ),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &goal),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &missing),
             )
         });
         assert_eq!(verdicts, (true, false));
@@ -5746,10 +5685,7 @@ fn certification_keeps_conditional_universal_guards_snapshots_and_sorts() {
     let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&fact));
     let facts = PureFactContext::new().assume_proposition(fact);
     let proves = |goal: &Proposition| {
-        let certified =
-            crate::kernel::api::contract_certification::certification_proves_proposition(
-                &facts, goal,
-            );
+        let certified = crate::kernel::PureFactContext::settles_exactly(&facts, goal);
         assert_eq!(proof_facts.pure_assumption_available(goal), certified);
         certified
     };
@@ -5823,12 +5759,8 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
         let missing = conditional_path_universal(&ty, 200, memory, 1_000);
         let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &goal,
-                ),
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &missing,
-                ),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &goal),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &missing),
                 proof_facts.pure_assumption_available(&goal),
                 proof_facts.pure_assumption_available(&missing),
             )
@@ -5840,4 +5772,72 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
         samples.windows(2).all(|pair| pair[0] == pair[1]),
         "conditional lookup scanned unrelated facts: {samples:?}"
     );
+}
+
+#[test]
+fn aggregate_copy_requires_write_authority_for_each_destination_field() {
+    let target = Pointer {
+        block: "target".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let source = Pointer {
+        block: "source".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let layout = CAggregateLayout::new(
+        8,
+        4,
+        vec![
+            CAggregateField::new("a", 0, CType::Int32),
+            CAggregateField::new("b", 4, CType::Int32),
+        ],
+    );
+    let function = c_function(
+        CType::Void,
+        "copy_fields",
+        vec![
+            c_parameter("target", CType::Int32Pointer),
+            c_parameter("source", CType::Int32Pointer),
+        ],
+        c_copy_aggregate(c_variable("target"), c_variable("source"), layout),
+    );
+    for complete in [false, true] {
+        let mut resources = vec![
+            own_memory_fact(target.clone(), 0, 1),
+            view_memory_fact(source.clone(), 0, 2),
+        ];
+        if complete {
+            resources.push(own_memory_fact(target.clone(), 1, 2));
+        }
+        let theorem = prove_symbolic_c_function_execution_with_environment(
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_facts(resources)),
+            function.clone(),
+            vec![
+                c_pointer_value(target.clone()),
+                c_pointer_value(source.clone()),
+            ],
+            PureFactContext::new(),
+            CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        )
+        .unwrap();
+        let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
+            panic!("expected function execution");
+        };
+        if complete {
+            assert!(
+                matches!(outcome, CFunctionOutcome::Return { .. }),
+                "{outcome:?}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    outcome,
+                    CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                ),
+                "{outcome:?}"
+            );
+        }
+    }
 }

@@ -166,15 +166,21 @@ impl TraceSurfaceView<'_> {
             }) {
                 return Some(ContractExpression::Binding(name.clone()));
             }
-            if let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) {
+            if let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable)
+                && let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable)
+            {
                 for (selector, state) in self.preferred_snapshots() {
                     let snapshot = crate::kernel::intern_c_memory_ref(state.memory());
-                    if crate::kernel::canonical_form_of_load(snapshot.clone(), pointer.clone())
-                        != *term
+                    if crate::kernel::canonical_form_of_load(
+                        snapshot.clone(),
+                        pointer.clone(),
+                        kind,
+                    ) != *term
                     {
                         continue;
                     }
-                    let load = Bitvector32Term::MemoryLoad(snapshot, Box::new(pointer.clone()));
+                    let load =
+                        Bitvector32Term::MemoryLoad(snapshot, Box::new(pointer.clone()), kind);
                     if let Some(expression) =
                         super::super::surface_synthesis::synthesize_surface_machine_expression(
                             &load,
@@ -189,7 +195,7 @@ impl TraceSurfaceView<'_> {
                         });
                     }
                 }
-                let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+                let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind);
                 return super::super::surface_synthesis::synthesize_surface_machine_expression(
                     &load,
                     self.parameters,

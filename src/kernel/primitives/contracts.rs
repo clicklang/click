@@ -1482,6 +1482,33 @@ impl CCompositeResourceDefinition {
         !self.counted_population && !self.facts_claim_liveness
     }
 
+    /// Equal arguments make every instance own the same positive cell range.
+    /// This is a uniqueness consequence of exclusive memory ownership, not a
+    /// declaration that families without memory are implicitly multiple.
+    pub(in crate::kernel) fn has_fixed_exclusive_memory(&self) -> bool {
+        self.witnesses.is_empty()
+            && self.contains.iter().any(|child| {
+                if child.access() != CResourceAccessMode::Own
+                    || child.quantity() != &CResourceQuantity::One
+                    || child.guard().is_some()
+                {
+                    return false;
+                }
+                let CResourceTerm::Memory(segment) = child.term() else {
+                    return false;
+                };
+                let CExpression::Variable(parameter) = &segment.base else {
+                    return false;
+                };
+                let (CExpression::Value(CValue::Int32(start)), CExpression::Value(CValue::Int32(end))) =
+                    (&segment.start, &segment.end) else { return false; };
+                segment.guard.is_none()
+                    && segment.element_width > 0
+                    && self.parameters.iter().any(|p| p.name() == parameter)
+                    && matches!((start.as_const(), end.as_const()), (Some(a), Some(b)) if (a as i32) < (b as i32))
+            })
+    }
+
     pub fn witnesses(&self) -> &[CParameter] {
         &self.witnesses
     }
@@ -2486,6 +2513,7 @@ fn statement_contains_internal_throw(statement: &CStatement) -> bool {
         | CStatement::Declare { .. }
         | CStatement::DeclareAggregate { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Assign { .. }
         | CStatement::CallAssign { .. }
         | CStatement::Call { .. }
@@ -2892,6 +2920,17 @@ impl CVerifiedLoopRule {
 impl CTerminationError {
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// The function whose termination was being decided, when one was.
+    pub fn function(&self) -> Option<&str> {
+        self.function.as_deref()
+    }
+
+    /// Whether the check refused a function-level measure on a function
+    /// with no recursive edge to rank.
+    pub fn is_superfluous_recursive_measure(&self) -> bool {
+        self.superfluous_recursive_measure
     }
 }
 

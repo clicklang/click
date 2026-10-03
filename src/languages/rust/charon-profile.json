@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "identity": "click-charon-trial-v1",
+  "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+  "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+  "toolchain": "nightly-2026-09-17",
+  "extraction": "click-charon-optimized-abort-checked-v1",
+  "flags": [
+    "--edition=2024",
+    "--target=x86_64-unknown-linux-gnu",
+    "-Cpanic=abort",
+    "-Coverflow-checks=on",
+    "-Zmir-opt-level=0"
+  ],
+  "semantics": [
+    "flat-record-drop-v1",
+    "unsigned-from-v1",
+    "compact-uniform-scalar-array-v1",
+    "byte-slice-metadata-v1",
+    "shared-byte-chunks-exact-v1",
+    "nested-natural-while-v1",
+    "byte-array-unsize-v1",
+    "unsigned-checksum-operators-v1",
+    "borrowed-scalar-array-fields-v1",
+    "compact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1",
+    "shared-scalar-array-iteration-v1",
+    "resolved-source-assignment-operators-v1",
+    "shared-scalar-slice-length-v1",
+    "local-scalar-array-reference-assignment-v1",
+    "external-scalar-array-snapshot-v1"
+  ],
+  "extractor_version": "0.1.279"
+}

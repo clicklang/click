@@ -5,6 +5,14 @@ impl PureFactContext {
         if let Some(value) = self.exact_condition_value(condition) {
             return Some(value);
         }
+        if let Some(value) = self
+            .decide_small_uint64_index_order(condition)
+            .or_else(|| self.decide_indexed_greater_equal(condition))
+            .or_else(|| self.decide_masked_order(condition))
+            .or_else(|| self.decide_widened_sum_bound(condition))
+        {
+            return Some(value);
+        }
         if let Some(value) = self.decide_exact_signed_constant_order(condition) {
             return Some(value);
         }
@@ -15,9 +23,7 @@ impl PureFactContext {
             }
             ConditionTerm::Constant(value) => Some(*value),
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerEqual(left, right)
-                if self.pointer_equality_in_graph(left, right) =>
-            {
+            ConditionTerm::PointerEqual(left, right) if self.pointers_known_equal(left, right) => {
                 Some(true)
             }
             ConditionTerm::PointerEqual(left, right) if left.blocks_proven_distinct(right) => {
@@ -221,6 +227,14 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         if let Some(value) = self.exact_condition_value(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self
+            .decide_small_uint64_index_order(condition)
+            .or_else(|| self.decide_indexed_greater_equal(condition))
+            .or_else(|| self.decide_masked_order(condition))
+            .or_else(|| self.decide_widened_sum_bound(condition))
+        {
             return Some(value);
         }
         if let Some(value) = self.decide_exact_signed_constant_order(condition) {
@@ -654,24 +668,6 @@ impl PureFactContext {
             })
     }
 
-    /// Resolves both sides to known constants through equality facts (with
-    /// per-load snapshot bridging) and compares them. Deterministic and
-    /// bounded: the resolution walk carries its own visited set and consults
-    /// no fuel, so certification may use it.
-    pub(in crate::kernel) fn constants_known_equal_after_normalization(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        let Some(left) = self.signed_constant_after_equality_normalization(left) else {
-            return false;
-        };
-        let Some(right) = self.signed_constant_after_equality_normalization(right) else {
-            return false;
-        };
-        left == right
-    }
-
     /// The unique constant this term resolves to through equality facts
     /// (with per-load snapshot bridging), if any. Bounded and fuel-free.
     pub(in crate::kernel) fn known_signed_constant_after_normalization(
@@ -679,33 +675,6 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Option<i64> {
         self.signed_constant_after_equality_normalization(term)
-    }
-
-    /// Decides a signed comparison whose sides both resolve to known
-    /// constants through equality facts (with per-load snapshot bridging).
-    /// Bounded and fuel-free, so certification may use it.
-    pub(in crate::kernel) fn signed_comparison_by_constant_normalization(
-        &self,
-        condition: &ConditionTerm,
-    ) -> Option<bool> {
-        let (left, right, compare): (_, _, fn(i64, i64) -> bool) = match condition {
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                (left, right, |left, right| left < right)
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                (left, right, |left, right| left <= right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                (left, right, |left, right| left > right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                (left, right, |left, right| left >= right)
-            }
-            _ => return None,
-        };
-        let left = self.signed_constant_after_equality_normalization(left)?;
-        let right = self.signed_constant_after_equality_normalization(right)?;
-        Some(compare(left, right))
     }
 
     fn order_path_connection_for_simp(

@@ -13,6 +13,15 @@ The [stable-views record](../docs/internals/stable-views.md) and the completed
 boundaries. This document owns the cross-language rationale and future
 investigations, so those decisions survive issue closure.
 
+The [Rust resource correspondence](rust-resource-correspondence.md) adds
+paired Rust compiler/runtime witnesses and independent resource-model traces
+for moves, shared field borrows, exclusive reborrowing, recovery, and disjoint
+fields. The first safe-Rust frontend should reuse rustc's type and borrow
+checking. Typed HIR and MIR remain candidate extraction boundaries; a complete
+loan/lifetime export is not a prerequisite until the chosen proof interpretation
+requires it. The correspondence record qualifies the earlier MIR-first advice
+below and records the remaining production-model gaps.
+
 ## Sequence: C++ first, Rust next
 
 The delivered basic C++ milestone is a pinned, non-throwing C++20 subset with scalar
@@ -37,9 +46,12 @@ whole program-language boundary. Rust follows once the shared borrowing model
 and that boundary have evidence behind them. Avoid doing both frontends
 simultaneously for the first milestone.
 
-The bounded C++ slice is P1 by explicit user direction. The launch remains
-P1 -> unchanged Linux rbtree verification -> public launch with rbtree as the
-key demo. Broad C++ coverage and Rust are later work. Neither a successful
+The bounded C++ slice was P1 by explicit user direction and has landed. The
+selected safe-Rust and shared C/Rust checksum milestones are now also P1 by
+user direction; [rust-support.md](../issues/rust-support.md) owns that roadmap.
+The launch remains P1 -> unchanged Linux rbtree verification -> public launch
+with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
+Neither a successful
 compiler probe nor accepting C-shaped code with a `.cpp` extension is enough
 to announce the first slice as complete.
 
@@ -68,10 +80,12 @@ Use compiler semantic information deliberately:
   standalone semantic tools. Human AST/CFG dumps are investigation aids.
   [Clang AST](https://clang.llvm.org/docs/IntroductionToTheClangAST.html),
   [LibTooling](https://clang.llvm.org/docs/LibTooling.html)
-- **Rust:** use a pinned rustc integration around MIR, collecting borrow and
-  type information deliberately before relevant information is erased.
-  The compiler's borrow analysis includes moves and region inference over
-  the control-flow graph. A pretty-printed MIR file alone is not the contract
+- **Rust:** use a pinned rustc integration and reuse its type and borrow
+  checking for the supported safe subset. Compare typed HIR and MIR as
+  extraction boundaries; retain the type, move, and borrow information needed
+  by the chosen proof interpretation. The compiler's borrow analysis includes
+  moves and region inference over the control-flow graph, but Click need not
+  reproduce that analysis. A pretty-printed MIR file alone is not the contract
   for the importer. [rustc borrow checking](https://rustc-dev-guide.rust-lang.org/borrow-check.html)
 
 Do not choose optimized LLVM IR as the only source-verification boundary
@@ -418,19 +432,21 @@ value and preservation of another field. Reject conflicting accesses and a
 false postcondition. Pair source tests with adversarial checked-transition
 tests so compiler rejection alone is not mistaken for kernel validation.
 
-Collect source spans, type validity, moves/initialization, and relevant loan
-information at the selected MIR phases. Reconcile this with the lowered
-execution operations. State precisely which compiler analyses are trusted
-and which obligations Click checks; do not simply remove borrow operations
-and execute the remainder as C.
+Collect source spans, type validity, moves/initialization, and any loan
+information required by the selected HIR/MIR boundary and proof interpretation.
+Reconcile this with the lowered execution operations. State precisely which
+compiler analyses are trusted and which obligations Click checks; a successful
+borrow check does not establish the functional claims or justify an arbitrary
+translation to C operations.
 
 Defer returned references, general generics/traits, enums with complex validity,
 trait objects, closures, async, unsafe code, interior-mutability libraries,
 standard-library verification, and threading to later slices. Returned field
 borrows remain an early design model requirement in the stable-views design record; actual Rust
 surface support follows when contracts can bind the escaping lifetime and
-connect the final borrowed value to the recovered owner. No separate Rust
-implementation issue is filed until that milestone is requested.
+connect the final borrowed value to the recovered owner. The requested
+[P1 Rust issue](../issues/rust-support.md) owns the initial support milestone
+and subsequent shared-specification checksum demonstration.
 
 ## Later coverage and investigation gates
 

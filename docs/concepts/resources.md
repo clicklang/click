@@ -358,6 +358,24 @@ authority cannot justify it. At function entry the count is arbitrary,
 constrained by the control invariant and supplied preconditions; it is not zero.
 Contracts and proof expressions use the same checked rule.
 
+Locally created concrete batches can be consumed in pieces: after
+`fold(3 of token(p))`, `unfold(token(p))` leaves two members, and
+`unfold(2 of token(p))` leaves none. Each change requires the matching authority;
+zero quantities also require authority and leave the population unchanged.
+Retirement still requires all members to have been consumed. The
+[local numeric batch fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_local_numeric_batch.md)
+checks this without enumerating the members.
+
+A resource quantity may read memory supplied by another required resource in
+that contract section. For example, `owns control(pool)` can supply the field
+read in `owns pool->capacity of slot(pool)` when its body owns the pool's
+memory, even while the control stays folded. Clause order does not matter.
+This read exposes neither the authority nor mutable memory ownership;
+changing the field still requires opening the control. Authority alone, or
+zero copies of a control, does not supply its memory. The
+[folded-quantity fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_control_quantity_read.md)
+checks both orders. The quantity read itself does not transfer ownership.
+
 Creating or consuming a reference requires exposed authority, and opening the
 control exposes its owned counter field. Updating both the field and the
 population by the same amount lets the proof restore the control invariant.
@@ -369,6 +387,65 @@ ownership, field access, or permission to create or consume members. Merely
 knowing that a pointer was freed does not establish an unrelated family’s
 count. The [cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_count_after_cleanup.md)
 checks this observation before and after free.
+
+An ordinary helper may borrow a folded control and an unchanged whole slot
+batch with `owns control(pool); owns pool->capacity of slot(pool);`. The
+helper must return both. Authority custody and batch custody move separately:
+receiving only one grants neither the other's ownership nor permission to
+consume members. A field-valued zero quantity moves no member rights. The
+[symbolic batch helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_helper.md)
+checks direct and nested calls. A cleanup helper can instead consume the
+control and complete entry-sized batch with `consumes`, retire its authority,
+and return ordinary storage with `produces object(pool)`. The
+[symbolic cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_cleanup_helper.md)
+checks direct, nested, and zero-sized calls. Call application consumes the
+checked entry quantity even when the helper changes the accounting field.
+Retired consumption evidence remains available to the certificate checker;
+it grants no live authority or member rights. When the consumed control owns
+several authorities, cleanup checks and retires each one. Additional
+populations must have zero global count and no outstanding member custody;
+local absence alone does not establish emptiness. The
+[pool cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup_helper.md)
+checks direct, nested, and zero-capacity calls using the original pool cleanup
+C. The caller unfolds and refolds the control to establish the required
+conservation and empty-population facts before calling cleanup. A caller
+holding a concrete numerical batch can pass it to an entry field-valued
+quantity when an available equality identifies that field with the sender's
+complete held batch. The equality moves only those existing members;
+it cannot substitute a global count for custody or permit consumption without
+authority. The [field-quantity cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_cleanup_field_quantity.md)
+checks two owned slots passed as the cleanup helper's entry capacity.
+A helper that creates a fresh symbolic quantity can return that exact whole
+batch with `produces amount of slot(pool)`. The transfer changes batch custody
+without changing the already-checked population delta or moving preexisting
+members. It requires the actual born quantity and its current holder; returning
+a different quantity or spending the transfer twice is rejected. The
+[growth helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_grow_helper.md)
+checks this boundary with arbitrary entry totals and nonnegative growth. The
+caller establishes the count addition's definedness from the control before
+calling. Splitting batches remains separate work.
+
+A unit-exchange helper can move one unit of each of two families between two
+distinct anchors. It consumes the two incoming members and produces the two
+outgoing members using ordinary `consumes` and `produces`; all four matching
+authorities are borrowed and returned with `owns`. This covers moving an object
+to another pool while consuming its destination slot and returning a source
+slot. Every transition has separate authority, exact-identity, and custody
+checks. The [four-effect fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_four_effect_exchange.md)
+retains neighboring ownership and checks all four resulting counts. Omitting a
+consumption reports `Requires consumes R(...)`; extra births are rejected even
+without count postconditions. This checkpoint supports unit exchanges, not
+arbitrary groups of symbolic effects.
+
+For an authority passed into a function, retirement checks both that its
+member custody has been consumed and that its authenticated global count is
+zero. This applies to an already-empty population and to a fully consumed
+numeric or symbolic batch. Consuming only the members owned by the function
+is insufficient when the global population includes other members; writing
+an accounting field to zero does not consume those members. The
+[pool cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup.md)
+consumes the entry-capacity slot batch, checks the private-object population
+is empty, and retires both authorities while keeping the pool's C storage.
 
 Ordinary wrappers can package existing members with `contains R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
@@ -392,8 +469,342 @@ the initializer’s empty-population precondition. Click does not assume zero
 or read an uninitialized field to obtain that count. The
 [initialization fixture](https://github.com/clicklang/click/blob/master/mdtests/population_initialized_cleanup.md)
 checks that the initializer still produces its first reference.
-Standalone symbolic batch exchange is supported, but symbolic nested transfers
-are not yet supported on this migration path.
+Standalone symbolic batch exchange and whole-batch helper custody are supported.
+Composing additional population changes with an already-updated symbolic batch
+remains separate work.
+
+For a field-free family with several arguments, one authority can govern all
+members sharing a concrete storage anchor:
+
+<!-- verified-example: mdtests/authority_wildcard_lifecycle.md -->
+```click
+resource slot(pool: int32*, member: int32*) {}
+```
+
+`fold(authority(slot(&pool, _)))` establishes the empty population in the
+environment that created `pool`. Folding `slot(&pool, &first)` or
+`slot(&pool, &second)` requires that authority and increases
+`count(slot(&pool, _))`. Unfolding requires the particular owned member and
+the authority, and decreases the total. Retirement requires zero members.
+Another pool has a separate authority. With more arguments, every argument
+after the anchor is a wildcard, as in `authority(slot(pool, _, _))`.
+
+An ordinary helper can borrow and return wildcard authority together with one
+concrete member:
+
+<!-- verified-example: mdtests/authority_wildcard_helper_borrow.md -->
+```click
+void inspect(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    owns slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _)));
+}
+```
+
+The helper's entry total is arbitrary, including members owned elsewhere.
+Receiving one member gives a lower bound of one, not an exact total of one.
+The call returns the same authority and the same concrete member, preserving
+the caller's total and any members it retained. Nested helper calls use the
+same checked transfer. The helper receives no population creation permission.
+
+A member can own a private memory body independently of population authority:
+
+<!-- verified-example: mdtests/authority_wildcard_private_body_helper.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+int32 update(int32* pool, int32* p) {
+    owns slot(pool, p);
+    ensures result == 7;
+    ensures p[0] == 7;
+}
+```
+
+`open(slot(pool, p)) { ... }` exposes that member's memory and requires the
+same body to be restored on close. Neither step changes membership. The
+helper needs the member, while its caller can retain authority and other
+members. Two members can own disjoint cells of the same allocation, and
+nested opens keep their ownership separate. Owning one member grants no
+access to another member's cells and no population count observation.
+Creating or consuming a member still requires authority and transfers its
+private memory into or out of the member. Merely having a scalar local does
+not supply separable memory ownership to package into a member.
+This checkpoint covers owned memory ranges without member facts or proof fields.
+
+An authority-only helper input can also create one field-free member:
+
+<!-- verified-example: mdtests/authority_wildcard_create_helper.md -->
+```click
+void issue(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    requires defined(count(slot(pool, _)) + 1);
+    produces slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+}
+```
+
+The proof folds the promised member. This is a checked population birth, not
+authority establishment: entry supplies an existing population with an arbitrary
+total, which may include members held elsewhere. The count bound is required
+before the birth. The returned member keeps its concrete arguments, and the
+caller recovers authority with its total increased by one. Nested creation
+helpers use the same transfer. This initial creation support admits one birth
+from an input containing authority and any required private memory; it does
+not replace a borrowed member or consume another population member.
+
+A memory-bearing member is created by transferring its private memory into
+the helper:
+
+<!-- verified-example: mdtests/authority_wildcard_create_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void issue(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes p[0..1];
+    requires defined(count(slot(pool, _)) + 1);
+    produces slot(pool, p);
+    ensures p[0] == 7;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+}
+```
+
+The C body can update the supplied memory before `fold(slot(pool, p))`
+packages it into the new member. The caller recovers authority and that
+member, including through nested helpers, while retaining its other members.
+The helper cannot return independent ownership of the packaged memory as
+well, and authority cannot supply missing memory. The overflow bound remains
+required for the arbitrary entry total. This uses ordinary `consumes` and
+`produces`; no additional resource operation is needed.
+
+The corresponding consumption helper borrows authority and takes one member:
+
+<!-- verified-example: mdtests/authority_wildcard_consume_helper.md -->
+```click
+void release(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    consumes slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+Its proof uses `unfold(slot(pool, member))` to consume that exact member, or
+delegates consumption to a checked nested helper. Holding the input member
+establishes that the arbitrary entry total is at least one, so decrementing
+needs no additional bound. Return checks the member's checked consumption;
+merely declaring `consumes` and returning authority does not suffice. The
+caller retains its other members, recovers authority, and observes the total
+decreased by one. The consumed member cannot be used again. This single-pool
+form admits one consumption of the entry member. The two-pool move below
+also produces a member under a different authority.
+
+A consumed member can return its private memory through the ordinary output
+contract:
+
+<!-- verified-example: mdtests/authority_wildcard_consume_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void release(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes slot(pool, p);
+    produces p[0..1];
+    ensures p[0] == 0;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+Here `unfold(slot(pool, p))` consumes the member and exposes its memory for
+the C body to update. `produces p[0..1]` returns that memory to the caller;
+it does not recreate membership. The caller retains its other member and
+recovers authority with the decremented count, including through nested
+helpers. It can use the returned memory and reclaim the allocation once all
+its remaining memory ownership is available. It cannot reopen the consumed
+member or read the memory after freeing it. Opening and closing the member
+without consuming it cannot satisfy this contract.
+
+A private member body can also carry ordinary invariant facts:
+
+<!-- verified-example: mdtests/authority_wildcard_body_facts.md -->
+```click
+resource slot(pool: int32*, p: int32*) {
+    owns p[0..1];
+    fact 0 <= p[0];
+}
+```
+
+Folding must establish the fact at the current memory state. Opening exposes
+it, and closing must restore it after any C writes; an old snapshot of the
+fact cannot justify closing after an invalidating write. Consuming the exact
+member exposes its memory and invariant together. A helper may open and close
+the member without holding population authority, preserving membership.
+
+These facts may depend on the member's arguments and its privately owned
+memory. Ambient ownership of another cell does not let the member promise a
+fact about that cell. This increment supports unit members with field-free,
+owned-memory bodies, not named proof fields, aggregate count invariants inside
+members, or independent external lifetime claims. Population-wide facts belong
+in the authority control resource.
+
+A population member may instead own another ordinary declared resource:
+
+<!-- verified-example: mdtests/authority_wildcard_contained_resource.md -->
+```click
+resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
+resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
+```
+
+Folding `slot(pool, p)` transfers the already-owned `cell(pool, p)` into its
+body and increments the slot population. Consuming the slot returns that exact
+cell and decrements the slot population. These operations preserve the cell's
+membership in its own population, if it has one; they do not create or destroy
+that cell. Ordinary helpers express these transfers with `consumes` and
+`produces`, including nested calls. Their count changes concern the outer
+member only.
+
+`open(slot(pool, p))` temporarily exposes the cell. Inside that block,
+`open(cell(pool, p))` exposes its memory for C access. Both scopes must restore
+their owned contents, and neither requires population authority. Missing or
+mismatched children cannot establish the outer member; its child cannot also
+be returned as independent ownership while retained inside the folded member.
+Built-in `owns object(p)` also works inside a member body. This checkpoint
+supports unit owned contents in field-free bodies; named proof fields,
+conditional contents, and counted batches with nonempty bodies remain separate.
+Private facts inside each resource layer follow that layer's existing checks.
+
+A helper can move a unit member between two authorities of the same family:
+
+<!-- verified-example: mdtests/authority_wildcard_transfer_private_body.md -->
+```click
+void move(int32* source, int32* destination, int32* p) {
+    requires source != destination;
+    owns authority(slot(source, _));
+    owns authority(slot(destination, _));
+    consumes slot(source, p);
+    requires defined(count(slot(destination, _)) + 1);
+    produces slot(destination, p);
+    ensures p[0] == old(p[0]);
+    ensures count(slot(source, _)) == old(count(slot(source, _))) - 1;
+    ensures count(slot(destination, _)) == old(count(slot(destination, _))) + 1;
+}
+```
+
+Its proof unfolds the source member, then folds the destination member using
+that same private memory, or calls a checked nested helper. Both authorities
+are borrowed and returned. The destination entry total is arbitrary; owning
+its authority gives no ownership of its existing members. Each population's
+ledger checks its own exchange, while ordinary resource transfer checks the
+private body. Caller-retained members in both pools remain owned. The old
+source membership cannot be reused. This transfer admits one unit consumption
+and one unit production with the same family and trailing arguments, changing
+only the pool anchor; it does not enable arbitrary batches of updates.
+
+A helper can also exchange one member between two different families at the
+same anchor. This is the checkout pattern: consume an available capacity unit,
+then package supplied object ownership into a checked-out member.
+
+<!-- verified-example: mdtests/authority_family_exchange.md -->
+```click
+void checkout(int32* pool, struct payload* p) {
+    owns authority(capacity(pool));
+    owns authority(item(pool, _));
+    consumes capacity(pool);
+    consumes object(p);
+    requires defined(count(item(pool, _)) + 1);
+    produces item(pool, p);
+    ensures p->value == old(p->value);
+    ensures count(capacity(pool)) == old(count(capacity(pool))) - 1;
+    ensures count(item(pool, _)) == old(count(item(pool, _))) + 1;
+}
+```
+
+Both authorities are borrowed and returned. A direct unary authority exposes
+an arbitrary entry count, just like a wildcard authority: the one capacity
+unit supplied to this helper proves a lower bound, not the entire total.
+The proof consumes that unit and creates the item through the ordinary
+`unfold` and `fold` operations. Each family's ledger checks its own change;
+ordinary resource ownership separately checks the item's private body.
+Nested helpers follow the same rule, and caller-retained members stay owned.
+This initial exchange supports one unit consumption and one unit production
+under explicitly borrowed authorities, with different families at the same
+anchor. It does not admit arbitrary batches or authority replacement.
+
+Private external memory can use its checked `viewable(...)` facts together with
+owned body resources. A local struct's implicit storage access currently does
+not supply transferable `owns object(...)`; the preserved
+`authority_family_exchange_stack_object_unavailable` regression records that
+separate limitation. The positive caller fixture receives explicit object
+ownership on entry.
+
+An ordinary control resource can own both authorities and the C fields that
+record their totals. A checkout helper borrows that control as one resource:
+
+<!-- verified-example: mdtests/authority_pool_control_checkout.md -->
+```click
+resource control(pool: struct pool*) {
+    owns object(pool);
+    owns authority(slot(pool));
+    owns authority(item(pool, _));
+    fact 0 <= pool->checked_out;
+    fact pool->checked_out == count(item(pool, _));
+    fact pool->capacity == pool->checked_out + count(slot(pool));
+}
+```
+
+The helper contract uses `owns control(pool)`, `consumes slot(pool)`,
+`consumes object(p)`, and `produces item(pool, p)`. Its proof opens the control,
+consumes the slot, increments the C counter, creates the item, and closes the
+control. Closing checks both relationships against the updated ledgers;
+retaining the authority alone cannot restore a false invariant. Nested helpers
+transfer the same control, and callers can retain additional slots.
+
+The fixture requires `pool->checked_out < 2147483647` to establish that the C
+increment is defined. It uses the existing unit-transfer sum theorem to restore
+the capacity equation. Certificate checking verifies that the original sum,
+increment, and predecessor are all defined before cancelling the two unit
+changes; wrapping arithmetic cannot justify the new sum's domain.
+
+This checkpoint supports one or two distinct authority scopes at the same
+pointer anchor in a field-free control with owned memory and at most one
+allocation. Every contained authority is authenticated and transferred
+separately. An imported control assumes an existing population, never an empty
+one or a new creation right. General control bodies and more than two
+authorities remain separate work.
+
+A wildcard authority also permits an exact member count. `count(slot(pool, p))`
+counts every existing unit with those arguments; `count(slot(pool, _))` counts
+the whole family. Equal empty members can have a count greater than one. Owning
+one member establishes a lower bound, not equality to one.
+
+<!-- verified-example: mdtests/authority_wildcard_exact_count.md -->
+```click
+void release(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    requires count(slot(pool, p)) == 1;
+    consumes slot(pool, p);
+    produces p[0..1];
+    ensures p[0] == 0;
+    ensures count(slot(pool, p)) == 0;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+The helper's exact entry count is arbitrary unless its contract constrains it.
+Consuming the member subtracts one from that exact count as well as the total.
+Creation similarly adds one; a helper promising an exact result of one can
+require an exact entry count of zero. Other concrete members keep their counts.
+Neither observation gives permission to open their private bodies.
+
+This initial exact-count support covers concrete pointer/`int32` indices and a
+helper's selected concrete member. It rejects unresolved indices rather than
+reporting an unproved zero, and does not yet observe another potentially aliased
+member inside that helper. Partially fixed wildcard patterns and exact counts
+in symbolic batches remain separate work.
+
+This scope support covers field-free members, aggregate wildcard observations,
+and helper contracts that borrow and return one concrete member with their
+authority, consume the entry member, or create one from authority and its required
+private memory, move one unit member between two wildcard authorities, or exchange
+one unit between two different families at one anchor. Fixed
+trailing arguments in authority patterns, partially fixed subset observations,
+and field-bearing members remain future work.
 
 The rest of this section describes the legacy population path, retained while
 its consumers are migrated. The
@@ -923,9 +1334,9 @@ so travels nowhere: only `unfold` or a proof `match` names that binding. An arm
 fact that names no binding of its own does travel, so a resource whose `Some`
 arm also states `fact p != 0` makes that an entry premise, and a walk that
 starts with `if (p == 0)` decides the guard instead of needing an infeasible
-`branch`. Contract certification derives the same facts at its own entry state
-rather than accepting them from the checked execution, so the two contexts
-agree on what the contract assumed
+`branch`. The proof starts from the kernel's contract entry, which states
+those facts, so the proof and contract certification share what the contract
+assumed
 (`mdtests/resource_selected_arm_fact_at_contract.md`).
 
 ### A model field is not carried for you
@@ -1308,3 +1719,13 @@ For the planned relationship between population counts, access authority,
 and mutexes, see the internal
 [resource invariant design](../internals/resource-invariants.md). That record
 separates implemented sequential checks from future concurrency rules.
+
+A helper can also compose two independent unit births while consuming and
+returning their ordinary authority-bearing controls. Each returned control
+must preserve its input's anchor and authority scopes; each new member needs
+its corresponding input authority. The checked ledger still verifies both
+births and exact returned custody. This bounded composition adds no creation
+right for an external pointer. `authority_two_control_birth_helpers.md` checks
+two initializer calls, and its extra-member companion rejects closing a
+control whose capacity no longer equals its population. Grouped symbolic
+quantities and arbitrary collections of effects remain outside this checkpoint.

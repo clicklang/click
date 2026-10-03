@@ -43,6 +43,37 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// The line naming the C statement checked path `path_index` ended at,
+    /// as [`describe_c_statement_site`] spells a stepped statement, or
+    /// nothing when the path recorded no statement.
+    ///
+    /// This is diagnostics only. The statement is the one whose snapshot the
+    /// path recorded last, read from the presentation data the outcome
+    /// already carries.
+    ///
+    /// [`describe_c_statement_site`]: crate::surface::diagnostics::describe_c_statement_site
+    pub(in crate::surface::proof) fn describe_outcome_statement_site(
+        &self,
+        path_index: usize,
+    ) -> String {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return String::new();
+        };
+        self.state()
+            .open_branches()
+            .iter()
+            .find_map(|(_, branch)| match &branch.obligation {
+                Obligation::FunctionOutcome(outcome) if outcome.path_index == path_index => {
+                    Some(describe_last_statement_site(
+                        &context.constants.source_layout,
+                        &outcome.data.presentation.recorded_snapshots,
+                    ))
+                }
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     pub(in crate::surface::proof) fn focused_outcome_snapshot(
         &self,
     ) -> Result<CFunctionOutcome, ClickError> {
@@ -485,13 +516,47 @@ impl<'a> Proof<'a> {
 
     /// Focus a compiler-lowered contract claim with only the load facts
     /// produced by that lowering. The ambient outcome facts remain shared.
+    /// Focuses the kernel's goal for one contract claim, with the facts its
+    /// loads introduced. The obligation keeps the claim's identity, so the
+    /// proposition completed from it says which claim it closes.
+    pub(in crate::surface::proof) fn focus_kernel_claim_goal(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Self, ClickError> {
+        let focused = self.focus_bare_kernel_claim_goal(goal, surface)?;
+        focused.with_claim_lowering_facts(self, goal.facts())
+    }
+
+    /// [`Self::focus_kernel_claim_goal`] without the goal's lowering facts.
+    pub(in crate::surface::proof) fn focus_bare_kernel_claim_goal(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Self, ClickError> {
+        self.focus_fixed_state_goal_for_claim(
+            goal.proposition().clone(),
+            Some(surface.clone()),
+            Some(goal),
+        )
+    }
+
     pub(in crate::surface::proof) fn focus_lowered_outcome_claim(
         &self,
         goal: Proposition,
         lowering_facts: &[Proposition],
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
-        let mut focused = self.focus_fixed_state_goal_with_surface(goal, Some(surface.clone()))?;
+        let focused = self.focus_fixed_state_goal_with_surface(goal, Some(surface.clone()))?;
+        focused.with_claim_lowering_facts(self, lowering_facts)
+    }
+
+    fn with_claim_lowering_facts(
+        self,
+        origin: &Self,
+        lowering_facts: &[Proposition],
+    ) -> Result<Self, ClickError> {
+        let mut focused = self;
         let facts = lowering_facts
             .iter()
             .fold(focused.facts().clone(), |facts, fact| {
@@ -506,7 +571,7 @@ impl<'a> Proof<'a> {
                     .clone(),
                 facts,
             )
-            .map_err(|_| self.step_error("claim goal is no longer open"))?;
+            .map_err(|_| origin.step_error("claim goal is no longer open"))?;
         Ok(focused)
     }
 
@@ -634,12 +699,18 @@ impl<'a> Proof<'a> {
                         unreachable!()
                     };
                     return Err(self.step_error(format!(
-                        "path {path_index}: {}",
+                        "path {path_index}: {}{}",
                         describe_function_outcome(
                             path.outcome(),
                             context.parsed_function.parameters(),
                             context.arguments
-                        )
+                        ),
+                        describe_last_statement_site(
+                            &context.constants.source_layout,
+                            &execution
+                                .provenance_for_outcome(path_index)
+                                .recorded_snapshots,
+                        ),
                     )));
                 }
             };
@@ -697,6 +768,7 @@ impl<'a> Proof<'a> {
             // step vocabulary for consuming outcome goals arrives with the
             // drain migration.
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -717,13 +789,6 @@ impl<'a> Proof<'a> {
             .execution()
             .ok_or_else(|| self.step_error("execution proof lost its semantic frontier"))?;
         if execution.core.frontier.is_at_function_exit() {
-            return Ok(false);
-        }
-        if execution.core.state.memory().has_pending_heap_allocation() {
-            // A pending malloc result is an independent execution split. The
-            // current branch container owns one C-condition split, not the
-            // Cartesian product of both; compatibility execution retains
-            // that frontier from the unchanged Proof root.
             return Ok(false);
         }
         let Some(context) = self.execution_context() else {
@@ -811,16 +876,17 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`execute_until` requires an execution proof"));
         };
-        let CodeRegion::Statement(statement_index) = resolve_code_region_ref(
+        let region = resolve_code_region_ref(
             context.function_block,
             region,
             context.claim_label,
             context.tactic_index,
-        )?
-        else {
-            return Err(self.step_error("`execute_until` expects a statement region"));
-        };
-        Ok(statement_index)
+        )?;
+        context
+            .constants
+            .source_layout
+            .execution_region_entry(region)
+            .map_err(|message| self.step_error(message))
     }
 
     /// Returns the current source-statement frontier for a checked execution
@@ -842,6 +908,20 @@ impl<'a> Proof<'a> {
             .map(|execution| execution.core.frontier.next_statement_index)
             .ok_or_else(|| self.step_error("execution proof lost its semantic frontier"))
     }
+}
+
+/// The line naming the C statement a path stepped last, in the form
+/// `describe_c_statement_site` gives a stepped statement, or nothing when the
+/// path recorded none or the layout has no site for it.
+fn describe_last_statement_site(
+    layout: &crate::surface::lowering::SourceExecutionLayout,
+    snapshots: &RecordedSnapshots,
+) -> String {
+    snapshots
+        .latest_statement()
+        .and_then(|statement_index| layout.site(statement_index))
+        .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
+        .unwrap_or_default()
 }
 
 /// The premise anchor of an execution frontier: the entry of the last

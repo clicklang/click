@@ -470,8 +470,8 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         term.hash(&mut hasher);
                         let _ = write!(identity, "click:{:x};", hasher.finish());
                     }
-                    Bitvector32Term::MemoryLoad(_, pointer) => {
-                        identity.push_str("load(");
+                    Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+                        let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
                     }
@@ -722,6 +722,230 @@ mod call_havoc_local_retention_tests {
     use super::*;
 
     #[test]
+    fn call_havoc_drops_explicitly_written_local_fields_and_keeps_disjoint_cells() {
+        let block: PointerBlock = "local:borrowed-guard".into();
+        let at = |offset| Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let before = CMemory::new()
+            .with_block(block.clone(), 16)
+            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)))
+            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)))
+            .store(at(12), CValue::Int32(Bitvector32Term::Constant(9)));
+        let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_012),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert_eq!(
+            after.known_value(&at(8)),
+            None,
+            "a callee can write directly named local storage"
+        );
+        assert_eq!(after.known_value(&at(0)), before.known_value(&at(0)));
+        assert_eq!(after.known_value(&at(12)), before.known_value(&at(12)));
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let stale = after
+            .clone()
+            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+        assert!(!stale.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+    }
+
+    #[test]
+    fn call_havoc_preserves_only_existing_local_initialization() {
+        let at = |offset| Pointer {
+            block: "local:initialization".into(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let before = CMemory::new()
+            .with_block(at(0).block.clone(), 16)
+            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)));
+        let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_015),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert!(after.has_initialized_bytes_at(&at(0), 4));
+        assert!(!after.has_initialized_bytes_at(&at(0), 8));
+        assert!(!after.has_initialized_bytes_at(&at(8), 4));
+        let named = after.clone().materialize_named_cell(
+            at(0),
+            CValue::Int32(Bitvector32Term::Variable(Variable(944_016))),
+        );
+        assert!(
+            named.known_value(&at(0)).is_none(),
+            "logical naming does not materialize automatic storage"
+        );
+        assert!(named.has_initialized_bytes_at(&at(0), 4));
+        let fresh = after
+            .clone()
+            .materialize_named_cell(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+        assert!(fresh.known_value(&at(8)).is_none());
+        let mut forged = after.clone();
+        std::sync::Arc::make_mut(&mut forged.heap)
+            .initialized
+            .record(&at(8), 4);
+        assert!(!forged.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let mut widened = after.clone();
+        std::sync::Arc::make_mut(&mut widened.heap)
+            .initialized
+            .record(&at(0), 8);
+        assert!(!widened.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let retired = after.without_local_block(&at(0).block);
+        assert!(!retired.has_initialized_bytes_at(&at(0), 4));
+        assert!(!retired.is_loadable_concretely(&at(0), 4));
+    }
+
+    #[test]
+    fn local_initialization_havoc_checks_scale_with_changed_cells() {
+        let target = Pointer {
+            block: "local:target".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let range =
+            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let mut samples = Vec::new();
+        for count in [16, 64, 256, 1024] {
+            let mut before = CMemory::new()
+                .with_block(target.block.clone(), 8)
+                .store(target.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+            for index in 0..count {
+                let pointer = Pointer {
+                    block: format!("local:ambient-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                std::sync::Arc::make_mut(&mut before.heap)
+                    .initialized
+                    .record(&pointer, 4);
+            }
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let after = before.clone().with_call_memory_havoc(
+                    Variable(944_017),
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None,
+                );
+                after.matches_call_memory_havoc_result(
+                    &before,
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None,
+                )
+            });
+            assert!(checked);
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] * 4 + 128),
+            "ambient initialization scan: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn call_havoc_drops_explicitly_written_local_union_views() {
+        let pointer = Pointer {
+            block: "local:borrowed-union".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block(pointer.block.clone(), 8)
+            .store_union_views(
+                pointer.clone(),
+                8,
+                vec![(
+                    pointer.clone(),
+                    CType::Int32,
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                )],
+            );
+        let range =
+            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_013),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert_eq!(after.known_union_value(&pointer, CType::Int32), None);
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+    }
+
+    #[test]
+    fn call_havoc_drops_a_local_cell_written_through_an_interior_alias() {
+        let pointer = Pointer {
+            block: "local:interior-field".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let alias = Pointer::symbolic(Variable(944_021));
+        let before = CMemory::new()
+            .with_block(pointer.block.clone(), 4)
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            true,
+        );
+        let range = CMemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_022),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert!(after.known_value(&pointer).is_none());
+        assert!(after.has_initialized_bytes_at(&pointer, 4));
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        assert!(
+            !after
+                .store(pointer, CValue::Int32(Bitvector32Term::Constant(7)))
+                .matches_call_memory_havoc_result(
+                    &before,
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None
+                )
+        );
+    }
+
+    #[test]
     fn call_havoc_drops_local_cell_when_write_range_is_assumed_equal_to_it() {
         let local = Pointer {
             block: PointerBlock::Concrete("local:t".to_string()),
@@ -850,6 +1074,104 @@ mod call_havoc_union_view_tests {
 }
 
 #[cfg(test)]
+mod forget_cached_values_tests {
+    use super::*;
+
+    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, CType, CValue) {
+        (
+            pointer.clone(),
+            CType::Int32,
+            CValue::Int32(Bitvector32Term::Constant(value)),
+        )
+    }
+
+    fn zeroed_heap_with_cell() -> (CMemory, Pointer) {
+        let base = Pointer {
+            block: PointerBlock::Heap(944_100),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new().with_block(base.block.clone(), 8);
+        let heap = std::sync::Arc::make_mut(&mut memory.heap);
+        heap.live_allocations
+            .insert(base.clone(), Bitvector32Term::Constant(8));
+        heap.zeroed_allocations.insert(base.clone());
+        let memory = memory.store(base.clone(), int32(9));
+        (memory, base)
+    }
+
+    /// The loop head forgets a typed union view exactly as it forgets a
+    /// cell, unless the view's storage is preserved.
+    #[test]
+    fn loop_havoc_drops_union_views_outside_preserved_blocks() {
+        let written = Pointer {
+            block: "global:loop-union".into(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        let preserved = Pointer {
+            block: "local:loop-union-kept".into(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        let before = CMemory::new()
+            .with_block(written.block.clone(), 12)
+            .with_block(preserved.block.clone(), 12)
+            .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
+            .store_union_views(preserved.clone(), 8, vec![int32_view(&preserved, 5)]);
+        let after = before.with_loop_memory_havoc_preserving_loans(
+            Variable(944_101),
+            &BTreeSet::from([preserved.block.clone()]),
+            None,
+            None,
+        );
+        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(
+            after.known_union_value(&preserved, CType::Int32),
+            Some(CValue::Int32(Bitvector32Term::Constant(5)))
+        );
+    }
+
+    /// A zero reading answers for the bytes no cell covers, so the loop
+    /// head that forgets a cell written over the zeros forgets the reading
+    /// too: otherwise the load after the loop reads zero, not the value.
+    #[test]
+    fn loop_havoc_drops_the_zero_reading_under_a_forgotten_cell() {
+        let (before, base) = zeroed_heap_with_cell();
+        assert!(before.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        let after = before.with_loop_memory_havoc_preserving_loans(
+            Variable(944_102),
+            &BTreeSet::new(),
+            None,
+            None,
+        );
+        assert_eq!(after.known_value(&base), None);
+        assert!(!after.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+    }
+
+    /// An interface join whose arms agree on a zero reading still drops it
+    /// when one arm caches a value written over the zeros, and both arms'
+    /// abstractions agree on that.
+    #[test]
+    fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
+        let (wrote, base) = zeroed_heap_with_cell();
+        let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
+        let heap = std::sync::Arc::make_mut(&mut untouched.heap);
+        heap.live_allocations
+            .insert(base.clone(), Bitvector32Term::Constant(8));
+        heap.zeroed_allocations.insert(base.clone());
+        let arms = [&wrote, &untouched];
+        let from_wrote = wrote
+            .clone()
+            .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
+            .expect("joinable arms");
+        let from_untouched = untouched
+            .clone()
+            .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
+            .expect("joinable arms");
+        assert!(!from_wrote.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        assert_eq!(from_wrote.heap, from_untouched.heap);
+    }
+}
+
+#[cfg(test)]
 mod havoc_identity_tests {
     use super::*;
 
@@ -960,69 +1282,21 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[CMemoryRange]) -> u32 {
 /// Whether a held resource grants read authority over a symbolic byte extent
 /// at `base`.
 ///
-/// A resource range counts its own elements while a loadability fact counts
-/// bytes, so the two meet at the held range's element width: reading the fact's
-/// extent back through [`element_count_from_bytes`] at that width inverts the
-/// scaling [`memory_range_byte_count`] applied when the clause was lowered, and
-/// the required range is then in the same coordinate system as the held one.
-///
-/// The width has to come from the *range*, not from the shape of the extent
-/// term. `memory_range_byte_count` folds a factor of one away, so a `uint8[]`
-/// clause `s[0..n]` arrives here as the bare count `n` rather than `n * 1`;
-/// asking the term which width it was scaled by cannot tell that apart from a
-/// byte count that is no element range at all, and a byte buffer would never be
-/// recognised. Two-byte and wider ranges keep their explicit product and are
-/// read back exactly as before.
-///
-/// Width one weakens nothing. [`element_count_from_bytes`] at width one is the
-/// identity, so the required range names exactly the bytes the fact names: no
-/// product is formed, so none can wrap, and a byte count simply *is* its own
-/// element count. The nonnegativity half of the valid-extent condition still
-/// matters and is still asked — it is the held clause's own obligation,
-/// discharged where the clause was stated — and `memory_range_covers` still has
-/// to place the required range inside the held one.
+/// The trusted graph/index selects a sole footprint or start supplier. The
+/// ordinary read-core coverage judgment converts byte and element coordinates
+/// and checks quantity and bounds. Unknown or ambiguous selection refuses;
+/// this consumer must never search the resource input for a successful check.
 pub(crate) fn resource_context_has_symbolic_range_read(
     resources: &ResourceContext,
     base: &Pointer,
     bytes: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
-    // The ranges written against `base` itself are asked first, from the base
-    // index; they are the usual answer. The whole-context scan is the same
-    // question over a superset, kept for a range reached through an alias or
-    // another spelling of the base, and paid only on a miss. Without the
-    // first phase, `N` derived facts over `N` held ranges of one block cost
-    // `N * N` coverage queries at a contract's entry.
+    let footprint =
+        CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
     resources
-        .memory_base_facts(base)
-        .any(|fact| memory_fact_reads_symbolic_range(fact, base, bytes, assumptions))
-        || resources
-            .facts()
-            .iter()
-            .any(|fact| memory_fact_reads_symbolic_range(fact, base, bytes, assumptions))
-}
-
-fn memory_fact_reads_symbolic_range(
-    fact: &CResourceFact,
-    base: &Pointer,
-    bytes: &Bitvector32Term,
-    assumptions: &PureFactContext,
-) -> bool {
-    let Some(range) = fact.memory_range() else {
-        return false;
-    };
-    let element_width = range.element_width();
-    let Some(elements) = crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
-    else {
-        return false;
-    };
-    let required = CMemoryRange::new_with_element_width(
-        base.clone(),
-        Bitvector32Term::Constant(0),
-        elements,
-        element_width,
-    );
-    crate::kernel::primitives::resource_algebra::memory_range_covers(range, &required, assumptions)
+        .symbolic_range_read_supported(&footprint, assumptions, None)
+        .unwrap_or(false)
 }
 
 impl CLocalEnvironment {
@@ -1383,7 +1657,7 @@ impl CLocalEnvironment {
         }
     }
 
-    pub(in crate::kernel) fn scalar_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<CType> {
         match self.binding(name) {
             Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
             Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),
@@ -1463,6 +1737,42 @@ impl CLocalEnvironment {
             std::sync::Arc::make_mut(&mut self.slots).remove(&old_slot);
         }
         std::sync::Arc::make_mut(&mut self.slots).insert(slot, name);
+    }
+
+    /// Puts back a binding read from another environment with
+    /// [`Self::binding`].
+    pub(in crate::kernel) fn restore_binding(&mut self, name: &str, binding: CLocalBinding) {
+        self.insert_binding(name.to_string(), binding);
+    }
+
+    /// Makes an initialized scalar object uninitialized again, keeping its
+    /// slot, type and qualifiers, so a read of it is refused. Returns whether
+    /// the name held such an object.
+    pub(in crate::kernel) fn forget_initialization(&mut self, name: &str) -> bool {
+        let Some(CLocalBinding::Object {
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+            ..
+        }) = self.bindings.get(name).cloned()
+        else {
+            return false;
+        };
+        self.insert_binding(
+            name.to_string(),
+            CLocalBinding::UninitializedObject {
+                c_type,
+                slot,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+            },
+        );
+        true
     }
 
     /// Unbinds one name, as control leaving the scope that declared it does.
@@ -1607,9 +1917,14 @@ impl CallKeptRanges {
             .is_some()
     }
 
+    pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
+        self.ranges
+            .contains_exact_representation(&CResourceFact::own_memory(range.clone()))
+    }
+
     /// The kept range holding the access. `placement` is the premises already
     /// assumed into `assumptions`, when the caller has built it once.
-    fn range_holding<'a>(
+    pub(in crate::kernel) fn range_holding<'a>(
         &'a self,
         assumptions: &PureFactContext,
         placement: Option<&PureFactContext>,
@@ -1653,6 +1968,11 @@ impl CallKeptRanges {
 }
 
 impl CallKeptOwnership {
+    #[cfg(test)]
+    pub(in crate::kernel) fn opened_resources_for_test(&self) -> &ResourceContext {
+        &self.opened.ranges
+    }
+
     pub(in crate::kernel) fn new(
         residual: ResourceContext,
         opened: CallKeptRanges,
@@ -1676,6 +1996,8 @@ impl CallKeptOwnership {
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
+        // This residual is permanently empty: recorded authority is carried
+        // only by `kept`, not by facts inserted into this placeholder.
         Some(Self::new(ResourceContext::new(), kept, assumptions))
     }
 
@@ -1715,12 +2037,11 @@ enum CallHavocCellRule {
 /// ([`call_havoc_candidates`]), in the producing context. The
 /// two are compared in `docs/internals/resource-tracker.md`.
 ///
-/// Local cells may be kept without an owned-range lookup when the write set
-/// names the same local block directly. A different spelling cannot use the
-/// structural local-versus-argument separation rule: consult the proven
-/// pointer-equality graph before keeping the cell, so an assumed alias drops
-/// it. Other cells use the ordinary range-disjointness query, and then what
-/// the caller keeps owning ([`CallKeptOwnership`]).
+/// Unreachable local cells may be kept without an owned-range lookup. A write
+/// set naming that local block directly or through a checked affine alias
+/// uses the ordinary byte-disjointness rule, followed by what the caller
+/// keeps owning ([`CallKeptOwnership`]). An interior field alias can write
+/// part of a cached cell even when its start differs from the cell's start.
 fn call_havoc_keeps_cell(
     pointer: &Pointer,
     value: &CValue,
@@ -1729,7 +2050,19 @@ fn call_havoc_keeps_cell(
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
-    if preserve_local_slots && pointer.block.starts_with("local:") {
+    if preserve_local_slots
+        && pointer.block.starts_with("local:")
+        // An opaque pointer may reach a local even when no exact alias has
+        // yet been stated. Absence of an alias is not separation evidence.
+        && mutable_ranges.iter().all(|range| !matches!(range.base().block, PointerBlock::Symbolic(_)))
+        && !mutable_ranges.iter().any(|range| {
+            range.base().block == pointer.block
+                || assumptions
+                    .equality_graph
+                    .pointer_in_block(range.base(), &pointer.block)
+                    .is_some()
+        })
+    {
         return if mutable_ranges.iter().all(|range| {
             range.base().block == pointer.block
                 || !pointers_proven_equal_for_memory_resolution(range.base(), pointer, assumptions)
@@ -1828,14 +2161,10 @@ fn call_write_set_marker(
 /// proved (`docs/internals/stable-views.md`).
 fn loan_preserving_havoc_keeps_cell(
     pointer: &Pointer,
-    value: &CValue,
-    union_widths: &BTreeMap<Pointer, u32>,
+    byte_width: u32,
     preserved_blocks: &BTreeSet<PointerBlock>,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> bool {
-    let byte_width = value
-        .byte_width()
-        .max(union_widths.get(pointer).copied().unwrap_or(0));
     preserved_blocks.contains(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
@@ -2045,15 +2374,29 @@ impl CMemory {
         let mut memory = self.clone();
         let base = intern_derivation_base(&mut memory);
         std::sync::Arc::make_mut(&mut memory.blocks).remove(block);
-        // Only the retired block's own cells go: one key range each.
+        // Only the retired block's own cells go: one key range each, and a
+        // run of the block (a zero-filled automatic array) as a whole.
         let own = AliasCandidates::only_block(block);
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates(&own, |_, _| false);
-        own.retain_map(std::sync::Arc::make_mut(&mut memory.union_cells), |_, _| {
-            false
-        });
+        memory.forget_cached_values(
+            ForgetScope::candidates(&own),
+            |_, _| CachedValueFate::Retired,
+            |_| {
+                (
+                    SlotSet::Nothing,
+                    crate::kernel::primitives::RuleAnswer::Exact,
+                )
+            },
+        );
         std::sync::Arc::make_mut(&mut memory.forgotten)
             .ended_local_blocks
             .insert(block.clone());
+        // A later object is uninitialized until written; the tombstone
+        // already refuses every access to this one.
+        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true) {
+            std::sync::Arc::make_mut(&mut memory.heap)
+                .initialized
+                .forget_block(block);
+        }
         record_c_memory_derivation(
             &mut memory,
             CMemoryDerivation::LocalLifetimeEnded {
@@ -2132,10 +2475,21 @@ impl CMemory {
         candidates.retain_map(&mut heap.zeroed_prefix_allocations, |base, _| {
             !freed_within(base)
         });
-        candidates.retain_map(&mut heap.initialized_cells, |cell, _| !freed_within(cell));
-        std::sync::Arc::make_mut(&mut self.cells).retain_candidates(&candidates, |cell, _| {
-            !aliased_blocks.contains(&cell.block) && !freed_within(cell)
-        });
+        heap.initialized
+            .retain_candidates(&candidates, |cell, _| !freed_within(cell));
+        // Cached values go with the storage, union views as well as cells:
+        // nothing may answer a load of freed bytes, under any spelling.
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
+            |cell, _| {
+                if aliased_blocks.contains(&cell.block) || freed_within(cell) {
+                    CachedValueFate::Retired
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
+        );
         if let Some(base) = base {
             record_c_memory_derivation(
                 &mut self,
@@ -2384,14 +2738,18 @@ impl CMemory {
         candidates.retain_map(&mut heap.zeroed_prefix_allocations, |candidate, _| {
             !retired_claim(candidate)
         });
-        candidates.retain_map(&mut heap.initialized_cells, |candidate, _| {
-            !retired_cell(candidate)
-        });
-        std::sync::Arc::make_mut(&mut self.cells)
+        heap.initialized
             .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut self.union_cells),
-            |(candidate, _), _| !retired_cell(candidate),
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
+            |candidate, _| {
+                if retired_cell(candidate) {
+                    CachedValueFate::Retired
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
         );
         for block in &retired_blocks {
             if *block != PointerBlock::ExternalArgument {
@@ -2452,6 +2810,7 @@ impl CMemory {
         old_bytes: Bitvector32Term,
         zeroed_prefix: Option<Bitvector32Term>,
         copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+        initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -2462,9 +2821,20 @@ impl CMemory {
                     old_bytes,
                     zeroed_prefix,
                     copied_cells,
+                    initialized_prefix,
                 },
             );
         self
+    }
+
+    /// The runs of constant byte offsets of `block` the initialization
+    /// record holds, ascending, as start and length. Costs the entries of
+    /// the one block.
+    pub(in crate::kernel) fn initialized_runs_in_block(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<(i64, u32)> {
+        self.heap.initialized.constant_runs_in_block(block)
     }
 
     /// Whether execution still owns the unresolved success/failure choice of
@@ -2592,6 +2962,17 @@ impl CMemory {
                     value.clone(),
                 );
             }
+            // Bytes the old block had initialized keep that, in the new
+            // block, where no cached cell carried their value across.
+            for (start, length) in &pending.initialized_prefix {
+                memory = memory.with_initialized_object(
+                    &Pointer {
+                        block: resolved_base.block.clone(),
+                        offset: PointerOffsetTerm::Constant(*start),
+                    },
+                    *length,
+                );
+            }
         }
         Some((memory, bytes, resolved_base, pending))
     }
@@ -2604,30 +2985,24 @@ impl CMemory {
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
         // A loop body that may write memory can clobber, through some
-        // pointer, any cell it can reach. Drop concrete cells outside the
-        // preserved (scalar stack local) blocks so loop-head and post-loop
-        // reads do not observe stale pre-loop values. A checked footprint is
-        // retained on the derivation edge for disjoint-load transport; the
-        // marker block still distinguishes this havoc from ordinary memory.
+        // pointer, any value it can reach. Drop cached values (cells and
+        // typed union views alike) outside the preserved (scalar stack local)
+        // blocks so loop-head and post-loop reads do not observe stale
+        // pre-loop values. A checked footprint is retained on the derivation
+        // edge for disjoint-load transport; the marker block still
+        // distinguishes this havoc from ordinary memory. The body can only
+        // initialize more, so every automatic value that goes stays
+        // initialized at the head and after the loop.
         let base = Some(intern_derivation_base(&mut self));
-        // Whole-map by design, unlike the per-access rules that visit only
-        // `AliasCandidates`: the body may write through any pointer it can
-        // reach, so every cell is a candidate. The work is the cells dropped
-        // plus the ones something else keeps (declared locals and
-        // loan-protected bytes), charged by `retain`.
-        let union_widths = union_overlay_widths(&self);
-        std::sync::Arc::make_mut(&mut self.cells).retain_by(
-            |pointer, value| {
-                loan_preserving_havoc_keeps_cell(
-                    pointer,
-                    value,
-                    &union_widths,
-                    preserved_blocks,
-                    ledger,
-                )
-            },
-            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
-        );
+        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        // The body may also have written bytes no value was cached for, and
+        // a zero reading answers for exactly those.
+        match mutable_ranges {
+            Some(ranges) => {
+                self.forget_zero_readings_under(ranges.iter().map(|range| &range.base().block))
+            }
+            None => self.forget_every_zero_reading(),
+        }
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("havoc:{}", variable.0).into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
@@ -2643,6 +3018,55 @@ impl CMemory {
             );
         }
         self
+    }
+
+    /// Forgets every cached value nothing protects from a write through an
+    /// arbitrary reachable pointer: the one rule of the loop head and of the
+    /// interface join ([`loan_preserving_havoc_keeps_cell`]), asked of cells
+    /// and typed union views alike. Whole-map by design, unlike the
+    /// per-access rules that visit only `AliasCandidates`: the work is the
+    /// values dropped plus the ones something keeps.
+    fn forget_loan_unprotected_values(
+        &mut self,
+        preserved_blocks: &BTreeSet<PointerBlock>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ) {
+        let union_widths = union_overlay_widths(self);
+        self.forget_cached_values(
+            ForgetScope::Everywhere,
+            |pointer, value| {
+                // A view is asked by its own width; a cell by the widest
+                // overlay at its address as well, so the loan question
+                // covers every byte it can be read as.
+                let width = match value {
+                    CachedValue::Cell(_) => union_widths.get(pointer).copied().unwrap_or(0),
+                    CachedValue::UnionView(..) => 0,
+                };
+                if loan_preserving_havoc_keeps_cell(
+                    pointer,
+                    value.byte_width().max(width),
+                    preserved_blocks,
+                    ledger,
+                ) {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                }
+            },
+            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
+        );
+    }
+
+    /// Drops every zero reading, for a transition that may have written any
+    /// allocation.
+    fn forget_every_zero_reading(&mut self) {
+        if self.heap.zeroed_allocations.len() == 0 && self.heap.zeroed_prefix_allocations.is_empty()
+        {
+            return;
+        }
+        let heap = std::sync::Arc::make_mut(&mut self.heap);
+        heap.zeroed_allocations = SnapshotSet::new();
+        heap.zeroed_prefix_allocations = SnapshotMap::new();
     }
 
     /// Forgets branch-local cell values and constructs the conservative heap
@@ -2745,16 +3169,34 @@ impl CMemory {
             uninitialized_allocations.extend(memory.heap.uninitialized_allocations.iter().cloned());
         }
 
-        // A scalar cell is definitely initialized at the join only when every
-        // incoming arm has initialized a compatible cell at that address.
-        // This metadata carries initialization, not a value, so it remains
-        // useful after the join's conservative value havoc.
-        let mut initialized_cells = first.heap.initialized_cells.clone();
-        initialized_cells.retain(|pointer, width| {
-            sibling_memories
-                .iter()
-                .all(|memory| memory.heap.initialized_cells.get(pointer) == Some(width))
-        });
+        // A byte is definitely initialized at the join only when every
+        // incoming arm initialized it: in the arm's record, or as an
+        // automatic cell the arm still caches (the cell is its own evidence
+        // until the join forgets it). This carries initialization, not a
+        // value, so it remains useful after the join's conservative value
+        // havoc. Cells of preserved blocks survive the join as cells.
+        let arm_initialized = |memory: &CMemory| {
+            let mut record = memory.heap.initialized.clone();
+            let mut visited = 0usize;
+            for (pointer, value) in local_block_entries(memory.cells.logical()) {
+                visited += 1;
+                if !preserved_blocks.contains(&pointer.block) {
+                    record.record(pointer, value.byte_width());
+                }
+            }
+            for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
+                visited += 1;
+                if !preserved_blocks.contains(&pointer.block) {
+                    record.record(pointer, c_type.byte_width());
+                }
+            }
+            crate::instrumentation::record_deterministic_work(visited);
+            record
+        };
+        let mut initialized = arm_initialized(first);
+        for memory in &sibling_memories[1..] {
+            initialized = initialized.intersection(&arm_initialized(memory));
+        }
 
         // A zero marker is a value guarantee, so it is retained only when
         // every arm provides it. (The uninitialized marker above is instead
@@ -2809,21 +3251,54 @@ impl CMemory {
         }
 
         // Whole-memory by design: a join merges every sibling's blocks and
-        // heap collections above, and forgets every cell nothing preserves,
-        // exactly as the loop havoc does.
-        let union_widths = union_overlay_widths(&self);
-        std::sync::Arc::make_mut(&mut self.cells).retain_by(
-            |pointer, value| {
-                loan_preserving_havoc_keeps_cell(
+        // heap collections above, and forgets every cached value nothing
+        // preserves, cells and union views alike, exactly as the loop havoc
+        // does. The heap it records along the way is replaced below by the
+        // arms' join, which is the one that decides initialization.
+        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        // A zero reading is kept only where every arm has it, but an arm can
+        // have it beside a value it wrote over the zeros, and that value is
+        // forgotten here. So a reading goes wherever *any* arm caches a value
+        // the join forgets, which is also what keeps every arm's abstraction
+        // the same one.
+        let forgotten_value_blocks = |memory: &CMemory| {
+            if zeroed_allocations.len() == 0 && zeroed_prefix_allocations.is_empty() {
+                return BTreeSet::new();
+            }
+            let mut blocks = BTreeSet::new();
+            let mut visited = 0usize;
+            let union_widths = union_overlay_widths(memory);
+            for (pointer, value) in memory.cells.logical().iter() {
+                visited += 1;
+                if !loan_preserving_havoc_keeps_cell(
                     pointer,
-                    value,
-                    &union_widths,
+                    value
+                        .byte_width()
+                        .max(union_widths.get(pointer).copied().unwrap_or(0)),
                     preserved_blocks,
                     ledger,
-                )
-            },
-            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
-        );
+                ) {
+                    blocks.insert(pointer.block.clone());
+                }
+            }
+            for ((pointer, c_type), _) in memory.union_cells.iter() {
+                visited += 1;
+                if !loan_preserving_havoc_keeps_cell(
+                    pointer,
+                    c_type.byte_width(),
+                    preserved_blocks,
+                    ledger,
+                ) {
+                    blocks.insert(pointer.block.clone());
+                }
+            }
+            crate::instrumentation::record_deterministic_work(visited);
+            blocks
+        };
+        let forgotten_blocks = sibling_memories
+            .iter()
+            .flat_map(|memory| forgotten_value_blocks(memory))
+            .collect::<BTreeSet<_>>();
         blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
         std::sync::Arc::make_mut(&mut self.forgotten).ended_local_blocks = ended_local_blocks;
@@ -2832,12 +3307,13 @@ impl CMemory {
             deallocated_allocations,
             pending_allocations,
             uninitialized_allocations,
-            initialized_cells,
+            initialized,
             zeroed_allocations,
             zeroed_prefix_allocations,
             zeroed_pending_allocations,
             pending_reallocations,
         });
+        self.forget_zero_readings_under(forgotten_blocks.iter());
         Ok(self)
     }
 
@@ -2874,49 +3350,33 @@ impl CMemory {
         let base = Some(intern_derivation_base(&mut self));
         let mut flat_hits = Vec::new();
         let candidates = call_havoc_candidates(mutable_ranges);
-        std::sync::Arc::make_mut(&mut self.cells).retain_candidates(
-            &candidates,
+        // Cells and typed union views by one rule: a view is the
+        // authoritative answer to an exact typed load, so one the callee may
+        // have overwritten goes exactly as a cell does
+        // (`mdtests/call_havoc_drops_a_union_member_view.md`). A callee can
+        // only initialize more, so the automatic values that go stay
+        // initialized.
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
             |pointer, value| match call_havoc_keeps_cell(
                 pointer,
-                value,
+                value.value(),
                 mutable_ranges,
                 assumptions,
                 kept,
                 preserve_local_slots,
             ) {
-                CallHavocCellRule::Separate => true,
+                CallHavocCellRule::Separate => CachedValueFate::Kept,
                 // The cached value is dropped as before; the edge records
                 // the member that holds it, and a load after the call is
                 // named across the edge at its pre-call value.
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
-                    false
+                    CachedValueFate::Forgotten
                 }
-                CallHavocCellRule::Dropped => false,
+                CallHavocCellRule::Dropped => CachedValueFate::Forgotten,
             },
-        );
-        // A typed union view is a cached value like any other, and it is the
-        // authoritative answer to an exact typed load, so one the callee may
-        // have overwritten must go by the same rule. Keeping it let a load
-        // after the call read the pre-call member
-        // (`mdtests/call_havoc_drops_a_union_member_view.md`).
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut self.union_cells),
-            |(pointer, _), value| match call_havoc_keeps_cell(
-                pointer,
-                value,
-                mutable_ranges,
-                assumptions,
-                kept,
-                preserve_local_slots,
-            ) {
-                CallHavocCellRule::Separate => true,
-                CallHavocCellRule::KeptByCaller(range) => {
-                    flat_hits.push(range);
-                    false
-                }
-                CallHavocCellRule::Dropped => false,
-            },
+            ask_every_slot,
         );
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
@@ -2959,7 +3419,7 @@ impl CMemory {
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> bool {
-        if self.heap != before.heap || self.blocks.len() != before.blocks.len() + 2 {
+        if self.blocks.len() != before.blocks.len() + 2 {
             return false;
         }
         // `self.blocks` must be `before.blocks` plus exactly two new blocks.
@@ -2996,15 +3456,20 @@ impl CMemory {
         let mut visited = 0usize;
         let mut flat_hits = Vec::new();
         let mut dropped_cells = Vec::new();
+        let mut dropped_initialized = Vec::new();
         for (pointer, value) in before.cells.candidate_logical_entries(&candidates) {
             visited += 1;
             match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
                     dropped_cells.push(pointer);
                 }
-                CallHavocCellRule::Dropped => dropped_cells.push(pointer),
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
+                    dropped_cells.push(pointer);
+                }
             }
         }
         let dropped_cells = dropped_cells.iter().collect::<Vec<_>>();
@@ -3015,12 +3480,30 @@ impl CMemory {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((key.0.clone(), key.1.byte_width()));
                     dropped_union_cells.push(key);
                 }
-                CallHavocCellRule::Dropped => dropped_union_cells.push(key),
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((key.0.clone(), key.1.byte_width()));
+                    dropped_union_cells.push(key);
+                }
             }
         }
         crate::instrumentation::record_deterministic_work(visited);
+        // The producer's heap: `before`'s, with the automatic values it
+        // dropped recorded initialized, and without the zero readings under
+        // a dropped value or the write set ([`CMemory::forget_cached_values`]).
+        let mut expected = before.clone();
+        expected.record_dropped_local_cells(&dropped_initialized);
+        expected.forget_zero_readings_under(
+            dropped_initialized
+                .iter()
+                .map(|(pointer, _)| &pointer.block),
+        );
+        expected.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
+        if !self.heap.eq_relative_to(&expected.heap, &before.heap) {
+            return false;
+        }
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
         let write_set_marker =
             call_write_set_marker(variable, mutable_ranges, kept_ranges.as_ref());
@@ -3165,6 +3648,67 @@ impl CMemory {
         ))
     }
 
+    /// [`Self::with_symbolic_storage_run`] for an array of `count` structs
+    /// `stride` bytes apart at `base`, whose scalar fields are `fields` (each
+    /// one's offset within the struct and type): one [`CellRun`] per field,
+    /// stepping by `stride`, at a cost of the fields and the block's existing
+    /// cells rather than the struct count. A field element that already
+    /// holds a cell keeps it, as [`Self::materialize_named_cell`] would. The
+    /// refusals are [`Self::with_symbolic_storage_run`]'s, and a block that
+    /// already holds a run is refused too, so no two runs' slots meet.
+    pub(crate) fn with_symbolic_storage_runs(
+        mut self,
+        base: &Pointer,
+        stride: u32,
+        count: u32,
+        fields: &[(u32, CType)],
+        source: SharedCMemory,
+    ) -> Result<Self, Self> {
+        if base.block.starts_with("local:")
+            || matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(base)
+            || self.cells.runs_in_block(&base.block).next().is_some()
+        {
+            return Err(self);
+        }
+        let existing = AliasCandidates::only_block(&base.block)
+            .entries(self.cells.concrete())
+            .map(|(pointer, _)| pointer.clone())
+            .collect::<Vec<_>>();
+        for (offset, element_type) in fields {
+            crate::instrumentation::record_deterministic_work(1 + existing.len());
+            let probe = CellRun::new_with_mode(
+                base.offset_by_bytes(*offset),
+                stride,
+                *element_type,
+                count,
+                source.clone(),
+                RunValueMode::SymbolicStorage,
+                IndexIntervals::default(),
+            );
+            let mut holes = IndexIntervals::default();
+            for pointer in &existing {
+                if let Some(index) = probe.slot_index(pointer) {
+                    holes.insert(index);
+                }
+            }
+            if holes.count() >= u64::from(count) {
+                continue;
+            }
+            let run = probe.with_holes(holes);
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        Ok(self)
+    }
+
     /// A store of `value` into each of the `count` elements of `element_type`
     /// at `base`, in element order, as one [`CellRun`] at a cost that does
     /// not depend on `count`: the known initial contents of static storage
@@ -3210,6 +3754,560 @@ impl CMemory {
             source,
             RunValueMode::Constant(value),
         ))
+    }
+
+    /// The stores of one object's known initial contents, as one constant
+    /// [`CellRun`] per entry of `runs`, at a cost of the runs rather than the
+    /// cells they hold: the zero contents of an array of structs (one run per
+    /// scalar field, stepping by the struct's size) or of an automatic array
+    /// declared with an initializer. The runs' slots are exactly the cells
+    /// the stores of each run's value into each of its slots would leave, and
+    /// one `CellsSeeded` edge per run stands for them.
+    ///
+    /// The object at `base` must be fresh: its block holds no cell and no run
+    /// yet, so no slot of a run is already a cell and the runs start with no
+    /// hole. The caller builds the runs from one layout, so no two slots of
+    /// them overlap; a slot's value is no wider than its run's step. Unlike
+    /// [`Self::with_constant_run`] an automatic object's block is accepted:
+    /// a store into a live local block records its cell and nothing else,
+    /// and the declaration that just created the block is what calls this.
+    /// A heap block (a store there marks the cell initialized), typed union
+    /// views to displace, or a base in a live allocation are refused, and
+    /// `Err` hands the memory back unchanged for the caller's own stores.
+    pub(crate) fn with_constant_runs(
+        mut self,
+        base: &Pointer,
+        runs: &[CConstantRun],
+    ) -> Result<Self, Self> {
+        if matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(base)
+            || AliasCandidates::only_block(&base.block)
+                .entries(self.cells.concrete())
+                .next()
+                .is_some()
+            || self.cells.runs_in_block(&base.block).next().is_some()
+            || runs.iter().any(|run| {
+                run.stride == 0 || (run.count > 1 && run.value.byte_width() > run.stride)
+            })
+        {
+            return Err(self);
+        }
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        for run in runs.iter().filter(|run| run.count > 0) {
+            crate::instrumentation::record_deterministic_work(1);
+            let run = CellRun::new_with_mode(
+                base.offset_by_bytes(run.offset),
+                run.stride,
+                run.value.c_type(),
+                run.count,
+                source.clone(),
+                RunValueMode::Constant(run.value.clone()),
+                IndexIntervals::default(),
+            );
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        Ok(self)
+    }
+
+    /// Checked compact initialization of one fresh automatic scalar array.
+    /// The caller has separately checked read/write authority and coercion.
+    pub(in crate::kernel) fn initialize_scalar_array(
+        self,
+        base: &Pointer,
+        element_type: CType,
+        count: u32,
+        value: CValue,
+        copy: bool,
+    ) -> Result<Self, CRuntimeError> {
+        self.write_scalar_array_region(
+            base,
+            element_type,
+            count,
+            value,
+            copy,
+            true,
+            &PureFactContext::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::kernel) fn write_scalar_array_region(
+        mut self,
+        base: &Pointer,
+        element_type: CType,
+        count: u32,
+        value: CValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CRuntimeError> {
+        let bytes = count
+            .checked_mul(element_type.byte_width())
+            .filter(|bytes| *bytes <= i32::MAX as u32)
+            .ok_or(CRuntimeError::TypeMismatch)?;
+        let snapshot_copy = copy
+            && matches!(&value, CValue::Pointer(source) if
+            !source.pointer().block.starts_with("local:")
+            || self.cells.runs_in_block(&source.pointer().block)
+                .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
+        if !base.block.starts_with("local:") || snapshot_copy {
+            return self.write_scalar_array_snapshot(
+                base,
+                element_type,
+                count,
+                value,
+                copy,
+                fresh,
+                assumptions,
+            );
+        }
+        let valid_region = |pointer: &Pointer| {
+            pointer.block.starts_with("local:")
+                && pointer.offset.as_const().is_some_and(|offset| {
+                    offset >= 0
+                        && offset % i64::from(element_type.byte_width()) == 0
+                        && self
+                            .block_size(&pointer.block)
+                            .and_then(Bitvector32Term::as_const)
+                            .is_some_and(|size| {
+                                offset
+                                    .checked_add(i64::from(bytes))
+                                    .is_some_and(|end| end <= i64::from(size))
+                            })
+                })
+        };
+        if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32)
+            || !valid_region(base)
+            || !self.run_can_stand_for_cells_at(base)
+            || (fresh
+                && (base.offset != PointerOffsetTerm::Constant(0)
+                    || self
+                        .block_size(&base.block)
+                        .and_then(Bitvector32Term::as_const)
+                        != Some(bytes)
+                    || AliasCandidates::only_block(&base.block)
+                        .entries(self.cells.concrete())
+                        .next()
+                        .is_some()
+                    || self.cells.runs_in_block(&base.block).next().is_some()))
+        {
+            return Err(CRuntimeError::FunctionContract(
+                "scalar-array write requires a valid aligned local region; fresh initialization requires complete empty storage".into(),
+            ));
+        }
+        // Capture represented values before changing the destination, including
+        // overlapping copies. Constant spans stay compact; explicit lanes retain
+        // their immutable values rather than referring back to mutable storage.
+        let mut spans = Vec::new();
+        let mut cells = Vec::new();
+        if copy {
+            let CValue::Pointer(pointer) = value else {
+                return Err(CRuntimeError::TypeMismatch);
+            };
+            let pointer = pointer.pointer();
+            if !valid_region(pointer)
+                || !self.run_can_stand_for_cells_at(pointer)
+                || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
+                || (fresh
+                    && (pointer.offset != PointerOffsetTerm::Constant(0)
+                        || self
+                            .block_size(&pointer.block)
+                            .and_then(Bitvector32Term::as_const)
+                            != Some(bytes)))
+            {
+                return Err(CRuntimeError::FunctionContract(
+                    "scalar-array copy requires a valid aligned initialized local source region"
+                        .into(),
+                ));
+            }
+            if count == 0 {
+                return Ok(self);
+            }
+            let start = pointer.offset.as_const().unwrap();
+            let end = start + i64::from(bytes);
+            let width = i64::from(element_type.byte_width());
+            let mut covered = IndexIntervals::default();
+            let invalid = |reason: &str| {
+                CRuntimeError::FunctionContract(format!(
+                    "scalar-array copy requires complete represented scalar values: {reason}"
+                ))
+            };
+            for run in self.cells.runs_in_block(&pointer.block) {
+                crate::instrumentation::record_deterministic_work(1);
+                let Some(run_start) = run.base().offset.as_const() else {
+                    return Err(invalid("symbolic run address"));
+                };
+                let run_end = i64::from(run.count())
+                    .checked_mul(i64::from(run.element_width()))
+                    .and_then(|bytes| run_start.checked_add(bytes))
+                    .ok_or_else(|| invalid("run byte extent overflow"))?;
+                if run_end <= start || end <= run_start {
+                    continue;
+                }
+                let RunValueMode::Constant(value) = run.value_mode() else {
+                    return Err(invalid("unsupported run values"));
+                };
+                if run.element_type() != element_type
+                    || value.c_type() != element_type
+                    || run.element_width() != element_type.byte_width()
+                    || (run_start - start) % width != 0
+                {
+                    return Err(invalid("run element type or alignment"));
+                }
+                for (low, high) in run.live_intervals().intervals() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let low = (run_start + i64::from(low) * width).max(start);
+                    let high = (run_start + i64::from(high) * width).min(end);
+                    if low < high {
+                        let first = ((low - start) / width) as u32;
+                        let last = ((high - start) / width) as u32;
+                        covered.insert_range(first, last);
+                        spans.push((first, last - first, value.clone()));
+                    }
+                }
+            }
+            let at = |offset| Pointer {
+                block: pointer.block.clone(),
+                offset: PointerOffsetTerm::Constant(offset),
+            };
+            // Reject symbolic-address caches with one indexed lookup. Concrete
+            // cells are visited only inside the selected byte region, plus the
+            // bounded prefix where an eight-byte scalar might overlap it.
+            let max_width = CType::UInt64
+                .byte_width()
+                .max(CType::VoidPointer.byte_width());
+            if self
+                .cells
+                .concrete()
+                .range((
+                    std::ops::Bound::Excluded(at(i64::MAX)),
+                    std::ops::Bound::Unbounded,
+                ))
+                .next()
+                .is_some_and(|(at, _)| at.block == pointer.block)
+            {
+                return Err(invalid("symbolic cached address"));
+            }
+            for (at, value) in self
+                .cells
+                .concrete()
+                .range(at(start.saturating_sub(i64::from(max_width - 1)))..at(end))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let Some(offset) = at.offset.as_const() else {
+                    return Err(invalid("nonconstant cell address"));
+                };
+                if offset + i64::from(value.byte_width()) <= start || end <= offset {
+                    continue;
+                }
+                if offset < start
+                    || offset + width > end
+                    || (offset - start) % width != 0
+                    || value.c_type() != element_type
+                {
+                    return Err(invalid(&format!(
+                        "cell at byte {offset} with type {:?} does not fit {element_type:?} region {start}..{end}",
+                        value.c_type()
+                    )));
+                }
+                let index = ((offset - start) / width) as u32;
+                covered.insert(index);
+                cells.push((index, value.clone()));
+            }
+            if covered != IndexIntervals::full(count) {
+                return Err(invalid("incomplete typed coverage"));
+            }
+        } else {
+            if value.c_type() != element_type {
+                return Err(CRuntimeError::TypeMismatch);
+            }
+            spans.push((0, count, value));
+        }
+        if count == 0 {
+            return Ok(self);
+        }
+        if !fresh {
+            self = self.without_possible_aliasing_cells(base, bytes, assumptions);
+        }
+        let target_at = |index| Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(
+                base.offset.as_const().unwrap()
+                    + i64::from(index) * i64::from(element_type.byte_width()),
+            ),
+        };
+        for (first, length, value) in spans {
+            let run = CellRun::new_with_mode(
+                target_at(first),
+                element_type.byte_width(),
+                element_type,
+                length,
+                crate::kernel::intern_c_memory(CMemory::new()),
+                RunValueMode::Constant(value),
+                IndexIntervals::default(),
+            );
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        for (index, value) in cells {
+            self = self.store_with_context(target_at(index), value, assumptions);
+        }
+        Ok(self.with_initialized_object(base, bytes))
+    }
+
+    // Authority is checked by the statement executor. External argument
+    // storage follows ordinary typed-load semantics: unknown initialized
+    // bytes remain symbolic. Known automatic storage must be initialized.
+    #[allow(clippy::too_many_arguments)]
+    fn write_scalar_array_snapshot(
+        mut self,
+        base: &Pointer,
+        element: CType,
+        count: u32,
+        value: CValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CRuntimeError> {
+        let bytes = count
+            .checked_mul(element.byte_width())
+            .filter(|bytes| *bytes <= i32::MAX as u32)
+            .ok_or(CRuntimeError::TypeMismatch)?;
+        if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32) {
+            return Err(CRuntimeError::TypeMismatch);
+        }
+        if count == 0 {
+            if (copy && !matches!(value, CValue::Pointer(_)))
+                || (!copy && value.c_type() != element)
+            {
+                return Err(CRuntimeError::TypeMismatch);
+            }
+            return Ok(self);
+        }
+        let valid = |pointer: &Pointer| {
+            let (stem, constant) = offset_stem_and_constant(&pointer.offset);
+            let width = i64::from(element.byte_width());
+            let aligned = constant % width == 0
+                && match stem {
+                    None => true,
+                    Some(PointerOffsetTerm::Int32Scaled { byte_width, .. }) => {
+                        byte_width % width == 0
+                    }
+                    _ => false,
+                };
+            pointer != &Pointer::null()
+                && constant.checked_add(i64::from(bytes)).is_some()
+                && aligned
+                && self.run_can_stand_for_cells_at(pointer)
+                && if self.has_block(&pointer.block) {
+                    self.access_in_bounds(pointer, bytes)
+                } else {
+                    matches!(
+                        pointer.block,
+                        PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+                    )
+                }
+        };
+        if !valid(base)
+            || (fresh
+                && (!base.block.starts_with("local:")
+                    || base.offset != PointerOffsetTerm::Constant(0)
+                    || self
+                        .block_size(&base.block)
+                        .and_then(Bitvector32Term::as_const)
+                        != Some(bytes)
+                    || self.cells.runs_in_block(&base.block).next().is_some()
+                    || AliasCandidates::only_block(&base.block)
+                        .entries(self.cells.concrete())
+                        .next()
+                        .is_some()))
+        {
+            return Err(CRuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
+        }
+        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let mut captured_runs = Vec::new();
+        let mut captured_cells = Vec::new();
+        if copy {
+            let CValue::Pointer(pointer) = value else {
+                return Err(CRuntimeError::TypeMismatch);
+            };
+            let pointer = pointer.pointer();
+            if !valid(pointer)
+                || (pointer.block.starts_with("local:")
+                    && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
+            {
+                return Err(CRuntimeError::FunctionContract(
+                    "scalar-array snapshot requires a valid initialized source region".into(),
+                ));
+            }
+            let (stem, start) = offset_stem_and_constant(&pointer.offset);
+            let width = i64::from(element.byte_width());
+            let mut represented = IndexIntervals::default();
+            for run in self.cells.runs_in_block(&pointer.block) {
+                crate::instrumentation::record_deterministic_work(1);
+                let (run_stem, run_start) = offset_stem_and_constant(&run.base().offset);
+                if run_stem != stem {
+                    continue;
+                }
+                let delta = run_start
+                    .checked_sub(start)
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                let end = delta
+                    .checked_add(i64::from(run.count()) * i64::from(run.element_width()))
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                if end <= 0 || delta >= i64::from(bytes) {
+                    continue;
+                }
+                if run.element_type() != element
+                    || run.element_width() != element.byte_width()
+                    || delta % width != 0
+                {
+                    return Err(CRuntimeError::TypeMismatch);
+                }
+                for (low, high) in run.live_intervals().intervals() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let low = (delta + i64::from(low) * width).max(0);
+                    let high = (delta + i64::from(high) * width).min(i64::from(bytes));
+                    if low >= high {
+                        continue;
+                    }
+                    let first = (low / width) as u32;
+                    let length = ((high - low) / width) as u32;
+                    let source_index = ((low - delta) / width) as u32;
+                    represented.insert_range(first, first + length);
+                    let mode = match run.value_mode() {
+                        RunValueMode::Constant(value) => RunValueMode::Constant(value.clone()),
+                        RunValueMode::Copy { source_base } => RunValueMode::Copy {
+                            source_base: source_base
+                                .offset_by_bytes(source_index * element.byte_width()),
+                        },
+                        RunValueMode::Load | RunValueMode::SymbolicStorage => RunValueMode::Copy {
+                            source_base: run.slot_pointer(source_index),
+                        },
+                    };
+                    captured_runs.push(CellRun::new_with_mode(
+                        base.offset_by_bytes(first * element.byte_width()),
+                        element.byte_width(),
+                        element,
+                        length,
+                        run.source().clone(),
+                        mode,
+                        IndexIntervals::default(),
+                    ));
+                }
+            }
+            for (at, value) in self.cells.concrete_region_candidates(pointer, bytes) {
+                crate::instrumentation::record_deterministic_work(1);
+                let (cell_stem, cell_start) = offset_stem_and_constant(&at.offset);
+                if cell_stem != stem {
+                    continue;
+                }
+                let delta = cell_start
+                    .checked_sub(start)
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                if delta + i64::from(value.byte_width()) <= 0 || delta >= i64::from(bytes) {
+                    continue;
+                }
+                if delta < 0
+                    || delta + width > i64::from(bytes)
+                    || delta % width != 0
+                    || value.c_type() != element
+                {
+                    return Err(CRuntimeError::TypeMismatch);
+                }
+                let index = (delta / width) as u32;
+                represented.insert(index);
+                captured_cells.push((
+                    base.offset_by_bytes(index * element.byte_width()),
+                    value.clone(),
+                ));
+            }
+            if represented != IndexIntervals::full(count) {
+                captured_runs.push(CellRun::new_with_mode(
+                    base.clone(),
+                    element.byte_width(),
+                    element,
+                    count,
+                    snapshot,
+                    RunValueMode::Copy {
+                        source_base: pointer.clone(),
+                    },
+                    represented,
+                ));
+            }
+        } else {
+            if value.c_type() != element {
+                return Err(CRuntimeError::TypeMismatch);
+            }
+            captured_runs.push(CellRun::new_with_mode(
+                base.clone(),
+                element.byte_width(),
+                element,
+                count,
+                crate::kernel::intern_c_memory(CMemory::new()),
+                RunValueMode::Constant(value),
+                IndexIntervals::default(),
+            ));
+        }
+        if !fresh {
+            // Compact writes must not fall back to visiting every logical
+            // slot of a possibly aliasing run. Require a whole-footprint
+            // decision (including ownership separation), or refuse promptly.
+            for run in self
+                .cells
+                .candidate_runs(&AliasCandidates::of_block(&base.block))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let (kept, _) =
+                    crate::kernel::reasoning::memory_resolution::run_slots_kept_by_store(
+                        run,
+                        base,
+                        bytes,
+                        assumptions,
+                    );
+                if matches!(
+                    kept,
+                    crate::kernel::primitives::SlotSet::PerSlot
+                        | crate::kernel::primitives::SlotSet::AskWithin(_, _)
+                ) {
+                    return Err(CRuntimeError::FunctionContract(
+                        "scalar-array snapshot requires a compact decision for possibly aliasing storage".into()));
+                }
+            }
+        }
+        if !fresh {
+            self = self.without_possible_aliasing_cells(base, bytes, assumptions);
+        }
+        for run in captured_runs {
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        for (at, value) in captured_cells {
+            self = self.store_with_context(at, value, assumptions);
+        }
+        Ok(self.with_initialized_object(base, bytes))
     }
 
     /// Whether a run at `base` stands for the cells it seeds with nothing
@@ -3312,7 +4410,7 @@ impl CMemory {
             if (self.heap.uninitialized_allocations.contains(&base)
                 || self.heap.zeroed_allocations.contains(&base)
                 || self.heap.zeroed_prefix_allocations.contains_key(&base))
-                && !self.has_initialized_cell_at(&pointer, value.byte_width())
+                && !self.has_initialized_bytes_at(&pointer, value.byte_width())
             {
                 return self;
             }
@@ -3347,10 +4445,12 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
-        if self.is_live_heap_address(&pointer, context) {
+        if self.is_live_heap_address(&pointer, context)
+            && !self.heap.initialized.covers(&pointer, value.byte_width())
+        {
             std::sync::Arc::make_mut(&mut self.heap)
-                .initialized_cells
-                .insert(pointer.clone(), value.byte_width());
+                .initialized
+                .record(&pointer, value.byte_width());
         }
         // Skipped when empty so an ordinary store neither visits nor
         // reallocates the shared overlay map.
@@ -3493,17 +4593,99 @@ impl CMemory {
         }
     }
 
-    /// Whether a typed scalar at this exact heap address was initialized
-    /// before cached values were forgotten by a call or loop havoc.
-    pub(in crate::kernel) fn has_initialized_cell_at(
+    /// Whether the `byte_width` bytes at `pointer` are recorded initialized,
+    /// whether or not a cached value for them survives (see
+    /// [`InitializedBytes`]). A constant offset is covered by the run of its
+    /// block holding it; a symbolic offset by the same spelling.
+    pub(in crate::kernel) fn has_initialized_bytes_at(
         &self,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        self.heap
-            .initialized_cells
-            .get(pointer)
-            .is_some_and(|width| *width >= byte_width)
+        self.heap.initialized.covers(pointer, byte_width)
+    }
+
+    /// Whether every byte of `block` in `start..end` was written: held by a
+    /// run of the initialization record or by a cached constant-offset cell.
+    /// A cell is evidence its bytes were written, as the record is for the
+    /// bytes whose cached values were forgotten, so a byte either holds is
+    /// initialized. Walks the bytes left to right, one predecessor lookup in
+    /// each map per run or cell crossed: the work is the entries inside the
+    /// interval, not the block or the memory.
+    fn written_interval(&self, block: &PointerBlock, start: i64, end: i64) -> bool {
+        let at = |offset: i64| Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let concrete = self.cells.concrete();
+        let mut cursor = start;
+        while cursor < end {
+            if let Some(run_end) = self.heap.initialized.run_end_holding(block, cursor) {
+                cursor = run_end;
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let cell_end = concrete
+                .range(at(i64::MIN)..=at(cursor))
+                .next_back()
+                .and_then(|(cell, value)| {
+                    Some(cell.offset.as_const()? + i64::from(value.byte_width()))
+                })
+                .filter(|cell_end| *cell_end > cursor);
+            match cell_end {
+                Some(cell_end) => cursor = cell_end,
+                None => return false,
+            }
+        }
+        true
+    }
+
+    /// Whether the `byte_width` bytes at `pointer` were written, by the
+    /// initialization record or a cached cell (see [`Self::written_interval`]),
+    /// also for an element index the facts bound: `a[u]` under `0 <= u < n`
+    /// reads bytes of `a[0..n]`, so a run or cells covering all of those
+    /// cover the read wherever `u` lands. The bound is the index's signed
+    /// interval; the offset must be the block's base plus one scaled index
+    /// and a constant, as an element access is.
+    pub(in crate::kernel) fn has_initialized_bytes_under(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if self.has_initialized_bytes_at(pointer, byte_width) {
+            return true;
+        }
+        if let Some(offset) = pointer.offset.as_const() {
+            return self.written_interval(&pointer.block, offset, offset + i64::from(byte_width));
+        }
+        let (atoms, shift) =
+            crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
+        let [
+            PointerOffsetTerm::Int32Scaled {
+                value,
+                byte_width: scale,
+            },
+        ] = atoms.as_slice()
+        else {
+            return false;
+        };
+        if *scale <= 0 {
+            return false;
+        }
+        let Some((low, high)) = assumptions.signed_interval(value) else {
+            return false;
+        };
+        let (Some(start), Some(end)) = (
+            low.checked_mul(*scale)
+                .and_then(|bytes| bytes.checked_add(shift)),
+            high.checked_mul(*scale)
+                .and_then(|bytes| bytes.checked_add(shift))
+                .and_then(|bytes| bytes.checked_add(i64::from(byte_width))),
+        ) else {
+            return false;
+        };
+        start < end && self.written_interval(&pointer.block, start, end)
     }
 
     /// Whether any typed union overlay is recorded at exactly this pointer.
@@ -3561,24 +4743,21 @@ impl CMemory {
             written_bytes,
             &PureFactContext::new(),
         );
-        let mut initialized_widths = BTreeMap::<Pointer, u32>::new();
+        let mut initialized = Vec::new();
         for (pointer, value_type, value) in views {
             std::sync::Arc::make_mut(&mut memory.union_cells)
                 .insert((pointer.clone(), value_type), value);
-            if memory.is_live_heap_address(&pointer, &PureFactContext::new()) {
-                initialized_widths
-                    .entry(pointer)
-                    .and_modify(|width| *width = (*width).max(value_type.byte_width()))
-                    .or_insert(value_type.byte_width());
+            if memory.is_live_heap_address(&pointer, &PureFactContext::new())
+                && !memory.has_initialized_bytes_at(&pointer, value_type.byte_width())
+            {
+                initialized.push((pointer, value_type.byte_width()));
             }
         }
-        for (pointer, width) in initialized_widths {
-            let initialized_cells =
-                &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells;
-            let width = initialized_cells
-                .get(&pointer)
-                .map_or(width, |existing| (*existing).max(width));
-            initialized_cells.insert(pointer, width);
+        if !initialized.is_empty() {
+            let record = &mut std::sync::Arc::make_mut(&mut memory.heap).initialized;
+            for (pointer, width) in initialized {
+                record.record(&pointer, width);
+            }
         }
         memory
     }
@@ -3614,15 +4793,30 @@ impl CMemory {
         };
         // `overlaps` holds only in the base's own block.
         let own = AliasCandidates::only_block(&base.block);
-        std::sync::Arc::make_mut(&mut memory.cells)
-            .retain_candidates(&own, |pointer, _| !overlaps(pointer));
-        own.retain_map(
-            std::sync::Arc::make_mut(&mut memory.union_cells),
-            |(pointer, _), _| !overlaps(pointer),
+        memory.forget_cached_values(
+            ForgetScope::candidates(&own),
+            |pointer, _| {
+                if overlaps(pointer) {
+                    CachedValueFate::Forgotten
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
         );
-        own.retain_map(
-            &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells,
-            |pointer, _| !overlaps(pointer),
+        // The field's bytes now hold something the copy cannot name, whether
+        // or not a value was cached for them, so no zero reading answers for
+        // them either.
+        memory.forget_zero_readings_under(std::iter::once(&base.block));
+        // The copy wrote the field with no value it can name, from a source
+        // whose field it could not check, so its bytes are not known
+        // initialized either.
+        memory.forget_initialized_bytes(
+            &Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(field_start),
+            },
+            c_type.byte_width(),
         );
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
@@ -3640,10 +4834,242 @@ impl CMemory {
         let mut memory = self.clone();
         std::sync::Arc::make_mut(&mut memory.cells).remove(pointer);
         memory.remove_union_views_at(pointer);
-        std::sync::Arc::make_mut(&mut memory.heap)
-            .initialized_cells
-            .remove(pointer);
+        // The hypothetical memory a load's distinct case reads also drops the
+        // cell's initialization mark, as it always has, so it re-interns as
+        // the state before the store that wrote the cell when nothing else
+        // differs. Only that load reads it, at an address distinct from the
+        // cell's.
+        let width = self
+            .cells
+            .get(pointer)
+            .map_or(0, |value| value.byte_width());
+        memory.forget_initialized_bytes(pointer, width);
         memory
+    }
+
+    /// Records the bytes of cells whose cached values an operation dropped
+    /// as initialized, where they are automatic storage: a store only ever
+    /// initializes, so the bytes stay initialized with the value unknown.
+    /// Heap cells need nothing here — a heap store records its bytes as it
+    /// writes them. Costs the dropped cells.
+    fn record_dropped_local_cells(&mut self, dropped: &[(Pointer, u32)]) {
+        let mut record = self.heap.initialized.clone();
+        let mut changed = false;
+        for (pointer, width) in dropped {
+            if pointer.block.starts_with("local:") {
+                changed |= record.record(pointer, *width);
+            }
+        }
+        if changed {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
+    }
+
+    /// The one way a memory transition drops cached contents.
+    ///
+    /// A snapshot records what an address holds in more than one place: a
+    /// cell (or one slot of a run), a typed union view keyed by the member
+    /// type it records, and, for `calloc` storage, the zero reading that
+    /// answers for every byte no cached value covers. Each of them is an
+    /// authoritative answer to some load, so a transition that forgets bytes
+    /// has to forget every one of them, or the survivor answers for bytes the
+    /// transition no longer knows. Loop havoc used to drop cells alone: a
+    /// union view written inside the loop survived it, and so did the zero
+    /// reading of an allocation the loop wrote, and both read back the
+    /// pre-loop value (`mdtests/a_loop_that_writes_a_union_member_forgets_its_view.md`,
+    /// `mdtests/a_loop_that_writes_calloc_storage_forgets_its_zero_reading.md`).
+    ///
+    /// So every forgetting transition goes through here. `fate` decides each
+    /// cell and each union view by the same rule; `run_rule` answers for a
+    /// run as a whole, as [`CellStore::retain_candidates_outside_by`] asks.
+    /// What is [`CachedValueFate::Forgotten`] then also loses its zero
+    /// reading, and, in automatic storage, stays recorded initialized (a
+    /// write only ever initializes). A new representation of cached bytes
+    /// belongs in this function, so no transition can miss it.
+    ///
+    /// The slots `run_rule` drops as a whole run are recorded initialized
+    /// where they are automatic ([`Self::record_dropped_local_run_slots`]),
+    /// whatever `fate` would say of them: a dropped slot was written, and a
+    /// caller that retires the storage forgets its record afterwards. A run
+    /// carries no zero reading to lose: it is never seeded where a live
+    /// allocation may lie ([`Self::with_seeded_cells`] and its siblings
+    /// refuse one).
+    ///
+    /// The work is the candidates `scope` admits, which every caller already
+    /// pays for its cells; the union views are asked only when the snapshot
+    /// holds some, and the zero readings only when it holds some. Returns
+    /// whether any value was [`CachedValueFate::Forgotten`].
+    pub(super) fn forget_cached_values(
+        &mut self,
+        scope: ForgetScope<'_>,
+        mut fate: impl FnMut(&Pointer, CachedValue<'_>) -> CachedValueFate,
+        run_rule: impl FnMut(&CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswer),
+    ) -> bool {
+        let mut forgotten_cells = Vec::new();
+        let dropped_run_slots;
+        {
+            let mut keep_cell =
+                |pointer: &Pointer, value: &CValue| match fate(pointer, CachedValue::Cell(value)) {
+                    CachedValueFate::Kept => true,
+                    CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                    CachedValueFate::Forgotten => {
+                        push_dropped_initialized(
+                            &mut forgotten_cells,
+                            (pointer.clone(), value.byte_width()),
+                        );
+                        false
+                    }
+                };
+            let cells = std::sync::Arc::make_mut(&mut self.cells);
+            dropped_run_slots = match scope {
+                ForgetScope::Everywhere => cells.retain_by(&mut keep_cell, run_rule),
+                ForgetScope::Candidates {
+                    candidates,
+                    cells_kept,
+                } => cells.retain_candidates_outside_by(
+                    candidates,
+                    cells_kept,
+                    &mut keep_cell,
+                    run_rule,
+                ),
+            };
+        }
+        if !self.union_cells.is_empty() {
+            let mut keep_view = |(pointer, c_type): &(Pointer, CType), value: &CValue| match fate(
+                pointer,
+                CachedValue::UnionView(*c_type, value),
+            ) {
+                CachedValueFate::Kept => true,
+                CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                CachedValueFate::Forgotten => {
+                    push_dropped_initialized(
+                        &mut forgotten_cells,
+                        (pointer.clone(), c_type.byte_width()),
+                    );
+                    false
+                }
+            };
+            let union_cells = std::sync::Arc::make_mut(&mut self.union_cells);
+            match scope {
+                ForgetScope::Everywhere => union_cells.retain(&mut keep_view),
+                // A union view is never skipped by `cells_kept`: those ranges
+                // are what the caller showed its *cell* rule keeps, and a
+                // view is asked by its own width.
+                ForgetScope::Candidates { candidates, .. } => {
+                    candidates.retain_map(union_cells, &mut keep_view)
+                }
+            }
+        }
+        self.record_dropped_local_cells(&forgotten_cells);
+        // A run's slots are cells too, dropped by `run_rule` as a whole run
+        // without `fate` being asked; automatic ones stay initialized.
+        self.record_dropped_local_run_slots(&dropped_run_slots);
+        self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.block));
+        !forgotten_cells.is_empty()
+    }
+
+    /// Drops the zero reading of every allocation that may hold a byte of
+    /// `blocks`: every one in a block not proven distinct from one of them.
+    /// A zero reading answers for the bytes no cached value covers, so once a
+    /// cached value under it is forgotten, the reading would answer zero for
+    /// bytes that held something else. The allocation goes as a whole, as a
+    /// call's write set takes it ([`Self::forget_zeroed_allocations_written_by`]).
+    /// Costs nothing when no allocation reads as zero, and otherwise the
+    /// distinct blocks plus the readings dropped.
+    fn forget_zero_readings_under<'a>(&mut self, blocks: impl Iterator<Item = &'a PointerBlock>) {
+        if self.heap.zeroed_allocations.len() == 0 && self.heap.zeroed_prefix_allocations.is_empty()
+        {
+            return;
+        }
+        let blocks = blocks.collect::<BTreeSet<_>>();
+        for block in blocks {
+            let candidates = AliasCandidates::of_block(block);
+            if !candidates.any_element(&self.heap.zeroed_allocations, |_| true)
+                && !candidates.any_entry(&self.heap.zeroed_prefix_allocations, |_, _| true)
+            {
+                continue;
+            }
+            let heap = std::sync::Arc::make_mut(&mut self.heap);
+            candidates.retain_set(&mut heap.zeroed_allocations, |_| false);
+            candidates.retain_map(&mut heap.zeroed_prefix_allocations, |_, _| false);
+        }
+    }
+
+    /// [`Self::record_dropped_local_cells`] for run slots dropped as a whole
+    /// run. A dropped interval whose bytes the record already holds costs
+    /// one covering query: the usual case, as a declaration's initializer,
+    /// which is what makes a run of automatic storage, records its whole
+    /// object ([`Self::with_initialized_object`]). Otherwise contiguous
+    /// slots are one run of bytes, and only slots strided apart or at a
+    /// symbolic offset are recorded one by one, each as a dropped cell.
+    fn record_dropped_local_run_slots(&mut self, dropped: &[DroppedRunSlots]) {
+        if dropped.is_empty() {
+            return;
+        }
+        let mut record = self.heap.initialized.clone();
+        let mut changed = false;
+        for DroppedRunSlots { run, elements } in dropped {
+            if !run.base().block.starts_with("local:") {
+                continue;
+            }
+            let width = run.value_width();
+            for (low, high) in elements.intervals() {
+                if low >= high {
+                    continue;
+                }
+                let first = run.slot_pointer(low);
+                let span = first.offset.as_const().zip(
+                    run.slot_pointer(high - 1)
+                        .offset
+                        .as_const()
+                        .map(|last| last + i64::from(width)),
+                );
+                if let Some((start, end)) = span {
+                    if record.covers_interval(&first.block, start, end) {
+                        continue;
+                    }
+                    if run.element_width() == width
+                        && let Ok(bytes) = u32::try_from(end - start)
+                    {
+                        changed |= record.record(&first, bytes);
+                        continue;
+                    }
+                }
+                for index in low..high {
+                    changed |= record.record(&run.slot_pointer(index), width);
+                }
+            }
+        }
+        if changed {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
+    }
+
+    /// Records the `bytes` bytes of the object at `pointer` as initialized:
+    /// a declaration whose initializer writes every byte of its object
+    /// (C11 6.7.9p21 zero-initializes whatever it does not name). The cells
+    /// it leaves are the values; this is what outlives them.
+    pub(in crate::kernel) fn with_initialized_object(
+        mut self,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Self {
+        if !self.heap.initialized.covers(pointer, bytes) {
+            std::sync::Arc::make_mut(&mut self.heap)
+                .initialized
+                .record(pointer, bytes);
+        }
+        self
+    }
+
+    /// Forgets the initialization of the `byte_width` bytes at `pointer`
+    /// (see [`InitializedBytes::forget`]), leaving the heap shared when the
+    /// record holds none of them.
+    fn forget_initialized_bytes(&mut self, pointer: &Pointer, byte_width: u32) {
+        let mut record = self.heap.initialized.clone();
+        if record.forget(pointer, byte_width) {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
     }
 
     /// Forgets every cell of `self` the write of `bytes` bytes at `pointer`
@@ -3694,13 +5120,13 @@ impl CMemory {
         let written = crate::kernel::reasoning::StoreByteInterval::of(&normalized_pointer, bytes);
         let mut memory = self.clone();
         let base = Some(intern_derivation_base(&mut memory));
-        // Whether any cell went for the *aliasing* reason rather than because
-        // this store overwrites every one of its bytes. An overwritten cell
-        // is stale, not forgotten: the store about to run replaces exactly
-        // what was dropped, so the result still says everything about the
-        // state it describes. A possibly aliasing cell is knowledge the
-        // result no longer has, and that is what has to show in the content.
-        let mut forgot_live_knowledge = false;
+        // An overwritten value is stale, not forgotten: the store about to
+        // run replaces exactly what was dropped, so the result still says
+        // everything about the state it describes. A possibly aliasing value,
+        // or one the store writes only part of, is knowledge the result no
+        // longer has: it is `Forgotten`, which is what has to show in the
+        // content, keeps automatic bytes initialized (see
+        // `record_dropped_local_cells`), and ends a zero reading under it.
         // Every cell in a block proven distinct from the written one is kept
         // by each ladder below (its bytes are `Separate` and its address is
         // proven distinct on the first rung), so only the candidates are
@@ -3734,7 +5160,7 @@ impl CMemory {
             bytes,
             assumptions,
         );
-        let mut keep_cell = |cell_pointer: &Pointer, cell_value: &CValue| {
+        let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -3750,10 +5176,13 @@ impl CMemory {
                 // Only a cell the store writes *completely* is stale. One it
                 // writes part of leaves the untouched bytes unrecorded, so the
                 // result knows strictly less than its source and has to say so.
-                forgot_live_knowledge |= !written.as_ref().is_some_and(|written| {
+                return if written.as_ref().is_some_and(|written| {
                     written.overwrites_completely(&normalized_cell_pointer, cell_value)
-                });
-                return false;
+                }) {
+                    CachedValueFate::Overwritten
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -3761,7 +5190,7 @@ impl CMemory {
                 &normalized_cell_pointer,
                 crate::kernel::reasoning::cell_access_byte_width(cell_value),
             ) {
-                return true;
+                return CachedValueFate::Kept;
             }
             let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
                 &normalized_cell_pointer,
@@ -3807,66 +5236,52 @@ impl CMemory {
                     assumptions,
                 )
                 .is_some();
-            forgot_live_knowledge |= !kept;
-            kept
+            if kept {
+                CachedValueFate::Kept
+            } else {
+                CachedValueFate::Forgotten
+            }
         };
-        #[cfg(debug_assertions)]
-        if !gap_kept.is_empty() {
-            crate::instrumentation::uncharged_debug_check(|| {
-                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
-                    &memory.cells,
-                    &gap_kept,
-                    &normalized_pointer,
-                    &mut keep_cell,
-                );
-            });
-        }
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_outside_by(
-            &candidates,
-            &gap_kept,
-            &mut keep_cell,
-            run_rule,
-        );
-        forgot_live_knowledge |= run_forgot;
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut memory.union_cells),
-            |(cell_pointer, cell_type), _| {
-                let normalized_cell_pointer = Pointer {
-                    block: cell_pointer.block.clone(),
-                    offset: normalize_exact_memory_loads_in_pointer_offset(
-                        &cell_pointer.offset,
-                        assumptions,
-                    ),
+        let view_fate = |cell_pointer: &Pointer, cell_type: CType| {
+            let normalized_cell_pointer = Pointer {
+                block: cell_pointer.block.clone(),
+                offset: normalize_exact_memory_loads_in_pointer_offset(
+                    &cell_pointer.offset,
+                    assumptions,
+                ),
+            };
+            if normalized_cell_pointer.block == normalized_pointer.block
+                && written.as_ref().is_some_and(|written| {
+                    written.overwrites_typed(&normalized_cell_pointer, cell_type)
+                })
+            {
+                return if written.as_ref().is_some_and(|written| {
+                    written.overwrites_typed_completely(&normalized_cell_pointer, cell_type)
+                }) {
+                    CachedValueFate::Overwritten
+                } else {
+                    CachedValueFate::Forgotten
                 };
-                if normalized_cell_pointer.block == normalized_pointer.block
-                    && written.as_ref().is_some_and(|written| {
-                        written.overwrites_typed(&normalized_cell_pointer, *cell_type)
-                    })
-                {
-                    forgot_live_knowledge |= !written.as_ref().is_some_and(|written| {
-                        written.overwrites_typed_completely(&normalized_cell_pointer, *cell_type)
-                    });
-                    return false;
-                }
-                if assumptions.access_owned_apart_from_store(
-                    &owned_footprint,
-                    &normalized_pointer,
-                    &normalized_cell_pointer,
-                    cell_type.byte_width().max(1),
-                ) {
-                    return true;
-                }
-                // A union view has no value to read a width from, so it stands in
-                // the width of the type it is keyed by — the access it records.
-                let address_inequality_separates_bytes =
-                    crate::kernel::reasoning::access_byte_overlap(
-                        &normalized_cell_pointer,
-                        cell_type.byte_width().max(1),
-                        &normalized_pointer,
-                        bytes,
-                        assumptions,
-                    ) == crate::kernel::reasoning::AccessByteOverlap::Separate;
-                let kept = address_inequality_separates_bytes
+            }
+            if assumptions.access_owned_apart_from_store(
+                &owned_footprint,
+                &normalized_pointer,
+                &normalized_cell_pointer,
+                cell_type.byte_width().max(1),
+            ) {
+                return CachedValueFate::Kept;
+            }
+            // A union view has no value to read a width from, so it stands in
+            // the width of the type it is keyed by — the access it records.
+            let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
+                &normalized_cell_pointer,
+                cell_type.byte_width().max(1),
+                &normalized_pointer,
+                bytes,
+                assumptions,
+            )
+                == crate::kernel::reasoning::AccessByteOverlap::Separate;
+            let kept = address_inequality_separates_bytes
                 && pointers_proven_distinct_for_memory_resolution(
                     &normalized_cell_pointer,
                     &normalized_pointer,
@@ -3882,44 +5297,48 @@ impl CMemory {
                     assumptions,
                 )
                 .is_some();
-                forgot_live_knowledge |= !kept;
-                kept
-            },
-        );
-        candidates.retain_map(
-            &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells,
-            |cell_pointer, width| {
-                let normalized_cell_pointer = Pointer {
-                    block: cell_pointer.block.clone(),
-                    offset: normalize_exact_memory_loads_in_pointer_offset(
-                        &cell_pointer.offset,
-                        assumptions,
-                    ),
-                };
-                let separate = crate::kernel::reasoning::access_byte_overlap(
-                    &normalized_cell_pointer,
-                    *width,
+            if kept {
+                CachedValueFate::Kept
+            } else {
+                CachedValueFate::Forgotten
+            }
+        };
+        #[cfg(debug_assertions)]
+        if !gap_kept.is_empty() {
+            crate::instrumentation::uncharged_debug_check(|| {
+                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
+                    &memory.cells,
+                    &gap_kept,
                     &normalized_pointer,
-                    bytes,
-                    assumptions,
-                ) == crate::kernel::reasoning::AccessByteOverlap::Separate;
-                separate
-                    && (pointers_proven_distinct_for_memory_resolution(
-                        &normalized_cell_pointer,
-                        &normalized_pointer,
-                        assumptions,
-                    ) || normalized_cell_pointer.block != normalized_pointer.block)
+                    &mut |pointer: &Pointer, value: &CValue| {
+                        cell_fate(pointer, value) == CachedValueFate::Kept
+                    },
+                );
+            });
+        }
+        let forgot_values = memory.forget_cached_values(
+            ForgetScope::Candidates {
+                candidates: &candidates,
+                cells_kept: &gap_kept,
             },
+            |pointer, value| match value {
+                CachedValue::Cell(value) => cell_fate(pointer, value),
+                CachedValue::UnionView(c_type, _) => view_fate(pointer, c_type),
+            },
+            run_rule,
         );
+        let forgot_live_knowledge = forgot_values || run_forgot;
         // Forgetting nothing is not a transition: the memory is the same
         // snapshot, so a later load keeps resolving through it unchanged
         // instead of stopping at an edge that records no write.
         if memory.cells.len() == self.cells.len()
             && memory.union_cells.len() == self.union_cells.len()
-            && memory.heap.initialized_cells == self.heap.initialized_cells
         {
             return self.clone();
         }
+        // A store never de-initializes: the heap marks of the cells it may
+        // alias stay as they are, and `forget_cached_values` recorded the
+        // automatic cells it forgot beside them.
         if let Some(base) = base {
             // The mark goes on before interning, because it is what the
             // result is interned *as*. Without it the emptied cell map can
@@ -3929,17 +5348,15 @@ impl CMemory {
             // recorded history.
             if forgot_live_knowledge {
                 memory.mark_forgotten_from(&base);
-                // The mark is what makes this edge recordable, so check it
-                // where it is set rather than where it is used: a result
-                // that is not younger than its base would be dropped by
-                // `record_c_memory_derivation` and take the forgotten
-                // store off every recorded history with it.
-                debug_assert!(
-                    intern_c_memory_ref(&memory).arena_id() > base.arena_id(),
-                    "a forget that lost knowledge landed on an older snapshot"
-                );
             }
+            let base_id = base.arena_id();
             record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
+            // Check after producer recording: first interning also fixes the
+            // read-congruence identity, so debug checks must not preempt it.
+            debug_assert!(
+                !forgot_live_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
+                "a forget that lost knowledge landed on an older snapshot"
+            );
         }
         memory
     }
@@ -4146,6 +5563,7 @@ impl CMemory {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits32,
         ))
     }
 
@@ -4153,6 +5571,7 @@ impl CMemory {
         int8(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Int8,
         ))
     }
 
@@ -4160,6 +5579,7 @@ impl CMemory {
         int16(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Int16,
         ))
     }
 
@@ -4167,6 +5587,7 @@ impl CMemory {
         uint8(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::UInt8,
         ))
     }
 
@@ -4174,6 +5595,7 @@ impl CMemory {
         uint16(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::UInt16,
         ))
     }
 
@@ -4181,6 +5603,7 @@ impl CMemory {
         uint32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits32,
         ))
     }
 
@@ -4188,6 +5611,7 @@ impl CMemory {
         CValue::Int64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits64,
         ))
     }
 
@@ -4195,6 +5619,7 @@ impl CMemory {
         CValue::UInt64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits64,
         ))
     }
 
@@ -4202,6 +5627,7 @@ impl CMemory {
         CValue::Float32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Float32,
         ))
     }
 
@@ -4209,6 +5635,7 @@ impl CMemory {
         CValue::Float64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Float64,
         ))
     }
 
@@ -4224,6 +5651,7 @@ impl CMemory {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(self.clone()),
                     Box::new(pointer.clone()),
+                    LoadKind::Bits32,
                 ),
                 i64::from(pointee_byte_width),
             ),
@@ -4384,7 +5812,7 @@ impl CState {
     }
 
     /// Admit exactly one explicitly owned helper input as an opaque existing
-    /// population. A standalone proof receives no count or creator right.
+    /// population. Its observable entry total is arbitrary, with no creator right.
     pub(crate) fn import_opaque_population(
         &self,
         authority: &CResourceFact,
@@ -4416,8 +5844,87 @@ impl CState {
             .creation
             .as_ref()
             .ok_or("opaque import requires authority mode")?
-            .import_opaque_contract_population(description, owned_members)
+            .import_observable_contract_population(description, owned_members)
             .map_err(|refusal| format!("opaque population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
+    /// Import exactly the authority and identified member declared at a
+    /// wildcard helper entry. Neither input is a population creation event.
+    pub(crate) fn import_opaque_wildcard_population(
+        &self,
+        authority: &CResourceFact,
+        member: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+            return Err("Requires owns authority(R(anchor, _))".into());
+        };
+        let CResourceFact::Own(CResource::Composite { name, arguments }, member_quantity) = member
+        else {
+            return Err("Requires owns R(anchor, member)".into());
+        };
+        if quantity.as_const() != Some(1)
+            || member_quantity.as_const() != Some(1)
+            || !self.resources.contains_exact_representation(authority)
+            || !self.resources.contains_exact_representation(member)
+        {
+            return Err("Requires one owned authority and its declared owned member".into());
+        }
+        let description = super::super::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
+        );
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque import requires authority mode")?
+            .import_opaque_wildcard_population(scope, &description)
+            .map_err(|refusal| format!("wildcard population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
+    pub(crate) fn import_opaque_wildcard_authority(
+        &self,
+        authority: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+            return Err("Requires owns authority(R(anchor, _))".into());
+        };
+        if quantity.as_const() != Some(1)
+            || !self.resources.contains_exact_representation(authority)
+        {
+            return Err("Requires one declared owned authority".into());
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque import requires authority mode")?
+            .import_opaque_wildcard_authority(scope)
+            .map_err(|refusal| format!("wildcard authority import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
+    pub(crate) fn with_checked_current_control_wrapper(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("control registration requires authority mode")?
+            .checked_current_control_wrapper(self, selected, definition, assumptions)?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -4435,6 +5942,26 @@ impl CState {
             .is_some_and(|events| events.recognizes_population_authority(description))
     }
 
+    /// Whether an exact resource belongs to an established or imported population.
+    /// Wrapping such a resource's body must use the population exchange law.
+    pub(crate) fn tracks_authority_member(&self, selected: &CResourceFact) -> bool {
+        let CResource::Composite { name, arguments } = selected.resource() else {
+            return false;
+        };
+        let description = super::super::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            super::super::ResourceFieldSchema::new(vec![]).expect("empty schema"),
+        );
+        self.population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| {
+                events.tracks_population(&description)
+                    || events.recognizes_imported_population(&description)
+            })
+    }
+
     /// Project the exact body of a folded, field-free control resource for
     /// checking its current facts. This does not publish the projection: the
     /// resource-rewrite certificate independently checks the eventual exchange.
@@ -4443,7 +5970,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
     }
 
@@ -4454,7 +5981,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
     }
 
@@ -4464,7 +5991,7 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         let (children, count) =
             self.authority_wrapper_body(selected, definition, assumptions, require_folded)?;
         // Retire the head before composing its body. Its ownership observations
@@ -4492,8 +6019,20 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
+    ) -> Result<(Vec<CResourceFact>, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
+    }
+
+    /// Describe a selected control's declared authorities for exit checking.
+    /// Unlike opening its body, this grants no ownership or count observations.
+    pub(in crate::kernel) fn authority_wrapper_descriptions(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Vec<ResourceDescription>, String> {
+        self.authority_wrapper_candidates(selected, definition, assumptions, false)
+            .map(|(_, descriptions)| descriptions)
     }
 
     /// Before a fold, require the exact body already owned. The certificate
@@ -4504,7 +6043,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Bitvector32Term, String> {
+    ) -> Result<Vec<Bitvector32Term>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
         Ok(count)
     }
@@ -4515,69 +6054,83 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
-        let (children, description) =
+    ) -> Result<(Vec<CResourceFact>, Vec<Bitvector32Term>), String> {
+        let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
-            return Err("control authority needs one pointer anchor".into());
-        };
-        let anchor = pointer.pointer();
-        let events = self
-            .population_effects
-            .creation
-            .as_ref()
-            .ok_or("control resource requires authority mode")?;
-        if !events.owns_population_authority(&description) {
-            return Err("Requires owns authority(R(p))".into());
-        }
-        let count = if anchor.block != PointerBlock::ExternalArgument
-            && anchor.offset == PointerOffsetTerm::Constant(0)
-        {
-            events
-                .observe_term(&anchor.block, description.family())
-                .map_err(|_| "Requires a current authority count")?
-        } else {
-            let imported = events
-                .observe_symbolic(&description)
-                .ok_or("Requires a current authority count")?;
-            if let Some((produce, quantity)) = imported.symbolic_delta {
-                if produce {
-                    Bitvector32Term::add(imported.entry_count, quantity)
-                } else {
-                    Bitvector32Term::subtract(imported.entry_count, quantity)
-                }
-            } else {
-                match imported.delta.cmp(&0) {
-                    std::cmp::Ordering::Equal => imported.entry_count,
-                    std::cmp::Ordering::Greater => Bitvector32Term::add(
-                        imported.entry_count,
-                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
-                    ),
-                    std::cmp::Ordering::Less => Bitvector32Term::subtract(
-                        imported.entry_count,
-                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
-                    ),
-                }
+        let mut counts = Vec::with_capacity(descriptions.len());
+        for description in descriptions {
+            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                return Err("control authority needs one pointer anchor".into());
+            };
+            let anchor = pointer.pointer();
+            let events = self
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("control resource requires authority mode")?;
+            if !events.owns_population_authority(&description) {
+                return Err("Requires owns authority(R(p))".into());
             }
-        };
-        Ok((children, count))
+            let count = if anchor.block != PointerBlock::ExternalArgument
+                && anchor.offset == PointerOffsetTerm::Constant(0)
+            {
+                events
+                    .observe_term(&anchor.block, description.family())
+                    .map_err(|_| "Requires a current authority count")?
+            } else {
+                let imported = events
+                    .observe_symbolic(&description)
+                    .ok_or("Requires a current authority count")?;
+                if let Some((produce, quantity)) = imported.symbolic_delta {
+                    if produce {
+                        Bitvector32Term::add(imported.entry_count, quantity)
+                    } else {
+                        Bitvector32Term::subtract(imported.entry_count, quantity)
+                    }
+                } else {
+                    match imported.delta.cmp(&0) {
+                        std::cmp::Ordering::Equal => imported.entry_count,
+                        std::cmp::Ordering::Greater => Bitvector32Term::add(
+                            imported.entry_count,
+                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                        ),
+                        std::cmp::Ordering::Less => Bitvector32Term::subtract(
+                            imported.entry_count,
+                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                        ),
+                    }
+                }
+            };
+            counts.push(count);
+        }
+        Ok((children, counts))
     }
 
     /// A standalone helper assumes a folded control from its caller. Only the
-    /// checked body of that exact owned wrapper may seed one opaque population
-    /// input; no direct authority or creator right is manufactured here.
+    /// checked body of that exact owned wrapper may seed its opaque population
+    /// inputs; no direct authority or creator right is manufactured here.
     pub(crate) fn import_opaque_control_wrapper(
         &self,
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
+        wildcard_members: &std::collections::BTreeMap<
+            super::super::ResourceDescription,
+            Vec<CResourceFact>,
+        >,
     ) -> Result<Self, String> {
         let events = self
             .population_effects
             .creation
             .as_ref()
             .ok_or("opaque control requires authority mode")?
-            .import_checked_control_wrapper(self, selected, definition, assumptions)?;
+            .import_checked_control_wrapper_with_members(
+                self,
+                selected,
+                definition,
+                assumptions,
+                wildcard_members,
+            )?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)
@@ -4591,96 +6144,104 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceDescription, Option<Bitvector32Term>), String> {
+    ) -> Result<Vec<(ResourceDescription, Option<Bitvector32Term>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
             return Err("Requires the declared owned control resource".into());
         }
-        let (children, description) =
+        let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
-        let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
-            return Err("control authority needs one pointer anchor".into());
-        };
-        let anchor = anchor_value.pointer().clone();
-        let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
-            return Err("Requires owns control resource".into());
-        };
-        if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
-            return Err("control and authority need the same pointer argument".into());
-        }
-        let parameter = definition.parameters()[0].name();
-        let memory_cells = children
-            .iter()
-            .filter_map(CResourceFact::memory_own_range)
-            .collect::<Vec<_>>();
-        let allocations = children
-            .iter()
-            .filter_map(CResourceFact::allocation)
-            .collect::<Vec<_>>();
-        let owns_counter = memory_cells.iter().any(|range| {
-            range.base() == &anchor
-                && range.start().as_const() == Some(0)
-                && range.end().as_const().is_some_and(|end| {
-                    end.checked_mul(range.element_width())
-                        .is_some_and(|bytes| bytes >= 4)
-                })
-        });
-        if children.len() != 1 + memory_cells.len() + allocations.len()
-            || allocations.len() > 1
-            || allocations.iter().any(|(base, _)| *base != &anchor)
-        {
-            return Err("control must own exact memory, allocation, and authority".into());
-        }
-        let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
-        let is_counter_load = |expression: &SpecExpression| {
-            let SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
-                pointer,
-                value_type: CType::Int32,
-            } = expression
-            else {
-                return false;
+        let mut components = Vec::with_capacity(descriptions.len());
+        for description in &descriptions {
+            let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
+                return Err("control authority needs one pointer anchor".into());
             };
-            match pointer.as_ref() {
-                // The first int32 field of a struct (for example `obj->refs`)
-                // lowers to a load at the struct base, not an array offset.
-                direct if is_parameter(direct) => true,
-                SpecExpression::PointerOffset {
-                    pointer,
-                    elements,
-                    byte_width: 4,
-                } => {
-                    is_parameter(pointer)
-                        && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
-                }
-                _ => false,
+            let anchor = anchor_value.pointer().clone();
+            let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
+                return Err("Requires owns control resource".into());
+            };
+            if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
+                return Err("control and authority need the same pointer argument".into());
             }
-        };
-        let is_population_count = |expression: &SpecExpression| {
-            matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
+            let parameter = definition.parameters()[0].name();
+            let memory_cells = children
+                .iter()
+                .filter_map(CResourceFact::memory_own_range)
+                .collect::<Vec<_>>();
+            let allocations = children
+                .iter()
+                .filter_map(CResourceFact::allocation)
+                .collect::<Vec<_>>();
+            let owns_counter = memory_cells.iter().any(|range| {
+                range.base() == &anchor
+                    && range.start().as_const() == Some(0)
+                    && range.end().as_const().is_some_and(|end| {
+                        end.checked_mul(range.element_width())
+                            .is_some_and(|bytes| bytes >= 4)
+                    })
+            });
+            if children.len() != descriptions.len() + memory_cells.len() + allocations.len()
+                || allocations.len() > 1
+                || allocations.iter().any(|(base, _)| *base != &anchor)
+            {
+                return Err("control must own exact memory, allocation, and authority".into());
+            }
+            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
+            let is_counter_load = |expression: &SpecExpression| {
+                let SpecExpression::MemoryLoad {
+                    memory: SpecMemory::Current,
+                    pointer,
+                    value_type: CType::Int32,
+                } = expression
+                else {
+                    return false;
+                };
+                match pointer.as_ref() {
+                    // The first int32 field of a struct (for example `obj->refs`)
+                    // lowers to a load at the struct base, not an array offset.
+                    direct if is_parameter(direct) => true,
+                    SpecExpression::PointerOffset {
+                        pointer,
+                        elements,
+                        byte_width: 4,
+                    } => {
+                        is_parameter(pointer)
+                            && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+                    }
+                    _ => false,
+                }
+            };
+            let is_population_count = |expression: &SpecExpression| {
+                matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
                 if name == description.family()
-                    && matches!(arguments.as_slice(), [Some(argument)] if is_parameter(argument)))
-        };
-        let exact_count_fact = definition.facts().iter().any(|fact| {
-            matches!(fact, SpecProposition::Comparison {
+                    && arguments.len() == description.population_arity().unwrap_or(1)
+                    && arguments.first().is_some_and(|arg| arg.as_ref().is_some_and(is_parameter))
+                    && arguments[1..].iter().all(Option::is_none))
+            };
+            let exact_count_fact = definition.facts().iter().any(|fact| {
+                matches!(fact, SpecProposition::Comparison {
             left,
             operator: CComparisonOperator::Equal,
             right,
         } if (is_counter_load(left) && is_population_count(right))
             || (is_population_count(left) && is_counter_load(right)))
-        });
-        if !exact_count_fact {
-            return Ok((description, None));
+            });
+            if !exact_count_fact {
+                components.push((description.clone(), None));
+                continue;
+            }
+            if !owns_counter {
+                return Err("coupled control must own its exact counter cell".into());
+            }
+            components.push((
+                description.clone(),
+                Some(Bitvector32Term::MemoryLoad(
+                    intern_c_memory_ref(&self.memory),
+                    Box::new(anchor.clone()),
+                    LoadKind::Bits32,
+                )),
+            ));
         }
-        if !owns_counter {
-            return Err("coupled control must own its exact counter cell".into());
-        }
-        Ok((
-            description,
-            Some(Bitvector32Term::MemoryLoad(
-                intern_c_memory_ref(&self.memory),
-                Box::new(anchor.clone()),
-            )),
-        ))
+        Ok(components)
     }
 
     fn authority_wrapper_candidates(
@@ -4689,7 +6250,7 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, ResourceDescription), String> {
+    ) -> Result<(Vec<CResourceFact>, Vec<ResourceDescription>), String> {
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
         else {
             return Err("Requires owns control resource".into());
@@ -4727,7 +6288,8 @@ impl CState {
             );
         }
         let mut children = Vec::with_capacity(definition.contains().len());
-        let mut authority = None;
+        let mut authorities = Vec::new();
+        let mut seen_authorities = std::collections::BTreeSet::new();
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in definition.contains() {
             if spec.access() != super::super::CResourceAccessMode::Own
@@ -4739,8 +6301,10 @@ impl CState {
             }
             let child = match spec.term() {
                 super::super::CResourceTerm::PopulationAuthority { .. } => {
-                    if authority.is_some() {
-                        return Err("control body requires one authority".into());
+                    if authorities.len() == 2 {
+                        return Err(
+                            "control body currently supports at most two authorities".into()
+                        );
                     }
                     super::super::functions::evaluate_population_authority_candidate(
                         &evaluation,
@@ -4776,12 +6340,23 @@ impl CState {
                 }
                 _ => {
                     return Err(
-                        "control body supports owned memory, allocation, and one authority".into(),
+                        "control body supports owned memory, allocation, and authorities".into(),
                     );
                 }
             };
             if let CResource::PopulationAuthority(description) = child.resource() {
-                authority = Some(description.clone());
+                if !seen_authorities.insert(description.clone()) {
+                    return Err("control body repeats a population authority".into());
+                }
+                if authorities
+                    .first()
+                    .is_some_and(|first: &ResourceDescription| {
+                        first.arguments() != description.arguments()
+                    })
+                {
+                    return Err("control authorities need the same pointer anchor".into());
+                }
+                authorities.push(description.clone());
             }
             children.push(child);
         }
@@ -4810,10 +6385,10 @@ impl CState {
                 None => format!("Requires the owned authority control body: missing {kind}"),
             });
         }
-        Ok((
-            children,
-            authority.ok_or("control body requires one authority")?,
-        ))
+        if authorities.is_empty() {
+            return Err("control body requires population authority".into());
+        }
+        Ok((children, authorities))
     }
 
     #[cfg(test)]
@@ -4857,29 +6432,15 @@ impl CState {
             .ok_or("authority mode has no creation history")?;
         let imported_retirement = !establish
             && anchor.block == PointerBlock::ExternalArgument
-            && events
-                .observe_symbolic(description)
-                .is_some_and(|symbolic| {
-                    symbolic.entry_owned_members == 1
-                        && symbolic.delta == -1
-                        && super::super::quantity_condition_holds(
-                            assumptions,
-                            ConditionTerm::Bitvector32Equal(
-                                Box::new(symbolic.entry_count),
-                                Box::new(Bitvector32Term::Constant(1)),
-                            ),
-                        )
-                });
-        if !establish
-            && anchor.block == PointerBlock::ExternalArgument
-            && events.observe_symbolic(description).is_some()
-            && !imported_retirement
-        {
-            return Err(format!(
-                "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
-                description.family(),
-                description.family(),
-            ));
+            && self
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| events.recognizes_imported_population(description));
+        if imported_retirement {
+            self.population_effects.creation.as_ref().expect("imported population")
+                .check_imported_retirement(description, assumptions)
+                .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
         }
         if !imported_retirement
             && (anchor.offset != PointerOffsetTerm::Constant(0)
@@ -4935,6 +6496,14 @@ impl CState {
         else {
             return Err("Requires owns R(p)".into());
         };
+        if let Some(value) = quantity.as_const()
+            && (value as i32) < 0
+        {
+            return Err(format!(
+                "Requires 0 <= {} (resource quantity)",
+                value as i32
+            ));
+        }
         let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()
@@ -4942,28 +6511,32 @@ impl CState {
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
+            || definition.facts_claim_liveness
             || !definition.children.is_empty()
-            || !definition.facts.is_empty()
             || definition
                 .instance_schema
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
             || definition.contains().iter().any(|spec| {
-                !matches!(spec.term(), super::super::CResourceTerm::Memory(_))
-                    || spec.access() != super::super::CResourceAccessMode::Own
+                !matches!(
+                    spec.term(),
+                    super::super::CResourceTerm::Memory(_)
+                        | super::super::CResourceTerm::Composite { .. }
+                ) || spec.access() != super::super::CResourceAccessMode::Own
                     || spec.quantity() != &super::super::CResourceQuantity::One
                     || spec.guard().is_some()
                     || !spec.resource_arguments().is_empty()
             })
         {
-            return Err("member exchange requires a field-free private owned-memory body".into());
+            return Err("member exchange requires a field-free private body of owned memory or declared resources".into());
         }
         let description = super::super::ResourceDescription::new(
             name.clone(),
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        else {
             return Err("Requires an exact pointer-anchored resource R(p)".into());
         };
         let anchor = pointer.pointer();
@@ -4990,7 +6563,20 @@ impl CState {
         {
             return Err("Requires live base storage for R(p)".into());
         }
-        let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+        let governing = self
+            .population_effects
+            .creation
+            .as_ref()
+            .and_then(|events| events.governing_authority(&description))
+            .ok_or_else(|| {
+                format!(
+                    "Requires owns authority({name}(anchor, {}))",
+                    std::iter::repeat_n("_", arguments.len().saturating_sub(1))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
@@ -5002,13 +6588,14 @@ impl CState {
             .creation
             .as_ref()
             .ok_or("authority mode has no creation history")?;
-        if batch && !definition.contains().is_empty() {
+        if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
             return Err("a quantified member needs an empty private body".into());
         }
         let body = if definition.contains().is_empty() {
             Vec::new()
         } else {
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let expanded = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
@@ -5019,11 +6606,19 @@ impl CState {
             .ok_or("cannot instantiate the member's private body")?;
             expanded.facts().to_vec()
         };
-        if body.iter().any(|fact| fact.memory_own_range().is_none()) {
-            return Err("member body must contain only owned memory".into());
-        }
         for child in &body {
-            let range = child.memory_own_range().expect("body shape checked above");
+            let Some(range) = child.memory_own_range() else {
+                if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                    && quantity.as_const() == Some(1)
+                {
+                    // Transfer the folded child; do not expose its contents or
+                    // change its population membership.
+                    continue;
+                }
+                return Err(
+                    "member body must contain owned memory or owned declared resources".into(),
+                );
+            };
             let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
             else {
                 return Err("member private memory needs concrete bounds".into());
@@ -5038,13 +6633,34 @@ impl CState {
             let base = range
                 .base()
                 .offset_by_elements(range.start().clone(), range.element_width());
-            if !imported_member_exchange && !self.memory.access_in_bounds(&base, bytes) {
+            if !imported_member_exchange
+                && !self.memory.access_in_bounds(&base, bytes)
+                && !assumptions.proves_memory_loadable_for_memory_resolution(
+                    &self.memory,
+                    &base,
+                    &Bitvector32Term::Constant(bytes),
+                )
+            {
                 return Err("member private memory exceeds live storage".into());
             }
             if let Some(ledger) = self.loan_ledger() {
                 ledger
                     .permits_memory_access_with_assumptions(range, assumptions)
                     .map_err(|_| "member private memory has an active borrow")?;
+            }
+        }
+        if produce && !definition.facts().is_empty() {
+            let instantiated = crate::kernel::functions::instantiate_private_member_body_facts(
+                selected,
+                definition,
+                &self.memory,
+                assumptions,
+            )
+            .ok_or("Requires ownership of every cell read by member body facts")?;
+            for (index, fact) in instantiated.declared {
+                if !assumptions.proves_exact(&fact) {
+                    return Err(format!("Requires member body fact #{index}"));
+                }
             }
         }
         let resources = if produce {
@@ -5067,19 +6683,78 @@ impl CState {
                 .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
                 .map_err(|error| format!("member body ownership refused: {error:?}"))?
         };
-        let (history, evidence) = events
-            .checked_member_exchange_quantity(
+        let exchange = if definition.has_fixed_exclusive_memory() {
+            events.checked_exclusive_member_exchange_quantity(
                 &anchor.block,
                 &description,
                 produce,
                 quantity,
                 assumptions,
             )
-            .map_err(|error| format!("member change refused: {error:?}"))?;
+        } else {
+            events.checked_member_exchange_quantity(
+                &anchor.block,
+                &description,
+                produce,
+                quantity,
+                assumptions,
+            )
+        };
+        let (history, evidence) = exchange
+            .map_err(|error| {
+                if produce && governing.population_arity().is_some()
+                    && events.observe_symbolic(&governing).is_some()
+                    && matches!(error, super::super::population_authority::c_creation::CreationRefusal::InvalidQuantity)
+                {
+                    format!("Requires defined(count({name}({}, {})) + 1)", definition.parameters().first().map_or("anchor", |parameter| parameter.name()),
+                        std::iter::repeat_n("_", arguments.len() - 1).collect::<Vec<_>>().join(", "))
+                } else { format!("member change refused: {error:?}") }
+            })?;
         let mut next = self.clone();
         next.resources = resources;
         Arc::make_mut(&mut next.population_effects).creation = Some(history);
         Ok((next, evidence))
+    }
+
+    /// Named ownership remains in the resource context; the authority ledger
+    /// records only its birth or consumption. Opening a body is a different
+    /// operation and does not use this lifecycle exchange.
+    pub(in crate::kernel) fn record_instance_population_exchange(
+        &mut self,
+        before: &CState,
+        instance: &super::super::ResourceInstance,
+        produce: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<(), String> {
+        let Some(events) = &before.population_effects.creation else {
+            return Ok(());
+        };
+        let description = super::super::ResourceDescription::from_instance(instance);
+        let history = if events.tracks_population(&description) {
+            let governing = events
+                .governing_authority(&description)
+                .ok_or("Requires a matching population authority")?;
+            let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
+            if !before.resources.satisfies_fact(&authority, assumptions) {
+                return Err(format!("Requires owns authority({}(...))", instance.name()));
+            }
+            events
+                .checked_instance_exchange(
+                    &super::super::ResourceReference::from_instance(instance),
+                    produce,
+                )
+                .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+        } else if produce {
+            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            else {
+                return Ok(());
+            };
+            events.member_created(&pointer.pointer().block, description.family())
+        } else {
+            return Ok(());
+        };
+        Arc::make_mut(&mut self.population_effects).creation = Some(history);
+        Ok(())
     }
 
     pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: PointerBlock) {
@@ -5730,6 +7405,28 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
+thread_local! {
+    /// Where the argument copied into each by-value aggregate parameter's
+    /// frame block arrived. The callee's copy and the caller's argument are
+    /// two objects; a diagnostic reads this to name the second. Nothing
+    /// that decides a proof reads it.
+    static AGGREGATE_ARGUMENT_SOURCES: std::cell::RefCell<BTreeMap<PointerBlock, Pointer>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+/// Records that the aggregate parameter stored in `slot` was copied from
+/// `source`. One entry per parameter bound; a later binding of the same
+/// frame block replaces it.
+pub(crate) fn register_aggregate_argument_source(slot: &PointerBlock, source: &Pointer) {
+    AGGREGATE_ARGUMENT_SOURCES.with(|sources| {
+        sources.borrow_mut().insert(slot.clone(), source.clone());
+    });
+}
+
+pub(crate) fn registered_aggregate_argument_source(slot: &PointerBlock) -> Option<Pointer> {
+    AGGREGATE_ARGUMENT_SOURCES.with(|sources| sources.borrow().get(slot).cloned())
+}
+
 pub(crate) fn register_block_alignment(block: &PointerBlock, alignment: u32) {
     if alignment < 2 {
         return;
@@ -5932,7 +7629,7 @@ mod contract_retirement_tests {
         heap.zeroed_allocations.insert(unrelated.clone());
         memory = memory.store_with_context(aliases[0].clone(), int32(9), &assumptions);
         memory = memory.store(unrelated.clone(), int32(11));
-        assert!(memory.has_initialized_cell_at(&aliases[0], 4));
+        assert!(memory.has_initialized_bytes_at(&aliases[0], 4));
         let retired = memory.retire_contract_heap_allocation_claim(
             &base,
             &Bitvector32Term::Constant(4),
@@ -5946,7 +7643,7 @@ mod contract_retirement_tests {
         }
         assert!(retired.heap.zeroed_allocations.contains(&unrelated));
         assert_eq!(retired.known_value(&aliases[0]), None);
-        assert!(!retired.has_initialized_cell_at(&aliases[0], 4));
+        assert!(!retired.has_initialized_bytes_at(&aliases[0], 4));
         assert_eq!(retired.known_value(&unrelated), Some(int32(11)));
     }
 }
@@ -6035,30 +7732,19 @@ mod hunt_investigation_join_tests {
 }
 
 #[cfg(test)]
-mod hunt_investigation_join_dspelling_tests {
+mod join_allocation_spelling_tests {
     use super::*;
 
-    /// Investigation repro (bug hunt phase 2b): `with_interface_memory_havoc_preserving_loans`
-    /// unions `live_allocations` keyed by pointer spelling, so one
-    /// allocation recorded live by arm A under spelling P and by arm B
-    /// through its proven-equal spelling Q joins as TWO live entries with
-    /// no record of their equality. A free through each spelling then both
-    /// succeed without any structure about their equal bases.
-    #[test]
-    fn hunt_investigation_join_carries_two_live_spellings_of_one_allocation() {
-        let p = Pointer {
-            block: PointerBlock::Heap(924_001),
+    fn heap_base(identity: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::Heap(identity),
             offset: PointerOffsetTerm::Constant(0),
-        };
-        let q = Pointer {
-            block: PointerBlock::Heap(924_005),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
-            true,
-        ));
-        // Arm A holds the allocation live under spelling p; arm B under q.
+        }
+    }
+
+    /// Each arm holds its allocation live under its own spelling, so the
+    /// join unions two live entries.
+    fn joined(p: &Pointer, q: &Pointer) -> CMemory {
         let arm_a = CMemory::new()
             .with_block(p.block.clone(), 8)
             .with_heap_allocation_claim(p.clone(), 8)
@@ -6077,15 +7763,426 @@ mod hunt_investigation_join_dspelling_tests {
                 None,
             )
             .expect("the join runs");
-        assert!(joined.heap.live_allocations.contains_key(&p));
-        assert!(joined.heap.live_allocations.contains_key(&q));
-        // A free through each equal spelling is accepted as a plain C free.
-        let once = joined
+        assert!(joined.heap.live_allocations.contains_key(p));
+        assert!(joined.heap.live_allocations.contains_key(q));
+        joined
+    }
+
+    /// `with_interface_memory_havoc_preserving_loans` keys `live_allocations`
+    /// by pointer spelling, so one allocation the arms spell `p` and `q`
+    /// joins as two live entries. Where `p == q` is known, a free through
+    /// either spelling retires both, and the other spelling cannot be freed
+    /// or reported live afterwards.
+    #[test]
+    fn join_of_two_spellings_of_one_allocation_frees_once() {
+        let p = heap_base(924_001);
+        let q = Pointer {
+            block: PointerBlock::Symbolic(Variable(924_005)),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            true,
+        ));
+        assert!(!assumptions.is_inconsistent());
+        for (first, second) in [(&p, &q), (&q, &p)] {
+            let once = joined(&p, &q)
+                .free_heap_block(first, &assumptions)
+                .expect("the first free is a real free");
+            assert!(!once.heap.live_allocations.contains_key(second));
+            assert!(!once.is_live_heap_address(second, &assumptions));
+            assert!(once.is_deallocated_heap_address(second, &assumptions));
+            assert!(once.free_heap_block(second, &assumptions).is_err());
+        }
+    }
+
+    /// Two fresh heap identities are never one allocation: their equality
+    /// is not an alias fact but a contradiction, under which the path the
+    /// frees are on does not exist.
+    #[test]
+    fn equal_fresh_heap_identities_are_a_contradiction() {
+        let p = heap_base(924_021);
+        let q = heap_base(924_025);
+        assert_eq!(
+            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            ConditionTerm::Constant(false)
+        );
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(p, q),
+            true,
+        ));
+        assert!(assumptions.is_inconsistent());
+    }
+
+    #[test]
+    fn join_of_two_different_allocations_frees_each_once() {
+        let p = heap_base(924_011);
+        let q = heap_base(924_015);
+        let assumptions = PureFactContext::new();
+        let once = joined(&p, &q)
             .free_heap_block(&p, &assumptions)
-            .expect("the first free is a real free");
+            .expect("the first allocation frees");
+        assert!(once.heap.live_allocations.contains_key(&q));
+        let twice = once
+            .free_heap_block(&q, &assumptions)
+            .expect("the second allocation frees");
+        assert!(matches!(
+            twice.free_heap_block(&q, &assumptions),
+            Err(CInvalidFree::DoubleFree)
+        ));
+    }
+}
+
+/// One cached value a forgetting transition is asked about
+/// ([`CMemory::forget_cached_values`]).
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CachedValue<'a> {
+    /// A cell, or one slot of a run.
+    Cell(&'a CValue),
+    /// A typed view of union storage, keyed by the member type it records.
+    UnionView(CType, &'a CValue),
+}
+
+impl<'a> CachedValue<'a> {
+    pub(super) fn value(self) -> &'a CValue {
+        match self {
+            Self::Cell(value) | Self::UnionView(_, value) => value,
+        }
+    }
+
+    /// The width of the access this value answers. A union view has no
+    /// value width of its own to trust, so it stands in its key type's.
+    pub(super) fn byte_width(self) -> u32 {
+        match self {
+            Self::Cell(value) => value.byte_width(),
+            Self::UnionView(c_type, _) => c_type.byte_width(),
+        }
+    }
+}
+
+/// What a forgetting transition does with one cached value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CachedValueFate {
+    /// The value is still what the memory holds there.
+    Kept,
+    /// The value goes because the write about to run replaces every one of
+    /// its bytes: it is stale, and nothing about the memory is lost.
+    Overwritten,
+    /// The value goes with its storage, whose retirement the caller records.
+    Retired,
+    /// The value goes and its bytes are no longer known.
+    Forgotten,
+}
+
+/// Which cached values a forgetting transition asks about; every other one
+/// is kept unasked.
+#[derive(Clone, Copy)]
+pub(super) enum ForgetScope<'a> {
+    /// Every cached value, for a transition that may have written anywhere.
+    Everywhere,
+    /// The values in `candidates`' blocks, except the cells inside the key
+    /// ranges `cells_kept`, which the caller has shown its rule keeps
+    /// ([`CellStore::retain_candidates_outside_by`]).
+    Candidates {
+        candidates: &'a AliasCandidates,
+        cells_kept: &'a [(Pointer, Pointer)],
+    },
+}
+
+impl<'a> ForgetScope<'a> {
+    fn candidates(candidates: &'a AliasCandidates) -> Self {
+        Self::Candidates {
+            candidates,
+            cells_kept: &[],
+        }
+    }
+}
+
+/// The whole-run answer of a rule that has no cheaper one: ask every slot.
+fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
+    (
+        SlotSet::PerSlot,
+        crate::kernel::primitives::RuleAnswer::Exact,
+    )
+}
+
+/// Collects one dropped cell for [`CMemory::record_dropped_local_cells`],
+/// except from inside a debug self-check that re-asks a retain predicate:
+/// that would record, in a debug build only, cells a release build keeps
+/// by a whole-run answer.
+fn push_dropped_initialized(dropped: &mut Vec<(Pointer, u32)>, cell: (Pointer, u32)) {
+    if !crate::instrumentation::in_uncharged_debug_check() {
+        dropped.push(cell);
+    }
+}
+
+/// The entries of automatic (`local:`) blocks in a pointer-keyed map, which
+/// are one contiguous key range: `local:` blocks are `Concrete` names sharing
+/// that prefix.
+fn local_block_entries<'a, K: BlockKeyed, V>(
+    map: &'a SnapshotMap<K, V>,
+) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
+    map.range(K::first_key_of(&PointerBlock::from("local:"))..)
+        .take_while(|(key, _)| key.key_block().starts_with("local:"))
+}
+
+#[cfg(test)]
+mod initialization_record_tests {
+    use super::*;
+
+    fn element(block: &str, index: i64) -> Pointer {
+        Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::Constant(4 * index),
+        }
+    }
+
+    fn unplaced(block: &str) -> Pointer {
+        Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(924_001)), 4),
+        }
+    }
+
+    fn written_pair(block: &str) -> CMemory {
+        CMemory::new()
+            .with_block(block, 8)
+            .store(
+                element(block, 0),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+            .store(
+                element(block, 1),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+    }
+
+    fn forgotten_pair(block: &str) -> CMemory {
+        written_pair(block).without_possible_aliasing_cells(
+            &unplaced(block),
+            4,
+            &PureFactContext::new(),
+        )
+    }
+
+    #[test]
+    fn an_unplaced_store_keeps_the_bytes_it_forgets_initialized() {
+        let block = "local:record-pair";
+        assert!(!written_pair(block).has_initialized_bytes_at(&element(block, 0), 4));
+        let forgotten = forgotten_pair(block);
+        assert!(!forgotten.has_known_cell_at(&element(block, 0)));
+        assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 8));
+        assert!(!forgotten.has_initialized_bytes_at(&element(block, 1), 8));
+        // The store the forgetting precedes only initializes more.
+        let stored = forgotten.store(unplaced(block), CValue::Int32(Bitvector32Term::Constant(7)));
+        assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
+    }
+
+    #[test]
+    fn loop_havoc_keeps_forgotten_automatic_bytes_initialized() {
+        let block = "local:record-loop";
+        let havoc = written_pair(block).with_loop_memory_havoc_preserving_loans(
+            Variable(924_002),
+            &BTreeSet::new(),
+            None,
+            None,
+        );
+        assert!(!havoc.has_known_cell_at(&element(block, 1)));
+        assert!(havoc.has_initialized_bytes_at(&element(block, 0), 8));
+    }
+
+    #[test]
+    fn a_join_keeps_only_bytes_every_arm_initialized() {
+        let block = "local:record-join";
+        // One arm forgot both values but keeps their initialization; the
+        // other still caches only the first element.
+        let forgotten = forgotten_pair(block);
+        let first_only = CMemory::new().with_block(block, 8).store(
+            element(block, 0),
+            CValue::Int32(Bitvector32Term::Constant(5)),
+        );
+        let arms = [&forgotten, &first_only];
+        let joined = forgotten
+            .clone()
+            .with_interface_memory_havoc_preserving_loans(
+                Variable(924_003),
+                &BTreeSet::new(),
+                &arms,
+                None,
+            )
+            .expect("the interface join should run");
+        assert!(joined.has_initialized_bytes_at(&element(block, 0), 4));
+        assert!(!joined.has_initialized_bytes_at(&element(block, 1), 4));
+    }
+
+    /// A fresh local block of `count` two-field structs (`stride` 8) or
+    /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
+    /// with no initialization recorded, so only the runs say it was written.
+    fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
+        let zero = CValue::Int32(Bitvector32Term::Constant(0));
+        let runs = (0..stride / 4)
+            .map(|field| CConstantRun {
+                offset: 4 * field,
+                stride,
+                count,
+                value: zero.clone(),
+            })
+            .collect::<Vec<_>>();
+        CMemory::new()
+            .with_block(block, count * stride)
+            .with_constant_runs(&element(block, 0), &runs)
+            .expect("a fresh local block takes constant runs")
+    }
+
+    fn loop_havoc(memory: CMemory, variable: u64) -> CMemory {
+        memory.with_loop_memory_havoc_preserving_loans(
+            Variable(variable),
+            &BTreeSet::new(),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn loop_havoc_keeps_a_dropped_run_initialized() {
+        for (block, stride) in [("local:record-run", 4), ("local:record-strided-run", 8)] {
+            let memory = zero_runs(block, 4, stride);
+            assert!(!memory.has_initialized_bytes_at(&element(block, 0), 4));
+            let havoc = loop_havoc(memory, 924_005);
+            assert!(!havoc.has_known_cell_at(&element(block, 3)));
+            assert!(havoc.has_initialized_bytes_at(&element(block, 0), 4 * stride));
+            assert!(!havoc.has_initialized_bytes_at(&element(block, 0), 4 * stride + 1));
+        }
+    }
+
+    #[test]
+    fn a_declared_object_makes_dropping_its_runs_one_query() {
+        // With the declaration's object recorded, a havoc dropping its runs
+        // costs the runs, not their slots, whatever the struct count.
+        let mut works = Vec::new();
+        for count in [1_000u32, 10_000, 100_000] {
+            let block = format!("local:record-declared-{count}");
+            let memory =
+                zero_runs(&block, count, 8).with_initialized_object(&element(&block, 0), count * 8);
+            let (havoc, work) =
+                crate::instrumentation::measure_deterministic_work(|| loop_havoc(memory, 924_006));
+            assert!(havoc.has_initialized_bytes_at(&element(&block, 0), count * 8));
+            works.push(work);
+        }
         assert!(
-            once.free_heap_block(&q, &assumptions).is_ok(),
-            "BUG: freeing the same allocation through its second joined spelling succeeds"
+            works.windows(2).all(|pair| pair[0] == pair[1]),
+            "dropping declared runs cost {works:?} work units"
+        );
+    }
+
+    #[test]
+    fn an_ended_lifetime_forgets_its_initialization() {
+        let block = "local:record-lifetime";
+        let forgotten = forgotten_pair(block);
+        assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 4));
+        let ended = forgotten.without_local_block(&PointerBlock::from(block));
+        assert!(!ended.has_initialized_bytes_at(&element(block, 0), 4));
+    }
+
+    #[test]
+    fn an_element_index_the_facts_bound_reads_a_covering_run() {
+        let block = "local:record-index";
+        let forgotten = forgotten_pair(block);
+        let index = Bitvector32Term::Variable(Variable(924_004));
+        let read = Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        let bounded = |high: u32| {
+            PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        index.clone(),
+                        Bitvector32Term::Constant(high),
+                    ),
+                    true,
+                )
+        };
+        assert!(forgotten.has_initialized_bytes_under(&read, 4, &bounded(1)));
+        assert!(!forgotten.has_initialized_bytes_under(&read, 4, &bounded(2)));
+        assert!(!forgotten.has_initialized_bytes_under(&read, 4, &PureFactContext::new()));
+    }
+
+    fn index_between(index: &Bitvector32Term, low: u32, high: u32) -> PureFactContext {
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(low), index.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(index.clone(), Bitvector32Term::Constant(high)),
+                true,
+            )
+    }
+
+    #[test]
+    fn cached_cells_cover_an_element_index_the_facts_bound() {
+        // Stores that still hold their values wrote their bytes: with no
+        // initialization record at all, cells covering every element the
+        // index may name cover the read, and a gap does not.
+        let block = "local:record-cells";
+        let written = written_pair(block);
+        assert!(!written.has_initialized_bytes_at(&element(block, 0), 8));
+        let index = Bitvector32Term::Variable(Variable(924_007));
+        let read = Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
+        assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
+        let gap = CMemory::new()
+            .with_block(block, 12)
+            .store(
+                element(block, 0),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+            .store(
+                element(block, 2),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            );
+        assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
+        assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
+    }
+
+    #[test]
+    fn a_covering_query_scales_with_the_cells_it_crosses() {
+        // A read bounded to two elements of an array whose every element is
+        // a cached cell costs those two cells, whatever the array's size.
+        let mut works = Vec::new();
+        for count in [64i64, 512, 4096] {
+            let block = format!("local:record-cells-{count}");
+            let mut memory =
+                CMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
+            for index in 0..count {
+                memory = memory.store(
+                    element(&block, index),
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                );
+            }
+            let index = Bitvector32Term::Variable(Variable(924_008));
+            let read = Pointer {
+                block: PointerBlock::from(block.as_str()),
+                offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+            };
+            let assumptions = index_between(&index, 7, 8);
+            let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.has_initialized_bytes_under(&read, 4, &assumptions)
+            });
+            assert!(covered);
+            works.push(work);
+        }
+        assert!(
+            works.windows(2).all(|pair| pair[0] == pair[1]),
+            "covering queries cost {works:?} work units"
         );
     }
 }

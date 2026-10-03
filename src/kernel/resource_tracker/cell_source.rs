@@ -23,7 +23,11 @@ use crate::kernel::reasoning::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MemoryDagCell {
     /// `node`'s derivation is a `Store` whose pointer is provably the loaded
-    /// one, so the load reads `value`.
+    /// one and whose value is exactly as wide as the read, so the load reads
+    /// `value` ([`write_supplies_read`]). A store that only *reaches* the
+    /// read's bytes — part of them, or more than them — stops the walk as
+    /// [`Self::Unwritten`] at the node it produced: no extraction rule turns
+    /// its value into the bytes the read returns.
     Stored {
         node: SharedCMemory,
         value: CValue,
@@ -116,6 +120,11 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     CallHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
+    CallHavocKeptRange {
+        range: CMemoryRange,
+        first: PointerInRangeEvidence,
+        last: PointerInRangeEvidence,
+    },
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
@@ -165,6 +174,11 @@ pub(in crate::kernel) enum StoreSeparatedRangeOrientation {
 /// touches only this index and the named bound premises.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum PointerInRangeEvidence {
+    ExactAlias {
+        alias: Pointer,
+        condition: ConditionTerm,
+        membership: Box<PointerInRangeEvidence>,
+    },
     /// Existing structural constant/affine membership. Retaining this cheap
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
@@ -371,6 +385,29 @@ impl MemoryDagHopJustification {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
             }
+            Self::CallHavocKeptRange { range, first, last } => {
+                let CMemoryDerivation::CallHavoc {
+                    kept_by_caller: Some(kept),
+                    ..
+                } = derivation
+                else {
+                    return false;
+                };
+                let width = range.element_width();
+                width != 0
+                    && bytes != 0
+                    && bytes.is_multiple_of(width)
+                    && kept.contains_range(range)
+                    && first.checks(pointer, range, assumptions)
+                    && last.checks(
+                        &pointer.offset_by_elements(
+                            Bitvector32Term::Constant(bytes / width - 1),
+                            width,
+                        ),
+                        range,
+                        assumptions,
+                    )
+            }
             Self::LoopHavocRanges { ranges } => {
                 let CMemoryDerivation::LoopHavoc {
                     mutable_ranges: Some(mutable_ranges),
@@ -526,11 +563,25 @@ impl MemoryDagCell {
         }
     }
 
-    /// The concrete value the lookup pins down, when it pins one down.
-    pub(in crate::kernel) fn resolved_value(&self, pointer: &Pointer) -> Option<CValue> {
+    /// The concrete value the lookup pins down for a `kind` read at
+    /// `pointer`, when it pins one down.
+    ///
+    /// A stored value starts at the read's address by construction
+    /// ([`write_supplies_read`]); it, and a cell the stopping snapshot
+    /// materialized at this exact address, answer only when the read of
+    /// `kind` returns exactly that value ([`LoadKind::reads_value`]). A value
+    /// of another width holds other bytes than the read returns, and one of
+    /// the read's width but the other signedness is another number.
+    pub(in crate::kernel) fn resolved_value(
+        &self,
+        pointer: &Pointer,
+        kind: LoadKind,
+    ) -> Option<CValue> {
         match self {
-            Self::Stored { value, .. } => Some(value.clone()),
-            Self::Unwritten { node, .. } => node.known_value(pointer),
+            Self::Stored { value, .. } => kind.reads_value(value).then(|| value.clone()),
+            Self::Unwritten { node, .. } => node
+                .known_value(pointer)
+                .filter(|value| kind.reads_value(value)),
         }
     }
 
@@ -716,6 +767,30 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        Self::for_pointer_direct(pointer, range, assumptions).or_else(|| {
+            assumptions
+                .exact_pointer_aliases(pointer)
+                .find_map(|alias| {
+                    let membership = Self::for_pointer_direct(alias, range, assumptions)?;
+                    let condition = ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
+                    crate::kernel::record_implicit_reasoning_provenance(
+                        assumptions,
+                        &Proposition::ConditionIs(condition.clone(), true),
+                    );
+                    Some(Self::ExactAlias {
+                        alias: alias.clone(),
+                        condition,
+                        membership: Box::new(membership),
+                    })
+                })
+        })
+    }
+
+    fn for_pointer_direct(
+        pointer: &Pointer,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
         if crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
             pointer,
             range,
@@ -735,12 +810,23 @@ impl PointerInRangeEvidence {
         })
     }
 
-    fn checks(
+    pub(in crate::kernel) fn checks(
         &self,
         pointer: &Pointer,
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Self::ExactAlias {
+            alias,
+            condition,
+            membership,
+        } = self
+        {
+            return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
+                && assumptions.exact_condition_value(condition) == Some(true)
+                && !matches!(membership.as_ref(), Self::ExactAlias { .. })
+                && membership.checks(alias, range, assumptions);
+        }
         let Self::Indexed {
             index: retained_index,
             lower,
@@ -884,6 +970,38 @@ fn range_structurally_covers_allocation(
     }
 }
 
+/// Whether a write of `value` at `write` supplies exactly the value a
+/// `bytes`-byte read at `pointer` returns: it starts at the read's address
+/// and is exactly as wide.
+///
+/// This is the one check every route that reads a value off the recorded
+/// history spends. A write the walk stops at only *reaches* the read when the
+/// two share a byte, and that is how a two-byte store's value was once read
+/// back as a four-byte load inside which it landed. The kernel has no rule
+/// that extracts a narrower read from a wider write or assembles a wider read
+/// from a narrower one, so anything other than an exact match pins nothing;
+/// the read is then whatever the produced snapshot holds there.
+///
+/// The walk is asked about an access width, the recorded one at the read's
+/// address, and this check decides on that width alone. The read's own kind,
+/// which a load term carries, is the second half and is
+/// [`MemoryDagCell::resolved_value`]'s: a write of the read's width but the
+/// other signedness stops the walk here and supplies nothing, because an
+/// `int8` value's term is sign-extended where a `uint8` read's is not.
+pub(in crate::kernel) fn write_supplies_read(
+    write: &Pointer,
+    value: &CValue,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    value.byte_width() == bytes
+        && (super::step_effect::write_is_at_read_address(write, pointer, assumptions)
+            || write.block == pointer.block
+                && crate::kernel::reasoning::memory_resolution::constant_byte_shift(write, pointer)
+                    == Some(0))
+}
+
 pub(in crate::kernel) fn memory_dag_cell_source(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -965,21 +1083,27 @@ fn memory_dag_cell_source_walk(
                             &evidence,
                         )
                     });
-                if let Some(super::step_effect::SeededCellEffect::Written(_, value)) = seeded {
+                let written = match (seeded, derivation.as_ref()) {
+                    (Some(super::step_effect::SeededCellEffect::Written(write, value)), _) => {
+                        Some((write, value))
+                    }
+                    (
+                        None,
+                        CMemoryDerivation::Store {
+                            pointer: write,
+                            value,
+                            ..
+                        },
+                    ) => Some((write.clone(), value.clone())),
+                    _ => None,
+                };
+                if let Some((write, value)) = written
+                    && write_supplies_read(&write, &value, pointer, bytes, assumptions)
+                {
                     return (
                         MemoryDagCell::Stored {
                             node: current,
                             value,
-                            path,
-                        },
-                        CellWalkStop::Affected,
-                    );
-                }
-                if let CMemoryDerivation::Store { value, .. } = derivation.as_ref() {
-                    return (
-                        MemoryDagCell::Stored {
-                            node: current,
-                            value: value.clone(),
                             path,
                         },
                         CellWalkStop::Affected,

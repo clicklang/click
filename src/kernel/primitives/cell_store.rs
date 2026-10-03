@@ -61,6 +61,7 @@ use super::{
     SnapshotMap, SnapshotMapChange, SnapshotSet,
 };
 use crate::kernel::primitives::Bitvector32Term;
+use crate::kernel::primitives::LoadKind;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
@@ -84,6 +85,11 @@ impl IndexIntervals {
 
     pub(crate) fn contains(&self, index: u32) -> bool {
         self.interval_of(index).is_some()
+    }
+
+    /// Whether one merged interval covers all of `[low, high)`.
+    pub(crate) fn covers_range(&self, low: u32, high: u32) -> bool {
+        low >= high || self.interval_of(low).is_some_and(|(_, end)| end >= high)
     }
 
     /// The indexes in these intervals and not in `other`'s, linear in the
@@ -255,6 +261,9 @@ pub(crate) enum RunValueMode {
     /// so two constant runs over the same slots are one run exactly when
     /// they hold one value.
     Constant(CValue),
+    /// An immutable snapshot copy. Slot i reads source_base + i * stride,
+    /// rather than its destination address. Used only for scalar elements.
+    Copy { source_base: Pointer },
 }
 
 /// `count` seeded cells at `base`, `base + width`, …: the cell at element `i`
@@ -338,6 +347,29 @@ impl CellRun {
             holes,
             ..self.clone()
         }
+    }
+
+    /// Exact source of an entire footprint supplied by this materialization
+    /// edge. This says nothing about subsequent writes or other retained runs.
+    /// The egraph is trusted kernel state; admission checks only these slots.
+    pub(crate) fn read_source(&self, pointer: &Pointer, bytes: u32) -> Option<SharedCMemory> {
+        let width = self.element_width();
+        if bytes == 0
+            || width == 0
+            || width != self.value_width()
+            || !bytes.is_multiple_of(width)
+            || !matches!(self.value_mode(), RunValueMode::Load)
+        {
+            return None;
+        }
+        for offset in (0..bytes).step_by(width as usize) {
+            crate::instrumentation::record_deterministic_work(1);
+            let index = self.slot_index(&pointer.offset_by_bytes(offset))?;
+            if self.holes().contains(index) {
+                return None;
+            }
+        }
+        Some(self.source().clone())
     }
 
     /// How the run spells each element's value.
@@ -483,8 +515,12 @@ impl CellRun {
         let pointer = self.slot_pointer(index);
         match &self.mode {
             RunValueMode::Load => {
-                let load =
-                    crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
+                let load = crate::kernel::canonical_form_of_load(
+                    self.source.clone(),
+                    pointer.clone(),
+                    LoadKind::of_type(self.element_type)
+                        .expect("memory ranges cannot contain aggregate elements"),
+                );
                 cell_run_value(&pointer, self.element_type, load)
             }
             RunValueMode::SymbolicStorage => crate::kernel::eval::symbolic_storage_cell_value(
@@ -495,6 +531,15 @@ impl CellRun {
             )
             .expect("a symbolic storage run holds only element types with a value"),
             RunValueMode::Constant(value) => value.clone(),
+            RunValueMode::Copy { source_base } => {
+                let source_pointer = source_base.offset_by_bytes(index * self.element_width);
+                let load = crate::kernel::canonical_form_of_load(
+                    self.source.clone(),
+                    source_pointer.clone(),
+                    LoadKind::of_type(self.element_type).expect("scalar snapshot element"),
+                );
+                cell_run_value(&source_pointer, self.element_type, load)
+            }
         }
     }
 
@@ -728,9 +773,11 @@ pub(crate) fn cell_run_value(
                 {
                     *variable
                 }
-                Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)
-                    .map(|(variable, _)| variable)
-                    .expect("exact function-pointer loads have canonical identities"),
+                Bitvector32Term::MemoryLoad(_, _, _) => {
+                    crate::kernel::load_variable_for_term(&load)
+                        .map(|(variable, _)| variable)
+                        .expect("exact function-pointer loads have canonical identities")
+                }
                 _ => unreachable!(
                     "symbolic function-pointer fields use raw or canonical exact loads"
                 ),
@@ -912,6 +959,15 @@ impl CellRun {
     }
 }
 
+/// The slots of one run that a whole-run retain dropped: the run (its new
+/// holes included) and the elements, live before the retain, that it made
+/// holes. A dropped slot's value is forgotten; what its bytes held is for
+/// the caller to keep or not ([`CellStore::retain_by`]).
+pub(crate) struct DroppedRunSlots {
+    pub(crate) run: CellRun,
+    pub(crate) elements: IndexIntervals,
+}
+
 /// A snapshot's cells: the concrete map and the seeded runs, in canonical
 /// form, the runs indexed by [`RunKey`] (see the module comment).
 #[derive(Clone, Default)]
@@ -991,6 +1047,44 @@ struct SlotAt<'a> {
 }
 
 impl CellStore {
+    /// Concrete cells whose canonical address lies on the region's line.
+    /// Include the bounded prefix that an eight-byte cell could overlap.
+    /// As for run slot candidates, use address ranges rather than scanning
+    /// other parameter bases that share the external-argument block.
+    pub(crate) fn concrete_region_candidates<'a>(
+        &'a self,
+        base: &Pointer,
+        bytes: u32,
+    ) -> Vec<(&'a Pointer, &'a CValue)> {
+        let (stem, start) = offset_stem_and_constant(&base.offset);
+        let low = start.saturating_sub(7);
+        let high = start.saturating_add(i64::from(bytes));
+        let at = |offset| Pointer {
+            block: base.block.clone(),
+            offset,
+        };
+        match stem {
+            None => self
+                .concrete
+                .range(at(PointerOffsetTerm::Constant(low))..at(PointerOffsetTerm::Constant(high)))
+                .collect(),
+            Some(stem) => {
+                let shifted = |shift| {
+                    at(PointerOffsetTerm::Add(
+                        Box::new(stem.clone()),
+                        Box::new(PointerOffsetTerm::Constant(shift)),
+                    ))
+                };
+                let mut result: Vec<_> = self.concrete.range(shifted(low)..shifted(high)).collect();
+                if low <= 0 && 0 < high {
+                    let key = at(stem.clone());
+                    result.extend(self.concrete.range(key.clone()..=key));
+                }
+                result
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
@@ -1607,6 +1701,25 @@ impl CellStore {
         }
     }
 
+    /// Whether the two stores hold exactly the same cells: the same pointers
+    /// with the same values, however each store represents them.
+    ///
+    /// `==` compares the concrete map and the run map, and those can differ
+    /// between two stores with one logical map: a path that wrote a run's
+    /// only slot and wrote the run's value back holds a concrete cell where
+    /// a path that never wrote it holds the live slot, because the first
+    /// path's store retired the run. A run is exactly its logical cells (the
+    /// module comment), so this is an equivalence of what a consumer reads
+    /// and nothing weaker. The work is [`Self::differing_cells`]': what the
+    /// two stores do not share.
+    pub(crate) fn same_cells_as(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        let differing = self.differing_cells(other);
+        differing.pointers.is_empty() && differing.run_slots.is_empty()
+    }
+
     /// See [`SnapshotMap::eq_relative_to`].
     pub(crate) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
         self.runs.eq_relative_to(&other.runs, &base.runs)
@@ -1692,15 +1805,15 @@ impl CellStore {
     }
 
     /// [`Self::retain`] with a whole-run answer from `run_rule`, as for
-    /// [`Self::retain_only_candidates_by`].
+    /// [`Self::retain_only_candidates_by`]. Returns the run slots it dropped.
     pub(crate) fn retain_by(
         &mut self,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         self.reset();
         self.concrete.retain(&mut keep);
-        self.retain_runs_by(None, keep, &mut run_rule);
+        self.retain_runs_by(None, keep, &mut run_rule)
     }
 
     /// [`Self::retain_candidates`] with a whole-run answer from `run_rule`,
@@ -1708,16 +1821,17 @@ impl CellStore {
     /// caller has shown accepts every concrete cell inside the key ranges
     /// `kept`: those cells are kept without being visited
     /// ([`AliasCandidates::retain_map_outside`]). Runs are asked as before.
+    /// Returns the run slots it dropped.
     pub(crate) fn retain_candidates_outside_by(
         &mut self,
         candidates: &AliasCandidates,
         kept: &[(Pointer, Pointer)],
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         self.reset();
         candidates.retain_map_outside(&mut self.concrete, kept, &mut keep);
-        self.retain_runs_by(Some(candidates), keep, &mut run_rule);
+        self.retain_runs_by(Some(candidates), keep, &mut run_rule)
     }
 
     /// The runs a retain visits: those `candidates` admits, or every run.
@@ -1740,12 +1854,13 @@ impl CellStore {
         candidates: Option<&AliasCandidates>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         if self.runs.is_empty() {
-            return;
+            return Vec::new();
         }
         let mut visited = 0usize;
         let mut updates = Vec::new();
+        let mut dropped = Vec::new();
         for (key, mut run) in self.visited_runs(candidates) {
             visited += 1;
             let (decision, answer) = run_rule(&run);
@@ -1759,23 +1874,18 @@ impl CellStore {
             let before = run.holes.clone();
             run.keep_only(decision, &mut keep, &mut visited);
             if run.holes != before {
+                // Linear in the two hole interval counts, which the walk
+                // above already paid to build.
+                dropped.push(DroppedRunSlots {
+                    elements: run.holes.difference(&before),
+                    run: run.clone(),
+                });
                 updates.push((key, run));
             }
         }
         crate::instrumentation::record_deterministic_work(visited);
         self.apply_run_updates(updates);
-    }
-
-    /// Keeps only the cells `keep` accepts among the candidates; every other
-    /// cell is kept. See [`AliasCandidates::retain_map`].
-    pub(crate) fn retain_candidates(
-        &mut self,
-        candidates: &AliasCandidates,
-        mut keep: impl FnMut(&Pointer, &CValue) -> bool,
-    ) {
-        self.reset();
-        candidates.retain_map(&mut self.concrete, &mut keep);
-        self.retain_run_slots(true, Some(candidates), keep);
+        dropped
     }
 
     /// Keeps only the candidate cells `keep` accepts, and no cell outside the
@@ -2480,7 +2590,9 @@ mod tests {
                     _ => {
                         let only = AliasCandidates::only_block(&global);
                         let keep = |pointer: &Pointer, _: &CValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % 8 == 4);
-                        store.retain_candidates(&only, keep);
+                        store.retain_candidates_outside_by(&only, &[], keep, |_| {
+                            (SlotSet::PerSlot, RuleAnswer::Exact)
+                        });
                         model.retain(|pointer, value| {
                             pointer.block != global || keep(pointer, value)
                         });
@@ -2570,6 +2682,111 @@ mod tests {
         assert!(forward_stored == backward_stored);
         assert!(forward_stored != forward);
         assert_eq!(forward_stored.differing_pointers(&backward), vec![written]);
+    }
+
+    /// `same_cells_as` is equality of the logical maps and nothing weaker:
+    /// it holds across the two representations of one set of cells, and
+    /// fails for a cell with another value, a cell one store lacks, and a
+    /// cell one store has extra.
+    #[test]
+    fn same_cells_as_compares_cells_and_not_their_representation() {
+        let global = PointerBlock::Concrete("cell-store-same-cells".to_string());
+        let seeded = run(constant(&global, 0), 4, 3, &source(6));
+        let mut store = CellStore::new();
+        let mut model = BTreeMap::new();
+        seed(&mut store, &mut model, seeded.clone());
+        let mut restored = store.clone();
+        for index in 0..3 {
+            restored.insert(
+                seeded.slot_pointer(index),
+                CValue::Int32(Bitvector32Term::Constant(index)),
+            );
+        }
+        for index in 0..3 {
+            restored.insert(seeded.slot_pointer(index), seeded.value(index));
+        }
+        // One set of cells, held as a run on one side and concretely on the
+        // other: structurally different, the same cells.
+        assert!(restored != store);
+        assert!(restored.same_cells_as(&store));
+        assert!(store.same_cells_as(&restored));
+
+        let mut other_value = restored.clone();
+        other_value.insert(
+            seeded.slot_pointer(1),
+            CValue::Int32(Bitvector32Term::Constant(41)),
+        );
+        assert!(!other_value.same_cells_as(&store));
+        assert!(!store.same_cells_as(&other_value));
+
+        let mut missing = restored.clone();
+        missing.remove(&seeded.slot_pointer(2));
+        assert!(!missing.same_cells_as(&store));
+        assert!(!store.same_cells_as(&missing));
+
+        let mut extra = restored.clone();
+        extra.insert(
+            constant(&global, 400),
+            CValue::Int32(Bitvector32Term::Constant(0)),
+        );
+        assert!(!extra.same_cells_as(&store));
+        assert!(!store.same_cells_as(&extra));
+    }
+
+    /// `CMemory::same_contents_as` looks through the cell cache's layout and
+    /// through nothing else. A block that is read-only on one side, a block
+    /// one side lacks, an ended automatic object, and a forget mark (a
+    /// snapshot identity: the marked memory is not known to be the one it
+    /// forgot from) each keep two memories with the same cells apart.
+    #[test]
+    fn same_contents_as_keeps_every_other_component_exact() {
+        let block = "cell-store-same-contents";
+        let global = PointerBlock::Concrete(block.to_string());
+        let seeded = run(constant(&global, 0), 4, 2, &source(7));
+        let mut cells = CellStore::new();
+        let mut model = BTreeMap::new();
+        seed(&mut cells, &mut model, seeded.clone());
+        let mut concrete = cells.clone();
+        // Writing every slot retires the run, so writing the run's values
+        // back leaves them as concrete cells.
+        for index in 0..2 {
+            concrete.insert(
+                seeded.slot_pointer(index),
+                CValue::Int32(Bitvector32Term::Constant(9)),
+            );
+        }
+        for index in 0..2 {
+            concrete.insert(seeded.slot_pointer(index), seeded.value(index));
+        }
+        let with_cells = |cells: &CellStore| {
+            let mut memory = CMemory::new().with_block(block, 8);
+            memory.cells = std::sync::Arc::new(cells.clone());
+            memory
+        };
+        let as_run = with_cells(&cells);
+        let as_cells = with_cells(&concrete);
+        assert!(as_run != as_cells);
+        assert!(as_run.same_contents_as(&as_cells));
+        assert!(as_cells.same_contents_as(&as_run));
+
+        let mut read_only = CMemory::new().with_read_only_block(block, 8);
+        read_only.cells = std::sync::Arc::new(concrete.clone());
+        assert!(!as_run.same_contents_as(&read_only));
+
+        let mut another_block = as_cells.clone().with_block("cell-store-same-contents-2", 4);
+        another_block.cells = std::sync::Arc::new(concrete.clone());
+        assert!(!as_run.same_contents_as(&another_block));
+
+        let mut ended = as_cells.clone();
+        std::sync::Arc::make_mut(&mut ended.forgotten)
+            .ended_local_blocks
+            .insert(PointerBlock::Concrete("local:lifetime:0:x".to_string()));
+        assert!(!as_run.same_contents_as(&ended));
+
+        let mut forgot = as_cells.clone();
+        forgot.mark_forgotten_from(&source(8));
+        assert!(!as_run.same_contents_as(&forgot));
+        assert!(!forgot.same_contents_as(&as_run));
     }
 
     /// A run whose every slot is written is retired, and a store holding a

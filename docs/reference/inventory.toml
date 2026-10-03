@@ -543,10 +543,6 @@ id = "language.word.apply"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.apply_loop_summary"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.as"
 path = "reference/language/grammar.md#word-index"
 
@@ -560,10 +556,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.auto"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.bounded_execute"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -587,19 +579,11 @@ id = "language.word.c"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.calculate"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.cases"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.close_invariants"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.conjunction"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -631,10 +615,6 @@ id = "language.word.count"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.counted"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.decreases"
 path = "reference/language/grammar.md#word-index"
 
@@ -644,10 +624,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.diverges"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.double_negation"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -676,22 +652,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.execute"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_else_step"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_rest"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_step"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_then_step"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -942,19 +902,15 @@ id = "language.word.struct"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.summarize"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.symbolic_execute"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.target"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.theorem"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
+id = "language.word.tactic"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -979,10 +935,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.using"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.vacuous"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1065,6 +1017,10 @@ path = "reference/language/index.md#file-shape"
 [[item]]
 id = "language.theorem"
 path = "reference/language/index.md#file-shape"
+
+[[item]]
+id = "language.tactic"
+path = "reference/language/index.md#user-defined-tactics"
 
 [[item]]
 id = "language.decreases"
@@ -1201,14 +1157,6 @@ id = "language.predicate-call"
 path = "reference/language/index.md#predicates"
 
 [[item]]
-id = "language.modifies"
-path = "reference/language/index.md#write-footprints"
-
-[[item]]
-id = "language.preserves"
-path = "reference/language/index.md#write-footprints"
-
-[[item]]
 id = "language.effect"
 path = "reference/language/index.md#write-footprints"
 
@@ -1299,6 +1247,10 @@ path = "reference/language/grammar.md#grammar-and-operators"
 [[item]]
 id = "tactic.mark"
 path = "reference/tactics/index.md#execution"
+
+[[item]]
+id = "tactic.tactic"
+path = "reference/tactics/index.md#resources-and-snapshots"
 
 [[item]]
 id = "tactic.step"
@@ -1462,54 +1414,6 @@ id = "tactic.close_invariants"
 path = "reference/tactics/index.md#resources-and-snapshots"
 
 [[item]]
-id = "tactic.conjunction"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.apply_loop_summary"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.summarize"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_rest"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.symbolic_execute"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_then_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_else_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.bounded_execute"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.calculate"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.double_negation"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.vacuous"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
 id = "tactic-form.mark"
 path = "reference/tactics/index.md#execution"
 [[item]]
@@ -1524,6 +1428,10 @@ path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.step-call"
 path = "reference/tactics/index.md#execution"
+
+[[item]]
+id = "tactic-form.user-tactic"
+path = "reference/tactics/index.md#resources-and-snapshots"
 [[item]]
 id = "tactic-form.execute"
 path = "reference/tactics/index.md#execution"
@@ -2242,6 +2150,58 @@ id = "stdlib.theorem.int32_positive_predecessor_strictly_decreases"
 path = "reference/library/index.md#int32_positive_predecessor_strictly_decreases"
 
 [[item]]
+id = "stdlib.theorem.uint32_positive_predecessor_strictly_decreases"
+path = "reference/library/index.md#uint32_positive_predecessor_strictly_decreases"
+
+[[item]]
+id = "stdlib.theorem.uint32_increment_upper_bound"
+path = "reference/library/index.md#uint32_increment_upper_bound"
+
+[[item]]
+id = "stdlib.theorem.uint32_increment_strictly_increases"
+path = "reference/library/index.md#uint32_increment_strictly_increases"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_implies_positive_difference"
+path = "reference/library/index.md#uint32_lt_implies_positive_difference"
+
+[[item]]
+id = "stdlib.theorem.uint32_difference_decreases_after_increment"
+path = "reference/library/index.md#uint32_difference_decreases_after_increment"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_le_transitive"
+path = "reference/library/index.md#uint32_lt_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_lt_transitive"
+path = "reference/library/index.md#uint32_le_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_transitive"
+path = "reference/library/index.md#uint32_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_transitive"
+path = "reference/library/index.md#uint32_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_gt_implies_reversed_lt"
+path = "reference/library/index.md#uint32_gt_implies_reversed_lt"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_implies_reversed_gt"
+path = "reference/library/index.md#uint32_lt_implies_reversed_gt"
+
+[[item]]
+id = "stdlib.theorem.uint32_ge_implies_reversed_le"
+path = "reference/library/index.md#uint32_ge_implies_reversed_le"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_implies_reversed_ge"
+path = "reference/library/index.md#uint32_le_implies_reversed_ge"
+
+[[item]]
 id = "stdlib.theorem.int32_nonnegative_predecessor_upper_bound"
 path = "reference/library/index.md#int32_nonnegative_predecessor_upper_bound"
 
@@ -2460,6 +2420,10 @@ path = "reference/library/index.md#cstr_len_has_prefix"
 [[item]]
 id = "stdlib.theorem.cstr_len_has_terminator"
 path = "reference/library/index.md#cstr_len_has_terminator"
+
+[[item]]
+id = "stdlib.extern.__click_constant_p_unknown"
+path = "reference/library/index.md#__click_constant_p_unknown"
 
 [[item]]
 id = "stdlib.extern.memcpy"
@@ -3169,6 +3133,10 @@ path = "reference/cli/import.md#locations-and-trust-boundary"
 [[item]]
 id = "stdlib.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
+
+[[item]]
+id = "stdlib.theorem.int32_equal_of_to_integer"
+path = "reference/library/index.md#int32_equal_of_to_integer"
 
 [[item]]
 id = "stdlib.theorem.int32_less_equal_to_integer"

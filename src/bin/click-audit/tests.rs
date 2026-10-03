@@ -668,7 +668,7 @@ fn markdown_inventory_and_expansion_use_container_coordinates() {
 fn cpp_mdtest_audit_inventories_imported_semantics() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
     let source = load_audit_source(&path).expect("prepare C++ mdtest for audit");
-    assert!(matches!(source.inputs, CInput::PreparedCpp(_)));
+    assert!(matches!(source.inputs, CInput::PreparedProgram(_)));
     assert!(source.project.is_some());
     let sites = inventory_sites(&[path]).expect("inventory C++ smart proof sites");
     assert!(sites.iter().any(|site| site.claim == "caller.ensures_0"));
@@ -1246,4 +1246,51 @@ fn an_unfold_bound_scalar_field_audits_every_site() {
             );
         }
     }
+}
+
+#[test]
+fn sidecar_importing_a_sibling_project_loads_under_the_verify_root() {
+    // `examples/rbtree-insert` imports `../rbtree-model/rbtree_model.click`.
+    // `click verify` widens a lone sidecar's project root to cover its
+    // imports; audit loaded the project at the sidecar's own directory and
+    // refused the import as outside the project root.
+    let directory =
+        std::env::temp_dir().join(format!("click-audit-sibling-import-{}", std::process::id()));
+    if directory.exists() {
+        fs::remove_dir_all(&directory).unwrap();
+    }
+    fs::create_dir_all(directory.join("model")).unwrap();
+    fs::create_dir_all(directory.join("entry")).unwrap();
+    fs::write(
+        directory.join("model/model.click"),
+        "function twice(x: int) -> int {\n    x + x\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("entry/double.c"),
+        "int32 double_it(int32 x) {\n    return x + x;\n}\n",
+    )
+    .unwrap();
+    let click_path = directory.join("entry/double.click");
+    fs::write(
+        &click_path,
+        r#"import "../model/model.click";
+
+verifying "double.c";
+
+int32 double_it(int32 x) {
+    requires x >= 0;
+    requires x < 1000;
+    ensures result == x + x;
+} by {
+    execute();
+    simp();
+}
+"#,
+    )
+    .unwrap();
+    let sites = inventory_sites(std::slice::from_ref(&click_path))
+        .expect("the sidecar should load under the root `click verify` selects");
+    assert!(sites.iter().any(|site| site.tactic_name == "simp"));
+    fs::remove_dir_all(directory).unwrap();
 }

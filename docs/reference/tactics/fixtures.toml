@@ -38,6 +38,11 @@ path = "mdtests/c_call_binder_transport.md"
 needle = "step(increment(state), { first: c });"
 
 [[form]]
+id = "user-tactic"
+path = "mdtests/user_tactic_reshapes_owned_resources.md"
+needle = "divide(p) { x: x };"
+
+[[form]]
 id = "execute"
 path = "mdtests/tactic_execute.md"
 needle = "execute();"

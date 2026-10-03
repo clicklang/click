@@ -17,5 +17,5 @@ int32 identity(int32 x) {
 ```
 
 ```expect
-fail: let binding `byte` evaluated
+fail: let binding `byte` evaluated to `300` of type `int32`, which does not match the declared type `uint8`
 ```

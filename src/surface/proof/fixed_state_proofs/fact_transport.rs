@@ -161,7 +161,9 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 .filter(|fact| !candidates.iter().any(|(candidate, _)| candidate == *fact))
                 .count();
             return Err(ClickError::new(format!(
-                "explicit surface premises do not view the certified fact transport\n  source: {source:?}\n  target: {target:?}\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted)",
+                "explicit surface premises do not view the certified fact transport\n  source: `{}`\n  target: `{}`\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted)",
+                crate::surface::proof_diagnostics::render::render_proposition(source),
+                crate::surface::proof_diagnostics::render::render_proposition(target),
                 complete.len(),
             )));
         }
@@ -646,7 +648,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                 {
                     // One label set for both leaves, so a read they share is
                     // spelled once and two different reads never share a name.
-                    let mut labels = render::SnapshotLabels::default();
+                    let mut labels = render::SnapshotLabels::ambient();
                     let had = render::render_proposition_labeled(from, &mut labels);
                     let wanted = render::render_proposition_labeled(to, &mut labels);
                     rendered.push_str(&format!(
@@ -684,7 +686,7 @@ fn describe_unreachable_fact_transport(
     target: &Proposition,
     transition_facts: &[ExecutionPureFact],
 ) -> String {
-    let mut labels = render::SnapshotLabels::default();
+    let mut labels = render::SnapshotLabels::ambient();
     let mut rendered = format!(
         "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
          carrying its source fact to the target's state\
@@ -777,7 +779,7 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
     }
     format!(
         "could not make fact transport premises explicit: {}",
-        error.message()
+        error.raw_summary()
     )
 }
 
@@ -830,12 +832,13 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
 ) -> Option<Proposition> {
     fn erase_term(term: &Bitvector32Term) -> Bitvector32Term {
         match term {
-            Bitvector32Term::MemoryLoad(_, pointer) => Bitvector32Term::MemoryLoad(
+            Bitvector32Term::MemoryLoad(_, pointer, kind) => Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::default()),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: erase_offset(&pointer.offset),
                 }),
+                *kind,
             ),
             Bitvector32Term::Add(left, right) => {
                 Bitvector32Term::Add(Box::new(erase_term(left)), Box::new(erase_term(right)))
@@ -981,47 +984,6 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         || symmetric_equality_equivalent(&left, &right)
 }
 
-/// The outermost memory snapshot a comparison proposition loads from, used
-/// to pick the transport destination for certified-fact matching.
-pub(in crate::surface::proof) fn proposition_outer_load_memory(
-    proposition: &Proposition,
-) -> Option<&CMemory> {
-    fn term_outer(term: &Bitvector32Term) -> Option<&CMemory> {
-        match term {
-            Bitvector32Term::MemoryLoad(memory, _) => Some(memory),
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::UnsignedDivide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::UnsignedRemainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
-                term_outer(left).or_else(|| term_outer(right))
-            }
-            _ => None,
-        }
-    }
-    let Proposition::ConditionIs(condition, _) = proposition else {
-        return None;
-    };
-    match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right) => {
-            term_outer(left).or_else(|| term_outer(right))
-        }
-        _ => None,
-    }
-}
-
 /// Like [`certified_fact_transport_reaches`], but first rewrites the source
 /// through the transition facts' certified stores, so a fact written in
 /// pre-store terms can reach a post-store form.
@@ -1089,6 +1051,25 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     after: Option<&CMemory>,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A checked read at a computed address includes its address-definedness
+    // obligations. Prove every target leaf from the same selected facts;
+    // those obligations must not prevent transport of the read itself.
+    if matches!(target, Proposition::And(_, _)) {
+        let mut pending = vec![target];
+        while let Some(leaf) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Proposition::And(left, right) = leaf {
+                pending.push(right);
+                pending.push(left);
+            } else if !assumptions.proves_exact(leaf)
+                && !crate::kernel::proposition_holds_without_facts(leaf)
+                && !certified_fact_transport_reaches(source, leaf, after, assumptions)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
     let equivalent = |left: &Proposition, right: &Proposition| {
         left == right
             || crate::kernel::c_condition_facts_equivalent_for_memory_resolution(
@@ -1251,6 +1232,74 @@ fn holds_without_facts_under_binders(proposition: &Proposition) -> bool {
 #[cfg(test)]
 mod path_condition_tests {
     use super::*;
+
+    #[test]
+    fn compound_read_transport_requires_every_address_guard_and_range() {
+        let memory = CMemory::new();
+        let base = Pointer {
+            block: "bytes".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: Bitvector32Term::Constant(1),
+        };
+        let guard = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedSubtractOverflows(
+                Box::new(Bitvector32Term::Variable(Variable(7))),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            false,
+        );
+        let target = Proposition::And(Box::new(guard.clone()), Box::new(source.clone()));
+        let facts = PureFactContext::new().assume_proposition(source.clone());
+        assert!(!certified_fact_transport_reaches(
+            &source, &target, None, &facts
+        ));
+        let facts = facts.assume_proposition(guard.clone());
+        assert!(certified_fact_transport_reaches(
+            &source, &target, None, &facts
+        ));
+        let wider = Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes: Bitvector32Term::Constant(2),
+        };
+        let invalid = Proposition::And(Box::new(guard), Box::new(wider));
+        assert!(!certified_fact_transport_reaches(
+            &source, &invalid, None, &facts
+        ));
+    }
+
+    #[test]
+    fn compound_transport_target_work_scales_with_explicit_leaves() {
+        let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let facts = PureFactContext::new().assume_proposition(source.clone());
+        let mut previous = 0;
+        for size in [16, 64, 256, 1024] {
+            let mut level = vec![source.clone(); size];
+            while level.len() > 1 {
+                level = level
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| {
+                        Proposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                    })
+                    .collect();
+            }
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                certified_fact_transport_reaches(&source, &level[0], None, &facts)
+            });
+            assert!(proved);
+            assert!(work >= size);
+            if previous > 0 {
+                assert!(work <= 4 * previous + 4, "{size}: {work} after {previous}");
+            }
+            previous = work;
+        }
+    }
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {

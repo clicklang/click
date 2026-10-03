@@ -690,6 +690,257 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
 }
 
 #[test]
+fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(870_000 + id)),
+        };
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new(at(i), 0u32.into(), 1u32.into()),
+            ));
+        }
+        let limit = Bitvector32Term::Variable(Variable(871_100));
+        let index = Bitvector32Term::Variable(Variable(869_000));
+        let symbolic = resources
+            .clone()
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                at(size),
+                0u32.into(),
+                limit.clone(),
+            )));
+        let concrete = resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            at(size),
+            0u32.into(),
+            4u32.into(),
+        )));
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::signed_less_than(index.clone(), limit), true);
+        symbolic.synchronize_memory_equalities(&facts);
+        let query = at(size).offset_by_elements(index, 4);
+        let required =
+            |base| CResourceFact::view_memory(CMemoryRange::new(base, 1u32.into(), 2u32.into()));
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(symbolic.permits_memory_read(&query, 4, &facts));
+                assert!(!symbolic.permits_memory_read(&at(size + 1), 4, &facts));
+                assert!(concrete.satisfies_memory_fact_structurally(&required(at(size))));
+                assert!(!concrete.satisfies_memory_fact_structurally(&required(at(size + 1))));
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "structural lookup scanned unrelated parameters: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 3 + 128,
+        "structural index scanned unrelated parameters: {samples:?}"
+    );
+}
+
+#[test]
+fn write_candidates_do_not_scan_unrelated_memory_ranges() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let owner = Pointer::symbolic(Variable(860_000));
+        let alias = Pointer::symbolic(Variable(860_001));
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    owner.clone(),
+                    (i as u32 * 8).into(),
+                    (i as u32 * 8 + 4).into(),
+                    1,
+                ),
+            ));
+        }
+        let empty = PureFactContext::new();
+        resources.synchronize_memory_equalities(&empty);
+        let facts = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
+        resources.synchronize_memory_equalities(&facts);
+        let at = |offset| Pointer {
+            block: alias.block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let query = |offset| {
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    resources
+                        .memory_write_range(&at(offset), 4, &facts)
+                        .is_some()
+                })
+            })
+        };
+        let ((hit, work), map_work) = query(size as i64 * 4);
+        let ((miss, miss_work), miss_map_work) = query(size as i64 * 4 + 4);
+        assert!(hit);
+        assert!(!miss);
+        assert!(
+            resources
+                .memory_write_range(&at(size as i64 * 4), 4, &empty)
+                .is_none()
+        );
+        samples.push((size, work, map_work, miss_work, miss_map_work));
+    }
+    assert!(
+        samples[2].1 <= samples[0].1 * 2 + 32 && samples[2].3 <= samples[0].3 * 2 + 32,
+        "write checks scanned unrelated ranges: {samples:?}"
+    );
+    assert!(
+        samples[2].2 <= samples[0].2 * 3 + 128 && samples[2].4 <= samples[0].4 * 3 + 128,
+        "write index work scanned unrelated ranges: {samples:?}"
+    );
+}
+
+#[test]
+fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
+    let base = Pointer::symbolic(Variable(862_000));
+    let returned = Pointer::symbolic(Variable(862_001));
+    let bytes = |start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            start.into(),
+            end.into(),
+            1,
+        ))
+    };
+    // A returned i32 field sits beside padding still spelled in bytes.
+    let field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        returned.clone(),
+        0u32.into(),
+        1u32.into(),
+        4,
+    ));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(field.clone())
+        .unchecked_with_fact(bytes(12, 16));
+    let empty = PureFactContext::new();
+    resources.synchronize_memory_equalities(&empty);
+    assert!(
+        resources
+            .clone()
+            .reserve_owned_memory_fragments(&bytes(8, 16), &empty)
+            .is_none()
+    );
+    let facts = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(
+            Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(8),
+            },
+            returned,
+        ),
+        true,
+    );
+    let (remaining, supports) = resources
+        .clone()
+        .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+        .unwrap();
+    assert_eq!(supports.len(), 2);
+    assert_ne!(supports[0], supports[1]);
+    for support in &supports {
+        assert!(resources.owned_fact_for_occurrence(*support).is_some());
+        assert!(remaining.owned_fact_for_occurrence(*support).is_none());
+    }
+    assert!(
+        remaining
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_none()
+    );
+    assert!(
+        resources
+            .clone()
+            .reserve_owned_memory_fragments(&bytes(8, 17), &facts)
+            .is_none()
+    );
+    let viewed = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::view_memory(
+            field.memory_own_range().unwrap().clone(),
+        ))
+        .unchecked_with_fact(bytes(12, 16));
+    assert!(
+        viewed
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_none()
+    );
+    // A failed reservation of a larger range did not consume its input.
+    assert!(
+        resources
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_some()
+    );
+}
+
+#[test]
+fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
+    let base = Pointer::symbolic(Variable(862_010));
+    let fact = |start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            start.into(),
+            end.into(),
+            1,
+        ))
+    };
+    let measure = |fragments: u32, ambient: u32| {
+        let mut resources = ResourceContext::new();
+        for i in 0..fragments {
+            resources = resources.unchecked_with_fact(fact(i * 4, i * 4 + 4));
+        }
+        for i in 0..ambient {
+            resources = resources.unchecked_with_fact(fact(8192 + i * 8, 8196 + i * 8));
+        }
+        let facts = PureFactContext::new();
+        resources.synchronize_memory_equalities(&facts);
+        let required = fact(0, fragments * 4);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    resources
+                        .directly_supporting_owned_entry(&required, &facts)
+                        .is_none()
+                );
+                let (_, supports) = resources
+                    .reserve_owned_memory_fragments(&required, &facts)
+                    .unwrap();
+                assert_eq!(supports.len(), fragments as usize);
+            })
+        });
+        (work, map_work)
+    };
+    let ambient = [16, 64, 256, 1024].map(|n| measure(4, n));
+    assert!(
+        ambient[3].0 <= ambient[0].0 * 2 + 32,
+        "reservation scanned unrelated memory: {ambient:?}"
+    );
+    assert!(
+        ambient[3].1 <= ambient[0].1 * 4 + 256,
+        "reservation index scanned unrelated memory: {ambient:?}"
+    );
+    let fragments = [8, 32, 128].map(|n| measure(n, 0));
+    assert!(
+        fragments[2].0 <= fragments[0].0 * 20 + 128,
+        "reservation is superlinear: {fragments:?}"
+    );
+    assert!(
+        fragments[2].1 <= fragments[0].1 * 40 + 1024,
+        "reservation index is superlinear: {fragments:?}"
+    );
+}
+
+#[test]
 fn specification_read_candidates_do_not_scan_unrelated_memory_ranges() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256] {
@@ -3769,6 +4020,7 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
         block: "certified_group".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
+    let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let facts = (0..size)
             .map(|index| {
@@ -3790,15 +4042,19 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
                 )
         });
         assert!(installed.is_ok());
-        // Inserting each span and recording its normalization touches its
-        // constant base once each, now also filing its affine start in the
-        // paired index. Permit four units per explicit input span, but no
-        // internal pair comparisons (which would grow quadratically).
+        // Installation now also closes each explicit span into the address
+        // graph. Bound that per-input work and its growth; internal pair
+        // comparisons would grow quadratically across these sizes.
         assert!(
-            work <= 4 * size,
+            work <= 64 * size,
             "installing a certified size-{size} group rechecked its internal pairs: {work}"
         );
+        samples.push(work);
     }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "certified installation grew superlinearly: {samples:?}"
+    );
 }
 
 #[test]
@@ -6003,6 +6259,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {
@@ -6076,6 +6333,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let base_projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {
@@ -7755,5 +8013,153 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
     assert!(
         samples.iter().all(|(_, work)| *work == base_work),
         "evaluating a first-pass section grew with the frame's composites: {samples:?}"
+    );
+}
+
+#[test]
+fn named_population_members_keep_identity_and_fields_independent_of_count() {
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let block = PointerBlock::Heap(940_501);
+    let pointer = Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+    let description =
+        crate::kernel::ResourceDescription::new("ticket".into(), arguments.clone(), schema.clone());
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let mut created = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(
+            CMemory::new()
+                .with_heap_allocation_claim(pointer, 4)
+                .unwrap(),
+        );
+    created.record_population_storage_creation(block.clone());
+    let assumptions = PureFactContext::new();
+    let (empty, _) = created
+        .checked_population_authority_exchange(&authority, true, &assumptions)
+        .unwrap();
+    let definition = CCompositeResourceDefinition::new(
+        "ticket",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![],
+        vec![],
+    )
+    .with_instance_schema(Some(schema.clone()));
+    let member = |serial| {
+        ResourceInstance::new(
+            Variable::allocate_fresh().unwrap(),
+            "ticket".into(),
+            arguments.clone(),
+            schema.clone(),
+            vec![int32(serial).into()].into(),
+        )
+        .unwrap()
+    };
+    let first = member(1);
+    let second = member(2);
+    let rewrite = |state: &CState, instance: &ResourceInstance, unfold| {
+        rewrite_resource_instance(state, instance, &definition, &assumptions, unfold)
+            .map(|(next, _)| next)
+    };
+    let count = |state: &CState| {
+        state
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .observe(&block, "ticket")
+            .unwrap()
+    };
+    for quantity in [
+        Bitvector32Term::Constant(1),
+        Bitvector32Term::Constant(2),
+        Bitvector32Term::Variable(Variable::allocate_fresh().unwrap()),
+    ] {
+        assert!(
+            empty
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &quantity,
+                    &assumptions
+                )
+                .is_err(),
+            "an anonymous quantity cannot replace named occurrences and their fields"
+        );
+    }
+    let one = rewrite(&empty, &first, false).unwrap();
+    assert_eq!(count(&one), 1);
+    assert_eq!(
+        rewrite(&empty, &first, false)
+            .unwrap()
+            .population_effects
+            .creation,
+        one.population_effects.creation,
+        "rechecking preserves the ledger successor"
+    );
+    let two = rewrite(&one, &second, false).unwrap();
+    assert_eq!(count(&two), 2);
+    assert_eq!(
+        two.resources().owned_instance(first.identity()),
+        Some(&first)
+    );
+    assert_eq!(
+        two.resources().owned_instance(second.identity()),
+        Some(&second)
+    );
+    assert!(
+        rewrite(&two, &second, false).is_err(),
+        "identity cannot be duplicated"
+    );
+    let mut forged = second.clone();
+    forged.fields = vec![int32(99).into()].into();
+    assert!(
+        rewrite(&two, &forged, true).is_err(),
+        "count does not authorize different fields"
+    );
+    assert!(
+        two.checked_population_authority_exchange(&authority, false, &assumptions)
+            .is_err(),
+        "live members block retirement"
+    );
+    let without_authority = two.clone().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(first.clone()))),
+    );
+    assert!(
+        rewrite(&without_authority, &first, true).is_err(),
+        "member ownership does not grant authority"
+    );
+    let remaining = rewrite(&two, &first, true).unwrap();
+    assert_eq!(count(&remaining), 1);
+    assert_eq!(
+        remaining.resources().owned_instance(second.identity()),
+        Some(&second)
+    );
+    assert!(
+        rewrite(&remaining, &first, true).is_err(),
+        "consumption is single spend"
+    );
+    let zero = rewrite(&remaining, &second, true).unwrap();
+    assert_eq!(count(&zero), 0);
+    zero.checked_population_authority_exchange(&authority, false, &assumptions)
+        .unwrap();
+    let before_authority = rewrite(&created, &first, false).unwrap();
+    assert!(
+        before_authority
+            .checked_population_authority_exchange(&authority, true, &assumptions)
+            .is_err(),
+        "prior members prohibit a fresh empty authority"
     );
 }

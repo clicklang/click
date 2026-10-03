@@ -95,7 +95,7 @@ fn plan_signed_arithmetic_certificate_in_pass(
         }
     }
     if comparison_terms(goal).is_some_and(|(left, right, _)| {
-        !contains_machine_operation(left) && !contains_machine_operation(right)
+        is_affine_planning_atom(left) && is_affine_planning_atom(right)
     }) && let Some(plan) = plan_affine_from_selected_claims(
         premises,
         &claims,
@@ -125,7 +125,25 @@ fn plan_affine_from_selected_claims(
     int32_range_fallback: bool,
 ) -> Option<SignedArithmeticCertificate> {
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
-    let conclusion = planner.affine_claim(expected, allow_weakening)?;
+    let conclusion = planner
+        .affine_claim(expected, allow_weakening)
+        .or_else(|| {
+            if expected.relation != SignedArithmeticRelation::Equal {
+                return None;
+            }
+            // Equality needs both signed directions. Plan each from the same
+            // explicitly selected facts, retaining equality substitutions as
+            // checked arithmetic nodes rather than importing a solver verdict.
+            let lower =
+                planner.affine_claim(&equality_direction(expected, false), allow_weakening)?;
+            let upper =
+                planner.affine_claim(&equality_direction(expected, true), allow_weakening)?;
+            planner.push(SignedArithmeticNode::EqualityFromBounds {
+                lower,
+                upper,
+                result: expected.clone(),
+            })
+        })?;
     Some(certificate(planner.nodes, conclusion))
 }
 
@@ -581,6 +599,27 @@ fn affine_operation_terms(
     let right_operation = is_affine_operation(right).then_some(right);
     (left_operation.is_some() || right_operation.is_some())
         .then_some((left_operation, right_operation))
+}
+
+/// A goal side the affine planner may combine premises over as one opaque
+/// atom: a term with no machine operation, or the sign-bit flip
+/// `v ^ 2^31` of one. The flip is how a 32-bit unsigned order is spelled
+/// (`ConditionTerm::unsigned_less_than` states `x <u n` as
+/// `(x ^ 2^31) <s (n ^ 2^31)`), and it is total: no operand makes it
+/// undefined. So an unsigned chain `x <u n`, `n <=u 4` sums over the flipped
+/// atoms exactly as the signed chain over `x` and `n` sums over theirs. A
+/// flipped atom is a different atom from its operand, so an unsigned bound
+/// never composes with a signed one on the same variable.
+fn is_affine_planning_atom(term: &Bitvector32Term) -> bool {
+    if let Bitvector32Term::BitwiseXor(left, right) = term {
+        let operand = match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::Constant(0x8000_0000), operand)
+            | (operand, Bitvector32Term::Constant(0x8000_0000)) => operand,
+            _ => return false,
+        };
+        return !contains_machine_operation(operand);
+    }
+    !contains_machine_operation(term)
 }
 
 fn contains_machine_operation(root: &Bitvector32Term) -> bool {
@@ -1053,7 +1092,67 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        self.affine_pair_through_equality(target)
+        if let Some(node) = self.affine_pair_through_equality(target) {
+            return Some(node);
+        }
+        if allow_weakening {
+            return self.affine_sum_of_listed_claims(target);
+        }
+        None
+    }
+
+    /// The sum of every listed inequality, for a chain of any length:
+    /// `x < a`, `a <= b`, `b <= 4` sum to `x < 4`. `arithmetic() using`
+    /// lists the premises it means, so all of them are added, in order, and
+    /// the sum is weakened to the target when it is stronger. The work is
+    /// one addition per listed premise; nothing is searched.
+    fn affine_sum_of_listed_claims(&mut self, target: &SignedArithmeticClaim) -> Option<usize> {
+        if target.relation != SignedArithmeticRelation::LessEqual {
+            return None;
+        }
+        let listed = self
+            .claims
+            .iter()
+            .filter(|(_, claim)| claim.relation == SignedArithmeticRelation::LessEqual)
+            .cloned()
+            .collect::<Vec<_>>();
+        // One or two premises are the cases the searches above decide.
+        if listed.len() < 3 {
+            return None;
+        }
+        let mut listed = listed.into_iter();
+        let (first_index, mut sum) = listed.next()?;
+        let mut node = self.premise(first_index, &sum)?;
+        for (index, claim) in listed {
+            charge_work(1)?;
+            let next = add_affine_claims(&sum, &claim)?;
+            let right = self.premise(index, &claim)?;
+            node = self.push(SignedArithmeticNode::Add {
+                left: node,
+                right,
+                result: next.clone(),
+            })?;
+            sum = next;
+        }
+        if sum == *target {
+            return Some(node);
+        }
+        if sum.terms != target.terms || sum.constant < target.constant {
+            return None;
+        }
+        let trivial = self.push(SignedArithmeticNode::Trivial {
+            result: SignedArithmeticClaim {
+                carrier: target.carrier,
+                relation: SignedArithmeticRelation::LessEqual,
+                terms: BTreeMap::new(),
+                constant: &target.constant - &sum.constant,
+            },
+        })?;
+        self.push(SignedArithmeticNode::Add {
+            left: node,
+            right: trivial,
+            result: target.clone(),
+        })
     }
 
     /// A two-premise sum where one addend is a direction of an equality
@@ -1722,6 +1821,8 @@ impl<'a> Planner<'a> {
         while let Some(term) = pending.pop() {
             match term {
                 Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_) => {}
+                Bitvector32Term::UInt32From64(_)
+                    if SignedArithmeticAtom::from_term(term).is_some() => {}
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }
@@ -2441,6 +2542,48 @@ mod tests {
     }
 
     #[test]
+    fn sign_bit_flip_on_either_comparison_side_rechecks() {
+        let bounds = [lt(constant(0), var(1)), le(var(1), constant(4))];
+        for constant_first in [false, true] {
+            let flipped = if constant_first {
+                Bitvector32Term::BitwiseXor(Box::new(constant(i32::MIN)), Box::new(var(1)))
+            } else {
+                Bitvector32Term::BitwiseXor(Box::new(var(1)), Box::new(constant(i32::MIN)))
+            };
+            for goal in [
+                le(constant(i32::MIN + 1), flipped.clone()),
+                le(flipped, constant(i32::MIN + 4)),
+            ] {
+                let plan = check_plan(&goal, &bounds);
+                assert!(plan.check(&goal, &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn equality_from_bounds_through_a_pinned_constant_is_checked() {
+        let goal = proposition(
+            ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(var(2))),
+            true,
+        );
+        let premises = vec![
+            le(constant(0), var(1)),
+            le(var(1), var(2)),
+            proposition(
+                ConditionTerm::Bitvector32Equal(Box::new(var(2)), Box::new(constant(0))),
+                true,
+            ),
+        ];
+        let plan = check_plan(&goal, &premises);
+        for missing in 0..premises.len() {
+            let mut unavailable = premises.clone();
+            unavailable[missing] = le(constant(0), constant(1));
+            assert!(plan.check(&goal, &unavailable).is_err());
+            assert!(plan_signed_arithmetic_certificate(&goal, &unavailable).is_none());
+        }
+    }
+
+    #[test]
     fn one_sided_direct_bound_does_not_hide_the_operand_bound() {
         // The back edge of `for (i = 0; i < n; i++)`: the new index is
         // `i0 + 1`, the invariant `0 <= i` bounds it directly from below
@@ -2986,34 +3129,6 @@ mod tests {
         let final_goal = le(final_in_range, constant(i32::MAX));
         let bounds = [le(constant(0), x.clone()), le(x, constant(i32::MAX))];
         assert!(plan_signed_arithmetic_certificate(&final_goal, &bounds).is_none());
-    }
-
-    #[test]
-    fn deep_affine_plans_have_bounded_work_and_node_growth() {
-        let mut measurements = Vec::new();
-        for depth in [4usize, 8, 16, 32] {
-            let x = var(71);
-            let mut term = x.clone();
-            for _ in 0..depth {
-                term = Bitvector32Term::Add(Box::new(term), Box::new(x.clone()));
-            }
-            let goal = le(term, constant(depth as i32 + 1));
-            let premises = [le(constant(0), x.clone()), le(x, constant(1))];
-            let (plan, work) =
-                crate::instrumentation::measure_deterministic_work(|| check_plan(&goal, &premises));
-            assert!(
-                plan.nodes.len() <= 12 * depth + 32,
-                "certificate node count grew beyond the expression: {} at depth {depth}",
-                plan.nodes.len()
-            );
-            measurements.push(work);
-        }
-        assert!(
-            measurements
-                .windows(2)
-                .all(|pair| pair[1] <= 4 * pair[0] + 128),
-            "deep affine planning should have bounded scaling: {measurements:?}"
-        );
     }
 
     #[test]

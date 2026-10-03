@@ -9,8 +9,8 @@ of proof fields, and remove `guarded_by`. Use ordinary resource composition and
 and mutex operations. Do this migration before extending the
 [concurrency demo](concurrency-demo.md) to exact shared-worker accounting.
 
-This is the selected direction, not implemented syntax or a claim that current
-sequential proofs are unsound. It supersedes the whole-population mutex-custody
+This is the selected direction, implemented additively for the migrated groups
+below. It is not a claim that legacy sequential proofs are unsound. It supersedes the whole-population mutex-custody
 extension plan in the [counted counter investigation](../design/concurrency-probes/shared-count-authority.md).
 The older [fractional sum proposal](../design/concurrency-probes/explicit-authority.md)
 is background, not authorization to introduce its entire interface.
@@ -59,9 +59,9 @@ A member no longer exposes shared population memory merely because it is one
 of several units. Private contents may be opened using ordinary ownership;
 access to shared accounting state comes from the resource that owns it.
 
-### Proposed authority interface
+### Authority interface
 
-Use the following as the design target, not parser-ready implemented code:
+The implemented surface uses ordinary resources and the built-in `authority`:
 
 ```text
 resource reference(p: struct object*) {
@@ -74,7 +74,7 @@ resource control(p: struct object*) {
 }
 ```
 
-`authority(reference(p))` is a proposed built-in resource, exclusively held for
+`authority(reference(p))` is a built-in resource, exclusively held for
 one population identity. It controls checked population changes; it does not
 own all distributed references or grant arbitrary access to their contents.
 The surrounding ordinary resource owns the actual C counter and states the
@@ -98,7 +98,7 @@ possible interference. At contract boundaries, a checked invariant may expose
 its stated relationship without handing out duplicate authority; spelling a
 count must never manufacture ownership or permission to update it.
 
-### Decisions to settle before implementation
+### Permission rules and remaining design boundaries
 
 Specify these rules together, with a small kernel interpretation and source
 examples. Review additional surface syntax before implementing it.
@@ -166,384 +166,339 @@ A control resource must also be usable sequentially with no mutex annotation.
 Retain existing `mutex_live`, `mutex_use`, and `mutex_guard` behavior except
 where integrating ordinary authority ownership requires a justified change.
 
-## Staged rollout: build, migrate, then remove
+## Milestones and chunk size
 
-Build authority support additively before changing existing examples or the
-public default. The checkpoints below are ordered dependencies, not one large
-patch. Each may take several coherent commits, but must meet its exit gate
-before the next checkpoint starts. Keep the original C and properties fixed.
+Build support additively, migrate consumers, then switch and remove the old
+model. Keep the original C and its properties fixed. A chunk is one missing
+capability or one small consumer group, with focused positive and negative
+regressions, independent kernel/certificate checks where appropriate,
+documentation, and a green full gate. A milestone is an acceptance demonstration,
+not permission to combine unrelated verifier repairs into a large patch.
 
-Checkpoint 0 has a [consumer inventory](../docs/internals/authority-migration-inventory.md)
-and an approved [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md).
-The first additive kernel slice checks exact unary population ownership,
-creation-site restriction, once-per-lifetime establishment, transfer, and empty
-retirement. A C event ledger checks heap and automatic-object
-creation provenance, call-environment transport, and per-family history that
-prevents late establishment after members were transferred away. Project-level
-mode selection and `authority(R(p))` parsing/lowering are additive. A restricted
-source bridge checks `fold(authority(R(p)))` for empty establishment and
-`unfold(authority(R(p)))` for zero-count retirement against actual C creation
-events. A partial checkpoint 2 checks one member's `fold(R(p))`/`unfold(R(p))`
-as birth/consumption paired with its owned resource exchange. Members may have
-a field-free body of private, concrete, owned C memory; opening such a member
-exposes that body without changing its count. Current exact `count(R(p))`
-observes the authority ledger. The transitions have independent certificate
-checks. Verified ordinary C helpers can borrow and return the same exact
-authority and member; standalone helper proofs treat their declared input as
-an opaque population with no count or creator permission. Such a helper can
-open a transferred member's private memory body, use it, and close it before
-return. A verified helper can also create or consume one exact member with a
-private owned-memory body while returning authority. Its contract transfers
-the entire body through ordinary memory `consumes` or `produces` clauses, its
-standalone proof checks the birth or death, and the call applies that change
-to the concrete ledger. Creation checks live anchor storage. Checkpoints 1–5 now support the sequential
-refcount group, current and historical exact count, checked authority-bearing
-wrappers, private member bodies, numeric nested helper transfers, conditional
-release, standalone symbolic batches, and shared-parent ownership through
-named wrappers and nested helpers. Symbolic nested transfers,
-field-bearing/wildcard populations, and worker/mutex migration remain pending
-in checkpoints 6–12. `construct(...)` has not been
-extended; authority establishment and empty cleanup use `fold`/`unfold`.
-Update this status and the inventory as commits land.
+The rough remaining budget is **26–34 chunks across six milestones**. Including
+completed foundations and earlier migrations, the whole effort is approximately
+50 chunks, with uncertainty of about ten. Historical changes were not uniformly
+sized; these are planning estimates, not measured effort or promises. Tooling
+repairs may add chunks. Do not expand scope merely to fill a predicted number.
+One milestone may use one PR with several green commits when it remains coherent.
 
-| Checkpoints | Deliverable | What happens to old clients |
+### Completed foundations
+
+The [consumer inventory](../docs/internals/authority-migration-inventory.md)
+records migrated groups and regressions. The approved
+[object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md)
+checks actual heap/automatic-object creation, once-per-lifetime establishment,
+explicit transport, empty retirement, and dependencies preventing early free.
+
+Kernel and source support now check authority custody, current versus historical
+counts, real birth/consumption, private-body access, and independently checked
+ordinary helper contracts. Helper populations enter with arbitrary totals and
+no creator rights. Sequential refcount, symbolic batches, and shared-parent
+ownership have migrated. Field-free wildcard populations support concrete-member
+creation, consumption, cross-pool moves, private memory and invariants, contained
+ordinary resources, and exact member observations. A control can package two
+same-anchor authorities with counter facts; direct and nested checkout preserve
+that control and caller-retained slots. No new parameter syntax is needed.
+
+Named proof-field population identity, the original bounded-pool sidecar,
+remaining sequential groups, mutex/worker migration, and the default switch
+remain unfinished. Earlier checkpoint numbers 0–5 correspond to the completed
+foundation; unfinished checkpoint 6–12 work is reorganized below. Detailed
+historical evidence belongs in the inventory, not a second competing roadmap.
+
+| Milestone | Estimated chunks | Exit demonstration |
 | --- | --- | --- |
-| 0 | Baseline inventory and settled permission rules | Unchanged |
-| 1–3 | Kernel support, checked updates, and usable source interface | Unchanged; new focused fixtures exercise authority |
-| 4–7 | Sequential refcount, parents, field-bearing members, and pool | Migrate one dependency group at a time |
-| 8–10 | Mutex integration, shared refcount, contribution/join accounting | Migrate remaining groups after their prerequisites pass |
-| 11 | New semantics become the sole execution path | No unmigrated clients remain |
-| 12 | Delete legacy code and `guarded_by` | Already verified without legacy execution |
+| 1. Bounded pool | 7–9 | Original pool C verifies initialization, checkout/return, resize, transfer, and cleanup |
+| 2. Member identity and proof fields | 3–4 | Count identified members without erasing private proof state |
+| 3. Remaining sequential accounting | 3–4 | All sequential inventory groups use authority without fallback |
+| 4. Mutex integration | 4–5 | Ordinary protected-control transfers replace population mutex special cases |
+| 5. Concurrent lifetime and accounting | 5–7 | Shared refcount and worker accounting cover interference, joins, failure, and cleanup |
+| 6. Sole default and legacy removal | 4–5 | One checked counting model remains; `guarded_by` and old machinery are removed |
 
 ### Rollout safeguards
 
-- Keep the full existing corpus green at every landed checkpoint. No mass
-  expected-failure changes, quarantine, weakened postconditions, or discarded
-  negative tests to make a migration pass.
-- Keep the legacy path temporarily for **unmigrated** verification units. A new
-  authority proof must never retry through legacy rules when checking fails.
-  This is implementation coexistence, not implicit authority in the new model.
-- Select the temporary implementation path at an explicit verification-unit or
-  project boundary, recorded in migration/test metadata and proof provenance.
-  All reachable contracts, imported summaries, caches, and certificates must
-  agree on the semantics. Reject mixed unchecked boundaries. Do not select the
-  model from the presence of fields, discovery of a `count` expression, or
-  whether a proof happens to succeed. Settle this boundary in checkpoint 0;
-  do not add a permanent public `legacy` keyword.
-- Maintain a migration inventory here or in a linked checked-in table. Record
-  each affected project/fixture group, selected path, original property, and
-  replacement regression. A group leaves legacy only when every dependency
-  and its positive/negative proofs are ready.
-- Run focused tests and the full `scripts/check.sh` before merging executable
-  changes. Verify affected proofs before profile/expand/reverify/audit. Apply
-  the repository's documentation gate to prose-only checkpoints. Rebase and
-  rerun affected checks when the integration base moves.
-- If a checkpoint fails, keep the incomplete work isolated. Retain the previous
-  green checkpoint; never weaken the permission rule or mix old and new
-  certificates as a fallback. Build scaling tests alongside new representations.
+- Keep the existing corpus green. Do not quarantine proofs, weaken claims, or
+  discard negatives to force a migration through.
+- Retain legacy only for explicitly unmigrated verification units. Authority
+  proofs must never retry under legacy rules. All reachable contracts, imports,
+  caches, and certificates must agree on the selected model; reject unchecked
+  mixed boundaries. Temporary project selection is not a permanent keyword.
+- Record each group's selected path, original claims, dependencies, and
+  replacement regressions in the inventory. Migrate dependencies together.
+- Run focused checks and unpiped `scripts/check.sh` before submitting executable
+  work; use the documentation gate for prose-only checkpoints. If upstream
+  moves, update the branch and rerun affected gates. Use fork PRs and the merge
+  queue; never integrate directly into upstream master.
+- Keep failed experiments isolated and retain green checkpoints. Fix tooling
+  correctness, bounds, and diagnostics before building further features. Add
+  deterministic multi-size scaling tests for performance-sensitive changes.
+- Discuss any additional surface syntax before implementing it. Do not invent
+  implicit sequential authority, revive `<>`, or introduce sum-specific built-ins.
 
-### 0. Inventory and freeze the migration contract (documentation/tests)
+### Milestone 1: Complete bounded pool — complete (7–9 planned chunks)
 
-**Work:** Inventory `count`, quantity syntax, proof-field count refusals,
-count-dependent bodies/predicates, abstract worker populations, and `guarded_by`
-across examples, mdtests, design probes, kernel tests, and source-backed docs.
-Group consumers by project/call dependencies. Record the existing pass/fail
-properties, including tests whose current field-based rejection must become a
-positive with explicit authority.
+**North star:** [bounded pool](../examples/bounded-pool/README.md), with its
+original C and claims. Missing capabilities get small regressions before the
+whole example depends on them. Chunk order may change when a dependency becomes
+clear; combine already-supported steps rather than manufacturing extra changes.
 
-Resolve the decisions above into concrete allocation, observation, transition,
-and retirement rules. In particular, fix fresh-population establishment and
-exact-count meaning, and choose the temporary isolation boundary. Specify
-wildcard scope semantics now; implementation may wait for checkpoint 6.
-Identify any additional source syntax requiring user review before coding it.
+1. **Return through a control.** Import a concrete wildcard input member under
+   authority held inside the pool control. Consume it through direct/nested
+   helpers, returning its private memory and a slot. Check arbitrary entry
+   totals, retained neighbors, wrong identities, and the actual decrement.
+2. **Object ownership boundary.** Check which original pool paths need a local
+   object bridge. Where genuinely needed, make C-created automatic objects
+   transferable through ordinary ownership without rewriting C. The existing
+   stack-object rejection is a separate reduced regression, not a reason to
+   add irrelevant ownership machinery to external-pointer pipelines.
+3. **Initialization and cleanup.** Helpers receive explicitly passed authority,
+   package both populations with initialized pool memory, and later return or
+   retire it through ordinary contracts. Establishment remains creator-only;
+   `pool_init` receiving an external pointer cannot invent creation rights.
+   Cover arbitrary inputs, empty populations, duplicate establishment, and
+   nonempty retirement. Preserve the original zero/destroy claims.
+4. **Symbolic slot quantities.** Support initialized capacity and grow/shrink
+   batches through the two-authority control, including zero quantities and
+   signed arithmetic bounds. Preserve retained members and reject unowned
+   consumption and overflow. No symbolic wildcard subset machinery unless used.
+5. **Multiple checked transitions.** Admit the bounded set of member effects
+   needed for transfer: return the source slot, consume the destination slot,
+   and move the concrete object membership. Independently authenticate each
+   effect, authority, identity, quantity, and body exchange.
+6. **Two-control transfer.** Restore both pool invariants after the unchanged
+   two-counter C operation. Preserve framed members and private object memory;
+   reject wrong pools, aliases without proof, missing updates, and double spend.
+7. **Checkout/return pipeline.** Migrate the original pipeline, retaining private
+   object writes while control stays closed and final values 11/22. It must not
+   need pool authority just to modify the member's private contents.
+8. **Zero, resize, and transfer pipelines.** Migrate the remaining original pool
+   claims, update README/contracts/inventory, and audit successful proofs.
 
-**Exit gate:** A reviewer can tell which operations require authority and why,
-how an authority is first obtained, and how new proofs cannot enter old rules.
-Baseline gates pass. No existing resource semantics change.
+**Exit gate:** Every original bounded-pool claim verifies with explicit authority;
+all C files are unchanged. Verify, expand/reverify, and audit affected proofs;
+focused positives/negatives and the full gate pass. Private memory access remains
+ordinary member ownership. Any capability not actually required by these claims
+stays a separate future task rather than expanding this milestone.
 
-### 1. Add kernel authority ownership (no existing client migration)
+#### Milestone 1 completion checkpoint
 
-**Work:** Add population identities, exclusive authority ownership, tracked
-membership, indexed scope lookup, and ownership transport. Supply checked
-fresh allocation and retirement. Add exact-population observations for kernel
-clients; authority allocation must not arise from ordinary folding. Keep the
-new representation inaccessible to legacy rules and maintain separate proof
-provenance/cache identities as needed.
+The original bounded-pool project now uses authority semantics, with the former
+companion consolidated into `examples/bounded-pool/bounded_pool.click`. All
+original C is unchanged. Its 16 claims cover all eleven original C functions
+and five arithmetic lemmas. The full `scripts/check.sh` gate passed: 4,720 unit/integration tests and 190
+fixture tests. The complete expansion audit passed all 99 smart sites across
+all 16 claims. Milestone 1 is complete.
 
-**Tests:** Duplicate authority, wrong population, aliases, pointer reuse,
-retirement with outstanding members, quantity regrouping, transfer without
-authority, and independence from unrelated resources. Deterministic scaling
-covers allocation, lookup, and transfer.
+- Initialization explicitly receives storage and both empty authorities; it
+  cannot mint authority for an external pointer. Cleanup consumes the complete
+  entry-capacity slot batch, proves both populations empty, retires both
+  authorities, and returns ordinary memory. Zero quantities use the same rules.
+- Checkout and return exchange a concrete member's private memory and one slot
+  under the control's authority. Helpers preserve neighbors, exact identity,
+  values, conservation, and arithmetic bounds. Private writes need only the
+  owned member; the pool control stays closed.
+- Symbolic growth/shrink preserve existing populations, handle zero, and check
+  signed arithmetic. A helper returns its exact freshly born symbolic batch;
+  caller ownership remains distinct from global population counts.
+- Transfer checks all four unit effects under the two controls and restores
+  both invariants. The original transfer pipeline composes initialization,
+  checkout, and transfer, preserving the object's value and returning both
+  controls plus the destination member and source slot.
 
-**Exit gate:** Kernel ownership and observation tests pass; existing source
-examples still use their unchanged implementation path. Do not remove
-`is_countable`, the old population representation, or `guarded_by` yet.
+The reduced capability checkpoints remain covered by
+`authority_pool_control_return_full.md`, `authority_pool_control_init_nested.md`,
+`authority_pool_control_cleanup_helper.md`, `authority_pool_cleanup_field_quantity.md`,
+`authority_symbolic_batch_helper.md`, `authority_symbolic_batch_cleanup_helper.md`,
+`authority_pool_grow_helper.md`, `authority_four_effect_exchange.md`,
+`authority_two_control_init_call.md`, and `authority_two_control_birth_helpers.md`,
+with their negative companions and independent kernel/scaling checks. These
+cover missing authority/custody, wrong identities or quantities, duplicate
+transfer, missing consumption, extra birth, overflow, and nonempty retirement.
+The two-control call boundary projects callee returns and untouched caller
+controls under their respective ledgers. Ordinary resource openings establish
+memory framing; no C workaround or new syntax is used.
 
-### 2. Add checked population transitions and fact dependencies
+A stack-object transfer bridge was unnecessary for these external-pointer C
+pipelines and remains outside the milestone. Additional symbolic subset or
+batch-splitting machinery stays driven by real consumers. The speculative
+cache repair remains removed. Milestones 1 and 2 are complete; milestone 3 is next.
 
-**Work:** Implement creation/consumption with the appropriate authority and
-owned members. Define the exact-total conservation evidence. Connect updates
-to checked resource exchanges, function entry/return, scoped restoration, and
-current versus historical observations. Establish how private member contents
-can be unfolded/refolded without deleting and recreating membership. Ordinary
-ownership of shared C memory remains with the control resource.
+### Milestone 2: Finish member identity and proof fields — complete (four slices)
 
-**Tests:** Missing authority, missing consumed unit, double consumption, stale
-count reuse, a closed control invariant surviving an unauthorized update, and
-forged certificates. Include opaque-call and snapshot bypass attempts, not only
-successful tactic execution. Test fact invalidation and update scaling.
+1. **Occurrence identity:** The existing resource context retains each named
+   instance's identity and proof fields. Population bookkeeping counts births
+   and consumption independently of field values, with checked certificate
+   successors. Equal arguments do not merge member states.
+2. **Local lifecycle and counts:** Existing `authority(...)`, `count(...)`,
+   `fold`, and `unfold` support local field-bearing exact and wildcard families.
+   Both aggregate and exact counts include independently owned occurrences.
+   Local creation and consumption require the governing authority.
+3. **Preserving helper transport:** Ordinary named `owns` inputs and explicit
+   field postconditions retain members across calls. A helper can unfold,
+   update, and restore private memory while the caller keeps its authority
+   control closed and retains another member. The same occurrence remains
+   reserved across the preserving call; this does not authorize counting.
+4. **Replacement negatives:** Checks reject overlapping private memory,
+   duplicate helper inputs, count observations without authority, unauthorized
+   lifecycle changes, late establishment, and retirement with live members.
+   Anonymous quantities cannot manufacture missing instance fields. Legacy
+   field-count rejection fixtures remain controls.
 
-**Exit gate:** The kernel independently checks both observation and transition
-permissions. No source-level authority feature is enabled with unchecked
-updates or a legacy fallback. Existing examples remain untouched and green.
+**Exit gate passed:** Two disjoint field-bearing members preserve identity and
+private state; exclusive-memory conflicts and unauthorized transitions fail.
+Field presence does not select authority-mode family countability. No new
+surface syntax or changes to existing C were needed. The full `scripts/check.sh`
+gate passed 4,723 unit/integration tests and 190 fixture tests; all 48 new
+named-member expansion-audit sites passed.
 
-### 3. Wire the source interface end to end on new focused fixtures
+**Explicit remaining boundaries:** Named-member creation/consumption through
+helpers with explicit authority still needs checked lifecycle effects. Calls
+cannot silently remove or add a tracked member without updating the ledger;
+unsupported transitions are rejected. Symbolic quantities of heterogeneous
+instances, algebraic/list field descriptions, and general sums over fields are
+not implemented. Local lifecycle operations and preserving helpers are supported.
+These limits do not restrict ordinary uncounted named resources.
 
-**Current slice:** A field-free ordinary control resource with owned counter
-memory, one contained exact authority, and a count fact can be folded, opened,
-closed, and unfolded. Checked rewrites validate the resource exchange and fact
-against the current ledger total. A three-function fixture creates the control,
-passes it through ordinary retaining and releasing helper contracts, observes
-the returned count, and retires the empty authority before freeing storage.
-The exact symbolic count at a helper entry is imported only through this
-checked wrapper. Verification, selective expansion/re-verification, and audit
-pass on this fixture. Other body shapes and migration of the existing
-sequential refcount project remain outstanding.
+### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
-**Work:** Parse/lower `authority(R(...))` through ordinary ownership clauses,
-resource composition, named binders, and call maps. Wire the approved
-establishment/retirement interface. Implement authority-dependent `count` in
-facts, predicates, contracts, snapshots, and simple loop invariants. In the
-new path, resource fields must not select population semantics. Initially use
-exact populations and small members; broader cases have explicit later gates.
+**First small slice:** The constant-quantity fixtures now use authority semantics.
+`let_bound_constant_quantity.md` packages allocation, counter memory, and
+authority in an ordinary control; its contract still consumes the quantity
+selected by `let k = 2`. `fold_rejects_a_negative_quantity.md` preserves the
+zero/negative boundary with a separate reference family and owned counter
+memory. Negative coefficients report the required nonnegative fact rather
+than `InvalidQuantity`. C source is unchanged.
 
-**Tests:** New tiny positive and negative fixtures for initialization, retain,
-release, current count, zero, and a control resource opened/restored through
-ordinary helper contracts. Add a test that new-mode proofs/certificates cannot
-obtain legacy population-body permission.
+**Next boundaries found:** A symbolic helper birth followed by a unit birth is
+currently rejected because numeric and symbolic ledger effects cannot mix.
+The reduced reproduction is the original pair of
+`population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
+authority and defined-addition contracts.
 
-**Exit gate:** A complete new proof passes verify, expand/reverify, and audit
-using authority throughout. Diagnostics name missing source resources/facts.
-The whole old corpus remains green. This is the first usable authority support;
-only now start migrating existing clients.
+**Global-count decision resolved:** Remove the two obsolete fixtures that
+counted across all independently anchored populations or used integer-only
+population identities. No arena abstraction or new syntax is required for this
+migration. Existing fixed-anchor wildcard fixtures retain scoped aggregation
+coverage. The independent symbolic-entry fixture now owns each exact family's
+authority; it still needs no invented bound on the sum of unrelated counts.
 
-### 4. Migrate the sequential refcount project
+**Predicate-snapshot slice:** `resource_count_predicate_snapshot.md` now uses
+authority semantics. An ordinary control owns the counter and reference-family
+authority; references remain separate members. The unchanged retain operation
+increments the counter, creates one member, establishes the new predicate,
+and restores the control. The proof retains the current predicate and returned
+pointer claims without reusing the entry predicate for the updated state.
 
-**Work:** First prove the same frozen C with an authority-based sidecar while
-the old project remains the baseline. Then replace its sidecars and migrate
-its fixture group in one green checkpoint. Cover
-[the complete refcount example](../examples/refcount/README.md): initialize,
-retain, symbolic retain/release, nonfinal release, final free, allocation
-failure, and callers. Control owns the counter, authority, and appropriate
-allocation/lifetime obligations; references are separate members.
+**Exact-two slice:** `counted_resource_contribution_counter.md` now uses
+authority semantics for all seven original C functions. Empty contribution
+members are separate from an ordinary counter/authority control. Initialization
+takes storage with empty authority; each increment explicitly consumes one
+member and states its count and memory effects. Both caller pipelines prove two
+contributions, and final cleanup consumes the remaining member before retiring
+authority and returning memory. Whole symbolic cleanup and the zero/one-value
+cleanup cases retain their original results. C source is unchanged.
 
-**Exit gate:** All original claims hold on the new path, including exact totals
-and final reclamation. The negative variants fail for the relevant missing
-permission or false equality. This group has no legacy dependency; unrelated
-examples have not changed semantics.
+**Early-consumption slice:** `population_consumption_at_close.md` now uses
+explicit member consumption inside an ordinary control scope. Reopening does
+not spend again; nested calls and both reporting branches retain the one
+checked effect. The caller proves two contributions and fully retires authority.
+The wrong-increment negative uses the same protocol and fails on the concrete
+counter/count invariant. All five proofs and ten audit sites pass.
 
-**Current frontier:** The canonical sidecar in `examples/refcount/` selects
-authority semantics and verifies all seven frozen C functions, including
-symbolic `amount` retain/release and the complete allocation-failure and
-final-free pipeline. Its ordinary `control(obj)` owns the allocation, counter
-memory, authority, and count equation. Checked symbolic batches cross helper
-contracts and are consumed before final authority retirement. Focused
-authority-mode negatives reject an omitted `free`, resource duplication,
-double spend, and count observations without the matching live authority.
 
-Four related positive fixtures now use authority: population/body equality,
-initialization/finalization, independent populations, and retain/nonfinal
-release. They preserve their original count claims and frozen C. Retain can
-produce one member while holding an existing member; release can consume one
-from a numeric quantity greater than one. Numeric imports remain bounded to
-one net unit change; symbolic batches use their separate checked exchange.
+**Local concrete-batch slice:** Locally established numerical batches now share
+the unit custody ledger, so a batch of three can be consumed as one and two.
+Zero changes still require authority. The focused fixture and kernel tests
+cover splitting, overconsumption, overflow, live-member retirement, and exact
+wildcard member counts. Deterministic quantity scaling checks constant work;
+true symbolic-batch/unit mixing remains a separate boundary.
 
-Contract count observations require both current owned custody and checked
-ledger custody. A folded control supplies the first only through its checked
-resource definition, for the exact contained `authority(R(p))`; an entry-time
-registration or a historical fact alone is insufficient. Its arbitrary entry
-total comes from the authenticated control invariant and retains the checked
-member-update delta. Transfer, consumption, and retirement immediately remove
-the former holder's observation permission. Source proof execution and
-certificate validation run the same rule. Regressions cover wrong populations,
-absent ownership, views, nested calls, retirement, and historical versus current
-observations. A false-zero regression ensures that authenticating an external
-control does not assume its entry count is zero.
+**Contract-transition slice:** The count-transition positive and negative now
+use explicit authority and a checked member birth. The positive states the
+entry-to-post count relation; the negative rejects its fixed post-count claim.
+The produced-population predicate fixture and its ordinary caller also select
+authority semantics. They require an empty entry family explicitly and retain
+the original C and ensured predicate through positive and zero quantities.
 
-The ordinary abstract transfer fixture and missing-private-body negative now
-use authority. Ordinary wrappers package and expose existing members without
-changing their population; the kernel checks and retains those exchanges,
-including proof operations after the C return.
+1. Migrate remaining numeric/symbolic quantity groups and local contribution
+   consumption, retaining scope-close and return single-spend checks.
+   Before migrating named-member lifecycle helpers, extend their checked
+   authority effects for explicit helper birth/consumption; milestone two
+   supports preserving transport and local lifecycle operations only.
+2. Migrate predicates, loops, current/old snapshots, and contract observation
+   boundaries without permitting count facts to manufacture authority.
+3. Migrate sequential exact-two accounting and dependent helper groups.
+4. Finish residual sequential consumers and replacement diagnostic/negative
+   coverage from the inventory, if the earlier groups do not cover them.
 
-Conditional release helpers use existing `consumes` and guarded `produces`
-clauses to return control only on the nonfinal branch. Nested numeric calls
-transfer authority and members explicitly, preserve updated population state,
-and reject stranded ownership. Their postconditions observe the checked member
-delta before the caller resumes. Symbolic nested transfers remain explicitly
-unsupported; standalone symbolic batch proofs remain supported.
+**Exit gate:** Every sequential consumer has a checked authority replacement;
+no group is silently skipped or weakened. Mutex and worker legacy groups remain
+explicitly listed for their own milestones.
 
-The sequential refcount group is complete: both
-`counted_release_preserves_nonfinal_allocation.md` and
-`population_initialized_cleanup.md` now use authority with unchanged C and
-all original postconditions. Consuming authority requires proof that the exact
-population is empty; this preserves a read-only `count(R(p)) == 0`, including
-after free. It grants no membership-update, storage-access, or reestablishment
-permission. An unrelated freed pointer cannot supply that evidence, and a new
-object lifetime cannot reuse it. Imported authority cleanup independently
-checks the global total, rather than merely local member exhaustion.
+### Milestone 4: Integrate authority with mutexes (4–5 chunks)
 
-A generic authority-bearing storage resource can describe an object before its
-C counter is initialized. Its helper-entry count is an arbitrary opaque value;
-a declared counter equality is used only when the wrapper actually provides
-one. Initialization can require zero and produce the first reference using
-ordinary contracts. Checked wrapper opening supplies authority for helper
-preconditions and historical count postconditions without changing actual
-custody. Both migrated fixtures pass verification and expansion audit;
-`authority_count_after_cleanup.md` covers zero before and after free, while
-spent-authority and unregistered-family negatives preserve permission checks.
+1. Deposit an ordinary authority-bearing control during checked initialization;
+   lock returns it, unlock requires it with restored facts.
+2. Support independently checked acquiring/releasing helpers using existing
+   `owns`/`consumes`/`produces`, including replacement state and lifetime holds.
+3. Check fresh count observations after possible interference and reject stale
+   observations, wrong mutexes, missing state, and stale initialization.
+4. Migrate held/unheld population helpers and local-conservation groups.
+5. Migrate active `guarded_by` associations to ordinary initialization/transfer
+   in dependency groups; retain its parser until the final removal milestone.
 
-### 5. Migrate shared-parent ownership
+**Exit gate:** These proofs/certificates use no special counted-population mutex
+custody. A member alone grants no protected control access. Parity, ordinary
+mutex helpers, and all earlier migrations stay green.
 
-**Work:** Move references through ordinary parent wrappers and nested helpers.
-Migrate [both parent destruction orders](../mdtests/shared_heap_population_lifecycles.md)
-and their related alias, allocation-failure, and final-release fixtures.
-Preserve reads through the surviving parent and exact final reclamation.
+### Milestone 5: Concurrent lifetime and worker accounting (5–7 chunks)
 
-**Exit gate:** Wrapped members retain their population identity, opaque calls
-cannot change them without authority, and both frozen caller paths verify and
-audit. Refcount and all unmigrated consumers remain green.
+1. Check authority/member lifetime transport through create, worker contracts,
+   and join, rejecting premature observations and reclamation.
+2. Freeze the no-lock worker accounting protocol. Workers must possess authority
+   or use a specifically justified deferred transfer; join cannot retroactively
+   authorize birth/consumption. Discuss a substantive design gap before coding.
+3. Implement the smallest justified protocol with independent certificate and
+   misuse regressions, if the existing transfers cannot express it.
+4. Migrate abstract tickets/contributions, retained units, and symbolic joins.
+5. Verify a mutex-protected shared-refcount C example with two users, a retained
+   owner reference, locked retain/release, and final reclamation.
+6. Cover create failures, either completion/join order, early/stale count
+   refusals, and exact cleanup across dependent worker fixtures.
+7. Finish remaining concurrent consumer groups and audits if necessary.
 
-**Complete:** Both frozen destruction orders, surviving-parent reads,
-allocation failures, and final reclamation verify under authority semantics.
-The main sidecar audits all 48 smart sites; the related migrated fixture group
-and all remaining consumers pass the full repository gate. The C is unchanged.
-The migration also preserves checked early-consumption evidence at legacy
-proof endpoints, so a nested extra consumption cannot be hidden at return.
+**Exit gate:** Distributed references preserve object/mutex lifetime, population
+updates preserve framed ownership, and final reclamation occurs exactly once.
+Every count consumer has a new-model replacement. Verify/expand/reverify/audit
+pass without a refcount-specific mutex rule. The final exact-two shared-worker
+counter remains a subsequent concurrency-demo task, not an additional authority
+migration gate. Atomic or lock-free refcounting is out of scope.
 
-The straight two-parent decrement-only helper uses borrowed control and a
-borrowed surviving member plus one consumed member. Its existing inputs still
-supply two units, and its output preserves the surviving unit's identity and
-returns control unconditionally. This is a stronger natural contract for C
-that cannot take a final-release branch. The earlier explicit
-`consumes 2`/`produces 1` member shape and weaker conditional control return
-using `old(count(child_ref(p->kid)))` remain unsupported at their modular and
-deferred-certification boundaries. Checkpoint 5 does not claim those interface
-gaps resolved; genuine conditional/free behavior remains covered by the main
-shared-parent and branch fixtures.
+### Milestone 6: Switch the default and delete legacy machinery (4–5 chunks)
 
-### 6. Build wildcard and field-bearing member support before pool migration
+1. Audit production paths, runtime specs, public docs, imports, summaries,
+   caches, and certificates against the now-empty legacy consumer inventory.
+2. Make authority the sole execution model; reject unauthorized current counts
+   uniformly and incompatible old caches/certificates. Remove temporary project
+   selection. Keep old code unreachable until this switch is independently green.
+3. Delete implicit population body access, count-in-body classification,
+   field-based countability, and obsolete counted-population mutex custody.
+4. Remove `guarded_by` parser/lowering/kernel metadata, retaining a useful
+   retired-spelling diagnostic and migrated wrong-association regressions.
+5. Remove obsolete migration metadata/dead tests and update historical statuses
+   and public documentation if this does not fit the preceding cleanup commits.
 
-**Work:** Implement disjoint per-pool scopes, exact observations governed by a
-wildcard authority, and a checked transfer between two authorities. Count
-individually identified members without erasing fields or treating equal
-parameters as interchangeable instances. Add the private-slot example below.
+**Exit gate:** Full corpus passes with no legacy execution/fallback, old permission
+machinery, or active `guarded_by` consumer. Replacement coverage is recorded
+before old tests disappear. Complete this issue and resume the concurrency demo.
 
-**Tests:** Overlapping authorities, wrong-pool updates, aliasing, cross-pool
-transfer, two disjoint field-bearing instances, exclusive-memory conflicts,
-and private field changes that preserve membership. Wildcard queries/updates
-need indexed, output-sensitive scaling coverage.
+## Scope boundary
 
-**Exit gate:** Small dedicated fixtures establish these capabilities before any
-bounded-pool sidecar depends on them. The legacy field-based restriction still
-exists only for remaining old clients; do not globally flip it yet.
-
-### 7. Migrate bounded pool and remaining sequential count consumers
-
-**Work:** Migrate [bounded pool](../examples/bounded-pool/README.md), preserving
-checkout/return, resize, zero capacity, wildcard totals, private object writes,
-and source-to-destination transfer. Move the pool invariant and population
-authorities into its control ownership. Then migrate the remaining sequential
-count/predicate/loop fixtures from the inventory in small dependency groups.
-
-**Exit gate:** Original pool C and all claims verify with explicit authority.
-Private object writes need no pool authority when they do not change the pool
-invariant. No sequential consumer remains unaccounted for in the inventory;
-concurrent and local-mutex legacy groups are listed explicitly.
-
-### 8. Integrate authority with existing mutex transfers
-
-**Work:** Allow an ordinary mutex-protected control resource to contain authority.
-Verify concrete lock/unlock and independently checked acquiring/releasing
-helpers, including fresh count observations, replacement state, and lifetime
-holds. First add authority-based counterparts to the held/unheld population
-helper and local-conservation fixtures, then switch those groups over.
-
-Migrate `guarded_by` examples to initialization-established associations in
-small groups. Preserve wrong-mutex, stale-initialization, and missing-state
-negative coverage. Keep the old parser/metadata until the final removal gate.
-
-**Exit gate:** Lock gives control ownership, unlock requires its restored
-invariant, and a member alone cannot expose it. Neither the new proofs nor
-helper certificates use special counted-population mutex custody. Parity,
-ordinary mutex helpers, and all previous migrations stay green.
-
-### 9. Add shared-refcount concurrency support and its acceptance example
-
-**Work:** First test authority/member lifetime dependencies across create,
-worker contracts, and join without admitting premature observations. Then
-freeze and verify a small ordinary C program with two users, a retained owner
-reference, locked retain/release, and final reclamation after users finish.
-Handle creation failure and both completion/join orders.
-
-**Exit gate:** References keep the object and mutex alive before acquisition;
-updates cannot invalidate references held elsewhere; reclamation occurs once
-only after the necessary references and use loans are recovered. Verify,
-expand/reverify, and audit pass without a refcount-specific mutex rule. This
-is a mutex-protected example, not an atomic-refcount or lock-free claim.
-
-### 10. Migrate contribution and abstract worker-accounting fixtures
-
-**Work:** Migrate [sequential exact two](../mdtests/counted_resource_contribution_counter.md)
-and local contribution consumption, retaining scope-close and return
-single-consumption checks. Separately migrate abstract worker-ticket/join
-fixtures. A worker transition must possess authority or use a specifically
-justified deferred transfer; join cannot retroactively authorize consumption.
-
-Existing no-lock workers may expose a real expressibility gap under the new
-rules. Resolve the protocol/contract design before migrating that group; do
-not rewrite their C, drop their exact claims, or retain a hidden authority
-bypass. Preserve create failures, either join order, and early/stale count
-refusals. The shared-worker counter's final exact-two proof remains the next
-concurrency-demo task after migration, rather than an extra completion gate here.
-
-**Exit gate:** Every count consumer in the inventory has a checked new-model
-replacement, including worker accounting. No legacy-only fixture is quietly
-skipped or weakened. All new groups pass the full gate together.
-
-### 11. Switch the default only when the migration inventory is empty
-
-**Work:** Audit all production verification paths, runtime specs, public docs,
-examples, fixtures, imported summaries, and cached certificates. Enable the
-new authority semantics globally; current count without authority now fails
-uniformly. Remove temporary per-project selection and reject incompatible old
-certificates/caches. Keep old implementation code unreachable for this
-checkpoint if that makes the switch independently reviewable.
-
-**Exit gate:** The full corpus passes with legacy execution disabled. Tests
-prove there is no fallback and field presence no longer selects countability.
-There are zero active `guarded_by` consumers except targeted rejection tests.
-Only after this gate may the old implementation be deleted.
-
-### 12. Delete legacy machinery in separately green cleanup commits
-
-**Work:** Remove the unreachable implicit-population access and count-in-body
-classification, field-based countability checks, and obsolete population mutex
-custody. Remove `guarded_by` parser/lowering/kernel metadata in a separate
-reviewable commit, retaining a useful diagnostic for the retired spelling.
-Remove migration metadata and dead tests only after their replacement coverage
-is recorded. Update historical design statuses and public resource docs.
-
-**Exit gate:** Source and test inventory confirms no old permission path,
-scaffolding, or active syntax remains. The full gate and affected proof audits
-pass. Mark the authority migration complete and resume the concurrency demo
-on the new foundation.
-
-An identified-slot example should test that a field-bearing member can change
-its privately owned memory while the control resource stays closed, provided
-that update changes no population invariant. Removing the slot requires its
-membership and authority. General sums over member fields, mutable ghost maps,
-fractional/persistent fragments, atomic refcounts, and arbitrary user-defined
-algebras are follow-up scope, not prerequisites for this migration.
+General aggregate invariants over proof fields, mutable ghost maps, fractional
+or persistent fragments, arbitrary user-defined algebras, and atomic refcounts
+are follow-up projects. General controls with more than two authorities,
+partially fixed population patterns, and symbolic exact subsets are not migration
+prerequisites unless an unchanged acceptance example demonstrates a need.
 
 ## Small intended regressions
 

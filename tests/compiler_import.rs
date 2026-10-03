@@ -612,3 +612,50 @@ fn userspace_frozen_pthread_probe_records_real_header_boundary() {
     assert!(!error.trim().is_empty(), "empty import diagnostic");
     assert!(error.len() < 4096, "unbounded import diagnostic: {error}");
 }
+
+#[test]
+fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option() {
+    let project = Project::new();
+    let original_config = fs::read(project.config()).unwrap();
+    let with_projection = |value: &str| {
+        let mut config: serde_json::Value = serde_json::from_slice(&original_config).unwrap();
+        config["sources"][0]["projection"] = json!(value);
+        fs::write(
+            project.config(),
+            serde_json::to_vec_pretty(&config).unwrap(),
+        )
+        .unwrap();
+    };
+
+    with_projection("whatever-parses");
+    let error = create_lock(&project.config()).expect_err("unknown projection");
+    assert!(error.contains("unsupported import projection"), "{error}");
+
+    // An unused declaration the parser rejects is omitted by the projection,
+    // while the proof about the definition it keeps still verifies.
+    let mut header = fs::read_to_string(project.0.join("context.h")).unwrap();
+    header = header.replace(
+        "#endif\n",
+        "static inline int unused_stray(int x) { __asm__ __volatile__(\"cli\"); return x; }\n#endif\n",
+    );
+    fs::write(project.0.join("context.h"), header).unwrap();
+    with_projection("dependency-closure");
+    create_lock(&project.config()).expect("lock the projected import");
+    let imports = load_imports(&project.config()).expect("load the projected import");
+    assert!(!imports[0].source().contains("unused_stray"));
+    assert!(imports[0].source().contains("from_header"));
+    verify_c0_prepared_sources(&project.proof(), &imports).expect("the kept proof verifies");
+
+    // Without the projection the same artifact is refused at the stray
+    // assembly, and the configuration change is a different lock.
+    fs::write(project.config(), &original_config).unwrap();
+    create_lock(&project.config()).expect("lock the whole import");
+    let imports = load_imports(&project.config()).expect("load the whole import");
+    let error = verify_c0_prepared_sources(&project.proof(), &imports)
+        .expect_err("the whole unit includes the stray assembly");
+    assert!(
+        error.message().contains("inline assembly"),
+        "{}",
+        error.message()
+    );
+}

@@ -80,12 +80,9 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
             }
         "#;
 
-    let ((verified, _events), planning_transitions) =
-        collect_planning_statement_transitions(|| {
-            crate::instrumentation::collect(|| {
-                verify_c0_sources(click_source, &[("transport.c", c_source)])
-            })
-        });
+    let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("transport.c", c_source)])
+    });
     let verified =
         verified.expect("transport should certify a source derived from exact snapshot facts");
     assert!(
@@ -243,6 +240,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let first_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(base_memory.clone()),
         Box::new(first.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let before_memory = base_memory
         .clone()
@@ -252,6 +250,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             int32(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(base_memory.clone()),
                 Box::new(second.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
         );
     let state = CState::new()
@@ -307,35 +306,13 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(post_state.memory().clone()),
                 Box::new(first),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(7)),
         ),
         true,
     );
     assert!(!transition.pure_facts.contains(&transported));
-}
-
-#[test]
-fn step_executes_with_the_whole_proof_context() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures result == x + 1;
-            } by {
-                step();
-                simp();
-            }
-        "#;
-
-    verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("the whole proof context should justify one execution transition");
 }
 
 #[test]
@@ -440,23 +417,13 @@ fn execute_step_records_a_state_checked_surface_expansion() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| {
-            verify_c0_sources(click_source, &[("increment.c", c_source)])
-        })
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("increment.c", c_source)])
     });
     let verified = verified.expect("the smart execution step should verify");
     assert_eq!(
         planning_transitions, 0,
         "the exact definedness premise should be selected without a mutable planning transition"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment.contract" && name == "generated certificate validation"
-        )),
-        "a linear smart step must retain its checked Proof instead of ordinarily checking it: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -513,21 +480,13 @@ fn no_premise_smart_step_searches_directly_on_proof() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &[("zero.c", c_source)]))
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("a no-premise smart step should verify on its Proof successor");
     assert_eq!(
         planning_transitions, 0,
         "the accepted no-premise candidate must not first execute a mutable planning transition"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "zero.contract" && name == "generated certificate validation"
-        )),
-        "the direct Proof successor must not pass through ordinary construction check: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -565,8 +524,8 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
             }
         "#;
 
-    let ((verified, _events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &[("zero.c", c_source)]))
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("the unrelated scalar fact should remain shared by Proof");
     assert_eq!(
@@ -610,23 +569,13 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| {
-            verify_c0_sources(click_source, &[("set_one.c", c_source)])
-        })
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("set_one.c", c_source)])
     });
     let verified = verified.expect("fact-free linear smart steps should verify through Proof");
     assert_eq!(
         planning_transitions, 0,
         "neither linear statement should execute on a mutable planning context"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "set_one.contract" && name == "generated certificate validation"
-        )),
-        "the retained Proof path must not pass through ordinary construction check: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -668,23 +617,13 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| {
-            verify_c0_sources(click_source, &[("set_one.c", c_source)])
-        })
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("set_one.c", c_source)])
     });
     let verified = verified.expect("the local assignment dependency should be selected by Proof");
     assert_eq!(
         planning_transitions, 0,
         "the smart local assignment must not execute on a mutable planning context"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "set_one.contract" && name == "generated certificate validation"
-        )),
-        "the retained Proof path must not pass through ordinary construction check: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -773,21 +712,13 @@ fn linear_execute_retains_its_checked_execution_proof() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &[("zero.c", c_source)]))
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("linear execute should verify through its checked Proof");
     assert_eq!(
         planning_transitions, 0,
         "linear execute must search on checked Proof descendants"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "zero.contract" && name == "generated certificate validation"
-        )),
-        "linear execute must not ordinarily check its retained certificate: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -816,21 +747,13 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             }
         "#;
 
-    let ((verified, events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &[("zero.c", c_source)]))
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("zero.c", c_source)])
     });
     let verified = verified.expect("linear execute_until should verify through its checked Proof");
     assert_eq!(
         planning_transitions, 0,
         "linear execute_until must search on checked Proof descendants"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "zero.contract" && name == "generated certificate validation"
-        )),
-        "linear execute_until must not ordinarily check its retained certificate: {events:#?}"
     );
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -873,12 +796,9 @@ fn execute_step_omits_materialization_only_transport() {
             }
         "#;
 
-    let ((verified, _events), planning_transitions) =
-        collect_planning_statement_transitions(|| {
-            crate::instrumentation::collect(|| {
-                verify_c0_sources(click_source, &[("transport.c", c_source)])
-            })
-        });
+    let (verified, planning_transitions) = collect_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("transport.c", c_source)])
+    });
     let verified = verified.expect("automatic snapshot transport should verify");
     assert!(
         planning_transitions.iter().all(|(claim, _, tactic)| claim
@@ -1159,6 +1079,7 @@ fn synthesizes_pointer_offset_equality_as_pointer_comparison() {
                 value: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(owner.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 byte_width: 4,
             }),

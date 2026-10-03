@@ -140,8 +140,8 @@ there is a real cycle that Click does not already rank: a loop the proof
 summarizes, or a recursive call. A `decreases` clause is always one expression, and what it names
 decides which measure it is: an `int32` parameter, a resource application such
 as `list(node)`, a contract or loop resource binder such as `t`, or, on a
-self-recursive function, any pure `int32` or mathematical `Integer`
-expression. Functions
+self-recursive function, any pure `int32`, unsigned, or mathematical
+`Integer` expression. Functions
 and resources share one namespace, so that classification happens after name
 resolution rather than from a keyword; there is no `decreases resource`
 spelling. A function-level measure ranks recursive calls:
@@ -252,11 +252,12 @@ An expression measure currently ranks **direct self-recursion only**. The
 descent is owed at a call to the function that declared the measure, so a
 recursive component with more than one function would leave its other edges
 ranked by nothing; Click refuses such a declaration by name
-(`mdtests/c_decreases_pure_expression_rejects_mutual_recursion.md`). For the
-same reason it refuses a self-recursive `static inline` helper, whose body
-executes at each call site instead of applying a contract.
+(`mdtests/c_decreases_pure_expression_rejects_mutual_recursion.md`).
 `decreases <int32 parameter>`, whose analysis reads the body rather than the
-call steps, still ranks both shapes.
+call steps, still ranks that shape. A self-recursive `static inline` helper
+with a contract is called through its contract, so an expression measure
+ranks it like any function
+(`mdtests/inline_helper_expression_measure_recursion.md`).
 
 A binder the contract already declares names the same measure without
 repeating its arguments:
@@ -292,7 +293,8 @@ value.
 
 The numeric proof shape is deliberately small but a loop measure is one
 component, or a nonempty lexicographic tuple of components, and each component
-is any pure `int32` or mathematical `Integer` expression: a C fragment, a
+is any pure `int32`, unsigned, or mathematical `Integer` expression: a C
+fragment, a
 memory read, an application of
 a pure Click function, a resource model field. Click evaluates the one
 declared component at the iteration's entry state and again at the back-edge
@@ -339,6 +341,51 @@ member permanently open. See
 no leniency about the descent itself: a measure the body does not move leaves
 the ranking member open exactly as a C one does, as in
 `mdtests/loop_decreases_pure_expression_must_decrease.md`.
+
+A machine component's type is the one C gives the expression. Operands
+narrower than `int` (`_Bool`, `int8`, `int16`, `uint8`, `uint16`) are
+promoted to `int32` first, so a measure over a `uint8` counter is an int32
+measure and owes the signed `0 <= m` member:
+
+<!-- verified-example: mdtests/a_uint8_loop_counter_ranks_as_a_promoted_int32.md -->
+```click
+loop {
+    decreases 4 - x;
+    invariant x <= 4;
+}
+```
+
+A component whose type, after C's usual arithmetic conversions, is `uint32`
+or `uint64` ranks the loop by unsigned order. That includes a mixed
+expression such as `4 - x` over a `uint32 x`, whose `int32` operand converts
+to `uint32` exactly as C converts it. The measure is the value C computes,
+wraparound included. Its nonnegativity member is the constant `true`, since
+every unsigned value is a natural number, and its decrease member is
+`post < pre` as an unsigned comparison of the two wrapped values. Wrapped
+values are what keep the ranking sound: a back edge on which the measure
+wraps upward, as `3 - x` does when `x` goes from 3 to 4, fails the decrease
+member (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`), and a
+measure the body moves up fails it too
+(`mdtests/an_unsigned_measure_that_grows_is_refused.md`). Division,
+remainder, right shift, and comparisons inside a component use the
+signedness of their operands' common type. Click refuses an `int64`
+component, a shift of a `uint64` value, and a `?:` that chooses between
+`uint64` values, and names the refusal. A pure component and a self-recursive
+function's expression measure take the same carriers.
+
+An unsigned comparison is a signed order between sign-bit-flipped values, so
+signed arithmetic does not relate `x - 1` to `x` through the flip. The closer
+proves an unsigned member with the `uint32_*` order lemmas instead: one lemma
+per member, from the exact fact that lemma requires, as
+`while (x > 0u) x--;` under `decreases x` does
+(`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
+`mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`).
+A measure `c - x` over a constant is evaluated to `(0 - x) + c`, and
+`uint32_difference_decreases_after_increment` states its descent in that form
+(`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`). A fact
+that takes two steps, such as `x < 4` from `x < n` and `n <= 4`, is stated in
+the proof
+(`mdtests/an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard.md`).
 
 A component whose type is `Integer` ranks the loop in that carrier:
 
@@ -2171,6 +2218,67 @@ declared before the proof that calls it. A named contract takes its instances
 positionally instead, as `step(Exact(k))`, because it declares a parameter
 list.
 
+## User-defined tactics
+
+A `tactic` declaration names a reusable proof step with a contract. Its
+clauses are a function contract's: `consumes`, `produces`, `owns`, `views`,
+`requires`, and `ensures`. Its `by` block proves that contract once, at one
+point of execution: it may unfold, fold, apply theorems and earlier tactics,
+and prove facts, but it runs no C, so `step`, `execute`, `loop`, `branch`, and
+`outcomes` are refused in it. The block ends where its last step leaves the
+proof: every produced instance must be held and every `ensures` an available
+fact.
+
+<!-- verified-example: mdtests/user_tactic_reshapes_owned_resources.md -->
+```click
+tactic divide(p: struct pr*) {
+    consumes x: both(p);
+    produces y: first(p);
+    produces z: second(p);
+    ensures y.tag == 7;
+} by {
+    unfold(x);
+    let y = fold(first(p), { tag: 7 });
+    let z = fold(second(p), { tag: 0 });
+    have y.tag == 7 by { simp(); }
+}
+```
+
+A proof applies it like any tactic, by name, with the binder map a call step
+uses:
+
+<!-- verified-example: mdtests/user_tactic_reshapes_owned_resources.md -->
+```click
+let { y: y, z: z } = divide(p) { x: x };
+```
+
+An application is one simple step. It checks each `requires` as an available
+fact, consumes the mapped instances, produces the declared ones under the
+names the `let` pattern gives, and adds the `ensures`. It changes only the
+resources and facts the proof holds: no C runs, memory is unchanged, and every
+fact about a cell survives. `click expand` never expands an application, and
+`click audit` audits the smart tactics inside the tactic's own `by` block.
+
+A tactic may apply itself. That is what makes it more than an abbreviation: a
+recursive tactic covers a structure of symbolic size, such as converting a
+linked list of any length one node at a time, which no fixed sequence of
+`fold`s can. The recursive application is the induction hypothesis, so the
+tactic must be ranked by an expression `decreases` measure, written after the
+binders it reads (`decreases links_len(x.model);`). Each recursive application
+owes the measure's descent as available facts: the measure at the
+application is nonnegative and smaller than at the tactic's entry
+(`mdtests/user_tactic_recursion_converts_a_list.md`). A recursion with no
+measure is refused, and so is a structural or parameter measure: those read
+recursive calls in a C body, and a tactic's recursion is in its proof.
+
+Tactic parameters use Click's `name: type` spelling and are C scalars and
+pointers in this release. A tactic may not take the name of a built-in tactic
+or a C function, may not declare `diverges`, `throws`, or `constructs`, and
+applies only itself and tactics declared before it, in the module that
+declares it. An application runs at an execution frontier before the function
+exits. See [User-defined tactics (design)](../../internals/user-defined-tactics.md)
+for the kernel rule.
+
 ## Propositions
 
 Click proposition connectives are words:
@@ -2342,7 +2450,10 @@ Existing unqualified references and `verifying "file.c";` remain unchanged.
 `c(name)` explicitly refers to the binding named `name` in the verified C
 program. It is distinct from Click built-ins and contract bindings with the
 same spelling. In particular, bare `result` is the function's contract result,
-while `c(result)` is a C parameter or local named `result`.
+while `c(result)` is a C parameter or local named `result`. Where the contract
+result is in scope (a postcondition, or a proof fact after function exit),
+`c(result)` is refused; read the C binding through a snapshot such as
+`old(c(result))` or `at(statement(N).entry, c(result))`.
 
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded program point:
@@ -2598,9 +2709,9 @@ spelling is unaffected. Explicit ranges such as
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
 
-- `load_int32(pointer)` and `load_uint8(pointer)`
+- `load_int32(pointer)`, `load_uint8(pointer)`, and `load_uint16(pointer)`
 - `load_uint32(pointer)`, `load_int64(pointer)`, and `load_uint64(pointer)`
-- `load_int32_pointer(pointer)` and `load_uint8_pointer(pointer)`
+- `load_int32_pointer(pointer)`, `load_uint8_pointer(pointer)`, and `load_uint16_pointer(pointer)`
 - `byte_offset(pointer, bytes)`
 
 `address(pointer)` is the `uint64` integer representation of an object pointer
@@ -2691,9 +2802,7 @@ passes arguments such as `p` and `old(p)`.
 A function's externally visible write footprint is exactly the memory its
 contract owns. There is no separate effect clause: `owns` permits stores and
 reads, `views` permits reads, and a store outside the owned memory fails at
-the store. The retired `modifies`, `preserves`, `mutable`, and `immutable`
-effect spellings and the `frame` tactic are parse errors whose diagnostics name
-this ownership form.
+the store.
 
 Contract segment expressions are evaluated at function entry, so a shifted
 segment such as `owns (owner->data + owner->len)[0..2]` continues to denote the

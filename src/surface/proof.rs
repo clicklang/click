@@ -1,7 +1,6 @@
 use super::diagnostics::*;
 use super::validation::{collect_called_predicates, collect_resource_count_families, tactic_name};
 use super::*;
-use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
 mod attempt;
@@ -26,8 +25,7 @@ mod proof_object;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,
-    count_execution_context_exports, count_finalization_view_constructions,
-    count_source_certificate_checks,
+    count_finalization_view_constructions,
 };
 mod checked_drivers;
 mod execution_state;
@@ -49,7 +47,7 @@ use crate::kernel::proof::{
     CallOutcomeArmEvidence, CheckedCallOutcomeSplit, CheckedCallOutcomeSplitError,
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
-    PersistentSequenceIter, ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
+    ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
     quantified_equivalence_index_key,
 };
 
@@ -86,9 +84,9 @@ pub(super) use execution_state::{
     capture_c0_prepared_proof_site_expansion, capture_c0_prepared_tactic_expansion,
     capture_c0_project_proof_site_expansion, capture_c0_project_tactic_expansion,
     capture_c0_proof_site_expansion, capture_c0_tactic_expansion,
-    capture_cpp_prepared_project_proof_site_expansion,
-    capture_cpp_prepared_project_tactic_expansion, capture_cpp_prepared_proof_site_expansion,
-    capture_cpp_prepared_tactic_expansion,
+    capture_program_prepared_project_proof_site_expansion,
+    capture_program_prepared_project_tactic_expansion,
+    capture_program_prepared_proof_site_expansion, capture_program_prepared_tactic_expansion,
 };
 #[cfg(test)]
 pub(super) use fact_reasoning::describe_condition_search_miss;
@@ -98,8 +96,6 @@ pub(super) use fact_reasoning::{
 };
 use fixed_state_proofs::*;
 use language_context::*;
-#[cfg(test)]
-pub(in crate::surface) use proof_object::collect_execution_context_export_labels;
 use proof_object::*;
 #[cfg(test)]
 pub(in crate::surface) use pure_theorems::PROVED_THEOREMS;
@@ -129,35 +125,6 @@ use theorem_application::*;
 use timing::TacticTiming;
 pub(super) use timing::{SourceSiteKind, source_site_kind};
 
-/// Checked kernel evidence used as the input to constructing one
-/// [`ProofStep`]. Evidence never forms an ordered checkable program of
-/// its own: search consumes it transiently to write the surface step, and the
-/// resulting operation is checked by `Proof`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::surface::proof) enum ConstructionEvidence {
-    CertifiedStatementStep {
-        planned_transition: Option<usize>,
-    },
-    CertifiedLoopSummaryStep {
-        prerequisite_derivations: Vec<PropositionDerivation>,
-        exact_premises: Vec<Proposition>,
-        planned_transition: Option<usize>,
-    },
-    CertifiedFactTransport {
-        source: Proposition,
-        target: Proposition,
-        theorem: Theorem,
-    },
-    FinishCertifiedFactTransports(Vec<Proposition>),
-    CertifiedPathAssumption {
-        occurrence: usize,
-        condition: ClickProposition,
-        value: bool,
-        facts: Vec<Proposition>,
-        theorem: Theorem,
-    },
-}
-
 type NextTopLevelStatement = (CState, CState, CStatement, Option<CStatement>);
 
 fn check_verification_deadline() -> Result<(), ClickError> {
@@ -169,194 +136,6 @@ fn check_verification_deadline() -> Result<(), ClickError> {
     } else {
         Ok(())
     }
-}
-
-/// Checks a bitvector equality target by transitive chaining of the listed
-/// equality premises, with load terms in canonical form as term identity. The
-/// decide engine chains constants and variables; certificates also chain
-/// through load terms recorded at intermediate states.
-fn pointer_offsets_match_by_term_equivalence(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
-    terms_equivalent: &impl Fn(&Bitvector32Term, &Bitvector32Term) -> bool,
-) -> bool {
-    match (left, right) {
-        (PointerOffsetTerm::Constant(left), PointerOffsetTerm::Constant(right)) => left == right,
-        (PointerOffsetTerm::Variable(left), PointerOffsetTerm::Variable(right)) => left == right,
-        (
-            PointerOffsetTerm::Int32Scaled {
-                value: left,
-                byte_width: left_width,
-            },
-            PointerOffsetTerm::Int32Scaled {
-                value: right,
-                byte_width: right_width,
-            },
-        ) => left_width == right_width && terms_equivalent(left, right),
-        (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
-            (pointer_offsets_match_by_term_equivalence(left_a, right_a, terms_equivalent)
-                && pointer_offsets_match_by_term_equivalence(left_b, right_b, terms_equivalent))
-                || (pointer_offsets_match_by_term_equivalence(left_a, right_b, terms_equivalent)
-                    && pointer_offsets_match_by_term_equivalence(left_b, right_a, terms_equivalent))
-        }
-        _ => false,
-    }
-}
-
-fn pointer_offset_equality_by_frame(target: &Proposition, available: &[Proposition]) -> bool {
-    let Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) = target
-    else {
-        return false;
-    };
-    let framing_facts = available
-        .iter()
-        .filter(|fact| {
-            !matches!(
-                fact,
-                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, _), _)
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let assumptions = assumptions_from_propositions(&framing_facts);
-    let terms_equivalent = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        left == right
-            || crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                left,
-                right,
-                &assumptions,
-            )
-    };
-    pointer_offsets_match_by_term_equivalence(left, right, &terms_equivalent)
-}
-
-fn equal_by_premise_chain(
-    premises: &[Proposition],
-    target: &Proposition,
-    available: &[Proposition],
-) -> bool {
-    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(target_left, target_right), true) =
-        crate::kernel::c_condition_fact_with_canonicalized_loads(target)
-    else {
-        return false;
-    };
-    let framing_facts = available
-        .iter()
-        .filter(|fact| {
-            !matches!(
-                fact,
-                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(_, _), _)
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let frame_assumptions = assumptions_from_propositions(&framing_facts);
-    // Two forms denote the same term when identical, or when they load
-    // the same pointer from memories the recorded effect facts prove
-    // unchanged between (frame-justified, never by ignoring havoc alone).
-    let terms_equivalent = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        left == right
-            || crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                left,
-                right,
-                &frame_assumptions,
-            )
-    };
-    let mut classes: Vec<Vec<Bitvector32Term>> = Vec::new();
-    {
-        let mut add_equality = |left: &Bitvector32Term, right: &Bitvector32Term| {
-            let left = left.clone();
-            let right = right.clone();
-            let left_class = classes.iter().position(|class| class.contains(&left));
-            let right_class = classes.iter().position(|class| class.contains(&right));
-            match (left_class, right_class) {
-                (Some(a), Some(b)) if a != b => {
-                    let merged = classes.remove(a.max(b));
-                    classes[a.min(b)].extend(merged);
-                }
-                (Some(_), Some(_)) => {}
-                (Some(a), None) => classes[a].push(right),
-                (None, Some(b)) => classes[b].push(left),
-                (None, None) => classes.push(vec![left, right]),
-            }
-        };
-        // Ambient equality facts are execution-certified (store equations,
-        // recorded aliases) and may link the listed premises, the same way
-        // frame facts justify load unification. Keep the raw edge as well as its
-        // canonical form: canonicalizing a store equation can reduce its written
-        // load to the stored value and erase the edge needed to reach a later
-        // memory-load term.
-        for premise in premises.iter().chain(available) {
-            if let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                premise
-            {
-                add_equality(left, right);
-            }
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                crate::kernel::c_condition_fact_with_canonicalized_loads(premise)
-            else {
-                continue;
-            };
-            add_equality(&left, &right);
-        }
-    }
-    let target_left = *target_left;
-    let target_right = *target_right;
-    let terms_linked = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        left == right
-            || classes
-                .iter()
-                .any(|class| class.contains(left) && class.contains(right))
-    };
-    let address_terms_linked = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        terms_linked(left, right)
-            || classes.iter().any(|class| {
-                class.iter().any(|term| terms_equivalent(term, left))
-                    && class.iter().any(|term| terms_equivalent(term, right))
-            })
-            || terms_equivalent(left, right)
-    };
-    if terms_linked(&target_left, &target_right)
-        || terms_equivalent(&target_left, &target_right)
-        || classes.iter().any(|class| {
-            class
-                .iter()
-                .any(|term| terms_equivalent(term, &target_left))
-                && class
-                    .iter()
-                    .any(|term| terms_equivalent(term, &target_right))
-        })
-    {
-        return true;
-    }
-    let Bitvector32Term::MemoryLoad(target_memory, target_pointer) = &target_left else {
-        return false;
-    };
-    premises.iter().chain(available).any(|premise| {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = premise
-        else {
-            return false;
-        };
-        let (Bitvector32Term::MemoryLoad(memory, pointer), value) = (left.as_ref(), right.as_ref())
-        else {
-            return false;
-        };
-        let same_block = target_pointer.block == pointer.block;
-        let same_value = terms_linked(&target_right, value);
-        let same_offset = pointer_offsets_match_by_term_equivalence(
-            &target_pointer.offset,
-            &pointer.offset,
-            &address_terms_linked,
-        );
-        same_block
-            && same_value
-            && same_offset
-            && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &Bitvector32Term::MemoryLoad(target_memory.clone(), target_pointer.clone()),
-                &Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone()),
-                &frame_assumptions,
-            )
-    })
 }
 
 /// Language-facing diagnostic adapter for the kernel's instantiated-guard
@@ -403,261 +182,6 @@ pub(super) fn format_forall_int32_instantiation_error(
     }
 }
 
-pub(super) fn check_atomic_premise_derivation_goal(
-    target: &Proposition,
-    premises: Vec<Proposition>,
-    goal: &Proposition,
-    available: &[Proposition],
-) -> Result<(), String> {
-    let target_matches_goal = target == goal
-        || quantified_equivalent_available_fact(goal, std::slice::from_ref(target)).is_some();
-    if !target_matches_goal {
-        return Err(format!(
-            "atomic premise derivation target does not match the current goal\n  target: {}\n  goal: {}",
-            describe_pure_fact(target, &[], &[]),
-            describe_pure_fact(goal, &[], &[]),
-        ));
-    }
-    // An empty premise derivation is sound only for a context-free goal. Any
-    // proof that needs frame or ambient facts must keep at least one explicit
-    // premise in the smart tactic's selected evidence.
-    if premises.is_empty() && !normalizes_context_free(target) {
-        return Err("atomic derivation requires at least one explicit premise".to_string());
-    }
-    let premise_part_available = |part: &Proposition| {
-        available.iter().any(|available| {
-            let mut conjuncts = Vec::new();
-            atomic_conjuncts(available, &mut conjuncts);
-            conjuncts.into_iter().any(|available| {
-                *available == *part
-                    || condition_polarity_equivalent(available, part)
-                    || (matches!(available, Proposition::ForAll { .. })
-                        && matches!(part, Proposition::ForAll { .. })
-                        && assumptions_from_propositions(std::slice::from_ref(available))
-                            .derive_simp_proposition(part)
-                            .is_some())
-            })
-        })
-    };
-    if let Some(missing) = premises.iter().find(|premise| {
-        // A conjunction premise is available when each conjunct is; facts
-        // are often assumed split even when the certificate lists them
-        // joined.
-        let mut parts = Vec::new();
-        atomic_conjuncts(premise, &mut parts);
-        !parts.into_iter().all(premise_part_available)
-    }) {
-        return Err(format!(
-            "atomic derivation is missing an exact listed premise: {}",
-            describe_pure_fact(missing, &[], &[]),
-        ));
-    }
-    if matches!(normalize_proposition(target), SimpProposition::True) {
-        return Ok(());
-    }
-    let premise_assumptions = assumptions_from_propositions(&premises);
-    let premise_only_derivation = premise_assumptions
-        .derive_atomic_proposition(target)
-        .or_else(|| premise_assumptions.derive_simp_atomic_proposition(target));
-    if premise_only_derivation.is_some() {
-        return Ok(());
-    }
-    // Overflow side-conditions are execution-certified facts with no Surface
-    // surface form, so a certificate can never list them; check consumes
-    // them from the ambient record, and this check may too. Only that shape
-    // widens the premise set — evidence for everything else stays listed.
-    let ambient_overflow_facts = available
-        .iter()
-        .filter(|fact| {
-            matches!(
-                fact,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedAddOverflows(_, _)
-                        | ConditionTerm::Bitvector32SignedSubtractOverflows(_, _)
-                        | ConditionTerm::Bitvector32SignedMultiplyOverflows(_, _)
-                        | ConditionTerm::Bitvector32SignedDivideOverflows(_, _)
-                        | ConditionTerm::Bitvector32SignedShiftLeftOverflows(_, _),
-                    false,
-                )
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if !ambient_overflow_facts.is_empty() {
-        let mut widened = premises.clone();
-        widened.extend(ambient_overflow_facts);
-        let widened_assumptions = assumptions_from_propositions(&widened);
-        if widened_assumptions
-            .derive_atomic_proposition(target)
-            .or_else(|| widened_assumptions.derive_simp_atomic_proposition(target))
-            .is_some()
-        {
-            return Ok(());
-        }
-    }
-    let explicit_assumptions = assumptions_from_propositions(available);
-    let explicit_terms_equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
-        left == right
-            || crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                left,
-                right,
-                &explicit_assumptions,
-            )
-    };
-    let explicit_dag_equality = matches!(
-        target,
-        Proposition::ConditionIs(condition, true)
-            if match condition {
-                ConditionTerm::Bitvector32Equal(left, right) => {
-                    explicit_terms_equal(left, right)
-                }
-                ConditionTerm::PointerOffsetEqual(left, right) => {
-                    pointer_offsets_match_by_term_equivalence(
-                        left,
-                        right,
-                        &explicit_terms_equal,
-                    )
-                }
-                ConditionTerm::PointerEqual(left, right) => {
-                    left.block == right.block
-                        && pointer_offsets_match_by_term_equivalence(
-                            &left.offset,
-                            &right.offset,
-                            &explicit_terms_equal,
-                        )
-                }
-                _ => false,
-            }
-    );
-    if explicit_dag_equality
-        || pointer_offset_equality_by_frame(target, available)
-        || equal_by_premise_chain(&premises, target, available)
-    {
-        return Ok(());
-    }
-    // Effect summaries and certified-write records are deterministic
-    // execution artifacts with no surface form; certificate generation
-    // deliberately omits them from the premise list (mirroring its
-    // loadability carve-out), so the check environment supplies them.
-    // Only these two shapes ride along: everything else the derivation
-    // consumes must be a listed premise.
-    let effect_context = available
-        .iter()
-        .filter(|fact| {
-            matches!(
-                fact,
-                Proposition::CMemoryMutatesOnly { .. }
-                    | Proposition::CMemoryEffectSummary { .. }
-                    | Proposition::CHeapAllocationFreed { .. }
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let with_effect_context = |facts: &[Proposition]| {
-        let mut combined = facts.to_vec();
-        combined.extend(effect_context.iter().cloned());
-        combined
-    };
-    let derive_from = |facts: &[Proposition], target: &Proposition| {
-        let assumptions = assumptions_from_propositions(facts);
-        assumptions
-            .derive_atomic_proposition(target)
-            .or_else(|| assumptions.derive_proposition(target))
-            .or_else(|| assumptions.derive_simp_atomic_proposition(target))
-            .or_else(|| assumptions.derive_simp_proposition(target))
-    };
-    let derivation = derive_from(&premises, target)
-        .or_else(|| derive_from(&with_effect_context(&premises), target));
-    // Premises recorded at different program points can write the same load
-    // through different snapshots; retry with loads in canonical form so the chain
-    // unifies.
-    let derivation = derivation.or_else(|| {
-        let canonical_premises = premises
-            .iter()
-            .map(crate::kernel::c_condition_fact_with_canonicalized_loads)
-            .collect::<Vec<_>>();
-        let canonical_target = crate::kernel::c_condition_fact_with_canonicalized_loads(target);
-        if canonical_premises == premises && &canonical_target == target {
-            return None;
-        }
-        derive_from(&canonical_premises, &canonical_target)
-            .or_else(|| derive_from(&with_effect_context(&canonical_premises), &canonical_target))
-    });
-    if crate::instrumentation::deadline_exceeded() {
-        return Err(format!(
-            "tactic budget exhausted: {}",
-            crate::instrumentation::deadline_context()
-        ));
-    }
-    if derivation.is_none()
-        && (pointer_offset_equality_by_frame(target, available)
-            || equal_by_premise_chain(&premises, target, available))
-    {
-        return Ok(());
-    }
-    if derivation.is_none() {
-        return Err(format!(
-            "atomic derivation could not check the target from exactly the listed premises: {}\n  premises: {}",
-            describe_pure_fact(target, &[], &[]),
-            describe_pure_facts(&premises),
-        ));
-    }
-    Ok(())
-}
-
-/// Plan `simp() using` against only the propositions named by the user.
-///
-/// Availability is checked against the ambient proof state, but ambient facts
-/// are deliberately not included in the simplifier context. The returned
-/// derivation is a smart-tactic plan; expansion must lower it to simple rules
-/// before it can become a certificate.
-pub(super) fn plan_restricted_simp_goal(
-    target: &Proposition,
-    premises: Vec<Proposition>,
-    goal: &Proposition,
-    available: &[Proposition],
-) -> Result<PropositionDerivation, String> {
-    if target != goal
-        && quantified_equivalent_available_fact(goal, std::slice::from_ref(target)).is_none()
-    {
-        return Err(format!(
-            "`simp` target does not match the current goal\n  target: {}\n  goal: {}",
-            describe_pure_fact(target, &[], &[]),
-            describe_pure_fact(goal, &[], &[]),
-        ));
-    }
-    let premise_part_available = |part: &Proposition| {
-        available.iter().any(|available| {
-            let mut conjuncts = Vec::new();
-            atomic_conjuncts(available, &mut conjuncts);
-            conjuncts.into_iter().any(|available| {
-                *available == *part || condition_polarity_equivalent(available, part)
-            })
-        })
-    };
-    if let Some(missing) = premises.iter().find(|premise| {
-        let mut parts = Vec::new();
-        atomic_conjuncts(premise, &mut parts);
-        !parts.into_iter().all(premise_part_available)
-    }) {
-        return Err(format!(
-            "`simp` is missing an exact listed premise: {}",
-            describe_pure_fact(missing, &[], &[]),
-        ));
-    }
-    let assumptions = assumptions_from_propositions(&premises);
-    let Some(derivation) = assumptions.derive_simp_proposition(target) else {
-        return Err(format!(
-            "`simp() using` could not prove the current goal from only its listed premises\n  goal: {}",
-            describe_pure_fact(target, &[], &[]),
-        ));
-    };
-    derivation
-        .check(&assumptions)
-        .then_some(derivation)
-        .ok_or_else(|| "`simp() using` planned a derivation that failed validation".to_string())
-}
-
 pub(in crate::surface) fn normalizes_context_free(goal: &Proposition) -> bool {
     crate::kernel::proof::fact_reasoning::normalizes_context_free(goal)
 }
@@ -675,6 +199,7 @@ mod certificate_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(CMemory::new()),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
 
         assert!(bitvector_term_is_load_free(&Bitvector32Term::Add(
@@ -745,6 +270,7 @@ mod certificate_tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(target_memory.clone()),
                         Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Variable(Variable(7))),
                 ),
@@ -786,6 +312,7 @@ mod certificate_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(target_memory),
                     Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(0)),
             ),
@@ -1006,25 +533,6 @@ mod certificate_tests {
     }
 
     #[test]
-    fn pure_fact_check_availability_ignores_quantifier_binder_ids() {
-        let quantified_equality = |variable| Proposition::ForAll {
-            var: variable,
-            sort: Sort::CInt32,
-            body: Box::new(Proposition::ConditionIs(
-                ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::Variable(variable)),
-                ),
-                true,
-            )),
-        };
-        let available = quantified_equality(Variable(2_000_000));
-        let checked = quantified_equality(Variable(3_000_000));
-
-        assert!(pure_fact_is_available(&checked, &[available]));
-    }
-
-    #[test]
     fn pure_certificate_check_is_transactional() {
         let file = parse(
             r#"
@@ -1146,17 +654,15 @@ mod certificate_tests {
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
-        let (verified, events) = crate::instrumentation::collect(|| {
-            verify_theorem_definitions(
-                &[],
-                file.theorem_definitions(),
-                &predicate_environment,
-                &click_function_environment,
-                None,
-                &ResourceEnvironment::new(&[]),
-                std::sync::Arc::new(FunctionSourceRegistry::default()),
-            )
-        });
+        let verified = verify_theorem_definitions(
+            &[],
+            file.theorem_definitions(),
+            &predicate_environment,
+            &click_function_environment,
+            None,
+            &ResourceEnvironment::new(&[]),
+            std::sync::Arc::new(FunctionSourceRegistry::default()),
+        );
         let verified = verified.expect("direct checked pure proofs should verify");
         assert_eq!(
             verified[0].proof_tactics().as_deref(),
@@ -1193,25 +699,6 @@ mod certificate_tests {
             verified[7].proof_tactics().as_deref(),
             Some([ProofTactic::Contradiction(_)])
         ));
-        assert!(
-            events.iter().all(|event| !matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                    if matches!(
-                        claim.as_str(),
-                        "required.ensures_0"
-                            | "reflexive.ensures_0"
-                            | "applied.ensures_0"
-                            | "applied_then_simp.ensures_0"
-                            | "implication.ensures_0"
-                            | "conjunction.ensures_0"
-                            | "disjunction.ensures_0"
-                            | "impossible.ensures_0"
-                    )
-                        && name == "generated certificate validation"
-            )),
-            "checked smart pure proofs must not pass through ordinary certificate validation: {events:#?}"
-        );
     }
 
     #[test]
@@ -1713,6 +1200,15 @@ fn indexed_linear_tactics(
         .cloned()
         .enumerate()
         .map(|(index, tactic)| {
+            if let ProofTactic::Synthetic(inner) = tactic {
+                // A synthetic tactic is no source site: its index lies past
+                // every source position, so no site lookup can match it.
+                return IndexedTactic {
+                    index: index_offset + index,
+                    source_index: SYNTHETIC_SOURCE_INDEX_BASE + index_offset + index,
+                    tactic: *inner,
+                };
+            }
             let indexed = IndexedTactic {
                 index: index_offset + index,
                 source_index,
@@ -1724,12 +1220,16 @@ fn indexed_linear_tactics(
         .collect()
 }
 
+/// Where synthetic tactics are numbered: far past any source script.
+const SYNTHETIC_SOURCE_INDEX_BASE: usize = usize::MAX / 2;
+
 pub(super) fn source_tactic_count(tactics: &[ProofTactic]) -> usize {
     tactics.iter().map(source_tactic_width).sum()
 }
 
 fn source_tactic_width(tactic: &ProofTactic) -> usize {
     match tactic {
+        ProofTactic::Synthetic(_) => 0,
         ProofTactic::Match(proof_match) => {
             1 + proof_match
                 .arms
@@ -1926,6 +1426,26 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
         .collect()
 }
 
+/// The entry a function proof was built from, kept with the theorems the
+/// proof issues so that certifying the contract starts from the same entry
+/// instead of building it again.
+#[derive(Clone, Debug)]
+pub(in crate::surface) struct ProofEntryContext {
+    pub(in crate::surface) state: CState,
+    pub(in crate::surface) arguments: Vec<CExpression>,
+    pub(in crate::surface) pure_facts: PureFactList,
+}
+
+impl PartialEq for ProofEntryContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.arguments == other.arguments
+            && *self.pure_facts == *other.pure_facts
+    }
+}
+
+impl Eq for ProofEntryContext {}
+
 pub(super) struct InitialClaimContext {
     pub(super) state: CState,
     pub(super) arguments: Vec<CExpression>,
@@ -2047,6 +1567,10 @@ pub(super) fn initial_claim_context_with_mode(
             resource_semantics_mode,
         )?
     };
+    crate::surface::proof_diagnostics::render::enter_ambient_naming(
+        parsed_function.parameters(),
+        &arguments,
+    );
     let mut observed_population_families = BTreeSet::new();
     let mut pending_predicates = BTreeSet::new();
     for requirement in function_block.requires() {
@@ -2088,7 +1612,7 @@ pub(super) fn initial_claim_context_with_mode(
     let symbolic_population_families = function_block
         .requires()
         .iter()
-        .filter_map(|requirement| match requirement.inner() {
+        .filter_map(|requirement| match requirement {
             Requirement::Resource(resource) => declared_resource_family(resource),
             _ => None,
         })
@@ -2243,6 +1767,17 @@ pub(super) fn initial_claim_context_with_mode(
         })
         .collect::<Vec<_>>();
     requirement_pure_facts.extend(bool_range_facts.iter().map(|(_, fact)| fact.clone()));
+    // Each narrow integer parameter's type range, such as `0 <= x` and
+    // `x <= 255` for a `uint8`, is likewise a derived entry fact the kernel
+    // states from the parameter's value. It is filed here once, where the
+    // value is introduced, so no use of the parameter has to restate it.
+    for argument in &arguments {
+        if let CExpression::Value(value) = argument
+            && let Some(facts) = crate::kernel::c_narrow_integer_range_facts(value)
+        {
+            requirement_pure_facts.extend(facts);
+        }
+    }
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // The lowerings of requirements that mention `defined(...)` at this
     // folded state; they are replaced at the definedness state below.
@@ -2252,7 +1787,7 @@ pub(super) fn initial_claim_context_with_mode(
         .enumerate()
         .filter_map(|(ordinal, requirement)| {
             matches!(
-                requirement.inner(),
+                requirement,
                 Requirement::Proposition(surface) if click_proposition_mentions_defined(surface)
             )
             .then_some(ordinal)
@@ -2267,7 +1802,7 @@ pub(super) fn initial_claim_context_with_mode(
         .iter()
         .filter(|requirement| {
             matches!(
-                requirement.inner(),
+                requirement,
                 Requirement::Proposition(surface) if click_proposition_mentions_defined(surface)
             )
         })
@@ -2291,12 +1826,12 @@ pub(super) fn initial_claim_context_with_mode(
         surface_propositions.record_lowering(surface, kernel)?;
     }
     for requirement in function_block.requires() {
-        let surface = match requirement.inner() {
+        let surface = match requirement {
             Requirement::Proposition(proposition) => Some(proposition.clone()),
             Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
                 segment: segment.clone(),
             }),
-            Requirement::Resource(_) | Requirement::Labeled { .. } => None,
+            Requirement::Resource(_) => None,
         };
         let Some(surface) = surface else {
             continue;
@@ -2388,7 +1923,7 @@ pub(super) fn initial_claim_context_with_mode(
     let mut definedness_context = PureFactContext::new();
     let mut definedness_context_facts = 0;
     for (source_ordinal, requirement) in function_block.requires().iter().enumerate() {
-        let Requirement::Proposition(surface) = requirement.inner() else {
+        let Requirement::Proposition(surface) = requirement else {
             continue;
         };
         if !click_proposition_mentions_defined(surface) {
@@ -2492,7 +2027,8 @@ pub(super) fn initial_claim_context_with_mode(
     // segment diagnostic is used only to enrich a kernel refusal, never to
     // authorize a clause independently.
     let entry_partition_facts;
-    (state, entry_partition_facts) = evaluate_entry_resource_context(
+    let entry_quantity_facts;
+    (state, entry_partition_facts, entry_quantity_facts) = evaluate_entry_resource_context(
         function_block,
         parsed_function,
         resource_environment,
@@ -2508,19 +2044,25 @@ pub(super) fn initial_claim_context_with_mode(
     )?;
     // The entry partition facts are entry assumptions of this contract, on the
     // same footing as the `viewable(..)` fact a clause yields: they are
-    // derived from the written clause list, and contract certification derives
-    // them again for itself from the same list rather than trusting this one.
+    // derived from the written clause list. They are the proof side's
+    // spelling of what the kernel's contract entry states; a proof keeps one
+    // only when the entry states it (`contract_entry_view`).
     for fact in entry_partition_facts {
         if !requirement_pure_facts.contains(&fact) {
             requirement_pure_facts.push(fact);
             entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
+    // Quantity guards are checked implicit requirements. Append them directly:
+    // deduplicating each one by scanning all earlier facts makes a section
+    // with many quantified clauses quadratic. The fact context indexes them.
+    requirement_pure_facts.extend(entry_quantity_facts);
+    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // From here the entry facts only grow, so every context read of them
     // below extends one built context.
     let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
     for requirement in function_block.requires() {
-        let Requirement::Resource(resource) = requirement.inner() else {
+        let Requirement::Resource(resource) = requirement else {
             continue;
         };
         record_initial_composite_surface_facts(
@@ -2571,6 +2113,14 @@ pub(super) fn initial_claim_context_with_mode(
         }
     }
     debug_assert_eq!(requirement_pure_facts.len(), entry_fact_origins.len());
+    // Export the selected function-entry input in the final execution lineage.
+    // Clause evaluation used a separate context with projection-derived read
+    // facts excluded; its prepared index cannot stand in for this one. Entry
+    // construction owns this whole-input boundary, once before proof steps.
+    // Permission lookup must only advance its checked resource/equality deltas.
+    state
+        .resources()
+        .synchronize_memory_equalities(&requirement_pure_facts.context());
     Ok(InitialClaimContext {
         state,
         arguments,
@@ -2672,7 +2222,7 @@ fn explicit_entry_loadability_facts(
 ) -> Result<Vec<Proposition>, ClickError> {
     let mut facts = Vec::new();
     for requirement in function_block.requires() {
-        match requirement.inner() {
+        match requirement {
             Requirement::LoadableSegment { .. } => {
                 let lowered = crate::surface::lowering::requirement_propositions_with_assumptions(
                     std::slice::from_ref(requirement),
@@ -2714,7 +2264,7 @@ fn explicit_entry_loadability_facts(
                     }
                 }
             }
-            Requirement::Resource(_) | Requirement::Labeled { .. } => {}
+            Requirement::Resource(_) => {}
         }
     }
     Ok(facts)
@@ -2740,7 +2290,7 @@ fn evaluate_entry_resource_context(
     claim_label: &str,
     entry_resources: &ResourceContext,
     entry_memory: &CMemory,
-) -> Result<(CState, Vec<Proposition>), ClickError> {
+) -> Result<(CState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
         function_block,
         parsed_function,
@@ -2749,7 +2299,7 @@ fn evaluate_entry_resource_context(
         resource_environment,
     )?;
     if resource_specs.is_empty() {
-        return Ok((state, Vec::new()));
+        return Ok((state, Vec::new(), Vec::new()));
     }
 
     // The kernel evaluator resolves source parameter names through its local
@@ -2822,8 +2372,9 @@ fn evaluate_entry_resource_context(
             Some(CResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
+    let assumptions = pure_facts.context();
     let mut evaluation_state = state.clone().with_resource_context(
-        ResourceContext::new()
+        ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_facts(explicit_entry_facts)
             .unchecked_with_facts(precondition_read_facts),
     );
@@ -2833,7 +2384,6 @@ fn evaluate_entry_resource_context(
             evaluation_state = evaluation_state.with_local(parameter.name(), value.clone());
         }
     }
-    let assumptions = pure_facts.context();
     let definitions = crate::surface::verification::composite_resource_definitions(
         resource_environment,
         predicate_environment,
@@ -2844,6 +2394,7 @@ fn evaluate_entry_resource_context(
     let quantity_assumptions = match crate::kernel::quantified_resource_requirement_assumptions(
         &evaluation_state,
         &resource_specs,
+        &definitions,
         &assumptions,
         &mut budget,
     ) {
@@ -2865,8 +2416,8 @@ fn evaluate_entry_resource_context(
             )));
         }
     };
-    for proposition in quantity_assumptions {
-        assumptions = assumptions.assume_proposition(proposition);
+    for proposition in &quantity_assumptions {
+        assumptions = assumptions.assume_proposition(proposition.clone());
     }
     let (evaluated, entry_clauses) =
         match crate::kernel::evaluate_function_resource_context_with_metadata(
@@ -2892,10 +2443,7 @@ fn evaluate_entry_resource_context(
                         &assumptions,
                     )
                 {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` setup failed: {}",
-                        surface_error.message()
-                    )));
+                    return Err(surface_error.with_context(format!("`{claim_label}` setup failed")));
                 }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
@@ -2922,6 +2470,15 @@ fn evaluate_entry_resource_context(
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
     let entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    // Quantity guards are implicit requirements, just as they are in the
+    // kernel's certified entry. Retain them in the proof context as well;
+    // otherwise the checked boundary loses the very premise used above to
+    // admit a symbolic `owns n of ...` clause.
+    let entry_quantity_facts = if state.uses_population_authority_semantics() {
+        quantity_assumptions
+    } else {
+        Vec::new()
+    };
     let state = project_initial_composite_resource_cores(
         resource_environment,
         parsed_function.parameters(),
@@ -2933,7 +2490,7 @@ fn evaluate_entry_resource_context(
         predicate_environment,
         click_function_environment,
     )?;
-    Ok((state, entry_partition_facts))
+    Ok((state, entry_partition_facts, entry_quantity_facts))
 }
 
 fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
@@ -3093,7 +2650,7 @@ fn install_borrowed_contract_inputs(
 }
 
 pub(super) fn prove_claim_by_auto(
-    mut expansion_capture: Option<&mut ExpansionCapture>,
+    expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
@@ -3106,63 +2663,34 @@ pub(super) fn prove_claim_by_auto(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    let mut loop_verification_error = None;
-    for tactics in auto_loop_verification_tactic_candidates(function_block, claim) {
-        match prove_claim_by_tactics(
-            expansion_capture.as_deref_mut(),
-            source_path,
-            function_block,
-            parsed_function,
-            claim,
-            claim_label,
-            function_environment,
-            predicate_environment,
-            click_function_environment,
-            resource_environment,
-            theorem_environment,
-            function_source_registry.clone(),
-            &tactics,
-            ProofTacticSource::GeneratedBy { source_index: 0 },
-        ) {
-            Ok(mut theorems) => {
-                for theorem in &mut theorems.theorems {
-                    theorem.proof_kind = ProofKind::LoopVerification;
-                }
-                return Ok(theorems.theorems);
-            }
-            Err(error) => loop_verification_error = Some(error),
+    // `auto` is exactly the script `execute(); simp();`.
+    let tactics = [ProofTactic::SmartExecute, ProofTactic::Simp];
+    let mut theorems = prove_claim_by_tactics(
+        expansion_capture,
+        source_path,
+        function_block,
+        parsed_function,
+        claim,
+        claim_label,
+        function_environment,
+        predicate_environment,
+        click_function_environment,
+        resource_environment,
+        theorem_environment,
+        function_source_registry,
+        &tactics,
+        ProofTacticSource::GeneratedBy { source_index: 0 },
+    )?;
+    if function_block
+        .structural_clauses()
+        .iter()
+        .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
+    {
+        for theorem in &mut theorems.theorems {
+            theorem.proof_kind = ProofKind::LoopVerification;
         }
     }
-
-    let mut bounded_error = None;
-    for tactics in bounded_execution_tactic_candidates(claim) {
-        match prove_claim_by_tactics(
-            expansion_capture.as_deref_mut(),
-            source_path,
-            function_block,
-            parsed_function,
-            claim,
-            claim_label,
-            function_environment,
-            predicate_environment,
-            click_function_environment,
-            resource_environment,
-            theorem_environment,
-            function_source_registry.clone(),
-            &tactics,
-            ProofTacticSource::GeneratedBy { source_index: 0 },
-        ) {
-            Ok(theorems) => return Ok(theorems.theorems),
-            Err(error) => bounded_error = Some(error),
-        }
-    }
-    Err(loop_verification_error
-        .or(bounded_error)
-        .unwrap_or_else(|| {
-            ClickError::new(format!(
-                "`{claim_label}`: `auto` had no proof candidate to try"
-            ))
-        }))
+    Ok(theorems.theorems)
 }
 
 pub(super) fn prove_claim_by_simp(

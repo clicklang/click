@@ -9,7 +9,8 @@ script, so the frontier report must not displace it.
 
 `count_down`'s body is one statement and its preservation proof is complete,
 except that it opens with a `have` stating something false. The report names
-the tactic and the missing fact, not the loop.
+the tactic, by its place in the `loop` tactic's `preserve` script, and the
+missing fact, not the loop's unfinished frontier.
 
 ```c filename=count_down.c
 int32 count_down(int32 n) {
@@ -47,5 +48,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-fail: `count_down.contract` tactic 0: `have` failed
+fail: `count_down.contract` tactic 2 (`loop`), `preserve` tactic 0: `have` failed
 ```

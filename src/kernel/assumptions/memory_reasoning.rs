@@ -1168,7 +1168,109 @@ impl PureFactContext {
             }
         }
 
-        false
+        self.proves_cell_within_strided_region(base, bytes, pointer, byte_width, &|condition| {
+            self.exact_condition_value(condition)
+                .or_else(|| self.decide(condition))
+                == Some(true)
+        })
+    }
+
+    /// The element rule above for an access narrower than the element it
+    /// lands in: a field of a struct-array element, or a cell of an array
+    /// inside one.
+    ///
+    /// The address is `base + index * stride + rest`, with `stride` the
+    /// widest scaled summand. It is in the region when `index` is an element
+    /// of it, `0 <= index < bytes / stride`, which is the scalar question
+    /// with the struct size as the element width, and the access at `rest`
+    /// lies within the `stride` bytes of one element, which is this same
+    /// question about a region of `stride` bytes. Every byte offset here is
+    /// a mathematical sum, so the two bounds compose exactly:
+    /// `index * stride + rest + width <= (count - 1) * stride + stride`.
+    ///
+    /// `holds` is the caller's own exact bound check for the two index
+    /// conditions, so a region and a resource range ask them the way their
+    /// scalar rules do.
+    fn proves_cell_within_strided_region(
+        &self,
+        base: &Pointer,
+        bytes: &Bitvector32Term,
+        pointer: &Pointer,
+        byte_width: u32,
+        holds: &dyn Fn(&ConditionTerm) -> bool,
+    ) -> bool {
+        let Some(delta) = pointer.offset_from_base(base) else {
+            return false;
+        };
+        let mut summands = Vec::new();
+        let mut pending = vec![&delta];
+        while let Some(term) = pending.pop() {
+            match term {
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                other => summands.push(other),
+            }
+        }
+        let scaled = |term: &PointerOffsetTerm| match term {
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => u32::try_from(*byte_width)
+                .ok()
+                .map(|stride| (value.as_ref().clone(), stride)),
+            _ => None,
+        };
+        let Some(stride) = summands
+            .iter()
+            .filter_map(|term| scaled(term).map(|(_, stride)| stride))
+            .max()
+        else {
+            return false;
+        };
+        // An element as wide as the access is the scalar rule's case.
+        if stride <= byte_width {
+            return false;
+        }
+        let mut indices = summands.iter().enumerate().filter_map(|(position, term)| {
+            scaled(term)
+                .filter(|(_, width)| *width == stride)
+                .map(|(index, _)| (position, index))
+        });
+        let (Some((position, index)), None) = (indices.next(), indices.next()) else {
+            return false;
+        };
+        let Some(element_count) = element_count_from_bytes(bytes, stride) else {
+            return false;
+        };
+        if !self.assumed_extent_covers_its_element_count(&element_count, stride) {
+            return false;
+        }
+        let lower_condition =
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone());
+        let upper_condition = ConditionTerm::signed_less_than(index, element_count);
+        if !holds(&lower_condition) || !holds(&upper_condition) {
+            return false;
+        }
+        let rest = summands
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != position)
+            .map(|(_, term)| (*term).clone())
+            .reduce(PointerOffsetTerm::add)
+            .unwrap_or(PointerOffsetTerm::Constant(0));
+        let element = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let within = Pointer {
+            block: base.block.clone(),
+            offset: rest,
+        };
+        self.proves_loadable_cell_from_region(
+            &element,
+            &Bitvector32Term::Constant(stride),
+            &within,
+            byte_width,
+        )
     }
 
     pub(in crate::kernel) fn proves_loadable_cell_from_region(
@@ -1387,9 +1489,20 @@ impl PureFactContext {
             if spelled.contains(&range) || spellings.contains(range.base()) {
                 continue;
             }
-            if spellings.iter().any(|base| {
-                crate::kernel::reasoning::kept_range_bases_proven_equal(base, range.base(), self)
-            }) {
+            // A fixed interior offset is a candidate for this parent's
+            // footprint. A symbolic difference between unrelated argument
+            // bases is not: admitting it would query every kept range.
+            if pointer
+                .element_index_from_base_with_width(range.base(), range.element_width())
+                .is_some_and(|index| index.as_const().is_some())
+                || spellings.iter().any(|base| {
+                    crate::kernel::reasoning::kept_range_bases_proven_equal(
+                        base,
+                        range.base(),
+                        self,
+                    )
+                })
+            {
                 aliased.push(range);
             }
         }
@@ -1417,11 +1530,25 @@ impl PureFactContext {
             )
         };
         let elements = bytes.max(1).div_ceil(width);
-        contains(pointer)
+        if contains(pointer)
             && (elements == 1
                 || contains(
                     &pointer.offset_by_elements(Bitvector32Term::Constant(elements - 1), width),
                 ))
+        {
+            return true;
+        }
+        // A field of a struct-array element inside a range that starts at its
+        // base: the range is `end * width` bytes there, and the strided rule
+        // asks the element and field questions with this rule's bound check.
+        range.start().as_const() == Some(0)
+            && self.proves_cell_within_strided_region(
+                range.base(),
+                &Bitvector32Term::multiply(range.end().clone(), Bitvector32Term::Constant(width)),
+                pointer,
+                bytes,
+                &|condition| self.proves_range_bound(condition.clone()),
+            )
     }
 
     /// Whether every byte of an access of `bytes` at `pointer` lies in
@@ -2283,9 +2410,7 @@ impl PureFactContext {
         if left.blocks_proven_distinct(right) {
             return false;
         }
-        self.exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
-            == Some(true)
-            || self.has_indexed_pointer_equality_path(left, right)
+        self.pointers_known_equal(left, right)
     }
 
     /// Whether a recorded separation between these ranges contradicts pointer
@@ -2641,7 +2766,7 @@ impl PureFactContext {
     }
 
     fn pointers_proven_equal_for_fact_transport(&self, left: &Pointer, right: &Pointer) -> bool {
-        if pointers_proven_equal(left, right, self) {
+        if pointers_proven_equal_by_reasoning(left, right, self) {
             return true;
         }
         if left.block != right.block {
@@ -2862,10 +2987,12 @@ impl PureFactContext {
         // check; a late or transitive equality needs no alias walk. This
         // changes address matching only: the range still supplies authority
         // and its bounds still decide whether the access is covered.
-        let resolved = if pointer == base || self.pointer_equality_in_graph(pointer, base) {
+        let resolved = if pointer == base || self.pointers_known_equal(pointer, base) {
             base.clone()
         } else {
-            crate::kernel::reasoning::resolve_symbolic_pointer_alias(pointer, self)
+            self.equality_graph
+                .pointer_at_base(pointer, base)
+                .unwrap_or_else(|| pointer.clone())
         };
         let pointer = &resolved;
         let proves_order = |left: &Bitvector32Term, right: &Bitvector32Term, strict: bool| {
@@ -2947,11 +3074,33 @@ impl PureFactContext {
                 byte_offset,
                 Bitvector32Term::Constant(0),
             )) == Some(true)
-                && self.decide(&ConditionTerm::signed_less_equal(access_end, range_bytes))
-                    == Some(true)
+                && self.decide(&ConditionTerm::signed_less_equal(
+                    access_end,
+                    range_bytes.clone(),
+                )) == Some(true)
             {
                 return true;
             }
+        }
+        // The same footprint holding a struct-array element's field: the
+        // element index and the field are bounded separately.
+        if self.proves_cell_within_strided_region(
+            &range_base,
+            &range_bytes,
+            pointer,
+            byte_width,
+            &|condition| match condition {
+                ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+                    proves_order(left, right, false)
+                }
+                ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+                    proves_order(left, right, true)
+                }
+                ConditionTerm::Constant(value) => *value,
+                _ => false,
+            },
+        ) {
+            return true;
         }
 
         if element_width > 0 && byte_width.is_multiple_of(element_width) {
@@ -3225,7 +3374,7 @@ impl PureFactContext {
                     value: right,
                     byte_width: right_width,
                 },
-            ) => left_width == right_width && self.bitvector_terms_equal_from_facts(left, right),
+            ) => left_width == right_width && self.int32_values_known_equal(left, right),
             _ => false,
         }
     }

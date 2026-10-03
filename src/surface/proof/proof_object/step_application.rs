@@ -773,11 +773,23 @@ impl<'a> Proof<'a> {
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }
+        // An unsigned order is the signed order of sign-flipped operands,
+        // which the arithmetic certificates treat as opaque atoms. A goal
+        // one uint32 lemma away from a listed premise is closed by that
+        // lemma, recorded as the `apply` steps it is.
+        if let ProofStep::ArithmeticUsing(premises) = &step
+            && let Some(proof) = self.try_unsigned_order_lemma_using(premises)
+        {
+            return Ok(proof);
+        }
         if matches!(
             &step,
             ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_)
         ) {
             return self.apply_execution_statement_step(step);
+        }
+        if matches!(&step, ProofStep::UserTactic(_)) {
+            return self.apply_execution_user_tactic(step);
         }
 
         let mut provenance_step = step.clone();
@@ -814,11 +826,18 @@ impl<'a> Proof<'a> {
             _ => None,
         };
         if let Some(successor) = checked_proposition_successor {
+            let successor = successor?;
+            let successor = if matches!(step, ProofStep::InstantiateUsing { .. }) {
+                close_goal_from_added_fact(successor)
+            } else {
+                successor
+            };
             return Ok(Self {
                 site: self.site.clone(),
                 context: self.context.clone(),
-                state: successor?,
+                state: successor,
                 node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
                     parent: Some(self.node.clone()),
                     step: Some(Arc::new(provenance_step)),
                     focused_branch: self.focused_branch_id(),
@@ -898,11 +917,23 @@ impl<'a> Proof<'a> {
             transition.clear_chosen_projection();
         }
 
+        let state = self.publish_checked_transition(transition)?;
+        let state = if matches!(
+            step,
+            ProofStep::ApplyTheoremUsing { .. }
+                | ProofStep::TransportUsing { .. }
+                | ProofStep::LetSatisfy(_)
+        ) {
+            close_goal_from_added_fact(state)
+        } else {
+            state
+        };
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: self.publish_checked_transition(transition)?,
+            state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(step)),
                 focused_branch: self.focused_branch_id(),
@@ -1238,12 +1269,24 @@ impl<'a> Proof<'a> {
             SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticCheckError,
             SpecialArithmeticNode as KernelNode,
         };
+        let has_integer_product = certificate
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpecialArithmeticNode::IntegerProductBounds { .. }));
         let mut premises = Vec::with_capacity(certificate.premises.len());
         for premise in &certificate.premises {
-            premises.push(self.lower_surface_proposition_direct(
-                premise,
-                "special arithmetic certificate premise",
-            )?);
+            let lowered = if has_integer_product {
+                self.lower_integer_surface_proposition(
+                    premise,
+                    "special arithmetic certificate premise",
+                )?
+            } else {
+                self.lower_surface_proposition_direct(
+                    premise,
+                    "special arithmetic certificate premise",
+                )?
+            };
+            premises.push(lowered);
         }
         let lower_result = |result: &ClickProposition| {
             self.lower_surface_proposition_direct(result, "special arithmetic certificate result")
@@ -1260,6 +1303,18 @@ impl<'a> Proof<'a> {
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for node in &certificate.nodes {
             let lowered = match node {
+                SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
+                    KernelNode::IntegerProductBounds {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer product bound result",
+                        )?,
+                    }
+                }
                 SpecialArithmeticNode::PointerTranslation {
                     relation,
                     bounds,
@@ -1305,6 +1360,15 @@ impl<'a> Proof<'a> {
                         result: lower_result(result)?,
                     }
                 }
+                SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
+                    KernelNode::UnsignedSumBound {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: lower_result(result)?,
+                    }
+                }
                 SpecialArithmeticNode::SignedDefined {
                     width,
                     bounds,
@@ -1340,7 +1404,10 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::SpecialArithmeticPremiseUnavailable(index) => self
                     .step_error(format!(
-                        "special arithmetic premise {index} is not exactly available"
+                        "special arithmetic premise {index} is not exactly available: {}",
+                        crate::surface::proof_diagnostics::render::render_proposition(
+                            &premises[index]
+                        )
                     )),
                 PropositionCloseError::SpecialArithmetic(
                     SpecialArithmeticCheckError::SignedDefinedRangeExceeded {
@@ -1371,7 +1438,8 @@ impl<'a> Proof<'a> {
                     ))
                 }
                 PropositionCloseError::SpecialArithmetic(error) => self.step_error(format!(
-                    "special arithmetic certificate rejected: {error:?}"
+                    "special arithmetic certificate rejected: {}",
+                    describe_special_arithmetic_check_error(&error)
                 )),
                 _ => self.step_error("special arithmetic certificate could not be applied"),
             })
@@ -1887,7 +1955,8 @@ impl<'a> Proof<'a> {
                         "signed_int32 premise {index} is not exactly available"
                     )),
                 PropositionCloseError::SignedArithmetic(error) => self.step_error(format!(
-                    "signed_int32 arithmetic certificate rejected: {error:?}"
+                    "signed_int32 arithmetic certificate rejected: {}",
+                    describe_signed_arithmetic_check_error(&error)
                 )),
                 _ => self.step_error("signed_int32 certificate could not be applied"),
             })
@@ -2069,7 +2138,8 @@ impl<'a> Proof<'a> {
                         "integer certificate premise {index} is not exactly available"
                     )),
                 PropositionCloseError::IntegerArithmetic(error) => self.step_error(format!(
-                    "integer arithmetic certificate rejected: {error:?}"
+                    "integer arithmetic certificate rejected: {}",
+                    describe_integer_arithmetic_check_error(&error)
                 )),
                 _ => unreachable!("kernel returned an unrelated integer arithmetic error"),
             })
@@ -2908,4 +2978,108 @@ fn integer_constant_expression(expression: &ContractExpression) -> Option<num_bi
         },
         _ => None,
     }
+}
+
+/// An `Integer` certificate refusal in the certificate's own terms: premises
+/// and nodes by the zero-based indices the certificate cites them with.
+fn describe_integer_arithmetic_check_error(
+    error: &crate::kernel::proof::integer_arithmetic::IntegerArithmeticCheckError,
+) -> String {
+    use crate::kernel::proof::integer_arithmetic::IntegerArithmeticCheckError as Error;
+    match error {
+        Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
+        Error::InvalidNodeReference(index) => {
+            format!("node {index} is referenced but is not an earlier node")
+        }
+        Error::UnsupportedPremise(index) => {
+            format!("premise {index} is not a linear `Integer` claim")
+        }
+        Error::UnsupportedGoal => "the goal is not a linear `Integer` claim".to_string(),
+        Error::NodeResultMismatch(index) => {
+            format!("node {index} does not state what its rule derives from its inputs")
+        }
+        Error::InvalidCoefficient(index) => format!("node {index} uses an invalid coefficient"),
+        Error::InvalidRelation(index) => {
+            format!("node {index} combines relations its rule does not accept")
+        }
+        Error::WorkLimitExceeded => "checking exceeded the work limit".to_string(),
+        Error::DoesNotFollow => "the conclusion node does not establish the goal".to_string(),
+    }
+}
+
+/// As [`describe_integer_arithmetic_check_error`], for `signed_int32`.
+fn describe_signed_arithmetic_check_error(
+    error: &crate::kernel::proof::signed_arithmetic::SignedArithmeticCheckError,
+) -> String {
+    use crate::kernel::proof::signed_arithmetic::SignedArithmeticCheckError as Error;
+    match error {
+        Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
+        Error::InvalidNodeReference(index) => {
+            format!("node {index} is referenced but is not an earlier node")
+        }
+        Error::UnsupportedCarrier => "a term is not a signed `int32` value".to_string(),
+        Error::UnsupportedPremise(index) => {
+            format!("premise {index} is not a signed `int32` claim")
+        }
+        Error::UnsupportedGoal => "the goal is not a signed `int32` claim".to_string(),
+        Error::InvalidDefinedness(index) => {
+            format!("node {index} lacks the definedness evidence its rule needs")
+        }
+        Error::InvalidOperator(index) => {
+            format!("node {index} applies its rule to an operator it does not accept")
+        }
+        Error::InvalidCoefficient(index) => format!("node {index} uses an invalid coefficient"),
+        Error::InvalidEndpoint(index) => format!("node {index} has an invalid interval endpoint"),
+        Error::InvalidRelation(index) => {
+            format!("node {index} combines relations its rule does not accept")
+        }
+        Error::NodeResultMismatch(index) => {
+            format!("node {index} does not state what its rule derives from its inputs")
+        }
+        Error::Overflow(index) => format!("node {index} may overflow `int32`"),
+        Error::DoesNotFollow => "the conclusion node does not establish the goal".to_string(),
+    }
+}
+
+/// As [`describe_integer_arithmetic_check_error`], for `special`.
+fn describe_special_arithmetic_check_error(
+    error: &crate::kernel::proof::arithmetic_special::SpecialArithmeticCheckError,
+) -> String {
+    use crate::kernel::proof::arithmetic_special::SpecialArithmeticCheckError as Error;
+    match error {
+        Error::InvalidIntegerProductBounds(index) => format!(
+            "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"
+        ),
+        Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
+        Error::InvalidNodeReference(index) => {
+            format!("node {index} is referenced but is not an earlier node")
+        }
+        Error::InvalidRelation(index) => {
+            format!("node {index} combines relations its rule does not accept")
+        }
+        Error::InvalidAlignment(index) => format!("node {index} states an invalid alignment"),
+        Error::InvalidDefinedness(index) => {
+            format!("node {index} lacks the definedness evidence its rule needs")
+        }
+        Error::InvalidOperator(index) => {
+            format!("node {index} applies its rule to an operator it does not accept")
+        }
+        Error::NodeResultMismatch(index) => {
+            format!("node {index} does not state what its rule derives from its inputs")
+        }
+        Error::WorkLimitExceeded => "checking exceeded the work limit".to_string(),
+        Error::DoesNotFollow => "the conclusion node does not establish the goal".to_string(),
+        Error::SignedDefinedBoundUnrelated { node, premise, .. } => format!(
+            "node {node}: premise {premise} is not a constant order or equality fact on an operand"
+        ),
+        Error::SignedDefinedRangeExceeded {
+            node, lower, upper, ..
+        } => format!("node {node} puts the exact result in [{lower}, {upper}], outside its width"),
+    }
+}
+
+/// A step that adds a fact closes a proposition goal it added, as `extract`
+/// does. A goal that was already available before the step stays open.
+fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
+    state.closed_if_goal_was_added().unwrap_or(state)
 }

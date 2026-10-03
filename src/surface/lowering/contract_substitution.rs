@@ -1677,10 +1677,6 @@ pub(in crate::surface) fn apply_contract_lets_to_requirement(
     bindings: &[ContractLetBinding],
 ) -> Result<Requirement, String> {
     match requirement {
-        Requirement::Labeled { label, requirement } => Ok(Requirement::Labeled {
-            label,
-            requirement: Box::new(apply_contract_lets_to_requirement(*requirement, bindings)?),
-        }),
         Requirement::LoadableSegment { segment } => Ok(Requirement::LoadableSegment {
             segment: apply_contract_lets_to_segment(segment, bindings)?,
         }),
@@ -3127,22 +3123,27 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             };
             contract_expression_as_c_fragment(substitution).ok_or_else(|| {
                 format!(
-                    "cannot substitute non-C-fragment expression for `{name}` inside C fragment `{expression:?}`"
+                    "cannot substitute non-C-fragment expression for `{name}` inside C fragment `{}`",
+                    crate::surface::diagnostics::describe_c_expression(expression)
                 )
             })
         }
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => Ok(CExpression::Cast {
             expression: Box::new(substitute_c_fragment_in(expression, substitutions)?),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         }),
         CExpression::FloatNegate(expression) => Ok(CExpression::FloatNegate(Box::new(
             substitute_c_fragment_in(expression, substitutions)?,

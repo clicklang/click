@@ -19,7 +19,7 @@ require_mdbook() {
         return 0
     fi
     echo "error: mdBook $mdbook_version not found at $mdbook_bin" >&2
-    echo "Install it once per machine (needs network) with:" >&2
-    echo "    scripts/install-tools.sh" >&2
+    echo "Prepare this machine with (needs network):" >&2
+    echo "    scripts/setup-environment.sh --docs-only" >&2
     exit 1
 }

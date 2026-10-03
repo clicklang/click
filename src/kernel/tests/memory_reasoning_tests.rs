@@ -627,8 +627,13 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after),
                 Box::new(read.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(before), Box::new(read),),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(before),
+                Box::new(read),
+                crate::kernel::LoadKind::Bits32,
+            ),
         ),
         true,
     )));
@@ -741,10 +746,12 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(loop_exit_memory),
                 Box::new(first_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(old_memory),
-                Box::new(first_cell)
+                Box::new(first_cell),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -788,11 +795,13 @@ fn mutable_frame_transports_load_across_certified_effect_chain() {
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after),
-                Box::new(preserved.clone())
+                Box::new(preserved.clone()),
+                crate::kernel::LoadKind::Bits32
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before),
-                Box::new(preserved)
+                Box::new(preserved),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -858,6 +867,7 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(old_memory),
             Box::new(field_pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         ),
         4,
     );
@@ -865,6 +875,7 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(current_memory),
             Box::new(field_pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         ),
         4,
     );
@@ -928,6 +939,7 @@ fn unrelated_external_cell_store_preserves_memory_load_with_stack_temporary() {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(stack_memory),
             Box::new(p0),
+            crate::kernel::LoadKind::Bits32,
         )),
     );
 
@@ -935,9 +947,14 @@ fn unrelated_external_cell_store_preserves_memory_load_with_stack_temporary() {
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(current_memory),
-                Box::new(p1.clone())
+                Box::new(p1.clone()),
+                crate::kernel::LoadKind::Bits32
             ),
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(old_memory), Box::new(p1)),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(old_memory),
+                Box::new(p1),
+                crate::kernel::LoadKind::Bits32
+            ),
         ),
         true,
     )));
@@ -958,10 +975,12 @@ fn target_directed_transport_preserves_one_old_load_form() {
     let old_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(old_memory),
         Box::new(preserved.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let current_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(current_memory),
         Box::new(preserved),
+        crate::kernel::LoadKind::Bits32,
     );
     let source = Proposition::ConditionIs(
         ConditionTerm::equal(old_load.clone(), old_load.clone()),
@@ -1013,7 +1032,11 @@ fn exact_separation_resolves_contained_symbolic_ranges_without_general_search() 
     let memory = CMemory::new().with_block("call-havoc:0", 0);
     let data_field = owner.offset_by_int32_elements(2.into());
     let loaded_data_offset = PointerOffsetTerm::scale_int32(
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(memory), Box::new(data_field)),
+        Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory),
+            Box::new(data_field),
+            crate::kernel::LoadKind::Bits32,
+        ),
         4,
     );
     let loaded_data = Pointer {
@@ -1052,6 +1075,7 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(owner.offset_by_int32_elements(2.into())),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         ),
@@ -1059,6 +1083,7 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
     let loaded_length = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(owner.offset_by_int32_elements(1.into())),
+        crate::kernel::LoadKind::Bits32,
     );
     let named_data = Pointer {
         block: owner.block.clone(),
@@ -1095,6 +1120,7 @@ fn memory_range_endpoint_match_uses_graph_loads_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -1180,6 +1206,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
                     Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(field.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                     4,
                 ),
@@ -1397,9 +1424,13 @@ fn equivalent_memory_load_order_facts_can_be_inconsistent() {
     let old_p0 = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(old_memory),
         Box::new(p0.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let stack_p0 =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(stack_memory), Box::new(p0));
+    let stack_p0 = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(stack_memory),
+        Box::new(p0),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_than(old_p0.clone(), stack_p0.clone()),
@@ -1429,17 +1460,23 @@ fn equivalent_condition_facts_with_different_truth_values_are_inconsistent() {
     let left_a = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory_a.clone()),
         Box::new(p0.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let right_a = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory_a),
         Box::new(p1.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let left_b = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory_b.clone()),
         Box::new(p0),
+        crate::kernel::LoadKind::Bits32,
     );
-    let right_b =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(memory_b), Box::new(p1));
+    let right_b = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory_b),
+        Box::new(p1),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::signed_less_than(left_a, right_a), true)
         .assume_condition(ConditionTerm::signed_less_than(left_b, right_b), false);
@@ -1504,11 +1541,13 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_memory),
-                Box::new(read_cell.clone())
+                Box::new(read_cell.clone()),
+                crate::kernel::LoadKind::Bits32
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before_memory),
-                Box::new(read_cell)
+                Box::new(read_cell),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -1563,10 +1602,12 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_memory),
                 Box::new(metadata_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before_memory),
-                Box::new(metadata_cell)
+                Box::new(metadata_cell),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -1591,6 +1632,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(base_memory.clone()),
                 Box::new(owner_data_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         ),
@@ -1601,6 +1643,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(execution_memory.clone()),
                 Box::new(owner_data_cell),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         ),
@@ -1644,10 +1687,12 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_memory),
                 Box::new(metadata_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(execution_memory),
-                Box::new(metadata_cell)
+                Box::new(metadata_cell),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -1666,10 +1711,12 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
     let data_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(owner_data_cell),
+        crate::kernel::LoadKind::Bits32,
     );
     let length = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(owner_len_cell),
+        crate::kernel::LoadKind::Bits32,
     );
     let data = Pointer {
         block: "arg-memory".into(),
@@ -1685,6 +1732,7 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(terminator_cell),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Constant(0),
         ),
@@ -1737,6 +1785,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(field_cell.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         ),
@@ -1763,6 +1812,7 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after),
                 Box::new(field_cell),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         ),
@@ -1786,6 +1836,7 @@ fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
     let loaded = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(field.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let fact = Proposition::ConditionIs(
         ConditionTerm::signed_add_overflows(loaded, Bitvector32Term::Constant(1)),
@@ -1803,7 +1854,7 @@ fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
 }
 
 #[test]
-fn simple_pointer_equality_does_not_walk_interleaved_aliases() {
+fn simple_pointer_equality_composes_interleaved_aliases_in_the_graph() {
     let final_pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(120)),
@@ -1833,16 +1884,15 @@ fn simple_pointer_equality_does_not_walk_interleaved_aliases() {
             true,
         );
 
-    // The separate indexed alias relation still records this equality, but
-    // the simple Boolean decision does not enumerate its component. The
-    // trusted graph has not yet joined exact offset edges to block classes.
-    assert!(assumptions.has_indexed_pointer_equality_path(&final_pointer, &Pointer::null()));
+    // Exact offset and block premises must compose in the shared graph,
+    // without a consumer walking the exact-alias adjacency index.
+    assert!(assumptions.pointers_known_equal(&final_pointer, &Pointer::null()));
     assert_eq!(
         assumptions.decide(&ConditionTerm::pointer_equal(
             final_pointer,
             Pointer::null()
         )),
-        None
+        Some(true)
     );
 }
 
@@ -2016,17 +2066,23 @@ fn bounded_separation_uses_order_fact_across_equivalent_snapshots() {
     let query_len = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(plain.clone()),
         Box::new(len_cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let query_cap = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(plain),
         Box::new(cap_cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let fact_len = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(cached.clone()),
         Box::new(len_cell),
+        crate::kernel::LoadKind::Bits32,
     );
-    let fact_cap =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(cached), Box::new(cap_cell));
+    let fact_cap = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(cached),
+        Box::new(cap_cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let owner_range = CMemoryRange::new(
         owner.clone(),
         Bitvector32Term::Constant(0),
@@ -2103,11 +2159,13 @@ fn covering_disjoint_fact_handles_shifted_mutable_range() {
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_memory),
-                Box::new(src_cell.clone())
+                Box::new(src_cell.clone()),
+                crate::kernel::LoadKind::Bits32
             ),
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before_memory),
-                Box::new(src_cell)
+                Box::new(src_cell),
+                crate::kernel::LoadKind::Bits32
             ),
         ),
         true,
@@ -2133,6 +2191,7 @@ fn atomic_condition_fact_transport_does_not_plan_from_an_effect_summary() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(stable.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Constant(7),
         ),
@@ -2168,8 +2227,13 @@ fn memory_load_equality_does_not_ignore_loop_havoc_identity() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after),
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(before), Box::new(pointer)),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(before),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            ),
         ),
         true,
     );
@@ -2204,6 +2268,7 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(preserved.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Constant(7),
         ),
@@ -2220,7 +2285,8 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
                 ConditionTerm::equal(
                     Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(after),
-                        Box::new(preserved)
+                        Box::new(preserved),
+                        crate::kernel::LoadKind::Bits32
                     ),
                     Bitvector32Term::Constant(7),
                 ),
@@ -2251,6 +2317,7 @@ fn pointer_offset_fact_transport_does_not_plan_from_an_effect_summary() {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(before.clone()),
                     Box::new(stable.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 4,
             ),
@@ -2300,6 +2367,7 @@ fn equality_fact_matching_transports_both_pointer_offset_endpoints() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             4,
         )
@@ -2340,10 +2408,12 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
     let data_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(data_field),
+        crate::kernel::LoadKind::Bits32,
     );
     let pos_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pos_field),
+        crate::kernel::LoadKind::Bits32,
     );
     let indexed = Pointer {
         block: "arg-memory".into(),
@@ -2373,8 +2443,13 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(indexed),
+                crate::kernel::LoadKind::Bits32,
             ),
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(memory), Box::new(direct)),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(direct),
+                crate::kernel::LoadKind::Bits32,
+            ),
         ),
         true,
     );
@@ -2409,6 +2484,92 @@ fn pointer_offset_equality_combines_equal_base_and_zero_index() {
 }
 
 #[test]
+fn a_struct_field_offset_is_distinct_from_offsets_off_its_stride_residue() {
+    let index = Bitvector32Term::Variable(Variable(93));
+    // `items[x].y` in an array of 8-byte structs is at `x * 8 + 4`.
+    let field = PointerOffsetTerm::add(
+        PointerOffsetTerm::scale_int32(index.clone(), 8),
+        PointerOffsetTerm::Constant(4),
+    );
+    for other in [0, 8, -8, 13] {
+        assert_eq!(
+            ConditionTerm::pointer_offset_equal(field.clone(), PointerOffsetTerm::Constant(other)),
+            ConditionTerm::Constant(false),
+            "offset {other}",
+        );
+    }
+    // A symbolic offset on the other side shares the residue only when its
+    // strides allow it: `y * 4` can be `x * 8 + 4`, `y * 8` cannot.
+    let other_index = Bitvector32Term::Variable(Variable(94));
+    assert_eq!(
+        ConditionTerm::pointer_offset_equal(
+            field.clone(),
+            PointerOffsetTerm::scale_int32(other_index.clone(), 8),
+        ),
+        ConditionTerm::Constant(false),
+    );
+    assert!(matches!(
+        ConditionTerm::pointer_offset_equal(
+            field.clone(),
+            PointerOffsetTerm::scale_int32(other_index, 4),
+        ),
+        ConditionTerm::PointerOffsetEqual(_, _),
+    ));
+    assert!(matches!(
+        ConditionTerm::pointer_offset_equal(field, PointerOffsetTerm::Constant(12)),
+        ConditionTerm::PointerOffsetEqual(_, _),
+    ));
+}
+
+#[test]
+fn a_struct_field_offset_at_a_constant_is_decided_by_its_index() {
+    let index = Bitvector32Term::Variable(Variable(95));
+    let field = PointerOffsetTerm::add(
+        PointerOffsetTerm::scale_int32(index.clone(), 8),
+        PointerOffsetTerm::Constant(4),
+    );
+    let at_twelve = ConditionTerm::pointer_offset_equal(field, PointerOffsetTerm::Constant(12));
+    for (value, decided) in [(true, true), (false, false)] {
+        let assumptions = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(1)),
+            value,
+        );
+        assert_eq!(assumptions.decide(&at_twelve), Some(decided));
+    }
+}
+
+#[test]
+fn memory_resolution_equates_offsets_that_regroup_their_constants() {
+    // A byte field's element `s + 5` and its one-slot run's base
+    // `(s + 4) + 1` are one address; `(s + 4) + 2` is the next byte.
+    let scaled = PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(96)), 4);
+    let grouped = |last: i64| {
+        PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(scaled.clone()),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            )),
+            Box::new(PointerOffsetTerm::Constant(last)),
+        )
+    };
+    let flat = PointerOffsetTerm::Add(
+        Box::new(scaled.clone()),
+        Box::new(PointerOffsetTerm::Constant(5)),
+    );
+    let assumptions = PureFactContext::new();
+    for (last, equal) in [(1, true), (2, false)] {
+        assert_eq!(
+            crate::kernel::reasoning::memory_resolution::pointer_offsets_equal_for_memory_resolution(
+                &flat,
+                &grouped(last),
+                &assumptions,
+            ),
+            Some(equal),
+        );
+    }
+}
+
+#[test]
 fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
     let before = CMemory::new();
     let after = before.clone().with_block("call-havoc:0", 0);
@@ -2425,6 +2586,7 @@ fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(left.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Constant(0),
         ),
@@ -2501,6 +2663,7 @@ fn direct_condition_transport_uses_relative_separate_range() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(data.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Variable(Variable(94)),
         ),
@@ -2554,7 +2717,11 @@ fn direct_condition_transport_uses_relative_separate_range() {
         target,
         &Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(data)),
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(after),
+                    Box::new(data),
+                    crate::kernel::LoadKind::Bits32
+                ),
                 Bitvector32Term::Variable(Variable(94)),
             ),
             true,
@@ -2585,6 +2752,7 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before.clone()),
                 Box::new(data_one.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Variable(Variable(94)),
         ),
@@ -2637,7 +2805,8 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
             ConditionTerm::equal(
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(after),
-                    Box::new(data_one)
+                    Box::new(data_one),
+                    crate::kernel::LoadKind::Bits32
                 ),
                 Bitvector32Term::Variable(Variable(94)),
             ),
@@ -2660,6 +2829,7 @@ fn condition_fact_transport_preserves_arithmetic_structure() {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(before),
                     Box::new(stable.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 Bitvector32Term::Constant(1),
             ),
@@ -2679,7 +2849,8 @@ fn condition_fact_transport_preserves_arithmetic_structure() {
                     Bitvector32Term::add(
                         Bitvector32Term::MemoryLoad(
                             crate::kernel::intern_c_memory(after),
-                            Box::new(stable)
+                            Box::new(stable),
+                            crate::kernel::LoadKind::Bits32
                         ),
                         Bitvector32Term::Constant(1),
                     ),
@@ -3066,6 +3237,7 @@ fn integer_array_fold(
                 byte_width: 4,
             },
         }),
+        crate::kernel::LoadKind::Bits32,
     );
     IntegerTerm::range_fold(
         IntegerRangeFoldIndex::Int32 {
@@ -4215,11 +4387,18 @@ fn memory_resolution_alias_check_uses_strict_indices_across_equal_loaded_bases()
     let data_before = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(data_cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let data_after =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(data_cell));
-    let length =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(before), Box::new(owner));
+    let data_after = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(data_cell),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let length = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(before),
+        Box::new(owner),
+        crate::kernel::LoadKind::Bits32,
+    );
     let index = Bitvector32Term::subtract(length.clone(), Bitvector32Term::Constant(1));
     let indexed = Pointer {
         block: "arg-memory".into(),
@@ -4259,12 +4438,17 @@ fn memory_resolution_alias_check_transports_unchanged_field_loads() {
     let data_before = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(data_cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let data_after =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(data_cell));
+    let data_after = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(data_cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let zero_index = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let left = Pointer {
         block: "arg-memory".into(),
@@ -4307,16 +4491,22 @@ fn memory_resolution_separation_transports_unchanged_range_base_loads() {
     let data_before = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(data_cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let data_after =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(data_cell));
+    let data_after = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(data_cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let length = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let capacity = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(owner.offset_by_int32_elements(Bitvector32Term::Constant(1))),
+        crate::kernel::LoadKind::Bits32,
     );
     let index = Bitvector32Term::subtract(length.clone(), Bitvector32Term::Constant(1));
     let data_base = Pointer {
@@ -4383,6 +4573,7 @@ fn incremented_materialized_index_transports_its_nonnegative_bound() {
     let old_len = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let materialized = before
         .with_block("local:index", 4)
@@ -4390,6 +4581,7 @@ fn incremented_materialized_index_transports_its_nonnegative_bound() {
     let materialized_index = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(materialized),
         Box::new(local_index),
+        crate::kernel::LoadKind::Bits32,
     );
     let incremented = Bitvector32Term::add(materialized_index, Bitvector32Term::Constant(1));
     let upper = Bitvector32Term::Variable(Variable(932));
@@ -4442,6 +4634,7 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
                     int32(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(base_memory.clone()),
                         Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 )
             });
@@ -4467,11 +4660,13 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
             ConditionTerm::equal(
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(base_memory.clone()),
-                    Box::new(pointer)
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32
                 ),
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(materialized_memory.clone()),
                     Box::new(symbolic_src.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             ),
             true,
@@ -4505,6 +4700,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                     int32(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(base_memory.clone()),
                         Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 )
             });
@@ -4524,10 +4720,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(base_memory),
                     Box::new(src_pointers[1].clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(materialized_memory),
                     Box::new(symbolic_src.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             ),
             true,
@@ -4600,6 +4798,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                     int32(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(base_memory.clone()),
                         Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 )
             });
@@ -4625,10 +4824,12 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(base_memory),
                     Box::new(src_pointers[1].clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(materialized_memory),
                     Box::new(symbolic_src.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             ),
             true,
@@ -4693,6 +4894,7 @@ fn added_composition_carrier_keeps_snapshot_premise_work_bounded() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after),
                 Box::new(target.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
         ),
         true,
@@ -4700,7 +4902,11 @@ fn added_composition_carrier_keeps_snapshot_premise_work_bounded() {
     let recorded = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
             Bitvector32Term::Constant(0),
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(before), Box::new(target)),
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(before),
+                Box::new(target),
+                crate::kernel::LoadKind::Bits32,
+            ),
         ),
         true,
     );
@@ -4765,17 +4971,41 @@ fn load_variable_registry_fails_loudly_at_capacity_instead_of_clearing() {
             .with_block("local:c", 4),
     );
     crate::kernel::with_load_variable_registry_capacity(2, || {
-        let first = load_variable_for_cell_with_origin(&memory, &pointer("local:a"), 4, &memory);
-        load_variable_for_cell_with_origin(&memory, &pointer("local:b"), 4, &memory);
+        let first = load_variable_for_cell_with_origin(
+            &memory,
+            &pointer("local:a"),
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
+        load_variable_for_cell_with_origin(
+            &memory,
+            &pointer("local:b"),
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         // Re-registering an identity the registry already knows is not growth
         // and must keep returning the same variable.
-        let again = load_variable_for_cell_with_origin(&memory, &pointer("local:a"), 4, &memory);
+        let again = load_variable_for_cell_with_origin(
+            &memory,
+            &pointer("local:a"),
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         assert_eq!(first, again);
         assert_eq!(crate::kernel::load_variable_registry_len(), 2);
         // The third distinct identity exceeds the capacity: the registry must
         // fail loudly here rather than forget the entries that guard against
         // id collisions.
-        load_variable_for_cell_with_origin(&memory, &pointer("local:c"), 4, &memory);
+        load_variable_for_cell_with_origin(
+            &memory,
+            &pointer("local:c"),
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
     });
 }
 
@@ -4801,7 +5031,12 @@ fn colliding_load_hashes_still_mint_distinct_load_variables() {
     crate::kernel::with_load_variable_range(4, || {
         let blocks = ["local:a", "local:b", "local:c"];
         let variables = blocks.map(|block| {
-            crate::kernel::eval::load_variable_for_exact_cell(&memory, &pointer(block), 4)
+            crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &pointer(block),
+                crate::kernel::LoadKind::Bits32,
+                4,
+            )
         });
         for (index, block) in blocks.iter().enumerate() {
             for other in &variables[index + 1..] {
@@ -4813,7 +5048,12 @@ fn colliding_load_hashes_still_mint_distinct_load_variables() {
                 "an id must name the load it was minted for"
             );
             assert_eq!(
-                crate::kernel::eval::load_variable_for_exact_cell(&memory, &pointer(block), 4),
+                crate::kernel::eval::load_variable_for_exact_cell(
+                    &memory,
+                    &pointer(block),
+                    crate::kernel::LoadKind::Bits32,
+                    4
+                ),
                 variables[index],
                 "a load already named keeps its id"
             );
@@ -4931,6 +5171,7 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_snapshot() {
                     Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(live.clone()),
                         Box::new(base.offset_by_int32_elements(Bitvector32Term::Variable(k))),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                     Bitvector32Term::Constant(0),
                 ),
@@ -5038,11 +5279,15 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
             let next = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(cell(index + 1)),
+                crate::kernel::LoadKind::Bits32,
             );
             memory = CMemory::new().store(cell(index), CValue::Int32(next));
         }
-        let load =
-            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(memory), Box::new(cell(0)));
+        let load = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory),
+            Box::new(cell(0)),
+            crate::kernel::LoadKind::Bits32,
+        );
         let (proven, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                 &load,
@@ -6312,8 +6557,16 @@ fn wide_effect_does_not_frame_an_overlapping_narrow_load() {
     });
     assert!(!assumptions.proves(&Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(before.into(), Box::new(read.clone())),
-            Bitvector32Term::MemoryLoad(after.into(), Box::new(read)),
+            Bitvector32Term::MemoryLoad(
+                before.into(),
+                Box::new(read.clone()),
+                crate::kernel::LoadKind::Bits32
+            ),
+            Bitvector32Term::MemoryLoad(
+                after.into(),
+                Box::new(read),
+                crate::kernel::LoadKind::Bits32
+            ),
         ),
         true
     )));
@@ -6338,23 +6591,33 @@ fn memory_resolution_requires_the_loaded_cell_width() {
     );
     for pointer in [&stored, &alias] {
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, 4),
+            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::Bits32),
             None
         );
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, 2),
+            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::UInt16),
             Some(uint16(7))
         );
     }
     let snapshot = crate::kernel::intern_c_memory(memory);
-    let narrow = crate::kernel::eval::load_variable_for_exact_cell(&snapshot, &stored, 2);
+    let narrow = crate::kernel::eval::load_variable_for_exact_cell(
+        &snapshot,
+        &stored,
+        crate::kernel::LoadKind::UInt16,
+        2,
+    );
     assert_eq!(
         assumptions.resolve_memory_load_term(&Bitvector32Term::Variable(narrow)),
         Some(Bitvector32Term::Constant(7))
     );
     // The shared load name conservatively widens when another access is
     // recorded; it can no longer resolve through the narrow stored cell.
-    let wide = crate::kernel::eval::load_variable_for_exact_cell(&snapshot, &stored, 4);
+    let wide = crate::kernel::eval::load_variable_for_exact_cell(
+        &snapshot,
+        &stored,
+        crate::kernel::LoadKind::Bits32,
+        4,
+    );
     assert_eq!(
         assumptions.resolve_memory_load_term(&Bitvector32Term::Variable(wide)),
         None

@@ -555,6 +555,88 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     ensures value - 1 < value;
 }
 
+theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures value - 1u32 < value;
+}
+
+theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value + 1u32 <= upper;
+}
+
+theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value < value + 1u32;
+}
+
+theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0u32 < upper - value;
+}
+
+theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+}
+
+theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
+theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+    requires greater > lower;
+
+    ensures lower < greater;
+}
+
+theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+    requires lower < greater;
+
+    ensures greater > lower;
+}
+
+theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+    requires greater >= lower;
+
+    ensures lower <= greater;
+}
+
+theorem uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+    requires lower <= greater;
+
+    ensures greater >= lower;
+}
+
 theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;
@@ -811,6 +893,10 @@ theorem cstr_len_has_terminator(bytes: uint8[], len: int32) {
     }
 }
 
+extern int32 __click_constant_p_unknown() {
+    ensures result == 0 or result == 1;
+}
+
 extern uint8* memcpy(uint8 destination[], uint8 source[], int32 bytes) {
     requires 0 <= bytes;
     requires viewable(source[0..bytes]);
@@ -860,6 +946,11 @@ theorem int32_add_to_integer(left: int32, right: int32) {
 theorem int32_less_equal_to_integer(left: int32, right: int32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);
+}
+
+theorem int32_equal_of_to_integer(left: int32, right: int32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
 }
 
 theorem int32_subtract_to_integer(left: int32, right: int32) {

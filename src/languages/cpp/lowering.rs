@@ -10,6 +10,9 @@
 //! Function-body scalar locals use the kernel's ordinary declaration,
 //! assignment, and call-result statements.
 
+use super::lifetime::{LifetimePlan, LifetimeState};
+use super::names::ResolvedNames;
+use super::scalar::{self, Scalar, ScalarKind};
 use std::collections::BTreeMap;
 
 use super::{
@@ -20,10 +23,11 @@ use super::{
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_function, c_greater_equal, c_if,
-    c_int32_literal, c_int64_literal, c_less_equal, c_parameter, c_pointer_offset_bytes, c_return,
-    c_seq, c_skip, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source,
-    c_typed_store, c_variable,
+    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_divide, c_equal, c_function,
+    c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
+    c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract,
+    c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source, c_typed_store,
+    c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -32,11 +36,29 @@ use crate::kernel::{
 #[derive(Clone, Debug)]
 pub struct LoweredCppFunction {
     source: PreparedCppImport,
+    names: ResolvedNames,
     function: CFunction,
     reachable_functions: Vec<CFunction>,
+    execution: std::sync::Arc<crate::languages::PreparedExecution>,
 }
 
 impl LoweredCppFunction {
+    /// Proof-facing name for a resolved Clang declaration identity.
+    pub fn contract_name(&self, declaration_id: &str) -> Option<&str> {
+        self.names.get(declaration_id)
+    }
+
+    pub(crate) fn prepared_execution(&self) -> std::sync::Arc<crate::languages::PreparedExecution> {
+        self.execution.clone()
+    }
+    pub fn contract_functions(&self) -> &[crate::languages::c::syntax::C0Function] {
+        &self.execution.functions
+    }
+
+    pub fn record_layouts(&self) -> &BTreeMap<String, crate::languages::c::syntax::C0StructLayout> {
+        &self.execution.layouts
+    }
+
     pub fn source(&self) -> &PreparedCppImport {
         &self.source
     }
@@ -54,24 +76,67 @@ impl LoweredCppFunction {
     }
 }
 
-/// Lowers the first pinned C++ import slice directly to the kernel's checked
-/// execution vocabulary.
+/// Normalize the pinned C++ artifact into checked execution and its prepared
+/// contract-facing metadata.
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
-    let function = lower_function(import, &import.export().function)?;
+    let names = ResolvedNames::new(
+        std::iter::once(&import.export().function)
+            .chain(&import.export().reachable_functions)
+            .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
+    )?;
+    // Build immutable inventories once; every function borrows the same indexes.
+    let records = import
+        .export()
+        .records
+        .iter()
+        .map(|record| {
+            crate::instrumentation::record_deterministic_work(1);
+            (record.declaration_id.as_str(), record)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let constants = import
+        .export()
+        .constants
+        .iter()
+        .map(|constant| {
+            crate::instrumentation::record_deterministic_work(1);
+            (constant.declaration_id.as_str(), constant)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let function = lower_function(
+        import,
+        &import.export().function,
+        &names,
+        &records,
+        &constants,
+    )?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source))
+        .map(|source| lower_function(import, source, &names, &records, &constants))
         .collect::<Result<Vec<_>, _>>()?;
+    let execution = std::sync::Arc::new(super::interface::prepare(
+        import,
+        &function,
+        &reachable_functions,
+    )?);
     Ok(LoweredCppFunction {
+        execution,
+        names,
         source: import.clone(),
         function,
         reachable_functions,
     })
 }
 
-fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CFunction, String> {
+fn lower_function(
+    import: &PreparedCppImport,
+    source: &CppFunction,
+    names: &ResolvedNames,
+    records: &BTreeMap<&str, &CppRecord>,
+    constants: &BTreeMap<&str, &CppConstant>,
+) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
     let places = source
@@ -87,53 +152,44 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
         .collect::<Result<Vec<_>, _>>()?;
     let mut context = LoweringContext {
         source_unit: import.logical_source(),
-        function_name: &source.name,
+        function_name: names.require(&source.declaration_id)?,
+        names,
+        source_names: places.values().map(|place| place.name.as_str()).collect(),
+        next_call_capture: 0,
         places,
-        records: import
-            .export()
-            .records
-            .iter()
-            .map(|record| (record.declaration_id.as_str(), record))
-            .collect(),
-        constants: import
-            .export()
-            .constants
-            .iter()
-            .map(|constant| (constant.declaration_id.as_str(), constant))
-            .collect(),
+        records,
+        constants,
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
+        nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
         unwind_exception_name: fresh_internal_name(source, "__click_cpp_unwind_exception"),
         unwind_cleanups: matches!(
             import.export().exception_behavior,
             CppExceptionBehavior::ScalarInt32
         ),
     };
-    let body = context.lower_function_body(&source.body)?;
+    let lifetimes = LifetimePlan::new(&source.body, |id| context.records.get(id).copied())?;
+    let body = context.lower_sequence_with_lifetimes(
+        &source.body,
+        &lifetimes,
+        &mut LifetimeState::default(),
+        0,
+    )?;
     let return_type = match &source.function_kind {
-        CppFunctionKind::Free if is_mutable_int32(&source.return_type) => CType::Int32,
-        CppFunctionKind::Free
-            if matches!(
-                source.return_type,
-                CppType::Boolean {
-                    bits: 8,
-                    is_const: false
-                }
-            ) =>
-        {
-            CType::Bool
-        }
-        CppFunctionKind::Free => {
-            return Err(format!(
-                "C++ function `{}` has a return type outside direct lowering",
-                source.name
-            ));
-        }
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
+        _ if source.return_type == CppType::Void => CType::Void,
+        _ => Scalar::mutable_kind(&source.return_type)
+            .map(ScalarKind::kernel_type)
+            .ok_or_else(|| {
+                format!(
+                    "C++ function `{}` has a return type outside direct lowering",
+                    source.name
+                )
+            })?,
     };
     Ok(c_function(
         return_type,
-        source.name.clone(),
+        names.require(&source.declaration_id)?.to_owned(),
         parameters,
         body,
     ))
@@ -141,6 +197,10 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
 
 fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
     match &parameter.value_type {
+        CppType::Integer { .. } => Ok(c_parameter(
+            parameter.name.clone(),
+            cpp_scalar_kernel_type(&parameter.value_type)?,
+        )),
         CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -159,7 +219,11 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
         CppType::LvalueReference { pointee }
             if matches!(pointee.as_ref(), CppType::Record { .. }) =>
         {
-            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+            Ok(
+                c_parameter(parameter.name.clone(), CType::Int32Pointer).with_pointee_constant(
+                    matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }),
+                ),
+            )
         }
         CppType::Pointer { pointee } if is_mutable_int32(pointee) => {
             Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
@@ -171,88 +235,86 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
     }
 }
 
+// An empty evaluation prefix does not introduce a synthetic execution step.
+fn evaluate_then(prefix: CStatement, continuation: CStatement) -> CStatement {
+    if matches!(prefix, CStatement::Skip) {
+        continuation
+    } else {
+        c_seq(prefix, continuation)
+    }
+}
+
+/// A source scalar evaluation, independent of its initializer/return context.
+/// Artifact wrappers retain their source role; every call uses this normalizer.
+enum ScalarInput<'a> {
+    Value(&'a CppExpression),
+    Call {
+        callee: &'a super::CppFunctionReference,
+        arguments: &'a [CppCallArgument],
+        value_type: &'a CppType,
+    },
+}
+
+struct ScalarEvaluation {
+    prefix: CStatement,
+    value: CExpression,
+    value_type: CType,
+    may_throw: bool,
+}
+
 struct LoweringContext<'a> {
     source_unit: &'a str,
     function_name: &'a str,
+    names: &'a ResolvedNames,
     places: BTreeMap<&'a str, &'a CppPlace>,
-    records: BTreeMap<&'a str, &'a CppRecord>,
-    constants: BTreeMap<&'a str, &'a CppConstant>,
+    records: &'a BTreeMap<&'a str, &'a CppRecord>,
+    constants: &'a BTreeMap<&'a str, &'a CppConstant>,
     next_load_occurrence: u32,
     return_capture_name: String,
+    nested_capture_name: String,
+    source_names: std::collections::BTreeSet<&'a str>,
+    next_call_capture: u64,
     unwind_exception_name: String,
     unwind_cleanups: bool,
 }
 
 impl LoweringContext<'_> {
-    /// Lowers the function body with its function-scope cleanup prefix on each
-    /// operation that can propagate an exception. Return statements already
-    /// carry their complete cleanup chain; this prefix is for calls and throws
-    /// that escape the frame before a return is reached.
-    fn lower_function_body(&mut self, statements: &[CppStatement]) -> Result<CStatement, String> {
-        let function_cleanups = match statements.last() {
-            Some(CppStatement::Return { cleanups, .. }) => cleanups.as_slice(),
-            _ => &[],
-        };
-        let mut active = Vec::new();
-        let mut lowered = None;
-        for statement in statements {
-            let current = self.lower_statement_with_cleanups(statement, &active)?;
-            lowered = Some(match lowered {
-                Some(previous) => c_seq(previous, current),
-                None => current,
-            });
-            if let CppStatement::Declare { local, .. } = statement
-                && let Some(cleanup) = function_cleanups.iter().find(|cleanup| match cleanup {
-                    CppCleanup::Destructor { object, .. } => {
-                        object.declaration_id == local.declaration_id && object.name == local.name
-                    }
-                })
-            {
-                active.push(cleanup.clone());
-            }
-        }
-        Ok(lowered.unwrap_or_else(c_skip))
-    }
-
-    fn lower_sequence(&mut self, statements: &[CppStatement]) -> Result<CStatement, String> {
-        let mut statements = statements
-            .iter()
-            .map(|statement| self.lower_statement(statement));
-        let Some(first) = statements.next() else {
-            return Ok(c_skip());
-        };
-        let first = first?;
-        statements.try_fold(first, |body, statement| {
-            statement.map(|statement| c_seq(body, statement))
-        })
-    }
-
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<CStatement, String> {
         match statement {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
-                (CppType::Integer { .. }, CppInitializer::Value { value }) => Ok(c_seq(
-                    c_declare(local.name.clone(), CType::Int32),
-                    c_assign(local.name.clone(), self.lower_expression(value)?),
-                )),
+                (CppType::Integer { .. }, CppInitializer::Value { value }) => {
+                    let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                    Ok(c_seq(
+                        c_declare(local.name.clone(), evaluation.value_type),
+                        evaluate_then(
+                            evaluation.prefix,
+                            c_assign(local.name.clone(), evaluation.value),
+                        ),
+                    ))
+                }
                 (
                     CppType::Integer { .. },
                     CppInitializer::Call {
                         callee, arguments, ..
                     },
-                ) => Ok(c_seq(
-                    c_declare(local.name.clone(), CType::Int32),
-                    c_call_assign(
-                        local.name.clone(),
-                        callee.name.clone(),
-                        self.lower_call_arguments(arguments)?,
-                    ),
-                )),
+                ) => {
+                    let evaluation = self.normalize_scalar_into(
+                        ScalarInput::Call {
+                            callee,
+                            arguments,
+                            value_type: &local.value_type,
+                        },
+                        Some(&local.name),
+                    )?;
+                    Ok(evaluation.prefix)
+                }
                 (
                     CppType::Record {
                         declaration_id,
                         name,
+                        ..
                     },
                     CppInitializer::Aggregate { fields, .. },
                 ) => {
@@ -296,6 +358,7 @@ impl LoweringContext<'_> {
                     CppType::Record {
                         declaration_id,
                         name,
+                        ..
                     },
                     CppInitializer::Constructor {
                         callee, arguments, ..
@@ -315,7 +378,10 @@ impl LoweringContext<'_> {
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
                         c_begin_aggregate_construction(local.name.clone(), layout),
-                        c_call(callee.name.clone(), lowered_arguments),
+                        c_call(
+                            self.names.require(&callee.declaration_id)?.to_owned(),
+                            lowered_arguments,
+                        ),
                     ))
                 }
                 _ => Err(format!(
@@ -355,150 +421,117 @@ impl LoweringContext<'_> {
                     value_type,
                 ))
             }
-            CppStatement::Return {
-                value, cleanups, ..
-            } => {
-                let value = self.lower_expression(value)?;
-                if cleanups.is_empty() {
-                    return Ok(c_return(value));
-                }
-                let capture = self.return_capture_name.clone();
-                let mut result = c_seq(
-                    c_declare(capture.clone(), CType::Int32),
-                    c_assign(capture.clone(), value),
-                );
-                for cleanup in cleanups {
-                    result = c_seq(result, self.lower_cleanup(cleanup)?);
-                }
-                Ok(c_seq(result, c_return(c_variable(capture))))
-            }
-            CppStatement::Throw { value, .. } => {
-                Ok(CStatement::Throw(self.lower_expression(value)?))
-            }
-            CppStatement::TryCatchInt32 {
-                try_body,
-                binding,
-                handler,
-                ..
-            } => Ok(c_try_catch_int32(
-                self.lower_sequence(try_body)?,
-                binding.name.clone(),
-                self.lower_sequence(handler)?,
+            CppStatement::Assume { condition, span } => Ok(crate::kernel::c_labeled_assert(
+                self.lower_expression(condition)?,
+                format!(
+                    "C++ __builtin_assume at {}:{}:{}",
+                    span.file, span.start_line, span.start_column
+                ),
             )),
-            CppStatement::Scope { body, cleanups, .. } => {
-                if self.unwind_cleanups && !cleanups.is_empty() {
-                    if scope_needs_path_sensitive_unwind(body, cleanups) {
-                        return self.lower_path_sensitive_scope(body, cleanups);
-                    }
-                    let Some((construction, live_body)) = body.split_first() else {
-                        return Err("C++ unwind scope has no construction statement".into());
-                    };
-                    if !matches!(construction, CppStatement::Declare { .. }) {
-                        return Err("C++ unwind scope must begin with guard construction".into());
-                    }
-                    let construction = self.lower_statement(construction)?;
-                    let live_body = self.lower_sequence(live_body)?;
-                    let binding = self.unwind_exception_name.clone();
-                    let mut handler = c_skip();
-                    for cleanup in cleanups {
-                        handler = c_seq(handler, self.lower_cleanup(cleanup)?);
-                    }
-                    handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
-                    let mut live_body =
-                        c_try_catch_int32_with_cleanup(live_body, binding, handler, true);
-                    for cleanup in cleanups {
-                        live_body = c_seq(live_body, self.lower_cleanup(cleanup)?);
-                    }
-                    return Ok(c_seq(construction, live_body));
-                }
-                let mut result = self.lower_sequence(body)?;
-                for cleanup in cleanups {
-                    result = c_seq(result, self.lower_cleanup(cleanup)?);
-                }
-                Ok(result)
-            }
-            CppStatement::If {
-                condition,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                let condition = self.lower_expression(condition)?;
-                let then_branch = self.lower_sequence(then_branch)?;
-                let else_branch = self.lower_sequence(else_branch)?;
-                Ok(c_if(condition, then_branch, else_branch))
+            CppStatement::Return { .. }
+            | CppStatement::ReturnCall { .. }
+            | CppStatement::Throw { .. }
+            | CppStatement::TryCatchInt32 { .. }
+            | CppStatement::Scope { .. }
+            | CppStatement::If { .. } => {
+                Err("C++ control flow requires lifetime-aware lowering".into())
             }
             CppStatement::Call {
                 callee, arguments, ..
-            } => Ok(c_call(
-                callee.name.clone(),
-                self.lower_call_arguments(arguments)?,
-            )),
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                Ok(evaluate_then(
+                    prefix,
+                    c_call(
+                        self.names.require(&callee.declaration_id)?.to_owned(),
+                        arguments,
+                    ),
+                ))
+            }
         }
     }
 
-    /// Lowers a cleanup scope whose constructed-object set can differ by
-    /// exceptional path. The ordinary scope shape has all declarations before
-    /// the first potentially throwing operation, so it can use one checked
-    /// cleanup edge around the live tail. Once a potentially throwing operation or initializer precedes a later
-    /// declaration, that edge would incorrectly destroy an object that has not
-    /// been constructed yet. Keep the active cleanup prefix while lowering
-    /// each statement instead.
-    fn lower_path_sensitive_scope(
+    /// Capture the result before destruction. A throwing return call takes the
+    /// same cleanup chain on its exceptional edge and never produces a return.
+    fn lower_captured_return(
         &mut self,
-        body: &[CppStatement],
-        cleanups: &[CppCleanup],
+        mut evaluation: CStatement,
+        value_type: CType,
+        cleanups: &[&CppCleanup],
+        unwind_cleanups: &[&CppCleanup],
+        can_throw: bool,
     ) -> Result<CStatement, String> {
-        let mut active = Vec::new();
+        let capture = self.return_capture_name.clone();
+        if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
+            let binding = self.unwind_exception_name.clone();
+            let mut handler = c_skip();
+            for cleanup in unwind_cleanups {
+                handler = c_seq(handler, self.lower_cleanup(cleanup)?);
+            }
+            handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
+            evaluation = c_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
+        }
+        let mut result = c_seq(c_declare(capture.clone(), value_type), evaluation);
+        for cleanup in cleanups {
+            result = c_seq(result, self.lower_cleanup(cleanup)?);
+        }
+        Ok(c_seq(result, c_return(c_variable(capture))))
+    }
+
+    /// Each sequence starts with the objects live on entry. Construction adds
+    /// an object only after its initializer; lexical exits restore a cursor.
+    fn lower_sequence_with_lifetimes<'p>(
+        &mut self,
+        statements: &[CppStatement],
+        plan: &'p LifetimePlan,
+        state: &mut LifetimeState<'p>,
+        unwind_base: usize,
+    ) -> Result<CStatement, String> {
         let mut lowered = None;
-        for statement in body {
-            let current = self.lower_statement_with_cleanups(statement, &active)?;
+        for statement in statements {
+            let current =
+                self.lower_statement_with_lifetimes(statement, plan, state, unwind_base)?;
             lowered = Some(match lowered {
                 Some(previous) => c_seq(previous, current),
                 None => current,
             });
-            if let CppStatement::Declare { local, .. } = statement
-                && let Some(cleanup) = cleanups.iter().find(|cleanup| match cleanup {
-                    CppCleanup::Destructor { object, .. } => {
-                        object.declaration_id == local.declaration_id && object.name == local.name
-                    }
-                })
-            {
-                active.push(cleanup.clone());
-            }
+            plan.constructed(statement, state);
         }
-        let mut result = lowered.unwrap_or_else(c_skip);
-        for cleanup in cleanups {
-            result = c_seq(result, self.lower_cleanup(cleanup)?);
-        }
-        Ok(result)
+        Ok(lowered.unwrap_or_else(c_skip))
     }
 
-    /// Lowers one statement with the cleanup prefix that is alive on entry.
-    /// Branches inherit the prefix, while a nested scope extends it only for
-    /// the statements after its own construction.
-    fn lower_statement_with_cleanups(
+    fn lower_statement_with_lifetimes<'p>(
         &mut self,
         statement: &CppStatement,
-        active: &[CppCleanup],
+        plan: &'p LifetimePlan,
+        state: &mut LifetimeState<'p>,
+        unwind_base: usize,
     ) -> Result<CStatement, String> {
         match statement {
-            CppStatement::Declare {
-                initializer: CppInitializer::Call { .. },
+            CppStatement::Return { value, .. } => {
+                let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                self.lower_scalar_return(evaluation, &state.exit(0).collect::<Vec<_>>(), &[])
+            }
+            CppStatement::ReturnCall {
+                callee,
+                arguments,
+                value_type,
                 ..
             } => {
-                let declaration = self.lower_statement(statement)?;
-                self.lower_throwing_statement(declaration, active)
-            }
-            CppStatement::Call {
-                callee, arguments, ..
-            } => {
-                let call = c_call(callee.name.clone(), self.lower_call_arguments(arguments)?);
-                self.lower_throwing_statement(call, active)
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                })?;
+                self.lower_scalar_return(
+                    evaluation,
+                    &state.exit(0).collect::<Vec<_>>(),
+                    &state.exit(unwind_base).collect::<Vec<_>>(),
+                )
             }
             CppStatement::Throw { value, .. } => {
                 let throw = CStatement::Throw(self.lower_expression(value)?);
-                self.lower_throwing_statement(throw, active)
+                self.lower_throwing_statement(throw, state.exit(unwind_base))
             }
             CppStatement::If {
                 condition,
@@ -507,8 +540,13 @@ impl LoweringContext<'_> {
                 ..
             } => {
                 let condition = self.lower_expression(condition)?;
-                let then_branch = self.lower_sequence_with_cleanups(then_branch, active)?;
-                let else_branch = self.lower_sequence_with_cleanups(else_branch, active)?;
+                let mark = state.mark();
+                let then_branch =
+                    self.lower_sequence_with_lifetimes(then_branch, plan, state, unwind_base)?;
+                state.restore(mark);
+                let else_branch =
+                    self.lower_sequence_with_lifetimes(else_branch, plan, state, unwind_base)?;
+                state.restore(mark);
                 Ok(c_if(condition, then_branch, else_branch))
             }
             CppStatement::TryCatchInt32 {
@@ -516,74 +554,198 @@ impl LoweringContext<'_> {
                 binding,
                 handler,
                 ..
-            } => Ok(c_try_catch_int32(
-                self.lower_sequence_with_cleanups(try_body, active)?,
-                binding.name.clone(),
-                self.lower_sequence_with_cleanups(handler, active)?,
-            )),
-            CppStatement::Scope { body, cleanups, .. } => {
-                let mut nested_active = active.to_vec();
-                let mut lowered = None;
-                for member in body {
-                    let current = self.lower_statement_with_cleanups(member, &nested_active)?;
-                    lowered = Some(match lowered {
-                        Some(previous) => c_seq(previous, current),
-                        None => current,
-                    });
-                    if let CppStatement::Declare { local, .. } = member
-                        && let Some(cleanup) = cleanups.iter().find(|cleanup| match cleanup {
-                            CppCleanup::Destructor { object, .. } => {
-                                object.declaration_id == local.declaration_id
-                                    && object.name == local.name
-                            }
-                        })
-                    {
-                        nested_active.push(cleanup.clone());
-                    }
-                }
-                let mut result = lowered.unwrap_or_else(c_skip);
-                for cleanup in cleanups {
+            } => {
+                let mark = state.mark();
+                let try_body = self.lower_sequence_with_lifetimes(try_body, plan, state, mark)?;
+                state.restore(mark);
+                let handler =
+                    self.lower_sequence_with_lifetimes(handler, plan, state, unwind_base)?;
+                state.restore(mark);
+                Ok(c_try_catch_int32(try_body, binding.name.clone(), handler))
+            }
+            CppStatement::Scope { body, .. } => {
+                let mark = state.mark();
+                let mut result =
+                    self.lower_sequence_with_lifetimes(body, plan, state, unwind_base)?;
+                for cleanup in state.exit(mark) {
                     result = c_seq(result, self.lower_cleanup(cleanup)?);
                 }
+                state.restore(mark);
                 Ok(result)
+            }
+            CppStatement::Declare {
+                initializer: CppInitializer::Call { .. },
+                ..
+            }
+            | CppStatement::Call { .. } => {
+                let operation = self.lower_statement(statement)?;
+                self.lower_throwing_statement(operation, state.exit(unwind_base))
             }
             _ => self.lower_statement(statement),
         }
     }
 
-    fn lower_sequence_with_cleanups(
-        &mut self,
-        statements: &[CppStatement],
-        active: &[CppCleanup],
-    ) -> Result<CStatement, String> {
-        let mut lowered = None;
-        for statement in statements {
-            let current = self.lower_statement_with_cleanups(statement, active)?;
-            lowered = Some(match lowered {
-                Some(previous) => c_seq(previous, current),
-                None => current,
-            });
-        }
-        Ok(lowered.unwrap_or_else(c_skip))
-    }
-
-    fn lower_throwing_statement(
+    fn lower_throwing_statement<'p>(
         &mut self,
         statement: CStatement,
-        active: &[CppCleanup],
+        mut cleanups: impl Iterator<Item = &'p CppCleanup>,
     ) -> Result<CStatement, String> {
-        if active.is_empty() {
+        let Some(first) = cleanups.next() else {
             return Ok(statement);
-        }
+        };
         let binding = self.unwind_exception_name.clone();
-        let mut handler = c_skip();
-        for cleanup in active.iter().rev() {
+        let mut handler = c_seq(c_skip(), self.lower_cleanup(first)?);
+        for cleanup in cleanups {
             handler = c_seq(handler, self.lower_cleanup(cleanup)?);
         }
         handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
         Ok(c_try_catch_int32_with_cleanup(
             statement, binding, handler, true,
         ))
+    }
+
+    /// Normalize evaluation into explicit statements followed by a pure value.
+    /// The validated C++ ordering policy is shared by every scalar call context.
+    fn normalize_scalar(&mut self, input: ScalarInput<'_>) -> Result<ScalarEvaluation, String> {
+        self.normalize_scalar_into(input, None)
+    }
+
+    /// Use an existing source destination when the caller needs no temporary.
+    fn normalize_scalar_into(
+        &mut self,
+        input: ScalarInput<'_>,
+        destination: Option<&str>,
+    ) -> Result<ScalarEvaluation, String> {
+        match input {
+            ScalarInput::Value(value) => Ok(ScalarEvaluation {
+                prefix: c_skip(),
+                value: self.lower_expression(value)?,
+                value_type: cpp_return_scalar_type(value.value_type())?,
+                may_throw: false,
+            }),
+            ScalarInput::Call {
+                callee,
+                arguments,
+                value_type,
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let capture = match destination {
+                    Some(name) => name.to_owned(),
+                    None => self.fresh_call_capture()?,
+                };
+                let value_type = cpp_return_scalar_type(value_type)?;
+                Ok(ScalarEvaluation {
+                    prefix: evaluate_then(
+                        prefix,
+                        c_seq(
+                            c_declare(capture.clone(), value_type),
+                            c_call_assign(
+                                capture.clone(),
+                                self.names.require(&callee.declaration_id)?.to_owned(),
+                                arguments,
+                            ),
+                        ),
+                    ),
+                    value: c_variable(capture),
+                    value_type,
+                    may_throw: true,
+                })
+            }
+        }
+    }
+
+    fn normalize_arguments(
+        &mut self,
+        arguments: &[CppCallArgument],
+    ) -> Result<(CStatement, Vec<CExpression>), String> {
+        let mut evaluation = c_skip();
+        let has_nested = arguments
+            .iter()
+            .any(|argument| matches!(argument, CppCallArgument::Call { .. }));
+        // Check and snapshot field reads before a nested call can throw. Scalar
+        // isolation keeps their values invariant in every argument order.
+        let mut snapshots = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let snapshot = if let CppCallArgument::Value { value } = argument {
+                if has_nested && super::schema::field_scalar_argument(value) {
+                    let capture = self.fresh_call_capture()?;
+                    let expression = self.lower_expression(value)?;
+                    evaluation = evaluate_then(
+                        evaluation,
+                        c_seq(
+                            c_declare(capture.clone(), cpp_return_scalar_type(value.value_type())?),
+                            c_assign(capture.clone(), expression),
+                        ),
+                    );
+                    Some(c_variable(capture))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            snapshots.push(snapshot);
+        }
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for (argument, snapshot) in arguments.iter().zip(snapshots) {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(snapshot) = snapshot {
+                lowered.push(snapshot);
+            } else if let CppCallArgument::Call {
+                callee,
+                arguments,
+                value_type,
+                ..
+            } = argument
+            {
+                let inner = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                })?;
+                evaluation = evaluate_then(evaluation, inner.prefix);
+                lowered.push(inner.value);
+            } else {
+                // Remaining siblings are stable and total across the call.
+                lowered.push(self.lower_call_argument(argument)?);
+            }
+        }
+        Ok((evaluation, lowered))
+    }
+
+    fn lower_scalar_return(
+        &mut self,
+        evaluation: ScalarEvaluation,
+        cleanups: &[&CppCleanup],
+        unwind_cleanups: &[&CppCleanup],
+    ) -> Result<CStatement, String> {
+        if cleanups.is_empty() {
+            return Ok(evaluate_then(evaluation.prefix, c_return(evaluation.value)));
+        }
+        let capture = self.return_capture_name.clone();
+        self.lower_captured_return(
+            evaluate_then(evaluation.prefix, c_assign(capture, evaluation.value)),
+            evaluation.value_type,
+            cleanups,
+            unwind_cleanups,
+            evaluation.may_throw,
+        )
+    }
+
+    fn fresh_call_capture(&mut self) -> Result<String, String> {
+        let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
+        self.next_call_capture = self
+            .next_call_capture
+            .checked_add(1)
+            .ok_or("C++ nested call capture counter overflow")?;
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            if !self.source_names.contains(capture.as_str()) {
+                break;
+            }
+            capture.push('_');
+        }
+        Ok(capture)
     }
 
     fn lower_call_arguments(
@@ -599,7 +761,7 @@ impl LoweringContext<'_> {
     fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<CStatement, String> {
         let CppCleanup::Destructor { object, callee, .. } = cleanup;
         Ok(c_call(
-            callee.name.clone(),
+            self.names.require(&callee.declaration_id)?.to_owned(),
             vec![c_cast(self.lower_place(object)?, CType::Int32Pointer)],
         ))
     }
@@ -608,6 +770,9 @@ impl LoweringContext<'_> {
         match argument {
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => self.lower_place(place),
+            CppCallArgument::Call { .. } => {
+                Err("nested C++ call bypassed scalar evaluation normalization".into())
+            }
         }
     }
 
@@ -615,15 +780,13 @@ impl LoweringContext<'_> {
         match expression {
             CppExpression::IntegerLiteral {
                 value, value_type, ..
-            } if is_mutable_int32(value_type) => {
-                let value = value
-                    .parse::<i32>()
-                    .map_err(|_| format!("unsupported C++ integer literal `{value}`"))?;
-                Ok(c_int32_literal(value as u32))
             }
-            CppExpression::IntegerLiteral { .. } => {
-                Err("C++ integer literal is outside direct `int` lowering".into())
-            }
+            | CppExpression::CompilerConstant {
+                value, value_type, ..
+            } => Scalar::mutable_kind(value_type)
+                .and_then(|kind| kind.parse_literal(value))
+                .map(|literal| literal.kernel_expression())
+                .ok_or_else(|| format!("unsupported C++ integer constant `{value}`")),
             CppExpression::ConstantReference { constant, .. } => {
                 let resolved = self
                     .constants
@@ -665,8 +828,8 @@ impl LoweringContext<'_> {
                     },
                 ) => Ok(c_variable(place.name.clone())),
                 (CppType::Integer { .. }, CppType::Integer { .. })
-                    if is_mutable_int32(&self.place(place)?.value_type)
-                        && is_mutable_int32(value_type) =>
+                    if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
+                        == cpp_scalar_kernel_type(value_type)? =>
                 {
                     Ok(c_variable(place.name.clone()))
                 }
@@ -745,73 +908,44 @@ impl LoweringContext<'_> {
             }
             CppExpression::IntegralCast {
                 value, value_type, ..
-            } if is_mutable_int32(value.value_type()) && is_mutable_int64(value_type) => {
-                Ok(c_cast(self.lower_expression(value)?, CType::Int64))
-            }
-            CppExpression::IntegralCast { .. } => {
-                Err("C++ integral cast is outside direct `int` to signed-64 lowering".into())
+            } => {
+                let source = Scalar::mutable_kind(value.value_type())
+                    .ok_or_else(|| "unsupported C++ integral cast operand".to_string())?;
+                let target = Scalar::mutable_kind(value_type)
+                    .ok_or_else(|| "unsupported C++ integral cast result".to_string())?;
+                Ok(scalar::convert(
+                    self.lower_expression(value)?,
+                    source,
+                    target,
+                ))
             }
             CppExpression::Binary {
-                operator: CppBinaryOperator::Add,
+                operator,
                 left,
                 right,
                 value_type,
                 ..
-            } if is_mutable_int32(value_type) => {
+            } => {
                 let left = self.lower_expression(left)?;
                 let right = self.lower_expression(right)?;
-                Ok(c_add(left, right))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::LogicalAnd,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_bool(left.value_type()) && is_mutable_bool(right.value_type()) => {
-                Ok(c_cast(
-                    c_and(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::LessEqual,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_int64(left.value_type()) && is_mutable_int64(right.value_type()) => {
-                Ok(c_cast(
-                    c_less_equal(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::GreaterEqual,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_int64(left.value_type()) && is_mutable_int64(right.value_type()) => {
-                Ok(c_cast(
-                    c_greater_equal(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary { .. } => {
-                Err("C++ binary expression is outside direct `int` lowering".into())
+                let expression = match operator {
+                    CppBinaryOperator::Add => c_add(left, right),
+                    CppBinaryOperator::Subtract => c_subtract(left, right),
+                    CppBinaryOperator::Multiply => c_multiply(left, right),
+                    CppBinaryOperator::Divide => c_divide(left, right),
+                    CppBinaryOperator::Remainder => c_remainder(left, right),
+                    CppBinaryOperator::Equal => c_equal(left, right),
+                    CppBinaryOperator::LessThan => c_less_than(left, right),
+                    CppBinaryOperator::GreaterThan => c_greater_than(left, right),
+                    CppBinaryOperator::LessEqual => c_less_equal(left, right),
+                    CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
+                    CppBinaryOperator::LogicalAnd => c_and(left, right),
+                };
+                Ok(if is_mutable_bool(value_type) {
+                    c_cast(expression, CType::Bool)
+                } else {
+                    expression
+                })
             }
         }
     }
@@ -868,6 +1002,7 @@ impl LoweringContext<'_> {
         let CppType::Record {
             declaration_id,
             name,
+            ..
         } = record_type
         else {
             return Err(format!(
@@ -928,57 +1063,6 @@ impl LoweringContext<'_> {
         Ok(parameter)
     }
 }
-
-fn scope_needs_path_sensitive_unwind(statements: &[CppStatement], cleanups: &[CppCleanup]) -> bool {
-    let mut may_throw = false;
-    for statement in statements {
-        if may_throw
-            && matches!(
-                statement,
-                CppStatement::Declare { local, .. }
-                    if cleanups.iter().any(|cleanup| match cleanup {
-                        CppCleanup::Destructor { object, .. } => {
-                            object.declaration_id == local.declaration_id
-                                && object.name == local.name
-                        }
-                    })
-            )
-        {
-            return true;
-        }
-        may_throw |= statement_may_throw(statement);
-    }
-    false
-}
-
-fn statement_may_throw(statement: &CppStatement) -> bool {
-    match statement {
-        CppStatement::Call { .. } | CppStatement::Throw { .. } => true,
-        CppStatement::Declare {
-            initializer: CppInitializer::Call { .. },
-            ..
-        } => true,
-        CppStatement::If {
-            then_branch,
-            else_branch,
-            ..
-        } => sequence_may_throw(then_branch) || sequence_may_throw(else_branch),
-        CppStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => sequence_may_throw(try_body) || sequence_may_throw(handler),
-        CppStatement::Scope { body, .. } => sequence_may_throw(body),
-        CppStatement::Declare { .. }
-        | CppStatement::Assign { .. }
-        | CppStatement::Store { .. }
-        | CppStatement::MemberStore { .. }
-        | CppStatement::Return { .. } => false,
-    }
-}
-
-fn sequence_may_throw(statements: &[CppStatement]) -> bool {
-    statements.iter().any(statement_may_throw)
-}
-
 fn return_capture_name(function: &CppFunction) -> String {
     fresh_internal_name(function, "__click_cpp_return_value")
 }
@@ -1051,72 +1135,36 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
     ))
 }
 
+fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    Scalar::mutable_kind(value_type)
+        .map(ScalarKind::kernel_type)
+        .ok_or_else(|| "unsupported C++ scalar kernel type".into())
+}
+
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    if is_mutable_int32(value_type) {
-        Ok(CType::Int32)
+    if let Some(kind) = Scalar::mutable_kind(value_type).filter(|kind| kind.is_integer()) {
+        Ok(kind.kernel_type())
     } else if is_mutable_int32_pointer(value_type) {
         Ok(CType::Int32Pointer)
     } else {
-        Err("C++ record field is outside mutable `int`/`int*` lowering".into())
+        Err("unsupported C++ scalar kernel type".into())
     }
 }
 
 fn is_mutable_int32(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int32, false)
 }
-
 fn is_mutable_bool(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Boolean {
-            bits: 8,
-            is_const: false
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Bool, false)
 }
-
 fn is_mutable_int64(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: false,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int64, false)
 }
-
 fn is_const_int32(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: true,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int32, true)
 }
-
 fn is_const_int64(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: true,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int64, true)
 }
 
 fn is_mutable_int32_pointer(value_type: &CppType) -> bool {

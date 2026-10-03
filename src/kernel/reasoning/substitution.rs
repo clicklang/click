@@ -1,89 +1,6 @@
 use super::*;
 use num_traits::ToPrimitive;
 
-/// Rewrites kernel-minted load variables back to their defining load terms,
-/// using the certified defining equations the canonicalizing loader pushed
-/// into the execution fact stream. Surface synthesis calls this before
-/// form a kernel fact, so a fact mentioning a minted variable writes as
-/// the loaded expression the source actually wrote.
-/// The pointer-level companion of [`resolve_minted_load_variables`]: rewrites
-/// kernel-minted load variables inside a pointer's offset using
-/// defining-shaped equations drawn from an assumption context. Range and
-/// containment provers call this on their query pointer so a minted address
-/// matches ranges still written through loads.
-pub(crate) fn resolve_minted_load_pointer(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Pointer {
-    let mut resolved = pointer.clone();
-    let mut defining = 0usize;
-    for fact in assumptions.prop_facts.iter() {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = fact
-        else {
-            continue;
-        };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
-            (left.as_ref(), right.as_ref())
-        else {
-            continue;
-        };
-        defining += 1;
-        resolved.offset =
-            substitute_bitvector_variable_in_pointer_offset(&resolved.offset, *variable, load);
-    }
-    let _ = defining;
-    resolved
-}
-
-#[cfg(test)]
-mod alias_resolution_tests {
-    use super::*;
-
-    fn symbolic(identity: u64) -> Pointer {
-        Pointer {
-            block: PointerBlock::Symbolic(Variable(identity)),
-            offset: PointerOffsetTerm::Constant(0),
-        }
-    }
-
-    fn concrete(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
-        }
-    }
-
-    /// The hop reads the alias index under the pointer, so it finds the
-    /// equality whichever side named the symbolic pointer, ignores a false
-    /// one and a symbolic-to-symbolic one, and leaves a pointer with no
-    /// concrete alias alone.
-    #[test]
-    fn a_symbolic_pointer_resolves_through_its_indexed_alias() {
-        let havoc = symbolic(7);
-        let other = symbolic(8);
-        let object = concrete("node");
-        let assumptions = PureFactContext::default()
-            .assume_condition(
-                ConditionTerm::pointer_equal(other.clone(), havoc.clone()),
-                true,
-            )
-            .assume_condition(
-                ConditionTerm::pointer_equal(havoc.clone(), concrete("wrong")),
-                false,
-            )
-            .assume_condition(
-                ConditionTerm::pointer_equal(object.clone(), havoc.clone()),
-                true,
-            );
-        assert_eq!(resolve_symbolic_pointer_alias(&havoc, &assumptions), object);
-        assert_eq!(resolve_symbolic_pointer_alias(&other, &assumptions), other);
-        assert_eq!(
-            resolve_symbolic_pointer_alias(&object, &assumptions),
-            object
-        );
-    }
-}
-
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
@@ -369,26 +286,6 @@ mod resource_frame_substitution_tests {
     }
 }
 
-/// Rewrites a havoced symbolic pointer local through one explicit pointer
-/// equality. The equality is deliberately limited to an exact fact and one
-/// hop: resource lookup can use the concrete block's index without turning
-/// alias reasoning into an unbounded graph walk. The true pointer equalities
-/// naming this pointer are filed under it (`pointer_block_aliases`), so the
-/// hop is a keyed lookup rather than a scan of every condition fact.
-pub(crate) fn resolve_symbolic_pointer_alias(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Pointer {
-    if !matches!(pointer.block, PointerBlock::Symbolic(_)) {
-        return pointer.clone();
-    }
-    assumptions
-        .exact_pointer_aliases(pointer)
-        .find(|alias| !matches!(alias.block, PointerBlock::Symbolic(_)))
-        .cloned()
-        .unwrap_or_else(|| pointer.clone())
-}
-
 /// Resolves load variables in a proposition through
 /// defining-equation propositions (`v == load(snapshot, ptr)`), restoring
 /// the load terms. For surface-form synthesis, where the internal
@@ -409,36 +306,11 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
         if !crate::kernel::eval::is_load_variable(&variable) {
             continue;
         }
-        let Some((memory, pointer)) =
-            crate::kernel::eval::registered_load_origin_for_variable(&variable)
+        let Some(load) = crate::kernel::eval::registered_load_origin_term_for_variable(&variable)
         else {
             continue;
         };
-        let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
         resolved = substitute_bitvector_variable_in_proposition(&resolved, variable, &load);
-    }
-    resolved
-}
-
-pub fn resolve_load_variables_via(
-    proposition: &Proposition,
-    defining: &[Proposition],
-) -> Proposition {
-    let mut resolved = proposition.clone();
-    for fact in defining {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = fact
-        else {
-            continue;
-        };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
-            (left.as_ref(), right.as_ref())
-        else {
-            continue;
-        };
-        if !crate::kernel::eval::is_load_variable(variable) {
-            continue;
-        }
-        resolved = substitute_bitvector_variable_in_proposition(&resolved, *variable, load);
     }
     resolved
 }
@@ -457,7 +329,7 @@ pub fn resolve_minted_load_variables(
         else {
             continue;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             continue;
@@ -1268,7 +1140,8 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
             collect_c_expression_bound_variables(pointer, variables);
             collect_c_expression_bound_variables(value, variables);
         }
-        CStatement::CopyAggregate { target, source, .. } => {
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => {
             collect_c_expression_bound_variables(target, variables);
             collect_c_expression_bound_variables(source, variables);
         }
@@ -1735,7 +1608,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
                 collect_bitvector_bound_variables(&arm.body, variables);
             }
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             // Memory snapshots are immutable kernel values; their free
             // variable collector remains the source of truth for snapshot
             // contents, while the pointer can contain nested fold terms.
@@ -2048,12 +1921,7 @@ fn substitute_bitvector_variable_in_integer_checked_with_mode(
         Term::Integer(result) => result,
         _ => unreachable!(),
     };
-    if rewrite.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if rewrite.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(rewrite.refusal())?;
     Ok(result)
 }
 
@@ -2186,13 +2054,21 @@ pub(crate) fn substitute_integer_variable_in_pure_proposition(
     walker.reserve_integer_substitution_variables(&reserved);
     let result =
         substitute_integer_pure_proposition_with_walker(proposition, from, false, &mut walker);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     result
+}
+
+fn integer_substitution_refusal(
+    refusal: Option<crate::kernel::proof::term_rewrite::RewriteRefusal>,
+) -> Result<(), IntegerPureSubstitutionError> {
+    use crate::kernel::proof::term_rewrite::RewriteRefusal;
+    match refusal {
+        None => Ok(()),
+        Some(RewriteRefusal::WorkExhausted) => Err(IntegerPureSubstitutionError::WorkLimitExceeded),
+        Some(RewriteRefusal::UnsupportedScope) => {
+            Err(IntegerPureSubstitutionError::UnsupportedCarrier)
+        }
+    }
 }
 
 fn integer_work(units: usize) -> Result<(), IntegerPureSubstitutionError> {
@@ -2322,12 +2198,7 @@ fn rewrite_integer_atomic_proposition(
         from, to, shadowed, renamings,
     );
     let result = walker.proposition(proposition);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     integer_work(0)?;
     Ok(result)
 }
@@ -2338,12 +2209,7 @@ fn rewrite_integer_atomic_proposition_with_walker(
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     integer_work(1)?;
     let result = walker.proposition(proposition);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     integer_work(0)?;
     Ok(result)
 }
@@ -2575,12 +2441,12 @@ fn queue_integer_quantifier_rewrite<'a>(
     } else {
         walker.replacement_contains_c_variable(var)
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
     let new_var = if renamed {
         let Some(variable) = walker.fresh_integer_substitution_variable() else {
-            return if walker.integer_work_exhausted {
+            return if walker.work_exhausted() {
                 Err(IntegerPureSubstitutionError::WorkLimitExceeded)
             } else {
                 Err(IntegerPureSubstitutionError::FreshVariableExhausted)
@@ -2590,7 +2456,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     } else {
         var
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
 
@@ -2653,12 +2519,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         ))) else {
             unreachable!("pointer rewrite changed its carrier")
         };
-        if walker.integer_work_exhausted {
-            return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-        }
-        if walker.unsupported_integer_scope {
-            return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-        }
+        integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::CMemoryReadDefined {
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
@@ -2678,16 +2539,11 @@ fn rewrite_integer_memory_loadable_with_walker(
     let Term::CValue(CValue::Pointer(pointer)) = walker.term(&Term::CValue(pointer)) else {
         unreachable!("pointer rewrite changed its carrier")
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
     let bytes = walker.bits(bytes);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::CMemoryLoadable {
         // Snapshots are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
@@ -2960,17 +2816,21 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => CExpression::Cast {
             expression: Box::new(substitute_bitvector_variable_in_c_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         },
         CExpression::Conditional {
             condition,
@@ -3217,6 +3077,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile,
             constant,
             pointee_constant,
+            zero_fill,
         } => CStatement::Declare {
             name: name.clone(),
             c_type: *c_type,
@@ -3224,6 +3085,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile: *pointee_volatile,
             constant: *constant,
             pointee_constant: *pointee_constant,
+            zero_fill: zero_fill.clone(),
         },
         CStatement::DeclareAggregate {
             name,
@@ -3326,6 +3188,21 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             target: substitute_bitvector_variable_in_c_expression(target, from, to),
             source: substitute_bitvector_variable_in_c_expression(source, from, to),
             layout: layout.clone(),
+        },
+        CStatement::InitializeScalarArray {
+            target,
+            source,
+            element_type,
+            count,
+            copy,
+            fresh,
+        } => CStatement::InitializeScalarArray {
+            target: substitute_bitvector_variable_in_c_expression(target, from, to),
+            source: substitute_bitvector_variable_in_c_expression(source, from, to),
+            element_type: *element_type,
+            count: *count,
+            copy: *copy,
+            fresh: *fresh,
         },
         CStatement::Update {
             target,
@@ -3995,6 +3872,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_context(
     from: Variable,
     to: &Bitvector32Term,
 ) -> ResourceContext {
+    // Structural theorem/state substitution has no current proof assumptions.
+    // Do not inherit the old graph: its equalities name the pre-substitution
+    // variables. A resulting live proof input is published at its admission
+    // boundary before execution; this helper performs no resource lookup.
     ResourceContext::new().unchecked_with_facts(
         resources
             .facts()
@@ -4386,8 +4267,10 @@ fn substitute_bitvector_variable_in_resource_term(
         },
         CResourceTerm::PopulationAuthority {
             protected,
+            population_arity,
             snapshot,
         } => CResourceTerm::PopulationAuthority {
+            population_arity: *population_arity,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(substitute_bitvector_variable_in_resource_spec(
                     &protected.resource,
@@ -4762,6 +4645,7 @@ fn substitute_through_load_variable(
         return None;
     }
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
+    let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
     let substituted_pointer = Pointer {
         block: pointer.block.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
@@ -4797,7 +4681,7 @@ fn substitute_through_load_variable(
         }
     };
     Some(crate::kernel::eval::canonical_term(
-        &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer)),
+        &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
     ))
 }
 
@@ -5122,9 +5006,10 @@ pub(crate) fn substitute_bitvector_variable(
                 })
                 .collect(),
         },
-        Bitvector32Term::MemoryLoad(memory, pointer) => Bitvector32Term::MemoryLoad(
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
             substitute_bitvector_variable_in_shared_memory(memory, from, to),
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
+            *kind,
         ),
         Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::PointerAddress(Box::new(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
@@ -5358,6 +5243,17 @@ fn run_slot_named_by_load_variable(
     run: &crate::kernel::primitives::CellRun,
     from: Variable,
 ) -> Option<u32> {
+    if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
+        let source_run = crate::kernel::primitives::CellRun::new(
+            source_base.clone(),
+            run.element_width(),
+            run.element_type(),
+            run.count(),
+            run.source().clone(),
+            run.holes().clone(),
+        );
+        return run_slot_named_by_load_variable(&source_run, from);
+    }
     if !crate::kernel::is_load_variable(&from) {
         return None;
     }
@@ -5502,17 +5398,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized_cells: memory
-                .heap
-                .initialized_cells
-                .iter()
-                .map(|(pointer, width)| {
-                    (
-                        substitute_bitvector_variable_in_pointer(pointer, from, to),
-                        *width,
-                    )
-                })
-                .collect(),
+            initialized: memory.heap.initialized.map_pointers(|pointer| {
+                substitute_bitvector_variable_in_pointer(pointer, from, to)
+            }),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -5554,6 +5442,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 .zeroed_prefix
                                 .as_ref()
                                 .map(|prefix| substitute_bitvector_variable(prefix, from, to)),
+                            initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
                                 .iter()
@@ -6141,17 +6030,21 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => CExpression::Cast {
             expression: Box::new(substitute_pointer_variable_in_c_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         },
         CExpression::Conditional {
             condition,
@@ -6379,6 +6272,21 @@ fn substitute_pointer_variable_in_c_statement(
             target: substitute_pointer_variable_in_c_expression(target, from, to),
             source: substitute_pointer_variable_in_c_expression(source, from, to),
             layout: layout.clone(),
+        },
+        CStatement::InitializeScalarArray {
+            target,
+            source,
+            element_type,
+            count,
+            copy,
+            fresh,
+        } => CStatement::InitializeScalarArray {
+            target: substitute_pointer_variable_in_c_expression(target, from, to),
+            source: substitute_pointer_variable_in_c_expression(source, from, to),
+            element_type: *element_type,
+            count: *count,
+            copy: *copy,
+            fresh: *fresh,
         },
         CStatement::Update {
             target,
@@ -6755,6 +6663,10 @@ fn substitute_pointer_variable_in_resource_context(
     from: Variable,
     to: &Pointer,
 ) -> ResourceContext {
+    // Structural theorem/state substitution has no current proof assumptions.
+    // Do not inherit the old graph: its equalities name the pre-substitution
+    // variables. A resulting live proof input is published at its admission
+    // boundary before execution; this helper performs no resource lookup.
     ResourceContext::new().unchecked_with_facts(
         resources
             .facts()
@@ -7007,17 +6919,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized_cells: memory
+            initialized: memory
                 .heap
-                .initialized_cells
-                .iter()
-                .map(|(pointer, width)| {
-                    (
-                        substitute_pointer_variable_in_pointer(pointer, from, to),
-                        *width,
-                    )
-                })
-                .collect(),
+                .initialized
+                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7056,6 +6961,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                             ),
                             old_bytes: pending.old_bytes.clone(),
                             zeroed_prefix: pending.zeroed_prefix.clone(),
+                            initialized_prefix: pending.initialized_prefix.clone(),
                             copied_cells: pending
                                 .copied_cells
                                 .iter()
@@ -8039,8 +7945,10 @@ fn substitute_pointer_variable_in_resource_term(
         },
         CResourceTerm::PopulationAuthority {
             protected,
+            population_arity,
             snapshot,
         } => CResourceTerm::PopulationAuthority {
+            population_arity: *population_arity,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(substitute_pointer_variable_in_resource_spec(
                     &protected.resource,
@@ -8934,6 +8842,7 @@ mod integer_mixed_quantifier_tests {
                     byte_width: 4,
                 },
             },
+            crate::kernel::LoadKind::Bits32,
             4,
         );
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -9472,7 +9381,11 @@ mod integer_range_fold_substitution_tests {
                 byte_width: 4,
             },
         };
-        let load_variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load_variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)
                 .expect("the source load must be registered");
@@ -9516,7 +9429,11 @@ mod integer_range_fold_substitution_tests {
                 }),
             ),
         };
-        let load_variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load_variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)
                 .expect("the source load must be registered");

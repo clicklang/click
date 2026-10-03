@@ -35,14 +35,13 @@ documentation inventory keep the following accepted words synchronized.
 | `import` | Loads declarations from a local Click module without selecting that module's proofs. |
 | `verifying` | C-source declaration. |
 | `target` | Selects the C implementation target the file's C sources are preprocessed and verified under. |
-| `predicate`, `function`, `theorem`, `contract` | Top-level logic and behavioral-interface declarations; `function` also starts a C contract. |
+| `predicate`, `function`, `theorem`, `contract`, `tactic` | Top-level logic and behavioral-interface declarations; `function` also starts a C contract, and `tactic` declares a user-defined tactic. |
 | `executes` | Gives a contract-refinement theorem an explicit one-call execution frontier, over the theorem's callback parameter or a named project function. |
 | `spec`, `enum`, `match` | Specification-only algebraic datatype declarations and exhaustive elimination. |
 | `abstract`, `resource` | Abstract and composite resource declarations. |
-| `counted` | Compatibility-only rejected spelling for the former `counted resource`; use `resource`. |
 | `int8`, `int16`, `int32`, `uint8`, `uint16`, `uint32`, `int64`, `uint64`, `short`, `int`, `signed int`, `long`, `long long`, `int8_t`, `int16_t`, `int32_t`, `int64_t`, `ssize_t`, `signed char`, `unsigned char`, `unsigned short`, `unsigned int`, `unsigned long`, `unsigned long long`, `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t`, `size_t`, `void`, `struct` | Type words. The standard spellings alias the modeled C0 types; `void` is available only where the detailed type rules allow it. |
 | `let`, `where` | Value abbreviation and existential-binding forms. |
-| `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses spelled `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as an int32 measure, a resource application, or a resource binder; there is no `decreases resource` spelling. |
+| `requires`, `ensures`, `exceptional`, `throws`, `decreases` | Contract, theorem, function-totality, exceptional-postcondition, and loop-termination clauses. The initial exceptional signature is `throws int32`, with clauses spelled `exceptional ensures`; a `decreases` clause is one expression, classified after name resolution as a numeric (int32, unsigned, or `Integer`) measure, a resource application, or a resource binder; there is no `decreases resource` spelling. |
 | `diverges` | Signature and `loop`-head marker declaring that the function or loop may not return. It follows the parameter list, after `throws` when a signature carries both, and excludes a `decreases` clause on the same function or loop. |
 | `owns`, `views`, `consumes`, `produces` | Resource transfer clauses, in a contract and in a loop header. |
 | `constructs` | Authorizes one function to create an abstract resource token. |
@@ -55,7 +54,7 @@ documentation inventory keep the following accepted words synchronized.
 | `defined`, `viewable`, `same_object`, `separate`, `aligned` | Definedness, readable-memory, pointer-provenance, resource-separation, and pointer-alignment propositions. |
 | `old`, `at`, `c` | Snapshot selection and embedded C-fragment forms. |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
-| `load_int32`, `load_uint8`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
+| `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
 | `by`, `auto`, `using` | Proof introduction, default smart proof, and exact-premise syntax. |
 | `mark`, `step`, `execute`, `execute_until` | Execution tactics. |
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
@@ -83,7 +82,6 @@ documentation inventory keep the following accepted words synchronized.
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `statement`, `entry`, `exit` | Program-region and program-point selectors. |
-| `apply_loop_summary`, `bounded_execute`, `calculate`, `conjunction`, `double_negation`, `execute_else_step`, `execute_rest`, `execute_step`, `execute_then_step`, `summarize`, `symbolic_execute`, `vacuous` | Compatibility-only tactic spellings that produce focused migration diagnostics. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
 listed here isn't necessarily valid in every identifier or expression

@@ -100,6 +100,14 @@ impl CSourceMap {
         Ok((output, Self { segments }))
     }
 
+    /// The file the first line marker names: the translation unit's own
+    /// source file.
+    pub(crate) fn primary_file(&self) -> Option<&str> {
+        self.segments
+            .first()
+            .map(|segment| segment.filename.as_ref())
+    }
+
     /// Map a physical source position to its compiler source location.
     pub fn lookup(&self, position: SourcePosition) -> SourcePosition {
         self.lookup_counted(position, || {})

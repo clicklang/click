@@ -482,11 +482,18 @@ fn active_work_description() -> String {
                 )
             })
         })
-        .or_else(|| {
-            ACTIVE_PHASES
-                .with(|active| active.borrow().last().map(|phase| format!("{phase} phase")))
-        })
+        .or_else(active_phase_description)
         .unwrap_or_else(|| "verification driver".to_string())
+}
+
+/// The open phases, outermost first, as a limit's message names them:
+/// `frontend > program-entry storage phase` says both what the run was
+/// doing and which part of it.
+fn active_phase_description() -> Option<String> {
+    ACTIVE_PHASES.with(|active| {
+        let active = active.borrow();
+        (!active.is_empty()).then(|| format!("{} phase", active.join(" > ")))
+    })
 }
 
 /// Charges `units` to every whole-run budget. Returns `false` when one is
@@ -581,6 +588,20 @@ pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {
     let previous = UNCHARGED_DEBUG_CHECK.with(|flag| flag.replace(true));
     check();
     UNCHARGED_DEBUG_CHECK.with(|flag| flag.set(previous));
+}
+
+/// Whether the caller runs inside an [`uncharged_debug_check`]. A rule that
+/// collects side results from a predicate the check re-invokes skips them
+/// there, so a debug build collects exactly what a release build does.
+pub(crate) fn in_uncharged_debug_check() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        UNCHARGED_DEBUG_CHECK.with(Cell::get)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -890,10 +911,7 @@ pub fn deadline_context() -> String {
             active.event.source_index,
         );
     }
-    if let Some(phase) = ACTIVE_PHASES.with(|active| active.borrow().last().copied()) {
-        return format!("{phase} phase");
-    }
-    "verification driver".to_string()
+    active_phase_description().unwrap_or_else(|| "verification driver".to_string())
 }
 
 /// How a message names a crash-containment bound of `limit`, with the
@@ -1095,6 +1113,41 @@ impl Drop for OperationTiming {
             name,
             elapsed: started.elapsed(),
             work,
+        });
+    }
+}
+
+/// One named verifier phase, from construction until drop, on every exit
+/// path including an early `?`.
+///
+/// The open phases are what a limit's message names as running (a work
+/// budget or the crash-containment bound that fires inside them says
+/// "while running frontend > program-entry storage phase"), so every
+/// phase of a run, including source loading and program-entry
+/// construction before any tactic budget is installed, is named when a
+/// limit stops it. Profiling (`CLICK_TIMINGS`, a collector)
+/// additionally records its wall time. Phases are coarse, so emitting them
+/// unconditionally costs a handful of events per run.
+pub struct VerificationPhase {
+    name: &'static str,
+    started: Instant,
+}
+
+impl VerificationPhase {
+    pub fn new(name: &'static str) -> Self {
+        emit(VerificationEvent::PhaseStarted(name));
+        Self {
+            name,
+            started: Instant::now(),
+        }
+    }
+}
+
+impl Drop for VerificationPhase {
+    fn drop(&mut self) {
+        emit(VerificationEvent::PhaseFinished {
+            name: self.name,
+            elapsed: self.started.elapsed(),
         });
     }
 }

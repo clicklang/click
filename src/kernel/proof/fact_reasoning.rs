@@ -258,6 +258,21 @@ pub(crate) fn normalize_using_conditions(
         &facts.assumptions().equality_graph,
     )
     .proposition(goal);
+    // Check constant uint64 upper bounds from the cited order edges only.
+    // Construct this index once for this atomic query; no ambient scan or
+    // per-expression reconstruction is involved.
+    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
+        && matches!(&condition, ConditionTerm::Bitvector64UnsignedLessEqual(_, right) if right.uint64_as_const().is_some())
+    {
+        let mut selected = PureFactContext::new();
+        for (condition, value) in &conditions {
+            crate::instrumentation::record_deterministic_work(1);
+            selected = selected.assume_condition(condition.clone(), *value);
+        }
+        if selected.decide(&condition) == Some(true) {
+            return Ok(());
+        }
+    }
     normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
@@ -513,10 +528,8 @@ pub(crate) fn propositions_equal_modulo_proven_snapshots(
 fn expand_load_variables_shallow(bits: &Bitvector32Term) -> Bitvector32Term {
     match bits {
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-            match crate::kernel::registered_load_for_variable(variable) {
-                Some((memory, pointer)) => Bitvector32Term::MemoryLoad(memory, Box::new(pointer)),
-                None => bits.clone(),
-            }
+            crate::kernel::registered_load_term_for_variable(variable)
+                .unwrap_or_else(|| bits.clone())
         }
         Bitvector32Term::Add(left, right) => Bitvector32Term::Add(
             Box::new(expand_load_variables_shallow(left)),
@@ -572,18 +585,6 @@ pub(crate) fn exact_fact_contains_conjunct(fact: &Proposition, required: &Propos
         || matches!(fact, Proposition::And(left, right)
             if exact_fact_contains_conjunct(left, required)
                 || exact_fact_contains_conjunct(right, required))
-}
-
-/// True only when `required` is a proper conjunct of an available conjunction.
-/// This is the exact, structural rule checked by the simple `extract` tactic;
-/// it performs no normalization, snapshot transport, or proposition search.
-pub(crate) fn exact_proper_conjunct_is_available(
-    required: &Proposition,
-    available: &[Proposition],
-) -> bool {
-    available.iter().any(|fact| {
-        matches!(fact, Proposition::And(_, _)) && exact_fact_contains_conjunct(fact, required)
-    })
 }
 
 pub(crate) fn propositions_are_exact_negations(left: &Proposition, right: &Proposition) -> bool {
@@ -761,15 +762,6 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
         }
         _ => false,
     }
-}
-
-pub(crate) fn pure_fact_is_available(required: &Proposition, available: &[Proposition]) -> bool {
-    available.contains(required)
-        || exactly_available_fact(required, available).is_some()
-        || available
-            .iter()
-            .any(|fact| quantified_binder_equivalent(required, fact))
-        || quantified_equivalent_available_fact(required, available).is_some()
 }
 
 pub(crate) fn atomic_conjuncts<'a>(
@@ -1117,11 +1109,16 @@ mod tests {
                 Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                     &memory,
                     &pointer,
+                    crate::kernel::LoadKind::Bits32,
                     crate::kernel::load_access_width_or_widest(&memory, &pointer),
                     &memory,
                 ))
             } else {
-                Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()))
+                Bitvector32Term::MemoryLoad(
+                    memory,
+                    Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
+                )
             };
             Proposition::ForAll {
                 var: Variable(1),
@@ -1171,7 +1168,13 @@ mod tests {
                     byte_width: 4,
                 },
             };
-            let load = load_variable_for_cell_with_origin(snapshot, &pointer, 4, snapshot);
+            let load = load_variable_for_cell_with_origin(
+                snapshot,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                snapshot,
+            );
             Proposition::ForAll {
                 var: binder,
                 sort: Sort::CInt32,
@@ -1281,6 +1284,7 @@ mod tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         memory.clone().into(),
                         Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Variable(Variable(binder))),
                 ),
@@ -1325,12 +1329,14 @@ mod tests {
         let left = load_variable_for_cell_with_origin(
             &intern_c_memory(before.clone()),
             &preserved,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(before.clone()),
         );
         let right = load_variable_for_cell_with_origin(
             &intern_c_memory(after.clone()),
             &preserved,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(after.clone()),
         );
@@ -1353,12 +1359,14 @@ mod tests {
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(changed_before),
         );
         let changed_right = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_after.clone()),
             &loaded,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(changed_after),
         );
@@ -1511,6 +1519,7 @@ mod tests {
                         byte_width: 4,
                     },
                 }),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
@@ -1613,7 +1622,11 @@ mod tests {
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
         let load = |memory: &CMemory, pointer: &Pointer| {
-            Bitvector32Term::MemoryLoad(intern_c_memory(memory.clone()), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
         };
         let empty = CMemory::new();
         // The form recorded when the resource body was unfolded: the cell
@@ -1743,7 +1756,7 @@ impl LoadVariableBridgeSide for Bitvector32Term {
             Bitvector32Term::Variable(variable) => {
                 crate::kernel::is_load_variable(variable).then_some(*variable)
             }
-            Bitvector32Term::MemoryLoad(_, _) => {
+            Bitvector32Term::MemoryLoad(_, _, _) => {
                 crate::kernel::load_variable_for_term(self).map(|(variable, _)| variable)
             }
             _ => None,
@@ -1839,20 +1852,34 @@ impl<'a> OriginsUnchanged<'a> {
     }
 
     fn compute(&self, left: Variable, right: Variable) -> bool {
-        let (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) = (
-            crate::kernel::registered_load_origin_for_variable(&left),
-            crate::kernel::registered_load_origin_for_variable(&right),
+        let (Some(left_load), Some(right_load)) = (
+            crate::kernel::registered_load_origin_term_for_variable(&left),
+            crate::kernel::registered_load_origin_term_for_variable(&right),
         ) else {
             return false;
         };
-        // The unchanged proof comes from recorded derivations crossed with
-        // exact-fact distinctness, never from whole-snapshot alias search.
-        left_pointer == right_pointer
-            && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer.clone())),
-                &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
-                self.assumptions,
-            )
+        let (
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+        ) = (&left_load, &right_load)
+        else {
+            return false;
+        };
+        // Retain the selected, checked alias/snapshot path when different
+        // pointer spellings identify this cell. The read kind is preserved.
+        left_kind == right_kind
+            && ((left_pointer.block != right_pointer.block
+                && crate::kernel::memory_provenance::checked_origin_load_equality(
+                    &Bitvector32Term::Variable(left),
+                    &Bitvector32Term::Variable(right),
+                    self.assumptions,
+                ))
+                || left_pointer == right_pointer
+                    && crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                        &left_load,
+                        &right_load,
+                        self.assumptions,
+                    ))
     }
 }
 
@@ -2322,7 +2349,11 @@ mod integer_reflexivity_tests {
         );
         let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                memory, address, 8, memory,
+                memory,
+                address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let left = load(&before, &a);
@@ -2440,7 +2471,11 @@ mod integer_reflexivity_tests {
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone())),
+                    Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
+                    ),
                 )),
             )
         };
@@ -2581,5 +2616,174 @@ mod integer_reflexivity_tests {
             Some(false)
         );
         assert!(!normalizes_context_free(&equality));
+    }
+}
+
+#[cfg(test)]
+mod uint64_loop_tests {
+    use super::*;
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+
+    #[test]
+    fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_facts() {
+        let i = Bitvector32Term::Variable(Variable(980001));
+        let n = Bitvector32Term::Variable(Variable(980002));
+        let next = Bitvector32Term::uint64_add(i.clone(), Bitvector32Term::UInt64Constant(1));
+        let guard =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+        let successor = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(next.clone(), n.clone()),
+            true,
+        );
+        let descent = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_than(
+                Bitvector32Term::uint64_subtract(n.clone(), next),
+                Bitvector32Term::uint64_subtract(n.clone(), i.clone()),
+            ),
+            true,
+        );
+        let mut samples = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut premises = vec![guard.clone()];
+            premises.extend((0..size).map(|k| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_than(
+                        Bitvector32Term::Variable(Variable(990000 + k)),
+                        Bitvector32Term::UInt64Constant(17),
+                    ),
+                    true,
+                )
+            }));
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&successor, std::slice::from_ref(&guard), &facts)?;
+                normalize_using_conditions(&descent, std::slice::from_ref(&guard), &facts)
+            });
+            result.unwrap();
+            samples.push(work);
+            // Ambient facts do not substitute for explicit certificate inputs.
+            assert!(normalize_using_conditions(&successor, &[], &facts).is_err());
+            assert!(normalize_using_conditions(&descent, &[], &facts).is_err());
+        }
+        assert!(samples[0] > 0);
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        let weak =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(i.clone(), n.clone()), true);
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&weak));
+        assert!(
+            normalize_using_conditions(&successor, std::slice::from_ref(&weak), &facts).is_err()
+        );
+        assert!(normalize_using_conditions(&descent, std::slice::from_ref(&weak), &facts).is_err());
+        let missing = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+        assert!(matches!(
+            normalize_using_conditions(&successor, &[guard], &missing),
+            Err(ConditionalNormalizationError::UnavailablePremise(0))
+        ));
+    }
+
+    #[test]
+    fn uint64_truncation_certificates_require_full_width_bounds() {
+        let i = Bitvector32Term::Variable(Variable(981011));
+        let n = Bitvector32Term::Variable(Variable(981012));
+        let low_i = Bitvector32Term::uint32_from_64(i.clone());
+        let low_n = Bitvector32Term::uint32_from_64(n.clone());
+        let guard =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(
+                n.clone(),
+                Bitvector32Term::UInt64Constant(i32::MAX as u64),
+            ),
+            true,
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(low_i.clone(), low_n.clone()),
+            true,
+        );
+        let mut samples = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut available = vec![guard.clone(), bound.clone()];
+            available.extend((0..size).map(|k| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::Variable(Variable(982000 + k)),
+                        Bitvector32Term::UInt64Constant(1000),
+                    ),
+                    true,
+                )
+            }));
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&available);
+            let premises = [guard.clone(), bound.clone()];
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &premises, &facts)
+            });
+            result.unwrap();
+            samples.push(work);
+            assert!(normalize_using_conditions(&goal, &premises[..1], &facts).is_err());
+            assert!(normalize_using_conditions(&goal, &premises[1..], &facts).is_err());
+        }
+        assert!(
+            samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        let too_wide = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(
+                n.clone(),
+                Bitvector32Term::UInt64Constant(1u64 << 32),
+            ),
+            true,
+        );
+        let facts =
+            crate::kernel::proof::ProofFacts::from_ordered(&[guard.clone(), too_wide.clone()]);
+        assert!(normalize_using_conditions(&goal, &[guard, too_wide], &facts).is_err());
+
+        let full_equal = Proposition::ConditionIs(ConditionTerm::int64_equal(i.clone(), n), true);
+        let low_equal = Proposition::ConditionIs(ConditionTerm::equal(low_i.clone(), low_n), true);
+        let facts =
+            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&full_equal));
+        normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(i.clone(), Bitvector32Term::UInt64Constant(1000)),
+            true,
+        );
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&bound));
+        for goal in [
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), low_i.clone()),
+            ConditionTerm::signed_less_equal(low_i, Bitvector32Term::Constant(1000)),
+        ] {
+            // Lower-bound certificates need the explicit signed-range guard.
+            let signed_bound = Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(
+                    i.clone(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                ),
+                true,
+            );
+            normalize_using_conditions(&signed_bound, std::slice::from_ref(&bound), &facts)
+                .unwrap();
+            let premises = [bound.clone(), signed_bound];
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+            normalize_using_conditions(&Proposition::ConditionIs(goal, true), &premises, &facts)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn uint64_equality_certificate_requires_both_order_premises() {
+        let a = Bitvector32Term::Variable(Variable(981001));
+        let b = Bitvector32Term::Variable(Variable(981002));
+        let goal = Proposition::ConditionIs(ConditionTerm::int64_equal(a.clone(), b.clone()), true);
+        let le =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true);
+        let not_lt = Proposition::ConditionIs(ConditionTerm::uint64_less_than(a, b), false);
+        let premises = [le, not_lt];
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        normalize_using_conditions(&goal, &premises, &facts).unwrap();
+        for selection in [&premises[..1], &premises[1..], &premises[..0]] {
+            assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
+        }
     }
 }

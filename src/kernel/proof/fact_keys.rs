@@ -4,6 +4,7 @@
 //! A key match is never proof authority: the checked snapshot bridge still
 //! validates every selected candidate.
 
+use crate::kernel::LoadKind;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CType, CValue, IntegerComparisonOperator,
     IntegerTerm, MachineIntegerType, PureFunctionArgument, SharedCMemory, SharedIntegerTerm, Sort,
@@ -98,7 +99,7 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum SnapshotBlindBitvectorKey {
-    Load(Box<SnapshotBlindPointerKey>),
+    Load(Box<SnapshotBlindPointerKey>, LoadKind),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
@@ -107,8 +108,14 @@ pub(crate) enum SnapshotBlindBitvectorKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct SnapshotBlindPointerKey {
-    block: PointerBlock,
+    block: SnapshotBlindPointerBlockKey,
     offset: Box<SnapshotBlindPointerOffsetKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum SnapshotBlindPointerBlockKey {
+    Exact(PointerBlock),
+    Read(Box<SnapshotBlindPointerKey>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -189,7 +196,7 @@ impl SnapshotBlindFloatConditionKey {
 impl SnapshotBlindBitvectorKey {
     fn forgets_a_snapshot(&self) -> bool {
         match self {
-            Self::Load(_) => true,
+            Self::Load(_, _) => true,
             Self::Add(left, right) | Self::Subtract(left, right) | Self::Multiply(left, right) => {
                 left.forgets_a_snapshot() || right.forgets_a_snapshot()
             }
@@ -200,7 +207,8 @@ impl SnapshotBlindBitvectorKey {
 
 impl SnapshotBlindPointerKey {
     fn forgets_a_snapshot(&self) -> bool {
-        self.offset.forgets_a_snapshot()
+        matches!(self.block, SnapshotBlindPointerBlockKey::Read(_))
+            || self.offset.forgets_a_snapshot()
     }
 }
 
@@ -494,15 +502,19 @@ fn snapshot_blind_float_condition_key(
 
 fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
     match term {
-        Bitvector32Term::MemoryLoad(_, pointer) => {
-            SnapshotBlindBitvectorKey::Load(Box::new(snapshot_blind_pointer_key(pointer)))
+        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+            SnapshotBlindBitvectorKey::Load(Box::new(snapshot_blind_pointer_key(pointer)), *kind)
         }
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-            match crate::kernel::registered_load_for_variable(variable) {
-                Some((_, pointer)) => {
-                    SnapshotBlindBitvectorKey::Load(Box::new(snapshot_blind_pointer_key(&pointer)))
-                }
-                None => SnapshotBlindBitvectorKey::Exact(term.clone()),
+            match (
+                crate::kernel::registered_load_for_variable(variable),
+                crate::kernel::registered_load_kind_for_variable(variable),
+            ) {
+                (Some((_, pointer)), Some(kind)) => SnapshotBlindBitvectorKey::Load(
+                    Box::new(snapshot_blind_pointer_key(&pointer)),
+                    kind,
+                ),
+                _ => SnapshotBlindBitvectorKey::Exact(term.clone()),
             }
         }
         Bitvector32Term::Add(left, right) => SnapshotBlindBitvectorKey::Add(
@@ -521,9 +533,34 @@ fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvecto
     }
 }
 
+thread_local! {
+    static POINTER_READ_KEY_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct PointerReadKeyDepth(usize);
+impl Drop for PointerReadKeyDepth {
+    fn drop(&mut self) {
+        POINTER_READ_KEY_DEPTH.with(|depth| depth.set(self.0));
+    }
+}
+
 fn snapshot_blind_pointer_key(pointer: &Pointer) -> SnapshotBlindPointerKey {
+    let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
+    let _restore = PointerReadKeyDepth(depth);
+    // This candidate key forgets snapshots, never proof authority. Bound
+    // registry expansion across both defining addresses and their offsets.
+    let read = match &pointer.block {
+        PointerBlock::Symbolic(variable) if depth < 3 => {
+            crate::kernel::registered_load_for_variable(variable).map(|(_, source)| source)
+        }
+        _ => None,
+    };
     SnapshotBlindPointerKey {
-        block: pointer.block.clone(),
+        block: read
+            .map(|source| {
+                SnapshotBlindPointerBlockKey::Read(Box::new(snapshot_blind_pointer_key(&source)))
+            })
+            .unwrap_or_else(|| SnapshotBlindPointerBlockKey::Exact(pointer.block.clone())),
         offset: Box::new(snapshot_blind_pointer_offset_key(&pointer.offset)),
     }
 }
@@ -805,7 +842,7 @@ enum AlphaBitvectorKey {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
-    Load(Box<AlphaPointerKey>),
+    Load(Box<AlphaPointerKey>, LoadKind),
     RegisteredLoad(AlphaRegisteredLoadId),
     Address(Box<AlphaPointerKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
@@ -1015,6 +1052,7 @@ struct AlphaRegisteredLoadRecord {
     _interner: Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     snapshot: AlphaSnapshotKey,
     pointer: AlphaPointerKey,
+    kind: LoadKind,
 }
 
 struct AlphaRegisteredLoadInterner {
@@ -1077,10 +1115,12 @@ fn alpha_registered_load_interner() -> Option<Arc<std::sync::Mutex<AlphaRegister
 fn alpha_registered_load_descriptor_fingerprint(
     snapshot: &AlphaSnapshotKey,
     pointer: &AlphaPointerKey,
+    kind: LoadKind,
 ) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     snapshot.hash(&mut hasher);
     pointer.hash(&mut hasher);
+    kind.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -1088,8 +1128,9 @@ fn intern_alpha_registered_load(
     interner: &Arc<std::sync::Mutex<AlphaRegisteredLoadInterner>>,
     snapshot: AlphaSnapshotKey,
     pointer: AlphaPointerKey,
+    kind: LoadKind,
 ) -> Option<AlphaRegisteredLoadId> {
-    let fingerprint = alpha_registered_load_descriptor_fingerprint(&snapshot, &pointer);
+    let fingerprint = alpha_registered_load_descriptor_fingerprint(&snapshot, &pointer, kind);
     let mut interner_state = interner.lock().ok()?;
     interner_state.clean_some()?;
     let bucket = interner_state.buckets.entry(fingerprint).or_default();
@@ -1101,7 +1142,7 @@ fn intern_alpha_registered_load(
         let Some(record) = candidate.upgrade() else {
             continue;
         };
-        if record.snapshot == snapshot && record.pointer == pointer {
+        if record.snapshot == snapshot && record.pointer == pointer && record.kind == kind {
             return Some(AlphaRegisteredLoadId(record));
         }
     }
@@ -1117,6 +1158,7 @@ fn intern_alpha_registered_load(
         _interner: interner.clone(),
         snapshot,
         pointer,
+        kind,
     });
     bucket.push(Arc::downgrade(&record));
     interner_state.cleanup.push_back(fingerprint);
@@ -1630,6 +1672,7 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
     }
     let result = (|| {
         let (memory, pointer) = crate::kernel::registered_load_for_variable(&variable)?;
+        let kind = crate::kernel::registered_load_kind_for_variable(&variable)?;
         let snapshot = AlphaSnapshotKey::new(&memory);
         let pointer =
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(&pointer, bindings, next_binder)?;
@@ -1642,7 +1685,7 @@ fn alpha_registered_load_pointer_with_bindings<const ALLOW_LOADS: bool>(
             }
         };
         alpha_work_checkpoint(bindings, 1)?;
-        let load_id = intern_alpha_registered_load(&interner, snapshot, pointer)?;
+        let load_id = intern_alpha_registered_load(&interner, snapshot, pointer, kind)?;
         Some((load_id, *next_binder))
     })();
     bindings.registered_load_stack.remove(&variable);
@@ -1956,13 +1999,14 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                         )?;
                         AlphaBitvectorKey::RegisteredLoad(load_id)
                     }
-                    Some((_, pointer)) => {
-                        AlphaBitvectorKey::Load(Box::new(alpha_pointer_key_with_bindings::<
-                            ALLOW_LOADS,
-                        >(
-                            &pointer, bindings, next_binder
-                        )?))
-                    }
+                    Some((_, pointer)) => AlphaBitvectorKey::Load(
+                        Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                            &pointer,
+                            bindings,
+                            next_binder,
+                        )?),
+                        crate::kernel::registered_load_kind_for_variable(variable)?,
+                    ),
                     None => AlphaBitvectorKey::Variable(alpha_variable_key_with_bindings::<
                         ALLOW_LOADS,
                     >(
@@ -2218,7 +2262,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             }
         }
         Bitvector32Term::AlgebraicMatch { .. } => return None,
-        Bitvector32Term::MemoryLoad(memory, pointer) if bindings.snapshot_aware => {
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) if bindings.snapshot_aware => {
             bindings.raw_snapshot_load_seen = true;
             let snapshot = AlphaSnapshotKey::new(memory);
             let pointer =
@@ -2233,16 +2277,19 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             };
             alpha_work_checkpoint(bindings, 1)?;
             AlphaBitvectorKey::RegisteredLoad(intern_alpha_registered_load(
-                &interner, snapshot, pointer,
+                &interner, snapshot, pointer, *kind,
             )?)
         }
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
             bindings.raw_snapshot_load_seen = true;
-            AlphaBitvectorKey::Load(Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
-                pointer,
-                bindings,
-                next_binder,
-            )?))
+            AlphaBitvectorKey::Load(
+                Box::new(alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
+                    pointer,
+                    bindings,
+                    next_binder,
+                )?),
+                *kind,
+            )
         }
         Bitvector32Term::PointerAddress(pointer) => AlphaBitvectorKey::Address(Box::new(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(pointer, bindings, next_binder)?,
@@ -2699,6 +2746,7 @@ mod proposition_identity_tests {
                 Bitvector32Term::MemoryLoad(
                     CMemory::new().with_block("alpha-array", 8).into(),
                     Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
                 ),
                 Bitvector32Term::Constant(0),
             )),
@@ -2915,6 +2963,7 @@ mod proposition_identity_tests {
         let load = crate::kernel::load_variable_for_cell_with_origin(
             &shared_memory,
             &pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&shared_memory, &pointer),
             &shared_memory,
         );
@@ -2925,6 +2974,7 @@ mod proposition_identity_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     load_memory,
                     Box::new(load_pointer),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(7)),
             ),
@@ -2946,6 +2996,7 @@ mod proposition_identity_tests {
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
             &changed_shared,
             &pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&changed_shared, &pointer),
             &changed_shared,
         );
@@ -2957,6 +3008,7 @@ mod proposition_identity_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     changed_memory,
                     Box::new(changed_pointer),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(7)),
             ),
@@ -3596,6 +3648,7 @@ mod snapshot_alpha_tests {
                     block: "snapshot-alpha".into(),
                     offset: PointerOffsetTerm::Variable(item),
                 }),
+                crate::kernel::LoadKind::Bits32,
             ),
         ))
     }
@@ -3708,6 +3761,7 @@ mod snapshot_alpha_tests {
                         block: "snapshot-alpha".into(),
                         offset: PointerOffsetTerm::Variable(unknown_load),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             )),
         );
@@ -3726,10 +3780,20 @@ mod snapshot_alpha_tests {
             pointer.clone(),
             CValue::Int32(Bitvector32Term::Constant(11)),
         ));
-        let before_load =
-            crate::kernel::load_variable_for_cell_with_origin(&before, &pointer, 4, &before);
-        let after_load =
-            crate::kernel::load_variable_for_cell_with_origin(&after, &pointer, 4, &after);
+        let before_load = crate::kernel::load_variable_for_cell_with_origin(
+            &before,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &before,
+        );
+        let after_load = crate::kernel::load_variable_for_cell_with_origin(
+            &after,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &after,
+        );
 
         let make = |load: Variable, accumulator: Variable, item: Variable| {
             IntegerTerm::range_fold(
@@ -3779,17 +3843,32 @@ mod snapshot_alpha_tests {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let loaded =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &field(0), 8, &memory);
-        let other =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &field(8), 8, &memory);
+        let loaded = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &field(0),
+            crate::kernel::LoadKind::Bits32,
+            8,
+            &memory,
+        );
+        let other = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &field(8),
+            crate::kernel::LoadKind::Bits32,
+            8,
+            &memory,
+        );
         let every_element_is_one = |base: Variable, binder: Variable| {
             let element = Pointer {
                 block: PointerBlock::Symbolic(base),
                 offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(binder), 4),
             };
-            let element_load =
-                crate::kernel::load_variable_for_cell_with_origin(&memory, &element, 4, &memory);
+            let element_load = crate::kernel::load_variable_for_cell_with_origin(
+                &memory,
+                &element,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                &memory,
+            );
             Proposition::ForAll {
                 var: binder,
                 sort: Sort::CInt32,
@@ -3822,14 +3901,24 @@ mod snapshot_alpha_tests {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first_load =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &first_pointer, 4, &memory);
+        let first_load = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &first_pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         let nested_pointer = Pointer {
             block: block.into(),
             offset: PointerOffsetTerm::Variable(first_load),
         };
-        let nested_load =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &nested_pointer, 4, &memory);
+        let nested_load = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &nested_pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         // The load registry keeps the provenance-projected snapshot used by
         // the minted variable.  Use those exact identities for the explicit
         // forms below; the original `memory` may project to a different DAG
@@ -3855,6 +3944,7 @@ mod snapshot_alpha_tests {
         let explicit_first: SharedIntegerTerm = fold_with_body(Bitvector32Term::MemoryLoad(
             first_memory,
             Box::new(first_registered_pointer),
+            crate::kernel::LoadKind::Bits32,
         ))
         .into();
         let registered_first: SharedIntegerTerm =
@@ -3862,6 +3952,7 @@ mod snapshot_alpha_tests {
         let explicit_nested: SharedIntegerTerm = fold_with_body(Bitvector32Term::MemoryLoad(
             nested_memory,
             Box::new(nested_registered_pointer),
+            crate::kernel::LoadKind::Bits32,
         ))
         .into();
         let registered_nested: SharedIntegerTerm =
@@ -4042,14 +4133,25 @@ mod snapshot_alpha_tests {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut load =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &pointer, 4, &memory);
+        let mut load = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         for _ in 0..depth {
             pointer = Pointer {
                 block: pointer.block.clone(),
                 offset: PointerOffsetTerm::Variable(load),
             };
-            load = crate::kernel::load_variable_for_cell_with_origin(&memory, &pointer, 4, &memory);
+            load = crate::kernel::load_variable_for_cell_with_origin(
+                &memory,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                &memory,
+            );
         }
         (memory, load)
     }
@@ -4061,8 +4163,13 @@ mod snapshot_alpha_tests {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut load =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &pointer, 4, &memory);
+        let mut load = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         for _ in 0..depth {
             pointer = Pointer {
                 block: pointer.block.clone(),
@@ -4071,7 +4178,13 @@ mod snapshot_alpha_tests {
                     Box::new(PointerOffsetTerm::Variable(load)),
                 ),
             };
-            load = crate::kernel::load_variable_for_cell_with_origin(&memory, &pointer, 4, &memory);
+            load = crate::kernel::load_variable_for_cell_with_origin(
+                &memory,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                &memory,
+            );
         }
         (memory, load)
     }
@@ -4209,6 +4322,7 @@ mod snapshot_alpha_tests {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
                         }),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                 )),
             )
@@ -4243,6 +4357,7 @@ mod snapshot_alpha_tests {
                             block: block.into(),
                             offset: PointerOffsetTerm::Constant(0),
                         }),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                 )),
             )

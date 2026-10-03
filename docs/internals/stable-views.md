@@ -315,6 +315,12 @@ These are checks of the abstraction boundaries for later threading and Rust
 work, not verified mutex or atomic C operations: scheduling, atomics, Rust's
 alias rules, and exclusive production reborrows remain outside this checkpoint.
 
+The [Rust resource correspondence](https://github.com/clicklang/click/blob/master/design/rust-resource-correspondence.md)
+pairs the `rust_correspondence_` model traces with Rust compiler/runtime
+witnesses for moves, shared field borrows, exclusive reborrowing, and disjoint
+fields. It records the conservative field model's limits and the distinction
+between compiler-checked borrow legality and Click's functional claims.
+
 ## Regression map
 
 | Rule | Tests |

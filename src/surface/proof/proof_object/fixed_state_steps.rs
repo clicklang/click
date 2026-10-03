@@ -569,9 +569,6 @@ impl<'a> Proof<'a> {
         if let ProofContext::Pure(context) = self.context.as_ref() {
             let index = match &choice.source {
                 ProofFactSource::Requirement(index) => *index,
-                ProofFactSource::RequirementLabel(_) => {
-                    return self.apply_pure_integer_choose(choice);
-                }
                 ProofFactSource::Invariant(_) => {
                     return Err(
                         self.step_error("pure `choose` does not have a loop invariant source")
@@ -631,11 +628,6 @@ impl<'a> Proof<'a> {
                 }
                 *index
             }
-            ProofFactSource::RequirementLabel(label) => view
-                .requirement_label_indices
-                .and_then(|indices| indices.get(label))
-                .copied()
-                .ok_or_else(|| self.step_error(format!("unknown requirement label `{label}`")))?,
             ProofFactSource::Invariant(_) => unreachable!("handled above"),
         };
         // A caller source always names the immutable entry vector from which
@@ -1302,11 +1294,6 @@ impl<'a> Proof<'a> {
         }
         let index = match &choice.source {
             ProofFactSource::Requirement(index) => *index,
-            ProofFactSource::RequirementLabel(label) => {
-                return Err(self.step_error(format!(
-                    "pure `choose` does not support requirement labels (`{label}`)"
-                )));
-            }
             ProofFactSource::Invariant(_) => {
                 return Err(self.step_error("pure `choose` does not have a loop invariant source"));
             }
@@ -1380,11 +1367,6 @@ impl<'a> Proof<'a> {
         }
         let index = match &choice.source {
             ProofFactSource::Requirement(index) => *index,
-            ProofFactSource::RequirementLabel(label) => {
-                return Err(self.step_error(format!(
-                    "pure `choose` does not support requirement labels (`{label}`)"
-                )));
-            }
             ProofFactSource::Invariant(_) => {
                 return Err(self.step_error("pure `choose` does not have a loop invariant source"));
             }
@@ -2243,7 +2225,12 @@ impl<'a> Proof<'a> {
                     view.click_function_environment,
                 )
                 .map_err(|message| {
-                    self.step_error(format!("could not lower `rewrite` equality: {message}"))
+                    let source =
+                        crate::surface::printing::source_click_proposition(surface_equality);
+                    let source: String = source.chars().take(1024).collect();
+                    self.step_error(format!(
+                        "could not lower `rewrite` equality: {message}\n  equality: {source}"
+                    ))
                 })?,
             ),
         };
@@ -2314,7 +2301,7 @@ impl<'a> Proof<'a> {
                         message.push_str(&format!("\n  {mismatch}"));
                     }
                     let mut labels =
-                        crate::surface::proof_diagnostics::render::SnapshotLabels::default();
+                        crate::surface::proof_diagnostics::render::SnapshotLabels::ambient();
                     message.push_str(&format!(
                         "\n  the two spell alike but are different propositions; with each \
                          memory labelled they read\n  equality: {}\n  goal: {}",
@@ -2590,7 +2577,6 @@ impl<'a> Proof<'a> {
             click_function_environment: context.click_function_environment,
             theorem_environment: context.theorem_environment,
             original_requirements: context.function_block.requires(),
-            requirement_label_indices: Some(context.function_block.requirement_label_indices()),
             requirement_facts: &context.constants.execution_start_facts,
         })
     }
@@ -2915,7 +2901,6 @@ impl<'a> Proof<'a> {
             click_function_environment: context.click_function_environment,
             theorem_environment: context.theorem_environment,
             original_requirements: context.function_block.requires(),
-            requirement_label_indices: Some(context.function_block.requirement_label_indices()),
             requirement_facts: context.constants.execution_start_facts.as_slice(),
         })
     }

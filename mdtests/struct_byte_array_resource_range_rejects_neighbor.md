@@ -17,5 +17,5 @@ void set_pointer(struct bytes* p) {
 ```
 
 ```expect
-fail: missing resource fact
+fail: missing resource fact `owns p->data[2]`
 ```

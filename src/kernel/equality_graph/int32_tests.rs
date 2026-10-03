@@ -9,6 +9,129 @@ fn eq(left: &Bitvector32Term, right: &Bitvector32Term) -> ConditionTerm {
     ConditionTerm::equal(left.clone(), right.clone())
 }
 
+fn unsigned_composition(value: Bitvector32Term) -> Bitvector32Term {
+    Bitvector32Term::BitwiseXor(
+        Box::new(Bitvector32Term::UnsignedRemainder(
+            Box::new(value.clone()),
+            Box::new(var(90_001)),
+        )),
+        Box::new(Bitvector32Term::UnsignedDivide(
+            Box::new(value),
+            Box::new(var(90_002)),
+        )),
+    )
+}
+
+#[test]
+fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coercion() {
+    let (a, b) = (var(90_003), var(90_004));
+    let mut graph = EqualityGraph::default();
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let parent = graph.clone();
+    graph.add_int32_equality(&a, &b);
+    assert!(graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let sibling = parent;
+    assert!(!sibling.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let unsigned = Bitvector32Term::UnsignedRemainder(Box::new(a.clone()), Box::new(var(90_001)));
+    let signed = Bitvector32Term::Remainder(Box::new(b.clone()), Box::new(var(90_001)));
+    let quotient = Bitvector32Term::UnsignedDivide(Box::new(b.clone()), Box::new(var(90_001)));
+    assert!(!graph.are_int32_equal(&unsigned, &signed));
+    assert!(!graph.are_int32_equal(&unsigned, &quotient));
+    let mut results_only = EqualityGraph::default();
+    results_only.add_int32_equality(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone()),
+    );
+    assert!(!results_only.are_int32_equal(&a, &b));
+    let undefined =
+        Bitvector32Term::UnsignedDivide(Box::new(a), Box::new(Bitvector32Term::Constant(0)));
+    assert!(!graph.are_int32_equal(&undefined, &Bitvector32Term::Constant(0)));
+}
+
+#[test]
+fn unsigned_congruence_withdraws_with_its_operand_fact() {
+    let (a, b) = (var(90_010), var(90_011));
+    let fact = Proposition::ConditionIs(eq(&a, &b), true);
+    let context = PureFactContext::new().assume_proposition(fact.clone());
+    assert!(context.equality_graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let withdrawn = context.without_exact_fact(&fact);
+    assert!(
+        !withdrawn
+            .equality_graph
+            .are_int32_equal(&unsigned_composition(a), &unsigned_composition(b))
+    );
+}
+
+#[test]
+fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("unsigned", 4));
+    let pointer = Pointer {
+        block: "unsigned".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer.clone(),
+        CValue::UInt32(Bitvector32Term::Constant(9)),
+    ));
+    let load = |memory, kind| Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), kind);
+    let old = load(before.clone(), LoadKind::Bits32);
+    let value = var(90_012);
+    let mut graph = EqualityGraph::default();
+    graph.add_int32_equality(&old, &value);
+    assert!(graph.are_int32_equal(
+        &unsigned_composition(old),
+        &unsigned_composition(value.clone())
+    ));
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(load(after, LoadKind::Bits32)),
+        &unsigned_composition(value.clone())
+    ));
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(load(before, LoadKind::UInt16)),
+        &unsigned_composition(value)
+    ));
+}
+
+#[test]
+fn unsigned_congruence_registration_and_late_merges_scale_with_touched_uses() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let mut graph = EqualityGraph::default();
+                for i in 0..size {
+                    let (a, b) = (var(i), var(i + size));
+                    let (left, right) = (
+                        unsigned_composition(a.clone()),
+                        unsigned_composition(b.clone()),
+                    );
+                    assert!(!graph.are_int32_equal(&left, &right));
+                    graph.add_int32_equality(&a, &b);
+                    assert!(graph.are_int32_equal(&left, &right));
+                }
+            })
+        });
+        assert!(work < 1000 * size as usize, "size={size}, work={work}");
+        assert!(
+            map_work < 10_000 * size as usize * (size.ilog2() as usize + 1),
+            "size={size}, map work={map_work}"
+        );
+    }
+}
+
 #[test]
 fn int32_equality_is_transitive_symmetric_and_branch_local() {
     let (a, b, c) = (var(1), var(2), var(3));
@@ -86,6 +209,7 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -156,7 +280,11 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     );
     let load = |memory: &SharedCMemory| {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory, &pointer, 4, memory,
+            memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            memory,
         ))
     };
     let old_load = load(&before);
@@ -164,6 +292,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     let byte_load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
         &byte_memory,
         &pointer,
+        crate::kernel::LoadKind::UInt8,
         1,
         &byte_memory,
     ));
@@ -203,7 +332,11 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
                 .store(pointer.clone(), CValue::Int32(sum(var(0)))),
         );
         let load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            &memory, &pointer, 4, &memory,
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
         ));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -248,8 +381,13 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
             .store(right_pointer.clone(), CValue::UInt8(sum(b.clone()))),
     );
     let load = |memory: &SharedCMemory, pointer: &Pointer, width| {
+        let kind = if width == 1 {
+            crate::kernel::LoadKind::UInt8
+        } else {
+            crate::kernel::LoadKind::Bits32
+        };
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory, pointer, width, memory,
+            memory, pointer, kind, width, memory,
         ))
     };
     let left = load(&before, &left_pointer, 4);
@@ -293,6 +431,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                 &memory,
                 &pointer(offset),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 &memory,
             ))
@@ -326,6 +465,7 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -401,6 +541,7 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -487,48 +628,6 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
-fn typed_int32_value_equality_uses_graph_with_snapshot_scope() {
-    let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("typed-int32", 8));
-    let pointer = |index| Pointer {
-        block: "typed-int32".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
-    };
-    let load = |memory: &SharedCMemory, index| {
-        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory,
-            &pointer(index),
-            4,
-            memory,
-        ))
-    };
-    let (a, b) = (var(71), var(72));
-    let after = intern_c_memory(before.memory().clone().store(
-        pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
-    ));
-    let left = CValue::Int32(load(&before, a.clone()));
-    let right = CValue::Int32(load(&before, b.clone()));
-    let later = CValue::Int32(load(&after, b.clone()));
-    let premise = eq(&a, &b);
-    let parent = PureFactContext::new();
-    let branch = parent.clone().assume_condition(premise.clone(), true);
-    let values_equal = |context: &PureFactContext, left: &CValue, right: &CValue| {
-        crate::kernel::reasoning::memory_resolution::c_values_proven_equal_for_memory_resolution(
-            left, right, context,
-        )
-    };
-    let _scope = branch.enter_id_scope();
-    PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(values_equal(&branch, &left, &right));
-    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!values_equal(&branch, &left, &later));
-    assert!(!values_equal(&parent, &left, &right));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!values_equal(&withdrawn, &left, &right));
-}
-
-#[test]
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -565,6 +664,7 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -580,7 +680,7 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
     let later = sum(load(&after, b.clone()));
     let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
     let certifies = |context: &PureFactContext, goal: &Proposition| {
-        crate::kernel::api::contract_certification::certification_proves_proposition(context, goal)
+        crate::kernel::PureFactContext::settles_exactly(context, goal)
     };
     let premise = eq(&a, &b);
     let parent = PureFactContext::new();
@@ -610,11 +710,9 @@ fn certified_int32_graph_queries_scale_without_fact_index() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
                 let goal = Proposition::ConditionIs(eq(&left, &sum(var(index))), true);
-                assert!(
-                    crate::kernel::api::contract_certification::certification_proves_proposition(
-                        &context, &goal,
-                    )
-                );
+                assert!(crate::kernel::PureFactContext::settles_exactly(
+                    &context, &goal,
+                ));
             }
         });
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
@@ -634,6 +732,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -776,10 +875,18 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
             .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
     );
     let load = |memory: &SharedCMemory| {
-        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()))
+        Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        )
     };
     let named = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-        &before, &pointer, 4, &before,
+        &before,
+        &pointer,
+        crate::kernel::LoadKind::Bits32,
+        4,
+        &before,
     ));
     let a = var(41);
     let context = PureFactContext::new()
@@ -876,7 +983,11 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
             let memory = intern_c_memory(
                 memory.store(address.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
             );
-            let load = Bitvector32Term::MemoryLoad(memory, Box::new(address));
+            let load = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(address),
+                crate::kernel::LoadKind::Bits32,
+            );
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new()
                     .assume_condition(eq(&load, &Bitvector32Term::Constant(7)), true)

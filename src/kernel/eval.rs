@@ -58,6 +58,7 @@ pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
+pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
 #[cfg(test)]
@@ -69,6 +70,7 @@ pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_registered_load_variable;
 #[cfg(test)]
 pub(crate) use memory_loads::record_load_variable_defining_fact;
+#[cfg(test)]
 pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
@@ -83,7 +85,8 @@ pub(super) use memory_loads::{
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(in crate::kernel) use memory_loads::{
-    declare_symbolic_array_access_widths, symbolic_storage_cell_value,
+    declare_symbolic_array_access_widths, declare_symbolic_element_access_widths,
+    symbolic_storage_cell_value,
 };
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
@@ -93,6 +96,10 @@ pub(crate) use memory_loads::{
 };
 pub(crate) use memory_loads::{
     pointer_load_identity, registered_pointer_load, typed_pointer_read_variable,
+};
+pub(crate) use memory_loads::{
+    registered_load_kind_for_variable, registered_load_origin_term_for_variable,
+    registered_load_term_for_variable,
 };
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;

@@ -448,7 +448,7 @@ impl<'a> Proof<'a> {
         {
             let parameters = context.parsed_function.parameters();
             for requirement in requires {
-                let Requirement::Resource(resource) = requirement.inner() else {
+                let Requirement::Resource(resource) = requirement else {
                     continue;
                 };
                 let mut resource: &ResourceClause = resource;
@@ -650,11 +650,23 @@ impl<'a> Proof<'a> {
         }
         let goal = self.goal()?;
         let (parameters, arguments) = self.diagnostic_naming_tables();
-        Some(crate::surface::diagnostics::describe_stated_fact(
-            goal,
-            &parameters,
-            &arguments,
-        ))
+        let lowered =
+            crate::surface::diagnostics::describe_stated_fact(goal, &parameters, &arguments);
+        // The back-edge locals do not name a value read at an earlier
+        // snapshot, which the lowered spelling elides. The synthesized form
+        // names that snapshot even where it does not lower back exactly, as
+        // an unsigned order does not.
+        if lowered.contains('…')
+            && let Some(surface) = self.bundle_member_surface(goal, false)
+        {
+            let spelled = crate::surface::diagnostics::with_refusal_spelling(|| {
+                crate::surface::printing::source_click_proposition(&surface)
+            });
+            if !spelled.contains("__click_") && !spelled.contains('…') {
+                return Some(spelled);
+            }
+        }
+        Some(lowered)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
@@ -695,6 +707,14 @@ impl<'a> Proof<'a> {
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
+        self.bundle_member_surface(goal, true)
+    }
+
+    /// [`Self::synthesized_bundle_member_surface`], or with `checked` false
+    /// the synthesized form whether or not it lowers back to `goal`. Only a
+    /// refusal reads the unchecked form, to name the snapshots a member
+    /// compares; nothing proves or records it.
+    fn bundle_member_surface(&self, goal: &Proposition, checked: bool) -> Option<ClickProposition> {
         let context = self.execution_context()?;
         let execution = self.execution()?;
         let bundle = context.constants.invariant_body_context.as_deref()?;
@@ -710,11 +730,13 @@ impl<'a> Proof<'a> {
                 )
             };
             let accepted = |surface: &ClickProposition| {
-                self.lower_surface_goal(surface, "loop invariant bundle member")
-                    .ok()
-                    .is_some_and(|lowered| {
-                        crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
-                    })
+                !checked
+                    || self
+                        .lower_surface_goal(surface, "loop invariant bundle member")
+                        .ok()
+                        .is_some_and(|lowered| {
+                            crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+                        })
             };
             if bundle.binder_names.is_empty() {
                 return synthesize().filter(accepted);
@@ -994,6 +1016,158 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
+                parent: Some(self.node.clone()),
+                step: Some(Arc::new(step)),
+                focused_branch: self.focused_branch_id(),
+                depth: self.node.depth + 1,
+                split_branches: Vec::new(),
+            }),
+        })
+    }
+
+    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// tactic at the execution frontier.
+    ///
+    /// The tactic's verified rule is applied by the kernel with no C
+    /// statement; the binder map is the whole binding, exactly as for a call
+    /// step, and every argument is lowered at the frontier as a fold field
+    /// is. Every precondition must already be an available fact.
+    pub(in crate::surface::proof) fn apply_execution_user_tactic(
+        &self,
+        step: ProofStep,
+    ) -> Result<Self, ClickError> {
+        let ProofStep::UserTactic(application) = &step else {
+            unreachable!("only a tactic application reaches this step")
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error(
+                "a tactic is applied in a C function or tactic proof in this release",
+            ));
+        };
+        self.require_execution_frontier("a tactic application")?;
+        let callee = application.callee();
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
+        let parameters = context
+            .function_environment
+            .get_function(callee)
+            .ok_or_else(|| self.step_error(format!("unknown tactic `{callee}`")))?
+            .parameters()
+            .to_vec();
+        if parameters.len() != application.arguments().len() {
+            return Err(self.step_error(format!(
+                "tactic `{callee}` expects {} argument(s), got {}",
+                parameters.len(),
+                application.arguments().len()
+            )));
+        }
+        let mut bindings = BTreeMap::new();
+        for binding in application.binders().iter().chain(application.produced()) {
+            crate::instrumentation::record_deterministic_work(1);
+            if bindings
+                .insert(binding.binder_identity(), binding.identity())
+                .is_some()
+            {
+                return Err(self.step_error(format!(
+                    "duplicate binder `{}` in the tactic's map",
+                    binding.binder()
+                )));
+            }
+        }
+        let environment = context
+            .function_environment
+            .clone()
+            .with_selected_call_binders(callee, parameters.len(), bindings);
+        let before = &*execution.core.state;
+        let pre_state = context.old_reference_state(&execution.core.frontier, before);
+        let values = parameter_values(context.parsed_function.parameters(), context.arguments)?;
+        let array_refs = array_refs_for_parameters(
+            context.parsed_function.parameters(),
+            &values,
+            before.memory(),
+        );
+        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
+        let mut arguments = Vec::with_capacity(parameters.len());
+        for (parameter, argument) in parameters.iter().zip(application.arguments()) {
+            let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+            let value = capture_resource_field_initializer(
+                &argument,
+                &crate::kernel::ResourceFieldType::C(parameter.c_type()),
+                self.facts().assumptions(),
+                &values,
+                &array_refs,
+                pre_state,
+                before,
+                &execution.presentation.recorded_snapshots,
+                context.predicate_environment,
+                context.click_function_environment,
+            )
+            .map_err(|message| {
+                self.step_error(format!(
+                    "tactic `{callee}` argument `{}`: {message}",
+                    parameter.name()
+                ))
+            })?;
+            let crate::kernel::AlgebraicValue::C(value) = value else {
+                unreachable!("a C parameter captures a C value")
+            };
+            arguments.push(value);
+        }
+        let before_state = (*execution.core.state).clone();
+        let context_parameters = context.parsed_function.parameters();
+        let context_arguments = context.arguments;
+        let (state, facts) = execution
+            .core
+            .record_tactic_application(
+                context.function,
+                context.arguments,
+                self.facts(),
+                callee,
+                &arguments,
+                &environment,
+            )
+            .map_err(|refusal| match refusal {
+                crate::kernel::TacticApplicationRefusal::MissingRequirement(
+                    requirement,
+                    context,
+                ) => {
+                    let spelling = synthesize_surface_proposition(
+                        &requirement,
+                        context_parameters,
+                        context_arguments,
+                        &before_state,
+                    )
+                    .map(|proposition| {
+                        crate::surface::diagnostics::describe_click_proposition(&proposition)
+                    })
+                    .unwrap_or_else(|| {
+                        crate::surface::proof_diagnostics::render::render_proposition(&requirement)
+                    });
+                    let owed = context.map_or_else(String::new, |context| format!(" ({context})"));
+                    self.step_error(format!(
+                        "tactic `{callee}` requires `{spelling}`{owed}, which is not an available \
+                         fact here; establish it first, for example with `have`"
+                    ))
+                }
+                crate::kernel::TacticApplicationRefusal::Refused(message) => {
+                    self.step_error(message)
+                }
+            })?;
+        execution.core.state = state.into();
+        let added_facts = facts.introduced_since(self.facts()).unwrap_or_default();
+        let state = self
+            .state
+            .publish_checked_frontier_transition(facts, execution, added_facts.clone(), added_facts)
+            .map_err(|error| self.execution_update_error("a tactic application", error))?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(step)),
                 focused_branch: self.focused_branch_id(),
@@ -1150,6 +1324,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -1261,6 +1436,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(ProofStep::CloseInvariantsBy(Box::new(
                     certificate,
@@ -1584,7 +1760,7 @@ impl<'a> Proof<'a> {
                 // derivation contributes steps to `certificate()` that this
                 // path never took, and counting those puts the case past the
                 // end of its own tactics.
-                let tactic_offset = self.path_certificate()?.steps().len();
+                let tactic_offset = self.path_step_count()?;
                 arm_execution
                     .presentation
                     .surface_record
@@ -1622,6 +1798,7 @@ impl<'a> Proof<'a> {
                     context: self.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.node.clone()),
                         step: None,
                         focused_branch: self.focused_branch_id(),
@@ -1658,97 +1835,6 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The planner fallback for a preservation smart `step`: a scratch
-    /// planning pass constructs the explicit checked operations for the
-    /// current statement, and this Proof applies exactly those operations.
-    /// Mirrors the checked smart-step law, including its failure wording.
-    pub(in crate::surface::proof) fn apply_planned_smart_step(
-        &self,
-        tactic_index: usize,
-    ) -> Result<Self, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("smart `step` requires an execution-frontier proof"));
-        };
-        let tactic_context = context.with_tactic_index(tactic_index);
-        self.require_execution_frontier("`step`")?;
-        let execution = self
-            .execution()
-            .cloned()
-            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let claim_label = context.claim_label;
-        let mut planning = execution.clone();
-        planning.planned_statement_transitions.clear();
-        let facts_vec = self.facts().to_vec();
-        planning.surface_record.certificate_facts = ProofFactStore::from_ordered(facts_vec.clone());
-        let mut sink = ProofCertificateBuilder {
-            last_step_entry: execution
-                .presentation
-                .surface_record
-                .last_step_entry
-                .clone(),
-            ..ProofCertificateBuilder::default()
-        };
-        let mut planning_facts = PureFactList::from(facts_vec);
-        execute_step_from_frontier_position(
-            &mut planning,
-            &tactic_context,
-            &mut planning_facts,
-            "step",
-            StatementPrerequisitePolicy::Planning,
-            StatementFactTransportPolicy::Automatic,
-            LoopStepPolicy::EnterBody,
-            Some(Construction {
-                environments: ConstructionEnvironments {
-                    predicate_environment: context.predicate_environment,
-                    click_function_environment: context.click_function_environment,
-                },
-                sink: &mut sink,
-            }),
-        )?;
-        let construction = sink;
-        if construction.blocker.is_none()
-            && !construction.steps.is_empty()
-            && construction.steps.iter().all(|step| {
-                matches!(
-                    step,
-                    ProofStep::Have { .. }
-                        | ProofStep::UnfoldPredicate(_)
-                        | ProofStep::UnfoldFunction(_)
-                        | ProofStep::TransportUsing { .. }
-                        | ProofStep::Step
-                )
-            })
-            && construction
-                .steps
-                .iter()
-                .any(|step| matches!(step, ProofStep::Step))
-        {
-            let mut proof = self.clone();
-            for step in &construction.steps {
-                proof = proof.apply_step(step.clone())?;
-            }
-            let (proof, ()) = proof.edit_execution_presentation(|presentation| {
-                presentation.surface_record.last_step_entry = construction.last_step_entry;
-            })?;
-            return Ok(proof);
-        }
-        if let Some(blocker) = construction.blocker {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: smart `step` could not construct checked Proof operations: {blocker}"
-            )));
-        }
-        Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: smart `step` found no checked Proof candidate"
-        )))
-    }
-
-    /// The planner fallback for a smart `execute`: a scratch planning pass
-    /// constructs the explicit checked operations for the remaining
-    /// execution (a linear sequence, or a planned `if` tree for
-    /// whole-function branches), and this Proof applies exactly those
-    /// operations. This is the one smart-execute planner law: the source
-    /// interpreter reports its errors directly, while the direct driver
-    /// treats any error as a decline.
     /// The one mid-execution `transport` premise law, shared by the drivers:
     /// the source and target are lowered at the frontier, the premise
     /// planner names the premises, and this Proof applies the explicit
@@ -1857,228 +1943,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// The one `execute_until` planner law, shared by the drivers: the
-    /// planner constructs the explicit checked operations from a scratch
-    /// copy of the frontier, and this Proof applies exactly those operations,
-    /// recording them as the tactic's surface. The planner's failure is the
-    /// answer.
-    pub(in crate::surface::proof) fn apply_planned_execute_until(
-        &self,
-        region_ref: &CodeRegionRef,
-        tactic_index: usize,
-    ) -> Result<Self, ClickError> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`execute_until` requires an execution-frontier proof"));
-        };
-        let tactic_context = context.with_tactic_index(tactic_index);
-        let claim_label = context.claim_label;
-        let code_region = super::super::structural::resolve_code_region_ref(
-            context.function_block,
-            region_ref,
-            claim_label,
-            tactic_index,
-        )?;
-        let CodeRegion::Statement(target_statement_index) = code_region else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until` expects a statement region"
-            )));
-        };
-        let (mut planning, mut planning_facts, mut sink) = {
-            let view = self.execution_view()?;
-            let mut planning = self.execution().cloned().ok_or_else(|| {
-                self.step_error("execution-frontier proof lost its semantic state")
-            })?;
-            planning.planned_statement_transitions.clear();
-            planning.surface_record.certificate_facts =
-                ProofFactStore::from_ordered(view.facts.clone());
-            let sink = ProofCertificateBuilder {
-                last_step_entry: view
-                    .execution
-                    .presentation
-                    .surface_record
-                    .last_step_entry
-                    .clone(),
-                ..ProofCertificateBuilder::default()
-            };
-            (planning, PureFactList::from(view.facts), sink)
-        };
-        super::super::cursor_execution::execute_until_statement(
-            &mut planning,
-            &tactic_context,
-            &mut planning_facts,
-            target_statement_index,
-            StatementPrerequisitePolicy::Planning,
-            Some(Construction {
-                environments: ConstructionEnvironments {
-                    predicate_environment: context.predicate_environment,
-                    click_function_environment: context.click_function_environment,
-                },
-                sink: &mut sink,
-            }),
-        )?;
-        let construction = sink;
-        if construction.blocker.is_none()
-            && !construction.steps.is_empty()
-            && construction.steps.iter().all(|step| {
-                matches!(
-                    step,
-                    ProofStep::Have { .. }
-                        | ProofStep::UnfoldPredicate(_)
-                        | ProofStep::UnfoldFunction(_)
-                        | ProofStep::TransportUsing { .. }
-                        | ProofStep::Step
-                )
-            })
-            && construction
-                .steps
-                .iter()
-                .any(|step| matches!(step, ProofStep::Step))
-        {
-            let mut executed = self.clone();
-            for step in &construction.steps {
-                executed = executed.apply_step(step.clone())?;
-            }
-            let (recorded, ()) = executed.edit_execution_presentation(|presentation| {
-                presentation.surface_record.last_step_entry = construction.last_step_entry;
-            })?;
-            Ok(recorded)
-        } else if let Some(blocker) = construction.blocker {
-            Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until` could not construct checked Proof operations: {blocker}"
-            )))
-        } else {
-            Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until` found no checked Proof candidate"
-            )))
-        }
-    }
-
-    pub(in crate::surface::proof) fn apply_planned_smart_execute(
-        &self,
-        force_all_paths: bool,
-        tactic_index: usize,
-    ) -> Result<Self, ClickError> {
-        #[cfg(test)]
-        let _planning_scope = crate::kernel::reasoning::path_facts::SmartPlanningScope::enter();
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("smart `execute` requires an execution-frontier proof"));
-        };
-        let tactic_context = context.with_tactic_index(tactic_index);
-        let claim_label = context.claim_label;
-        self.require_execution_frontier("`execute`")?;
-        let execution = self
-            .execution()
-            .cloned()
-            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let facts_vec = self.facts().to_vec();
-        let planning_sink = || ProofCertificateBuilder {
-            last_step_entry: execution
-                .presentation
-                .surface_record
-                .last_step_entry
-                .clone(),
-            ..ProofCertificateBuilder::default()
-        };
-        let construction_environments = ConstructionEnvironments {
-            predicate_environment: context.predicate_environment,
-            click_function_environment: context.click_function_environment,
-        };
-        let mut planning = execution.clone();
-        planning.planned_statement_transitions.clear();
-        planning.surface_record.certificate_facts = ProofFactStore::from_ordered(facts_vec.clone());
-        let mut sink = planning_sink();
-        // Both planners below start from these facts; building their context
-        // once here lets a retry reuse it.
-        let planning_start_facts = PureFactList::from(facts_vec.clone());
-        planning_start_facts.context();
-        let mut planning_facts = planning_start_facts.clone();
-        let direct_result = (!force_all_paths).then(|| {
-            execute_rest_from_frontier_position(
-                &mut planning,
-                &tactic_context,
-                &mut planning_facts,
-                Some(Construction {
-                    environments: construction_environments,
-                    sink: &mut sink,
-                }),
-            )
-        });
-        // A direct run may reach a verified loop summary successfully while
-        // still discovering that the summary has no standalone surface form.
-        // In that case the semantic plan is valid, but it cannot be retained
-        // as the certificate for an explicit `execute()`.  Retry through the
-        // bounded path planner, which records the loop body and its nested
-        // branches as ordinary checked operations instead of emitting a
-        // detached loop-summary certificate.
-        if direct_result.is_none_or(|result| result.is_err()) || sink.blocker.is_some() {
-            planning = execution.clone();
-            planning.planned_statement_transitions.clear();
-            planning.surface_record.certificate_facts =
-                ProofFactStore::from_ordered(facts_vec.clone());
-            sink = planning_sink();
-            planning_facts = planning_start_facts.clone();
-            bounded_execute_from_frontier_position(
-                &mut planning,
-                &tactic_context,
-                &mut planning_facts,
-                StatementPrerequisitePolicy::Planning,
-                Some(Construction {
-                    environments: construction_environments,
-                    sink: &mut sink,
-                }),
-            )?;
-        }
-        let construction = sink;
-        if let Some(blocker) = &construction.blocker {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: smart `execute` could not construct checked Proof operations: {blocker}"
-            )));
-        }
-        let no_candidate = || {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: smart `execute` found no checked Proof candidate"
-            ))
-        };
-        if construction.steps.is_empty() {
-            return Err(no_candidate());
-        }
-        let linear_supported = construction.steps.iter().all(|step| {
-            matches!(
-                step,
-                ProofStep::Have { .. }
-                    | ProofStep::UnfoldPredicate(_)
-                    | ProofStep::UnfoldFunction(_)
-                    | ProofStep::TransportUsing { .. }
-                    | ProofStep::Step
-            )
-        }) && construction
-            .steps
-            .iter()
-            .any(|step| matches!(step, ProofStep::Step));
-        let applied = if linear_supported {
-            let mut proof = self.clone();
-            for step in &construction.steps {
-                proof = proof.apply_step(step.clone())?;
-            }
-            Some(proof)
-        } else if construction
-            .steps
-            .iter()
-            .any(|step| matches!(step, ProofStep::If { .. }))
-        {
-            self.try_planned_execution_steps(&construction.steps)?
-        } else {
-            None
-        };
-        let Some(proof) = applied else {
-            return Err(no_candidate());
-        };
-        let (proof, ()) = proof.edit_execution_presentation(|presentation| {
-            presentation.surface_record.last_step_entry = construction.last_step_entry;
-        })?;
-        Ok(proof)
-    }
-
     /// Records where the checked `close_invariants` tactic sat, so the
     /// kernel re-derivation its caller performs at the bundle check can be
     /// timed against that tactic's identity. Cursor metadata only.
@@ -2150,7 +2014,7 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = PureFactList::from(self.facts().to_vec());
+        let mut facts = PureFactList::from_source(self.facts());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),
@@ -2223,6 +2087,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(loop_step)),
                 focused_branch: self.focused_branch_id(),

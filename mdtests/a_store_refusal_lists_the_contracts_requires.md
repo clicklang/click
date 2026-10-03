@@ -41,6 +41,7 @@ void walk(int32 *a, int32 *b, int32 n) {
 fail: missing resource fact `owns b[1..2]`
   note: held `owns b[0..n]` covers `b[1..2]` only when `2 <= n`
   C operation: *(b + 1) = 1
+  C statement at a_store_refusal_lists_the_contracts_requires.c:2:5: `b[1] = 1;`
 proof context:
   pure facts: [0 <= n, 1 <= n, n <= 1073741823, n <= 1073741823 (unsigned), viewable(a[0..n]), viewable(b[0..n]), separate(memory(b[0..n]), memory(a[0..n]))]
   resource facts: [views a[0..n], owns b[0..n]]

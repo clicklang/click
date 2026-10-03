@@ -5,6 +5,7 @@
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
+use crate::kernel::LoadKind;
 use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -106,6 +107,85 @@ pub(crate) enum CheckedExecutionEvent {
     /// `scatter`). Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
     IteratedStep(CheckedIteratedStep),
+    /// One application of a user-defined tactic: the verified rule of a
+    /// procedure whose body runs no code, applied with no C statement. It
+    /// changes the resource context and adds the rule's `ensures` facts.
+    TacticApplication(CheckedTacticApplication),
+}
+
+/// A checked application of a verified tactic rule.
+///
+/// Only [`Self::check`] builds one, and it applies the rule itself through
+/// [`crate::kernel::functions::apply_verified_tactic_rule`], so holding the
+/// event is holding the kernel's verdict on that exact before state and fact
+/// context. Trace certification then only has to connect the states.
+#[derive(Clone)]
+pub(crate) struct CheckedTacticApplication {
+    /// The tactic whose rule was applied: one call edge of the proof that
+    /// applied it, for the termination check.
+    name: String,
+    before_state: CState,
+    pub(crate) after_state: CState,
+    before_facts: ProofFacts,
+    pub(crate) after_facts: ProofFacts,
+}
+
+impl CheckedTacticApplication {
+    fn check(
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        name: &str,
+        arguments: &[crate::kernel::CValue],
+        environment: &crate::kernel::CExecutionEnvironment,
+        next_kernel_variable: u64,
+    ) -> Result<(Self, u64), crate::kernel::functions::TacticApplicationRefusal> {
+        let transition = crate::kernel::functions::apply_verified_tactic_rule(
+            before_state,
+            name,
+            arguments,
+            before_facts,
+            environment,
+            next_kernel_variable,
+        )?;
+        let after_facts = transition
+            .facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.proposition().clone())
+            });
+        Ok((
+            Self {
+                name: name.to_string(),
+                before_state: before_state.clone(),
+                after_state: transition.state,
+                before_facts: before_facts.clone(),
+                after_facts,
+            },
+            transition.next_kernel_variable,
+        ))
+    }
+
+    pub(crate) fn before_state(&self) -> &CState {
+        &self.before_state
+    }
+
+    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
+        if state != &self.before_state || facts.introduced_since(&self.before_facts).is_none() {
+            return None;
+        }
+        Some(
+            self.after_facts
+                .introduced_since(&self.before_facts)?
+                .into_iter()
+                .fold(facts.clone(), |facts, fact| {
+                    if facts.contains_top_level(&fact) {
+                        facts
+                    } else {
+                        facts.with_fact(fact)
+                    }
+                }),
+        )
+    }
 }
 
 /// Proof-object-owned authority for one checked call occurrence.
@@ -472,35 +552,11 @@ fn checks_population_authority_exchange(
             .population_effects
             .creation
             .as_ref()
-            .is_some_and(|events| {
-                events
-                    .observe_symbolic(description)
-                    .is_some_and(|symbolic| {
-                        symbolic.entry_owned_members == 1
-                            && symbolic.delta == -1
-                            && crate::kernel::quantity_condition_holds(
-                                assumptions,
-                                crate::kernel::ConditionTerm::Bitvector32Equal(
-                                    Box::new(symbolic.entry_count),
-                                    Box::new(crate::kernel::Bitvector32Term::Constant(1)),
-                                ),
-                            )
-                    })
-            });
-    if !establish
-        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
-        && before
-            .population_effects
-            .creation
-            .as_ref()
-            .is_some_and(|events| events.observe_symbolic(description).is_some())
-        && !imported_retirement
-    {
-        return Err(format!(
-            "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
-            description.family(),
-            description.family(),
-        ));
+            .is_some_and(|events| events.recognizes_imported_population(description));
+    if imported_retirement {
+        before.population_effects.creation.as_ref().expect("imported population")
+            .check_imported_retirement(description, assumptions)
+            .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
     }
     if !imported_retirement
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
@@ -674,23 +730,26 @@ fn checks_population_member_exchange(
         || definition.matched.is_some()
         || !definition.witnesses.is_empty()
         || definition.condition.is_some()
+        || definition.facts_claim_liveness
         || definition.contains.iter().any(|spec| {
-            !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
-                || spec.access() != crate::kernel::CResourceAccessMode::Own
+            !matches!(
+                spec.term(),
+                crate::kernel::CResourceTerm::Memory(_)
+                    | crate::kernel::CResourceTerm::Composite { .. }
+            ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                 || spec.quantity() != &crate::kernel::CResourceQuantity::One
                 || spec.guard().is_some()
                 || !spec.resource_arguments().is_empty()
         })
         || !definition.children.is_empty()
-        || !definition.facts.is_empty()
         || definition
             .instance_schema
             .as_ref()
             .is_some_and(|schema| !schema.fields().is_empty())
     {
-        return Err("population member rewrite requires a private owned-memory body".into());
+        return Err("population member rewrite requires a private body of owned memory or declared resources".into());
     }
-    if batch && !definition.contains().is_empty() {
+    if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
         return Err("quantified population members need an empty body".into());
     }
     let description = crate::kernel::ResourceDescription::new(
@@ -698,7 +757,8 @@ fn checks_population_member_exchange(
         arguments.clone(),
         crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
     );
-    let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+    let Some(crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))) =
+        description.arguments().first()
     else {
         return Err("population member rewrite requires one pointer anchor".into());
     };
@@ -723,7 +783,20 @@ fn checks_population_member_exchange(
     {
         return Err("population member rewrite requires live base storage".into());
     }
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let governing = before
+        .population_effects
+        .creation
+        .as_ref()
+        .and_then(|events| events.governing_authority(&description))
+        .ok_or_else(|| {
+            format!(
+                "Requires owns authority({name}(anchor, {}))",
+                std::iter::repeat_n("_", arguments.len().saturating_sub(1))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+    let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
     if !before.resources.satisfies_fact(&authority, assumptions) {
         return Err("Requires owns authority(R(p))".into());
     }
@@ -825,13 +898,7 @@ impl CheckedPopulationMemberRewrite {
             witness,
             before_facts.assumptions(),
         )?;
-        if !after_facts
-            .introduced_since(before_facts)
-            .is_some_and(|introduced| introduced.is_empty())
-        {
-            return Err("population member rewrite introduced unchecked pure facts".into());
-        }
-        Ok(Self {
+        let rewrite = Self {
             before_state: before_state.clone(),
             after_state: after_state.clone(),
             before_facts: before_facts.clone(),
@@ -840,17 +907,40 @@ impl CheckedPopulationMemberRewrite {
             produce,
             witness: witness.clone(),
             definition: definition.clone(),
-        })
+        };
+        rewrite
+            .checked_introductions()
+            .ok_or("population member rewrite introduced unchecked pure facts")?;
+        Ok(rewrite)
+    }
+
+    fn checked_introductions(&self) -> Option<Vec<Proposition>> {
+        let introduced = self.after_facts.introduced_since(&self.before_facts)?;
+        if introduced.is_empty() {
+            return Some(introduced);
+        }
+        if self.produce || self.definition.facts().is_empty() {
+            return None;
+        }
+        let allowed = crate::kernel::functions::instantiate_private_member_body_facts(
+            &self.selected,
+            &self.definition,
+            self.before_state.memory(),
+            self.before_facts.assumptions(),
+        )?
+        .propositions
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+        introduced
+            .iter()
+            .all(|fact| allowed.contains(fact))
+            .then_some(introduced)
     }
 
     fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
         if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
             || !state.shares_non_memory_storage_with(&self.before_state)
             || facts.introduced_since(&self.before_facts).is_none()
-            || !self
-                .after_facts
-                .introduced_since(&self.before_facts)
-                .is_some_and(|introduced| introduced.is_empty())
             || checks_population_member_exchange(
                 &self.definition,
                 state,
@@ -864,7 +954,11 @@ impl CheckedPopulationMemberRewrite {
         {
             return None;
         }
-        Some(facts.clone())
+        let mut advanced = facts.clone();
+        for fact in self.checked_introductions()? {
+            advanced = advanced.with_kernel_checked_fact(fact);
+        }
+        Some(advanced)
     }
 }
 
@@ -891,8 +985,8 @@ fn memory_only_adds_named_cells(
             "union cells"
         } else if rebased.forgotten != before.forgotten {
             "forgotten-cell provenance"
-        } else if rebased.heap.initialized_cells != before.heap.initialized_cells {
-            "heap initialized cells"
+        } else if rebased.heap.initialized != before.heap.initialized {
+            "initialized bytes"
         } else {
             "heap allocation state"
         };
@@ -904,7 +998,10 @@ fn memory_only_adds_named_cells(
             return Err("removed or rewrote an existing cell".into());
         };
         let value = after.cells.get(pointer).expect("added cell exists");
-        let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone());
+        let Some(kind) = LoadKind::of_value(&value) else {
+            return Err("added a cell no load reads".into());
+        };
+        let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
         if !cell_value_is_exactly_load(&value, &load, pointer) {
             return Err(describe_unnamed_cell_addition(
                 &base, pointer, &value, &load,
@@ -1040,6 +1137,73 @@ fn cell_value_is_exactly_load(
     }
 }
 
+/// A unit checkout preserves the mathematical sum only when neither child
+/// update wraps. Check the three original domains through named/indexed facts;
+/// modular equality of the two sums alone is insufficient.
+fn authority_control_evaluation_condition_proven(
+    assumptions: &PureFactContext,
+    goal: &Proposition,
+) -> bool {
+    use crate::kernel::ConditionTerm;
+    let stated = |goal: &Proposition| {
+        matches!(crate::kernel::canonical_condition_fact(goal), Proposition::ConditionIs(condition, truth)
+            if assumptions.exact_condition_value(&condition) == Some(truth))
+    };
+    if stated(goal) {
+        return true;
+    }
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false) =
+        goal
+    else {
+        return false;
+    };
+    let pair = match (left.as_ref(), right.as_ref()) {
+        (Bitvector32Term::Add(value, increment), Bitvector32Term::Subtract(other, decrement))
+        | (Bitvector32Term::Subtract(other, decrement), Bitvector32Term::Add(value, increment))
+            if increment.as_const() == Some(1) && decrement.as_const() == Some(1) =>
+        {
+            (value.as_ref(), other.as_ref())
+        }
+        _ => return false,
+    };
+    let one = Bitvector32Term::Constant(1);
+    let guards = [
+        ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
+        ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
+        ConditionTerm::signed_subtract_overflows(pair.1.clone(), one),
+    ];
+    guards.iter().all(|condition| {
+        if stated(&Proposition::ConditionIs(condition.clone(), false)) {
+            return true;
+        }
+        if let ConditionTerm::Bitvector32SignedAddOverflows(left, right) = condition
+            && stated(&Proposition::ConditionIs(
+                ConditionTerm::signed_add_overflows(right.as_ref().clone(), left.as_ref().clone()),
+                false,
+            ))
+        {
+            return true;
+        }
+        match condition {
+            ConditionTerm::Bitvector32SignedAddOverflows(value, one)
+                if one.as_const() == Some(1) =>
+            {
+                assumptions
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(_, high)| high < i64::from(i32::MAX))
+            }
+            ConditionTerm::Bitvector32SignedSubtractOverflows(value, one)
+                if one.as_const() == Some(1) =>
+            {
+                assumptions
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(low, _)| low > i64::from(i32::MIN))
+            }
+            _ => false,
+        }
+    })
+}
+
 impl CheckedResourceRewrite {
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
@@ -1123,21 +1287,26 @@ impl CheckedResourceRewrite {
                 .iter()
                 .filter(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
                 .count()
-                != 1
+                == 0
         {
             return Err("authority control has an unsupported body".into());
         }
-        let imported_count = folded
+        let imported_counts = folded
             .checked_authority_wrapper_import_components(selected, definition, assumptions)
             .ok()
-            .and_then(|(description, _)| {
-                folded
-                    .population_effects
-                    .creation
-                    .as_ref()
-                    .and_then(|ledger| ledger.observe_symbolic(&description))
+            .and_then(|components| {
+                components
+                    .iter()
+                    .map(|(description, _)| {
+                        folded
+                            .population_effects
+                            .creation
+                            .as_ref()
+                            .and_then(|ledger| ledger.observe_symbolic(description))
+                    })
+                    .collect::<Option<Vec<_>>>()
             });
-        let imported_control_cell = imported_count.is_some();
+        let imported_control_cell = imported_counts.is_some();
         for child in &children {
             let Some(range) = child.memory_own_range() else {
                 continue;
@@ -1215,7 +1384,23 @@ impl CheckedResourceRewrite {
         ) {
             return Err("authority control close changed C memory".into());
         }
+        let expected_creation = if exposing {
+            before_state.population_effects.creation.clone()
+        } else {
+            before_state
+                .clone()
+                .with_resource_context(after_state.resources().clone())
+                .with_checked_current_control_wrapper(selected, definition, assumptions)?
+                .population_effects
+                .creation
+                .clone()
+        };
+        if after_state.population_effects.creation != expected_creation {
+            return Err("authority control changed its population registration".into());
+        }
         let mut unchanged = after_state.clone();
+        Arc::make_mut(&mut unchanged.population_effects).creation =
+            before_state.population_effects.creation.clone();
         unchanged.memory = before_state.memory.clone();
         unchanged.resources = before_state.resources.clone();
         unchanged.population_access = before_state.population_access.clone();
@@ -1241,7 +1426,8 @@ impl CheckedResourceRewrite {
                 parameter.c_type(),
             );
         }
-        let child_context = ResourceContext::new().unchecked_with_facts(children.clone());
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_facts(children.clone());
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         for child in &children {
             if let Some(owned) = child.owned_resource() {
@@ -1252,9 +1438,10 @@ impl CheckedResourceRewrite {
             }
         }
         allowed.push(Proposition::CResourceComposition(
-            ResourceContext::new().unchecked_with_facts(children),
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children),
         ));
-        let evaluation_assumptions = if let Some(imported) = imported_count {
+        let mut evaluation_assumptions = assumptions.clone();
+        for imported in imported_counts.into_iter().flatten() {
             let bound = Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
@@ -1266,10 +1453,8 @@ impl CheckedResourceRewrite {
                 true,
             );
             allowed.push(bound.clone());
-            assumptions.clone().assume_proposition(bound)
-        } else {
-            assumptions.clone()
-        };
+            evaluation_assumptions = evaluation_assumptions.assume_proposition(bound);
+        }
         if let Some(loadable) =
             crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                 selected,
@@ -1295,23 +1480,23 @@ impl CheckedResourceRewrite {
             let path =
                 crate::kernel::api::exactly_selected_spec_proposition_path(&paths, assumptions)
                     .ok_or("authority control invariant needs one checked path")?;
-            if !path
-                .facts
-                .iter()
-                .all(|fact| evaluation_assumptions.states_required_goal(fact.proposition()))
-                || !path.obligations.iter().all(|obligation| {
-                    evaluation_assumptions.states_required_goal(obligation.proposition())
-                })
-            {
+            if !path.facts.iter().all(|fact| {
+                authority_control_evaluation_condition_proven(
+                    &evaluation_assumptions,
+                    fact.proposition(),
+                )
+            }) || !path.obligations.iter().all(|obligation| {
+                authority_control_evaluation_condition_proven(
+                    &evaluation_assumptions,
+                    obligation.proposition(),
+                )
+            }) {
                 return Err(
                     "authority control invariant has an unproved evaluation condition".into(),
                 );
             }
             if !exposing
-                && !crate::kernel::api::contract_certification::certification_proves_proposition(
-                    assumptions,
-                    &path.proposition,
-                )
+                && !crate::kernel::PureFactContext::settles_exactly(assumptions, &path.proposition)
             {
                 return Err(format!(
                     "Requires {}",
@@ -1333,7 +1518,7 @@ impl CheckedResourceRewrite {
                 && !allowed_assumptions.proves_exact(fact)
                 && !resource_composition_is_supported_by(
                     fact,
-                    &ResourceContext::new()
+                    &ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_facts(expected_resources.facts().iter().cloned()),
                     assumptions,
                 )
@@ -1416,7 +1601,8 @@ impl CheckedResourceRewrite {
             return Err("an authority member cannot use an ordinary wrapper rewrite".into());
         }
         let assumptions = before_facts.assumptions();
-        let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
         let expanded = crate::kernel::functions::expand_composite_resource_fact(
             &singleton,
             selected,
@@ -1522,8 +1708,8 @@ impl CheckedResourceRewrite {
         let introduced = after_facts
             .introduced_since(before_facts)
             .ok_or("transfer wrapper facts do not descend from their input")?;
-        let child_context =
-            ResourceContext::new().unchecked_with_facts(expanded.facts().iter().cloned());
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_facts(expanded.facts().iter().cloned());
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         for child in expanded.facts() {
             if let Some(owned) = child.owned_resource() {
@@ -1592,8 +1778,15 @@ impl CheckedResourceRewrite {
                     selected_children,
                 );
             }
-            if let CResourceFact::Own(CResource::Composite { name, .. }, _) = selected
+            if let CResourceFact::Own(CResource::Composite { name, arguments }, _) = selected
                 && let Some(definition) = function.composite_resource_definition(name)
+                && !before_state.tracks_authority_member(selected)
+                && before_state.population_body_is_open(name, arguments, before_facts.assumptions())
+                    == after_state.population_body_is_open(
+                        name,
+                        arguments,
+                        after_facts.assumptions(),
+                    )
                 && !definition.contains().is_empty()
                 && definition.contains().iter().all(|spec| {
                     matches!(
@@ -1627,15 +1820,18 @@ impl CheckedResourceRewrite {
                 || definition.matched.is_some()
                 || !definition.witnesses.is_empty()
                 || definition.condition.is_some()
+                || definition.facts_claim_liveness
                 || !definition.children.is_empty()
-                || !definition.facts.is_empty()
                 || definition
                     .instance_schema
                     .as_ref()
                     .is_some_and(|schema| !schema.fields().is_empty())
                 || definition.contains.iter().any(|spec| {
-                    !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
-                        || spec.access() != crate::kernel::CResourceAccessMode::Own
+                    !matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::Memory(_)
+                            | crate::kernel::CResourceTerm::Composite { .. }
+                    ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                         || spec.quantity() != &crate::kernel::CResourceQuantity::One
                         || spec.guard().is_some()
                         || !spec.resource_arguments().is_empty()
@@ -1643,7 +1839,7 @@ impl CheckedResourceRewrite {
                 || selected_children.is_some()
             {
                 return Err(
-                    "authority-mode body access requires a private owned-memory body".into(),
+                    "authority-mode body access requires a private body of owned memory or declared resources".into(),
                 );
             }
             if !before_state.loan_bindings_are_consistent()
@@ -1677,7 +1873,8 @@ impl CheckedResourceRewrite {
             ) {
                 return Err("authority-mode body access changed another open scope".into());
             }
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let expanded = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
@@ -1687,32 +1884,22 @@ impl CheckedResourceRewrite {
             )
             .ok_or("authority-mode body access cannot instantiate its private body")?;
             let children = expanded.facts();
-            if children
-                .iter()
-                .any(|fact| fact.memory_own_range().is_none())
-            {
-                return Err("authority-mode body access contains a nonprivate resource".into());
-            }
-            // A standalone helper receives an existing member through its
-            // declared contract. Its external-argument pointer has no concrete
-            // C allocation in this proof, but the exact imported member
-            // carries its private body. Concrete callers still prove live
-            // storage bounds when creating that member.
-            let imported_member = before_state
-                .population_effects
-                .creation
-                .as_ref()
-                .is_some_and(|events| {
-                    events.owns_imported_population_member(
-                        &crate::kernel::ResourceDescription::new(
-                            name.clone(),
-                            arguments.clone(),
-                            crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty schema"),
-                        ),
-                    )
-                });
+            // The exact owned member checked above carries its private body,
+            // including at an abstract helper entry. Body access does not
+            // change membership and requires no population authority import.
+            // Concrete bodies still need live bounds; a caller can only fold
+            // a member by transferring those owned memory ranges into it.
             for child in children {
-                let range = child.memory_own_range().expect("body shape checked above");
+                let Some(range) = child.memory_own_range() else {
+                    if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                        && quantity.as_const() == Some(1)
+                    {
+                        // The exact child stays folded until its own checked
+                        // open; no body facts or memory are published here.
+                        continue;
+                    }
+                    return Err("authority-mode body access contains a nonprivate resource".into());
+                };
                 let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
                 else {
                     return Err("authority-mode private body needs concrete bounds".into());
@@ -1727,8 +1914,7 @@ impl CheckedResourceRewrite {
                     .base()
                     .offset_by_elements(range.start().clone(), range.element_width());
                 if !before_state.memory().access_in_bounds(&base, bytes)
-                    && !(imported_member
-                        && base.block == crate::kernel::PointerBlock::ExternalArgument)
+                    && base.block != crate::kernel::PointerBlock::ExternalArgument
                 {
                     return Err("authority-mode private body exceeds live storage".into());
                 }
@@ -1738,8 +1924,8 @@ impl CheckedResourceRewrite {
                         .map_err(|_| "authority-mode private body has an active borrow")?;
                 }
             }
-            let child_context =
-                ResourceContext::new().unchecked_with_facts(children.iter().cloned());
+            let child_context = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(children.iter().cloned());
             let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
             allowed.push(Proposition::CResourceComposition(child_context.clone()));
             if let Some(propositions) =
@@ -1761,6 +1947,26 @@ impl CheckedResourceRewrite {
                 )
             {
                 allowed.extend(propositions);
+            }
+            if !definition.facts().is_empty() {
+                let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
+                    selected,
+                    definition,
+                    after_state.memory(),
+                    assumptions,
+                )
+                .ok_or("Requires ownership of every cell read by member body facts")?;
+                if !now_open
+                    && body_facts
+                        .declared
+                        .iter()
+                        .any(|(_, fact)| !assumptions.proves_exact(fact))
+                {
+                    return Err(
+                        "authority-mode body close requires its current declared facts".into(),
+                    );
+                }
+                allowed.extend(body_facts.propositions);
             }
             let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
                 facts.assume_proposition(fact.clone())
@@ -1942,8 +2148,16 @@ impl CheckedResourceRewrite {
                     .iter()
                     .map(|clause| clause.proposition.clone()),
             );
+            if after_state.population_effects.creation != expected.population_effects.creation {
+                return Err(
+                    "instance rewrite changed population custody outside its checked exchange"
+                        .into(),
+                );
+            }
             let mut unchanged = after_state.clone();
             unchanged = unchanged.with_resource_context(before_state.resources.clone());
+            Arc::make_mut(&mut unchanged.population_effects).creation =
+                before_state.population_effects.creation.clone();
             if unchanged != *before_state {
                 // An unfold names the cells it exposes, which materializes
                 // them in the snapshot so the body's facts and a later C read
@@ -2109,7 +2323,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 .owned_quantity_term()
                 .ok_or("population cleanup requires ownership")?;
             if !selected.has_proven_positive_quantity(assumptions)
-                || !crate::kernel::api::contract_certification::certification_proves_proposition(
+                || !crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &Proposition::ConditionIs(
                         crate::kernel::ConditionTerm::Bitvector32Equal(
@@ -2125,7 +2339,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             if before_state.population_body_is_open(name, arguments, assumptions) {
                 return Err("close the open population body before cleanup".into());
             }
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let body = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
@@ -2246,7 +2461,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             else {
                 return false;
             };
-            let singleton = ResourceContext::new().unchecked_with_fact(authority.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(authority.clone());
             let Some(body) = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 authority,
@@ -2285,7 +2501,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let introduced = after_facts.introduced_since(before_facts).ok_or_else(|| {
             "resource rewrite facts do not descend from the input facts".to_string()
         })?;
-        let temporary = ResourceContext::new().unchecked_with_fact(selected.clone());
+        let temporary =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
         let expanded = crate::kernel::functions::expand_composite_resource_fact(
             &temporary,
             selected,
@@ -2300,7 +2517,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             .filter(|fact| *fact != selected)
             .cloned()
             .collect::<Vec<_>>();
-        let child_context = ResourceContext::new().unchecked_with_facts(children);
+        let child_context =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         // Opening a closed population exposes its invariant at the tracked
         // current total, which can now differ from its entry observation after
@@ -2322,7 +2540,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             for fact in population_facts {
                 if before_state.population_body_is_open(name, arguments, assumptions)
                     && fact.is_body_fact
-                    && !crate::kernel::api::contract_certification::certification_proves_proposition(
+                    && !crate::kernel::PureFactContext::settles_exactly(
                         assumptions,
                         &fact.proposition,
                     )
@@ -2845,8 +3063,8 @@ impl CheckedResourceObservation {
             (Vec::new(), Vec::new())
         } else {
             let definition_authority = CResourceFact::own(observed.resource().clone());
-            let temporary =
-                ResourceContext::new().unchecked_with_fact(definition_authority.clone());
+            let temporary = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(definition_authority.clone());
             let (_, children, raw_children) =
                 crate::kernel::functions::expand_composite_resource_fact_with_children(
                     &temporary,
@@ -2906,7 +3124,8 @@ impl CheckedResourceObservation {
         let introduced = after_facts
             .introduced_since(before_facts)
             .ok_or("resource observation facts do not descend from the input facts")?;
-        let child_context = ResourceContext::new().unchecked_with_facts(children);
+        let child_context =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         allowed.push(Proposition::CResourceComposition(child_context.clone()));
         let relation_authority = CResourceFact::own(observed.resource().clone());
@@ -3014,6 +3233,12 @@ fn resource_composition_is_supported_by(
     let Proposition::CResourceComposition(required) = proposition else {
         return false;
     };
+    // Observing the exact checked context needs no resource consumption.
+    // In particular, a retained view and its owner can coexist in that
+    // context even though consuming both in sequence would fail.
+    if available.shares_storage_with(required) {
+        return true;
+    }
     available
         .clone()
         .without_facts(required.facts(), assumptions)
@@ -3073,10 +3298,17 @@ impl CheckedFunctionEntry {
         arguments: &[CExpression],
         expected_entry_state: &CState,
         assumptions: PureFactContext,
-    ) -> Option<Arc<Self>> {
-        let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)?;
+    ) -> Result<Arc<Self>, CRuntimeError> {
+        let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)
+            .ok_or_else(|| {
+                CRuntimeError::FunctionContract(
+                    "could not bind the function entry arguments".into(),
+                )
+            })?;
         if &entry_state != expected_entry_state {
-            return None;
+            return Err(CRuntimeError::FunctionContract(
+                "the checked function entry does not match the proof entry".into(),
+            ));
         }
         let function = Arc::new(function.clone());
         let boundary_transfer = if caller_state.uses_population_authority_semantics() {
@@ -3088,8 +3320,12 @@ impl CheckedFunctionEntry {
                     &assumptions,
                     &mut ExecutionBudget::beside_live_state(),
                 )
-                .ok()?
-                .ok()?,
+                .map_err(|limit| {
+                    CRuntimeError::FunctionContract(format!(
+                        "checking the function entry resource transfer stopped at {}",
+                        limit.describe(),
+                    ))
+                })??,
             )
         } else {
             None
@@ -3104,7 +3340,7 @@ impl CheckedFunctionEntry {
             relation_facts: None,
         };
         entry.relation_facts = entry.resource_relation_assumptions(&entry.assumptions);
-        Some(Arc::new(entry))
+        Ok(Arc::new(entry))
     }
 
     /// The facts the proof assumed at entry.
@@ -3244,6 +3480,31 @@ impl CheckedProofCasePartition {
         }
         let mut successor = self.clone();
         // Coverage from the old partition must not discharge this new one.
+        successor.identity = Arc::new(());
+        successor.excluded[index] = Some(fact);
+        Some(Arc::new(successor))
+    }
+
+    /// Excludes a constructor whose arm refutes itself after bridging steps.
+    ///
+    /// `arm_facts` are the facts the arm's own proof reached: this case's
+    /// facts plus what the arm's `have`s established from them, each checked
+    /// by its own proof. The arm is refuted when those facts contradict
+    /// `fact`, exactly as [`Self::excluding_constructor_case`] decides it for
+    /// a sole `contradiction`. The facts must hold this case's fact, so a
+    /// context from another arm, or from before the split, cannot exclude
+    /// this one.
+    pub(crate) fn excluding_constructor_case_in(
+        &self,
+        index: usize,
+        arm_facts: &ProofFacts,
+        fact: Proposition,
+    ) -> Option<Arc<Self>> {
+        self.witness_scope.as_ref()?;
+        if !arm_facts.contains(self.case_fact(index)?) || !arm_facts.contradicts(&fact) {
+            return None;
+        }
+        let mut successor = self.clone();
         successor.identity = Arc::new(());
         successor.excluded[index] = Some(fact);
         Some(Arc::new(successor))
@@ -3733,11 +3994,12 @@ impl CheckedExecutionBranch {
                 .iter()
                 .all(|facts| checked_branch_fact_is_available(facts, fact));
             let interface_fact = interface_propositions.contains(fact);
-            let interface_resource_fact = ResourceContext::new()
-                .unchecked_with_facts(successor_interface_resources.clone())
-                .observable_facts_assuming_valid(successor_facts.assumptions())
-                .contains(fact)
-                || successor_interface_resource_facts.contains(fact);
+            let interface_resource_fact =
+                ResourceContext::new_with_equalities(successor_facts.assumptions())
+                    .unchecked_with_facts(successor_interface_resources.clone())
+                    .observable_facts_assuming_valid(successor_facts.assumptions())
+                    .contains(fact)
+                    || successor_interface_resource_facts.contains(fact);
             if !common_arm_fact && !interface_fact && !interface_resource_fact {
                 return Err("the interface successor contains an unchecked new fact");
             }
@@ -4224,7 +4486,8 @@ fn interface_resources_guard_heap_frees(
                 return false;
             }
             crate::kernel::functions::expand_composite_resource_fact(
-                &ResourceContext::new().unchecked_with_fact(resource.clone()),
+                &ResourceContext::new_with_equalities(arm_facts[arm_index].assumptions())
+                    .unchecked_with_fact(resource.clone()),
                 resource,
                 function.composite_resource_definitions(),
                 arm_states[arm_index].memory(),
@@ -4496,14 +4759,14 @@ impl CheckedInterfaceLoadDefinition {
         else {
             return None;
         };
-        let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, pointer)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             return None;
         };
-        let (defined_memory, defined_pointer) =
-            crate::kernel::registered_load_for_variable(variable)?;
-        (&defined_memory == memory && &defined_pointer == pointer.as_ref()).then(|| Self {
+        // The registered load, kind included, is the definition.
+        let defined = crate::kernel::registered_load_term_for_variable(variable)?;
+        (&defined == load).then(|| Self {
             proposition: proposition.clone(),
         })
     }
@@ -5139,7 +5402,6 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) function_entry: Option<Arc<CheckedFunctionEntry>>,
     pub(crate) frontier_loop_rules: PersistentSequence<CVerifiedLoopRule>,
     pub(crate) execution_abstraction: bool,
-    pub(crate) next_path_choice: usize,
     pub(crate) concrete_loop_execution: bool,
     /// Kernel theorems whose conclusions justify the facts a resource
     /// observation introduces (its count and quantity witnesses).
@@ -5288,6 +5550,26 @@ fn register_recomputed_call_views(
     }
 }
 
+/// The tactics a retained trace applied, including in its branch arms.
+fn collect_applied_tactics(
+    events: &[CheckedExecutionEvent],
+    tactics: &mut std::collections::BTreeSet<String>,
+) {
+    for event in events {
+        match event {
+            CheckedExecutionEvent::TacticApplication(application) => {
+                tactics.insert(application.name.clone());
+            }
+            CheckedExecutionEvent::Branch(branch) => {
+                for arm in &branch.arms {
+                    collect_applied_tactics(&arm.events, tactics);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn collect_retained_call_events(
     events: &[CheckedExecutionEvent],
     call_events: &mut CheckedCallEvents,
@@ -5309,7 +5591,8 @@ fn collect_retained_call_events(
             | CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {}
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {}
         }
     }
 }
@@ -5810,6 +6093,11 @@ fn check_evidence_events_with_call_events(
                 state = step.advance_checked(&state, &current_facts)?;
                 continue;
             }
+            CheckedExecutionEvent::TacticApplication(application) => {
+                current_facts = application.advance_checked(&state, &current_facts)?;
+                state = application.after_state.clone();
+                continue;
+            }
             // The retained context of the preceding theorem; the arm check
             // above already holds the arm's own facts.
             CheckedExecutionEvent::Context(_) => continue,
@@ -5893,7 +6181,8 @@ fn check_evidence_events_with_call_events(
             CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {
                 unreachable!("handled before source advance")
             }
         }
@@ -6015,6 +6304,12 @@ fn trace_completion(
                 fallthrough = None;
                 if completed.is_some() {
                     return Err("population member rewrite must precede function exit");
+                }
+            }
+            CheckedExecutionEvent::TacticApplication(_) => {
+                fallthrough = None;
+                if completed.is_some() {
+                    return Err("a tactic application must precede function exit");
                 }
             }
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
@@ -6162,6 +6457,10 @@ fn events_use_the_function_definitions(
                 definitions.contains(observation.definition())
             }
             CheckedExecutionEvent::PopulationAuthorityRewrite(_) => true,
+            // The application was checked against the environment's own
+            // verified rule; the rule carries the definitions it was
+            // certified under, and the same run installed both.
+            CheckedExecutionEvent::TacticApplication(_) => true,
             CheckedExecutionEvent::PopulationMemberRewrite(rewrite) => {
                 definitions.contains(&rewrite.definition)
             }
@@ -6260,7 +6559,8 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
             | CheckedExecutionEvent::ResourceRewrite(_)
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::TacticApplication(_) => {
                 pending_call_views.clear();
                 continue;
             }
@@ -6410,6 +6710,14 @@ impl ExecutionProofCore {
         self.checked_call_events.clone()
     }
 
+    fn retained_applied_tactics(&self) -> std::collections::BTreeSet<String> {
+        let mut tactics = std::collections::BTreeSet::new();
+        for trace in &self.execution_evidence {
+            collect_applied_tactics(&trace.to_vec(), &mut tactics);
+        }
+        tactics
+    }
+
     fn retained_call_events(&self) -> CheckedCallEvents {
         let mut call_events = CheckedCallEvents::default();
         for trace in &self.execution_evidence {
@@ -6440,7 +6748,6 @@ impl ExecutionProofCore {
             function_entry: None,
             frontier_loop_rules: Default::default(),
             execution_abstraction: false,
-            next_path_choice: 0,
             concrete_loop_execution: false,
             function_entry_derivations: Default::default(),
             region_invariants_close_requested: false,
@@ -6459,24 +6766,24 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         expected_entry_state: &CState,
         assumptions: PureFactContext,
-    ) -> bool {
+    ) -> Result<(), CRuntimeError> {
         if !self.frontier.is_at_function_entry()
             || self.execution_evidence.len() != 1
             || !self.execution_evidence[0].is_empty()
         {
-            return false;
+            return Err(CRuntimeError::FunctionContract(
+                "function entry must be checked before executing its body".into(),
+            ));
         }
-        let Some(entry) = CheckedFunctionEntry::check(
+        let entry = CheckedFunctionEntry::check(
             &self.state,
             function,
             arguments,
             expected_entry_state,
             assumptions,
-        ) else {
-            return false;
-        };
+        )?;
         self.function_entry = Some(entry);
-        true
+        Ok(())
     }
 
     /// Records one statement theorem and the fact context it was proved
@@ -7203,11 +7510,66 @@ impl ExecutionProofCore {
                 } => (state, condition, *value),
                 _ => return Err("retained condition evidence has a non-value conclusion".into()),
             };
-        let Some((next, tail)) = self.next_source_statement_and_tail(function) else {
+        let Some((mut next, mut tail)) = self.next_source_statement_and_tail(function) else {
             return Err(
                 "condition evidence was recorded with no source statement remaining".into(),
             );
         };
+        // A `do`-`while` runs its body before its condition is read, so a
+        // condition decided at its head belongs to the body's first
+        // statement, never to the loop: the source is the body followed by
+        // an ordinary loop head, as for a statement theorem.
+        while let CStatement::While {
+            condition,
+            invariant,
+            invariant_checks,
+            effect_checks,
+            resource_specs,
+            ranking_measures,
+            structural_measure,
+            do_while: true,
+            backedge_target,
+            natural_exit_target,
+            body,
+        } = &*next
+        {
+            if backedge_target.is_some() || natural_exit_target.is_some() {
+                return Err(EvidenceRefusal {
+                    reason: "condition evidence does not decide the frontier's next `if` or `while`",
+                    expected: Some(next.into_owned()),
+                    proved: None,
+                    premise: None,
+                });
+            }
+            let loop_head = CStatement::While {
+                condition: condition.clone(),
+                invariant: invariant.clone(),
+                invariant_checks: invariant_checks.clone(),
+                effect_checks: effect_checks.clone(),
+                resource_specs: resource_specs.clone(),
+                ranking_measures: ranking_measures.clone(),
+                structural_measure: structural_measure.clone(),
+                do_while: false,
+                backedge_target: None,
+                natural_exit_target: None,
+                body: body.clone(),
+            };
+            let unrolled = prepend_shared_source(
+                Arc::new((**body).clone()),
+                Some(prepend_shared_source(Arc::new(loop_head), tail)),
+            );
+            let (mut head, mut rest) = split_shared_source(&unrolled);
+            while matches!(*head, CStatement::Skip) {
+                let Some(following) = rest else {
+                    break;
+                };
+                let (following_head, following_rest) = split_shared_source(&following);
+                head = std::borrow::Cow::Owned(following_head.into_owned());
+                rest = following_rest;
+            }
+            next = std::borrow::Cow::Owned(head.into_owned());
+            tail = rest;
+        }
         let decided = match &*next {
             CStatement::If { condition, .. } | CStatement::While { condition, .. } => condition,
             _ => {
@@ -8000,6 +8362,70 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Applies the verified rule of tactic `name` at the reached state and
+    /// records the checked application. Returns the successor state and fact
+    /// context the proof continues from.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_tactic_application(
+        &mut self,
+        function: &CFunction,
+        function_arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        name: &str,
+        arguments: &[crate::kernel::CValue],
+        environment: &crate::kernel::CExecutionEnvironment,
+    ) -> Result<(CState, ProofFacts), crate::kernel::functions::TacticApplicationRefusal> {
+        use crate::kernel::functions::TacticApplicationRefusal::Refused;
+        if self.evidence_completed {
+            return Err(Refused(
+                "a tactic must be applied before execution reaches function exit".into(),
+            ));
+        }
+        let (mut application, mark) = CheckedTacticApplication::check(
+            self.reached_state(),
+            before_facts,
+            name,
+            arguments,
+            environment,
+            self.kernel_variable_mark(),
+        )?;
+        self.advance_kernel_variable_mark(mark)
+            .map_err(|message| Refused(message.into()))?;
+        let result = (
+            application.after_state.clone(),
+            application.after_facts.clone(),
+        );
+        // Before any evidence, the core holds the caller-side state and the
+        // trace holds entry-bound states, as for a resource rewrite here.
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
+            application.before_state = crate::kernel::c_function_entry_state(
+                &application.before_state,
+                function,
+                function_arguments,
+            )
+            .ok_or_else(|| {
+                Refused("a tactic application could not bind the function entry state".into())
+            })?;
+            application.after_state = crate::kernel::c_function_entry_state(
+                &application.after_state,
+                function,
+                function_arguments,
+            )
+            .ok_or_else(|| {
+                Refused("a tactic application could not bind its successor entry state".into())
+            })?;
+        }
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(application.after_state.clone());
+        }
+        for trace in &mut *self.execution_evidence {
+            trace.push(CheckedExecutionEvent::TacticApplication(
+                application.clone(),
+            ));
+        }
+        Ok(result)
+    }
+
     pub(crate) fn record_resource_rewrite(
         &mut self,
         function: &CFunction,
@@ -8534,6 +8960,8 @@ impl ExecutionProofCore {
             checked_resource_transitions: vec![false; path_count],
             deferred_contract_exits,
             deferred_contract_exit_errors,
+            // Empty conclusion placeholders; checked resource clauses replace
+            // them before any live resource query.
             checked_returned_resources: vec![crate::kernel::ResourceContext::new(); path_count],
             entry_representation_origin: has_checked_entry
                 .then_some(self.function_entry.as_ref())
@@ -8544,6 +8972,7 @@ impl ExecutionProofCore {
                 .flatten()
                 .and_then(|entry| entry.boundary_transfer.clone()),
             checked_call_events: self.retained_call_events(),
+            applied_tactics: self.retained_applied_tactics(),
         })
     }
 
@@ -8910,6 +9339,135 @@ pub(crate) fn old_reference_state<'a>(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn balanced_unit_sum_domain_requires_all_three_original_domains() {
+        use crate::kernel::ConditionTerm;
+        let a = Bitvector32Term::Variable(Variable(100));
+        let b = Bitvector32Term::Variable(Variable(101));
+        let one = Bitvector32Term::Constant(1);
+        let guards = [
+            ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+            ConditionTerm::signed_add_overflows(a.clone(), one.clone()),
+            ConditionTerm::signed_subtract_overflows(b.clone(), one.clone()),
+        ];
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_add_overflows(
+                Bitvector32Term::add(a.clone(), one.clone()),
+                Bitvector32Term::subtract(b.clone(), one.clone()),
+            ),
+            false,
+        );
+        for missing in 0..=3 {
+            let facts = guards
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .fold(PureFactContext::new(), |facts, (_, condition)| {
+                    facts.assume_condition(condition.clone(), false)
+                });
+            assert_eq!(
+                super::authority_control_evaluation_condition_proven(&facts, &goal),
+                missing == 3
+            );
+        }
+        // Return reverses the two original summands. Commutativity must
+        // preserve the check without dropping either child-domain premise.
+        let reversed_guards = [
+            ConditionTerm::signed_add_overflows(b.clone(), a.clone()),
+            guards[1].clone(),
+            guards[2].clone(),
+        ];
+        for missing in 0..=3 {
+            let facts = reversed_guards
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .fold(PureFactContext::new(), |facts, (_, condition)| {
+                    facts.assume_condition(condition.clone(), false)
+                });
+            assert_eq!(
+                super::authority_control_evaluation_condition_proven(&facts, &goal),
+                missing == 3
+            );
+        }
+        // The original sum fits, but the increment wraps at MAX, or the
+        // predecessor wraps at MIN. Modular equality must not certify either.
+        for (left, right) in [(i32::MAX, 0), (0, i32::MIN)] {
+            assert!(left.checked_add(right).is_some());
+            assert!(
+                left.checked_add(1)
+                    .and_then(|x| right.checked_sub(1).and_then(|y| x.checked_add(y)))
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
+        use crate::kernel::ConditionTerm;
+        let a = Bitvector32Term::Variable(Variable(200));
+        let b = Bitvector32Term::Variable(Variable(201));
+        let one = Bitvector32Term::Constant(1);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_add_overflows(
+                Bitvector32Term::add(a.clone(), one.clone()),
+                Bitvector32Term::subtract(b.clone(), one),
+            ),
+            false,
+        );
+        let mut measurements = Vec::new();
+        for n in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+                    false,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(
+                        a.clone(),
+                        Bitvector32Term::Constant(i32::MAX as u32),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::Constant(1)),
+                    true,
+                );
+            for i in 0..n {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Variable(Variable(1000 + i)),
+                        Bitvector32Term::Constant(100),
+                    ),
+                    true,
+                );
+            }
+            let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
+                super::authority_control_evaluation_condition_proven(&facts, &goal)
+            });
+            assert!(valid);
+            // Removing the old domain must fail without searching the frame.
+            let missing_old = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_less_than(
+                    a.clone(),
+                    Bitvector32Term::Constant(i32::MAX as u32),
+                ),
+                true,
+            );
+            assert!(!super::authority_control_evaluation_condition_proven(
+                &missing_old,
+                &goal
+            ));
+            measurements.push(work);
+        }
+        assert!(
+            measurements
+                .iter()
+                .all(|work| *work <= measurements[0] + 16),
+            "{measurements:?}"
+        );
+    }
+
+    #[test]
     fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
         use crate::kernel::{CMemory, Pointer, PointerBlock, PointerOffsetTerm};
         let target = Pointer {
@@ -8931,6 +9489,7 @@ mod tests {
             let name = crate::kernel::canonical_form_of_load(
                 crate::kernel::intern_c_memory(before.clone()),
                 target.clone(),
+                crate::kernel::LoadKind::Bits32,
             );
             let after = before
                 .clone()
@@ -9071,7 +9630,10 @@ mod tests {
             ))),
         );
         let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
-        assert!(core.record_checked_function_entry(&function, &[], &state, PureFactContext::new()));
+        assert!(
+            core.record_checked_function_entry(&function, &[], &state, PureFactContext::new())
+                .is_ok()
+        );
         (core, value)
     }
 
@@ -11480,12 +12042,20 @@ mod tests {
             block: "interface_definition".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let equation = |variable, memory, pointer| {
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::MemoryLoad(memory, Box::new(pointer))),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory,
+                        Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
+                    )),
                 ),
                 true,
             )
@@ -12162,6 +12732,38 @@ mod population_authority_rewrite_tests {
     use super::*;
     use crate::kernel::{CType, c_function};
 
+    #[test]
+    fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownership() {
+        let (state, _) = source_state();
+        let pointer = state.locals.slot("anchor").unwrap().clone();
+        let range = CMemoryRange::new(pointer, 0.into(), 1.into());
+        let context = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own_memory(range.clone()),
+            CResourceFact::view_memory(range),
+        ]);
+        let assumptions = PureFactContext::default();
+        assert!(resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(context.clone()),
+            &context,
+            &assumptions,
+        ));
+        let foreign = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new(
+                Pointer {
+                    block: "local:foreign".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            ),
+        ));
+        assert!(!resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(foreign),
+            &context,
+            &assumptions,
+        ));
+    }
+
     fn source_state() -> (CState, CResourceFact) {
         let mut state = CState::new()
             .with_local("anchor", crate::kernel::int32(0))
@@ -12416,6 +13018,354 @@ mod population_authority_rewrite_tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
+        let (state, authority) = source_state();
+        let external = crate::kernel::Pointer {
+            block: crate::kernel::PointerBlock::ExternalArgument,
+            offset: crate::kernel::PointerOffsetTerm::Constant(16),
+        };
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(
+                crate::kernel::CMemorySegment::new(
+                    CExpression::Value(CValue::pointer(external.clone())),
+                    crate::kernel::c_int32_literal(0),
+                    crate::kernel::c_int32_literal(1),
+                ),
+            )],
+            vec![],
+        );
+        let function = c_function(CType::Void, "member", vec![], CStatement::Skip)
+            .with_composite_resource_definitions(vec![definition.clone()]);
+        let (empty, _) = state
+            .checked_population_authority_exchange(&authority, true, &PureFactContext::new())
+            .unwrap();
+        let owned =
+            empty
+                .clone()
+                .with_resource_context(empty.resources().clone().unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        external.clone(),
+                        0.into(),
+                        1.into(),
+                    )),
+                ));
+        assert!(
+            owned
+                .checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition,
+                    &PureFactContext::new()
+                )
+                .is_err()
+        );
+        let extent = |bytes| Proposition::CMemoryLoadable {
+            memory: owned.memory().clone(),
+            base: external.clone(),
+            bytes: Bitvector32Term::Constant(bytes),
+        };
+        let small = ProofFacts::default().with_fact(extent(1));
+        assert!(
+            owned
+                .checked_population_member_exchange(&member, true, &definition, small.assumptions())
+                .is_err()
+        );
+        let facts = ProofFacts::default().with_fact(extent(4));
+        assert!(
+            empty
+                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+                .is_err()
+        );
+        let (one, witness) = owned
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &owned, &facts, &member, true, &witness, &one, &facts
+            )
+            .is_ok()
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &owned, &small, &member, true, &witness, &one, &small
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn checked_member_exchange_transfers_exact_contained_resource() {
+        let (state, authority) = source_state();
+        let facts = ProofFacts::default();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let child = CResourceFact::own(CResource::Composite {
+            name: "payload".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::composite(
+                crate::kernel::CResourceAccessMode::Own,
+                "payload".into(),
+                vec![crate::kernel::c_variable("p")],
+                vec![CType::Int32Pointer],
+            )],
+            vec![],
+        );
+        let function = c_function(
+            CType::Void,
+            "member",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let (empty, _) = state
+            .checked_population_authority_exchange(&authority, true, facts.assumptions())
+            .unwrap();
+        assert!(empty.checked_population_member_exchange(
+            &member, true, &definition, facts.assumptions(),
+        ).is_err());
+        let empty = empty
+            .clone()
+            .with_resource_context(empty.resources().clone().unchecked_with_fact(child.clone()));
+        let (one, birth) = empty
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
+        assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &empty, &facts, &member, true, &birth, &one, &facts,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&empty, &facts).is_some());
+        let duplicated = one
+            .clone()
+            .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &empty,
+                &facts,
+                &member,
+                true,
+                &birth,
+                &duplicated,
+                &facts,
+            )
+            .is_err()
+        );
+        assert!(one.checked_population_member_exchange(
+            &member, true, &definition, facts.assumptions(),
+        ).is_err());
+        let (zero, death) = one
+            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .unwrap();
+        assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
+        assert!(
+            !zero
+                .resources()
+                .satisfies_fact(&member, facts.assumptions())
+        );
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &one, &facts, &member, false, &death, &zero, &facts,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&one, &facts).is_some());
+        let missing = zero.clone().with_resource_context(
+            zero.resources()
+                .clone()
+                .without_fact_incrementally(&child, facts.assumptions())
+                .unwrap(),
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &one, &facts, &member, false, &death, &missing, &facts,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn private_member_facts_cannot_use_ambient_cell_ownership() {
+        use crate::kernel::{CMemorySegment, c_int32_literal, c_parameter, c_variable};
+        let (_, authority) = source_state();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+        else {
+            unreachable!()
+        };
+        let pointer = pointer.pointer();
+        let memory = CMemory::new().with_block(pointer.block.clone(), 8).store(
+            pointer.offset_by_elements(1.into(), 4),
+            crate::kernel::int32(0),
+        );
+        let resources = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into())),
+            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 1.into(), 2.into())),
+        ]);
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![crate::kernel::SpecProposition::Comparison {
+                left: crate::kernel::SpecExpression::CExpression(crate::kernel::c_index(
+                    c_variable("p"),
+                    c_int32_literal(1),
+                )),
+                operator: crate::kernel::CComparisonOperator::Equal,
+                right: crate::kernel::SpecExpression::Value(crate::kernel::int32(0)),
+            }],
+        );
+        let assumptions = PureFactContext::default();
+        assert!(
+            crate::kernel::functions::instantiate_composite_resource_facts(
+                &member,
+                std::slice::from_ref(&definition),
+                &memory,
+                &resources,
+                &assumptions,
+            )
+            .is_some()
+        );
+        assert!(
+            crate::kernel::functions::instantiate_private_member_body_facts(
+                &member,
+                &definition,
+                &memory,
+                &assumptions,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts() {
+        let (state, authority) = source_state();
+        let facts = ProofFacts::default();
+        let (state, _) = state
+            .checked_population_authority_exchange(&authority, true, facts.assumptions())
+            .unwrap();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = |right| {
+            CCompositeResourceDefinition::new(
+                "reference",
+                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![],
+                vec![crate::kernel::SpecProposition::Comparison {
+                    left: crate::kernel::SpecExpression::Value(crate::kernel::int32(1)),
+                    operator: crate::kernel::CComparisonOperator::Equal,
+                    right: crate::kernel::SpecExpression::Value(crate::kernel::int32(right)),
+                }],
+            )
+        };
+        assert!(
+            state
+                .checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition(2),
+                    facts.assumptions()
+                )
+                .is_err()
+        );
+        let definition = definition(1);
+        let function = c_function(
+            CType::Void,
+            "member",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let (one, birth) = state
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        CheckedPopulationMemberRewrite::check(
+            &function, &state, &facts, &member, true, &birth, &one, &facts,
+        )
+        .unwrap();
+        let (zero, death) = one
+            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .unwrap();
+        let body_facts = crate::kernel::functions::instantiate_composite_resource_facts(
+            &member,
+            std::slice::from_ref(&definition),
+            one.memory(),
+            zero.resources(),
+            facts.assumptions(),
+        )
+        .unwrap();
+        let mut exposed = facts.clone();
+        for fact in body_facts.propositions {
+            exposed = exposed.with_fact(fact);
+        }
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &one, &facts, &member, false, &death, &zero, &exposed,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&one, &facts).is_some());
+        let forged_facts = exposed.with_fact(Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(false),
+            true,
+        ));
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &one,
+                &facts,
+                &member,
+                false,
+                &death,
+                &zero,
+                &forged_facts
+            )
+            .is_err()
+        );
+        let mut forged = event;
+        forged.after_facts = forged_facts;
+        assert!(forged.advance_checked(&one, &facts).is_none());
     }
 
     #[test]

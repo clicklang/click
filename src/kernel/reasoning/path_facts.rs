@@ -486,6 +486,12 @@ pub(in crate::kernel) fn element_index_from_offset(
         {
             Some(value.as_ref().clone())
         }
+        // A byte index is the byte offset. A struct-array element is scaled
+        // by its stride, and its byte offset is the same residue the byte
+        // spelling `items + i * stride` gives.
+        PointerOffsetTerm::Int32Scaled { .. } if element_width == 1 => {
+            byte_offset_from_pointer_offset(offset)
+        }
         PointerOffsetTerm::Constant(offset) if offset % i64::from(element_width) == 0 => {
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
@@ -1037,9 +1043,42 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
             ConditionTerm::equal(left_index, right_index),
             value,
         )?;
+    } else if let Some((index, element)) = single_scaled_index_equal_to_constant(&left, &right)
+        .or_else(|| single_scaled_index_equal_to_constant(&right, &left))
+    {
+        add_condition_path_fact(
+            facts,
+            assumptions,
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(element as u32)),
+            value,
+        )?;
     }
 
     Some(())
+}
+
+/// `scaled == constant` as the index it selects, when `scaled` is one scaled
+/// `int32` index plus constants, `sext(x) * stride + c`: `x * 8 + 4 == 12`
+/// holds exactly when `x == 1`. The offset sum is exact, so the equivalence
+/// holds in both polarities, at any stride. `None` when the constant is not
+/// one of the offsets the index reaches; the offset equality then folds to
+/// false (see `pointer_offsets_differ_by_residue`).
+pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
+    scaled: &'term PointerOffsetTerm,
+    constant: &PointerOffsetTerm,
+) -> Option<(&'term Bitvector32Term, i32)> {
+    let target = constant.as_const()?;
+    let (leaves, offset) = scaled.int32_scaled_linear_form()?;
+    let [(index, stride)] = leaves.as_slice() else {
+        return None;
+    };
+    let delta = target.checked_sub(offset)?;
+    if *stride == 0 || delta % stride != 0 {
+        return None;
+    }
+    i32::try_from(delta / stride)
+        .ok()
+        .map(|element| (*index, element))
 }
 
 pub(in crate::kernel) fn add_proof_obligation(
@@ -1528,8 +1567,6 @@ pub(in crate::kernel) fn decide_with_facts(
 #[cfg(test)]
 thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static SMART_PLANNING_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static SMART_PLANNING_CONTEXT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Counts, in test builds, the entries a fact context built from a list
@@ -1558,43 +1595,12 @@ pub(crate) fn count_uncharged_context_entries(_entries: usize) {
 #[cfg(test)]
 fn record_context_entries_for_tests(entries: usize) {
     CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + entries));
-    if SMART_PLANNING_DEPTH.with(std::cell::Cell::get) > 0 {
-        SMART_PLANNING_CONTEXT_ENTRIES.with(|count| count.set(count.get() + entries));
-    }
 }
 
 /// The context entries built so far on this thread, charged or not.
 #[cfg(test)]
 pub(crate) fn context_rebuild_entries() -> usize {
     CONTEXT_REBUILD_ENTRIES.with(std::cell::Cell::get)
-}
-
-/// The context entries built so far on this thread inside a smart planning
-/// tactic ([`SmartPlanningScope`]).
-#[cfg(test)]
-pub(crate) fn smart_planning_context_entries() -> usize {
-    SMART_PLANNING_CONTEXT_ENTRIES.with(std::cell::Cell::get)
-}
-
-/// Marks, in test builds, the extent of one smart planning tactic, so a
-/// scaling regression can count the context entries planning builds apart
-/// from those of the checks around it.
-#[cfg(test)]
-pub(crate) struct SmartPlanningScope(());
-
-#[cfg(test)]
-impl SmartPlanningScope {
-    pub(crate) fn enter() -> Self {
-        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() + 1));
-        Self(())
-    }
-}
-
-#[cfg(test)]
-impl Drop for SmartPlanningScope {
-    fn drop(&mut self) {
-        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() - 1));
-    }
 }
 
 pub(in crate::kernel) fn assumptions_with_path_context(

@@ -117,7 +117,8 @@ impl PureFactContext {
             }
         }
         if let Some((pointer, alignment)) = condition.as_pointer_alignment()
-            && let Some((aligned, premise)) = self.pointer_alignment_decision(pointer, alignment)
+            && let Some((aligned, premise)) =
+                self.pointer_alignment_certificate_decision(pointer, alignment)
         {
             if let Some(premise) = premise {
                 used.cite(premise);

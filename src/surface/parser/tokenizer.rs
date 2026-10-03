@@ -1,8 +1,11 @@
 use super::*;
 
-pub(super) fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), ClickError> {
+pub(super) fn tokenize(
+    source: &str,
+    container: Option<&crate::source::SourceContainer>,
+) -> Result<(Vec<Token>, Vec<SourcePosition>), ClickError> {
     let chars: Vec<char> = source.chars().collect();
-    let char_positions = crate::source::character_positions(source);
+    let char_positions = crate::source::character_positions_in(source, container);
     let mut tokens = Vec::new();
     let mut positions = Vec::new();
     let mut index = 0;
@@ -163,13 +166,13 @@ pub(super) fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>)
             }
             '"' => {
                 let (value, next_index) = tokenize_string(&chars, index)
-                    .map_err(|error| ClickError::new(format!("{position}: {}", error.message())))?;
+                    .map_err(|error| error.with_context(position.to_string()))?;
                 tokens.push(Token::String(value));
                 index = next_index;
             }
             '\'' => {
                 let (value, next_index) = tokenize_char_literal(&chars, index)
-                    .map_err(|error| ClickError::new(format!("{position}: {}", error.message())))?;
+                    .map_err(|error| error.with_context(position.to_string()))?;
                 tokens.push(Token::CharLiteral(value));
                 index = next_index;
             }

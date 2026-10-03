@@ -1,19 +1,31 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
-//! scaling. Other scalar operations stay opaque.
+//! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
+//! all other scalar operations stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
-use super::{AffineOffset, MachineAtom, PointerBlock, PointerOffsetTerm, Variable};
+use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
+
+/// These tags keep signed division and wider integer operations distinct.
+/// Congruence does not establish C/Rust arithmetic definedness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Int32Binary {
+    UnsignedDivide,
+    UnsignedRemainder,
+    BitwiseXor,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Address(u64, u64),
+    Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
+    Int32Binary(Int32Binary, u64, u64),
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
@@ -26,8 +38,10 @@ enum Node {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
     Address(u64, u64),
+    Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
+    Int32Binary(Int32Binary, u64, u64),
     Int32Scaled(u64, i64),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
@@ -37,7 +51,10 @@ enum Application {
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
-            Self::Add(left, right) | Self::Int32Add(left, right) => [Some(left), Some(right)],
+            Self::Add(left, right)
+            | Self::Int32Add(left, right)
+            | Self::Int32Binary(_, left, right)
+            | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Address(_, value)
             | Self::Int32Scaled(value, _)
             | Self::Int32Load(_, _, value) => [Some(value), None],
@@ -49,8 +66,12 @@ impl Application {
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
+            Self::Footprint(start, end) => Self::Footprint(classes.root(start), classes.root(end)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
+            Self::Int32Binary(op, left, right) => {
+                Self::Int32Binary(op, classes.root(left), classes.root(right))
+            }
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
             Self::Int32Load(snapshot, block, offset) => {
                 Self::Int32Load(snapshot, block, classes.root(offset))
@@ -71,16 +92,37 @@ struct MergeHistory {
     parent: Option<Arc<MergeHistory>>,
 }
 
+// This is disposable derived state, not proof-context storage. Forking starts
+// an empty local cache in constant work instead of copying a growing table.
+#[derive(Default)]
+struct RootLookupCache(std::cell::RefCell<std::collections::HashMap<u64, (usize, u64)>>);
+
+impl Clone for RootLookupCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     origin: Arc<()>,
-    non_affine_equivalences: bool,
+    // Completeness metadata for affine interval consumers, not equality facts.
+    // Propagates once per affected class/application through indexed uses.
+    non_affine_classes: PersistentSet<u64>,
+    affine_applications: PersistentMap<u64, PersistentSet<u64>>,
+    affine_uses: PersistentMap<u64, PersistentSet<u64>>,
+    non_affine_address_blocks: PersistentSet<PointerBlock>,
+    address_blocks: PersistentMap<u64, PointerBlock>,
     history: Option<Arc<MergeHistory>>,
     // Node IDs are local to a persistent registration prefix. The last marker
     // detects divergent query registrations without scanning that prefix.
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
     address_nodes: PersistentSet<u64>,
+    // Retained concrete address evidence follows typed class merges. This
+    // disambiguates parameters sharing the external address-space block.
+    storage_addresses: PersistentMap<u64, Option<Pointer>>,
+    alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
     registered_int32_loads: PersistentSet<u64>,
@@ -91,6 +133,10 @@ pub(super) struct TermClasses {
     // lighter side bounds both root depth and reindexing, including a class
     // with many application parents repeatedly joined to fresh singleton terms.
     parents: PersistentMap<u64, u64>,
+    // Cache representative lookups under the current merge epoch. A new union
+    // invalidates entries lazily, without a scan. Keys are shallow node IDs,
+    // with at most one entry per node; semantic graph roots remain persistent.
+    root_cache: RootLookupCache,
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     applications: PersistentMap<u64, Application>,
@@ -148,6 +194,7 @@ impl TermClasses {
         let block_id = match self.load_blocks.get(&block) {
             Some(id) => *id,
             None => {
+                self.address_blocks.insert(next_block, block.clone());
                 self.load_blocks.insert(block.clone(), next_block);
                 next_block
             }
@@ -163,12 +210,79 @@ impl TermClasses {
         (id, new)
     }
 
+    /// Only original concrete address inputs carry storage evidence. Affine
+    /// projections into a representative's coordinates must never mint it.
+    pub(super) fn retain_storage_address(&mut self, id: u64, storage: &Pointer) {
+        let root = self.root(id);
+        let retained = match self.storage_addresses.get(&root) {
+            None => Some(storage.clone()),
+            Some(Some(previous)) if previous.block == storage.block => Some(previous.clone()),
+            _ => None,
+        };
+        self.storage_addresses.insert(root, retained);
+    }
+
+    pub(super) fn storage_address(&self, id: u64) -> Option<Pointer> {
+        self.storage_addresses
+            .get(&self.root(id))
+            .cloned()
+            .flatten()
+    }
+
+    fn merge_storage_addresses(&mut self, moved: u64, kept: u64) {
+        let merged = match (
+            self.storage_addresses.get(&moved).cloned(),
+            self.storage_addresses.get(&kept).cloned(),
+        ) {
+            (None, right) => right,
+            (left, None) => left,
+            (Some(Some(left)), Some(Some(right))) if left.block == right.block => Some(Some(right)),
+            _ => Some(None),
+        };
+        if let Some(merged) = merged {
+            self.storage_addresses.insert(kept, merged);
+        }
+        self.storage_addresses.remove(&moved);
+    }
+
+    pub(super) fn retain_alignment(&mut self, id: u64, alignment: u64, pointer: &Pointer) {
+        let root = self.root(id);
+        if self
+            .alignment_witnesses
+            .get(&root)
+            .is_none_or(|(old, _)| *old < alignment)
+        {
+            self.alignment_witnesses
+                .insert(root, (alignment, pointer.clone()));
+        }
+    }
+
+    pub(super) fn alignment_witness(&self, id: u64) -> Option<(u64, Pointer)> {
+        self.alignment_witnesses.get(&self.root(id)).cloned()
+    }
+
+    fn merge_alignment_witnesses(&mut self, moved: u64, kept: u64) {
+        if let Some((alignment, pointer)) = self.alignment_witnesses.get(&moved).cloned() {
+            self.retain_alignment(kept, alignment, &pointer);
+        }
+        self.alignment_witnesses.remove(&moved);
+    }
+
+    pub(super) fn footprint(&mut self, start: u64, end: u64) -> u64 {
+        let id = self.intern_node(Node::Footprint(start, end));
+        self.root(id)
+    }
+
     pub(super) fn shift_addresses(
         &mut self,
         moved: &PointerBlock,
         kept: &PointerBlock,
         delta: &AffineOffset,
     ) {
+        if !self.affine_addresses_complete(moved) {
+            self.non_affine_address_blocks =
+                self.non_affine_address_blocks.with_value(kept.clone());
+        }
         let Some(uses) = self.address_uses.get(moved).cloned() else {
             return;
         };
@@ -188,6 +302,14 @@ impl TermClasses {
         }
     }
 
+    /// Checked pointer premises join address applications in the same closure
+    /// that propagates whole-offset equality. No adjacency search is retained.
+    pub(super) fn add_address_equality(&mut self, left: u64, right: u64) -> bool {
+        debug_assert!(self.address_nodes.contains(&left));
+        debug_assert!(self.address_nodes.contains(&right));
+        self.close(vec![(left, right)])
+    }
+
     pub(super) fn class_root(&self, id: u64) -> u64 {
         self.root(id)
     }
@@ -196,10 +318,71 @@ impl TermClasses {
         !self.parents.is_empty()
     }
 
-    // Address-class unions and affine spelling registration do not enlarge
-    // the offset theory beyond the concrete interval index's own arithmetic.
-    pub(super) fn has_non_affine_equivalences(&self) -> bool {
-        self.non_affine_equivalences
+    /// A non-affine offset equality can add suppliers not represented by an
+    /// affine interval tree. Report unknown only for address blocks reached by
+    /// that equality's registered parent dependencies. No class/frame walk.
+    pub(super) fn affine_addresses_complete(&self, block: &PointerBlock) -> bool {
+        !self.non_affine_address_blocks.contains(block)
+    }
+
+    fn mark_non_affine(&mut self, id: u64) {
+        let mut pending = vec![id];
+        while let Some(id) = pending.pop() {
+            let root = self.root(id);
+            if self.non_affine_classes.contains(&root) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            self.non_affine_classes = self.non_affine_classes.with_value(root);
+            let applications = self
+                .affine_applications
+                .get(&root)
+                .cloned()
+                .unwrap_or_default();
+            self.affine_applications.remove(&root);
+            for id in applications.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                let application = *self.applications.get(id).expect("application");
+                if let Application::Address(block, _) = application {
+                    let block = self.address_blocks.get(&block).expect("address block");
+                    self.non_affine_address_blocks =
+                        self.non_affine_address_blocks.with_value(block.clone());
+                }
+                // Remove already-affected parents from the completeness-use
+                // index. A later fork must not revisit them just because one
+                // previously unrelated operand learns its first alias.
+                for operand in application.operands() {
+                    let operand = self.root(operand);
+                    if let Some(uses) = self.affine_uses.get(&operand) {
+                        let uses = uses.without_value(id);
+                        if uses.is_empty() {
+                            self.affine_uses.remove(&operand);
+                        } else {
+                            self.affine_uses.insert(operand, uses);
+                        }
+                    }
+                }
+            }
+            if let Some(uses) = self.affine_uses.get(&root) {
+                pending.extend(uses.iter().copied());
+            }
+        }
+    }
+
+    fn merge_affine_applications(&mut self, moved: u64, kept: u64) {
+        // Only clean classes retain these sets. Each moved application/use is
+        // already charged to the graph's smaller-side union weight.
+        for map in [&mut self.affine_applications, &mut self.affine_uses] {
+            if let Some(moved_set) = map.get(&moved).cloned() {
+                let mut kept_set = map.get(&kept).cloned().unwrap_or_default();
+                for id in moved_set.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    kept_set = kept_set.with_value(*id);
+                }
+                map.remove(&moved);
+                map.insert(kept, kept_set);
+            }
+        }
     }
 
     fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
@@ -264,8 +447,12 @@ impl TermClasses {
                 self.address_nodes = self.address_nodes.with_value(id);
                 Some(Application::Address(*block, *offset))
             }
+            Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
+            Node::Int32Binary(op, left, right) => {
+                Some(Application::Int32Binary(*op, *left, *right))
+            }
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
@@ -289,9 +476,14 @@ impl TermClasses {
         let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
             return;
         };
+        // Only a four-byte integer read is an int32 load application: a
+        // narrower read named at an address a wider read was recorded at
+        // carries that wider width, and is still another value.
         if !crate::kernel::is_load_variable(variable)
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
+            || crate::kernel::registered_load_kind_for_variable(variable)
+                != Some(crate::kernel::LoadKind::Bits32)
         {
             return;
         }
@@ -312,12 +504,17 @@ impl TermClasses {
             let block = match self.load_blocks.get(&pointer.block) {
                 Some(block) => *block,
                 None => {
+                    self.address_blocks
+                        .insert(next_block, pointer.block.clone());
                     self.load_blocks.insert(pointer.block, next_block);
                     next_block
                 }
             };
             let offset = self.intern(&pointer.offset);
-            self.register_application(id, Application::Int32Load(memory.arena_id(), block, offset));
+            self.register_application(
+                id,
+                Application::Int32Load(memory.read_identity(), block, offset),
+            );
         }
     }
 
@@ -329,6 +526,7 @@ impl TermClasses {
         enum Work<'a> {
             Term(&'a Bitvector32Term),
             Add,
+            Binary(Int32Binary),
         }
         let mut pending = vec![Work::Term(&term)];
         let mut values = Vec::new();
@@ -340,6 +538,28 @@ impl TermClasses {
                     pending.push(Work::Term(right));
                     pending.push(Work::Term(left));
                     continue;
+                }
+                Work::Term(
+                    term @ (Bitvector32Term::UnsignedDivide(left, right)
+                    | Bitvector32Term::UnsignedRemainder(left, right)
+                    | Bitvector32Term::BitwiseXor(left, right)),
+                ) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let op = match term {
+                        Bitvector32Term::UnsignedDivide(..) => Int32Binary::UnsignedDivide,
+                        Bitvector32Term::UnsignedRemainder(..) => Int32Binary::UnsignedRemainder,
+                        Bitvector32Term::BitwiseXor(..) => Int32Binary::BitwiseXor,
+                        _ => unreachable!(),
+                    };
+                    pending.push(Work::Binary(op));
+                    pending.push(Work::Term(right));
+                    pending.push(Work::Term(left));
+                    continue;
+                }
+                Work::Binary(op) => {
+                    let right = values.pop().expect("right int32 operand");
+                    let left = values.pop().expect("left int32 operand");
+                    Node::Int32Binary(op, left, right)
                 }
                 Work::Term(term) => Node::Int32(MachineAtom::int32(term.clone())),
                 Work::Add => {
@@ -358,6 +578,52 @@ impl TermClasses {
         left: &crate::kernel::Bitvector32Term,
         right: &crate::kernel::Bitvector32Term,
     ) -> bool {
+        use crate::kernel::Bitvector32Term;
+        if left == right {
+            return true;
+        }
+        // Opaque atoms cannot acquire equality by query registration. Consult
+        // their existing nodes directly, avoiding registration of unrelated
+        // order endpoints and unsupported expressions. Loads and addition
+        // still need registration because their definitions can join classes.
+        let opaque = |term: &Bitvector32Term| {
+            let supported = |term: &Bitvector32Term| match term {
+                Bitvector32Term::Add(..)
+                | Bitvector32Term::MemoryLoad(..)
+                | Bitvector32Term::UnsignedDivide(..)
+                | Bitvector32Term::UnsignedRemainder(..)
+                | Bitvector32Term::BitwiseXor(..) => true,
+                Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
+                _ => false,
+            };
+            if supported(term) {
+                return None;
+            }
+            let term = crate::kernel::canonical_term(term);
+            (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
+        };
+        let left_atom = opaque(left);
+        let right_atom = opaque(right);
+        if left_atom.is_some() && left_atom == right_atom {
+            return true;
+        }
+        // Registration can create a literal through evaluation, but cannot
+        // create a new opaque nonliteral atom as another term's consequence.
+        // Such an absent endpoint therefore cannot match an application.
+        for atom in [&left_atom, &right_atom].into_iter().flatten() {
+            if let Node::Int32(value) = atom
+                && !matches!(value.value(), Bitvector32Term::Constant(_))
+                && !self.nodes.contains_key(atom)
+            {
+                return false;
+            }
+        }
+        if let (Some(left), Some(right)) = (left_atom, right_atom) {
+            return match (self.nodes.get(&left), self.nodes.get(&right)) {
+                (Some(left), Some(right)) => left == right || self.root(*left) == self.root(*right),
+                _ => false,
+            };
+        }
         let left = self.intern_int32(left);
         let right = self.intern_int32(right);
         self.register_pending_loads();
@@ -382,7 +648,7 @@ impl TermClasses {
             || self.uses.get(&root).is_some_and(|uses| {
                 uses.iter().any(|parent| {
                     crate::instrumentation::record_deterministic_work(1);
-                    matches!(self.applications.get(parent), Some(Application::Int32Add(..)))
+                    matches!(self.applications.get(parent), Some(Application::Int32Add(..) | Application::Int32Binary(..)))
                 })
             })
     }
@@ -399,13 +665,22 @@ impl TermClasses {
     }
 
     fn root(&self, mut id: u64) -> u64 {
+        let original = id;
+        let epoch = self.history.as_ref().map_or(0, |history| history.depth);
+        if let Some((cached_epoch, root)) = self.root_cache.0.borrow().get(&id).copied()
+            && cached_epoch == epoch
+        {
+            return root;
+        }
         loop {
             crate::instrumentation::record_deterministic_work(1);
             match self.parents.get(&id) {
                 Some(parent) => id = *parent,
-                None => return id,
+                None => break,
             }
         }
+        self.root_cache.0.borrow_mut().insert(original, (epoch, id));
+        id
     }
 
     pub(super) fn are_equal(
@@ -436,8 +711,23 @@ impl TermClasses {
 
     fn register_application(&mut self, id: u64, application: Application) {
         self.applications.insert(id, application);
+        let class = self.root(id);
+        let affine = !self.non_affine_classes.contains(&class);
+        if affine {
+            let applications = self
+                .affine_applications
+                .get(&class)
+                .cloned()
+                .unwrap_or_default();
+            self.affine_applications
+                .insert(class, applications.with_value(id));
+        }
         for operand in application.operands() {
             let root = self.root(operand);
+            if affine {
+                let uses = self.affine_uses.get(&root).cloned().unwrap_or_default();
+                self.affine_uses.insert(root, uses.with_value(id));
+            }
             let uses = self.uses.get(&root).cloned().unwrap_or_default();
             if !uses.contains(&id) {
                 self.uses.insert(root, uses.with_value(id));
@@ -461,6 +751,17 @@ impl TermClasses {
             .get(&id)
             .expect("registered application")
             .signature(self);
+        if signature
+            .operands()
+            .any(|operand| self.non_affine_classes.contains(&operand))
+        {
+            if let Application::Address(block, _) = signature {
+                let block = self.address_blocks.get(&block).expect("address block");
+                self.non_affine_address_blocks =
+                    self.non_affine_address_blocks.with_value(block.clone());
+            }
+            self.mark_non_affine(id);
+        }
         // PointerOffsetTerm folds literal int32 indices to byte constants.
         // Join that definitional form without solving any scalar arithmetic.
         if let Application::Int32Scaled(value, width) = signature
@@ -516,10 +817,17 @@ impl TermClasses {
             if self.weight(kept) < self.weight(moved) {
                 std::mem::swap(&mut kept, &mut moved);
             }
-            if !definitional && !self.address_nodes.contains(&kept) {
-                self.non_affine_equivalences = true;
+            let non_affine = (!definitional && !self.address_nodes.contains(&kept))
+                || self.non_affine_classes.contains(&kept)
+                || self.non_affine_classes.contains(&moved);
+            if non_affine {
+                self.mark_non_affine(kept);
+                self.mark_non_affine(moved);
             }
+            self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
+            self.merge_storage_addresses(moved, kept);
+            self.merge_alignment_witnesses(moved, kept);
             self.parents.insert(moved, kept);
             self.history = Some(Arc::new(MergeHistory {
                 depth: self.history.as_ref().map_or(1, |node| node.depth + 1),
@@ -713,6 +1021,34 @@ mod tests {
     }
 
     #[test]
+    fn affine_completeness_follows_only_affected_address_dependencies() {
+        let base = Pointer::symbolic(Variable(895_050));
+        let other = Pointer::symbolic(Variable(895_051));
+        let alias = Pointer::symbolic(Variable(895_052));
+        let mut graph = EqualityGraph::default();
+        graph.address_class(&Pointer {
+            block: base.block.clone(),
+            offset: add(var(895_053), var(895_054)),
+        });
+        graph.address_class(&other.offset_by_bytes(8));
+        let sibling = graph.clone();
+        graph.add_offset_equality(&var(895_053), &var(895_055));
+        assert!(!graph.affine_addresses_complete(&base.block));
+        assert!(graph.affine_addresses_complete(&other.block));
+        assert!(sibling.affine_addresses_complete(&base.block));
+        // A newly registered parent inherits the already-affected operand.
+        let late = Pointer::symbolic(Variable(895_056));
+        graph.address_class(&Pointer {
+            block: late.block.clone(),
+            offset: add(var(895_055), var(895_057)),
+        });
+        assert!(!graph.affine_addresses_complete(&late.block));
+        graph.add_equality(&base, &alias);
+        assert!(!graph.affine_addresses_complete(&alias.block));
+        assert!(graph.affine_addresses_complete(&other.block));
+    }
+
+    #[test]
     fn addition_congruence_late_merge_work_scales_with_affected_parents() {
         for size in [16u64, 64, 256, 1024] {
             let mut graph = EqualityGraph::default();
@@ -806,7 +1142,11 @@ mod tests {
         ));
         let load = |memory: &crate::kernel::SharedCMemory| {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
-                memory, &address, 8, memory,
+                memory,
+                &address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let old = scaled(load(&before), 4, false);

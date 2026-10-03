@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 54;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 55;
 
 pub(crate) mod assumptions;
 mod equality_graph;
@@ -30,11 +30,13 @@ mod quantified_frame;
 mod resource_description;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
+pub(crate) use functions::TacticApplicationRefusal;
 #[cfg(test)]
 pub(crate) use functions::rewrite_resource_instance;
 pub(crate) use functions::rewrite_resource_instance_selecting_children;
 pub(crate) use functions::{
     InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts,
+    instantiate_private_member_body_facts,
 };
 pub use resource_description::{ResourceDescription, ResourceReference};
 mod iterated;
@@ -63,7 +65,7 @@ pub(crate) mod model_fields;
 mod mutexes;
 mod named_authority;
 mod nat_integer;
-pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type};
+pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod primitives;
 pub(crate) mod proof;
 mod pure_functions;
@@ -110,6 +112,7 @@ pub(crate) use eval::is_load_variable;
 pub(crate) use eval::is_load_variable_defining_fact;
 pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
+pub(crate) use eval::load_term_access_width;
 #[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
@@ -125,6 +128,10 @@ pub(crate) use eval::terms_have_same_canonical_form;
 #[cfg(test)]
 pub(crate) use eval::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
+};
+pub(crate) use eval::{
+    registered_load_kind_for_variable, registered_load_origin_term_for_variable,
+    registered_load_term_for_variable,
 };
 pub(crate) use functions::ResourceModelArmDecision;
 pub(crate) use functions::ResourceModelArmSelection;
@@ -170,7 +177,6 @@ pub(crate) use reasoning::memory_resolution::{
     ClosureFactCheck, closure_memoized_fact_check, with_closure_failure_memo,
 };
 pub(crate) use reasoning::resolve_load_variables_from_registry;
-pub(crate) use reasoning::resolve_load_variables_via;
 pub(crate) use reasoning::resolve_minted_load_variables;
 pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
 pub(crate) use reasoning::substitute_pointer_variable_in_proposition;
@@ -232,10 +238,11 @@ pub(crate) mod planning_api {
     };
     pub(crate) use super::reasoning::path_facts::solve_builtin_prop;
     pub(crate) use super::reasoning::substitute_bitvector_variable_in_proposition;
+    #[cfg(test)]
     pub(crate) use super::reasoning::variable_collection::collect_condition_bitvector_variables;
     pub(crate) use super::reasoning::variable_collection::{
         collect_atomic_connection_keys, collect_proposition_bitvector_variables,
-        collect_proposition_frame_variables,
+        collect_proposition_connection_variables, collect_proposition_frame_variables,
     };
 }
 
@@ -302,7 +309,6 @@ impl VerificationSession {
             assumptions::clear_assumption_memos();
             assumptions::clear_context_inconsistency_memos();
             assumptions::clear_frame_expansion_memo();
-            api::clear_context_free_forall_cache();
             api::clear_borrowed_input_root_memo();
             reasoning::variable_collection::clear_shared_memory_variables();
         }

@@ -170,7 +170,7 @@ impl CallerRequirementIndex {
                 index.by_source.insert(source_id, None);
                 continue;
             };
-            let Requirement::Proposition(source_proposition) = requirement.inner() else {
+            let Requirement::Proposition(source_proposition) = requirement else {
                 continue;
             };
             let source_arguments = match source_proposition {
@@ -334,8 +334,7 @@ fn direct_parameter_name(expression: &ContractExpression) -> Option<&str> {
 }
 
 /// The source-side forms that can be re-lowered for an ordinary function
-/// requirement.  The source ordinal is kept separately so an outer label is
-/// preserved without copying label syntax into the retry carrier.
+/// requirement.  The source ordinal is kept separately beside it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum FunctionRequirementSource {
     Proposition(ClickProposition),
@@ -355,14 +354,14 @@ impl FunctionSourceRequirements {
         let requirements = function
             .requires()
             .iter()
-            .map(|requirement| match requirement.inner() {
+            .map(|requirement| match requirement {
                 Requirement::Proposition(proposition) => {
                     Some(FunctionRequirementSource::Proposition(proposition.clone()))
                 }
                 Requirement::LoadableSegment { segment } => {
                     Some(FunctionRequirementSource::LoadableSegment(segment.clone()))
                 }
-                Requirement::Resource(_) | Requirement::Labeled { .. } => None,
+                Requirement::Resource(_) => None,
             })
             .collect();
         Self { requirements }
@@ -487,13 +486,7 @@ mod tests {
             external: true,
             parameter_struct_casts: BTreeMap::new(),
             one_call_proof: false,
-            requirement_label_indices: requires
-                .iter()
-                .enumerate()
-                .filter_map(|(index, requirement)| {
-                    requirement.label().map(|label| (label.to_string(), index))
-                })
-                .collect(),
+            tactic_procedure: false,
             requires,
             decreases: None,
             structural_clauses: Vec::new(),
@@ -559,10 +552,7 @@ mod tests {
     #[test]
     fn preserves_outer_ordinals_and_fails_closed_for_resources() {
         let requirements = vec![
-            Requirement::Labeled {
-                label: "labelled".to_string(),
-                requirement: Box::new(proposition("p")),
-            },
+            proposition("p"),
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 state: ContractSegmentState::Current,
                 base: CExpression::Variable("p".to_string()),

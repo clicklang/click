@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use click::languages::refresh_compiler_import;
 
-const USAGE: &str = "usage: click import lock <sidecar.click>\n\nCreates the checked compiler import artifact and sidecar.click.import.lock.json.";
+const USAGE: &str = "usage: click import lock <sidecar.click>\n\nRefreshes the checked compiler import artifact and its input lock.";
 
 fn main() {
     if let Err(message) = entry() {

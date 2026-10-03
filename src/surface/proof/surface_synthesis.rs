@@ -143,9 +143,11 @@ fn struct_owners(
             base: CExpression::Cast {
                 expression: Box::new(CExpression::Variable(parameter.name().to_string())),
                 target_type: CType::Int32Pointer,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(struct_name.clone()),
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             },
             pointer: base.clone(),
             layout: layout.clone(),
@@ -577,7 +579,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => {}
-            Bitvector32Term::MemoryLoad(_, pointer) => {
+            Bitvector32Term::MemoryLoad(_, pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -1563,9 +1565,12 @@ fn synthesize_surface_atomic_proposition(
 ) -> Option<ClickProposition> {
     if let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
         proposition
-        && let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, pointer)) =
-            (left.as_ref(), right.as_ref())
+        && let (
+            Bitvector32Term::Variable(variable),
+            Bitvector32Term::MemoryLoad(memory, pointer, kind),
+        ) = (left.as_ref(), right.as_ref())
         && crate::kernel::is_load_variable(variable)
+        && crate::kernel::registered_load_kind_for_variable(variable) == Some(*kind)
     {
         return synthesize_load_defining_equation(
             variable,
@@ -1883,6 +1888,15 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    if let Some(comparison) =
+        synthesize_unsigned_comparison(condition, parameters, arguments, state, bound_variables)
+    {
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
     let (left, operator, right) = match condition {
         ConditionTerm::Bitvector32SignedLessThan(left, right)
         | ConditionTerm::Bitvector64SignedLessThan(left, right)
@@ -1931,6 +1945,102 @@ fn synthesize_surface_atomic_proposition(
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
     }
+}
+
+/// A 32-bit unsigned comparison spelled as the comparison it means.
+///
+/// The kernel states `x < 4` over a `uint32` as the signed comparison of
+/// both operands with their sign bit flipped
+/// (`ConditionTerm::unsigned_less_than`), a constant operand arriving already
+/// flipped; spelled operand by operand that reads `(-2147483648 ^ x) <
+/// -2147483644`. Constants and uint32 locals retain their direct spellings;
+/// computed operands and signed locals receive an explicit uint32 cast. The
+/// reconstructed comparison must lower back to this same flipped form.
+/// Snapshot-relative operands retain the literal sign-bit spelling.
+fn synthesize_unsigned_comparison(
+    condition: &ConditionTerm,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let (left, operator, right) = match condition {
+        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+            (left, ComparisonOperator::LessThan, right)
+        }
+        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+            (left, ComparisonOperator::LessEqual, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+            (left, ComparisonOperator::GreaterThan, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+            (left, ComparisonOperator::GreaterEqual, right)
+        }
+        _ => return None,
+    };
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
+            if sign.as_const() == Some(SIGN_BIT) =>
+        {
+            Some(value.as_ref().clone())
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| {
+            term.as_const()
+                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+        })
+    };
+    // At least one side carries the flip itself; two bare constants are an
+    // ordinary signed comparison.
+    let (left, right) = match (flipped(left), flipped(right)) {
+        (Some(left), Some(right)) => (left, right),
+        (Some(left), None) => (left, unflipped(right)?),
+        (None, Some(right)) => (unflipped(left)?, right),
+        (None, None) => return None,
+    };
+    // The `uint32` local holding the operand, named directly: a signed local
+    // can hold the same bits, and its name would make the comparison signed.
+    let operand = |term: &Bitvector32Term| match term.as_const() {
+        Some(_) => Some(ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt32(term.clone()),
+        ))),
+        None => state
+            .locals()
+            .object_values()
+            .find(|(name, value)| {
+                *name != "result" && matches!(value, CValue::UInt32(value) if value == term)
+            })
+            .map(|(name, _)| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+            .or_else(|| {
+                let expression = synthesize_surface_bitvector(
+                    term,
+                    parameters,
+                    arguments,
+                    state,
+                    bound_variables,
+                )?;
+                // Keep the literal sign-bit order when an operand is snapshot
+                // relative, preserving loop-ranking observations and refusal
+                // diagnostics. Division/remainder still cast within their own
+                // snapshot when reconstructing those operations.
+                if matches!(
+                    expression,
+                    ContractExpression::At { .. } | ContractExpression::Old(_)
+                ) {
+                    return None;
+                }
+                synthesize_uint32_operand(expression)
+            }),
+    };
+    Some(ClickProposition::Comparison {
+        left: operand(&left)?,
+        operator,
+        right: operand(&right)?,
+    })
 }
 
 fn synthesize_surface_resource_subject(
@@ -2029,6 +2139,26 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
                 )
             })?,
         ),
+        ConditionTerm::PointerEqual(left, right) => (
+            anchored(&|state| {
+                synthesize_surface_pointer_expression(
+                    left,
+                    parameters,
+                    arguments,
+                    state,
+                    &bound_variables,
+                )
+            })?,
+            anchored(&|state| {
+                synthesize_surface_pointer_expression(
+                    right,
+                    parameters,
+                    arguments,
+                    state,
+                    &bound_variables,
+                )
+            })?,
+        ),
         _ => return None,
     };
     Some(ClickProposition::Comparison {
@@ -2086,8 +2216,8 @@ pub(super) fn synthesize_surface_pointer_offset(
         PointerOffsetTerm::Int32Scaled {
             value,
             byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _)) => {
-            let Bitvector32Term::MemoryLoad(_, pointer) = value.as_ref() else {
+        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let Bitvector32Term::MemoryLoad(_, pointer, _) = value.as_ref() else {
                 unreachable!()
             };
             if let Some(field) = synthesize_struct_field_load(
@@ -2288,13 +2418,41 @@ fn registered_load_in_state(variable: &Variable, state: &CState) -> Option<Bitve
         return None;
     }
     let (_, pointer) = crate::kernel::registered_load_for_variable(variable)?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let memory = crate::kernel::intern_c_memory_ref(state.memory());
     let Bitvector32Term::Variable(named) =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone())
+        crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone(), kind)
     else {
         return None;
     };
-    (named == *variable).then(|| Bitvector32Term::MemoryLoad(memory, Box::new(pointer)))
+    (named == *variable).then(|| Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind))
+}
+
+// Unsigned division and remainder use the usual C conversion of both
+// operands when either operand is uint32. Keep an explicit snapshot outside
+// the cast so reconstruction never silently changes which memory is read.
+fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractExpression> {
+    match expression {
+        ContractExpression::At {
+            selector,
+            expression,
+        } => Some(ContractExpression::At {
+            selector,
+            expression: Box::new(synthesize_uint32_operand(*expression)?),
+        }),
+        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
+            synthesize_uint32_operand(*expression)?,
+        ))),
+        expression => Some(ContractExpression::CFragment(CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(&expression)?),
+            target_type: CType::UInt32,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        })),
+    }
 }
 
 fn synthesize_surface_bitvector(
@@ -2323,9 +2481,12 @@ fn synthesize_surface_bitvector(
         )));
     }
     if let Some((name, _)) = state.locals().object_values().find(|(_, value)| {
+        if matches!(value, CValue::Bool(_)) {
+            crate::instrumentation::record_deterministic_work(1);
+        }
         matches!(
             value,
-            CValue::Int8(local) | CValue::Int16(local)
+            CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
                 | CValue::Int32(local)
                 | CValue::UInt8(local)
                 | CValue::UInt16(local)
@@ -2416,7 +2577,10 @@ fn synthesize_surface_bitvector(
         }
         Bitvector32Term::UnsignedDivide(left, right) => {
             let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Divide(left, right))
+            Some(ContractExpression::Divide(
+                left,
+                Box::new(synthesize_uint32_operand(*right)?),
+            ))
         }
         Bitvector32Term::Remainder(left, right) => {
             let (left, right) = binary(left, right)?;
@@ -2424,7 +2588,10 @@ fn synthesize_surface_bitvector(
         }
         Bitvector32Term::UnsignedRemainder(left, right) => {
             let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Remainder(left, right))
+            Some(ContractExpression::Remainder(
+                left,
+                Box::new(synthesize_uint32_operand(*right)?),
+            ))
         }
         Bitvector32Term::ShiftLeft(left, right) => {
             let (left, right) = binary(left, right)?;
@@ -2465,12 +2632,30 @@ fn synthesize_surface_bitvector(
             Some(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
-        Bitvector32Term::MemoryLoad(memory, kernel_pointer) => {
+        Bitvector32Term::MemoryLoad(memory, kernel_pointer, kind) => {
+            if *kind == crate::kernel::LoadKind::Bits32
+                && let Some(field) =
+                    synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
+            {
+                return Some(field);
+            }
+
+            if *kind == crate::kernel::LoadKind::Bits32
+                && let Some(field) = synthesize_owned_pointer_field(kernel_pointer, state)
+            {
+                return Some(ContractExpression::Index(
+                    Box::new(field),
+                    Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
+                ));
+            }
+
             if let Some(source) = SYNTHESIS_QUALIFIED_SOURCES.with(|slot| {
                 slot.borrow()
                     .as_ref()?
@@ -2490,6 +2675,7 @@ fn synthesize_surface_bitvector(
                 let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
                     memory.clone(),
                     kernel_pointer.as_ref().clone(),
+                    *kind,
                 ) else {
                     return None;
                 };
@@ -2513,6 +2699,10 @@ fn synthesize_surface_bitvector(
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
                 && kernel_pointer.offset == PointerOffsetTerm::Constant(0)
+                && state
+                    .locals()
+                    .scalar_object_type(name)
+                    .is_some_and(|ty| ty.pointee_type().is_none())
             {
                 // A memory-resident scalar local reads as its own name.
                 Some(ContractExpression::CFragment(CExpression::Variable(
@@ -2644,9 +2834,11 @@ fn synthesize_surface_bitvector(
                     )?,
                 )?),
                 target_type: CType::Int64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::UInt64From32(value)
@@ -2663,9 +2855,11 @@ fn synthesize_surface_bitvector(
                     )?,
                 )?),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::UInt32From64(value) => {
@@ -2680,9 +2874,11 @@ fn synthesize_surface_bitvector(
                     )?,
                 )?),
                 target_type: CType::UInt32,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::Int64Add(left, right) => {
@@ -2872,7 +3068,7 @@ fn synthesize_parameter_field_indexed_int32_load(
             Bitvector32Term::Variable(variable) => registered_load_in_state(variable, state),
             _ => None,
         };
-        let Bitvector32Term::MemoryLoad(_, field_pointer) =
+        let Bitvector32Term::MemoryLoad(_, field_pointer, _) =
             named_load.as_ref().unwrap_or(value.as_ref())
         else {
             return None;
@@ -3042,6 +3238,30 @@ fn synthesize_local_aggregate_field(
                     };
                     if element_count == 1 {
                         Some(field_expression)
+                    } else if let Some(shape) = field.array_shape() {
+                        // Spell the element with one subscript per declared
+                        // dimension, as the parser reads it back.
+                        let mut remaining = index;
+                        let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
+                        for (slot, dimension) in indexes.iter_mut().zip(shape).rev() {
+                            *slot = CExpression::Value(int32(remaining % dimension));
+                            remaining /= dimension;
+                        }
+                        let ContractExpression::Field { lowered, .. } = &field_expression else {
+                            unreachable!()
+                        };
+                        let lowered = CExpression::Index(
+                            Box::new(lowered.clone()),
+                            Box::new(crate::surface::parser::flatten_array_indices(
+                                indexes.clone(),
+                                shape,
+                            )),
+                        );
+                        Some(ContractExpression::ArrayIndex {
+                            base: Box::new(field_expression),
+                            indexes,
+                            lowered,
+                        })
                     } else {
                         Some(ContractExpression::Index(
                             Box::new(field_expression),
@@ -3062,7 +3282,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             return false;
         }
         match term {
-            Bitvector32Term::MemoryLoad(_, _) => return false,
+            Bitvector32Term::MemoryLoad(_, _, _) => return false,
             Bitvector32Term::PointerAddress(pointer) => {
                 pending.extend(pointer.offset.scaled_values());
             }
@@ -3184,9 +3404,6 @@ fn synthesize_local_indexed_int32_load(
         }
         let element_width = base.c_type().pointee_type()?.byte_width();
         let index = pointer.element_index_from_base_with_width(base, element_width)?;
-        if index == Bitvector32Term::Constant(0) {
-            return None;
-        }
         // This candidate is for ordinary `local[index]` forms. If the
         // derived index itself reads memory, trying to synthesize that load
         // can rediscover another local-relative form with a still larger
@@ -3320,6 +3537,82 @@ fn synthesize_struct_field_load(
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameters, arguments, state))
 }
 
+/// Recover source syntax for an opaque pointer value read from an owned
+/// aggregate field. Offset-based synthesis cannot name its distinct block.
+/// This is a candidate spelling; callers must re-lower it to the exact fact.
+fn synthesize_owned_field_at_address(
+    address: &Pointer,
+    value_type: CType,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let PointerBlock::Concrete(block) = &address.block else {
+        return None;
+    };
+    let name = block.strip_prefix("local:")?.rsplit(':').next()?;
+    let slot = state.locals().aggregate_object_pointer(name)?;
+    let layout = state.locals().aggregate_layout(name)?;
+    let field = layout.fields().iter().find(|field| {
+        field.c_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
+    })?;
+    let base = CExpression::Variable(name.to_string());
+    Some(ContractExpression::Field {
+        base: Box::new(ContractExpression::CFragment(base.clone())),
+        field: field.name().to_string(),
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            value_type,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        offset_bytes: field.offset_bytes(),
+    })
+}
+
+fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    let PointerBlock::Symbolic(variable) = &pointer.block else {
+        return None;
+    };
+    if pointer.offset != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
+    let memory = crate::kernel::intern_c_memory_ref(state.memory());
+    if crate::kernel::canonical_form_of_load(
+        memory,
+        address.clone(),
+        crate::kernel::LoadKind::Bits32,
+    ) != Bitvector32Term::Variable(*variable)
+    {
+        return None;
+    }
+    let PointerBlock::Concrete(block) = &address.block else {
+        return None;
+    };
+    // Local storage names include a lifetime prefix when scopes reuse a name.
+    // Look up the named object and verify its actual slot rather than scanning
+    // all unrelated automatic aggregates in the snapshot.
+    let name = block.strip_prefix("local:")?.rsplit(':').next()?;
+    let slot = state.locals().aggregate_object_pointer(name)?;
+    let layout = state.locals().aggregate_layout(name)?;
+    let field = layout.fields().iter().find(|field| {
+        field.c_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
+    })?;
+    let base = CExpression::Variable(name.to_string());
+    Some(ContractExpression::Field {
+        base: Box::new(ContractExpression::CFragment(base.clone())),
+        field: field.name().to_string(),
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            value_type: field.c_type(),
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        offset_bytes: field.offset_bytes(),
+    })
+}
+
 fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
@@ -3382,6 +3675,9 @@ fn synthesize_surface_pointer(
     }) {
         return Some(expression);
     }
+    if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
+        return contract_expression_to_c_fragment(&field);
+    }
     if !arguments.iter().any(|argument| {
         matches!(
             argument,
@@ -3409,6 +3705,9 @@ fn synthesize_surface_pointer_expression(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
+        return Some(field);
+    }
     if let Some(pointer) =
         synthesize_surface_pointer(pointer, parameters, arguments, state, bound_variables)
     {

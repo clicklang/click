@@ -86,34 +86,6 @@ pub(super) fn facts_for_direct_derivation_lowering(
     facts
 }
 
-/// Facts that may establish that a restricted simplifier's surface goal and
-/// premises are defined without performing an equality step on its behalf.
-/// Array bounds are part of expression lowering; equalities remain available
-/// only through the explicitly listed `simp() using` premises.
-pub(super) fn facts_for_restricted_simp_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
-    let mut facts = facts_for_direct_surface_lowering(propositions);
-    for proposition in propositions {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(proposition, &mut conjuncts);
-        for proposition in conjuncts {
-            if matches!(
-                proposition,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(_, _)
-                        | ConditionTerm::Bitvector32SignedLessEqual(_, _)
-                        | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
-                        | ConditionTerm::Bitvector32SignedGreaterEqual(_, _),
-                    _,
-                )
-            ) && !facts.contains(proposition)
-            {
-                facts.push(proposition.clone());
-            }
-        }
-    }
-    facts
-}
-
 pub(super) fn facts_for_smart_have_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
     let mut facts = facts_for_direct_derivation_lowering(propositions);
     for proposition in propositions {
@@ -128,54 +100,14 @@ pub(super) fn facts_for_smart_have_lowering(propositions: &[Proposition]) -> Vec
             let is_atomic_alias = matches!(
                 (left.as_ref(), right.as_ref()),
                 (
-                    Bitvector32Term::MemoryLoad(_, _),
+                    Bitvector32Term::MemoryLoad(_, _, _),
                     Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_)
                 ) | (
                     Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_),
-                    Bitvector32Term::MemoryLoad(_, _)
+                    Bitvector32Term::MemoryLoad(_, _, _)
                 )
             );
             if is_atomic_alias && !facts.contains(proposition) {
-                facts.push(proposition.clone());
-            }
-        }
-    }
-    facts
-}
-
-pub(super) fn facts_for_simple_goal_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
-    let mut facts = facts_for_smart_have_lowering(propositions);
-    for proposition in propositions {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(proposition, &mut conjuncts);
-        for proposition in conjuncts {
-            let include = match proposition {
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(_, _)
-                    | ConditionTerm::Bitvector32SignedLessEqual(_, _)
-                    | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
-                    | ConditionTerm::Bitvector32SignedGreaterEqual(_, _)
-                    | ConditionTerm::PointerOffsetEqual(_, _),
-                    _,
-                ) => true,
-                // A false-polarity atomic alias decides branch conditions
-                // (`if (p[i] == x)`) whose negative arm the goal's `If` terms
-                // still carry; the smart-have set only admits the true polarity.
-                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), false) => {
-                    matches!(
-                        (left.as_ref(), right.as_ref()),
-                        (
-                            Bitvector32Term::MemoryLoad(_, _),
-                            Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_)
-                        ) | (
-                            Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_),
-                            Bitvector32Term::MemoryLoad(_, _)
-                        )
-                    )
-                }
-                _ => false,
-            };
-            if include && !facts.contains(proposition) {
                 facts.push(proposition.clone());
             }
         }
@@ -307,6 +239,325 @@ pub(super) fn describe_derivation_failure(
         // proposition, schemas and snapshots included.
         describe_pure_fact(proposition, &parameters, &arguments)
     }
+}
+
+/// The most facts a source-term prerequisite refusal lists.
+const PREREQUISITE_FACT_LIMIT: usize = 6;
+
+/// [`describe_derivation_failure`] for a prerequisite of executing
+/// `statement`, stated in the source terms of the C operation that needed it
+/// when it is one a proof supplies through ordinary facts: an access's
+/// element bound, or a bounds check the C frontend lowered to an assertion.
+/// Each names the source condition that was not shown and the consulted
+/// facts about its variables, leaving out `path_facts`, the assumptions of
+/// the refused path itself (on an assertion's failing path, the negation of
+/// what it asserts). Every other prerequisite keeps the generic sentence.
+pub(super) fn describe_statement_prerequisite_failure(
+    proposition: &Proposition,
+    available: &[Proposition],
+    path_facts: &[Proposition],
+    state: &CState,
+    statement: &CStatement,
+    environment: &CExecutionEnvironment,
+    predicate_environment: Option<&PredicateEnvironment>,
+) -> String {
+    let consulted = available
+        .iter()
+        .filter(|fact| !path_facts.contains(fact))
+        .cloned()
+        .collect::<Vec<_>>();
+    let refusal = describe_access_bound_prerequisite(proposition, &consulted, state, statement)
+        .or_else(|| describe_assertion_prerequisite(proposition, &consulted, state, statement))
+        .unwrap_or_else(|| {
+            describe_derivation_failure(
+                proposition,
+                available,
+                state,
+                environment,
+                predicate_environment,
+            )
+        });
+    format!(
+        "{refusal}{}",
+        crate::surface::diagnostics::describe_c_statement_site()
+    )
+}
+
+/// "the store to `items[i]` may write outside `items`: could not show
+/// `0 <= i && i < 4` from the facts ...", then the C operation.
+fn describe_access_bound_prerequisite(
+    proposition: &Proposition,
+    available: &[Proposition],
+    state: &CState,
+    statement: &CStatement,
+) -> Option<String> {
+    let (access, verb, memory, pointer, byte_width) = match proposition {
+        Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width,
+        } => ("store to", "write", memory, pointer, *byte_width),
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+        } => ("read of", "read", memory, base, bytes.as_const()?),
+        _ => return None,
+    };
+    let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
+    let object = crate::surface::diagnostics::describe_memory_block(
+        &pointer.block,
+        &parameters,
+        &arguments,
+    )?;
+    let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;
+    let spell = |term: &Bitvector32Term| {
+        let spelled = crate::surface::diagnostics::describe_bitvector_with_context(
+            term,
+            &parameters,
+            &arguments,
+        );
+        match spelled
+            .strip_prefix('(')
+            .and_then(|inner| inner.strip_suffix(')'))
+        {
+            Some(inner) if balanced_parentheses(inner) => inner.to_string(),
+            _ => spelled,
+        }
+    };
+    let (index, count) = (spell(&bound.index), spell(&bound.count));
+    let element = if bound.stride == byte_width {
+        format!("`{object}[{index}]`")
+    } else {
+        format!(
+            "{byte_width} bytes of element `{object}[{index}]` ({}-byte elements)",
+            bound.stride
+        )
+    };
+    // The locals the index is written over, which the consulted facts must
+    // mention to bear on it.
+    let names = index
+        .split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+        .filter(|word| word.starts_with(|first: char| first.is_ascii_alphabetic() || first == '_'))
+        .collect::<Vec<_>>();
+    // A source statement can lower to several kernel ones (a bounds check
+    // before the access); name the store itself when there is one.
+    let mut operation = statement;
+    let mut pending = vec![statement];
+    while let Some(next) = pending.pop() {
+        match next {
+            CStatement::Seq(first, second) => {
+                pending.push(second);
+                pending.push(first);
+            }
+            CStatement::Store { .. } | CStatement::TypedStore { .. } if verb == "write" => {
+                operation = next;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let bound = format!("0 <= {index} && {index} < {count}");
+    let reason = if names.is_empty() {
+        format!("`{bound}` does not hold")
+    } else {
+        format!(
+            "could not show `{bound}` from {}",
+            describe_consulted_facts_mentioning(available, state, &names)
+        )
+    };
+    Some(format!(
+        "the {access} {element} may {verb} outside `{object}`: {reason}\n  C operation: {}",
+        crate::surface::diagnostics::describe_c_statement_head(operation),
+    ))
+}
+
+/// A bounds check the C frontend lowered to `assert`, refused on the path
+/// where its condition is false: the prerequisite left there is the
+/// truthiness obligation `0 = 1`, and the condition is what a proof must
+/// show.
+fn describe_assertion_prerequisite(
+    proposition: &Proposition,
+    available: &[Proposition],
+    state: &CState,
+    statement: &CStatement,
+) -> Option<String> {
+    // The truthiness obligation an assertion leaves on its false path.
+    if !matches!(
+        proposition,
+        Proposition::Equal(Term::CValue(_), Term::CValue(one)) if *one == int32(1)
+    ) {
+        return None;
+    }
+    let mut pending = vec![statement];
+    let condition = loop {
+        match pending.pop()? {
+            CStatement::Seq(first, second) => {
+                pending.push(second);
+                pending.push(first);
+            }
+            CStatement::Assert { condition, .. } => break condition,
+            _ => {}
+        }
+    };
+    let mut names = Vec::new();
+    collect_c_expression_variables(condition, &mut names);
+    let names = names.iter().map(String::as_str).collect::<Vec<_>>();
+    let condition = describe_c_conjunction(condition);
+    // A check over constants alone is simply false: no fact bears on it.
+    if names.is_empty() {
+        return Some(format!("`{condition}` does not hold"));
+    }
+    Some(format!(
+        "could not show `{condition}` from {}",
+        describe_consulted_facts_mentioning(available, state, &names)
+    ))
+}
+
+/// A condition as a proof states it: a conjunction joined by `&&` without
+/// the expression printer's parentheses around each operand.
+fn describe_c_conjunction(condition: &CExpression) -> String {
+    if let CExpression::And(left, right) = condition {
+        return format!(
+            "{} && {}",
+            describe_c_conjunction(left),
+            describe_c_conjunction(right)
+        );
+    }
+    let rendered = crate::surface::diagnostics::describe_c_expression(condition);
+    match rendered
+        .strip_prefix('(')
+        .and_then(|inner| inner.strip_suffix(')'))
+    {
+        Some(inner) if balanced_parentheses(inner) => inner.to_string(),
+        _ => rendered,
+    }
+}
+
+fn balanced_parentheses(text: &str) -> bool {
+    let mut depth = 0usize;
+    for character in text.chars() {
+        match character {
+            '(' => depth += 1,
+            ')' => match depth.checked_sub(1) {
+                Some(next) => depth = next,
+                None => return false,
+            },
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+fn collect_c_expression_variables(expression: &CExpression, names: &mut Vec<String>) {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        match expression {
+            CExpression::Variable(name) => {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+            CExpression::Value(_) | CExpression::FunctionAddress(_) => {}
+            CExpression::Cast { expression, .. }
+            | CExpression::FloatNegate(expression)
+            | CExpression::FloatClassification { expression, .. }
+            | CExpression::AddressOf(expression)
+            | CExpression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            }
+            | CExpression::Not(expression)
+            | CExpression::BitwiseNot(expression)
+            | CExpression::Load(expression)
+            | CExpression::TypedLoad {
+                pointer: expression,
+                ..
+            } => pending.push(expression),
+            CExpression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                pending.push(condition);
+                pending.push(then_branch);
+                pending.push(else_branch);
+            }
+            CExpression::LessThan(left, right)
+            | CExpression::LessEqual(left, right)
+            | CExpression::GreaterThan(left, right)
+            | CExpression::GreaterEqual(left, right)
+            | CExpression::Equal(left, right)
+            | CExpression::NotEqual(left, right)
+            | CExpression::And(left, right)
+            | CExpression::Or(left, right)
+            | CExpression::Add(left, right)
+            | CExpression::Subtract(left, right)
+            | CExpression::Multiply(left, right)
+            | CExpression::Divide(left, right)
+            | CExpression::Remainder(left, right)
+            | CExpression::ShiftLeft(left, right)
+            | CExpression::ShiftRight(left, right)
+            | CExpression::BitwiseAnd(left, right)
+            | CExpression::BitwiseOr(left, right)
+            | CExpression::BitwiseXor(left, right)
+            | CExpression::Index(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+        }
+    }
+}
+
+/// The consulted condition facts whose source spelling names one of `names`,
+/// bounded, as `the facts `a`, `b``.
+fn describe_consulted_facts_mentioning(
+    available: &[Proposition],
+    state: &CState,
+    names: &[&str],
+) -> String {
+    let mentions = |text: &str| {
+        text.split(|character: char| !(character.is_ascii_alphanumeric() || character == '_'))
+            .any(|word| names.contains(&word))
+    };
+    let mut described = Vec::new();
+    let mut omitted = 0usize;
+    for fact in available {
+        if !matches!(fact, Proposition::ConditionIs(_, _)) {
+            continue;
+        }
+        let text = crate::surface::diagnostics::describe_stated_fact_over_locals(fact, state);
+        if !mentions(&text) || described.contains(&text) {
+            continue;
+        }
+        if described.len() == PREREQUISITE_FACT_LIMIT {
+            omitted += 1;
+            continue;
+        }
+        described.push(text);
+    }
+    if described.is_empty() {
+        let names = names
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("no fact about {names}");
+    }
+    let mut listed = described
+        .iter()
+        .map(|fact| format!("`{fact}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if omitted > 0 {
+        listed.push_str(&format!(" and {omitted} more"));
+    }
+    let noun = if described.len() == 1 && omitted == 0 {
+        "the fact"
+    } else {
+        "the facts"
+    };
+    format!("{noun} {listed}")
 }
 
 fn check_condition_search_budget(

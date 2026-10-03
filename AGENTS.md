@@ -3,16 +3,76 @@
 ## Develop in a fork and contribute through pull requests
 
 The upstream repository is `clicklang/click`. Humans and agents must develop
-in their own fork, push task branches there, and open a pull request against
-upstream `master` when the change is ready. Do not push development branches
-or changes directly to the upstream repository, even with write or admin
-access. Maintainers integrate reviewed changes through pull requests.
+in their own fork and open a pull request against upstream `master` as soon as
+they have a coherent, green, reviewable unit of work. Do not wait for a larger
+effort to finish; use a draft pull request if more work is expected before it
+is ready to merge. Do not push development branches or changes directly to the
+upstream repository, even with write or admin access. Maintainers integrate
+reviewed changes through pull requests.
+
+Each task thread, whether a human working session or one agent, has at most
+one open pull request at a time. While it is open, add each further coherent
+green increment to that same branch and pull request, even when the increment
+is a different chunk of the effort or an unrelated fix found along the way, and
+describe each increment in the pull request body. Do not open a second pull
+request, and do not stack pull requests on one another. Once the thread's pull
+request merges or is closed, start later work from current upstream `master` on
+a new branch and pull request. A thread that opens many pull requests floods the
+merge queue, which merges one at a time, and turns every failure low in a stack
+into a blocked chain.
 
 Upstream `master` requires a pull request, a passing GitHub Actions `test`
-check, and the merge queue. Once a pull request is ready and its checks pass,
-maintainers add it to the queue. The queue runs `scripts/check.sh` on the
-prospective upstream tree and merges one pull request at a time. Do not merge
-directly or bypass the queue.
+check, and the merge queue. The queue runs `scripts/check.sh` on the prospective
+upstream tree and merges one pull request at a time. Do not merge directly or
+bypass the queue.
+
+### Lacker and agent merge-queue loop
+
+Use this preferred path when Lacker is working with an agent authenticated to
+GitHub as `lacker` and has authorized the agent to deliver the change. Other
+contributors follow the normal PR and review process.
+
+1. Before follow-up work, inspect the thread's PR. If it is still open, add
+   the new work to that PR, whatever it is. If it merged, create a new PR for
+   the new work.
+2. Make a coherent change and use judgment to choose useful local checks. A
+   full `scripts/check.sh` run is not required before every PR; report the
+   checks that did run.
+3. Push the branch to the fork and create or update the PR against upstream
+   `master`.
+4. Immediately request **Merge when ready**, even while checks are running:
+   run `gh pr merge <PR> --auto`. GitHub records the request and puts the PR
+   into the merge queue once its requirements pass. Do not wait for CI to
+   finish before requesting this. The **Allow auto-merge** repository setting
+   must be enabled; it is enabled on `clicklang/click`.
+5. Once GitHub confirms the request, continue with the next work without
+   waiting for the check or merge to finish.
+6. On the next update, inspect the PR again. If it merged, open a new PR. If
+   it is open and not in the merge queue, push the new work to it and run
+   `gh pr merge <PR> --auto` again. Pushing to a PR that is already in the
+   queue does not remove it: the queue merges the head it was enqueued with,
+   and later commits are left behind on the branch. So first check the
+   queue entry:
+
+   ```sh
+   gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){mergeQueueEntry{id state}}}}'
+   ```
+
+   If its state is `QUEUED`, its final build has not started and nothing is
+   wasted by resetting it: remove it from the queue (the `dequeuePullRequest`
+   mutation with that entry `id`), push the new work, update the PR
+   description, run `gh pr merge <PR> --auto` again, and confirm the queued
+   head is the new one. If its build has started (`AWAITING_CHECKS` or
+   later), or the new work is a large change on its own, leave the PR alone
+   and deliver the new work in a new PR after it merges. After any PR merges,
+   check that every commit pushed to it reached `master`.
+7. If checks fail, a conflict appears, or GitHub removes the PR from the
+   queue, resolve the problem, update the PR, and register the merge request
+   again. Then continue with the next work.
+
+If GitHub reports that auto-merge is not allowed, report the repository
+setting as a blocker to the maintainer; do not wait for CI as a workaround.
+Never use `--admin`, merge directly, or bypass required checks or review rules.
 
 Use `origin` for the contributor's fork and `upstream` for
 `git@github.com:clicklang/click.git`. Set `remote.pushDefault` to `origin`
@@ -30,11 +90,12 @@ formatting, tests, and commits there. Treat the shared primary checkout as an
 integration checkout, not a development workspace; do not expose other agents
 to partially implemented or failing changes.
 
-Submit only a coherent green commit. Before opening a pull request, run the
-relevant focused and full gates in the task worktree (use the documentation-only
-gate for prose-only changes), then push the tested branch to the fork. Include
-the change's purpose and validation in the pull request. If upstream has moved,
-update the task branch and rerun any affected gates before merging.
+Submit coherent changes and use judgment to select useful local checks. A full
+local `scripts/check.sh` run is not required before every pull request; PR CI
+and the merge queue run the full gate. For prose-only changes, the focused
+documentation gate is available. Report which checks ran in the pull request.
+If upstream has moved, update the task branch and rerun affected checks before
+merging.
 
 If updating the local primary checkout after a pull request merges, verify
 that it is clean and fast-forward it from upstream with Git. Never copy
@@ -70,21 +131,46 @@ reading output, but the verdict comes from an unpiped run. The default `cargo
 test --lib` is also not the gate: it passes while both proof-fixture gates
 fail.
 
-## Create issues only when the user explicitly asks
+## File bugs freely; create issues only when the user explicitly asks
 
-Do not create new issue files or new issue-list entries unless the user
-explicitly asks you to create or file issues. Discovering a bug, design gap,
-deferred task, or tooling blocker is not authorization to file one. Report
-the finding to the user instead; a general request to implement, investigate,
-or fix something does not implicitly authorize new issues. This rule also
-applies when another document recommends filing an issue.
+`bugs/` and `issues/` are different lists with different rules.
+
+**Bugs: file them without asking.** A bug is a defect in what Click already
+claims to do, with a reproduction. Humans and agents should file one whenever
+they find one and do not fix it in the same change:
+
+- the verifier accepts something false, or refuses something the
+  documentation or a neighbouring case says it supports;
+- a tool crashes, hangs, exceeds a budget without a prompt local failure, or
+  disagrees with another tool (`verify`, `expand`, `audit`, `profile`);
+- a diagnostic is inaccurate or misleading: it names the wrong construct,
+  suggests a command or syntax that is then rejected, or reports a cause
+  that is not the cause;
+- a diagnostic is a wall of text: repeated or unbounded raw internal state
+  where a bounded, actionable message belongs.
+
+File one kebab-case `.md` file per independent bug in `bugs/` plus a one-line
+entry in `bugs/README.md`. State the violated invariant, a small intended
+regression, and acceptance criteria, written so a fresh agent can act on the
+file alone. Reproduce it first: an observation that was seen once, or inferred
+from reading code, is reported to the user, not filed. Tell the user what was
+filed. Delete the file and its list line when the fix, its regression
+coverage, and any documentation land.
+
+**Issues: only the user approves them.** An issue is roadmap: a missing
+feature, a design gap, deferred work, a new milestone, or a change of
+direction. Do not create new issue files or new issue-list entries unless the
+user explicitly asks you to. Finding such a gap is not authorization to file
+one; report it to the user instead. A general request to implement,
+investigate, or fix something does not implicitly authorize new issues, and
+neither does another document that recommends filing one. Do not file
+roadmap work in `bugs/` to avoid this rule: when it is unclear whether
+something is a bug or an issue, report it to the user.
 
 When requested, create one kebab-case `.md` file per independent problem in
-`issues/` plus a one-line entry in `issues/README.md`. State the violated
-invariant, a small intended regression, and acceptance criteria, written so
-a fresh agent can act on the file alone without the conversation that
-produced it. Delete the file and its list line when the fix, its regression
-coverage, and any documentation land.
+`issues/` plus a one-line entry in `issues/README.md`, with the same three
+parts as a bug. Delete the file and its list line when the fix, its
+regression coverage, and any documentation land.
 
 ## Existing C is the verification boundary
 
@@ -134,7 +220,8 @@ and sufficient simple tactics are requirements.
 Reduce and fix the tooling problem before resuming feature work. If it cannot
 be fixed in the same coherent chunk, report the blocker and a proposed
 regression to the user, then restore the worktree to a green, check-in-ready
-checkpoint. Create an issue only if the user explicitly asks. Do not silently
+checkpoint. File it in `bugs/` when it is a bug; create an issue only if the user
+explicitly asks. Do not silently
 work around the problem, raise time limits, accept a slow successful run, or
 leave the only reproduction inside an
 unverified example.

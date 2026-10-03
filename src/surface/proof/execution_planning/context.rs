@@ -184,6 +184,7 @@ pub(in crate::surface::proof) fn kernel_loop_by_index<'a>(
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. }
         | CStatement::Assert { .. } => None,
         CStatement::ForStep { .. } => None,
@@ -224,6 +225,9 @@ pub(in crate::surface::proof) struct LoopProofCertificates {
 pub(in crate::surface::proof) struct FrontierLoopProofSource {
     pub(in crate::surface::proof) proof_site: Option<ProofSite>,
     pub(in crate::surface::proof) claim_label: String,
+    /// The `loop` tactic's position among its proof's tactics, as the
+    /// claim's refusals number them.
+    pub(in crate::surface::proof) loop_tactic_index: usize,
     pub(in crate::surface::proof) loop_source_index: usize,
     pub(in crate::surface::proof) initialize_source_index: Option<usize>,
     pub(in crate::surface::proof) preserve_source_index: Option<usize>,
@@ -234,6 +238,7 @@ impl FrontierLoopProofSource {
         clause: &StructuralClause,
         proof_site: Option<ProofSite>,
         claim_label: &str,
+        loop_tactic_index: usize,
         loop_source_index: usize,
     ) -> Self {
         let mut next_source_index = loop_source_index + 1;
@@ -252,11 +257,63 @@ impl FrontierLoopProofSource {
         Self {
             proof_site,
             claim_label: claim_label.to_string(),
+            loop_tactic_index,
             loop_source_index,
             initialize_source_index,
             preserve_source_index,
         }
     }
+
+    /// Restates a refusal from one of this loop's phase proofs at the place
+    /// the user wrote. A phase proof is its own `Proof` whose tactics count
+    /// from zero, so its refusals name `` `claim` tactic 0 ``, which reads as
+    /// the claim's first top-level tactic. The place is the `loop` tactic,
+    /// then the phase: the written phase script's own tactic, or, for the
+    /// steps Click plans itself, what those steps were doing.
+    pub(in crate::surface::proof) fn locate_phase_error(
+        &self,
+        error: ClickError,
+        phase: LoopPhasePlace,
+    ) -> ClickError {
+        let head = format!("`{}` tactic ", self.claim_label);
+        let loop_place = format!("{head}{} (`loop`)", self.loop_tactic_index);
+        error.with_rewritten_place(|message| {
+            let rest = message.strip_prefix(&head)?;
+            let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+            if digits == 0 {
+                return None;
+            }
+            let (inner, rest) = rest.split_at(digits);
+            if !(rest.starts_with(": ") || rest.starts_with(" (")) {
+                return None;
+            }
+            Some(match phase {
+                // A planned step has no written position, so a loop nested
+                // in the body is named by what it is rather than by the
+                // planner's own tactic count.
+                LoopPhasePlace::PlannedPreservation => match rest.strip_prefix(" (`loop`)") {
+                    Some(nested) => format!(
+                        "{loop_place}, preserving the invariants through the loop body, at the nested `loop`{nested}"
+                    ),
+                    None => format!(
+                        "{loop_place}, preserving the invariants through the loop body{rest}"
+                    ),
+                },
+                LoopPhasePlace::Script(name) => {
+                    format!("{loop_place}, `{name}` tactic {inner}{rest}")
+                }
+            })
+        })
+    }
+}
+
+/// Which part of a `loop` tactic a phase proof is.
+#[derive(Clone, Copy)]
+pub(in crate::surface::proof) enum LoopPhasePlace {
+    /// The body steps Click plans for a loop without a written `preserve`.
+    PlannedPreservation,
+    /// A written `initialize` or `preserve` script.
+    Script(&'static str),
 }
 
 #[derive(Clone)]
@@ -656,207 +713,6 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
     pub(in crate::surface::proof) theorem: Theorem,
 }
 
-/// Records the planning evidence for a certified statement transition and
-/// immediately constructs its surface step against the current planning state.
-///
-/// Fact transports that must become standalone surface steps are returned to
-/// the caller instead of being constructed here: their surface form is
-/// resolved against the post-statement state, which does not exist yet at this
-/// call frontier.
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn append_statement_transition_certificate(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    transition: &CertifiedStatementTransition,
-    loop_step_policy: LoopStepPolicy,
-    state: &CState,
-    function_block: &FunctionBlock,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-    mut construction: Option<Construction<'_>>,
-) -> Vec<ConstructionEvidence> {
-    let planned_transition = execution.presentation.planned_statement_transitions.len();
-    let statement_operation = match loop_step_policy {
-        LoopStepPolicy::EnterBody => ConstructionEvidence::CertifiedStatementStep {
-            planned_transition: Some(planned_transition),
-        },
-        LoopStepPolicy::ApplyVerifiedRule => {
-            let mut exact_premises = transition.planning_premises.clone();
-            for transport in &transition.fact_transports {
-                if !transport.statement_local && !exact_premises.contains(&transport.source) {
-                    exact_premises.push(transport.source.clone());
-                }
-                for premise in &transport.frame_premises {
-                    if !exact_premises.contains(premise) {
-                        exact_premises.push(premise.clone());
-                    }
-                }
-            }
-            for obligation in &transition.obligations {
-                if !exact_premises.contains(obligation.proposition()) {
-                    exact_premises.push(obligation.proposition().clone());
-                }
-            }
-            for fact in &transition.path_facts {
-                if execution
-                    .presentation
-                    .surface_record
-                    .certificate_facts
-                    .contains(fact)
-                    && !exact_premises.contains(fact)
-                {
-                    exact_premises.push(fact.clone());
-                }
-            }
-            ConstructionEvidence::CertifiedLoopSummaryStep {
-                prerequisite_derivations: transition.prerequisite_derivations.clone(),
-                exact_premises,
-                planned_transition: Some(planned_transition),
-            }
-        }
-    };
-    execution
-        .presentation
-        .planned_statement_transitions
-        .push(PlannedStatementTransition {
-            transition: transition.clone(),
-            next_opaque_call: execution.core.next_opaque_call,
-            next_kernel_variable: execution.core.kernel_variable_mark(),
-        });
-    if let Some(construction) = construction.as_mut() {
-        let environments = construction.environments;
-        construct_proof_step_for_planned_operation(
-            execution,
-            proof_context,
-            construction.sink,
-            state,
-            function_block,
-            parameters,
-            arguments,
-            environments,
-            &statement_operation,
-        );
-        // Certificate validation carries the pre-statement facts across this
-        // step, adds the transition's path facts, and rewrites
-        // statement-local transports; automatic planning transports stay out
-        // of the certificate-visible set.
-        let certificate_facts = &mut execution.presentation.surface_record.certificate_facts;
-        for fact in &transition.path_facts {
-            certificate_facts.insert(fact.clone());
-        }
-        let local_sources = transition
-            .fact_transports
-            .iter()
-            .filter(|transport| transport.statement_local)
-            .map(|transport| &transport.source)
-            .collect::<Vec<_>>();
-        if !local_sources.is_empty() {
-            certificate_facts.retain(|fact| !local_sources.contains(&fact));
-        }
-        for transport in transition
-            .fact_transports
-            .iter()
-            .filter(|transport| transport.statement_local)
-        {
-            certificate_facts.insert(transport.target.clone());
-        }
-    }
-    // Definedness guards are certified with the statement, so its execution
-    // already carries them to their certified targets.
-    // Other transported facts can still require an explicit surface bridge.
-    let is_evaluator_guard = |fact: &Proposition| {
-        matches!(
-            fact,
-            Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedAddOverflows(_, _)
-                    | ConditionTerm::Bitvector32SignedSubtractOverflows(_, _)
-                    | ConditionTerm::Bitvector32SignedMultiplyOverflows(_, _)
-                    | ConditionTerm::Bitvector32SignedDivideOverflows(_, _)
-                    | ConditionTerm::Bitvector32SignedShiftLeftOverflows(_, _),
-                _
-            )
-        )
-    };
-    let external_transports = transition
-        .fact_transports
-        .iter()
-        .filter(|transport| {
-            !transport.statement_local
-                && !is_evaluator_guard(&transport.source)
-                && transport.source.clone() != transport.target.clone()
-        })
-        .collect::<Vec<_>>();
-    let mut deferred_operations = external_transports
-        .iter()
-        .map(|transport| ConstructionEvidence::CertifiedFactTransport {
-            source: transport.source.clone(),
-            target: transport.target.clone(),
-            theorem: transport.theorem.clone(),
-        })
-        .collect::<Vec<_>>();
-    if !external_transports.is_empty() {
-        deferred_operations.push(ConstructionEvidence::FinishCertifiedFactTransports(
-            external_transports
-                .iter()
-                .map(|transport| transport.source.clone())
-                .collect(),
-        ));
-    }
-    deferred_operations
-}
-
-pub(in crate::surface::proof) fn theorem_implication_premises(
-    theorem: &Theorem,
-) -> Vec<Proposition> {
-    let mut proposition = theorem.proposition();
-    let mut premises = Vec::new();
-    while let Proposition::Implies(premise, body) = proposition {
-        premises.push(premise.as_ref().clone());
-        proposition = body;
-    }
-    premises
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn append_condition_transition_certificate(
-    execution: &mut ExecutionProofState,
-    proof_context: &ExecutionProofContext<'_>,
-    transition: &CertifiedConditionTransition,
-    state: &CState,
-    available: &[Proposition],
-    function_block: &FunctionBlock,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-    mut construction: Option<Construction<'_>>,
-) {
-    let Some(construction) = construction.as_mut() else {
-        return;
-    };
-    let environments = construction.environments;
-    construct_proof_step_for_planned_operation(
-        execution,
-        proof_context,
-        construction.sink,
-        state,
-        function_block,
-        parameters,
-        arguments,
-        environments,
-        &ConstructionEvidence::CertifiedStatementStep {
-            planned_transition: None,
-        },
-    );
-    // A condition step introduces evaluation guards and path facts without
-    // touching memory; extend the certificate-visible set with exactly what this
-    // transition adds over the planning context.
-    let certificate_facts = &mut execution.presentation.surface_record.certificate_facts;
-    for fact in &transition.pure_facts {
-        if !available.contains(fact) {
-            certificate_facts.insert(fact.clone());
-        }
-    }
-}
-
 pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) -> ClickProposition {
     pub(in crate::surface::proof) fn expression(expression: &CExpression) -> ContractExpression {
         substitute_c_fragment_as_contract_with_numerals(expression, &BTreeMap::new(), true)
@@ -871,6 +727,14 @@ pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) ->
         }
     };
     match condition {
+        // Boolean conversion preserves truthiness. Retain the predicate's
+        // ordinary source spelling rather than printing a value-level cast
+        // around a comparison, which has no contract-expression syntax.
+        CExpression::Cast {
+            expression,
+            target_type: CType::Bool,
+            ..
+        } => surface_c_condition(expression),
         CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
         CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
@@ -910,7 +774,6 @@ pub(in crate::surface) enum StatementPrerequisitePolicy {
     /// `step()` uses this boundary; smart execution may answer the refusal by
     /// retaining a checked `have` and retrying the same simple step.
     Retained,
-    Planning,
 }
 
 /// The source-backed retry admits pure condition/logical trees and the
@@ -1186,7 +1049,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_),
             ) => {}
-            Work::Bitvector(term @ Bitvector32Term::MemoryLoad(_, _))
+            Work::Bitvector(term @ Bitvector32Term::MemoryLoad(_, _, _))
                 if static_snapshot.is_some_and(|_| {
                     registered_static_memory_load_matches_snapshot(
                         term,
@@ -1340,12 +1203,6 @@ pub(in crate::surface::proof) enum LoopStepPolicy {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::surface::proof) enum BranchStepPolicy {
-    RequireProven,
-    Explore,
-}
-
-#[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum LoopPreservationSource {
     Automatic,
     ExecutionProof,
@@ -1399,11 +1256,13 @@ mod tests {
             block: crate::kernel::PointerBlock::Concrete("static:test:values#static0".into()),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
-        // The spelled `MemoryLoad` alternative below records no width, so the
-        // named form has to stand in the width that term's naming assumes.
+        // The named form has to be the same read as the spelled `MemoryLoad`
+        // alternative below: its kind, and the width that term's naming
+        // walks with.
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&memory, &pointer),
             &memory,
         );
@@ -1429,6 +1288,7 @@ mod tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(0)),
             ),
@@ -1451,6 +1311,7 @@ mod tests {
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &dynamic_pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&memory, &dynamic_pointer),
             &memory,
         );
@@ -1709,5 +1570,32 @@ mod tests {
         assert!(
             !source_backed_requirement_should_intercept(&obligation, &different_epoch,).unwrap()
         );
+    }
+}
+
+#[cfg(test)]
+mod boolean_guard_tests {
+    use super::*;
+
+    #[test]
+    fn boolean_cast_guards_retain_the_underlying_source_predicate() {
+        for condition in [
+            crate::kernel::c_greater_than(
+                crate::kernel::c_variable("n"),
+                crate::kernel::c_int32_literal(0),
+            ),
+            crate::kernel::c_variable("n"),
+        ] {
+            let converted = crate::kernel::c_cast(condition.clone(), CType::Bool);
+            assert_eq!(
+                surface_c_condition(&converted),
+                surface_c_condition(&condition)
+            );
+            let nested = crate::kernel::c_cast(converted, CType::Bool);
+            assert_eq!(
+                surface_c_condition(&nested),
+                surface_c_condition(&condition)
+            );
+        }
     }
 }

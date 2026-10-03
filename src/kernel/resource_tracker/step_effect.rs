@@ -424,6 +424,27 @@ fn cell_effect(
                 assumptions,
             ) {
                 hop(MemoryDagHopJustification::CallHavocRanges { ranges })
+            } else if let Some((range, first, last)) = kept_by_caller.as_ref().and_then(|kept| {
+                let range = kept.range_holding(assumptions, None, pointer, bytes)?;
+                let width = range.element_width();
+                if width == 0 || bytes == 0 || !bytes.is_multiple_of(width) {
+                    return None;
+                }
+                let first = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    pointer,
+                    range,
+                    assumptions,
+                )?;
+                let last_pointer =
+                    pointer.offset_by_elements(Bitvector32Term::Constant(bytes / width - 1), width);
+                let last = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    &last_pointer,
+                    range,
+                    assumptions,
+                )?;
+                Some((range.clone(), first, last))
+            }) {
+                hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
             } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
                 mutable_ranges,
                 pointer,
@@ -498,20 +519,7 @@ fn store_cell_effect(
     let hop = |justification| StepEffect::Separate(Separation::Cell(justification));
     let unknown =
         || StepEffect::NotShownSeparate(separation_check(step, Resource::Cell { pointer, bytes }));
-    if write == pointer
-        || explicit_dag_check_active()
-            && write.block == pointer.block
-            && pointer_offsets_match_from_memory_derivations(
-                &write.offset,
-                &pointer.offset,
-                assumptions,
-            )
-        || write.block == pointer.block
-            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
-                write.offset.clone(),
-                pointer.offset.clone(),
-            )) == Some(true)
-    {
+    if write_is_at_read_address(write, pointer, assumptions) {
         return StepEffect::Affected;
     }
     // The ladders below prove the two ADDRESSES are different. That
@@ -605,6 +613,31 @@ fn store_cell_effect(
     } else {
         unknown()
     }
+}
+
+/// Whether a write's address is provably the read's own address: the first
+/// rung of the `Store` arm of [`cell_effect`], and the address half of
+/// [`super::cell_source::write_supplies_read`]. Overlapping bytes are a
+/// different, weaker fact — a store can reach a read without starting where
+/// it starts.
+pub(in crate::kernel) fn write_is_at_read_address(
+    write: &Pointer,
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    write == pointer
+        || explicit_dag_check_active()
+            && write.block == pointer.block
+            && pointer_offsets_match_from_memory_derivations(
+                &write.offset,
+                &pointer.offset,
+                assumptions,
+            )
+        || write.block == pointer.block
+            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+                write.offset.clone(),
+                pointer.offset.clone(),
+            )) == Some(true)
 }
 
 /// What a `CellsSeeded` edge does to one cell.

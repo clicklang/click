@@ -2,6 +2,8 @@ use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result<(), ClickError> {
+    // A failure before the first declaration belongs to none of them.
+    crate::surface::clear_ambient_proof_source();
     validate_algebraic_type_declarations(file)?;
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
@@ -10,6 +12,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut predicates = BTreeMap::new();
     for definition in &predicate_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         reject_held_outside_execution(
             definition.body(),
             &format!("predicate `{}`", definition.name()),
@@ -48,6 +51,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut contracts = BTreeMap::new();
     for definition in file.contract_definitions() {
+        crate::surface::enter_ambient_declaration(definition.name());
         if matches!(
             definition.name(),
             "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
@@ -91,6 +95,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let mut click_functions = BTreeMap::new();
     let mut click_function_types = BTreeMap::new();
     for definition in &click_function_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         generics::validate_type_parameter_list(
             "function",
             definition.name(),
@@ -136,6 +141,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut resources = BTreeMap::new();
     for definition in &resource_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         if matches!(definition.name(), "read" | "write") {
             return Err(ClickError::new(format!(
                 "`{}` is a built-in resource name",
@@ -188,6 +194,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut theorems = BTreeMap::new();
     for definition in &theorem_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         generics::validate_type_parameter_list(
             "theorem",
             definition.name(),
@@ -248,6 +255,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| (definition.name(), definition))
         .collect::<BTreeMap<_, _>>();
     for definition in &resource_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         validate_resource_definition(
             definition,
             &resource_definition_map,
@@ -266,6 +274,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     reject_composite_resource_cycles(&resource_definitions)?;
 
     for definition in &predicate_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         let variables = definition
             .parameters()
             .iter()
@@ -293,6 +302,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut function_calls = BTreeMap::new();
     for definition in &click_function_definitions {
+        crate::surface::enter_ambient_declaration(definition.name());
         validate_click_function_expression(
             definition.body(),
             &click_functions,
@@ -309,6 +319,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     )?;
 
     for theorem in &theorem_definitions {
+        crate::surface::enter_ambient_declaration(theorem.name());
         validate_theorem_definition(
             theorem,
             &proposition_calls,
@@ -326,6 +337,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 
     let mut function_specs = BTreeSet::new();
     for definition in file.contract_definitions() {
+        crate::surface::enter_ambient_declaration(definition.name());
         let variables =
             function_signature_type_environment(definition.function_block().signature(), false);
         for parameter in definition.proof_parameters().unwrap_or(&[]) {
@@ -375,6 +387,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .collect::<Vec<_>>();
     contract_and_function_blocks.extend(combined_external_function_blocks(file)?);
     for function in contract_and_function_blocks {
+        crate::surface::enter_ambient_declaration(function.signature().name());
         if !function_specs.insert(function.signature().name().to_string()) {
             return Err(ClickError::new(format!(
                 "duplicate contract or C function spec `{}`",
@@ -402,7 +415,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             function
                 .requires()
                 .iter()
-                .filter_map(|requirement| match requirement.inner() {
+                .filter_map(|requirement| match requirement {
                     Requirement::Resource(resource) => Some(resource),
                     _ => None,
                 }),
@@ -453,16 +466,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
-        let mut requirement_labels = BTreeSet::new();
         for requirement in function.requires() {
-            if let Some(label) = requirement.label()
-                && !requirement_labels.insert(label.to_string())
-            {
-                return Err(ClickError::new(format!(
-                    "duplicate requirement label `{label}` in `{}`",
-                    function.signature().name()
-                )));
-            }
             if let Some(proposition) = requirement.proposition() {
                 let context = format!("requires clause in `{}`", function.signature().name());
                 reject_held_outside_execution(proposition, &context)?;
@@ -479,7 +483,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     &click_function_types,
                     &context,
                 )?;
-            } else if let Requirement::Resource(resource) = requirement.inner() {
+            } else if let Requirement::Resource(resource) = requirement {
                 validate_resource_clause(
                     resource,
                     &resources,
@@ -575,6 +579,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         }
     }
 
+    crate::surface::clear_ambient_proof_source();
     Ok(())
 }
 
@@ -840,16 +845,7 @@ fn validate_theorem_definition(
     }
 
     let variables = theorem_type_environment(theorem);
-    let mut requirement_labels = BTreeSet::new();
     for requirement in theorem.requires() {
-        if let Some(label) = requirement.label()
-            && !requirement_labels.insert(label.to_string())
-        {
-            return Err(ClickError::new(format!(
-                "duplicate requirement label `{label}` in theorem `{}`",
-                theorem.name()
-            )));
-        }
         let Some(proposition) = requirement.theorem_proposition() else {
             return Err(ClickError::new(theorem_resource_clause_refusal(
                 theorem.name(),
@@ -1295,7 +1291,7 @@ fn validate_iterated_resource_clauses(
         .map_err(|error| {
             ClickError::new(format!(
                 "{context}: the guard must read only cells the same body owns, so that it cannot change while the resource is folded\n{}",
-                error.message()
+                error.raw_summary()
             ))
         })?;
     }

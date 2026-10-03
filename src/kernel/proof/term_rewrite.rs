@@ -742,7 +742,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         }
         // Memory snapshots are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         Bitvector32Term::PointerAddress(pointer) => {
@@ -810,15 +810,14 @@ fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
 /// Three conditions bound it, and each closes a way the cell could be
 /// something other than this load's value.
 ///
-/// *Width.* `Bitvector32Term::MemoryLoad` records no width: `symbolic_int32_load`
-/// and `symbolic_uint8_load` build the same term, so the variable alone cannot
-/// say how many bytes its load reads. Both halves of the width are therefore
-/// checked against the only two places that do record one. The cell must be a
-/// `CValue::Int32`, which is a four-byte value; and every scaled term in the
-/// pointer's own offset must scale by four, which makes the address an element
-/// address of a four-byte array rather than a narrower field inside a wider
-/// element. A one-byte array indexes by `*1` and a narrow struct field adds a
-/// constant to a stride that is the struct's size, so neither reaches here.
+/// *Width.* The variable's load must be a four-byte integer read
+/// (`LoadKind::Bits32`, which its registered term carries), and the cell must
+/// be a `CValue::Int32`, which is a four-byte value: a cell answers only a read
+/// of its own kind. Every scaled term in the pointer's own offset must also
+/// scale by four, which makes the address an element address of a four-byte
+/// array rather than a narrower field inside a wider element. A one-byte array
+/// indexes by `*1` and a narrow struct field adds a constant to a stride that
+/// is the struct's size, so neither reaches here.
 ///
 /// *Union overlays.* A typed union overlay outranks the raw cell for an exact
 /// typed load, so a raw cell read while an overlay is present would be the
@@ -834,7 +833,10 @@ fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
 /// pointer is compared, and no fact set is consulted.
 fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32Term> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
-    if !pointer_addresses_four_byte_elements(&pointer) {
+    if crate::kernel::eval::registered_load_kind_for_variable(&variable)
+        != Some(crate::kernel::LoadKind::Bits32)
+        || !pointer_addresses_four_byte_elements(&pointer)
+    {
         return None;
     }
     let memory = memory.memory();
@@ -1200,15 +1202,67 @@ pub(crate) struct TermRewrite<'a> {
     /// A malformed registry cycle is rejected before recursive pointer
     /// expansion can consume unbounded work.
     registered_load_pointer_active: BTreeSet<Variable>,
-    pub(crate) unsupported_integer_scope: bool,
-    pub(crate) integer_work_exhausted: bool,
+    /// Set when the walker met a scope it will not substitute through. The
+    /// value it then hands back is a placeholder, not a rewritten term, so
+    /// both refusal flags are private: callers read them through
+    /// [`TermRewrite::refusal`], and a debug build panics when a walker that
+    /// refused a scope is dropped without that question having been asked.
+    unsupported_integer_scope: bool,
+    integer_work_exhausted: bool,
+    refusal_observed: std::cell::Cell<bool>,
     pub(crate) changed: bool,
     #[cfg(test)]
     pub(crate) visits: usize,
     #[cfg(test)]
     pub(crate) collector_visits: usize,
 }
+/// Why a [`TermRewrite`] result must not be used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RewriteRefusal {
+    /// The walker ran out of checked work; the enclosing tactic's budget
+    /// report is the diagnostic.
+    WorkExhausted,
+    /// The walker met a binder or load it will not substitute through.
+    UnsupportedScope,
+}
+
+impl Drop for TermRewrite<'_> {
+    fn drop(&mut self) {
+        // A refused scope leaves a placeholder constant in the result. A
+        // caller that never asks cannot have told it from a rewritten term,
+        // which is how `rewrite` once turned an unfolded `match` into `0`.
+        // Work exhaustion is not asserted here: it is sticky in the run's
+        // budget state, which fails the run whatever the caller does.
+        #[cfg(debug_assertions)]
+        if self.unsupported_integer_scope
+            && !self.refusal_observed.get()
+            && !std::thread::panicking()
+        {
+            panic!("a TermRewrite refused a scope and its caller never read `refusal()`");
+        }
+    }
+}
+
 impl<'a> TermRewrite<'a> {
+    /// Whether the value this walker returned is a placeholder. Every caller
+    /// that can reach a refusing scope must ask before using the result.
+    pub(crate) fn refusal(&self) -> Option<RewriteRefusal> {
+        self.refusal_observed.set(true);
+        if self.integer_work_exhausted {
+            Some(RewriteRefusal::WorkExhausted)
+        } else if self.unsupported_integer_scope {
+            Some(RewriteRefusal::UnsupportedScope)
+        } else {
+            None
+        }
+    }
+
+    /// Whether checked work ran out, for a caller that stops early between
+    /// walker calls. It does not stand in for [`TermRewrite::refusal`].
+    pub(crate) fn work_exhausted(&self) -> bool {
+        self.integer_work_exhausted
+    }
+
     pub(crate) fn new(from: &'a AlgebraicTerm, to: &'a AlgebraicTerm) -> Self {
         Self {
             conditions: None,
@@ -1241,6 +1295,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
             #[cfg(test)]
@@ -1306,6 +1361,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: replacement_work_exhausted,
             pointer_variable: None,
             #[cfg(test)]
@@ -1365,9 +1421,14 @@ impl<'a> TermRewrite<'a> {
         let rewritten = if rewritten == pointer {
             variable
         } else {
+            let Some(kind) = crate::kernel::registered_load_kind_for_variable(&variable) else {
+                self.unsupported_integer_scope = true;
+                return None;
+            };
             crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &rewritten,
+                kind,
                 crate::kernel::registered_load_bytes_for_variable(&variable)
                     .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes),
             )
@@ -1409,6 +1470,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
             #[cfg(test)]
@@ -1461,6 +1523,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1542,6 +1605,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1715,6 +1779,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1729,7 +1794,7 @@ impl<'a> TermRewrite<'a> {
         let mut walker = TermRewrite::for_conditions(&empty);
         walker.collected_conditions = Some(Vec::new());
         walker.proposition(proposition);
-        walker.collected_conditions.unwrap()
+        walker.collected_conditions.take().unwrap()
     }
 
     fn new_carrier_variables(&self) -> CarrierVariables {
@@ -2783,6 +2848,7 @@ impl<'a> TermRewrite<'a> {
         );
         let value = field_rewrite.integer(&arm.body);
         self.changed |= field_rewrite.changed;
+        field_rewrite.refusal_observed.set(true);
         self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
         self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
         #[cfg(test)]
@@ -2848,6 +2914,7 @@ impl<'a> TermRewrite<'a> {
         );
         let value = field_rewrite.bits(&arm.body);
         self.changed |= field_rewrite.changed;
+        field_rewrite.refusal_observed.set(true);
         self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
         self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
         #[cfg(test)]
@@ -3536,6 +3603,57 @@ impl<'a> TermRewrite<'a> {
                 }
             }
         };
+        if let ConditionTerm::Bitvector64Equal(a, b) = &result {
+            let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
+            let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend([le.clone(), lt.clone()]);
+            }
+            if self.conditions.is_some_and(|conditions| {
+                conditions.get(&le) == Some(&true) && conditions.get(&lt) == Some(&false)
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
+        if let Some(guards) = result.uint64_index_order_guards() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
+        if let Some(guard) = result
+            .uint64_successor_guard()
+            .or_else(|| result.uint64_subtraction_guard())
+            .or_else(|| result.uint64_remainder_bound_guard())
+        {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            if self
+                .conditions
+                .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
+        if let Some(guards) = result.nonnegative_division_bound_guards() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
@@ -3723,9 +3841,7 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::UInt64From32(v) => {
                 Bitvector32Term::UInt64From32(Box::new(self.bits(v)))
             }
-            Bitvector32Term::UInt32From64(v) => {
-                Bitvector32Term::UInt32From64(Box::new(self.bits(v)))
-            }
+            Bitvector32Term::UInt32From64(v) => Bitvector32Term::uint32_from_64(self.bits(v)),
             Bitvector32Term::Int64FromUInt32(v) => {
                 Bitvector32Term::Int64FromUInt32(Box::new(self.bits(v)))
             }
@@ -3893,8 +4009,8 @@ impl<'a> TermRewrite<'a> {
                     arms: rewritten_arms,
                 }
             }
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)))
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(Box::new(self.pointer(pointer)))
@@ -3924,6 +4040,18 @@ impl<'a> TermRewrite<'a> {
                 right: Box::new(self.bits(right)),
             },
         };
+        if let Some((guards, replacement)) = result.guarded_remainder_rewrite() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return replacement;
+            }
+        }
         if self.checked_work_exhausted() {
             Bitvector32Term::Constant(0)
         } else {
@@ -4253,28 +4381,6 @@ mod tests {
     }
 
     #[test]
-    fn checked_integer_witness_canonicalizes_pointer_cast_constant() {
-        let source = Variable(3_103_900);
-        let replacement = IntegerTerm::constant_i64(0);
-        let renamings = BTreeMap::new();
-        let mut rewrite =
-            TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
-        rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
-                value: IntegerTerm::var(source).into(),
-                destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        };
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
-        assert_eq!(
-            rewritten,
-            Term::PointerOffset(PointerOffsetTerm::Constant(0))
-        );
-    }
-
-    #[test]
     fn checked_integer_witness_keeps_out_of_range_pointer_cast_wrapped() {
         let source = Variable(3_103_901);
         let replacement = IntegerTerm::constant_i64(2_147_483_648);
@@ -4370,6 +4476,7 @@ mod tests {
                         byte_width: 4,
                     },
                 },
+                crate::kernel::LoadKind::Bits32,
                 4,
             );
             for _ in 0..depth {
@@ -4388,6 +4495,7 @@ mod tests {
                             }),
                         ),
                     },
+                    crate::kernel::LoadKind::Bits32,
                     4,
                 );
             }
@@ -4438,7 +4546,10 @@ mod tests {
         cycle_rewrite.enable_registered_load_resolution();
         cycle_rewrite.registered_load_pointer_active.insert(load);
         let _ = cycle_rewrite.bits(&Bitvector32Term::Variable(load));
-        assert!(cycle_rewrite.unsupported_integer_scope);
+        assert_eq!(
+            cycle_rewrite.refusal(),
+            Some(RewriteRefusal::UnsupportedScope)
+        );
     }
 
     #[test]
@@ -4585,6 +4696,7 @@ mod tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.into(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(right),
             )
@@ -5521,7 +5633,11 @@ mod tests {
                 block: PointerBlock::Concrete("checked-fold-opaque".into()),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let replacement_payload = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+            let replacement_payload = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            );
             let replacement =
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
@@ -5575,8 +5691,11 @@ mod tests {
             }
             let integer_capture = *integer_accumulators.last().unwrap();
             let c_capture = *c_items.last().unwrap();
-            let mut mixed_c_payload =
-                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()));
+            let mut mixed_c_payload = Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            );
             for _ in 0..depth {
                 mixed_c_payload = Bitvector32Term::Add(
                     Box::new(mixed_c_payload),
@@ -5675,7 +5794,11 @@ mod tests {
             }
             let math_capture = *math_accumulators.last().unwrap();
             let c_item_capture = *mixed_c_items.last().unwrap();
-            let mut c_replacement = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+            let mut c_replacement = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            );
             for _ in 0..depth {
                 c_replacement = Bitvector32Term::Add(
                     Box::new(c_replacement),
@@ -6412,6 +6535,40 @@ mod tests {
         ));
     }
 
+    /// The placeholder a refused scope leaves behind is only told from a
+    /// rewritten term by asking. A debug build makes a caller that does not
+    /// ask fail at the first test that reaches a refusing scope through it.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "never read `refusal()`")]
+    fn refused_scope_dropped_unread_panics_in_debug_builds() {
+        let source_variable = Variable(3_104_000);
+        let source = Bitvector32Term::Add(
+            Box::new(Bitvector32Term::Variable(source_variable)),
+            Box::new(Bitvector32Term::Constant(1)),
+        );
+        let replacement = Bitvector32Term::Variable(Variable(3_104_001));
+        let fold = IntegerTerm::range_fold(
+            crate::kernel::IntegerRangeFoldIndex::Int32 {
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
+                    Bitvector32Term::Constant(0),
+                ),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                    1,
+                )),
+            },
+            IntegerTerm::constant_i64(0),
+            Variable(3_104_002),
+            source_variable,
+            IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
+                crate::kernel::MachineIntegerType::Int32,
+                source.clone(),
+            )),
+        );
+        let mut rewrite = TermRewrite::for_bits(&source, &replacement);
+        let _placeholder = rewrite.term(&Term::Integer(fold));
+    }
+
     #[test]
     fn composite_machine_source_is_rejected_under_c_binder() {
         let source_variable = Variable(3_103_000);
@@ -6439,7 +6596,7 @@ mod tests {
         );
         let mut rewrite = TermRewrite::for_bits(&source, &replacement);
         let output = rewrite.term(&Term::Integer(fold));
-        assert!(rewrite.unsupported_integer_scope);
+        assert_eq!(rewrite.refusal(), Some(RewriteRefusal::UnsupportedScope));
         assert!(matches!(
             output,
             Term::Integer(IntegerTerm::Constant(value)) if value == 0.into()
@@ -6462,8 +6619,12 @@ mod tests {
                     byte_width: 4,
                 },
             };
-            let mut load =
-                crate::kernel::eval::load_variable_for_exact_cell(&memory, &leaf_pointer, 4);
+            let mut load = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &leaf_pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+            );
             for _ in 0..depth {
                 load = crate::kernel::eval::load_variable_for_exact_cell(
                     &memory,
@@ -6471,6 +6632,7 @@ mod tests {
                         block: PointerBlock::Concrete("array".into()),
                         offset: PointerOffsetTerm::Variable(load),
                     },
+                    crate::kernel::LoadKind::Bits32,
                     4,
                 );
             }

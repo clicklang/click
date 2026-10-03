@@ -23,6 +23,7 @@ struct DeclaredResourceInfo {
 /// records the parent's family provisionally and the slot decides the real
 /// one here.
 struct DeclaredResourceScope {
+    authority_mode: bool,
     definitions: BTreeMap<String, DeclaredResourceInfo>,
     /// Instances introduced as matched-arm children, by identity. These
     /// override whatever family the parser recorded.
@@ -176,8 +177,17 @@ fn matched_arm_child_slots(definition: &ResourceDefinition) -> BTreeMap<String, 
 }
 
 pub(in crate::surface) fn expand_declared_resource_clauses(
-    mut file: ClickFile,
+    file: ClickFile,
 ) -> Result<ClickFile, ClickError> {
+    expand_declared_resource_clauses_with_semantics(file, ResourceSemanticsMode::Legacy)
+}
+
+pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
+    mut file: ClickFile,
+    semantics: ResourceSemanticsMode,
+) -> Result<ClickFile, ClickError> {
+    // A failure before the first declaration belongs to none of them.
+    crate::surface::clear_ambient_proof_source();
     let mut resource_definitions = file
         .resource_definitions()
         .iter()
@@ -272,6 +282,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         },
     );
     let resource_definitions = DeclaredResourceScope {
+        authority_mode: semantics == ResourceSemanticsMode::Authority,
         definitions: resource_definitions,
         children: Default::default(),
         instances: Default::default(),
@@ -318,8 +329,15 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
     for function in &mut file.function_blocks {
         expand_declared_resources_in_function_block(function, &resource_definitions)?;
     }
+    for tactic in &mut file.tactic_definitions {
+        expand_declared_resources_in_function_block(
+            tactic.function_block_mut(),
+            &resource_definitions,
+        )?;
+    }
 
     for theorem in &mut file.theorem_definitions {
+        crate::surface::enter_ambient_declaration(theorem.name());
         theorem.requires = theorem
             .requires
             .drain(..)
@@ -334,6 +352,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
             .collect::<Result<Vec<_>, _>>()?;
     }
 
+    crate::surface::clear_ambient_proof_source();
     Ok(file)
 }
 
@@ -341,10 +360,11 @@ fn expand_declared_resources_in_function_block(
     function: &mut FunctionBlock,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(), ClickError> {
+    crate::surface::enter_ambient_declaration(function.signature().name());
     let declared_binders = function
         .requires
         .iter()
-        .filter_map(|requirement| match requirement.inner() {
+        .filter_map(|requirement| match requirement {
             Requirement::Resource(ResourceClause::Named { binding, .. }) => {
                 Some(binding.name.clone())
             }
@@ -399,6 +419,7 @@ fn expand_declared_resource_definition(
     mut definition: ResourceDefinition,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceDefinition, ClickError> {
+    crate::surface::enter_ambient_declaration(definition.name());
     if !definition.resource_parameters.is_empty() && definition.fields().is_empty() {
         return Err(ClickError::new(
             "resource parameters currently require a resource with fields",
@@ -502,13 +523,6 @@ fn expand_declared_resource_requirement(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<Requirement, ClickError> {
     match requirement {
-        Requirement::Labeled { label, requirement } => Ok(Requirement::Labeled {
-            label,
-            requirement: Box::new(expand_declared_resource_requirement(
-                *requirement,
-                resource_definitions,
-            )?),
-        }),
         Requirement::Proposition(ClickProposition::PredicateCall { name, arguments })
             if resource_definitions.contains_key(&name) =>
         {
@@ -778,6 +792,18 @@ fn expand_declared_resource_certificate(
                 .into_iter()
                 .map(|node| {
                     Ok(match node {
+                        SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
+                            SpecialArithmeticNode::IntegerProductBounds {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
+                        SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
+                            SpecialArithmeticNode::UnsignedSumBound {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::SignedDefined {
                             width,
                             bounds,
@@ -1616,6 +1642,33 @@ fn expand_declared_resource_clause(
     }
 }
 
+fn declared_resource_type_schema(
+    info: &DeclaredResourceInfo,
+) -> Result<crate::kernel::ResourceFieldSchema, ClickError> {
+    let mut fields = info
+        .fields
+        .iter()
+        .map(|(name, (index, ty))| {
+            let ty = match ty {
+                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
+                _ => {
+                    return Err(ClickError::new(
+                        "protected resource types currently require C or integer model fields",
+                    ));
+                }
+            };
+            Ok((*index, name.clone(), ty))
+        })
+        .collect::<Result<Vec<_>, ClickError>>()?;
+    fields.sort_by_key(|(index, _, _)| *index);
+    let schema = crate::kernel::ResourceFieldSchema::new(
+        fields.into_iter().map(|(_, name, ty)| (name, ty)).collect(),
+    )
+    .ok_or_else(|| ClickError::new("invalid protected resource field schema"))?;
+    Ok(schema)
+}
+
 fn expand_resource_type_arguments(
     name: &str,
     arguments: Vec<ResourceClause>,
@@ -1635,39 +1688,63 @@ fn expand_resource_type_arguments(
             "resource `{name}` does not accept these resource type arguments"
         )));
     }
-    arguments.into_iter().map(|argument| {
-        let ResourceClause::Declared { access, name, arguments, resource_arguments, resource_type_arguments, .. } = argument else {
-            return Err(ClickError::new("expected a declared resource type"));
-        };
-        if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() || matches!(name.as_str(), "mutex_live" | "mutex_use" | "mutex_guard" | "authority") {
-            return Err(ClickError::new("protected resource types currently require ordinary value arguments"));
-        }
-        let info = declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
-        if is_authority && (arguments.len() != 1
-            || !info.parameter_types[0].is_pointer()
-            || info.has_fields
-            || access != ResourceAccessMode::Own
-            || arguments.iter().any(|argument| matches!(argument, ContractExpression::ResourceWildcard)))
-        {
-            return Err(ClickError::new("authority requires an exact unary field-free resource type with one pointer argument"));
-        }
-        let mut fields = info.fields.iter().map(|(name, (index, ty))| {
-            let ty = match ty {
-                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
-                ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
-                _ => return Err(ClickError::new("protected resource types currently require C or integer model fields")),
+    arguments
+        .into_iter()
+        .map(|argument| {
+            let ResourceClause::Declared {
+                access,
+                name,
+                arguments,
+                resource_arguments,
+                resource_type_arguments,
+                ..
+            } = argument
+            else {
+                return Err(ClickError::new("expected a declared resource type"));
             };
-            Ok((*index, name.clone(), ty))
-        }).collect::<Result<Vec<_>, ClickError>>()?;
-        fields.sort_by_key(|(index, _, _)| *index);
-        let schema = crate::kernel::ResourceFieldSchema::new(fields.into_iter().map(|(_, name, ty)| (name, ty)).collect()).ok_or_else(|| ClickError::new("invalid protected resource field schema"))?;
-        Ok(ResourceClause::Declared {
-            type_schema: Some(schema),
-            access, name, kind: info.kind, parameter_types: info.parameter_types,
-            arguments: arguments.into_iter().map(|arg| expand_declared_resource_expression(arg, definitions)).collect::<Result<_,_>>()?,
-            resource_arguments, resource_type_arguments,
+            if !resource_arguments.is_empty()
+                || !resource_type_arguments.is_empty()
+                || matches!(
+                    name.as_str(),
+                    "mutex_live" | "mutex_use" | "mutex_guard" | "authority"
+                )
+            {
+                return Err(ClickError::new(
+                    "protected resource types currently require ordinary value arguments",
+                ));
+            }
+            let info =
+                declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
+            if is_authority
+                && (arguments.is_empty()
+                    || !info.parameter_types[0].is_pointer()
+                    || access != ResourceAccessMode::Own
+                    || matches!(arguments[0], ContractExpression::ResourceWildcard)
+                    || arguments
+                        .iter()
+                        .skip(1)
+                        .any(|argument| !matches!(argument, ContractExpression::ResourceWildcard)))
+            {
+                return Err(ClickError::new(
+                    "authority requires R(anchor) or R(anchor, _, ...) with a pointer anchor",
+                ));
+            }
+            let schema = declared_resource_type_schema(&info)?;
+            Ok(ResourceClause::Declared {
+                type_schema: Some(schema),
+                access,
+                name,
+                kind: info.kind,
+                parameter_types: info.parameter_types,
+                arguments: arguments
+                    .into_iter()
+                    .map(|arg| expand_declared_resource_expression(arg, definitions))
+                    .collect::<Result<_, _>>()?,
+                resource_arguments,
+                resource_type_arguments,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn expand_declared_resource_subject(
@@ -2184,6 +2261,47 @@ fn expand_declared_resource_expression_node(
             Ok(ContractExpression::ResourceField(access))
         }
         ContractExpression::ResourceCount(resource) => {
+            if resource_definitions.authority_mode
+                && let ResourceClause::Declared {
+                    name,
+                    arguments,
+                    resource_arguments,
+                    resource_type_arguments,
+                    access,
+                    ..
+                } = resource.as_ref()
+                && resource_definitions
+                    .get(name)
+                    .is_some_and(|info| info.has_fields)
+            {
+                let info = declared_resource_info_with_fields(
+                    name,
+                    arguments.len(),
+                    resource_definitions,
+                    true,
+                )?;
+                if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() {
+                    return Err(ClickError::new("count requires ordinary value arguments"));
+                }
+                return Ok(ContractExpression::ResourceCount(Box::new(
+                    ResourceClause::Declared {
+                        type_schema: Some(declared_resource_type_schema(&info)?),
+                        kind: info.kind,
+                        parameter_types: info.parameter_types,
+                        name: name.clone(),
+                        arguments: arguments
+                            .iter()
+                            .cloned()
+                            .map(|argument| {
+                                expand_declared_resource_expression(argument, resource_definitions)
+                            })
+                            .collect::<Result<_, _>>()?,
+                        resource_arguments: resource_arguments.clone(),
+                        resource_type_arguments: resource_type_arguments.clone(),
+                        access: *access,
+                    },
+                )));
+            }
             reject_counted_field_resource(&resource, resource_definitions)?;
             let resource = expand_declared_resource_clause(*resource, resource_definitions)?;
             Ok(ContractExpression::ResourceCount(Box::new(resource)))

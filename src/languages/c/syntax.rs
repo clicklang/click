@@ -1472,6 +1472,170 @@ impl C0ArrayInitializer {
     }
 }
 
+/// The zero stores an automatic array's initializer makes into every one of
+/// its elements before the elements it writes: `count` elements `stride`
+/// bytes apart, each receiving the typed stores `cells` spell for element 0,
+/// as `(offset, value type, pointee qualification, zero initializer)`,
+/// ascending by offset. The declaration carries this instead of one store
+/// per element, so `int32 buf[1000000] = {0};` costs its element's cells.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct C0ZeroFill {
+    stride: u32,
+    count: u32,
+    cells: std::sync::Arc<[(u32, C0Type, bool, C0Expression)]>,
+}
+
+impl C0ZeroFill {
+    /// The zero stores of element 0 of a `count`-element array, recovered
+    /// from `stores`, which the caller spelled into the element at
+    /// `C0Expression::Variable(base)`. `None` unless every store is a typed
+    /// store of a literal at a constant byte offset from that base, so the
+    /// fill stands for exactly the stores the caller would otherwise emit.
+    fn from_element_stores(
+        base: &str,
+        stride: u32,
+        count: u32,
+        stores: &[C0Statement],
+    ) -> Option<Self> {
+        let mut cells = stores
+            .iter()
+            .map(|store| {
+                let (offset, value_type, pointee_constant, value) = typed_store_at(base, store)?;
+                (offset < stride
+                    && matches!(
+                        value.to_kernel_expression(),
+                        crate::kernel::CExpression::Value(_)
+                    ))
+                .then(|| (offset, value_type, pointee_constant, value.clone()))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        cells.sort_by_key(|(offset, ..)| *offset);
+        Some(Self {
+            stride,
+            count,
+            cells: cells.into(),
+        })
+    }
+
+    /// `stores` without each one this fill already makes: a typed store at
+    /// a constant offset from `base` spelled exactly as the fill's zero store
+    /// at that offset within its element, which would leave the cell the
+    /// fill left. A store at an offset another of `stores` also writes is
+    /// kept, so the order of the two is kept too.
+    fn without_its_own_stores(&self, base: &str, stores: Vec<C0Statement>) -> Vec<C0Statement> {
+        let mut writes = BTreeMap::<u32, usize>::new();
+        for store in &stores {
+            if let Some((offset, ..)) = typed_store_at(base, store) {
+                *writes.entry(offset).or_default() += 1;
+            }
+        }
+        stores
+            .into_iter()
+            .filter(|store| {
+                let Some((offset, value_type, pointee_constant, value)) =
+                    typed_store_at(base, store)
+                else {
+                    return true;
+                };
+                let within = offset % self.stride;
+                !(writes[&offset] == 1
+                    && offset / self.stride < self.count
+                    && self
+                        .cells
+                        .binary_search_by_key(&within, |(offset, ..)| *offset)
+                        .is_ok_and(|position| {
+                            let (_, cell_type, cell_constant, zero) = &self.cells[position];
+                            *cell_type == value_type
+                                && *cell_constant == pointee_constant
+                                && zero == value
+                        }))
+            })
+            .collect()
+    }
+
+    fn to_kernel(&self) -> crate::kernel::CZeroFill {
+        crate::kernel::CZeroFill::new(
+            self.stride,
+            self.count,
+            self.cells
+                .iter()
+                .map(|(offset, value_type, pointee_constant, zero)| {
+                    let crate::kernel::CExpression::Value(zero) = zero.to_kernel_expression()
+                    else {
+                        unreachable!("a zero fill holds only literal zero initializers")
+                    };
+                    crate::kernel::CZeroCell::new(
+                        *offset,
+                        value_type.to_kernel_type(),
+                        *pointee_constant,
+                        zero,
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+/// A typed store into the object named `base` at a constant byte offset
+/// from it: the offset, the stored type, its pointee qualification and the
+/// stored expression. `None` for any other statement.
+fn typed_store_at<'a>(
+    base: &str,
+    store: &'a C0Statement,
+) -> Option<(u32, C0Type, bool, &'a C0Expression)> {
+    let C0Statement::Store {
+        pointer,
+        value,
+        value_type: Some(value_type),
+        pointee_constant,
+        ..
+    } = store
+    else {
+        return None;
+    };
+    let mut offset = 0u32;
+    let mut pointer = pointer;
+    loop {
+        match pointer {
+            C0Expression::Variable(name) if name == base => break,
+            C0Expression::PointerOffsetBytes {
+                pointer: inner,
+                bytes,
+            } => {
+                offset = offset.checked_add(*bytes)?;
+                pointer = inner;
+            }
+            // Only the element store `base + index` of a scalar array, whose
+            // index scales by the stored element type.
+            C0Expression::Add(inner, index) if matches!(inner.as_ref(), C0Expression::Variable(name) if name == base) =>
+            {
+                let C0Expression::Int32Literal(index) = index.as_ref() else {
+                    return None;
+                };
+                offset = offset.checked_add(index.checked_mul(value_type.abi_size_bytes())?)?;
+                pointer = inner;
+            }
+            _ => return None,
+        }
+    }
+    Some((offset, *value_type, *pointee_constant, value))
+}
+
+/// Whether no initializer expression in `stores` names the object `base`
+/// being initialized, so none can observe whether an element it does not
+/// write is zero yet. The declaration's zero fill then stands for the zero
+/// stores whatever order they are made in.
+fn stores_do_not_read_the_object(base: &str, stores: &[C0Statement]) -> bool {
+    stores.iter().all(|store| {
+        let C0Statement::Store { value, .. } = store else {
+            return false;
+        };
+        let mut names = BTreeSet::new();
+        super::address_taken::mentioned_names(value, &mut names);
+        !names.contains(base)
+    })
+}
+
 fn zero_initializer(c_type: C0Type) -> C0Expression {
     match c_type {
         C0Type::Float32 => C0Expression::Float32Literal(0),
@@ -2189,8 +2353,24 @@ fn integer_type_bits(c_type: C0Type) -> Option<u32> {
     }
 }
 
+/// The standard-library function a `__builtin_constant_p` call lowers to.
+/// Its contract leaves the result an unknown 0 or 1.
+const CONSTANT_P_UNKNOWN: &str = "__click_constant_p_unknown";
+
+/// C's null pointer constant: the integer constant `0`, or that constant
+/// cast to `void *`.
 fn is_null_pointer_constant(expression: &C0Expression) -> bool {
-    matches!(expression, C0Expression::Int32Literal(0))
+    match expression {
+        C0Expression::Int32Literal(0) => true,
+        C0Expression::Cast {
+            expression,
+            c_type: C0Type::VoidPointer,
+            pointee_constant: false,
+            pointee_volatile: false,
+            ..
+        } => matches!(**expression, C0Expression::Int32Literal(0)),
+        _ => false,
+    }
 }
 
 fn conditional_expression_type(
@@ -2231,6 +2411,78 @@ impl C0SwitchCase {
     }
 }
 
+/// Where a source statement was written, for diagnostics only.
+///
+/// A site never takes part in what a statement means. Every site compares
+/// equal to every other, so the same C parsed at another line, in another
+/// file, or with its statements written differently yields equal C0 trees,
+/// and nothing that compares, interns, or caches statements can depend on a
+/// site. Lowering to kernel statements drops it: the source execution layout
+/// keeps each statement's site in a side table keyed by its statement index,
+/// which a refusal reads to name the line it refused.
+#[derive(Clone, Default)]
+pub struct C0Site(Option<std::sync::Arc<C0StatementSite>>);
+
+/// The first source line of a statement and its position.
+#[derive(Debug, Eq, PartialEq)]
+pub struct C0StatementSite {
+    position: SourcePosition,
+    text: Box<str>,
+}
+
+/// The longest statement excerpt a site keeps, in characters.
+const SITE_TEXT_LIMIT: usize = 100;
+
+impl C0Site {
+    pub const NONE: Self = Self(None);
+
+    pub fn get(&self) -> Option<&std::sync::Arc<C0StatementSite>> {
+        self.0.as_ref()
+    }
+
+    pub fn is_none(&self) -> bool {
+        self.0.is_none()
+    }
+}
+
+impl PartialEq for C0Site {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for C0Site {}
+
+impl std::fmt::Debug for C0Site {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Debug output of a statement must not change with its line either.
+        formatter.write_str("C0Site")
+    }
+}
+
+impl C0StatementSite {
+    pub fn position(&self) -> &SourcePosition {
+        &self.position
+    }
+
+    /// The statement as written, from its first token to its end on its
+    /// first line, with `…` marking a statement that continues past it.
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// `file:line:column`, or `line L, column C` for a source with no file.
+    pub fn location(&self) -> String {
+        match &self.position.origin {
+            Some(origin) => format!(
+                "{}:{}:{}",
+                origin.filename, origin.line, self.position.column
+            ),
+            None => self.position.to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum C0Statement {
     Skip,
@@ -2254,23 +2506,37 @@ pub enum C0Statement {
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
+        /// The zero stores an initializer makes into every element of an
+        /// automatic array before the elements it writes; absent for an
+        /// object declared without one, which stays uninitialized.
+        zero_fill: Option<C0ZeroFill>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     DeclareStructValue {
         name: String,
         layout: C0StructLayout,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     Assign {
         name: String,
         expression: C0Expression,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     CallAssign {
         target: String,
         function_name: String,
         arguments: Vec<C0Expression>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     Call {
         function_name: String,
         arguments: Vec<C0Expression>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     /// A statement-form call through a modeled function-pointer expression.
     /// Parsing expands this to a typed callback local before kernel lowering.
@@ -2279,14 +2545,20 @@ pub enum C0Statement {
         signature: C0FunctionPointerSignature,
         arguments: Vec<C0Expression>,
         position: Option<SourcePosition>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     HeapAllocate {
         target: String,
         bytes: C0Expression,
         zeroed: bool,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     HeapFree {
         pointer: C0Expression,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     /// A generated proof check for an index into a declared array dimension.
     /// This is not source-level `assert`; it is inserted while flattening
@@ -2295,14 +2567,19 @@ pub enum C0Statement {
     Assert {
         condition: C0Expression,
         label: String,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     Seq(Box<C0Statement>, Box<C0Statement>),
-    Return(C0Expression),
+    /// The returned expression and where the `return` was written.
+    Return(C0Expression, C0Site),
     Store {
         pointer: C0Expression,
         value: C0Expression,
         value_type: Option<C0Type>,
         pointee_constant: bool,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     /// A checked sequential access primitive imported from the Linux-style
     /// READ_ONCE/WRITE_ONCE/RCU macro family. The kernel records the access as
@@ -2313,6 +2590,8 @@ pub enum C0Statement {
         value: C0Expression,
         value_type: C0Type,
         pointee_constant: bool,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     /// Copy an address-backed aggregate whose layout includes overlapping
     /// union storage. Ordinary scalar stores cannot represent this copy
@@ -2322,34 +2601,48 @@ pub enum C0Statement {
         target: C0Expression,
         source: C0Expression,
         layout: C0StructLayout,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     Update {
         target: C0Expression,
         operator: C0UpdateOperator,
         operand: C0Expression,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     If {
         condition: C0Expression,
         then_branch: Box<C0Statement>,
         else_branch: Box<C0Statement>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     While {
         condition: C0Expression,
         body: Box<C0Statement>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     DoWhile {
         condition: C0Expression,
         body: Box<C0Statement>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     For {
         initializer: Box<C0Statement>,
         condition: C0Expression,
         step: Box<C0Statement>,
         body: Box<C0Statement>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
     Switch {
         expression: C0Expression,
         cases: Vec<C0SwitchCase>,
+        /// Where the source statement was written; see [`C0Site`].
+        site: C0Site,
     },
 }
 
@@ -2422,10 +2715,14 @@ pub enum C0Expression {
         /// This is the qualifier in `T * volatile *`, not volatility of the
         /// storage designated by `T *`.
         pointee_volatile: bool,
-        /// Const qualification of the storage reached by this pointer. An
-        /// unqualified cast retains the source view; a qualified destination
-        /// adds a read-only view without changing pointer identity.
+        /// Const qualification of the storage reached by this pointer. A
+        /// qualified destination adds a read-only view without changing
+        /// pointer identity.
         pointee_constant: bool,
+        /// A cast written in the source: its result has exactly the
+        /// destination's pointee qualification, so it may drop `const`. A
+        /// cast inserted by the parser keeps the source view instead.
+        explicit_qualification: bool,
     },
     Conditional {
         condition: Box<C0Expression>,
@@ -2686,6 +2983,11 @@ impl C0Function {
     /// C spelling.
     pub fn local_struct_pointers(&self) -> &BTreeMap<String, String> {
         &self.local_struct_pointers
+    }
+
+    pub(crate) fn with_local_struct_values(mut self, values: BTreeMap<String, String>) -> Self {
+        self.local_struct_values = values;
+        self
     }
 
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
@@ -3415,8 +3717,24 @@ impl C0StructLayout {
         let mut previous_end = 0u32;
         for (name, c_type, offset_bytes, byte_width) in fields {
             let (expected_width, expected_alignment) = match c_type {
-                C0Type::Int32 => (4, 4),
-                C0Type::Int32Pointer => (8, 8),
+                C0Type::Int32Array(length) | C0Type::UInt32Array(length) => (
+                    length
+                        .checked_mul(4)
+                        .filter(|width| *width <= i32::MAX as u32)
+                        .ok_or_else(|| {
+                            format!("explicit struct field `{name}` array exceeds modeled storage")
+                        })?,
+                    4,
+                ),
+                C0Type::UInt8Array(length) if length <= i32::MAX as u32 => (length, 1),
+                C0Type::UInt8 => (1, 1),
+                C0Type::Int64 => (8, 8),
+                C0Type::UInt16 => (2, 2),
+                C0Type::Int32 | C0Type::UInt32 => (4, 4),
+                C0Type::Int32Pointer
+                | C0Type::UInt8Pointer
+                | C0Type::UInt16Pointer
+                | C0Type::UInt32Pointer => (8, 8),
                 _ => {
                     return Err(format!(
                         "explicit struct field `{name}` has unsupported type"
@@ -3428,8 +3746,9 @@ impl C0StructLayout {
                 .ok_or_else(|| format!("explicit struct field `{name}` layout overflows"))?;
             if name.is_empty()
                 || byte_width != expected_width
+                || alignment_bytes < expected_alignment
                 || offset_bytes % expected_alignment != 0
-                || offset_bytes < previous_end
+                || (byte_width != 0 && offset_bytes < previous_end)
                 || end > size_bytes
             {
                 return Err(format!("explicit struct field `{name}` has invalid layout"));
@@ -3445,8 +3764,17 @@ impl C0StructLayout {
                         enum_name: None,
                         union_name: None,
                         function_pointer_signature: None,
-                        array_element_width: None,
-                        array_shape: None,
+                        array_element_width: match c_type {
+                            C0Type::Int32Array(_) | C0Type::UInt32Array(_) => Some(4),
+                            C0Type::UInt8Array(_) => Some(1),
+                            _ => None,
+                        },
+                        array_shape: match c_type {
+                            C0Type::Int32Array(n)
+                            | C0Type::UInt32Array(n)
+                            | C0Type::UInt8Array(n) => Some(vec![n]),
+                            _ => None,
+                        },
                         offset_bytes,
                         byte_width,
                     },
@@ -3461,7 +3789,7 @@ impl C0StructLayout {
                 offset_bytes,
                 c_type,
             });
-            previous_end = end;
+            previous_end = previous_end.max(end);
         }
         Ok(Self {
             fields: named_fields,
@@ -3499,6 +3827,11 @@ impl C0StructLayout {
                         &field.name,
                         field.offset_bytes,
                         field.c_type.to_kernel_type(),
+                    )
+                    .with_array_shape(
+                        self.fields
+                            .get(&field.name)
+                            .and_then(|declared| declared.array_shape()),
                     )
                 })
                 .collect(),
@@ -3999,6 +4332,68 @@ impl C0Type {
 }
 
 impl C0Statement {
+    /// Where this statement was written, for a statement kind that records
+    /// it; see [`C0Site`].
+    pub fn site(&self) -> Option<&C0Site> {
+        match self {
+            Self::Declare { site, .. }
+            | Self::DeclareStructValue { site, .. }
+            | Self::Assign { site, .. }
+            | Self::CallAssign { site, .. }
+            | Self::Call { site, .. }
+            | Self::IndirectCall { site, .. }
+            | Self::HeapAllocate { site, .. }
+            | Self::HeapFree { site, .. }
+            | Self::Assert { site, .. }
+            | Self::Return(_, site)
+            | Self::Store { site, .. }
+            | Self::SequentialStore { site, .. }
+            | Self::AggregateCopy { site, .. }
+            | Self::Update { site, .. }
+            | Self::If { site, .. }
+            | Self::While { site, .. }
+            | Self::DoWhile { site, .. }
+            | Self::For { site, .. }
+            | Self::Switch { site, .. } => Some(site),
+            Self::Skip
+            | Self::Break
+            | Self::Continue
+            | Self::Goto { .. }
+            | Self::Label { .. }
+            | Self::Seq(_, _) => None,
+        }
+    }
+
+    fn site_mut(&mut self) -> Option<&mut C0Site> {
+        match self {
+            Self::Declare { site, .. }
+            | Self::DeclareStructValue { site, .. }
+            | Self::Assign { site, .. }
+            | Self::CallAssign { site, .. }
+            | Self::Call { site, .. }
+            | Self::IndirectCall { site, .. }
+            | Self::HeapAllocate { site, .. }
+            | Self::HeapFree { site, .. }
+            | Self::Assert { site, .. }
+            | Self::Return(_, site)
+            | Self::Store { site, .. }
+            | Self::SequentialStore { site, .. }
+            | Self::AggregateCopy { site, .. }
+            | Self::Update { site, .. }
+            | Self::If { site, .. }
+            | Self::While { site, .. }
+            | Self::DoWhile { site, .. }
+            | Self::For { site, .. }
+            | Self::Switch { site, .. } => Some(site),
+            Self::Skip
+            | Self::Break
+            | Self::Continue
+            | Self::Goto { .. }
+            | Self::Label { .. }
+            | Self::Seq(_, _) => None,
+        }
+    }
+
     pub fn to_kernel_statement(&self) -> crate::kernel::CStatement {
         self.to_kernel_statement_with_control_targets(&BTreeMap::new())
     }
@@ -4027,25 +4422,29 @@ impl C0Statement {
                 pointee_volatile,
                 constant,
                 pointee_constant,
-            } => crate::kernel::c_declare_with_all_qualifiers(
+                zero_fill,
+                ..
+            } => crate::kernel::c_declare_with_zero_fill(
                 name.clone(),
                 c_type.to_kernel_type(),
                 *volatile,
                 *pointee_volatile,
                 *constant,
                 *pointee_constant,
+                zero_fill.as_ref().map(C0ZeroFill::to_kernel),
             ),
-            Self::DeclareStructValue { name, layout } => crate::kernel::c_declare_aggregate(
+            Self::DeclareStructValue { name, layout, .. } => crate::kernel::c_declare_aggregate(
                 name.clone(),
                 layout.to_kernel_aggregate_layout(),
             ),
-            Self::Assign { name, expression } => {
-                crate::kernel::c_assign(name.clone(), expression.to_kernel_expression())
-            }
+            Self::Assign {
+                name, expression, ..
+            } => crate::kernel::c_assign(name.clone(), expression.to_kernel_expression()),
             Self::CallAssign {
                 target,
                 function_name,
                 arguments,
+                ..
             } => crate::kernel::c_call_assign(
                 target.clone(),
                 function_name.clone(),
@@ -4057,6 +4456,7 @@ impl C0Statement {
             Self::Call {
                 function_name,
                 arguments,
+                ..
             } => crate::kernel::c_call(
                 function_name.clone(),
                 arguments
@@ -4071,27 +4471,31 @@ impl C0Statement {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => crate::kernel::c_heap_allocate_sized_with_zeroed(
                 target.clone(),
                 bytes.to_kernel_expression(),
                 *zeroed,
             ),
-            Self::HeapFree { pointer } => {
+            Self::HeapFree { pointer, .. } => {
                 crate::kernel::c_heap_free(pointer.to_kernel_expression())
             }
-            Self::Assert { condition, label } => {
-                crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone())
-            }
+            Self::Assert {
+                condition, label, ..
+            } => crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone()),
             Self::Seq(first, second) => crate::kernel::c_seq(
                 first.to_kernel_statement_with_control_targets(targets),
                 second.to_kernel_statement_with_control_targets(targets),
             ),
-            Self::Return(expression) => crate::kernel::c_return(expression.to_kernel_expression()),
+            Self::Return(expression, _) => {
+                crate::kernel::c_return(expression.to_kernel_expression())
+            }
             Self::Store {
                 pointer,
                 value,
                 value_type,
                 pointee_constant,
+                ..
             } => match value_type {
                 Some(value_type) => crate::kernel::c_qualified_typed_store(
                     pointer.to_kernel_expression(),
@@ -4110,6 +4514,7 @@ impl C0Statement {
                 value,
                 value_type,
                 pointee_constant,
+                ..
             } => crate::kernel::c_qualified_typed_store(
                 C0Expression::AddressOf(Box::new(target.clone())).to_kernel_expression(),
                 value.to_kernel_expression(),
@@ -4121,6 +4526,7 @@ impl C0Statement {
                 target,
                 source,
                 layout,
+                ..
             } => crate::kernel::c_copy_aggregate(
                 target.to_kernel_expression(),
                 source.to_kernel_expression(),
@@ -4130,6 +4536,7 @@ impl C0Statement {
                 target,
                 operator,
                 operand,
+                ..
             } => crate::kernel::c_update(
                 target.to_kernel_expression(),
                 match operator {
@@ -4150,17 +4557,22 @@ impl C0Statement {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => crate::kernel::c_if(
                 condition.to_kernel_expression(),
                 then_branch.to_kernel_statement_with_control_targets(targets),
                 else_branch.to_kernel_statement_with_control_targets(targets),
             ),
-            Self::While { condition, body } => crate::kernel::c_while(
+            Self::While {
+                condition, body, ..
+            } => crate::kernel::c_while(
                 condition.to_kernel_expression(),
                 Vec::new(),
                 body.to_kernel_statement_with_control_targets(targets),
             ),
-            Self::DoWhile { condition, body } => crate::kernel::c_do_while(
+            Self::DoWhile {
+                condition, body, ..
+            } => crate::kernel::c_do_while(
                 condition.to_kernel_expression(),
                 body.to_kernel_statement_with_control_targets(targets),
             ),
@@ -4169,6 +4581,7 @@ impl C0Statement {
                 condition,
                 step,
                 body,
+                ..
             } => {
                 let step = step.to_kernel_statement_with_control_targets(targets);
                 crate::kernel::c_seq(
@@ -4183,7 +4596,9 @@ impl C0Statement {
                     ),
                 )
             }
-            Self::Switch { expression, cases } => crate::kernel::c_switch(
+            Self::Switch {
+                expression, cases, ..
+            } => crate::kernel::c_switch(
                 expression.to_kernel_expression(),
                 cases
                     .iter()
@@ -4221,13 +4636,21 @@ impl C0Expression {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
-            } => crate::kernel::c_cast_with_pointee_qualifiers_and_struct(
-                expression.to_kernel_expression(),
-                c_type.to_kernel_type(),
-                *pointee_volatile,
-                *pointee_constant,
-                struct_name.clone(),
-            ),
+                explicit_qualification,
+            } => {
+                let cast = if *explicit_qualification {
+                    crate::kernel::c_source_cast_with_pointee_qualifiers_and_struct
+                } else {
+                    crate::kernel::c_cast_with_pointee_qualifiers_and_struct
+                };
+                cast(
+                    expression.to_kernel_expression(),
+                    c_type.to_kernel_type(),
+                    *pointee_volatile,
+                    *pointee_constant,
+                    struct_name.clone(),
+                )
+            }
             Self::Conditional {
                 condition,
                 then_branch,
@@ -4508,9 +4931,56 @@ pub(crate) fn parse_translation_unit_for_import(
     source: &str,
     source_identity: &str,
     map: &CSourceMap,
+    promises: PromiseAttributes,
 ) -> Result<C0TranslationUnit, C0SyntaxError> {
-    Parser::new_with_source_identity_and_map(source, CAbi::SUPPORTED, Some(source_identity), map)?
-        .parse_translation_unit()
+    let mut parser = Parser::new_with_source_identity_and_map(
+        source,
+        CAbi::SUPPORTED,
+        Some(source_identity),
+        map,
+    )?;
+    parser.refuse_promises = promises == PromiseAttributes::Refuse;
+    parser.parse_translation_unit()
+}
+
+/// Whether a compiler import accepts the function attributes and qualifiers
+/// that GCC's optimizer trusts as programmer promises. Click checks none of
+/// those promises. Without optimization GCC does not act on them, so they
+/// are accepted and ignored; under an option profile that accepts `-O2` they
+/// are refused. The GCC 13 measurements behind the list are in
+/// `docs/reference/cli/import.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromiseAttributes {
+    Accept,
+    Refuse,
+}
+
+/// Why an otherwise accepted function attribute is refused when GCC
+/// optimizes. Attributes the frontend refuses in every mode (`pure`,
+/// `malloc`, `returns_nonnull`, `alloc_size`, `assume_aligned`, ...) are not
+/// listed.
+fn optimizer_promise(attribute: &str) -> Option<&'static str> {
+    Some(match attribute {
+        "nonnull" | "__nonnull__" => {
+            "GCC at -O2 deletes the parameter's null checks even with -fno-delete-null-pointer-checks, and Click does not check the promise"
+        }
+        "const" | "__const__" => {
+            "GCC at -O2 merges calls and assumes the function touches no memory, and Click does not check the promise"
+        }
+        "leaf" | "__leaf__" => {
+            "GCC at -O2 assumes the call leaves this unit's unescaped static data unchanged, and Click does not check the promise"
+        }
+        "access" | "__access__" => {
+            "it promises how the function accesses the pointed-to object, and Click does not check the promise"
+        }
+        "noreturn" | "__noreturn__" => {
+            "GCC emits nothing after a call to it, and Click proves calls unreachable only for `compiletime_assert`'s error declarations"
+        }
+        "returns_twice" | "__returns_twice__" => {
+            "a second return from a call needs a control-flow model that Click does not have"
+        }
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -4541,11 +5011,11 @@ fn validate_function_returns(
     return_type: C0Type,
 ) -> Result<(), C0SyntaxError> {
     match statement {
-        C0Statement::Return(C0Expression::Void) if return_type != C0Type::Void => {
+        C0Statement::Return(C0Expression::Void, _) if return_type != C0Type::Void => {
             Err(C0SyntaxError::new("non-void functions must return a value"))
         }
-        C0Statement::Return(C0Expression::Void) => Ok(()),
-        C0Statement::Return(_) if return_type == C0Type::Void => {
+        C0Statement::Return(C0Expression::Void, _) => Ok(()),
+        C0Statement::Return(_, _) if return_type == C0Type::Void => {
             Err(C0SyntaxError::new("void functions cannot return a value"))
         }
         C0Statement::Seq(first, second) => {
@@ -4579,7 +5049,7 @@ fn validate_function_returns(
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
-        | C0Statement::Return(_)
+        | C0Statement::Return(_, _)
         | C0Statement::Store { .. }
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
@@ -4992,7 +5462,7 @@ fn statement_contains_control_transfer(statement: &C0Statement) -> bool {
         C0Statement::Break
         | C0Statement::Continue
         | C0Statement::Goto { .. }
-        | C0Statement::Return(_) => true,
+        | C0Statement::Return(_, _) => true,
         C0Statement::Label { statement, .. } => statement_contains_control_transfer(statement),
         C0Statement::Seq(first, second) => {
             statement_contains_control_transfer(first)
@@ -5844,6 +6314,7 @@ fn is_plain_struct_type(parsed_type: &ParsedType) -> bool {
 fn struct_scalar_array_shape(field: &C0StructField) -> Option<(C0Type, Vec<u32>)> {
     let (element_type, length) = match field.c_type {
         C0Type::Int32Array(length) => (C0Type::Int32, length),
+        C0Type::UInt32Array(length) => (C0Type::UInt32, length),
         C0Type::Int64Array(length) => (C0Type::Int64, length),
         C0Type::UInt64Array(length) => (C0Type::UInt64, length),
         C0Type::CharArray(length) => (C0Type::Char, length),
@@ -6217,6 +6688,7 @@ enum Token {
     Minus,
     Arrow,
     Dot,
+    Ellipsis,
     MinusMinus,
     MinusEqual,
     LessThan,
@@ -6284,6 +6756,7 @@ impl Token {
             Self::Minus => "-",
             Self::Arrow => "->",
             Self::Dot => ".",
+            Self::Ellipsis => "...",
             Self::MinusMinus => "--",
             Self::MinusEqual => "-=",
             Self::LessThan => "<",
@@ -6411,6 +6884,12 @@ impl ErrorContext {
 struct Parser {
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
+    /// The parsed text by line, so a statement's site can quote the line it
+    /// was written on. Positions index it by their parsed (not origin) line.
+    source_lines: std::sync::Arc<[Box<str>]>,
+    /// The line as written for each parsed line a macro expansion rewrote,
+    /// so a site quotes the expansion site rather than the replacement.
+    written_lines: std::sync::Arc<BTreeMap<usize, std::sync::Arc<str>>>,
     position: usize,
     structs: BTreeMap<String, C0StructLayout>,
     enums: BTreeMap<String, C0EnumDefinition>,
@@ -6455,6 +6934,29 @@ struct Parser {
     string_literal_names: BTreeSet<String>,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, C0FunctionHeader>,
+    /// The most recent attribute that is valid only on `static inline`.
+    static_inline_attribute: &'static str,
+    /// Unnamed parameters seen by `parse_parameters`; a function header
+    /// records how many belong to it.
+    unnamed_parameters: usize,
+    /// Set while parsing a block-scope function declaration, the only place
+    /// the GNU `error` attribute is accepted; records whether it was seen.
+    error_attribute: Option<bool>,
+    /// Set for a compiler import whose option profile accepts optimization:
+    /// the attributes and qualifiers GCC's optimizer trusts as unchecked
+    /// programmer promises are refused. See `PromiseAttributes`.
+    refuse_promises: bool,
+    /// Under `refuse_promises`, the refusal of a `noreturn` seen in a
+    /// block-scope declaration, kept until the declaration shows whether it
+    /// is a `compiletime_assert` error declaration, the one place it is
+    /// allowed.
+    pending_noreturn: Option<C0SyntaxError>,
+    /// Function names declared in a block, with the scope depth they leave
+    /// with.
+    block_function_declarations: Vec<(usize, String)>,
+    /// Set while parsing a discarded call statement, the only position in
+    /// which a call to an `error` function is accepted.
+    statement_call: bool,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -6522,6 +7024,15 @@ pub(crate) struct C0FunctionHeader {
     internal_linkage: bool,
     weak_linkage: bool,
     returns_twice: bool,
+    /// The prototype ends in `, ...`. Only body-less declarations carry
+    /// this; calls and address uses are refused because the variable
+    /// arguments have no model.
+    variadic: bool,
+    /// A parameter has no name, which only a body-less prototype may do.
+    has_unnamed_parameter: bool,
+    /// Declared with GNU `error`: the compiler rejects the program unless
+    /// it removes every call, so a call must be unreachable.
+    compile_time_error: bool,
     parameters: Vec<C0Parameter>,
 }
 
@@ -6605,6 +7116,8 @@ fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader
         && left.internal_linkage == right.internal_linkage
         && left.weak_linkage == right.weak_linkage
         && left.returns_twice == right.returns_twice
+        && left.variadic == right.variadic
+        && left.compile_time_error == right.compile_time_error
         && left.name == right.name
         && left.parameters.len() == right.parameters.len()
         && left
@@ -6640,7 +7153,7 @@ impl Parser {
         source_identity: Option<&str>,
     ) -> Result<Self, C0SyntaxError> {
         let (tokens, positions) = tokenize(source)?;
-        Self::from_tokens(tokens, positions, abi, source_identity, false)
+        Self::from_tokens(source, tokens, positions, abi, source_identity, false)
     }
 
     fn new_with_source_identity_and_map(
@@ -6660,7 +7173,7 @@ impl Parser {
             .into_iter()
             .map(|position| map.lookup(position))
             .collect();
-        Self::from_tokens(tokens, positions, abi, source_identity, true)
+        Self::from_tokens(source, tokens, positions, abi, source_identity, true)
     }
 
     /// Parses source-bundle C while attributing diagnostics to the bundle
@@ -6684,10 +7197,13 @@ impl Parser {
             .into_iter()
             .map(|position| line_map.lookup(position))
             .collect();
-        Self::from_tokens(tokens, positions, abi, source_identity, false)
+        let mut parser = Self::from_tokens(source, tokens, positions, abi, source_identity, false)?;
+        parser.written_lines = std::sync::Arc::new(line_map.written_lines().clone());
+        Ok(parser)
     }
 
     fn from_tokens(
+        source: &str,
         tokens: Vec<Token>,
         positions: Vec<SourcePosition>,
         abi: CAbi,
@@ -6697,6 +7213,8 @@ impl Parser {
         Ok(Self {
             tokens,
             positions,
+            source_lines: source.split('\n').map(Box::from).collect(),
+            written_lines: std::sync::Arc::default(),
             position: 0,
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
@@ -6724,6 +7242,13 @@ impl Parser {
             string_literal_names: BTreeSet::new(),
             loop_contexts: Vec::new(),
             function_declarations: BTreeMap::new(),
+            static_inline_attribute: "always-inline",
+            unnamed_parameters: 0,
+            error_attribute: None,
+            refuse_promises: false,
+            pending_noreturn: None,
+            block_function_declarations: Vec::new(),
+            statement_call: false,
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -6759,6 +7284,18 @@ impl Parser {
     /// Closes the innermost scope; its names, and any struct layouts they
     /// carried, are no longer visible.
     fn pop_scope(&mut self) {
+        let depth = self.scopes.len();
+        while let Some((declared_depth, _)) = self.block_function_declarations.last()
+            && *declared_depth >= depth
+        {
+            let (_, source_name) = self
+                .block_function_declarations
+                .pop()
+                .expect("the last entry was just inspected");
+            if let Some(header) = self.function_declarations.remove(&source_name) {
+                self.function_source_names.remove(&header.name);
+            }
+        }
         for binding in self.scopes.pop().unwrap_or_default() {
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
@@ -7049,8 +7586,12 @@ impl Parser {
             C0Expression::Cast {
                 expression,
                 pointee_constant,
+                explicit_qualification,
                 ..
-            } => self.expression_pointee_is_constant(expression) || *pointee_constant,
+            } => {
+                *pointee_constant
+                    || (!*explicit_qualification && self.expression_pointee_is_constant(expression))
+            }
             C0Expression::Conditional {
                 then_branch,
                 else_branch,
@@ -7258,6 +7799,44 @@ impl Parser {
         Ok(())
     }
 
+    /// Whether the `static` declaration at the cursor declares a function:
+    /// its first parenthesis outside an attribute directly follows the
+    /// declared name. `static int (*callback)(int);` declares an object, and
+    /// so does anything that reaches `=`, `[`, `;`, or `{` first.
+    fn static_function_declarator_ahead(&self) -> bool {
+        let mut offset = 1;
+        loop {
+            match self.peek_n(offset) {
+                Some(Token::Ident(name)) if name == "__attribute__" => {
+                    offset += 1;
+                    let mut depth = 0usize;
+                    loop {
+                        match self.peek_n(offset) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth = depth.saturating_sub(1);
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            None => return false,
+                            _ => {}
+                        }
+                        offset += 1;
+                    }
+                }
+                Some(Token::LParen) => {
+                    return matches!(self.peek_n(offset - 1), Some(Token::Ident(_)))
+                        && !self.is_type_start_at(offset - 1)
+                        && self.peek_n(offset + 1) != Some(&Token::Star);
+                }
+                Some(Token::Ident(_) | Token::Star) => {}
+                _ => return false,
+            }
+            offset += 1;
+        }
+    }
+
     fn file_static_kernel_name(&self, source_name: &str) -> String {
         format!(
             "{source_name}#file-static:{}",
@@ -7320,6 +7899,24 @@ impl Parser {
         {
             return Err(self.error_here(format!(
                 "weak function `{source_name}` may be absent; function-address uses need an availability model"
+            )));
+        }
+        if self
+            .function_declarations
+            .get(source_name)
+            .is_some_and(|header| header.compile_time_error)
+        {
+            return Err(self.error_here(format!(
+                "function `{source_name}` is declared with the GNU `error` attribute; its address cannot be used"
+            )));
+        }
+        if self
+            .function_declarations
+            .get(source_name)
+            .is_some_and(|header| header.variadic)
+        {
+            return Err(self.error_here(format!(
+                "variadic function `{source_name}` has no modeled variable-argument signature; function-address uses are not supported"
             )));
         }
         if self
@@ -7568,6 +8165,21 @@ impl Parser {
         })
     }
 
+    /// One unit of parsing work per top-level declaration, and a
+    /// cooperative checkpoint: a translation unit as large as the program
+    /// stops at the run's work budget or crash-containment bound instead of
+    /// parsing to its end first.
+    fn checkpoint(&self) -> Result<(), C0SyntaxError> {
+        if crate::instrumentation::deadline_exceeded() {
+            Err(self.error_here(format!(
+                "C parsing stopped: {}",
+                crate::instrumentation::deadline_context()
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
     /// An error at the next unconsumed token.
     fn error_here(&self, message: impl Into<String>) -> C0SyntaxError {
         match self.here() {
@@ -7634,6 +8246,7 @@ impl Parser {
         self.parse_declarations()?;
         let mut functions = Vec::new();
         while self.peek().is_some() {
+            self.checkpoint()?;
             let is_extern = if self.peek_ident() == Some("extern") {
                 self.position += 1;
                 true
@@ -7659,15 +8272,11 @@ impl Parser {
                     "inline function definitions require `static inline` or `static __always_inline` in this slice",
                 ));
             }
-            if is_static && !is_inline {
-                return Err(self.error_here(
-                    "file-scope static functions require `static inline` or `static __always_inline` in this slice",
-                ));
-            }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -7677,18 +8286,24 @@ impl Parser {
                         .unwrap_or_else(|| "end of input".to_string())
                 )));
             }
-            let mut header = self.parse_function_header(is_static && is_inline)?;
+            // A `static` function has internal linkage whether or not it is
+            // also `inline`; the two differ only in an optimization hint.
+            let mut header = self.parse_function_header(is_static)?;
             self.consume_function_asm_label(&mut header)?;
             let (has_trailing_always_inline_attribute, suffix_weak, suffix_returns_twice) =
                 self.consume_function_attributes()?;
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
-            if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+            if (has_always_inline_attribute || has_trailing_always_inline_attribute)
+                && !(is_static && is_inline)
+            {
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
+                self.reject_variadic_definition(&header)?;
                 if header.weak_linkage || header.returns_twice {
                     return Err(self.error_here(
                         "weak or returns-twice function definitions need a control-flow and linkage model",
@@ -7764,9 +8379,10 @@ impl Parser {
                 ));
             }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -7783,11 +8399,13 @@ impl Parser {
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
+                self.reject_variadic_definition(&header)?;
                 if header.weak_linkage || header.returns_twice {
                     return Err(self.error_here(
                         "weak or returns-twice function definitions need a control-flow and linkage model",
@@ -7832,15 +8450,17 @@ impl Parser {
             self.consume_function_attributes()?;
         header.weak_linkage = prefix_weak || suffix_weak;
         header.returns_twice = prefix_returns_twice || suffix_returns_twice;
+        self.reject_variadic_definition(&header)?;
         if header.weak_linkage || header.returns_twice {
             return Err(self.error_here(
                 "weak or returns-twice function definitions need a control-flow and linkage model",
             ));
         }
         if (prefix_inline || suffix_inline) && !internal_linkage {
-            return Err(self.error_here(
-                "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-            ));
+            return Err(self.error_here(format!(
+                "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                self.static_inline_attribute
+            )));
         }
         self.register_function_declaration(&header, true)?;
         if self.peek() != Some(&Token::LBrace) {
@@ -7891,7 +8511,7 @@ impl Parser {
         if header.return_type == C0Type::Void {
             body = C0Statement::Seq(
                 Box::new(body),
-                Box::new(C0Statement::Return(C0Expression::Void)),
+                Box::new(C0Statement::Return(C0Expression::Void, C0Site::NONE)),
             );
         }
         let control_targets = validate_direct_forward_gotos(&body)?;
@@ -7935,6 +8555,24 @@ impl Parser {
             local_struct_values,
             string_literals,
         })
+    }
+
+    /// A variadic body would read its variable arguments through `va_arg`,
+    /// which has no model. Only the body-less prototype is retained.
+    fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.has_unnamed_parameter {
+            return Err(self.error_here(format!(
+                "function definition `{}` has an unnamed parameter; only a body-less prototype may omit parameter names",
+                header.source_name
+            )));
+        }
+        if header.variadic {
+            return Err(self.error_here(format!(
+                "variadic function definitions (`...`) are not supported in C0; only a body-less prototype of `{}` can be declared",
+                header.source_name
+            )));
+        }
+        Ok(())
     }
 
     fn parse_function_header(
@@ -7996,7 +8634,13 @@ impl Parser {
         let source_name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         self.push_scope();
+        let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
+        let has_unnamed_parameter = self.unnamed_parameters != unnamed_before;
+        let variadic = self.peek() == Some(&Token::Ellipsis);
+        if variadic {
+            self.position += 1;
+        }
         self.expect(Token::RParen)?;
         let name = if internal_linkage {
             self.inline_function_kernel_name(&source_name)
@@ -8014,6 +8658,9 @@ impl Parser {
             internal_linkage,
             weak_linkage: false,
             returns_twice: false,
+            variadic,
+            has_unnamed_parameter,
+            compile_time_error: false,
             parameters,
         })
     }
@@ -8035,8 +8682,34 @@ impl Parser {
             self.expect(Token::LParen)?;
             loop {
                 let attribute = self.expect_ident("GNU function attribute")?;
+                if self.refuse_promises
+                    && let Some(reason) = optimizer_promise(&attribute)
+                {
+                    let refusal = self.error_at_previous(format!(
+                        "GNU function attribute `{attribute}` is refused under an optimizing compiler-option profile: {reason}"
+                    ));
+                    // `compiletime_assert`'s block-scope declaration is
+                    // decided once its `error` attribute has been seen.
+                    if matches!(attribute.as_str(), "noreturn" | "__noreturn__")
+                        && self.error_attribute.is_some()
+                    {
+                        self.pending_noreturn = Some(refusal);
+                    } else {
+                        return Err(refusal);
+                    }
+                }
                 match attribute.as_str() {
-                    "always_inline" | "__always_inline__" => always_inline = true,
+                    "always_inline" | "__always_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "always-inline";
+                    }
+                    // On a `static inline` function `gnu_inline` selects
+                    // nothing: it changes only when a non-static inline
+                    // definition is emitted. It is refused anywhere else.
+                    "gnu_inline" | "__gnu_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "gnu-inline";
+                    }
                     "weak" | "__weak__" => weak = true,
                     "returns_twice" | "__returns_twice__" => returns_twice = true,
                     "access" | "__access__" => {
@@ -8071,9 +8744,23 @@ impl Parser {
                         }
                         self.expect(Token::RParen)?;
                     }
+                    // `unused` silences a warning and
+                    // `no_instrument_function` omits profiling hooks; neither
+                    // changes what the function computes.
                     "nothrow" | "__nothrow__" | "leaf" | "__leaf__" | "const"
                     | "__const__" | "noreturn" | "__noreturn__" | "deprecated"
-                    | "__deprecated__" => {},
+                    | "__deprecated__" | "unused" | "__unused__"
+                    | "no_instrument_function" | "__no_instrument_function__" => {},
+                    "error" | "__error__" if self.error_attribute.is_some() => {
+                        self.expect(Token::LParen)?;
+                        let Some(Token::StringLiteral(_)) = self.next() else {
+                            return Err(self.error_at_previous(
+                                "the GNU error attribute requires one string literal",
+                            ));
+                        };
+                        self.expect(Token::RParen)?;
+                        self.error_attribute = Some(true);
+                    }
                     "nonnull" | "__nonnull__" => {
                         if self.peek() == Some(&Token::LParen) {
                             self.position += 1;
@@ -8097,7 +8784,7 @@ impl Parser {
                         }
                     }
                     _ => return Err(self.error_at_previous(format!(
-                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `weak`, `returns_twice`, and `access` are supported in this slice"
+                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, and `access` are supported in this slice"
                     ))),
                 }
                 if self.peek() != Some(&Token::Comma) {
@@ -8304,12 +8991,16 @@ impl Parser {
 
     fn parse_declarations(&mut self) -> Result<(), C0SyntaxError> {
         while self.peek().is_some() {
+            self.checkpoint()?;
             if (self.peek_ident() == Some("static")
                 && self.peek_n(1).is_some_and(Self::is_inline_specifier))
                 || self.peek_inline_specifier()
             {
                 break;
             } else if self.peek_ident() == Some("static") {
+                if !self.header_mode && self.static_function_declarator_ahead() {
+                    break;
+                }
                 self.parse_global_declaration()?;
             } else if self.peek_ident() == Some("typedef") {
                 self.parse_typedef_declaration()?;
@@ -10111,6 +10802,17 @@ impl Parser {
         }
 
         loop {
+            // A trailing `...` is left for the caller: only a function
+            // prototype may consume it, so every other parameter list
+            // rejects it at its closing parenthesis.
+            if self.peek() == Some(&Token::Ellipsis) {
+                if parameters.is_empty() {
+                    return Err(self.error_here(
+                        "a variadic parameter list (`...`) requires a preceding named parameter",
+                    ));
+                }
+                return Ok(parameters);
+            }
             let parsed_type = self.parse_type()?;
             if parsed_type.union_name.is_some() && !parsed_type.c_type.is_pointer() {
                 return Err(self.error_here(
@@ -10165,7 +10867,15 @@ impl Parser {
                 }
                 return Err(self.error_here("function parameters cannot have type `void`"));
             }
-            let name = self.expect_ident("parameter name")?;
+            // A prototype may leave a parameter unnamed. The placeholder
+            // cannot be spelled in C, and a definition that has one is
+            // rejected by the caller.
+            let name = if matches!(self.peek(), Some(Token::Comma | Token::RParen)) {
+                self.unnamed_parameters += 1;
+                format!("#unnamed{}", parameters.len())
+            } else {
+                self.expect_ident("parameter name")?
+            };
             let kernel_name = self.declare_name(&name)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here(
@@ -10563,7 +11273,14 @@ impl Parser {
                     Some("const") => object_constant = true,
                     Some("volatile") => volatile_levels |= 1,
                     // Restrict constrains aliases used by a valid C program.
-                    // Click never infers ownership or separation from it.
+                    // Click never infers ownership or separation from it,
+                    // and it does not check it either, so it is refused
+                    // where GCC's optimizer relies on it.
+                    Some("restrict" | "__restrict" | "__restrict__") if self.refuse_promises => {
+                        return Err(self.error_here(
+                            "`restrict` is refused under an optimizing compiler-option profile: GCC at -O2 assumes restrict pointers do not alias, and Click does not check it",
+                        ));
+                    }
                     Some("restrict" | "__restrict" | "__restrict__") => {}
                     _ => break,
                 }
@@ -10698,6 +11415,11 @@ impl Parser {
         let mut parameters = Vec::new();
         if self.peek() != Some(&Token::RParen) {
             loop {
+                if self.peek() == Some(&Token::Ellipsis) {
+                    return Err(self.error_here(
+                        "variadic function-pointer signatures (`...`) are not supported in C0",
+                    ));
+                }
                 let parsed_type = self.parse_type()?;
                 if parsed_type.is_volatile {
                     return Err(self.error_here(
@@ -11172,10 +11894,77 @@ impl Parser {
         })
     }
 
+    /// Parses one statement and gives it, and every statement it lowered to
+    /// that has no site of its own yet, the site where it was written.
+    /// Statements nested inside it were parsed here first and keep theirs.
+    #[inline(never)]
+    fn parse_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        let start = self.position;
+        let mut statement = self.parse_statement_unsited()?;
+        let site = self.site_between(start, self.position);
+        fill_missing_sites(&mut statement, &site);
+        Ok(statement)
+    }
+
+    /// The site of the statement written from token `start` up to (not
+    /// including) token `end`: its first token's position, and its text from
+    /// that token to its last token or to the end of that line, whichever is
+    /// first. Comments and anything past the length limit are left out.
+    fn site_between(&self, start: usize, end: usize) -> C0Site {
+        let Some(first) = self.positions.get(start) else {
+            return C0Site::NONE;
+        };
+        let Some(line) = first
+            .line
+            .checked_sub(1)
+            .and_then(|line| self.source_lines.get(line))
+        else {
+            return C0Site::NONE;
+        };
+        // A line a macro expansion rewrote is quoted as written. Its columns
+        // match the parsed line up to the first rewrite; a statement that
+        // starts after one is quoted as its whole written line.
+        if let Some(written) = self.written_lines.get(&first.line) {
+            let prefix = first.column.saturating_sub(1);
+            let tail = if line.chars().take(prefix).eq(written.chars().take(prefix)) {
+                written.chars().skip(prefix).collect::<String>()
+            } else {
+                written.to_string()
+            };
+            let continues = end
+                .checked_sub(1)
+                .and_then(|last| self.positions.get(last))
+                .is_some_and(|last| last.line != first.line);
+            return statement_site(first, &tail, continues);
+        }
+        let tail = line
+            .chars()
+            .skip(first.column.saturating_sub(1))
+            .collect::<String>();
+        let last = end
+            .checked_sub(1)
+            .filter(|last| *last >= start)
+            .and_then(|last| Some((self.positions.get(last)?, self.tokens.get(last)?)));
+        let (text, continues) = match last {
+            Some((position, token)) if position.line == first.line => {
+                match token_source_width(token) {
+                    Some(width) => {
+                        let length = (position.column + width).saturating_sub(first.column);
+                        (tail.chars().take(length).collect::<String>(), false)
+                    }
+                    None => (tail, false),
+                }
+            }
+            Some(_) => (tail, true),
+            None => (tail, false),
+        };
+        statement_site(first, &text, continues)
+    }
+
     /// Keep common straight-line statements off the large fallback dispatcher.
     /// This matters for callers that deliberately parse on a small stack.
     #[inline(never)]
-    fn parse_statement(&mut self) -> Result<C0Statement, C0SyntaxError> {
+    fn parse_statement_unsited(&mut self) -> Result<C0Statement, C0SyntaxError> {
         if matches!(self.peek(), Some(Token::Ident(_)))
             && self.peek_next().is_some_and(Token::is_scalar_update)
         {
@@ -11223,12 +12012,118 @@ impl Parser {
                 struct_name: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }
         } else {
             expression
         };
         self.expect(Token::Semicolon)?;
-        Ok(C0Statement::Return(expression))
+        Ok(C0Statement::Return(expression, C0Site::NONE))
+    }
+
+    /// A block-scope `extern` function declaration, as the Linux
+    /// `compiletime_assert` macro writes it:
+    /// `__attribute__((__noreturn__)) extern void name(void) __attribute__((__error__("...")));`.
+    /// The name is visible until its block ends. It declares no object and
+    /// executes nothing.
+    fn parse_block_scope_function_declaration(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        self.error_attribute = Some(false);
+        self.pending_noreturn = None;
+        let declaration = self.parse_block_scope_function_header();
+        let compile_time_error = self.error_attribute.take() == Some(true);
+        let noreturn_refusal = self.pending_noreturn.take();
+        let mut header = declaration?;
+        // Every call to a `compiletime_assert` error declaration lowers to a
+        // check that fails on any path reaching it, so Click proves each call
+        // unreachable and GCC's `noreturn` promise holds vacuously.
+        if let Some(refusal) = noreturn_refusal
+            && !compile_time_error
+        {
+            return Err(refusal);
+        }
+        header.compile_time_error = compile_time_error;
+        if self.function_declarations.contains_key(&header.source_name) {
+            return Err(self.error_here(format!(
+                "block-scope declaration of `{}` redeclares a visible function; only a new name is supported",
+                header.source_name
+            )));
+        }
+        self.register_function_declaration(&header, false)?;
+        self.block_function_declarations
+            .push((self.scopes.len(), header.source_name));
+        Ok(C0Statement::Skip)
+    }
+
+    /// The Linux `barrier()` statement, exactly
+    /// `__asm__ __volatile__("" : : : "memory");`: an empty template with
+    /// no operands and a `memory` clobber. It emits no instruction, so in
+    /// the sequential semantics it does nothing. What it tells the compiler
+    /// about reordering, and so its meaning for concurrent readers, is
+    /// outside that semantics. Every other inline assembly is rejected.
+    fn parse_empty_memory_barrier(&mut self) -> Result<C0Statement, C0SyntaxError> {
+        const ONLY: &str = "inline assembly is not supported, except the empty `__asm__ __volatile__(\"\" : : : \"memory\")` barrier";
+        self.position += 1;
+        if !matches!(self.peek_ident(), Some("volatile" | "__volatile__")) {
+            return Err(self.error_here(ONLY));
+        }
+        self.position += 1;
+        self.expect(Token::LParen)?;
+        if self.next() != Some(Token::StringLiteral(Vec::new())) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        for _ in 0..3 {
+            if self.next() != Some(Token::Colon) {
+                return Err(self.error_at_previous(ONLY));
+            }
+        }
+        if self.next() != Some(Token::StringLiteral(b"memory".to_vec())) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        if self.next() != Some(Token::RParen) {
+            return Err(self.error_at_previous(ONLY));
+        }
+        self.expect(Token::Semicolon)?;
+        Ok(C0Statement::Skip)
+    }
+
+    fn parse_block_scope_function_header(&mut self) -> Result<C0FunctionHeader, C0SyntaxError> {
+        let (prefix_inline, prefix_weak, prefix_returns_twice) =
+            self.consume_function_attributes()?;
+        if self.peek_ident() != Some("extern") {
+            return Err(self.error_here(
+                "a block-scope declaration that starts with an attribute must be an `extern` function declaration",
+            ));
+        }
+        self.position += 1;
+        if !self.is_type_start() {
+            return Err(
+                self.error_here("expected a function declaration after block-scope `extern`")
+            );
+        }
+        let header = self.parse_function_header(false)?;
+        self.pop_scope();
+        let (suffix_inline, suffix_weak, suffix_returns_twice) =
+            self.consume_function_attributes()?;
+        if prefix_inline
+            || suffix_inline
+            || prefix_weak
+            || suffix_weak
+            || prefix_returns_twice
+            || suffix_returns_twice
+            || header.variadic
+        {
+            return Err(self.error_here(
+                "block-scope function declarations support only the declaration-only attributes and `error`",
+            ));
+        }
+        if self.peek() != Some(&Token::Semicolon) {
+            return Err(self.error_here(format!(
+                "block-scope declaration of `{}` must be a body-less function prototype",
+                header.source_name
+            )));
+        }
+        self.position += 1;
+        Ok(header)
     }
 
     fn parse_statement_slow(&mut self) -> Result<C0Statement, C0SyntaxError> {
@@ -11236,6 +12131,12 @@ impl Parser {
             Some(Token::Semicolon) => {
                 self.position += 1;
                 Ok(C0Statement::Skip)
+            }
+            Some(Token::Ident(name)) if name == "extern" || name == "__attribute__" => {
+                self.parse_block_scope_function_declaration()
+            }
+            Some(Token::Ident(name)) if name == "asm" || name == "__asm__" => {
+                self.parse_empty_memory_barrier()
             }
             // Discarding a direct call's result is an ordinary C expression
             // statement. Preserve the call while omitting its unused value.
@@ -11250,6 +12151,7 @@ impl Parser {
                 Ok(C0Statement::Call {
                     function_name: self.resolve_function_name(&function_name),
                     arguments,
+                    site: C0Site::NONE,
                 })
             }
             Some(Token::Star) => {
@@ -11278,6 +12180,7 @@ impl Parser {
                         signature,
                         arguments,
                         position,
+                        site: C0Site::NONE,
                     });
                 }
                 self.position = start;
@@ -11352,6 +12255,7 @@ impl Parser {
                         condition,
                         then_branch,
                         else_branch,
+                        site: C0Site::NONE,
                     })
                 }
                 Some("while") => {
@@ -11362,7 +12266,11 @@ impl Parser {
                     self.loop_contexts.push(CLoopContext::While);
                     let body = Box::new(self.parse_controlled_statement("while")?);
                     self.loop_contexts.pop();
-                    Ok(C0Statement::While { condition, body })
+                    Ok(C0Statement::While {
+                        condition,
+                        body,
+                        site: C0Site::NONE,
+                    })
                 }
                 Some("switch") => {
                     self.position += 1;
@@ -11372,7 +12280,11 @@ impl Parser {
                     self.loop_contexts.push(CLoopContext::Switch);
                     let cases = self.parse_switch_body()?;
                     self.loop_contexts.pop();
-                    Ok(C0Statement::Switch { expression, cases })
+                    Ok(C0Statement::Switch {
+                        expression,
+                        cases,
+                        site: C0Site::NONE,
+                    })
                 }
                 Some("do") => {
                     self.position += 1;
@@ -11390,6 +12302,7 @@ impl Parser {
                     Ok(C0Statement::DoWhile {
                         condition,
                         body: Box::new(body),
+                        site: C0Site::NONE,
                     })
                 }
                 Some("for") => {
@@ -11417,6 +12330,7 @@ impl Parser {
                         condition,
                         step: Box::new(step),
                         body: Box::new(body),
+                        site: C0Site::NONE,
                     })
                 }
                 Some(other) => {
@@ -11432,6 +12346,7 @@ impl Parser {
                         };
                         Ok(C0Statement::HeapFree {
                             pointer: pointer.clone(),
+                            site: C0Site::NONE,
                         })
                     } else if self.peek_next() == Some(&Token::LParen) {
                         let source_name = self.expect_ident("function name")?;
@@ -11440,8 +12355,37 @@ impl Parser {
                                 self.error_here("the allocation result may not be discarded")
                             );
                         }
-                        let arguments = self.parse_call_arguments(Some(&source_name))?;
+                        // As in an expression: a GNU builtin such as
+                        // `__builtin_unreachable` is not an ordinary call.
+                        if source_name.starts_with("__builtin_") {
+                            return Err(self.error_at_previous(format!(
+                                "unsupported GNU builtin `{source_name}`"
+                            )));
+                        }
+                        let compile_time_error = self
+                            .function_declarations
+                            .get(&source_name)
+                            .is_some_and(|header| header.compile_time_error)
+                            && !self
+                                .variable_types
+                                .contains_key(&self.resolve_name(&source_name));
+                        self.statement_call = true;
+                        let arguments = self.parse_call_arguments(Some(&source_name));
+                        self.statement_call = false;
+                        let arguments = arguments?;
                         self.expect(Token::Semicolon)?;
+                        if compile_time_error {
+                            // The compiler accepts the program only if it
+                            // removes this call, so it must be unreachable:
+                            // the check fails on any path that gets here.
+                            return Ok(C0Statement::Assert {
+                                condition: C0Expression::Int32Literal(0),
+                                label: format!(
+                                    "call to `{source_name}`, declared with the GNU `error` attribute, is unreachable"
+                                ),
+                                site: C0Site::NONE,
+                            });
+                        }
                         if let Some(statement) =
                             self.parse_kernel_primitive_statement(&source_name, &arguments)?
                         {
@@ -11450,6 +12394,7 @@ impl Parser {
                         Ok(C0Statement::Call {
                             function_name: self.resolve_function_name(&source_name),
                             arguments,
+                            site: C0Site::NONE,
                         })
                     } else {
                         Err(self
@@ -11465,12 +12410,19 @@ impl Parser {
         }
     }
 
+    /// The stores of an automatic scalar array's initializer. When `compact`
+    /// (the object is not volatile), the declaration can zero-fill the
+    /// array instead of one store per element: the zero fill is returned
+    /// with the stores of the elements the initializer writes, which are
+    /// then all that follows the declaration. Otherwise every element is
+    /// stored, the unwritten ones with the zero initializer.
     fn parse_local_array_initializer(
         &mut self,
         name: &str,
         c_type: C0Type,
         array_shape: Option<&[u32]>,
-    ) -> Result<C0Statement, C0SyntaxError> {
+        compact: bool,
+    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
         let (length, element_type) = match c_type {
             C0Type::Int32Array(length) => (length, C0Type::Int32),
             C0Type::CharArray(length) => (length, C0Type::Char),
@@ -11487,37 +12439,76 @@ impl Parser {
             _ => unreachable!("array initializer called for a scalar type"),
         };
         let zero = zero_initializer(element_type);
-        let mut values = Vec::new();
         let dimensions = array_shape
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| vec![length]);
-        self.parse_array_initializer_level(name, &dimensions, 0, &mut values, &zero)?;
+        let mut written = Vec::new();
+        let mut next = 0u32;
+        self.parse_sparse_array_initializer_level(name, &dimensions, 0, &mut written, &mut next)?;
+        let store = |index: u32, value: C0Expression| C0Statement::Store {
+            pointer: C0Expression::Add(
+                Box::new(C0Expression::Variable(name.to_string())),
+                Box::new(C0Expression::Int32Literal(index)),
+            ),
+            value,
+            value_type: Some(element_type),
+            pointee_constant: false,
+            site: C0Site::NONE,
+        };
+        // The declaration zero-fills the array, and only the written
+        // elements that are not the zero initializer are stored after it.
+        if compact {
+            let written_stores = written
+                .iter()
+                .map(|(index, value)| store(*index, value.clone()))
+                .collect::<Vec<_>>();
+            if let Some(zero_fill) = C0ZeroFill::from_element_stores(
+                name,
+                element_type.abi_size_bytes(),
+                length,
+                &[store(0, zero.clone())],
+            )
+            .filter(|_| stores_do_not_read_the_object(name, &written_stores))
+            {
+                let stores = zero_fill.without_its_own_stores(name, written_stores);
+                return Ok((
+                    Some(zero_fill),
+                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                ));
+            }
+        }
 
+        let mut values = Vec::with_capacity(length as usize);
+        for (index, value) in written {
+            values.resize(index as usize, zero.clone());
+            values.push(value);
+        }
         let mut stores = Vec::with_capacity(length as usize);
         for index in 0..length {
             let value = values
                 .get(index as usize)
                 .cloned()
                 .unwrap_or_else(|| zero.clone());
-            stores.push(C0Statement::Store {
-                pointer: C0Expression::Add(
-                    Box::new(C0Expression::Variable(name.to_string())),
-                    Box::new(C0Expression::Int32Literal(index)),
-                ),
-                value,
-                value_type: Some(element_type),
-                pointee_constant: false,
-            });
+            stores.push(store(index, value));
         }
-        Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
+        Ok((
+            None,
+            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+        ))
     }
 
+    /// The stores of an automatic struct array's initializer, zero-filled by
+    /// the declaration when `compact` as for
+    /// [`Self::parse_local_array_initializer`]: every element receives the
+    /// zero stores an omitted element would, and only the listed fields that
+    /// are not those zeros are stored after it.
     fn parse_local_struct_array_initializer(
         &mut self,
         name: &str,
         struct_name: &str,
         array_shape: &[u32],
-    ) -> Result<C0Statement, C0SyntaxError> {
+        compact: bool,
+    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
         if self.peek() != Some(&Token::LBrace) {
             return Err(self.error_here(
                 "local struct array elements require nested `{...}` initializer groups",
@@ -11528,6 +12519,44 @@ impl Parser {
             .get(struct_name)
             .expect("validated local struct array has a layout")
             .size_bytes;
+        let zero_fill = compact
+            .then(|| {
+                let count = array_shape
+                    .iter()
+                    .try_fold(1u32, |count, dimension| count.checked_mul(*dimension))?;
+                C0ZeroFill::from_element_stores(
+                    name,
+                    element_width,
+                    count,
+                    &self.zero_struct_initializer_level(
+                        C0Expression::Variable(name.to_string()),
+                        struct_name,
+                    ),
+                )
+            })
+            .flatten();
+        let start = self.position;
+        if let Some(zero_fill) = zero_fill {
+            let stores = self.parse_embedded_struct_array_initializer_level(
+                C0Expression::Variable(name.to_string()),
+                struct_name,
+                array_shape,
+                0,
+                0,
+                element_width,
+                false,
+            )?;
+            if stores_do_not_read_the_object(name, &stores) {
+                let stores = zero_fill.without_its_own_stores(name, stores);
+                return Ok((
+                    Some(zero_fill),
+                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                ));
+            }
+            // An initializer that reads the array keeps every store in
+            // element order: parse it again with the omitted elements' zeros.
+            self.position = start;
+        }
         let stores = self.parse_embedded_struct_array_initializer_level(
             C0Expression::Variable(name.to_string()),
             struct_name,
@@ -11535,8 +12564,12 @@ impl Parser {
             0,
             0,
             element_width,
+            true,
         )?;
-        Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
+        Ok((
+            None,
+            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+        ))
     }
 
     /// One brace level of a nested array initializer, appended to `values`
@@ -12285,6 +13318,7 @@ impl Parser {
                 0,
                 0,
                 element_width,
+                true,
             );
         }
         if field.c_type == C0Type::Int32
@@ -12321,6 +13355,7 @@ impl Parser {
                     value,
                     value_type: Some(element_type),
                     pointee_constant: false,
+                    site: C0Site::NONE,
                 })
                 .collect());
         }
@@ -12332,9 +13367,15 @@ impl Parser {
             value,
             value_type: Some(field.c_type),
             pointee_constant: field.pointee_constant,
+            site: C0Site::NONE,
         }])
     }
 
+    /// The stores of one brace level of a struct array's initializer: the
+    /// elements it lists, and, when `zero_omitted`, the zero stores of every
+    /// element it leaves out. A caller whose declaration zero-fills the array
+    /// passes `false`, so an omitted element costs nothing.
+    #[allow(clippy::too_many_arguments)]
     fn parse_embedded_struct_array_initializer_level(
         &mut self,
         target_pointer: C0Expression,
@@ -12343,6 +13384,7 @@ impl Parser {
         depth: usize,
         flat_prefix: u32,
         element_width: u32,
+        zero_omitted: bool,
     ) -> Result<Vec<C0Statement>, C0SyntaxError> {
         let child_count = dimensions[depth];
         self.expect(Token::LBrace)?;
@@ -12407,6 +13449,7 @@ impl Parser {
                         depth + 1,
                         flat_index,
                         element_width,
+                        zero_omitted,
                     )?);
                 }
                 match self.peek() {
@@ -12433,6 +13476,9 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
 
+        if !zero_omitted {
+            return Ok(stores);
+        }
         for child_index in 0..child_count {
             if initialized_children.contains(&child_index) {
                 continue;
@@ -12571,6 +13617,7 @@ impl Parser {
                     value: zero_initializer_value(element_type),
                     value_type: Some(element_type),
                     pointee_constant: false,
+                    site: C0Site::NONE,
                 })
                 .collect();
         }
@@ -12580,6 +13627,7 @@ impl Parser {
             value: zero_initializer_value(field.c_type),
             value_type: Some(field.c_type),
             pointee_constant: field.pointee_constant,
+            site: C0Site::NONE,
         }]
     }
 
@@ -12673,6 +13721,8 @@ impl Parser {
                 pointee_volatile: false,
                 constant: false,
                 pointee_constant: false,
+                zero_fill: None,
+                site: C0Site::NONE,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
                 self.position += 1;
@@ -12683,6 +13733,7 @@ impl Parser {
                     Box::new(C0Statement::Assign {
                         name: kernel_name,
                         expression,
+                        site: C0Site::NONE,
                     }),
                 )
             } else {
@@ -12764,6 +13815,7 @@ impl Parser {
                 let declaration = C0Statement::DeclareStructValue {
                     name: name.clone(),
                     layout: layout.clone(),
+                    site: C0Site::NONE,
                 };
                 let statement = if self.peek() == Some(&Token::Equal) {
                     self.position += 1;
@@ -12891,6 +13943,8 @@ impl Parser {
                 pointee_volatile,
                 constant: object_constant,
                 pointee_constant,
+                zero_fill: None,
+                site: C0Site::NONE,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
                 self.position += 1;
@@ -12903,14 +13957,48 @@ impl Parser {
                         | C0Type::Float64Array(_)
                         | C0Type::PointerArray(_, _)
                 ) {
-                    let initializer = if is_plain_struct_type(&parsed_type) {
+                    // A volatile object keeps one access per element.
+                    let compact = !object_volatile && !pointee_volatile;
+                    let (zero_fill, initializer) = if is_plain_struct_type(&parsed_type) {
                         let struct_name = parsed_type.struct_name.as_deref().unwrap();
                         let dimensions = array_shape.as_deref().expect(
                             "local struct array initializers retain their declared dimensions",
                         );
-                        self.parse_local_struct_array_initializer(&name, struct_name, dimensions)?
+                        self.parse_local_struct_array_initializer(
+                            &name,
+                            struct_name,
+                            dimensions,
+                            compact,
+                        )?
                     } else {
-                        self.parse_local_array_initializer(&name, c_type, array_shape.as_deref())?
+                        self.parse_local_array_initializer(
+                            &name,
+                            c_type,
+                            array_shape.as_deref(),
+                            compact,
+                        )?
+                    };
+                    let declaration = match declaration {
+                        C0Statement::Declare {
+                            c_type,
+                            name,
+                            volatile,
+                            pointee_volatile,
+                            constant,
+                            pointee_constant,
+                            zero_fill: None,
+                            ..
+                        } => C0Statement::Declare {
+                            c_type,
+                            name,
+                            volatile,
+                            pointee_volatile,
+                            constant,
+                            pointee_constant,
+                            zero_fill,
+                            site: C0Site::NONE,
+                        },
+                        _ => unreachable!("an array declaration is a plain declaration"),
                     };
                     C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
@@ -12946,7 +14034,11 @@ impl Parser {
                         self.reject_discarded_const_pointer(c_type, pointee_constant, &expression)?;
                         C0Statement::Seq(
                             Box::new(declaration),
-                            Box::new(C0Statement::Assign { name, expression }),
+                            Box::new(C0Statement::Assign {
+                                name,
+                                expression,
+                                site: C0Site::NONE,
+                            }),
                         )
                     }
                 } else {
@@ -12959,7 +14051,11 @@ impl Parser {
                     self.reject_discarded_const_pointer(c_type, pointee_constant, &expression)?;
                     C0Statement::Seq(
                         Box::new(declaration),
-                        Box::new(C0Statement::Assign { name, expression }),
+                        Box::new(C0Statement::Assign {
+                            name,
+                            expression,
+                            site: C0Site::NONE,
+                        }),
                     )
                 }
             } else {
@@ -13321,6 +14417,7 @@ impl Parser {
                 target: target_pointer,
                 source: source_pointer,
                 layout: layout.clone(),
+                site: C0Site::NONE,
             });
         }
         let mut stores = Vec::new();
@@ -13397,6 +14494,7 @@ impl Parser {
                     },
                     value_type: Some(element_type),
                     pointee_constant: field.pointee_constant,
+                    site: C0Site::NONE,
                 });
             }
         }
@@ -13472,8 +14570,14 @@ impl Parser {
                     pointee_volatile,
                     constant: object_constant,
                     pointee_constant,
+                    zero_fill: None,
+                    site: C0Site::NONE,
                 }),
-                Box::new(C0Statement::Assign { name, expression }),
+                Box::new(C0Statement::Assign {
+                    name,
+                    expression,
+                    site: C0Site::NONE,
+                }),
             ));
             if self.peek() != Some(&Token::Comma) {
                 break;
@@ -13501,7 +14605,11 @@ impl Parser {
         self.expect(Token::Equal)?;
         let expression = self.parse_expression()?;
         self.validate_function_pointer_assignment(&name, &expression)?;
-        Ok(C0Statement::Assign { name, expression })
+        Ok(C0Statement::Assign {
+            name,
+            expression,
+            site: C0Site::NONE,
+        })
     }
 
     fn parse_scalar_update_statement(
@@ -13669,7 +14777,11 @@ impl Parser {
             )?;
             self.validate_function_pointer_assignment(&name, &expression)?;
         }
-        Ok(C0Statement::Assign { name, expression })
+        Ok(C0Statement::Assign {
+            name,
+            expression,
+            site: C0Site::NONE,
+        })
     }
 
     fn parse_update_statement(&mut self, context: &str) -> Result<C0Statement, C0SyntaxError> {
@@ -13739,6 +14851,7 @@ impl Parser {
                         value,
                         value_type: None,
                         pointee_constant: false,
+                        site: C0Site::NONE,
                     })
                 }
                 C0Expression::Field {
@@ -13777,6 +14890,7 @@ impl Parser {
                         value,
                         value_type: Some(field_type),
                         pointee_constant,
+                        site: C0Site::NONE,
                     })
                 }
                 C0Expression::AggregateAddress { .. } => unreachable!(
@@ -13793,6 +14907,7 @@ impl Parser {
                     value,
                     value_type: None,
                     pointee_constant: false,
+                    site: C0Site::NONE,
                 }),
                 target => Err(self.error_here(format!(
                     "expected memory lvalue assignment target in {context}, got {target:?}"
@@ -13834,6 +14949,7 @@ impl Parser {
             target,
             operator,
             operand,
+            site: C0Site::NONE,
         })
     }
 
@@ -13881,6 +14997,7 @@ impl Parser {
                 target,
                 function_name,
                 arguments,
+                site: C0Site::NONE,
             });
         }
         if !matches!(function_name.as_str(), "malloc" | "calloc") {
@@ -13899,6 +15016,7 @@ impl Parser {
                 target,
                 function_name,
                 arguments,
+                site: C0Site::NONE,
             });
         }
         let zeroed = function_name == "calloc";
@@ -14035,6 +15153,7 @@ impl Parser {
             target,
             bytes,
             zeroed,
+            site: C0Site::NONE,
         })
     }
 
@@ -14389,8 +15508,9 @@ impl Parser {
                 }
                 | C0Statement::HeapFree {
                     pointer: expression,
+                    ..
                 }
-                | C0Statement::Return(expression) => {
+                | C0Statement::Return(expression, _) => {
                     if self.expression_contains_lowerable_expression(expression) {
                         return true;
                     }
@@ -14447,6 +15567,7 @@ impl Parser {
                     condition,
                     then_branch,
                     else_branch,
+                    ..
                 } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
@@ -14454,8 +15575,12 @@ impl Parser {
                     statements.push(then_branch);
                     statements.push(else_branch);
                 }
-                C0Statement::While { condition, body }
-                | C0Statement::DoWhile { condition, body } => {
+                C0Statement::While {
+                    condition, body, ..
+                }
+                | C0Statement::DoWhile {
+                    condition, body, ..
+                } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
                     }
@@ -14466,6 +15591,7 @@ impl Parser {
                     condition,
                     step,
                     body,
+                    ..
                 } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
@@ -14474,7 +15600,9 @@ impl Parser {
                     statements.push(step);
                     statements.push(body);
                 }
-                C0Statement::Switch { expression, cases } => {
+                C0Statement::Switch {
+                    expression, cases, ..
+                } => {
                     if self.expression_contains_lowerable_expression(expression) {
                         return true;
                     }
@@ -14810,24 +15938,41 @@ impl Parser {
                 position,
                 direct_function_body,
             }),
-            C0Statement::Assert { condition, label } => {
+            C0Statement::Assert {
+                condition,
+                label,
+                site,
+            } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 Ok(prepend_statements(
                     prefix,
-                    C0Statement::Assert { condition, label },
+                    C0Statement::Assert {
+                        condition,
+                        label,
+                        site,
+                    },
                 ))
             }
-            C0Statement::Assign { name, expression } => {
+            C0Statement::Assign {
+                name,
+                expression,
+                site,
+            } => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
                 Ok(prepend_statements(
                     prefix,
-                    C0Statement::Assign { name, expression },
+                    C0Statement::Assign {
+                        name,
+                        expression,
+                        site,
+                    },
                 ))
             }
             C0Statement::CallAssign {
                 target,
                 function_name,
                 arguments,
+                site,
             } => {
                 let (prefix, arguments) = self.lower_call_arguments(arguments)?;
                 Ok(prepend_statements(
@@ -14836,12 +15981,14 @@ impl Parser {
                         target,
                         function_name,
                         arguments,
+                        site,
                     },
                 ))
             }
             C0Statement::Call {
                 function_name,
                 arguments,
+                site,
             } => {
                 let (prefix, arguments) = self.lower_call_arguments(arguments)?;
                 Ok(prepend_statements(
@@ -14849,6 +15996,7 @@ impl Parser {
                     C0Statement::Call {
                         function_name,
                         arguments,
+                        site,
                     },
                 ))
             }
@@ -14857,6 +16005,7 @@ impl Parser {
                 signature,
                 arguments,
                 position,
+                site,
             } => {
                 self.validate_function_designator_argument_order(&function, &arguments)?;
                 let (mut prefix, function) = self.lower_expression_calls(function)?;
@@ -14877,14 +16026,18 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    zero_fill: None,
+                    site: site.clone(),
                 });
                 prefix.push(C0Statement::Assign {
                     name: callback_name.clone(),
                     expression: function,
+                    site: site.clone(),
                 });
                 prefix.push(C0Statement::Call {
                     function_name: callback_name,
                     arguments,
+                    site,
                 });
                 Ok(balanced_statement_sequence(prefix)
                     .expect("indirect call has a non-empty prefix"))
@@ -14893,6 +16046,7 @@ impl Parser {
                 target,
                 bytes,
                 zeroed,
+                site,
             } => {
                 let (prefix, bytes) = self.lower_expression_calls(bytes)?;
                 Ok(prepend_statements(
@@ -14901,29 +16055,34 @@ impl Parser {
                         target,
                         bytes,
                         zeroed,
+                        site,
                     },
                 ))
             }
-            C0Statement::HeapFree { pointer } => {
+            C0Statement::HeapFree { pointer, site } => {
                 let (prefix, pointer) = self.lower_expression_calls(pointer)?;
                 Ok(prepend_statements(
                     prefix,
-                    C0Statement::HeapFree { pointer },
+                    C0Statement::HeapFree { pointer, site },
                 ))
             }
             C0Statement::Seq(first, second) => Ok(C0Statement::Seq(
                 Box::new(self.lower_statement_calls(*first)?),
                 Box::new(self.lower_statement_calls(*second)?),
             )),
-            C0Statement::Return(expression) => {
+            C0Statement::Return(expression, site) => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
-                Ok(prepend_statements(prefix, C0Statement::Return(expression)))
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::Return(expression, site),
+                ))
             }
             C0Statement::Store {
                 pointer,
                 value,
                 value_type,
                 pointee_constant,
+                site,
             } => {
                 let (prefix, pointer, value) = self.lower_expression_pair(pointer, value)?;
                 Ok(prepend_statements(
@@ -14933,6 +16092,7 @@ impl Parser {
                         value,
                         value_type,
                         pointee_constant,
+                        site,
                     },
                 ))
             }
@@ -14941,6 +16101,7 @@ impl Parser {
                 value,
                 value_type,
                 pointee_constant,
+                site,
             } => {
                 // The macro contract evaluates the value into a temporary
                 // before evaluating the destination access. This makes the
@@ -14956,6 +16117,7 @@ impl Parser {
                         value,
                         value_type,
                         pointee_constant,
+                        site,
                     },
                 ))
             }
@@ -14963,6 +16125,7 @@ impl Parser {
                 target,
                 source,
                 layout,
+                site,
             } => {
                 let (prefix, target, source) = self.lower_expression_pair(target, source)?;
                 Ok(prepend_statements(
@@ -14971,6 +16134,7 @@ impl Parser {
                         target,
                         source,
                         layout,
+                        site,
                     },
                 ))
             }
@@ -14978,6 +16142,7 @@ impl Parser {
                 target,
                 operator,
                 operand,
+                site,
             } => {
                 let (prefix, target, operand) = self.lower_expression_pair(target, operand)?;
                 Ok(prepend_statements(
@@ -14986,6 +16151,7 @@ impl Parser {
                         target,
                         operator,
                         operand,
+                        site,
                     },
                 ))
             }
@@ -14993,6 +16159,7 @@ impl Parser {
                 condition,
                 then_branch,
                 else_branch,
+                site,
             } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 let then_branch = self.lower_statement_calls(*then_branch)?;
@@ -15003,10 +16170,15 @@ impl Parser {
                         condition,
                         then_branch: Box::new(then_branch),
                         else_branch: Box::new(else_branch),
+                        site,
                     },
                 ))
             }
-            C0Statement::While { condition, body } => {
+            C0Statement::While {
+                condition,
+                body,
+                site,
+            } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 let body = self.lower_statement_calls(*body)?;
                 if !prefix.is_empty() {
@@ -15016,25 +16188,33 @@ impl Parser {
                             condition: C0Expression::Not(Box::new(condition)),
                             then_branch: Box::new(C0Statement::Break),
                             else_branch: Box::new(C0Statement::Skip),
+                            site: site.clone(),
                         },
                     );
                     return Ok(C0Statement::While {
                         condition: C0Expression::Int32Literal(1),
                         body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
+                        site,
                     });
                 }
                 Ok(C0Statement::While {
                     condition,
                     body: Box::new(body),
+                    site,
                 })
             }
-            C0Statement::DoWhile { condition, body } => {
+            C0Statement::DoWhile {
+                condition,
+                body,
+                site,
+            } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 let body = self.lower_statement_calls(*body)?;
                 if prefix.is_empty() {
                     return Ok(C0Statement::DoWhile {
                         condition,
                         body: Box::new(body),
+                        site,
                     });
                 }
                 // A do-while condition runs after the first body execution,
@@ -15051,11 +16231,13 @@ impl Parser {
                         condition: C0Expression::Not(Box::new(condition)),
                         then_branch: Box::new(C0Statement::Break),
                         else_branch: Box::new(C0Statement::Skip),
+                        site: site.clone(),
                     },
                 );
                 Ok(C0Statement::While {
                     condition: C0Expression::Int32Literal(1),
                     body: Box::new(C0Statement::Seq(Box::new(body), Box::new(condition_check))),
+                    site,
                 })
             }
             C0Statement::For {
@@ -15063,6 +16245,7 @@ impl Parser {
                 condition,
                 step,
                 body,
+                site,
             } => {
                 let (prefix, condition) = self.lower_expression_calls(condition)?;
                 let initializer = self.lower_statement_calls(*initializer)?;
@@ -15075,6 +16258,7 @@ impl Parser {
                             condition: C0Expression::Not(Box::new(condition)),
                             then_branch: Box::new(C0Statement::Break),
                             else_branch: Box::new(C0Statement::Skip),
+                            site: site.clone(),
                         },
                     );
                     return Ok(C0Statement::For {
@@ -15082,6 +16266,7 @@ impl Parser {
                         condition: C0Expression::Int32Literal(1),
                         step: Box::new(step),
                         body: Box::new(C0Statement::Seq(Box::new(guard), Box::new(body))),
+                        site,
                     });
                 }
                 Ok(C0Statement::For {
@@ -15089,9 +16274,14 @@ impl Parser {
                     condition,
                     step: Box::new(step),
                     body: Box::new(body),
+                    site,
                 })
             }
-            C0Statement::Switch { expression, cases } => {
+            C0Statement::Switch {
+                expression,
+                cases,
+                site,
+            } => {
                 let (prefix, expression) = self.lower_expression_calls(expression)?;
                 let cases = cases
                     .into_iter()
@@ -15104,7 +16294,11 @@ impl Parser {
                     .collect::<Result<Vec<_>, C0SyntaxError>>()?;
                 Ok(prepend_statements(
                     prefix,
-                    C0Statement::Switch { expression, cases },
+                    C0Statement::Switch {
+                        expression,
+                        cases,
+                        site,
+                    },
                 ))
             }
         }
@@ -15204,6 +16398,33 @@ impl Parser {
         Ok(())
     }
 
+    /// Whether evaluating `expression` reads nothing but named scalar
+    /// locals outside `assigned`: no load through a pointer, no call, no
+    /// static object, and no aggregate value. Such an evaluation cannot
+    /// read or write any object an assignment to a name in `assigned`
+    /// modifies, whatever the program's aliasing.
+    fn reads_only_locals_other_than(&self, expression: &C0Expression, assigned: &[String]) -> bool {
+        match expression {
+            C0Expression::Int32Literal(_)
+            | C0Expression::UInt8Literal(_)
+            | C0Expression::UInt32Literal(_)
+            | C0Expression::Int64Literal(_)
+            | C0Expression::UInt64Literal(_) => true,
+            C0Expression::Variable(name) => {
+                !assigned.contains(name)
+                    && self.variable_types.contains_key(name)
+                    && !self.variable_struct_values.contains_key(name)
+                    && !self.variable_has_static_storage(name)
+            }
+            C0Expression::Cast { expression, .. }
+            | C0Expression::PointerOffsetBytes {
+                pointer: expression,
+                ..
+            } => self.reads_only_locals_other_than(expression, assigned),
+            _ => false,
+        }
+    }
+
     fn lower_expression_pair(
         &mut self,
         left: C0Expression,
@@ -15217,6 +16438,14 @@ impl Parser {
         let right_reads = self.expression_reads_potentially_changed_value(&right);
         let left_value_reads = expression_reads_runtime_value(&left);
         let right_value_reads = expression_reads_runtime_value(&right);
+        // An assignment's side effect is unsequenced relative to the other
+        // operand, which C leaves undefined only when that operand reads or
+        // writes the assigned object. An operand built solely from direct
+        // reads of other named locals cannot touch it.
+        let left_disjoint_from_right_assignment = assignment_chain_targets(&right)
+            .is_some_and(|targets| self.reads_only_locals_other_than(&left, &targets));
+        let right_disjoint_from_left_assignment = assignment_chain_targets(&left)
+            .is_some_and(|targets| self.reads_only_locals_other_than(&right, &targets));
         let (left_prefix, left) = self.lower_expression_calls(left)?;
         let (right_prefix, right) = self.lower_expression_calls(right)?;
         if prefix_has_non_assertion(&left_prefix) && prefix_has_non_assertion(&right_prefix) {
@@ -15243,13 +16472,19 @@ impl Parser {
                 "an expression call and a potentially aliased operand read are not supported",
             ));
         }
-        if right_value_reads && let Some(position) = left_assignment {
+        if right_value_reads
+            && !right_disjoint_from_left_assignment
+            && let Some(position) = left_assignment
+        {
             return Err(self.error_at_position(
                 Some(position),
                 "an assignment expression and an unsequenced operand read are not supported",
             ));
         }
-        if left_value_reads && let Some(position) = right_assignment {
+        if left_value_reads
+            && !left_disjoint_from_right_assignment
+            && let Some(position) = right_assignment
+        {
             return Err(self.error_at_position(
                 Some(position),
                 "an assignment expression and an unsequenced operand read are not supported",
@@ -15290,6 +16525,8 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
+                    site: C0Site::NONE,
                 });
                 // Conversion happens once when the typed temporary receives
                 // the right operand. The target and expression result then
@@ -15298,10 +16535,12 @@ impl Parser {
                 prefix.push(C0Statement::Assign {
                     name: temporary.clone(),
                     expression: value,
+                    site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::Assign {
                     name,
                     expression: C0Expression::Variable(temporary.clone()),
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, C0Expression::Variable(temporary)))
             }
@@ -15328,11 +16567,13 @@ impl Parser {
                     prefix.push(C0Statement::DeclareStructValue {
                         name: target.clone(),
                         layout,
+                        site: C0Site::NONE,
                     });
                     prefix.push(C0Statement::CallAssign {
                         target: target.clone(),
                         function_name,
                         arguments,
+                        site: C0Site::NONE,
                     });
                     return Ok((prefix, C0Expression::Variable(target)));
                 }
@@ -15370,6 +16611,7 @@ impl Parser {
                     target: target.clone(),
                     function_name,
                     arguments,
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, C0Expression::Variable(target)))
             }
@@ -15385,6 +16627,7 @@ impl Parser {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
+                explicit_qualification,
             } => {
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
                 Ok((
@@ -15395,6 +16638,7 @@ impl Parser {
                         struct_name,
                         pointee_volatile,
                         pointee_constant,
+                        explicit_qualification,
                     },
                 ))
             }
@@ -15430,11 +16674,13 @@ impl Parser {
                     prefix.push(C0Statement::DeclareStructValue {
                         name: target.clone(),
                         layout,
+                        site: C0Site::NONE,
                     });
                     prefix.push(C0Statement::If {
                         condition,
                         then_branch: Box::new(then_statement),
                         else_branch: Box::new(else_statement),
+                        site: C0Site::NONE,
                     });
                     return Ok((prefix, C0Expression::Variable(target)));
                 }
@@ -15468,6 +16714,7 @@ impl Parser {
                     C0Statement::Assign {
                         name: target.clone(),
                         expression: then_branch,
+                        site: C0Site::NONE,
                     },
                 );
                 let else_statement = prepend_statements(
@@ -15475,6 +16722,7 @@ impl Parser {
                     C0Statement::Assign {
                         name: target.clone(),
                         expression: else_branch,
+                        site: C0Site::NONE,
                     },
                 );
                 // A conditional branch may not execute, so the result needs a
@@ -15487,11 +16735,14 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    zero_fill: None,
+                    site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::If {
                     condition,
                     then_branch: Box::new(then_statement),
                     else_branch: Box::new(else_statement),
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, C0Expression::Variable(target)))
             }
@@ -15525,12 +16776,15 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
+                    site: C0Site::NONE,
                 }];
                 prefix.push(body);
                 prefix.extend(value_prefix);
                 prefix.push(C0Statement::Assign {
                     name: target.clone(),
                     expression: value,
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, C0Expression::Variable(target)))
             }
@@ -15624,16 +16878,20 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
+                    site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::Assign {
                     name: temporary.clone(),
                     expression: value,
+                    site: C0Site::NONE,
                 });
                 prefix.push(C0Statement::SequentialStore {
                     target,
                     value: C0Expression::Variable(temporary.clone()),
                     value_type: c_type,
                     pointee_constant,
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, C0Expression::Variable(temporary)))
             }
@@ -15752,7 +17010,10 @@ impl Parser {
                 );
                 prefix.push(C0Statement::Assert {
                     condition: C0Expression::And(Box::new(lower), Box::new(upper)),
-                    label: format!("array subobject index must be in [0, {length})"),
+                    label: format!(
+                        "array subobject index must be at least 0 and less than {length}"
+                    ),
+                    site: C0Site::NONE,
                 });
                 Ok((prefix, index))
             }
@@ -15789,10 +17050,13 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
+            site: C0Site::NONE,
         });
         prefix.push(C0Statement::Assign {
             name: callback_name.clone(),
             expression: function,
+            site: C0Site::NONE,
         });
         let (call_prefix, result) = self.lower_expression_calls(C0Expression::Call {
             function_name: callback_name,
@@ -15863,6 +17127,7 @@ impl Parser {
         let assign_right = C0Statement::Assign {
             name: target.clone(),
             expression: normalized_right,
+            site: C0Site::NONE,
         };
         let (then_branch, else_branch) = if is_and {
             (
@@ -15870,6 +17135,7 @@ impl Parser {
                 C0Statement::Assign {
                     name: target.clone(),
                     expression: C0Expression::Int32Literal(0),
+                    site: C0Site::NONE,
                 },
             )
         } else {
@@ -15877,6 +17143,7 @@ impl Parser {
                 C0Statement::Assign {
                     name: target.clone(),
                     expression: C0Expression::Int32Literal(1),
+                    site: C0Site::NONE,
                 },
                 prepend_statements(right_prefix, assign_right),
             )
@@ -15889,11 +17156,14 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
+            site: C0Site::NONE,
         });
         prefix.push(C0Statement::If {
             condition: left,
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
+            site: C0Site::NONE,
         });
         Ok((prefix, C0Expression::Variable(target)))
     }
@@ -15936,6 +17206,17 @@ impl Parser {
         {
             return Err(self.error_here("conditional operator branches have incompatible types"));
         }
+        // Pointers to different struct types share a kernel pointer type
+        // but are not compatible C types.
+        if let (Some(then_pointee), Some(else_pointee)) = (
+            self.struct_pointer_name(&then_branch),
+            self.struct_pointer_name(&else_branch),
+        ) && then_pointee != else_pointee
+        {
+            return Err(self.error_here(format!(
+                "conditional operator branches have incompatible types `struct {then_pointee} *` and `struct {else_pointee} *`"
+            )));
+        }
         let then_branch = if let Some(common_type) = common_type {
             self.coerce_conditional_branch(then_branch, common_type)
         } else {
@@ -15961,6 +17242,15 @@ impl Parser {
         let Some(expression_type) = self.source_expression_type(&expression) else {
             return expression;
         };
+        // With a pointer as the other operand, a null pointer constant is
+        // converted to that pointer type; the null pointer is the same
+        // value at every pointer type.
+        if common_type.is_object_pointer()
+            && expression_type != common_type
+            && is_null_pointer_constant(&expression)
+        {
+            return C0Expression::Int32Literal(0);
+        }
         if expression_type == common_type
             || !is_arithmetic_type(expression_type)
             || !is_arithmetic_type(common_type)
@@ -15973,6 +17263,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         }
     }
 
@@ -15980,6 +17271,39 @@ impl Parser {
         &mut self,
         function_name: Option<&str>,
     ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        // Only the call the statement itself makes is a statement call; calls
+        // among its arguments are not.
+        let statement_call = std::mem::take(&mut self.statement_call);
+        // Every direct call, in statement or expression position, reaches
+        // its arguments through here, so the declarations whose calls have
+        // no model are refused at one place.
+        if let Some(source_name) = function_name
+            && !self
+                .variable_types
+                .contains_key(&self.resolve_name(source_name))
+            && let Some(header) = self.function_declarations.get(source_name)
+        {
+            if header.weak_linkage {
+                return Err(self.error_at_previous(format!(
+                    "weak function `{source_name}` may be absent; calls need an availability model"
+                )));
+            }
+            if header.returns_twice {
+                return Err(self.error_at_previous(format!(
+                    "returns-twice function `{source_name}` needs a checked control-flow model"
+                )));
+            }
+            if header.compile_time_error && !(statement_call && header.parameters.is_empty()) {
+                return Err(self.error_at_previous(format!(
+                    "function `{source_name}` is declared with the GNU `error` attribute; only a discarded call with no arguments is supported"
+                )));
+            }
+            if header.variadic {
+                return Err(self.error_at_previous(format!(
+                    "calls to variadic function `{source_name}` are not supported in C0; its variable arguments are not modeled"
+                )));
+            }
+        }
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() == Some(&Token::RParen) {
@@ -16373,6 +17697,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         };
         let byte_offset = C0Expression::Multiply(
             Box::new(offset),
@@ -16456,6 +17781,7 @@ impl Parser {
             struct_name,
             pointee_volatile: volatile_pointer_object_cast,
             pointee_constant: parsed_type.pointee_constant,
+            explicit_qualification: c_type.is_pointer(),
         })
     }
 
@@ -16786,7 +18112,7 @@ impl Parser {
                     target: target.clone(),
                     value: value.clone(),
                     value_type: c_type,
-                    pointee_constant: self.expression_pointee_is_constant(target),
+                    pointee_constant: self.expression_pointee_is_constant(target), site: C0Site::NONE
                 }))
             }
             "READ_ONCE" | "likely" | "unlikely" | "__builtin_expect" => Err(
@@ -16829,30 +18155,6 @@ impl Parser {
                             ));
                         }
                     };
-                    if self
-                        .function_declarations
-                        .get(&source_name)
-                        .is_some_and(|header| header.weak_linkage)
-                    {
-                        return Err(self.error_at_position(
-                            call_position,
-                            format!(
-                                "weak function `{source_name}` may be absent; calls need an availability model"
-                            ),
-                        ));
-                    }
-                    if self
-                        .function_declarations
-                        .get(&source_name)
-                        .is_some_and(|header| header.returns_twice)
-                    {
-                        return Err(self.error_at_position(
-                            call_position,
-                            format!(
-                                "returns-twice function `{source_name}` needs a checked control-flow model"
-                            ),
-                        ));
-                    }
                     let arguments = self.parse_call_arguments(Some(&source_name))?;
                     if let Some(result) = self.parse_kernel_primitive_expression(
                         &source_name,
@@ -16899,6 +18201,31 @@ impl Parser {
                         // first operand as the C0 expression preserves its
                         // value and any effects in the existing lowering path.
                         expression = value.clone();
+                        continue;
+                    }
+                    if source_name == "__builtin_constant_p" {
+                        let [operand] = arguments.as_slice() else {
+                            return Err(self.error_at_position(
+                                call_position,
+                                "`__builtin_constant_p` expects one argument",
+                            ));
+                        };
+                        if self.expression_has_runtime_effect(operand) {
+                            return Err(self.error_at_position(
+                                call_position,
+                                "the operand of `__builtin_constant_p` must be side-effect free",
+                            ));
+                        }
+                        // The operand is not evaluated. Whether the compiler
+                        // folds it to a constant depends on optimization, so
+                        // the result is an unknown 0 or 1 and both outcomes
+                        // are checked; the standard library's contract for
+                        // this name says only that.
+                        expression = C0Expression::Call {
+                            function_name: CONSTANT_P_UNKNOWN.to_string(),
+                            arguments: Vec::new(),
+                            position: call_position.clone(),
+                        };
                         continue;
                     }
                     if source_name.starts_with("__builtin_") {
@@ -17064,6 +18391,7 @@ impl Parser {
                                 struct_name: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
+                                explicit_qualification: false,
                             };
                             let offset = C0Expression::Multiply(
                                 Box::new(first_index),
@@ -17349,10 +18677,20 @@ impl Parser {
                 C0Expression::Variable(name) => self.variable_struct_values.get(name).cloned(),
                 _ => None,
             },
+            // The tag names what a one-level struct pointer points to. A cast
+            // to `struct T **` points to a pointer cell, not to a struct.
             C0Expression::Cast {
                 struct_name: Some(struct_name),
+                c_type,
                 ..
-            } => Some(struct_name.clone()),
+            } if !c_type.pointee_type().is_some_and(C0Type::is_pointer) => {
+                Some(struct_name.clone())
+            }
+            C0Expression::Cast { c_type, .. }
+                if c_type.pointee_type().is_some_and(C0Type::is_pointer) =>
+            {
+                None
+            }
             // A cast to another pointer type keeps the struct identity of
             // the pointer underneath; a cast to an integer does not, so an
             // `(unsigned long)p + 1` is integer arithmetic, not scaled
@@ -17362,6 +18700,19 @@ impl Parser {
             } if c_type.is_pointer() => self.struct_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_name(left)
+            }
+            // `parse_conditional` has already required the two branches to
+            // agree, with a null pointer constant taking the other's type.
+            C0Expression::Conditional {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if is_null_pointer_constant(then_branch) {
+                    self.struct_pointer_name(else_branch)
+                } else {
+                    self.struct_pointer_name(then_branch)
+                }
             }
             _ => None,
         }
@@ -17451,6 +18802,11 @@ impl Parser {
             },
             C0Expression::SequentialRead { struct_name, .. }
             | C0Expression::SequentialWrite { struct_name, .. } => struct_name.clone(),
+            C0Expression::Cast {
+                struct_name: Some(struct_name),
+                c_type,
+                ..
+            } if c_type.pointee_type().is_some_and(C0Type::is_pointer) => Some(struct_name.clone()),
             C0Expression::Cast { expression, .. } => self.struct_pointer_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_pointer_name(left)
@@ -18021,6 +19377,28 @@ impl Parser {
                     .ok_or_else(|| self.error_here(format!("unknown union declaration `{name}`")))?
                     .size_bytes;
                 return Ok(C0Expression::SizeOfUnion { name, bytes });
+            }
+            if !self.is_type_start() {
+                // `sizeof(expression)`: the operand is not evaluated; only
+                // its type is used, as for GNU `typeof`.
+                let operand = self.parse_expression_allow_direct_aggregate()?;
+                self.expect(Token::RParen)?;
+                let c_type = self
+                    .source_expression_type(&operand)
+                    .filter(|c_type| {
+                        (c_type.is_pointer() || is_arithmetic_type(*c_type))
+                            && self.aggregate_struct_name(&operand).is_none()
+                    })
+                    .ok_or_else(|| {
+                        self.error_at_previous(
+                            "`sizeof` of an expression requires a modeled scalar or pointer operand",
+                        )
+                    })?;
+                return Ok(C0Expression::SizeOfType {
+                    c_type,
+                    struct_name: None,
+                    bytes: c_type.abi_size_bytes(),
+                });
             }
             let parsed_type = self.parse_type_with_anonymous_struct(false, true)?;
             self.expect(Token::RParen)?;
@@ -18676,10 +20054,10 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
         }
 
         if ch == '.' && chars.get(index + 1) == Some(&'.') && chars.get(index + 2) == Some(&'.') {
-            return Err(C0SyntaxError::at(
-                position,
-                "variadic parameter lists (`...`) are not supported in C0",
-            ));
+            tokens.push(Token::Ellipsis);
+            positions.push(position);
+            index += 3;
+            continue;
         }
 
         if is_ident_start(ch) {
@@ -18853,9 +20231,163 @@ fn balanced_statement_sequence(mut statements: Vec<C0Statement>) -> Option<C0Sta
     statements.pop()
 }
 
-fn prepend_statements(prefix: Vec<C0Statement>, statement: C0Statement) -> C0Statement {
+/// A site at `position` quoting `text`, without a trailing comment and
+/// bounded to [`SITE_TEXT_LIMIT`] characters, with `…` marking a statement
+/// that continues past it.
+fn statement_site(position: &SourcePosition, text: &str, continues: bool) -> C0Site {
+    let text = without_trailing_comment(text).trim();
+    if text.is_empty() {
+        return C0Site::NONE;
+    }
+    let mut excerpt = text.chars().take(SITE_TEXT_LIMIT).collect::<String>();
+    if continues || text.chars().count() > SITE_TEXT_LIMIT {
+        excerpt.push_str(" …");
+    }
+    C0Site(Some(std::sync::Arc::new(C0StatementSite {
+        position: position.clone(),
+        text: excerpt.into_boxed_str(),
+    })))
+}
+
+/// The source width of a token whose spelling is fixed or recorded, so a
+/// site can end its excerpt just after a statement's last token.
+fn token_source_width(token: &Token) -> Option<usize> {
+    Some(match token {
+        Token::Ident(name) | Token::Number(name) => name.chars().count(),
+        Token::CharLiteral(_) | Token::StringLiteral(_) => return None,
+        Token::LParen
+        | Token::RParen
+        | Token::LBracket
+        | Token::RBracket
+        | Token::LBrace
+        | Token::RBrace
+        | Token::Comma
+        | Token::Semicolon
+        | Token::Plus
+        | Token::Minus
+        | Token::Dot
+        | Token::LessThan
+        | Token::GreaterThan
+        | Token::Bang
+        | Token::Star
+        | Token::Slash
+        | Token::Percent
+        | Token::Amp
+        | Token::Pipe
+        | Token::Caret
+        | Token::Tilde
+        | Token::Equal
+        | Token::Question
+        | Token::Colon => 1,
+        Token::PlusPlus
+        | Token::PlusEqual
+        | Token::Arrow
+        | Token::MinusMinus
+        | Token::MinusEqual
+        | Token::LessEqual
+        | Token::ShiftLeft
+        | Token::GreaterEqual
+        | Token::ShiftRight
+        | Token::EqualEqual
+        | Token::BangEqual
+        | Token::AmpAmp
+        | Token::PipePipe
+        | Token::StarEqual
+        | Token::CaretEqual
+        | Token::SlashEqual
+        | Token::PercentEqual
+        | Token::AmpEqual
+        | Token::PipeEqual => 2,
+        Token::Ellipsis | Token::ShiftLeftEqual | Token::ShiftRightEqual => 3,
+    })
+}
+
+/// `text` up to a `//` or `/*` comment that starts outside a literal.
+fn without_trailing_comment(text: &str) -> &str {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut previous = None;
+    for (index, character) in text.char_indices() {
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == delimiter {
+                quote = None;
+            }
+        } else if character == '"' || character == '\'' {
+            quote = Some(character);
+        } else if previous == Some('/') && (character == '/' || character == '*') {
+            return &text[..index - 1];
+        }
+        previous = Some(character);
+    }
+    text
+}
+
+/// Gives `site` to every statement in `statement` that can carry one and has
+/// none yet: the statements one source statement lowered to. A statement
+/// that already has a site was filled, with everything inside it, when it
+/// got that site, so its subtree is not walked again. Iterative because
+/// long blocks are deep `Seq` chains.
+fn fill_missing_sites(statement: &mut C0Statement, site: &C0Site) {
+    if site.is_none() {
+        return;
+    }
+    let mut pending = vec![statement];
+    while let Some(next) = pending.pop() {
+        if let Some(own) = next.site_mut() {
+            if !own.is_none() {
+                continue;
+            }
+            *own = site.clone();
+        }
+        match next {
+            C0Statement::Seq(first, second) => {
+                pending.push(second);
+                pending.push(first);
+            }
+            C0Statement::Label { statement, .. } => pending.push(statement),
+            C0Statement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                pending.push(else_branch);
+                pending.push(then_branch);
+            }
+            C0Statement::While { body, .. } | C0Statement::DoWhile { body, .. } => {
+                pending.push(body);
+            }
+            C0Statement::For {
+                initializer,
+                step,
+                body,
+                ..
+            } => {
+                pending.push(body);
+                pending.push(step);
+                pending.push(initializer);
+            }
+            C0Statement::Switch { cases, .. } => {
+                pending.extend(cases.iter_mut().map(|case| case.body.as_mut()));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `statement` after `prefix`, the statements its lowering moved ahead of
+/// it; each takes the statement's site, being part of what it does.
+fn prepend_statements(mut prefix: Vec<C0Statement>, statement: C0Statement) -> C0Statement {
     if prefix.is_empty() {
         return statement;
+    }
+    if let Some(site) = statement.site() {
+        for generated in &mut prefix {
+            fill_missing_sites(generated, site);
+        }
     }
     let mut statements = prefix;
     statements.push(statement);
@@ -18911,7 +20443,7 @@ fn statement_continues_enclosing_loop(statement: &C0Statement) -> bool {
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
-        | C0Statement::Return(_)
+        | C0Statement::Return(_, _)
         | C0Statement::Store { .. }
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
@@ -18932,6 +20464,7 @@ fn prepend_condition_check_before_loop_continues(
                 condition: C0Expression::Not(Box::new(loop_condition.clone())),
                 then_branch: Box::new(C0Statement::Break),
                 else_branch: Box::new(C0Statement::Continue),
+                site: C0Site::NONE,
             },
         ),
         C0Statement::Seq(first, second) => C0Statement::Seq(
@@ -18950,6 +20483,7 @@ fn prepend_condition_check_before_loop_continues(
             condition: if_condition,
             then_branch,
             else_branch,
+            site,
         } => C0Statement::If {
             condition: if_condition.clone(),
             then_branch: Box::new(prepend_condition_check_before_loop_continues(
@@ -18962,8 +20496,13 @@ fn prepend_condition_check_before_loop_continues(
                 prefix,
                 loop_condition,
             )?),
+            site,
         },
-        C0Statement::Switch { expression, cases } => {
+        C0Statement::Switch {
+            expression,
+            cases,
+            site,
+        } => {
             // The rewrite ends a failing iteration with `break`, which a
             // `switch` would capture as its own exit: the rest of the body
             // would run and the loop would not end. C0 has no spelling for
@@ -18977,7 +20516,11 @@ fn prepend_condition_check_before_loop_continues(
                     "`continue` inside a `switch` is not supported in a `do ... while` whose condition contains a call",
                 ));
             }
-            C0Statement::Switch { expression, cases }
+            C0Statement::Switch {
+                expression,
+                cases,
+                site,
+            }
         }
         statement @ (C0Statement::While { .. }
         | C0Statement::DoWhile { .. }
@@ -18994,7 +20537,7 @@ fn prepend_condition_check_before_loop_continues(
         | C0Statement::IndirectCall { .. }
         | C0Statement::HeapAllocate { .. }
         | C0Statement::HeapFree { .. }
-        | C0Statement::Return(_)
+        | C0Statement::Return(_, _)
         | C0Statement::Store { .. }
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
@@ -19085,6 +20628,18 @@ fn first_embedded_call_position(expression: &C0Expression) -> Option<SourcePosit
         | C0Expression::SizeOfUnion { .. }
         | C0Expression::SizeOfType { .. } => None,
     }
+}
+
+/// The names a chain of simple assignments `a = b = value` assigns, when
+/// `expression` is such a chain and `value` holds no further assignment.
+fn assignment_chain_targets(expression: &C0Expression) -> Option<Vec<String>> {
+    let mut targets = Vec::new();
+    let mut current = expression;
+    while let C0Expression::Assignment { name, value, .. } = current {
+        targets.push(name.clone());
+        current = value;
+    }
+    (!targets.is_empty() && first_assignment_position(current).is_none()).then_some(targets)
 }
 
 fn first_assignment_position(expression: &C0Expression) -> Option<SourcePosition> {
@@ -19247,29 +20802,71 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
     }
 }
 
+/// Decodes the escape sequence whose backslash is at `backslash`, returning
+/// its byte and the index after it. Octal escapes take up to three digits
+/// and hexadecimal escapes take every following hexadecimal digit, as in C;
+/// a value that does not fit one byte is rejected.
+fn parse_escape(
+    chars: &[char],
+    backslash: usize,
+    literal: &str,
+) -> Result<(u8, usize), C0SyntaxError> {
+    let Some(escaped) = chars.get(backslash + 1).copied() else {
+        return Err(C0SyntaxError::new(format!(
+            "unterminated {literal} literal"
+        )));
+    };
+    let simple = match escaped {
+        'n' => Some(b'\n'),
+        'r' => Some(b'\r'),
+        't' => Some(b'\t'),
+        'a' => Some(0x07),
+        'b' => Some(0x08),
+        'f' => Some(0x0c),
+        'v' => Some(0x0b),
+        '\\' => Some(b'\\'),
+        '\'' => Some(b'\''),
+        '"' => Some(b'"'),
+        '?' => Some(b'?'),
+        _ => None,
+    };
+    if let Some(byte) = simple {
+        return Ok((byte, backslash + 2));
+    }
+    let (radix, first_digit, max_digits) = match escaped {
+        '0'..='7' => (8, backslash + 1, 3),
+        'x' => (16, backslash + 2, usize::MAX),
+        other => {
+            return Err(C0SyntaxError::new(format!(
+                "unsupported {literal} escape `\\{other}`"
+            )));
+        }
+    };
+    let mut value = 0u32;
+    let mut end = first_digit;
+    while end - first_digit < max_digits
+        && let Some(digit) = chars.get(end).and_then(|digit| digit.to_digit(radix))
+    {
+        value = value.saturating_mul(radix).saturating_add(digit);
+        end += 1;
+    }
+    if end == first_digit {
+        return Err(C0SyntaxError::new(format!(
+            "hexadecimal {literal} escape `\\x` requires at least one digit"
+        )));
+    }
+    let byte = u8::try_from(value).map_err(|_| {
+        C0SyntaxError::new(format!("numeric {literal} escape does not fit one byte"))
+    })?;
+    Ok((byte, end))
+}
+
 fn parse_char_literal(chars: &[char], start: usize) -> Result<(u8, usize), C0SyntaxError> {
     let Some(first) = chars.get(start + 1).copied() else {
         return Err(C0SyntaxError::new("unterminated character literal"));
     };
     let (value, end) = if first == '\\' {
-        let Some(escaped) = chars.get(start + 2).copied() else {
-            return Err(C0SyntaxError::new("unterminated character literal"));
-        };
-        let value = match escaped {
-            'n' => b'\n',
-            'r' => b'\r',
-            't' => b'\t',
-            '0' => b'\0',
-            '\\' => b'\\',
-            '\'' => b'\'',
-            '"' => b'"',
-            other => {
-                return Err(C0SyntaxError::new(format!(
-                    "unsupported character escape `\\{other}`"
-                )));
-            }
-        };
-        (value, start + 3)
+        parse_escape(chars, start + 1, "character")?
     } else {
         if !first.is_ascii() {
             return Err(C0SyntaxError::new(
@@ -19295,25 +20892,9 @@ fn parse_string_literal(chars: &[char], start: usize) -> Result<(Vec<u8>, usize)
         match ch {
             '"' => return Ok((value, index + 1)),
             '\\' => {
-                let Some(escaped) = chars.get(index + 1).copied() else {
-                    return Err(C0SyntaxError::new("unterminated string literal"));
-                };
-                let byte = match escaped {
-                    'n' => b'\n',
-                    'r' => b'\r',
-                    't' => b'\t',
-                    '0' => b'\0',
-                    '\\' => b'\\',
-                    '\'' => b'\'',
-                    '"' => b'"',
-                    other => {
-                        return Err(C0SyntaxError::new(format!(
-                            "unsupported string escape `\\{other}`"
-                        )));
-                    }
-                };
+                let (byte, next) = parse_escape(chars, index, "string")?;
                 value.push(byte);
-                index += 2;
+                index = next;
             }
             '\n' | '\r' => {
                 return Err(C0SyntaxError::new(
@@ -19345,6 +20926,65 @@ fn is_ident_continue(ch: char) -> bool {
 #[cfg(test)]
 mod scope_metadata_tests {
     use super::*;
+
+    #[test]
+    fn explicit_halfword_fields_check_width_alignment_and_separation() {
+        let fields = vec![
+            ("a".into(), C0Type::UInt16, 0, 2),
+            ("b".into(), C0Type::UInt16, 2, 2),
+        ];
+        let layout = C0StructLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
+        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
+        assert_eq!(layout.field("b").unwrap().byte_width, 2);
+        for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
+            let mut invalid = fields.clone();
+            invalid[1].2 = offset;
+            invalid[1].3 = width;
+            assert!(C0StructLayout::from_explicit_fields(invalid, 4, 2).is_err());
+        }
+    }
+
+    #[test]
+    fn explicit_scalar_array_fields_preserve_extent_and_check_full_layout() {
+        for length in [1, 1024, 1_000_000] {
+            let width = length * 4;
+            let fields = vec![
+                ("values".into(), C0Type::UInt32Array(length), 0, width),
+                ("marker".into(), C0Type::UInt8, width, 1),
+            ];
+            let layout =
+                C0StructLayout::from_explicit_fields(fields.clone(), width + 4, 4).unwrap();
+            assert_eq!(
+                layout.field("values").unwrap().array_shape(),
+                Some(&[length][..])
+            );
+            assert_eq!(layout.to_kernel_aggregate_layout().fields().len(), 2);
+            for (offset, bytes) in [(1, width), (0, width - 1), (4, width)] {
+                let mut bad = fields.clone();
+                bad[0].2 = offset;
+                bad[0].3 = bytes;
+                assert!(C0StructLayout::from_explicit_fields(bad, width + 4, 4).is_err());
+            }
+        }
+        let empty = C0StructLayout::from_explicit_fields(
+            vec![
+                ("marker".into(), C0Type::UInt8, 0, 1),
+                ("empty".into(), C0Type::UInt8Array(0), 0, 0),
+            ],
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(empty.field("empty").unwrap().byte_width(), 0);
+        assert!(
+            C0StructLayout::from_explicit_fields(
+                vec![("too_big".into(), C0Type::UInt32Array(u32::MAX), 0, 0)],
+                4,
+                4
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn shadow_metadata_storage_is_independent_of_unrelated_globals() {

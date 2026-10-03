@@ -94,22 +94,6 @@ impl BuiltContext {
         }
     }
 
-    /// Keeps whichever of this prefix and `other`'s is longer. Both must
-    /// have been built from prefixes of one sequence.
-    pub(crate) fn adopt_longer(&mut self, other: &Self) {
-        let other = other.lock().clone();
-        let built = self
-            .0
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if other
-            .as_ref()
-            .is_some_and(|(length, _)| built.as_ref().is_none_or(|(built, _)| length > built))
-        {
-            *built = other;
-        }
-    }
-
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<(usize, PureFactContext)>> {
         self.0
             .lock()
@@ -168,6 +152,18 @@ impl<'a> IntoIterator for &'a PureFactList {
 }
 
 impl PureFactList {
+    /// Retain an already checked source's graph while materializing the
+    /// ordered syntax needed by the surface driver. Re-admitting this prefix
+    /// would disconnect resources published against the source context.
+    pub(crate) fn from_source(source: &(impl PropositionSource + ?Sized)) -> Self {
+        let facts = source
+            .propositions()
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect::<Vec<_>>();
+        let built = BuiltContext(Mutex::new(Some((facts.len(), source.pure_context()))));
+        Self::with_built_context(facts, built)
+    }
+
     /// `facts` with the context `built` holds for a prefix of them.
     pub(crate) fn with_built_context(facts: Vec<Proposition>, built: BuiltContext) -> Self {
         Self {
@@ -181,10 +177,6 @@ impl PureFactList {
     /// the facts appended since.
     pub(crate) fn context(&self) -> PureFactContext {
         self.built.context_of(&self.facts)
-    }
-
-    pub(crate) fn built_context(&self) -> &BuiltContext {
-        &self.built
     }
 
     /// The context of the facts' direct-transport premises, in order,

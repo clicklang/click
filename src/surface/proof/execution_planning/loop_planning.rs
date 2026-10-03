@@ -36,7 +36,7 @@ fn fresh_loop_binder_name(
 ) -> Option<String> {
     let mut enclosing = BTreeSet::new();
     for requirement in function_block.requires() {
-        if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement.inner() {
+        if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
             enclosing.insert(binding.name.clone());
         }
     }
@@ -134,9 +134,12 @@ struct InitializeScriptLayout<'a> {
     /// available to everything below.
     helpers: Vec<(usize, &'a ProofTactic)>,
     /// `Some` when the script names every declared invariant with its own
-    /// `have`, in declaration order: each entry is that `have`'s absolute
-    /// source index and the body it was written with.
-    invariant_bodies: Option<Vec<(usize, &'a SourceProof)>>,
+    /// `have`, in declaration order: each entry holds, for one invariant,
+    /// the absolute source index and written body of each `have` naming it.
+    /// An invariant owes its side conditions as goals of their own beside
+    /// its body, so it may be named once, with a body run for each goal, or
+    /// once per goal it owes, in the order they are owed.
+    invariant_bodies: Option<Vec<Vec<(usize, &'a SourceProof)>>>,
     /// The proof every invariant runs when the script does not name them
     /// individually.
     shared: SourceProof,
@@ -204,7 +207,11 @@ fn initialize_script_layout<'a>(
         .zip(&tactics[..helper_end])
         .collect::<Vec<_>>();
     let rest = &tactics[helper_end..];
-    let names_every_invariant = rest.len() >= invariant_items.len()
+    // One `have` per invariant, in declaration order, is read position by
+    // position: two invariants may state one proposition and each keeps its
+    // own body. Otherwise each invariant takes every consecutive `have`
+    // naming it, one per goal it owes.
+    let one_each = rest.len() >= invariant_items.len()
         && rest.iter().zip(invariant_items).all(|(tactic, item)| {
             matches!(tactic, ProofTactic::Have(have)
                     if &have.proposition == item.proposition())
@@ -212,23 +219,32 @@ fn initialize_script_layout<'a>(
         && rest[invariant_items.len()..]
             .iter()
             .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
-    let invariant_bodies = names_every_invariant.then(|| {
-        rest.iter()
-            .take(invariant_items.len())
-            .enumerate()
-            .map(|(index, tactic)| {
-                let ProofTactic::Have(have) = tactic else {
-                    unreachable!("the shape check accepted only `have` tactics")
-                };
-                (source_indices[helper_end + index], &have.proof)
-            })
-            .collect()
-    });
+    let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
+    let mut consumed = 0;
+    for item in invariant_items {
+        let mut bodies = Vec::new();
+        while let Some(ProofTactic::Have(have)) = rest.get(consumed)
+            && &have.proposition == item.proposition()
+            && !(one_each && !bodies.is_empty())
+        {
+            bodies.push((source_indices[helper_end + consumed], &have.proof));
+            consumed += 1;
+        }
+        if bodies.is_empty() {
+            break;
+        }
+        grouped.push(bodies);
+    }
+    let names_every_invariant = grouped.len() == invariant_items.len()
+        && rest[consumed..]
+            .iter()
+            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
+    let invariant_bodies = names_every_invariant.then_some(grouped);
     // Only a `simp()` that stands for what is left of the phase is a
     // whole-phase closer. A `simp()` written before the steps it closes
     // would be one invariant's own proof, not the phase's.
     let closer_start = if names_every_invariant {
-        helper_end + invariant_items.len()
+        helper_end + consumed
     } else {
         tactics.len().saturating_sub(1)
     };
@@ -258,6 +274,8 @@ struct InitializePhaseExpansion {
     helpers: usize,
     individual_bodies: bool,
     sites: Vec<usize>,
+    /// The first tactic of the script every invariant runs.
+    shared_start: Option<usize>,
 }
 
 impl InitializePhaseExpansion {
@@ -270,7 +288,18 @@ impl InitializePhaseExpansion {
             helpers: layout.helpers.len(),
             individual_bodies: layout.invariant_bodies.is_some(),
             sites,
+            shared_start: layout.shared_source_indices.first().copied(),
         }
+    }
+
+    /// The source index a closer's expansion replaces from. The expansion
+    /// is one step per invariant, each holding the whole shared script, so
+    /// it stands for every shared tactic written before the closer too.
+    fn replaces_from(&self, selected: usize) -> Option<usize> {
+        if self.individual_bodies || !self.sites.contains(&selected) {
+            return None;
+        }
+        self.shared_start.filter(|start| *start < selected)
     }
 
     fn expand(&self, selected: usize, certificate: &ProofCertificate) -> Option<Vec<ProofTactic>> {
@@ -446,28 +475,24 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .zip(entry_goals.declarations())
         .enumerate()
     {
-        let own_body = layout
+        let own_bodies = layout
             .invariant_bodies
             .as_ref()
-            .and_then(|bodies| bodies.get(invariant_index))
-            .copied();
+            .and_then(|bodies| bodies.get(invariant_index));
+        if let Some(bodies) = own_bodies
+            && bodies.len() != 1
+            && bodies.len() != goals.len()
+        {
+            return Err(ClickError::new(format!(
+                "loop {loop_index} invariant {invariant_index} owes {} entry goals but the `initialize` script names it {} times; name it once, or once per goal",
+                goals.len(),
+                bodies.len()
+            )));
+        }
+        // With one body the invariant's goals all run it; the timing label
+        // below describes that first body either way.
+        let own_body = own_bodies.and_then(|bodies| bodies.first()).copied();
         let invariant_proof = own_body.map_or(&layout.shared, |(_, body)| body);
-        // Where each written tactic of this invariant's proof sits: in the
-        // body of its own `have`, or at its own source index in the shared
-        // script.
-        let body_sites = invariant_proof.tactics().map(|tactics| match own_body {
-            Some((index, _)) => {
-                let have_site = phase_site.at_source_tactic(index);
-                (0..tactics.len())
-                    .map(|position| have_site.in_have_body(position))
-                    .collect::<Vec<_>>()
-            }
-            None => layout
-                .shared_source_indices
-                .iter()
-                .map(|&index| phase_site.at_source_tactic(index))
-                .collect(),
-        });
         let planned_step = timings_enabled.then(|| {
             ProofTactic::Have(ProofHave {
                 proposition: item.proposition().clone(),
@@ -484,7 +509,26 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 initialize_statement_index,
             )
         });
-        for obligation in goals {
+        for (goal_index, obligation) in goals.iter().enumerate() {
+            // The `have` written for this goal, when the invariant is named
+            // once per goal it owes.
+            let own_body = own_bodies
+                .and_then(|bodies| bodies.get(goal_index).or_else(|| bodies.first()))
+                .copied();
+            let invariant_proof = own_body.map_or(&layout.shared, |(_, body)| body);
+            let body_sites = invariant_proof.tactics().map(|tactics| match own_body {
+                Some((index, _)) => {
+                    let have_site = phase_site.at_source_tactic(index);
+                    (0..tactics.len())
+                        .map(|position| have_site.in_have_body(position))
+                        .collect::<Vec<_>>()
+                }
+                None => layout
+                    .shared_source_indices
+                    .iter()
+                    .map(|&index| phase_site.at_source_tactic(index))
+                    .collect(),
+            });
             let checkpoint = phase.checkpoint();
             let scope = phase.begin_loop_entry_goal(item.proposition().clone(), obligation)?;
             let body_checkpoint = scope.checkpoint();
@@ -596,7 +640,11 @@ impl CheckedLoopInitialization {
         selected: usize,
         certificate: &ProofCertificate,
     ) -> Option<Vec<ProofTactic>> {
-        self.expansion.expand(selected, certificate)
+        let expansion = self.expansion.expand(selected, certificate)?;
+        if let Some(from) = self.expansion.replaces_from(selected) {
+            crate::surface::expansion::note_expansion_replaces_from(from);
+        }
+        Some(expansion)
     }
 
     pub(in crate::surface::proof) fn is_complete(&self) -> bool {
@@ -619,7 +667,7 @@ impl CheckedLoopInitialization {
 pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     loop_index: usize,
     preservation: &crate::kernel::CLoopPreservationContext,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     body: &CStatement,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<ProofCertificate, ClickError> {
@@ -690,7 +738,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
             surface_propositions,
             PersistentSequence::default(),
         ),
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         environment.function_block,
         environment.function,
@@ -797,7 +845,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     tactics: &[ProofTactic],
     first_generated_tactic_index: usize,
     preservation: &crate::kernel::CLoopPreservationContext,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     invariant_checks: &[CLoopInvariantCheck],
     ranking_measures: &[crate::kernel::CRankingComponent],
     structural_measure: Option<&str>,
@@ -986,7 +1034,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         &claim_label,
         internal_proof_first_index(&program).unwrap_or(0),
         body_execution,
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         environment.function_block,
         environment.function,
@@ -1034,6 +1082,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut certificate_paths = Vec::new();
     let mut final_exit_candidates = Vec::new();
     let mut break_exits = Vec::new();
+    // Each exit is recorded once. The lists are compared by a hash of the
+    // exit's state and facts first, so a new exit is checked for equality only against
+    // exits in its own bucket rather than against every exit recorded so far.
+    let mut seen_final_exits = SeenLoopExits::default();
+    let mut seen_break_exits = SeenLoopExits::default();
     let mut nested_loop_rules = Vec::new();
     for (execution, path_certificate) in refuted_match_paths {
         let case_path = execution
@@ -1200,10 +1253,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 environment.function.composite_resource_definitions(),
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` (loop {loop_index} state join): {}",
-                    error.message()
-                ))
+                error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
             })?;
             leaf.clone()
         } else {
@@ -1227,10 +1277,15 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 None => Ok(leaf.clone()),
             })
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` (loop {loop_index} invariant bundle preservation): {}",
-                    error.message()
-                ))
+                let error = error.with_context(format!(
+                    "`{claim_label}` (loop {loop_index} invariant bundle preservation)"
+                ));
+                // A closer the `loop` tactic generated is no written tactic;
+                // the `loop` tactic is where the user reads its failure.
+                match environment.frontier_loop_source {
+                    Some(source) => error.attributed_to_source_tactic(source.loop_source_index),
+                    None => error,
+                }
             })?
         };
         let checked_execution = checked.execution_view()?.execution.clone();
@@ -1243,7 +1298,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts().to_vec(),
             )
             .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if !final_exit_candidates.contains(&exit) {
+            if seen_final_exits.is_new(
+                exit.state(),
+                exit.pure_facts(),
+                &final_exit_candidates,
+                &exit,
+            ) {
                 final_exit_candidates.push(exit);
             }
         } else if is_return_exit {
@@ -1262,7 +1322,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts().to_vec(),
             )
             .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if !break_exits.contains(&exit) {
+            if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);
             }
         } else {
@@ -1307,7 +1367,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts().to_vec(),
                 )
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-                if !final_exit_candidates.contains(&candidate) {
+                if seen_final_exits.is_new(
+                    candidate.state(),
+                    candidate.pure_facts(),
+                    &final_exit_candidates,
+                    &candidate,
+                ) {
                     final_exit_candidates.push(candidate);
                 }
             }
@@ -1383,4 +1448,44 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         break_exits,
         nested_loop_rules,
     })
+}
+
+/// The exits already recorded in one list, by the hash of each exit's state
+/// and facts.
+///
+/// `Vec::contains` compared a new exit with every earlier one, and two exits
+/// of one loop body usually agree on most of their state, so each comparison
+/// read most of a state before finding the difference. The answer here is the
+/// same: an exit is new exactly when no recorded exit equals it. Only the
+/// candidates for that equality are narrowed.
+#[derive(Default)]
+struct SeenLoopExits {
+    by_hash: std::collections::HashMap<u64, Vec<usize>>,
+}
+
+impl SeenLoopExits {
+    /// Whether `exit` equals none of `recorded`, and files it at the position
+    /// the caller is about to push it to when it is new.
+    fn is_new<T: PartialEq>(
+        &mut self,
+        state: &CState,
+        facts: &[Proposition],
+        recorded: &[T],
+        exit: &T,
+    ) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        state.hash(&mut hasher);
+        facts.hash(&mut hasher);
+        crate::instrumentation::record_deterministic_work(1 + facts.len());
+        let bucket = self.by_hash.entry(hasher.finish()).or_default();
+        if bucket.iter().any(|index| {
+            crate::instrumentation::record_deterministic_work(1);
+            &recorded[*index] == exit
+        }) {
+            return false;
+        }
+        bucket.push(recorded.len());
+        true
+    }
 }

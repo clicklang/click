@@ -133,11 +133,18 @@ fn write_tactics(output: &mut String, tactics: &[ProofTactic], indent: usize) {
 fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
     let prefix = "    ".repeat(indent);
     match tactic {
+        // A synthetic tactic was never written; it prints as what it wraps.
+        ProofTactic::Synthetic(inner) => write_tactic(output, inner, indent),
         ProofTactic::Mark(name) => line(output, &prefix, &format!("mark {name};")),
         ProofTactic::Sorry => line(output, &prefix, "sorry();"),
         ProofTactic::Step => line(output, &prefix, "step();"),
         ProofTactic::StepContract(name) => line(output, &prefix, &format!("step({name});")),
         ProofTactic::StepCall(transport) => line(output, &prefix, &format!("{transport};")),
+        ProofTactic::UserTactic(application) => line(
+            output,
+            &prefix,
+            &format!("{};", application.tactic_spelling()),
+        ),
         ProofTactic::UnfoldPredicate(name) => {
             line(output, &prefix, &format!("unfold({name});"));
         }
@@ -666,10 +673,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_premise_list(output, premises, indent + 1);
             line(output, &prefix, "}");
         }
-        ProofTactic::SmartExecute
-        | ProofTactic::SmartExecuteAllPaths
-        | ProofTactic::ExecuteUntil(_)
-        | ProofTactic::Simp => unreachable!("certificate validation rejects this tactic"),
+        ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(_) | ProofTactic::Simp => {
+            unreachable!("certificate validation rejects this tactic")
+        }
     }
 }
 
@@ -772,6 +778,15 @@ fn write_special_arithmetic_certificate(
     }
     for node in &certificate.nodes {
         let text = match node {
+            SpecialArithmeticNode::IntegerProductBounds { bounds, result } => format!(
+                "integer_product_bounds bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,
@@ -814,6 +829,15 @@ fn write_special_arithmetic_certificate(
             ),
             SpecialArithmeticNode::FloatReflexive { finite, result } => format!(
                 "float_reflexive finite {finite} => {};",
+                source_click_proposition(result)
+            ),
+            SpecialArithmeticNode::UnsignedSumBound { bounds, result } => format!(
+                "unsigned_sum_bound bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 source_click_proposition(result)
             ),
             SpecialArithmeticNode::SignedDefined {
@@ -1076,6 +1100,13 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
         unreachable!("certificate validation requires an explicit proof script")
     };
     output.push_str("by {\n");
+    if tactics.is_empty() {
+        // A `by` block must hold a tactic. A generated proof with no step,
+        // such as the `initialize` phase of a loop with no invariant, keeps
+        // `assumption();`, the step a phase with nothing to prove is
+        // checked by.
+        line(output, &"    ".repeat(indent + 1), "assumption();");
+    }
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));
     output.push('}');
@@ -1244,7 +1275,6 @@ fn format_click_function_application(application: &ClickFunctionApplication) -> 
 fn format_fact_source(source: &ProofFactSource) -> String {
     match source {
         ProofFactSource::Requirement(index) => format!("requirement {index}"),
-        ProofFactSource::RequirementLabel(label) => format!("requirement {label}"),
         ProofFactSource::Invariant(index) => format!("invariant {index}"),
     }
 }

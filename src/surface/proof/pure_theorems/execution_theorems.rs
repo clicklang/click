@@ -19,10 +19,6 @@ fn substitute_requirement(
         Requirement::LoadableSegment { segment } => Requirement::LoadableSegment {
             segment: substitute_contract_segment(segment, substitutions)?,
         },
-        Requirement::Labeled { label, requirement } => Requirement::Labeled {
-            label: label.clone(),
-            requirement: Box::new(substitute_requirement(requirement, substitutions)?),
-        },
     })
 }
 
@@ -38,6 +34,7 @@ pub(super) fn verify_execution_theorem(
     let execution = theorem.executes.as_ref().expect("execution declaration");
     let error = |message: &str| {
         ClickError::new(format!("theorem `{}` executes: {message}", theorem.name()))
+            .at_declaration(theorem.name())
     };
     let environment = environment.ok_or_else(|| error("requires a C contract environment"))?;
     let [ensure] = theorem.ensures() else {
@@ -278,6 +275,7 @@ pub(super) fn verify_execution_theorem(
         syntax::C0Statement::Call {
             function_name: execution.callback.clone(),
             arguments,
+            site: crate::languages::c::syntax::C0Site::NONE,
         }
     } else {
         syntax::C0Statement::Seq(
@@ -285,10 +283,12 @@ pub(super) fn verify_execution_theorem(
                 target: "result".into(),
                 function_name: execution.callback.clone(),
                 arguments,
+                site: crate::languages::c::syntax::C0Site::NONE,
             }),
-            Box::new(syntax::C0Statement::Return(syntax::C0Expression::Variable(
-                "result".into(),
-            ))),
+            Box::new(syntax::C0Statement::Return(
+                syntax::C0Expression::Variable("result".into()),
+                crate::languages::c::syntax::C0Site::NONE,
+            )),
         )
     };
     let parsed = crate::surface::verification::external_c0_function(&block).with_proof_body(body);
@@ -307,14 +307,28 @@ pub(super) fn verify_execution_theorem(
         function_source_registry,
         tactics,
     )?;
-    let (mut state, arguments, facts, _) = initial_claim_context(
-        &block,
-        &parsed,
-        resources,
-        predicates,
-        functions,
-        theorem.name(),
-    )?;
+    // Certification starts from the entry the proof was built from.
+    let (mut state, arguments, facts) = match verified
+        .iter()
+        .find_map(|verified| verified.entry_context.clone())
+    {
+        Some(entry) => (
+            entry.state.clone(),
+            entry.arguments.clone(),
+            entry.pure_facts.clone(),
+        ),
+        None => {
+            let (state, arguments, facts, _) = initial_claim_context(
+                &block,
+                &parsed,
+                resources,
+                predicates,
+                functions,
+                theorem.name(),
+            )?;
+            (state, arguments, facts)
+        }
+    };
     // A stable-view proof artifact carries the exact caller state the checked
     // function-entry boundary accepted, including its loan ledger roots and
     // resource occurrence IDs. Certifying the one-call proof against an
@@ -349,7 +363,6 @@ pub(super) fn verify_execution_theorem(
             state,
             function.clone(),
             arguments,
-            facts.into_vec(),
             environment.clone(),
             CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             CFunctionContractExecutionMode::VerifyLoops,

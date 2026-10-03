@@ -68,12 +68,19 @@ use crate::kernel::{
     prove_symbolic_c_condition_evaluation,
     prove_symbolic_c_loop_exit_with_proven_phases_using_budget,
     prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget,
+    prove_uint32_difference_decreases_after_increment, prove_uint32_ge_implies_reversed_le,
+    prove_uint32_gt_implies_reversed_lt, prove_uint32_increment_strictly_increases,
+    prove_uint32_increment_upper_bound, prove_uint32_le_implies_reversed_ge,
+    prove_uint32_le_lt_transitive, prove_uint32_le_transitive,
+    prove_uint32_lt_implies_positive_difference, prove_uint32_lt_implies_reversed_gt,
+    prove_uint32_lt_le_transitive, prove_uint32_lt_transitive,
+    prove_uint32_positive_predecessor_strictly_decreases,
     prove_universally_quantified_pure_implication,
     prove_universally_quantified_pure_implication_by_int32_rewrites,
     substitute_int32_variable_in_proposition,
 };
 use crate::languages::c::syntax::{self, C0Expression, C0Type};
-use crate::persistent::{PersistentMap, PersistentSet};
+use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
     match expression {
@@ -108,6 +115,7 @@ pub(crate) mod pure_fact_list;
 mod validation;
 mod verification;
 
+pub use crate::source::SourceContainer;
 use checking::*;
 pub use expansion::{
     CProofClaim, ClickImportSite, SmartTacticCandidate, SmartTacticSelectionError,
@@ -117,19 +125,21 @@ pub use expansion::{
     c0_prepared_tactic_source_position, c0_project_select_smart_tactic,
     c0_project_smart_tactic_source_sites, c0_project_tactic_source_position,
     c0_select_smart_tactic, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    click_import_sites, cpp_prepared_project_select_smart_tactic,
-    cpp_prepared_project_smart_tactic_source_sites, cpp_prepared_project_tactic_source_position,
-    cpp_prepared_select_smart_tactic, cpp_prepared_smart_tactic_source_sites,
-    cpp_prepared_tactic_source_position, expand_c0_claim_source, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_project_claim_source_by_label,
-    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
-    expand_c0_project_claim_source_by_label, expand_c0_project_tactic_source_at,
-    expand_c0_tactic_source_at, expand_cpp_prepared_claim_source_by_label,
-    expand_cpp_prepared_project_claim_source_by_label,
-    expand_cpp_prepared_project_tactic_source_at, expand_cpp_prepared_tactic_source_at,
-    map_verifying_source_paths, nested_tactic_source_position, selected_c_target,
-    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
-    tactic_arm_containing_position, tactic_have_body_contains_position,
+    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
+    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
+    expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label,
+    expand_program_prepared_project_claim_source_by_label,
+    expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
+    map_verifying_source_paths, nested_tactic_source_position,
+    program_prepared_project_select_smart_tactic,
+    program_prepared_project_smart_tactic_source_sites,
+    program_prepared_project_tactic_source_position, program_prepared_select_smart_tactic,
+    program_prepared_smart_tactic_source_sites, program_prepared_tactic_source_position,
+    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
+    selected_thread_runtime, tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
     verifying_source_paths,
 };
@@ -165,19 +175,19 @@ use validation::{
 pub(in crate::surface) use verification::CSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
-    C0IncrementalSelection, CProofArtifactIdentity, SorryAdmission, c0_external_dependencies,
-    c0_function_names, c0_incremental_selection, c0_prepared_external_dependencies,
-    c0_prepared_project_external_dependencies, c0_prepared_project_selected_proof_count,
-    c0_prepared_project_selected_proof_names, c0_project_external_dependencies,
-    c0_project_function_names, c0_project_selected_proof_count, c0_project_selected_proof_names,
-    cpp_prepared_project_external_dependencies, cpp_prepared_project_selected_proof_count, parse,
-    take_sorry_admissions, verify_c0_prepared_project, verify_c0_prepared_project_at,
-    verify_c0_prepared_project_functions, verify_c0_prepared_sources,
-    verify_c0_prepared_sources_at, verify_c0_prepared_sources_functions, verify_c0_project,
-    verify_c0_project_at, verify_c0_project_functions, verify_c0_sources, verify_c0_sources_at,
-    verify_c0_sources_functions, verify_click_theorems, verify_cpp_prepared_project,
-    verify_cpp_prepared_project_at, verify_cpp_prepared_sources_at, verify_standard_library,
-    with_allow_sorry,
+    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, SorryAdmission,
+    c0_external_dependencies, c0_function_names, c0_incremental_selection,
+    c0_prepared_external_dependencies, c0_prepared_project_selected_proof_names,
+    c0_prepared_project_summary, c0_project_function_names, c0_project_selected_proof_names,
+    c0_project_summary, parse, program_prepared_project_summary, take_sorry_admissions,
+    verify_c0_prepared_project, verify_c0_prepared_project_at,
+    verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem,
+    verify_c0_prepared_sources, verify_c0_prepared_sources_at,
+    verify_c0_prepared_sources_functions, verify_c0_project, verify_c0_project_at,
+    verify_c0_project_functions, verify_c0_project_theorem, verify_c0_sources,
+    verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
+    verify_program_prepared_project, verify_program_prepared_project_at,
+    verify_program_prepared_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
 pub use proof_trace::with_proof_trace;
@@ -190,7 +200,7 @@ pub fn accepted_proof_trace(
     have_body_contains: &dyn Fn(&str, &[usize], &crate::source::SourcePosition) -> bool,
     target: Option<&crate::source::SourcePosition>,
 ) -> Option<String> {
-    let mut labels = proof_diagnostics::render::SnapshotLabels::default();
+    let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
     proof_trace::render_accepted(
         &mut labels,
         tactic_location,
@@ -227,22 +237,18 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "and",
     "any",
     "apply",
-    "apply_loop_summary",
     "as",
     "assumption",
     "at",
     "auto",
     "both",
-    "bounded_execute",
     "branch",
     "outcomes",
     "by",
     "byte_offset",
     "c",
-    "calculate",
     "cases",
     "close_invariants",
-    "conjunction",
     "construct",
     "constructs",
     "consumes",
@@ -251,11 +257,9 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "contradiction",
     "conclusion",
     "count",
-    "counted",
     "decreases",
     "defined",
     "diverges",
-    "double_negation",
     "else",
     "ensures",
     "ensuring",
@@ -266,10 +270,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "enum",
     "enumerate",
     "execute",
-    "execute_else_step",
-    "execute_rest",
-    "execute_step",
-    "execute_then_step",
     "execute_until",
     "exists",
     "exit",
@@ -338,8 +338,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "statement",
     "step",
     "struct",
-    "summarize",
-    "symbolic_execute",
+    "tactic",
     "take",
     "target",
     "trivial",
@@ -349,7 +348,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "uint8",
     "unfold",
     "using",
-    "vacuous",
     "verifying",
     "viewable",
     "views",
@@ -391,7 +389,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "implies",
     "let-where",
     "match-expression",
-    "modifies",
     "not",
     "old",
     "operator-bit-and",
@@ -418,7 +415,6 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "or",
     "predicate",
     "predicate-call",
-    "preserves",
     "read",
     "requires",
     "resource",
@@ -426,6 +422,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "resource-witness",
     "same-object",
     "separate",
+    "tactic",
     "target",
     "theorem",
     "verifying",
@@ -436,38 +433,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
 const CLICK_STANDARD_LIBRARY: &str = include_str!("../stdlib/prelude.click");
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
-/// early `?`. Profiling enables this with `CLICK_TIMINGS`; ordinary
-/// verification pays only one environment lookup and an `Instant` read.
-struct VerificationTimingPhase {
-    name: &'static str,
-    started: std::time::Instant,
-    enabled: bool,
-}
-
-impl VerificationTimingPhase {
-    fn new(name: &'static str) -> Self {
-        let enabled = instrumentation::enabled();
-        if enabled {
-            instrumentation::emit(VerificationEvent::PhaseStarted(name));
-        }
-        Self {
-            name,
-            started: std::time::Instant::now(),
-            enabled,
-        }
-    }
-}
-
-impl Drop for VerificationTimingPhase {
-    fn drop(&mut self) {
-        if self.enabled {
-            instrumentation::emit(VerificationEvent::PhaseFinished {
-                name: self.name,
-                elapsed: self.started.elapsed(),
-            });
-        }
-    }
-}
+/// early `?`; see [`instrumentation::VerificationPhase`].
+type VerificationTimingPhase = instrumentation::VerificationPhase;
 
 fn check_verification_deadline() -> Result<(), ClickError> {
     if instrumentation::deadline_exceeded() {
@@ -497,6 +464,9 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    /// User-defined tactics: contracts over the proof state, each proved once
+    /// and then applied as one simple step.
+    tactic_definitions: Vec<TacticDefinition>,
     /// Canonical project-relative owner of every declaration in this resolved
     /// file. Surface names are intentionally unqualified in the first module
     /// delivery; the owner keeps the internal identity qualified without
@@ -522,6 +492,7 @@ enum DeclarationIdentity {
     Theorem(String),
     Contract(String),
     CFunction(String),
+    Tactic(String),
 }
 
 /// One canonical source file in a resolved local specification graph.
@@ -530,6 +501,10 @@ pub struct ClickModuleSource {
     identity: String,
     source: String,
     imports: Vec<String>,
+    /// Lines of the module's file that precede `source`: zero for a sidecar,
+    /// and the lines before the ```click block body for an mdtest.
+    /// Diagnostics add it so they name the line a person edits.
+    line_offset: usize,
 }
 
 impl ClickModuleSource {
@@ -542,11 +517,23 @@ impl ClickModuleSource {
             identity: identity.into(),
             source: source.into(),
             imports: imports.into_iter().collect(),
+            line_offset: 0,
         }
+    }
+
+    /// Places `source` after `line_offset` lines of its file, as a fenced
+    /// block of a larger container.
+    pub fn with_line_offset(mut self, line_offset: usize) -> Self {
+        self.line_offset = line_offset;
+        self
     }
 
     pub fn identity(&self) -> &str {
         &self.identity
+    }
+
+    pub fn line_offset(&self) -> usize {
+        self.line_offset
     }
 
     pub fn source(&self) -> &str {
@@ -564,6 +551,9 @@ pub struct ClickProject {
     entry: String,
     modules: Vec<ClickModuleSource>,
     c_profile: Option<CProjectProfile>,
+    /// C bundle sources extracted from a larger file, by bundle path, so
+    /// their diagnostics name that file and line. Empty for C files on disk.
+    c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
 }
 
 /// One project-wide C implementation selection. Files loaded without a
@@ -602,7 +592,24 @@ impl ClickProject {
             entry: entry.into(),
             modules: modules.into_iter().collect(),
             c_profile: None,
+            c_source_containers: BTreeMap::new(),
         }
+    }
+
+    /// Records that the C bundle source `path` is a block of a larger file,
+    /// such as a ```c fence of an mdtest. Locations in that source are then
+    /// reported as lines of the container. This changes diagnostics only.
+    pub fn with_c_source_container(
+        mut self,
+        path: impl Into<String>,
+        container: crate::source::SourceContainer,
+    ) -> Self {
+        self.c_source_containers.insert(path.into(), container);
+        self
+    }
+
+    pub fn c_source_containers(&self) -> &BTreeMap<String, crate::source::SourceContainer> {
+        &self.c_source_containers
     }
 
     pub fn with_c_profile(mut self, profile: CProjectProfile) -> Self {
@@ -635,6 +642,19 @@ impl ClickProject {
             .iter()
             .find(|module| module.identity == self.entry)
             .map(|module| module.source.as_str())
+    }
+
+    /// Places the entry module after `line_offset` lines of its file, as the
+    /// ```click block of an mdtest. This changes diagnostics only.
+    pub fn with_entry_line_offset(mut self, line_offset: usize) -> Self {
+        if let Some(entry) = self
+            .modules
+            .iter_mut()
+            .find(|module| module.identity == self.entry)
+        {
+            entry.line_offset = line_offset;
+        }
+        self
     }
 
     /// Returns the same loaded graph with only the entry module text replaced.
@@ -904,6 +924,38 @@ pub struct ContractDefinition {
     function_block: FunctionBlock,
 }
 
+/// A user-defined tactic: a contract over the proof state, with no C body.
+///
+/// Its clauses are a function contract's (`consumes`, `produces`, `owns`,
+/// `views`, `requires`, `ensures`, `decreases`), and its `by` block proves
+/// them once at a fixed execution point. An application is one simple step
+/// that consumes and produces resource instances and adds the `ensures`
+/// facts, leaving memory and C state unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TacticDefinition {
+    function_block: FunctionBlock,
+}
+
+impl TacticDefinition {
+    pub(in crate::surface) fn new(function_block: FunctionBlock) -> Self {
+        Self { function_block }
+    }
+
+    pub fn name(&self) -> &str {
+        self.function_block.signature().name()
+    }
+
+    /// The tactic's contract and proof, in the shape of a function block
+    /// whose signature returns `void`.
+    pub fn function_block(&self) -> &FunctionBlock {
+        &self.function_block
+    }
+
+    pub(in crate::surface) fn function_block_mut(&mut self) -> &mut FunctionBlock {
+        &mut self.function_block
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractApplication {
     name: String,
@@ -987,6 +1039,45 @@ impl CallBinderTransport {
     /// the callee produces no resource instance.
     pub fn result(&self) -> Option<&str> {
         self.result.as_deref()
+    }
+}
+
+impl CallBinderTransport {
+    /// The transport spelled as a tactic application: `name(args)`, then the
+    /// binder map when there is one, after a `let` output pattern when the
+    /// tactic produces instances.
+    pub fn tactic_spelling(&self) -> String {
+        let mut spelling = String::new();
+        if !self.produced.is_empty() {
+            spelling.push_str("let { ");
+            for (index, produced) in self.produced.iter().enumerate() {
+                if index != 0 {
+                    spelling.push_str(", ");
+                }
+                spelling.push_str(&format!("{}: {}", produced.binder, produced.instance));
+            }
+            spelling.push_str(" } = ");
+        }
+        spelling.push_str(&self.callee);
+        spelling.push('(');
+        for (index, argument) in self.arguments.iter().enumerate() {
+            if index != 0 {
+                spelling.push_str(", ");
+            }
+            spelling.push_str(&diagnostics::describe_contract_expression(argument));
+        }
+        spelling.push(')');
+        if !self.binders.is_empty() {
+            spelling.push_str(" { ");
+            for (index, binding) in self.binders.iter().enumerate() {
+                if index != 0 {
+                    spelling.push_str(", ");
+                }
+                spelling.push_str(&format!("{}: {}", binding.binder, binding.instance));
+            }
+            spelling.push_str(" }");
+        }
+        spelling
     }
 }
 
@@ -1080,6 +1171,10 @@ pub struct FunctionBlock {
     /// Internal source grouping for an `executes` theorem's call and return.
     /// The kernel still checks the complete ordinary statement sequence.
     one_call_proof: bool,
+    /// This block is a user-defined tactic's contract, certified as a
+    /// procedure whose body runs no code. Its write frame is empty: the
+    /// procedure writes nothing, so an application leaves memory unchanged.
+    tactic_procedure: bool,
     requires: Vec<Requirement>,
     /// For each entry of `requires`, the 0-based index of the clause the
     /// author wrote it in. An aggregate clause (an embedded struct field)
@@ -1088,9 +1183,6 @@ pub struct FunctionBlock {
     /// Empty when the block was built without a source (tests), in which
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
-    /// Legacy label index for internal proof-object compatibility. Surface
-    /// `requires` clauses no longer accept labels.
-    requirement_label_indices: BTreeMap<String, usize>,
     decreases: Option<CFunctionDecrease>,
     structural_clauses: Vec<StructuralClause>,
     constructs: Vec<ResourceClause>,
@@ -1180,13 +1272,7 @@ pub struct FunctionParameter {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Requirement {
-    Labeled {
-        label: String,
-        requirement: Box<Requirement>,
-    },
-    LoadableSegment {
-        segment: ContractSegment,
-    },
+    LoadableSegment { segment: ContractSegment },
     Resource(ResourceClause),
     Proposition(ClickProposition),
 }
@@ -1793,10 +1879,6 @@ fn clone_requirement_iteratively(requirement: &Requirement) -> Requirement {
         Requirement::Proposition(proposition) => {
             Requirement::Proposition(clone_click_proposition_iteratively(proposition))
         }
-        Requirement::Labeled { label, requirement } => Requirement::Labeled {
-            label: label.clone(),
-            requirement: Box::new(clone_requirement_iteratively(requirement)),
-        },
         requirement => requirement.clone(),
     }
 }
@@ -2378,6 +2460,33 @@ impl RecordedSnapshots {
         prior
     }
 
+    /// The index of the C statement whose snapshot was recorded most
+    /// recently and is still recorded: the statement an execution path last
+    /// stepped. Diagnostics read this to name where a path ended.
+    ///
+    /// The walk follows the change history from its newest entry and stops
+    /// at the first statement, so it costs the few non-statement changes
+    /// (marks, loop and label points) recorded after that statement. It
+    /// gives up after `LATEST_STATEMENT_WALK` changes rather than scan a
+    /// long history for a location note.
+    fn latest_statement(&self) -> Option<usize> {
+        const LATEST_STATEMENT_WALK: usize = 64;
+        let mut change = self.version.history.as_ref();
+        for _ in 0..LATEST_STATEMENT_WALK {
+            let entry = change?;
+            if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Statement(index),
+                ..
+            }) = &entry.selector
+                && self.contains_key(&entry.selector)
+            {
+                return Some(*index);
+            }
+            change = entry.parent.as_ref();
+        }
+        None
+    }
+
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
         let selector = key.to_selector();
         let prior = self.get(key).cloned();
@@ -2716,6 +2825,12 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     snapshot_state: Option<CState>,
+    /// The contract result is bound in this state under the name `result`,
+    /// as it is at function exit. The kernel's exit state stores the return
+    /// value as a local of that name, replacing any C parameter or local
+    /// spelled `result`, so `c(result)` cannot name that C binding here and
+    /// is refused rather than read as the return value.
+    contract_result_in_scope: bool,
 }
 
 impl Default for SpecElaborationContext {
@@ -2731,6 +2846,7 @@ impl Default for SpecElaborationContext {
             at_function_entry: false,
             function_contract: false,
             snapshot_state: None,
+            contract_result_in_scope: false,
         }
     }
 }
@@ -2774,6 +2890,7 @@ impl SpecElaborationContext {
                 function_contract: true,
                 at_function_entry: true,
                 snapshot_state: None,
+                contract_result_in_scope: false,
             });
         }
         let mut values = entry_values
@@ -2803,6 +2920,7 @@ impl SpecElaborationContext {
             function_contract: false,
             at_function_entry: true,
             snapshot_state: None,
+            contract_result_in_scope: false,
         })
     }
 }
@@ -2986,8 +3104,15 @@ pub enum ProofTactic {
     Step,
     StepContract(ContractApplication),
     StepCall(CallBinderTransport),
+    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// tactic's verified contract, with no C statement.
+    UserTactic(CallBinderTransport),
+    /// A tactic Click adds to a script, never written in source: the end of
+    /// a user-defined tactic's proof steps its procedure's `return` and
+    /// closes its claims. It occupies no source position, so the tactics
+    /// the author wrote keep their source indices; indexing unwraps it.
+    Synthetic(Box<ProofTactic>),
     SmartExecute,
-    SmartExecuteAllPaths,
     ExecuteUntil(CodeRegionRef),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
@@ -3166,6 +3291,8 @@ fn source_proof_sorry_outside_have(proof: &SourceProof, in_have: bool) -> bool {
 pub enum SimpleTactic {
     Mark,
     StatementTransition,
+    /// One application of a user-defined tactic's verified contract.
+    UserTactic,
     UnfoldPredicate,
     UnfoldFunction,
     UnfoldResource,
@@ -3266,6 +3393,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "step-call",
         syntax: "step(callee(...), { binder: instance })",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "user-tactic",
+        syntax: "name(args) { binder: instance }",
         class: "simple",
     },
     PublicTacticForm {
@@ -3575,6 +3707,8 @@ pub enum ProofStep {
     Step,
     StepContract(ContractApplication),
     StepCall(CallBinderTransport),
+    /// One application of a user-defined tactic's verified contract.
+    UserTactic(CallBinderTransport),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
     /// `unfold(f(args)) using { ... }`: the same defining equation, plus
@@ -3790,7 +3924,23 @@ impl ProofCertificate {
     /// request.  The walk is iterative because certificates can contain
     /// deeply nested branch, loop, and `have` proofs.
     fn contains_arithmetic_using(&self) -> bool {
-        let mut pending = self.steps.iter().collect::<Vec<_>>();
+        self.steps.iter().any(proof_step_contains_arithmetic_using)
+    }
+
+    /// Steps already admitted one at a time by the checks [`Self::from_steps`]
+    /// applies to the whole list ([`validate_certificate_step`] and
+    /// [`proof_step_contains_arithmetic_using`]).
+    pub(crate) fn from_admitted_steps(steps: Vec<ProofStep>) -> Self {
+        Self::from_validated_steps(steps)
+    }
+}
+
+/// Whether this step, or any step nested in it, is a source-only
+/// `ArithmeticUsing`. A certificate contains one exactly when one of its steps
+/// does.
+pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
+    {
+        let mut pending = vec![step];
         while let Some(step) = pending.pop() {
             match step {
                 ProofStep::ArithmeticUsing(_) => return true,
@@ -3841,7 +3991,9 @@ impl ProofCertificate {
         }
         false
     }
+}
 
+impl ProofCertificate {
     fn from_validated_proof(proof: &SourceProof) -> Self {
         let SourceProof::Script(tactics) = proof else {
             unreachable!("validated simple proof must be an explicit script")
@@ -3887,6 +4039,7 @@ impl ProofStep {
             ProofTactic::Step => Self::Step,
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
+            ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
             ProofTactic::UnfoldPredicate(name) => Self::UnfoldPredicate(name.clone()),
             ProofTactic::UnfoldFunction(application) => Self::UnfoldFunction(application.clone()),
             ProofTactic::UnfoldFunctionUsing {
@@ -4129,6 +4282,7 @@ impl ProofStep {
             Self::Step => ProofTactic::Step,
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
+            Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
             Self::UnfoldPredicate(name) => ProofTactic::UnfoldPredicate(name.clone()),
             Self::UnfoldFunction(application) => ProofTactic::UnfoldFunction(application.clone()),
             Self::UnfoldFunctionUsing {
@@ -4381,6 +4535,7 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
             TacticClass::Simple(SimpleTactic::StatementTransition)
         }
+        ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
         ProofStep::UnfoldFunction(_) | ProofStep::UnfoldFunctionUsing { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldFunction)
@@ -4438,6 +4593,19 @@ fn validate_certificate_steps(
     path: &mut Vec<CertificatePathSegment>,
 ) -> Result<(), CertificateError> {
     for (index, step) in steps.iter().enumerate() {
+        validate_certificate_step(step, index, path)?;
+    }
+    Ok(())
+}
+
+/// [`validate_certificate_steps`] for the step at `index` of its list: a list
+/// is admitted exactly when each of its steps is.
+pub(crate) fn validate_certificate_step(
+    step: &ProofStep,
+    index: usize,
+    path: &mut Vec<CertificatePathSegment>,
+) -> Result<(), CertificateError> {
+    {
         path.push(CertificatePathSegment::Tactic(index));
         // ArithmeticUsing remains accepted by the source-tactic constructor
         // as a smart request, but generated certificate steps must already
@@ -4691,10 +4859,12 @@ fn validate_certificate_proof(
 impl ProofTactic {
     pub fn class(&self) -> TacticClass {
         match self {
+            Self::Synthetic(inner) => inner.class(),
             Self::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
             Self::Step | Self::StepContract(_) | Self::StepCall(_) => {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
+            Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
             Self::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
             Self::UnfoldFunction(_) | Self::UnfoldFunctionUsing { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldFunction)
@@ -4732,9 +4902,7 @@ impl ProofTactic {
             Self::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
-            Self::SmartExecute | Self::SmartExecuteAllPaths => {
-                TacticClass::Smart(SmartTacticKind::SmartExecute)
-            }
+            Self::SmartExecute => TacticClass::Smart(SmartTacticKind::SmartExecute),
             Self::ExecuteUntil(_) => TacticClass::Smart(SmartTacticKind::ExecuteUntil),
             Self::Simp => TacticClass::Smart(SmartTacticKind::Simp),
             Self::SimpUsing(_) => TacticClass::Smart(SmartTacticKind::Simp),
@@ -5047,6 +5215,14 @@ pub struct SpecialArithmeticCertificate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpecialArithmeticNode {
+    IntegerProductBounds {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
+    UnsignedSumBound {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     PointerTranslation {
         relation: usize,
         bounds: Vec<usize>,
@@ -5195,7 +5371,6 @@ pub struct ProofChoice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofFactSource {
     Requirement(usize),
-    RequirementLabel(String),
     Invariant(usize),
 }
 
@@ -5618,6 +5793,9 @@ pub struct VerifiedCTheorem {
     pub(crate) checked_proposition: Option<CCheckedFunctionProposition>,
     pub(crate) frontier_loop_clauses: Vec<StructuralClause>,
     pub(crate) frontier_loop_rules: Vec<CVerifiedLoopRule>,
+    /// The entry the proof that issued this theorem was built from, shared
+    /// by every theorem of that proof.
+    pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5704,16 +5882,83 @@ pub enum ProofKind {
     LoopVerification,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ReportDetail {
+    missing_tactic_requirement: Option<String>,
+    /// The Click declaration (a function block, named contract or theorem)
+    /// this failure is about, when no C statement has run and no tactic has
+    /// been checked: a contract that could not be set up at entry, or an
+    /// `executes` theorem refused before its proof.
+    declaration: Option<String>,
+    /// The written tactic being checked when a failure with no proof-step
+    /// site of its own arose: its claim and source occurrence.
+    source_tactic: Option<(String, Vec<usize>)>,
+}
+
+/// What the verifier is working on, for locating a failure that carries no
+/// site of its own. This is diagnostics only: nothing reads it to decide a
+/// proof.
+#[derive(Default)]
+struct AmbientProofSource {
+    declaration: Option<String>,
+    tactic: Option<(String, usize)>,
+}
+
+thread_local! {
+    static AMBIENT_PROOF_SOURCE: std::cell::RefCell<AmbientProofSource> =
+        std::cell::RefCell::new(AmbientProofSource::default());
+}
+
+/// Starts verifying the Click declaration `name`; no tactic of it has been
+/// addressed yet.
+pub(crate) fn enter_ambient_declaration(name: &str) {
+    proof_diagnostics::render::clear_ambient_naming();
+    AMBIENT_PROOF_SOURCE.with(|ambient| {
+        *ambient.borrow_mut() = AmbientProofSource {
+            declaration: Some(name.to_owned()),
+            tactic: None,
+        };
+    });
+}
+
+/// Records that `claim_label`'s source tactic `source_index` is being
+/// checked.
+pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize) {
+    AMBIENT_PROOF_SOURCE.with(|ambient| {
+        let mut ambient = ambient.borrow_mut();
+        if ambient
+            .tactic
+            .as_ref()
+            .is_none_or(|(claim, index)| claim != claim_label || *index != source_index)
+        {
+            ambient.tactic = Some((claim_label.to_owned(), source_index));
+        }
+    });
+}
+
+pub(crate) fn clear_ambient_proof_source() {
+    proof_diagnostics::render::clear_ambient_naming();
+    AMBIENT_PROOF_SOURCE.with(|ambient| *ambient.borrow_mut() = AmbientProofSource::default());
+}
+
 #[derive(Debug)]
 pub struct ClickError {
     message: String,
-    rendered: std::sync::OnceLock<String>,
+    rendered: std::sync::OnceLock<Box<str>>,
     kind: ClickErrorKind,
     failed_tactic: Option<&'static str>,
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
-    missing_tactic_requirement: Option<std::sync::Arc<String>>,
+    /// Report detail few errors carry, shared behind one pointer so the
+    /// error stays small enough to return by value.
+    report_detail: Option<std::sync::Arc<ReportDetail>>,
+    /// The refused statement or condition has several checked successors
+    /// that are cases told apart by their path facts. A simple tactic does
+    /// not split on them; a planner that can split may take over.
+    /// Inside, the source condition a proof-level case split separates
+    /// those cases on first, when one has a Click spelling.
+    path_case_split: Option<std::sync::Arc<Option<ClickProposition>>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
@@ -5789,7 +6034,7 @@ pub struct C0VerificationSession {
     c_sources: Vec<(String, String)>,
     click_project: Option<ClickProject>,
     pub(crate) prepared_imports: Option<Vec<crate::languages::c::compiler_import::PreparedCImport>>,
-    pub(crate) prepared_cpp_import: Option<crate::languages::cpp::PreparedCppImport>,
+    pub(crate) prepared_program_import: Option<crate::languages::PreparedProgram>,
     baseline_file: ClickFile,
     verified_function_environment: CExecutionEnvironment,
     environment_identity: verification::CProofArtifactIdentity,
@@ -5854,6 +6099,10 @@ impl ClickFile {
 
     pub fn function_blocks(&self) -> &[FunctionBlock] {
         &self.function_blocks
+    }
+
+    pub fn tactic_definitions(&self) -> &[TacticDefinition] {
+        &self.tactic_definitions
     }
 
     fn declaration_owner(&self, identity: &DeclarationIdentity) -> Option<&str> {
@@ -6095,9 +6344,20 @@ impl FunctionBlock {
             self.requires
                 .iter()
                 .enumerate()
-                .filter(|(_, requirement)| matches!(requirement.inner(), Requirement::Resource(_)))
+                .filter(|(_, requirement)| matches!(requirement, Requirement::Resource(_)))
                 .map(|(index, _)| self.requirement_source_clauses.get(index).copied()),
         )
+    }
+
+    /// The written clause, counted among the function's `ensures`, `owns`
+    /// and `produces` clauses, that ensure `index` came from. An aggregate
+    /// resource clause is flattened into one ensure per member, so several
+    /// ensures share the clause the author wrote and its one proof.
+    pub fn ensure_source_clause(&self, index: usize) -> usize {
+        self.ensure_source_clauses
+            .get(index)
+            .copied()
+            .unwrap_or(index)
     }
 
     /// As [`Self::resource_requirement_positions`], for the resource
@@ -6110,10 +6370,6 @@ impl FunctionBlock {
                 .filter(|(_, ensure)| matches!(ensure.ensure(), Ensure::Resource(_)))
                 .map(|(index, _)| self.ensure_source_clauses.get(index).copied()),
         )
-    }
-
-    pub(in crate::surface) fn requirement_label_indices(&self) -> &BTreeMap<String, usize> {
-        &self.requirement_label_indices
     }
 
     pub fn decreases(&self) -> Option<&CFunctionDecrease> {
@@ -6134,6 +6390,11 @@ impl FunctionBlock {
 
     pub fn exceptional_ensures(&self) -> &[EnsureClause] {
         &self.exceptional_ensures
+    }
+
+    /// Whether this block is a user-defined tactic's contract.
+    pub(in crate::surface) fn is_tactic_procedure(&self) -> bool {
+        self.tactic_procedure
     }
 
     pub fn grouped_proof(&self) -> Option<&SourceProof> {
@@ -6285,22 +6546,8 @@ impl FunctionParameter {
 }
 
 impl Requirement {
-    pub fn label(&self) -> Option<&str> {
-        match self {
-            Self::Labeled { label, .. } => Some(label),
-            _ => None,
-        }
-    }
-
-    fn inner(&self) -> &Requirement {
-        match self {
-            Self::Labeled { requirement, .. } => requirement.inner(),
-            _ => self,
-        }
-    }
-
     fn proposition(&self) -> Option<&ClickProposition> {
-        match self.inner() {
+        match self {
             Self::Proposition(proposition) => Some(proposition),
             _ => None,
         }
@@ -6320,7 +6567,7 @@ impl Requirement {
     /// `owns`, `consumes` and `produces` have no reading here at all, and
     /// stay refused where this returns `None`.
     pub(crate) fn theorem_proposition(&self) -> Option<ClickProposition> {
-        match self.inner() {
+        match self {
             Self::Proposition(proposition) => {
                 Some(clone_click_proposition_iteratively(proposition))
             }
@@ -6328,7 +6575,6 @@ impl Requirement {
                 segment: segment.clone(),
             }),
             Self::Resource(resource) => theorem_resource_proposition(resource),
-            Self::Labeled { .. } => unreachable!("requirement.inner() removes labels"),
         }
     }
 }
@@ -6357,7 +6603,7 @@ fn theorem_resource_proposition(resource: &ResourceClause) -> Option<ClickPropos
 }
 
 fn requirement_contains_resource(requirement: &Requirement) -> bool {
-    matches!(requirement.inner(), Requirement::Resource(_))
+    matches!(requirement, Requirement::Resource(_))
 }
 
 fn parameter_is_click_array_ref(parameter: &FunctionParameter) -> bool {
@@ -6840,8 +7086,8 @@ impl VerifiedPureTheorem {
 /// A refusal's whole-context `proof context:` section is dropped with
 /// everything after it, as it always was: it lists the entire ambient context
 /// in kernel spellings. An unclosed goal's section
-/// ([`diagnostics::GOAL_PROOF_CONTEXT_HEADER`]) lists only the facts bearing
-/// on the goal, so its non-empty lists are shown. What follows the lists is
+/// ([`diagnostics::GOAL_PROOF_CONTEXT_HEADER`]) lists only the path's case
+/// and the facts bearing on the goal, so its non-empty lists are shown. What follows the lists is
 /// the enclosing failure's own premise and search report, which the full
 /// report and `--trace-proof` carry; it is dropped here as before.
 fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
@@ -6858,7 +7104,9 @@ fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
                 .map(str::trim)
                 .skip_while(|line| line.is_empty())
                 .take_while(|line| {
-                    line.starts_with("pure facts: ") || line.starts_with("resource facts: ")
+                    line.starts_with("case: ")
+                        || line.starts_with("pure facts: ")
+                        || line.starts_with("resource facts: ")
                 })
                 .filter(|line| !line.ends_with(": []"))
                 .collect();
@@ -6925,8 +7173,30 @@ impl ClickError {
         }
     }
 
+    /// A summary is one error's own statement. A rendered diagnostic (the
+    /// stage, location, premises and search candidates `message()` appends)
+    /// is not part of one: an error built from another error's rendered text
+    /// would report that whole block as its summary. Wrap an error with
+    /// `with_context`, or quote its `raw_summary()`, instead. A summary that
+    /// arrives with a rendered block anyway keeps only the text before it.
+    fn summary_without_rendered_diagnostic(mut summary: String) -> String {
+        const RENDERED_SECTIONS: [&str; 2] = ["\n  stage: ", "\n  search candidates:"];
+        let rendered = RENDERED_SECTIONS
+            .iter()
+            .filter_map(|section| summary.find(section))
+            .min();
+        debug_assert!(
+            rendered.is_none(),
+            "an error summary contains another error's rendered diagnostic: {summary}"
+        );
+        if let Some(rendered) = rendered {
+            summary.truncate(rendered);
+        }
+        summary
+    }
+
     fn new(message: impl Into<String>) -> Self {
-        let message = message.into();
+        let message = Self::summary_without_rendered_diagnostic(message.into());
         let message = match crate::instrumentation::exceeded_verification_limit_context() {
             // Deliberate limit diagnostics already include the active context
             // and often add useful target/premise detail. Preserve those;
@@ -6946,16 +7216,18 @@ impl ClickError {
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            missing_tactic_requirement: None,
+            report_detail: None,
+            path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
 
     pub(crate) fn with_diagnostic(
         summary: impl Into<String>,
-        diagnostic: proof_diagnostics::ProofFailureDiagnostic,
+        mut diagnostic: proof_diagnostics::ProofFailureDiagnostic,
     ) -> Self {
-        let summary = summary.into();
+        let summary = Self::summary_without_rendered_diagnostic(summary.into());
+        diagnostic.reason = Self::summary_without_rendered_diagnostic(diagnostic.reason);
         let summary = match crate::instrumentation::exceeded_verification_limit_context() {
             Some(context) if !summary.contains(&context) => {
                 format!("verification budget exhausted inside {context}")
@@ -6971,7 +7243,8 @@ impl ClickError {
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            missing_tactic_requirement: None,
+            report_detail: None,
+            path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
@@ -6989,21 +7262,20 @@ impl ClickError {
 
     pub fn message(&self) -> &str {
         if let Some(diagnostic) = &self.diagnostic {
-            self.rendered
-                .get_or_init(|| {
-                    proof_diagnostics::render_terminal_message(
-                        &self.message,
-                        diagnostic,
-                        self.search_failures
-                            .as_deref()
-                            .map_or(&[][..], Vec::as_slice),
-                    )
-                })
-                .as_str()
+            self.rendered.get_or_init(|| {
+                proof_diagnostics::render_terminal_message(
+                    &self.message,
+                    diagnostic,
+                    self.search_failures
+                        .as_deref()
+                        .map_or(&[][..], Vec::as_slice),
+                )
+                .into_boxed_str()
+            })
         } else if let Some(failures) = &self.search_failures {
-            self.rendered
-                .get_or_init(|| proof_diagnostics::render_search_failures(&self.message, failures))
-                .as_str()
+            self.rendered.get_or_init(|| {
+                proof_diagnostics::render_search_failures(&self.message, failures).into_boxed_str()
+            })
         } else {
             &self.message
         }
@@ -7013,7 +7285,7 @@ impl ClickError {
     /// was attempted. `message()` stays the stable cause text used by tools
     /// that compare or aggregate diagnostics.
     pub fn report(&self) -> String {
-        let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::default();
+        let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let traced_message = self.diagnostic.as_ref().and_then(|diagnostic| {
             (self.kind == ClickErrorKind::Proof
                 && proof_trace::enabled_for(&diagnostic.claim_label))
@@ -7084,8 +7356,7 @@ impl ClickError {
             });
         let (reason, proof_context) = split_proof_context(reason);
         let requirement_reason = self
-            .missing_tactic_requirement
-            .as_ref()
+            .missing_tactic_requirement()
             .map(|required| format!("requirement `{required}` not satisfied"));
         let reason = requirement_reason.as_deref().unwrap_or(reason);
         let (mut report, reason, certification_obligation) = if self.kind == ClickErrorKind::Proof
@@ -7149,7 +7420,7 @@ impl ClickError {
         if let Some(tactic) = self.failed_tactic {
             context.push(format!("tactic: {tactic}"));
         }
-        if let Some(required) = &self.missing_tactic_requirement {
+        if let Some(required) = self.missing_tactic_requirement() {
             context.push(format!("requires: {required}"));
         }
         if let Some(diagnostic) = &self.diagnostic
@@ -7158,7 +7429,7 @@ impl ClickError {
             let source_goal = state.source_goal();
             if let Some(goal) = &source_goal
                 && !certification_obligation
-                && self.missing_tactic_requirement.is_none()
+                && self.missing_tactic_requirement().is_none()
             {
                 context.push(format!("goal: {goal}"));
             }
@@ -7217,7 +7488,7 @@ impl ClickError {
         {
             return None;
         }
-        let mut labels = proof_diagnostics::render::SnapshotLabels::default();
+        let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let context = proof_diagnostics::render_trace_context_labeled(
             diagnostic,
             self.search_failures
@@ -7271,6 +7542,85 @@ impl ClickError {
     }
 
     /// The claim that supplied this proof failure's checked state, if any.
+    fn missing_tactic_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_tactic_requirement
+            .as_deref()
+    }
+
+    /// The Click declaration this failure is about, when it has no tactic
+    /// or C statement to name: the terminal report shows where it is
+    /// written.
+    pub fn proof_declaration(&self) -> Option<&str> {
+        self.report_detail.as_ref()?.declaration.as_deref()
+    }
+
+    /// The claim and source tactic path the terminal report excerpts: the
+    /// failing step's own site, or else the tactic that was being checked
+    /// when a failure with no site arose.
+    pub fn proof_source_site(&self) -> Option<(&str, &[usize])> {
+        if let (Some(claim), Some(path)) =
+            (self.proof_claim_label(), self.proof_source_tactic_path())
+        {
+            return Some((claim, path));
+        }
+        let (claim, path) = self.report_detail.as_ref()?.source_tactic.as_ref()?;
+        Some((claim, path))
+    }
+
+    /// Locates a proof failure that names no source by what the verifier
+    /// was working on: the tactic being checked, or else the declaration
+    /// being verified. A failure that already has a site keeps it.
+    pub(crate) fn located_by_ambient_source(mut self) -> Self {
+        if self.kind != ClickErrorKind::Proof
+            || self.proof_source_site().is_some()
+            || self.proof_declaration().is_some()
+        {
+            return self;
+        }
+        let (declaration, tactic) = AMBIENT_PROOF_SOURCE.with(|ambient| {
+            let ambient = ambient.borrow();
+            (ambient.declaration.clone(), ambient.tactic.clone())
+        });
+        if declaration.is_none() && tactic.is_none() {
+            return self;
+        }
+        let detail = std::sync::Arc::make_mut(self.report_detail.get_or_insert_default());
+        match tactic {
+            Some((claim, source_index)) => {
+                detail.source_tactic = Some((claim, vec![source_index]));
+            }
+            None => detail.declaration = declaration,
+        }
+        self
+    }
+
+    /// Shows a failure that names no source the declaration that was being
+    /// checked when it arose, whatever kind of failure it is. Declaration
+    /// checking has no tactic to name.
+    pub(crate) fn located_by_ambient_declaration(mut self) -> Self {
+        if self.proof_source_site().is_some() || self.proof_declaration().is_some() {
+            return self;
+        }
+        let declaration = AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow().declaration.clone());
+        if let Some(declaration) = declaration {
+            std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).declaration =
+                Some(declaration);
+        }
+        self
+    }
+
+    /// Records the Click declaration this failure is about. A failure
+    /// already attributed keeps its declaration.
+    pub(crate) fn at_declaration(mut self, name: &str) -> Self {
+        let detail = std::sync::Arc::make_mut(self.report_detail.get_or_insert_default());
+        if detail.declaration.is_none() {
+            detail.declaration = Some(name.to_owned());
+        }
+        self
+    }
+
     pub fn proof_claim_label(&self) -> Option<&str> {
         self.diagnostic
             .as_ref()
@@ -7294,9 +7644,35 @@ impl ClickError {
     }
 
     pub(crate) fn with_missing_tactic_requirement(mut self, required: String) -> Self {
-        self.missing_tactic_requirement = Some(std::sync::Arc::new(required));
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_tactic_requirement = Some(required);
         self.rendered = std::sync::OnceLock::new();
         self
+    }
+
+    /// Marks a refusal whose statement or condition has path cases that a
+    /// case split on their facts would separate.
+    pub(crate) fn with_path_case_split(mut self) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(None));
+        self
+    }
+
+    /// Whether this refusal is a simple tactic declining to split path cases.
+    pub(crate) fn is_path_case_split(&self) -> bool {
+        self.path_case_split.is_some()
+    }
+
+    /// Records the condition a proof-level case split separates this
+    /// refusal's path cases on first.
+    pub(crate) fn with_path_case_condition(mut self, condition: ClickProposition) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(Some(condition)));
+        self
+    }
+
+    /// The condition a proof-level case split separates this refusal's path
+    /// cases on first, when one has a Click spelling.
+    pub(crate) fn path_case_condition(&self) -> Option<&ClickProposition> {
+        self.path_case_split.as_deref().and_then(Option::as_ref)
     }
 
     /// The bounded cause text, without rendering proof state or premises.
@@ -7337,6 +7713,43 @@ impl ClickError {
         self
     }
 
+    /// Restates where a refusal happened: `rewrite` maps the leading place of
+    /// the cause text (`` `claim` tactic N ``) to the place a reader wrote,
+    /// in the summary and in the attached diagnostic alike. A message whose
+    /// place `rewrite` does not recognize is kept as it is.
+    pub(in crate::surface) fn with_rewritten_place(
+        mut self,
+        rewrite: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        if let Some(message) = rewrite(&self.message) {
+            self.message = message;
+            self.rendered = std::sync::OnceLock::new();
+        }
+        if let Some(diagnostic) = &self.diagnostic
+            && let Some(reason) = rewrite(&diagnostic.reason)
+        {
+            let mut diagnostic = diagnostic.as_ref().clone();
+            diagnostic.reason = reason;
+            self.diagnostic = Some(std::sync::Arc::new(diagnostic));
+            self.rendered = std::sync::OnceLock::new();
+        }
+        self
+    }
+
+    /// Attributes a failure no written tactic owns to the written tactic
+    /// that generated the failing step, so the report can show its source.
+    /// A failure that already names a written tactic keeps it.
+    pub(crate) fn attributed_to_source_tactic(mut self, source_index: usize) -> Self {
+        if let Some(diagnostic) = self.diagnostic.as_mut()
+            && diagnostic.origin.source_tactic_path.is_none()
+        {
+            std::sync::Arc::make_mut(diagnostic)
+                .origin
+                .source_tactic_path = Some(vec![source_index]);
+        }
+        self
+    }
+
     pub(crate) fn with_context(self, prefix: impl AsRef<str>) -> Self {
         self.with_prefix(format!("{}: ", prefix.as_ref()))
     }
@@ -7351,7 +7764,8 @@ impl ClickError {
             diagnostic: self.diagnostic,
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
-            missing_tactic_requirement: self.missing_tactic_requirement,
+            report_detail: self.report_detail,
+            path_case_split: self.path_case_split,
             timing_tactic: self.timing_tactic,
         }
     }
@@ -7383,7 +7797,8 @@ impl Clone for ClickError {
             diagnostic: self.diagnostic.clone(),
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
-            missing_tactic_requirement: self.missing_tactic_requirement.clone(),
+            report_detail: self.report_detail.clone(),
+            path_case_split: self.path_case_split.clone(),
             timing_tactic: self.timing_tactic.clone(),
         }
     }
@@ -7397,7 +7812,8 @@ impl PartialEq for ClickError {
             && self.diagnostic == other.diagnostic
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement
-            && self.missing_tactic_requirement == other.missing_tactic_requirement
+            && self.report_detail == other.report_detail
+            && self.path_case_split == other.path_case_split
             && self.timing_tactic == other.timing_tactic
     }
 }

@@ -20,5 +20,5 @@ int32 invoke(void (*callback)(int32), int32 x) {
 ```
 
 ```expect
-fail: unverified claims: Ensure(1) = produces
+fail: unverified claims: invoke.ensures_1 `produces Permit(x)`
 ```

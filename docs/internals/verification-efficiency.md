@@ -191,8 +191,17 @@ charged to visible semantic output rather than hidden ambient state:
   memoized walk with the full scan on generated fact sets. The `N^2/2`
   questions for symbolic indices remain a known violation of the contract;
   removing them needs the cells indexed by the index terms the facts order,
-  which no rule has yet. Heap `initialized_cells` and union views are still
-  visited per candidate on every store.
+  which no rule has yet. Union views are still visited per candidate on
+  every store. The initialization record (`InitializedBytes` in
+  `src/kernel/primitives/initialized_bytes.rs`) is not visited by a store:
+  a store only adds to it, merging constant-offset bytes into one run per
+  block with a predecessor lookup, and a forgotten cell's bytes are recorded
+  at the cost of the forgetting itself
+  (`an_unplaced_store_records_a_local_array_as_one_run`). A run of cells a
+  havoc or store drops as a whole is recorded per dropped interval, not per
+  slot: a declaration's initializer records its whole object, so dropping
+  the runs it seeded is one covering query each, whatever their length
+  (`a_declared_object_makes_dropping_its_runs_one_query`).
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work
@@ -203,8 +212,9 @@ charged to visible semantic output rather than hidden ambient state:
   setup and whole-function finalization build the entry facts' context once
   and extend it per path, and the implicit empty-effect check builds a
   path's context only when a write could reach storage that predates the
-  call. `planning_a_path_builds_contexts_linear_in_its_length` pins the
-  planner's builds (`smart_planning_context_entries`), and
+  call. `executing_a_fan_out_is_near_linear_in_its_length` pins `execute()`
+  on an early-return fan-out, where it builds no path context of its own,
+  and
   `call_ensure_lowering_is_linear_in_the_ensure_count` and
   `call_requirement_checking_is_linear_in_the_requirement_count` pin the
   builds of a call step (`context_rebuild_entries`).
@@ -506,8 +516,8 @@ loads of settled classes at the same memory-blind address. The regression
 is `counter_call_chain_ensure_lowering_stays_flat_per_call`
 (`src/surface/tests/scaling_tests.rs`).
 
-The condition-premise test oracle follows a persistent variable-to-fact
-adjacency index, also used by condition queries. Facts whose variables can be read without inspecting a
+The complete condition-premise test oracle follows a persistent variable-to-fact
+adjacency index. Facts whose variables can be read without inspecting a
 snapshot update the index as they are filed or withdrawn. The context-entry
 charge covers the first variable entry; additional variables are charged
 separately, and a restriction rebuild pays its own entry charge. Construction
@@ -517,7 +527,7 @@ once, preserving fact-index order for the unchanged kernel checker.
 
 Snapshot-dependent facts need the complete collector: a condition can connect
 to a goal through a variable stored in its snapshot even when their written
-syntax shares none. Their variable entries are deferred to smart planning,
+syntax shares none. The oracle defers their variable entries until queried,
 charged as `snapshot condition premise indexing`, and cached only after a
 complete construction. Scalar changes share this cache; snapshot-fact changes
 extend the last completed index with a deferred insertion or withdrawal,
@@ -739,13 +749,25 @@ loads from symbolic cell runs; nested load dependencies stop after 64 lookups
 on one path. Those lookups are charged individually. Scoped
 collection flags restore their previous values even during unwinding.
 
+Each complete fact is shared across its variable and block buckets. Selection
+deduplicates borrowed entries before copying retained syntax, so a wide
+compound premise costs its syntax and adjacency entries once.
+`wide_atomic_premise_cloning_scales_with_its_syntax` counts deep clone nodes
+across construction, selection, certificate checking, and premise withdrawal
+at 8, 16, 32, and 64 variables; doubling the input permits at most three times
+the clone visits. This catches repeated tree copies that work-fee counters
+alone cannot expose.
+
 Candidate trials first check their named sources alone. When conditions are
 needed, they walk only the condition buckets connected to the goal and source,
 then rebuild and prove the restricted context. Separate condition and
 proposition buckets prevent every single-source trial from visiting the other
 proposition candidates. If no source succeeds, a joint selection follows both
-kinds of adjacency. Condition goals retain the established condition-component
-selection, including its lazy snapshot adjacency. If that query fails, its
+kinds of adjacency. Condition goals first select their syntax component, including the value
+stored at an explicitly addressed load cell and recent frame bounds. Registered
+load variables follow the same exact-cell dependency as written loads, and their
+live origin snapshots supply the frame history when canonical snapshots are
+placeholders. Each registered load is expanded once per collection. If that query fails, its
 selected conditions seed one joint fallback that includes frame and quantified
 dependencies. Other atomic goals try narrow and widened selections. Retry
 comparisons use premise sets, so reaching additional keys without adding facts
@@ -754,7 +776,10 @@ component. A wider smart fallback admits ground and quantified facts and
 follows variables in recent store addresses and call or loop havoc ranges,
 at most 64 history edges per snapshot. Those buckets cost the facts they admit;
 they are not a claim that the ambient context proves the goal. Every successful selection
-still has to establish the goal in the restricted kernel context. For smart
+still has to establish the goal in the restricted kernel context. Memo-identity
+keys omit planning indexes and lazy query caches: retaining them for every transient restricted
+context would keep otherwise dead adjacency versions alive. Fact-set equality,
+hashing, and the memo-table limits remain unchanged. For smart
 equality failures, the shared ambient oracle can reject a goal before another
 history walk in a restricted context. Its positive answer never issues or
 retains evidence: the selected restricted query must still succeed. The
@@ -764,12 +789,15 @@ gone. Traversal is charged to `atomic dependency selection`; interruption return
 `atomic_memory_evidence_cites_only_connected_conditions` keeps one-source
 evidence at one premise, equality-assisted evidence at two, and refuses a
 range at an index not known equal. Beside 16, 32, 64 and 128 unrelated
-conditions and memory propositions, retained premise sizes stay at 565 and
-658 debug bytes and checking costs stay at 2 and 12 work units respectively.
+conditions and memory propositions, retained premise sizes stay at 589 and
+682 debug bytes and checking costs stay at 2 and 14 work units respectively.
 `atomic_evidence_without_one_source_cites_connected_facts` covers the joint
-quantified fallback: two premises, 840 debug bytes and 4 checking work units
-at every size. Construction of the ambient input is outside these query
-measurements. Withdrawing each required premise invalidates the certificate.
+quantified fallback: two premises, 872 debug bytes and 4 checking work units
+at every size. It also extends one context by an unrelated condition and
+memory fact before each query, over 8, 16, 32 and 64 additions, to pin total
+construction and fallback work to near-linear growth across successive contexts.
+Construction of the ambient input is outside the static query measurements.
+Withdrawing each required premise invalidates the certificate.
 `atomic_retained_evidence_expands_without_unrelated_conditions` covers
 covering and adjacent ranges, a pointer alias, resource separation and the
 quantified fallback through smart verification, expansion and independent

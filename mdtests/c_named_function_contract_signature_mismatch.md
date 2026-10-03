@@ -25,5 +25,5 @@ int32 unary_apply(int32 (*callback)(int32), int32 value) {
 ```
 
 ```expect
-fail: contract `Binary` expects
+fail: contract `Binary` expects int32 (*)(int32, int32), got int32 (*)(int32)
 ```

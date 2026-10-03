@@ -2,7 +2,152 @@
 
 This is the consumer inventory for `issues/authority-migration.md`, not a specification of new syntax. The groups below use the legacy resource/population rules unless marked as authority-mode proofs. Design notes are proposals or historical investigations, not passing fixtures. The C in source-backed fixtures is frozen by the migration issue.
 
+The original `examples/bounded-pool` project now uses authority semantics.
+All eleven original C functions and five arithmetic lemmas verify, including
+symbolic growth/shrink, private writes under a closed control, cleanup, and the
+zero, resize, two-object, and transfer pipelines. The C files are unchanged.
+Initialization receives empty authority explicitly; cleanup retires both empty
+populations. Exact member custody remains independent of global count facts.
+The former authority companion has been consolidated into the original project.
+Milestone 1 is complete: the full gate passed all 4,720 unit/integration and
+190 fixture tests, and all 99 pool expansion-audit sites passed.
+
 ## Discovery boundary
+
+The `authority_named_field_*` fixtures add local field-bearing families with
+exact and wildcard authority. Occurrences with equal arguments retain distinct
+identities and proof fields; aggregate/exact counts track local birth and
+consumption. Disjoint private bodies can be updated through preserving ordinary
+helper contracts while the caller's authority control remains closed.
+Negatives cover overlapping memory, duplicate helper inputs, missing authority
+for counts or lifecycle changes, late establishment, and premature retirement.
+Named-member helper creation/consumption with explicit authority, heterogeneous
+symbolic instance batches, and algebraic/list field descriptions remain outside
+the implemented boundary. Legacy field-count rejection fixtures remain controls. Milestone 2 is complete
+for this boundary: the full gate passed 4,723 unit/integration tests and 190
+fixture tests; all 48 new named-member expansion-audit sites passed.
+
+The `authority_wildcard_*` fixture group adds concrete, field-free
+`R(anchor, _, ...)` population scopes and aggregate count observations.
+The `authority_wildcard_helper_*` fixtures add ordinary borrow-and-return
+contracts for one concrete member and wildcard authority, including nested
+calls. Helper entry imports an arbitrary total; it cannot establish authority
+or equate that total to its locally owned member quantity.
+The `authority_wildcard_create_helper*` fixtures additionally create one
+field-free member from an authority-only helper input. They preserve arbitrary
+entry totals, require checked count bounds, retain concrete output arguments,
+and exercise both direct and nested creation while the caller holds other
+members. The `authority_wildcard_consume_helper*` fixtures consume one exact
+entry member while returning authority, including nested calls. The caller
+retains other members, observes the checked decrement, and cannot reuse the
+consumed member. Return certification rejects a declared consumption without
+an actual transition. Kernel regressions cover identity, authority and member
+custody, repeated transitions, and scaling beside unrelated imports.
+The `authority_wildcard_private_body*` fixtures cover disjoint private memory
+bodies, nested opening and closing without membership changes, and a member-only
+helper while the caller retains authority and another member. They reject
+missing member or memory ownership, overlapping bodies, and count observations
+without authority.
+The `authority_wildcard_consume_private_body*` fixtures combine consumption
+with private memory: direct and nested helpers return the selected member's
+owned range through `produces`, preserve caller-retained members, and decrease
+the arbitrary population total by one. They reject missing authority,
+wrong-member selection, a missing consumption, and reuse after consumption or
+memory reclamation.
+The `authority_wildcard_create_private_body*` fixtures cover the inverse:
+direct and nested helpers consume an owned range and produce a new member
+whose body owns that range. The caller retains another member and observes
+the incremented total. Regressions reject missing memory or authority,
+duplicate membership or independent body ownership, and a missing overflow
+bound. Existing checked exchanges support this without verifier changes.
+The `authority_wildcard_transfer_private_body*` fixtures move one unit member
+between two wildcard authorities through direct and nested helpers, retaining
+private memory and caller-owned members in both pools. Both entry totals are
+arbitrary; each ledger checks the exact decrement or increment. Rejections
+cover absent authority or bounds, missing exchange, incorrect totals, aliased
+pools, and reuse of the consumed source membership. An unrelated member may
+be framed beside an authority; it is not imported into that authority's pool.
+The `authority_wildcard_body_facts*` fixtures add private invariants to unit
+memory-bearing members. Folding checks current facts, opening/closing maintains
+them without authority, and consumption exposes the exact member's invariant.
+Two disjoint members retain their totals and private values. Rejections cover
+false birth, invalidating writes at close, and an invariant reading a cell
+outside its own body even when the caller owns that cell. Kernel regressions
+reject unchecked birth and forged facts during consumption or checked event application.
+The `authority_wildcard_contained_resource*` fixtures add ordinary owned
+resources inside a member body. Creation helpers consume the exact child;
+consumption helpers return it; member-only helpers open both layers. Direct
+and nested callers retain another member and preserve the child family's
+population total. Rejections cover missing or wrong children, independent
+return of a child retained in a member, wrong returned identity, and an
+unchanged total promised for a birth. `authority_wildcard_contained_object`
+covers the built-in `owns object(p)` form. The kernel checks the exact body
+exchange, and helper custody follows only the explicit contained-resource
+frontier, without scanning the caller frame.
+The bounded-pool sidecar remains on its existing path; this group supplies
+one prerequisite without migrating it.
+
+The `authority_wildcard_exact_count*` fixtures distinguish exact member counts
+from wildcard totals, including creation and consumption helper contracts,
+retained neighboring members, equal-member multiplicity, and refusal to infer
+a global exact count from local custody. Kernel regressions cover authority
+transfer, unresolved indices, arbitrary entry counts, and indexed scaling.
+
+The `authority_family_exchange*` fixtures add one unit consumption and one
+unit production from different families at the same anchor, with explicit
+borrowed unary/wildcard authorities and ordinary object ownership. Direct and
+nested caller proofs preserve retained members and check both count changes.
+Rejections cover missing authority or object ownership, missing consumption or
+production, and equating a unary total to local custody. Kernel checks cover
+admission and checked external body extents. The unchanged stack-object case
+is preserved as a separate expected rejection: implicit local access is not
+currently transferable object ownership.
+
+The `authority_pool_control*` fixtures package both population authorities and
+C pool fields in one ordinary control. Direct and nested checkout helpers
+restore the checked-out count and capacity equations. A caller retains another
+slot while passing the control and consuming one slot. Negative fixtures
+reject missing effects/authority, duplicate authority, and a wrong C increment.
+Kernel regressions check both imported custodies, arbitrary totals without
+creation rights, and the three required domains for balanced unit arithmetic.
+Indexed domain-query scaling is checked beside unrelated facts. Support is
+limited to one/two authorities at the same anchor with a field-free control;
+the bounded-pool sidecar and general wrapper/batch support remain separate.
+
+`authority_pool_control_return_full.md` adds direct and nested return, with an
+exact concrete input member imported alongside its folded control. Both count
+invariants and the ordinary `valid_pool(pool)` predicate are restored, private
+memory is returned, and a caller retains a neighboring slot. Its signed-sum proof uses ordinary arithmetic lemmas rather
+than new syntax; reversed summands retain all domain checks. Kernel imports
+reject missing ownership, multiple selected inputs, and wrong pool identity.
+`authority_pool_control_init_nested.md` packages explicitly passed empty
+populations through standalone arbitrary-capacity initialization and a nested
+capacity-two call. Both prove the ordinary `valid_pool` predicate after
+replacing storage with control; the caller also observes the current slot count.
+The checked rewrite and helper return authenticate only their explicit control
+frontier and preserve existing population identity, totals, and custody. An
+unowned wrapper or a wrapper without authenticated authority cannot supply
+count permission. Numerical unary batches compose with unit updates without
+per-unit iteration; tests reject overflow, insufficient custody, and use after
+lending authority. Zero quantities do not grant member rights.
+
+`authority_pool_control_two_members.md` initializes an external pool, checks out
+both private objects, writes 11/22 with control closed, and returns them in the
+opposite order. Its final slot quantity is two. Exact member custody and call
+memoization are indexed by identity; borrowing one member does not borrow its
+neighbor. For a deterministic positive exclusive memory footprint, equal
+arguments cannot describe two live instances, so its owned exact count is one.
+A remembered exact absence is invalidated by a subsequent unresolved birth;
+an empty whole population entails every exact count is zero. Empty-body
+families keep their existing conservative rule. Kernel tests cover wrong
+members, double spend, absence invalidation and multi-size custody scaling.
+An aliased second birth is rejected by a source regression. Constant ownership
+quantities are now observed from an indexed tally without merging or duplicating
+retained occurrences; views contribute no units and arithmetic never wraps.
+
+The original bounded-pool sidecar has completed its authority migration;
+the milestone-one status at the start of this inventory supersedes the earlier
+partial checkpoints above.
 
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
@@ -86,12 +231,60 @@ including all 2,569 mdtests and the frozen shared-heap example checks.
 | --- | --- | --- |
 | Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. All six related positive count-contract fixtures also use authority. |
 | Shared parent; authority | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md`, `design/shared-heap-probes/click.project.json` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The frozen main C verifies eight functions and audits 48 smart sites; the related boundary fixtures pass the full repository gate. |
-| Bounded pool; legacy | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
+| Bounded pool; authority | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md`, `examples/bounded-pool/click.project.json` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
 | Earlier authority design; non-executable | `design/concurrency-probes/shared-count-authority.md`, `design/concurrency-probes/explicit-authority.md`, `design/concurrency-probes/README.md` | Preserve the motivating hostile cases and protocol questions; these documents do not define the approved source interface. The migration issue supersedes the whole-population mutex-custody plan. |
 
 `examples/jsonc-refcount/README.md` and the `mdtests/jsonc_refcount_{getter,increment,setter}.md` fixtures describe a separate JSON-C resource/model-field example; inspect them during the final source/doc audit, but their `count` search hits include ordinary C/API naming and should not be assumed to be Click population observations.
 
 ## Sequential mdtest dependency groups
+
+The milestone-three constant-quantity slice migrates
+`let_bound_constant_quantity.md` and `fold_rejects_a_negative_quantity.md` to
+authority semantics. The former retains the let-bound contract quantity and
+an ordinary authority-bearing control; the latter retains both zero acceptance
+and rejection of a negative coefficient with its missing nonnegative fact.
+`fold_negative_quantity_legacy_control.md` retains the original signed-quantity
+regression until the final legacy-removal milestone; its authority replacement
+is `fold_rejects_a_negative_quantity.md`.
+The symbolic-plus-unit boundary remains recorded in the migration issue.
+The obsolete global unanchored count fixtures were removed by explicit design
+decision. Scoped wildcard aggregation remains covered by authority fixtures.
+`counted_distinct_populations_symbolic_entry.md` now uses authority semantics,
+with separate authorities for its independent families and no bound on their
+unobserved sum.
+
+`resource_count_predicate_snapshot.md` also uses authority semantics: an
+ordinary control owns counter memory and authority, independently of reference
+members. Its unchanged C retain operation restores a fresh predicate after the
+checked member birth; the predicate's entry snapshot cannot substitute for
+that updated relation.
+
+`counted_resource_contribution_counter.md` selects authority semantics for all
+seven functions. It separates empty contribution members from an ordinary
+counter/authority control and supplies empty authority through storage. One
+member is consumed per increment; exact-two callers consume their final member
+and retire authority before returning memory. Whole symbolic cleanup and direct
+zero/one/two-value pipelines preserve their original C and result guarantees.
+
+`population_consumption_at_close.md` and
+`population_consumption_wrong_increment.md` now use ordinary authority-bearing
+controls. Explicit member consumption precedes invariant restoration; reopening
+does not consume again. Nested calls and both reporting branches verify, while
+the unchanged two-unit increment is rejected for failing the counter/count fact.
+
+`authority_local_numeric_batch.md` covers a locally created concrete batch,
+including zero changes and partial consumption. Concrete quantities use the
+same custody ledger as units; kernel tests also preserve exact wildcard member
+counts and check quantity-independent work. True symbolic-batch/unit mixing
+is still a separate migration capability.
+
+`population_count_states_its_transition.md` and
+`population_count_across_a_produces_transition.md` now select authority semantics
+and explicitly create the produced member. The real count transition verifies;
+a fixed post-count of one remains rejected. The initializer and ordinary caller
+in `produced_population_count_in_ensured_predicate.md` now receive explicit
+authority for an empty entry family. Their ensured predicate observes checked
+births, including the zero-quantity branch, with unchanged C.
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
@@ -109,6 +302,11 @@ paths in each row are relative to `mdtests/`. The pass/fail ledger below comes
 from each fixture's checked-in `expect` block; names alone do not determine
 the expected result.
 
+The loop/pure-expression row is a search-hit inventory, not a population
+migration group: those fixtures use C functions named `count` or the standard
+library's array-count function. None observes a declared-resource population.
+Keep their existing proof coverage without introducing artificial authorities.
+
 All 18 fixtures in the shared-parent lifecycle row select authority semantics.
 Their contracts and intended refusals pass the full repository gate; see the
 verification and audit evidence above.
@@ -116,7 +314,7 @@ verification and audit evidence above.
 | Group | Files and preserved behavior |
 | --- | --- |
 | Refcount and exact population basics | `counted_resource_refcount_transitions.md`, `counted_resource_population_body.md`, `counted_resource_population_lifetime.md`, `counted_resource_independent_populations.md`, `counted_release_preserves_nonfinal_allocation.md`, `population_initialized_cleanup.md`, `population_unit_needs_its_body.md`, `population_simple_exit_rejects_final_leak.md`: exact count/body relation, independent populations, nonfinal allocation preservation, initialization/finalization, and refusal to leak or produce a unit without its body. `counted_resource_rejects_minting.md`, `counted_resource_rejects_double_spend.md`, `counted_resource_transfer.md` pin ordinary ownership transfer and spend, even where they do not spell `count`. |
-| Quantity, arithmetic, patterns, snapshots | `counted_distinct_populations_symbolic_entry.md`, `counted_distinct_populations_symbolic_sum.md`, `population_symbolic_increment_bounded.md`, `population_symbolic_increment_overflow.md`, `population_cleanup_rejects_partial_quantity.md`, `fold_rejects_a_negative_quantity.md`, `let_bound_constant_quantity.md`, `resource_count_patterns.md`, `resource_pattern_counts_cross_contracts.md`, `resource_count_observe_witness.md`, `resource_count_predicate_snapshot.md`, `population_count_states_its_transition.md`, `population_count_across_a_produces_transition.md`, `c_contract_executes_resource_count.md`, `c_step_contract_resource_count_is_model_local.md`, `produced_population_count_in_ensured_predicate.md`, `consumed_population_count_in_ensured_predicate.md`, `predicate_without_count_ignores_resource_population.md`, `a_population_count_is_not_a_wrapped_total.md`: exact versus wildcard totals, bounded `int32` sums, nonnegative coefficients, contracts and predicates, historical snapshots, witnesses, and an unrelated predicate that must remain usable. |
+| Quantity, arithmetic, patterns, snapshots | `counted_distinct_populations_symbolic_entry.md`, `population_symbolic_increment_bounded.md`, `population_symbolic_increment_overflow.md`, `population_cleanup_rejects_partial_quantity.md`, `fold_rejects_a_negative_quantity.md`, `let_bound_constant_quantity.md`, `resource_pattern_counts_cross_contracts.md`, `resource_count_observe_witness.md`, `resource_count_predicate_snapshot.md`, `population_count_states_its_transition.md`, `population_count_across_a_produces_transition.md`, `c_contract_executes_resource_count.md`, `c_step_contract_resource_count_is_model_local.md`, `produced_population_count_in_ensured_predicate.md`, `consumed_population_count_in_ensured_predicate.md`, `predicate_without_count_ignores_resource_population.md`, `a_population_count_is_not_a_wrapped_total.md`: exact versus wildcard totals, bounded `int32` sums, nonnegative coefficients, contracts and predicates, historical snapshots, witnesses, and an unrelated predicate that must remain usable. |
 | Open body, call, and return boundaries | `resource_population_open.md`, `population_open_calls_explicit_piece.md`, `call_inside_open_population_does_not_assume_its_body.md`, `population_call_with_restored_body.md`, `population_call_requires_closed_body.md`, `population_call_drops_the_cached_body_cell.md`, `population_call_keeps_what_it_may_and_drops_the_body_cell.md`, `population_call_rejects_open_alias.md`, `population_call_rejects_reentrant_restored_body.md`, `population_rejects_nested_open.md`, `population_rejects_nested_alias_open.md`, `load_origin_first_seen_per_function.md`, `return_population_rejects_missing_increment.md`, `return_population_rejects_missing_ownership.md`, `return_population_rejects_unupdated_sibling.md`, `return_population_rejects_wrong_release.md`: scoped restoration, no duplicated body access, call invalidation, and return checking. Some old positive body-open permissions must be replaced by ordinary ownership plus authority, while their memory and count claims remain. |
 | Consumption at close and contribution | `counted_resource_contribution_counter.md`, `population_consumption_at_close.md`, `population_consumption_missing_contract.md`, `population_consumption_nested_overconsume.md`, `population_consumption_repeated.md`, `population_consumption_wrong_increment.md`: exact two, one spend across scope close/return, and refusal of missing, repeated, or incorrect consumption. |
 | Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `shared_heap_produced_ensure_transport.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
@@ -130,7 +328,7 @@ The following **fail** fixtures are the negative side of the sequential groups a
 
 | Group | Expected-failure files |
 | --- | --- |
-| Arithmetic, quantity, patterns, and proof-expression boundaries | `a_population_count_is_not_a_wrapped_total.md`, `counted_distinct_populations_symbolic_sum.md`, `fold_rejects_a_negative_quantity.md`, `population_cleanup_rejects_partial_quantity.md`, `population_symbolic_increment_overflow.md`, `population_count_across_a_produces_transition.md`, `c_step_contract_resource_count_is_model_local.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`. |
+| Arithmetic, quantity, patterns, and proof-expression boundaries | `a_population_count_is_not_a_wrapped_total.md`, `fold_rejects_a_negative_quantity.md`, `population_cleanup_rejects_partial_quantity.md`, `population_symbolic_increment_overflow.md`, `population_count_across_a_produces_transition.md`, `c_step_contract_resource_count_is_model_local.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`. |
 | Body and call boundaries | `call_inside_open_population_does_not_assume_its_body.md`, `population_call_drops_the_cached_body_cell.md`, `population_call_rejects_open_alias.md`, `population_call_rejects_reentrant_restored_body.md`, `population_call_requires_closed_body.md`, `population_rejects_nested_alias_open.md`, `population_rejects_nested_open.md`, `population_unit_needs_its_body.md`. |
 | Population updates and return | `counted_resource_rejects_double_spend.md`, `counted_resource_rejects_minting.md`, `population_simple_exit_rejects_final_leak.md`, `population_consumption_missing_contract.md`, `population_consumption_nested_overconsume.md`, `population_consumption_repeated.md`, `population_consumption_wrong_increment.md`, `return_population_rejects_missing_increment.md`, `return_population_rejects_missing_ownership.md`, `return_population_rejects_unupdated_sibling.md`, `return_population_rejects_wrong_release.md`. |
 | Parent identity and lifetime | `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_detach_leak_diagnostic.md`, `resource_field_child_equation_rejects_other_start.md`. The unsuffixed two-parent branch fixture is a negative control; its `..._positive.md` counterpart is the passing claim. |

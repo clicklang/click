@@ -11,8 +11,9 @@ use click::instrumentation::{self, ArtifactReuseRejection};
 use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_prepared_project_tactic_source_position, c0_project_tactic_source_position,
-    c0_tactic_source_position, cpp_prepared_project_tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources, verify_cpp_prepared_project,
+    c0_tactic_source_position, program_prepared_project_tactic_source_position,
+    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
+    verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -163,8 +164,10 @@ fn example_projects() {
     }
 }
 
+/// The insert example verifies in the ordinary example gate; this pins what
+/// that verdict is about: the unchanged Linux C and the shared model.
 #[test]
-fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
+fn rbtree_insert_uses_the_unchanged_c_and_the_shared_model() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected) in [
         (
@@ -179,27 +182,46 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
         let bytes = fs::read(root.join(relative)).expect("the unchanged insert C input exists");
         assert_eq!(hex_digest(sha256(&bytes)), expected, "changed {relative}");
     }
-    let path = root.join("examples/rbtree-insert/rbtree_insert.frontier");
-    let source = fs::read_to_string(&path).expect("the insert frontier sidecar should exist");
+    let source = fs::read_to_string(root.join("examples/rbtree-insert/rbtree_insert.click"))
+        .expect("the insert sidecar should exist");
     assert!(source.contains("import \"../rbtree-model/rbtree_model.click\";"));
     assert!(!source.contains("spec enum RbTree"));
-    let c_sources =
-        read_verifying_sources(&path, &source).expect("the unchanged insert C bundle should load");
+    assert!(source.contains("void __rb_insert("));
+}
+
+/// The insert proof against a copy of the C whose root case skips its
+/// recolour, `rb_set_parent_color(node, NULL, RB_BLACK)`. The proof claims the
+/// root's colour bit is black at that `break`, which the C no longer makes
+/// true, and that claim is refused; the files on disk are not changed.
+#[test]
+fn rbtree_insert_refuses_a_skipped_recolour() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-insert/rbtree_insert.click");
+    let source = fs::read_to_string(&path).expect("the insert sidecar should exist");
+    let mut c_sources =
+        read_verifying_sources(&path, &source).expect("the insert C bundle should load");
+    let recolour = "\t\t\trb_set_parent_color(node, NULL, RB_BLACK);\n";
+    let (_, c) = c_sources
+        .iter_mut()
+        .find(|(name, _)| name.ends_with("rb_insert_color.c"))
+        .expect("the bundle holds rb_insert_color.c");
+    assert_eq!(c.matches(recolour).count(), 1, "the root recolour moved");
+    *c = c.replace(recolour, "");
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
-        .expect("the insert frontier should resolve the shared model");
-    let error = click::surface::verify_c0_project(&project, &source_refs(&c_sources))
-        .expect_err("the insert proof frontier is deliberately unfinished");
-    // The uncle-red `continue`s are complete on every frame combination,
-    // and six of the black-uncle case-3 rotation `break`s on the
-    // left-left frames. The first unfinished path is the case-3 rotation
-    // under a great-grandparent `Right` frame whose other child is a
-    // node: that child cannot yet be refolded at the pointer the arm
-    // bound, so the path stops after `__rb_rotate_set_parents`.
+        .expect("the insert sidecar should resolve the shared model");
+    // Like every other verification here, this runs on a harness verifier
+    // thread: the proof is deep enough to overflow the default test stack.
+    let error = limits::spawn(
+        "skipped-recolour verifier",
+        "click-skipped-recolour".to_string(),
+        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .expect_err("the insert proof must refuse C that skips the root recolour");
     let message = error.message();
     assert!(
-        message.contains("the frontier is at statement 42, `augment_rotate(gparent, parent)`")
-            && message.contains("9 at a `break` and 4 at a `continue`"),
-        "unexpected insert frontier: {message}"
+        message.contains("could not establish `(node->__rb_parent_color & 1) == 1`"),
+        "unexpected refusal: {message}"
     );
 }
 
@@ -358,8 +380,8 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                         CInput::Prepared(imports) => {
                             verify_c0_prepared_project(&click_project, imports)
                         }
-                        CInput::PreparedCpp(import) => {
-                            verify_cpp_prepared_project(&click_project, import)
+                        CInput::PreparedProgram(import) => {
+                            verify_program_prepared_project(&click_project, import)
                         }
                     }
                     .map(|_| ())
@@ -399,8 +421,8 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                                         source_index,
                                     )
                                 }
-                                CInput::PreparedCpp(import) => {
-                                    cpp_prepared_project_tactic_source_position(
+                                CInput::PreparedProgram(import) => {
+                                    program_prepared_project_tactic_source_position(
                                         &click_project,
                                         import,
                                         claim,

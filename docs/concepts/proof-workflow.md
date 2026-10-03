@@ -326,6 +326,17 @@ concrete path rather than merging it, while a terminal branch retains separate
 return paths. `execute()` is the batch form that continues from the same
 frontier to function exit.
 
+A statement or condition can also have several checked paths that only their
+facts tell apart: a load that may read the cell an earlier store wrote has one
+successor where the addresses are equal and one where they differ, and
+`x > 0 && y > 0` is false along two paths. `step()` and `branch` never split
+the proof on such cases. They refuse at that statement, list the condition
+each case assumes, and name the proof `if` that separates them; inside each
+arm of that `if` the statement has one successor. `execute()` makes the same
+split itself, one condition at a time before the statement, and continues each
+case with the rest of the block. Its expansion prints the split as nested
+proof `if`s.
+
 A resource listed by `branch ensuring` remains in the representation named by
 the interface. In particular, exporting a folded composite does not project
 its declared body, containment facts, or child views. Use an explicit

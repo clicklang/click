@@ -29,6 +29,7 @@ pub(crate) use contracts::{
     stated_separation_extent_guards,
 };
 mod integer;
+mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm,
@@ -41,10 +42,13 @@ mod cell_store;
 pub(crate) use cell_store::CHECKED_RUN_SLOTS;
 pub use cell_store::CellRun;
 pub(crate) use cell_store::{
-    CellStore, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, offset_stem_and_constant,
+    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet,
+    offset_stem_and_constant,
 };
 mod counted_populations;
 mod derivations;
+mod initialized_bytes;
+pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use counted_populations::CountedPopulations;
 mod persistent_map;
@@ -52,7 +56,8 @@ pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
     block_is_never_address_taken_local, clear_block_alignment_registry,
-    clear_never_address_taken_locals, register_block_alignment, registered_block_alignment,
+    clear_never_address_taken_locals, register_aggregate_argument_source, register_block_alignment,
+    registered_aggregate_argument_source, registered_block_alignment,
     registered_block_alignment_charged, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
 };
@@ -202,6 +207,103 @@ pub enum Sort {
     CFunctionOutcome,
 }
 
+/// What a load term reads at its address: how many bytes, and how the term
+/// represents them.
+///
+/// A load term is a value, and the value a read returns depends on more than
+/// the address. A one-byte read of `0xFF` is `-1` as `int8` and `255` as
+/// `uint8`, and an `int32` read at the same address returns all four bytes.
+/// Two reads of one address therefore name one value only when they agree on
+/// this kind.
+///
+/// Four- and eight-byte integer reads keep their two's-complement bit pattern
+/// in the term and let the `CValue` wrapper choose the interpretation, so a
+/// signed and an unsigned read of that width are one kind (`Bits32`,
+/// `Bits64`). Narrower reads store the extended value, which signedness
+/// changes, so they keep it. Floating-point reads are kinds of their own.
+///
+/// A pointer read is a `Bits32` read: Click names a pointer value by the
+/// four-byte word at its address (`Pointer::loaded` scales that word), which
+/// is also how a materialized pointer field's cells hold it. The access is
+/// still eight bytes wide; framing takes the width recorded at the address,
+/// which a pointer read records, and never less than the kind's own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LoadKind {
+    Int8,
+    UInt8,
+    Int16,
+    UInt16,
+    Bits32,
+    Bits64,
+    Float32,
+    Float64,
+}
+
+impl LoadKind {
+    /// The kind of a C read of `value_type`, for every scalar or pointer type
+    /// a load can have. `_Bool` reads its byte unsigned and normalizes it.
+    pub fn of_type(value_type: CType) -> Option<Self> {
+        Some(match value_type {
+            CType::Bool | CType::UInt8 => Self::UInt8,
+            CType::Int8 => Self::Int8,
+            CType::Int16 => Self::Int16,
+            CType::UInt16 => Self::UInt16,
+            CType::Int32 | CType::UInt32 => Self::Bits32,
+            CType::Int64 | CType::UInt64 => Self::Bits64,
+            CType::Float32 => Self::Float32,
+            CType::Float64 => Self::Float64,
+            CType::Void
+            | CType::Int8Array(_)
+            | CType::Int16Array(_)
+            | CType::Int32Array(_)
+            | CType::UInt8Array(_)
+            | CType::UInt16Array(_)
+            | CType::UInt32Array(_)
+            | CType::Int64Array(_)
+            | CType::UInt64Array(_)
+            | CType::Float32Array(_)
+            | CType::Float64Array(_)
+            | CType::PointerArray(_, _) => return None,
+            _ if value_type.is_pointer() => Self::Bits32,
+            _ => return None,
+        })
+    }
+
+    /// The kind of read that returns exactly `value`, a cell's stored value:
+    /// a read of any other kind at the cell's address does not.
+    pub fn of_value(value: &CValue) -> Option<Self> {
+        Some(match value {
+            CValue::Void => return None,
+            CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
+            CValue::Int8(_) => Self::Int8,
+            CValue::Int16(_) => Self::Int16,
+            CValue::UInt16(_) => Self::UInt16,
+            CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
+            CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
+            CValue::Float32(_) => Self::Float32,
+            CValue::Float64(_) => Self::Float64,
+            CValue::Pointer(_) => Self::Bits32,
+        })
+    }
+
+    /// Whether a read of this kind returns `value` itself, where `value` is
+    /// what a cell holds. This is the one test every route that answers a
+    /// load term from a cell or a store applies.
+    pub fn reads_value(self, value: &CValue) -> bool {
+        Self::of_value(value) == Some(self)
+    }
+
+    /// How many bytes a read of this kind returns.
+    pub fn byte_width(self) -> u32 {
+        match self {
+            Self::Int8 | Self::UInt8 => 1,
+            Self::Int16 | Self::UInt16 => 2,
+            Self::Bits32 | Self::Float32 => 4,
+            Self::Bits64 | Self::Float64 => 8,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
     Constant(u32),
@@ -261,7 +363,11 @@ pub enum Bitvector32Term {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
-    MemoryLoad(SharedCMemory, Box<Pointer>),
+    /// The value a read of `LoadKind` at the pointer returns in the snapshot.
+    /// The kind is part of the load's identity: two reads of one address
+    /// that differ in width or, below four bytes, in signedness return
+    /// different values, so they are different terms. See [`LoadKind`].
+    MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
     /// The 64-bit integer representation of a non-null object pointer under
     /// the LP64 profile.  The term keeps the exact source pointer, so the
     /// integer carries provenance: a cast back recovers that pointer, and two
@@ -432,7 +538,14 @@ pub(crate) struct LoadedPointerView {
 /// the address is being viewed.  `Pointer` remains the untyped address
 /// identity used by memory, aliasing, and provenance; pointer casts retag the
 /// value without changing that identity.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+///
+/// Whether the pointee is `const` is carried beside the value and is not part
+/// of its identity: equality, ordering and hashing ignore it. It is a property
+/// of the access path, which the write-through-`const` and implicit-discard
+/// checks read from the value or from the static type of the lvalue, and two
+/// values that differ only in it designate the same object. A fact about a
+/// pointer therefore matches the pointer however its type is qualified.
+#[derive(Clone, Debug)]
 pub struct CPointerValue {
     pointer: Pointer,
     c_type: CType,
@@ -500,6 +613,40 @@ impl CPointerValue {
     pub(crate) fn is_null(&self) -> bool {
         self.pointer.block == PointerBlock::Concrete("null".to_string())
             && self.pointer.offset == PointerOffsetTerm::Constant(0)
+    }
+}
+
+impl CPointerValue {
+    /// Everything that is the value's identity: the address, the type it is
+    /// viewed through, and whether the pointee is volatile.
+    fn identity(&self) -> (&Pointer, &CType, bool) {
+        (&self.pointer, &self.c_type, self.pointee_volatile)
+    }
+}
+
+impl PartialEq for CPointerValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+
+impl Eq for CPointerValue {}
+
+impl std::hash::Hash for CPointerValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state);
+    }
+}
+
+impl PartialOrd for CPointerValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CPointerValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
     }
 }
 
@@ -1001,6 +1148,15 @@ pub(super) enum CLValueStorage {
     Memory { pointer: Pointer },
 }
 
+/// The language-specific integer rule at an explicit kernel cast boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CIntegerCastMode {
+    #[default]
+    Standard,
+    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    UInt64BitsToInt64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CExpression {
     Value(CValue),
@@ -1009,6 +1165,7 @@ pub enum CExpression {
     Cast {
         expression: Box<CExpression>,
         target_type: CType,
+        integer_mode: CIntegerCastMode,
         /// The struct tag of a pointer cast target, as the source spelled it.
         /// Evaluation ignores it: a struct pointer is a kernel `Int32Pointer`
         /// and the layout lives with the field accesses. It is kept so a
@@ -1021,8 +1178,14 @@ pub enum CExpression {
         pointee_volatile: bool,
         /// Whether the cast result points at const-qualified storage. Source
         /// pointee constness is retained independently when the cast is
-        /// evaluated.
+        /// evaluated, unless `explicit_qualification` is set.
         pointee_constant: bool,
+        /// Whether this is a cast the C source wrote, whose result has
+        /// exactly the destination's pointee qualification. C lets such a
+        /// cast drop `const`; the storage's own read-only status still
+        /// decides every store. A cast that lowering inserts leaves this
+        /// unset and keeps the source pointer's qualification.
+        explicit_qualification: bool,
     },
     Conditional {
         condition: Box<CExpression>,
@@ -2147,6 +2310,11 @@ pub enum CStatement {
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
+        /// Present for an automatic array declared with an initializer: the
+        /// declaration zero-fills the object, and the initializer's written
+        /// elements follow as ordinary stores. Absent, the object is
+        /// uninitialized.
+        zero_fill: Option<CZeroFill>,
     },
     /// Declare an address-backed scalar-only aggregate. Aggregate values are
     /// not runtime `CValue`s; their local binding exposes the block base so
@@ -2165,6 +2333,17 @@ pub enum CStatement {
         target: CExpression,
         source: CExpression,
         layout: CAggregateLayout,
+    },
+    /// Write a scalar-array region with one evaluated repeated value or a
+    /// uniform initialized local source. `fresh` additionally requires complete
+    /// fresh local storage. Authority is checked; count never expands into nodes.
+    InitializeScalarArray {
+        target: CExpression,
+        source: CExpression,
+        element_type: CType,
+        count: u32,
+        copy: bool,
+        fresh: bool,
     },
     Assign {
         name: String,
@@ -2541,6 +2720,71 @@ impl From<Vec<CValue>> for CArrayContents {
     }
 }
 
+/// `count` cells holding `value`, `stride` bytes apart from `offset` bytes
+/// into an object: one [`CellRun`] of an object's known initial contents
+/// ([`CMemory::with_constant_runs`]).
+///
+/// [`CellRun`]: crate::kernel::primitives::CellRun
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CConstantRun {
+    pub(crate) offset: u32,
+    pub(crate) stride: u32,
+    pub(crate) count: u32,
+    pub(crate) value: CValue,
+}
+
+/// What an automatic array declared with an initializer holds before the
+/// initializer's written elements are stored: C zero-initializes every
+/// element the initializer does not name (C11 6.7.9p21), so the declaration
+/// fills the whole object with zeros at a cost that does not depend on its
+/// length, and the written elements follow as ordinary stores. An automatic
+/// array declared without an initializer carries none and stays
+/// uninitialized.
+///
+/// The object is `count` elements `stride` bytes apart, and every element
+/// receives the same stores of `cells`: each a typed store of a zero
+/// initializer at a byte offset within the element, exactly as the frontend
+/// would spell element 0's zero stores. The declaration leaves the cells
+/// those stores into every element leave.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CZeroFill {
+    pub(super) stride: u32,
+    pub(super) count: u32,
+    pub(super) cells: std::sync::Arc<[CZeroCell]>,
+}
+
+/// One zero store of every element of a [`CZeroFill`]: `zero`, the zero
+/// initializer's value, stored as a `value_type` cell `offset` bytes into
+/// the element, with the store's pointee qualification.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CZeroCell {
+    pub(super) offset: u32,
+    pub(super) value_type: CType,
+    pub(super) pointee_constant: bool,
+    pub(super) zero: CValue,
+}
+
+impl CZeroFill {
+    pub fn new(stride: u32, count: u32, cells: Vec<CZeroCell>) -> Self {
+        Self {
+            stride,
+            count,
+            cells: cells.into(),
+        }
+    }
+}
+
+impl CZeroCell {
+    pub fn new(offset: u32, value_type: CType, pointee_constant: bool, zero: CValue) -> Self {
+        Self {
+            offset,
+            value_type,
+            pointee_constant,
+            zero,
+        }
+    }
+}
+
 /// A function-local aggregate with one stable function-qualified block.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CStaticAggregate {
@@ -2588,6 +2832,11 @@ pub struct CAggregateField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
     pub(super) c_type: CType,
+    /// The source dimensions of an array field with more than one, outermost
+    /// first. `c_type` holds such a field as one flat array; nothing reasons
+    /// from the shape, which only lets a proof term about an element be
+    /// spelled with the subscripts the source declares.
+    pub(super) array_shape: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -2665,7 +2914,18 @@ impl CAggregateField {
             name: name.into(),
             offset_bytes,
             c_type,
+            array_shape: None,
         }
+    }
+
+    /// Records the source dimensions of a multidimensional array field.
+    pub fn with_array_shape(mut self, shape: Option<&[u32]>) -> Self {
+        self.array_shape = shape.filter(|shape| shape.len() > 1).map(<[u32]>::to_vec);
+        self
+    }
+
+    pub fn array_shape(&self) -> Option<&[u32]> {
+        self.array_shape.as_deref()
     }
 
     pub fn name(&self) -> &str {
@@ -3037,6 +3297,21 @@ pub struct CCallBinderTransport {
     pub(crate) bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
 }
 
+impl CCallBinderTransport {
+    /// Whether a call statement's target is the callee the step named. A
+    /// sidecar names a header-provided `static inline` helper by its source
+    /// spelling, while the call carries the helper's translation-unit-local
+    /// execution name `name#inline:unit`, so that suffix is not part of the
+    /// comparison. The call at the frontier is one call to one body either
+    /// way; this only decides whether the step named it.
+    pub(crate) fn names_call_to(&self, function_name: &str) -> bool {
+        let source_spelling = function_name
+            .split_once("#inline:")
+            .map_or(function_name, |(source, _)| source);
+        source_spelling == self.function.as_ref()
+    }
+}
+
 /// The order in which a target lays out the bytes of a multi-byte integer
 /// object. The kernel owns what a byte view of an integer cell means, so the
 /// order is a kernel value that the surface installs from the selected C
@@ -3195,6 +3470,11 @@ pub struct CVerifiedFunctionRule {
     /// `ApplyVerifiedRules` a loop with no verified loop rule ran to its
     /// exit on every certified path.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics this rule's certified proofs applied, by
+    /// name. A tactic's procedure runs no code, so its body has no calls;
+    /// these applications are its call edges, written by the kernel from the
+    /// checked traces, so the termination check may trust them.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 impl CVerifiedFunctionRule {
@@ -3388,13 +3668,24 @@ impl CRankingComponent {
 ///
 /// The carrier is a function of the component, not of the state: a
 /// [`CRankingComponent::PureInteger`] reads as an `Integer` at every state and
-/// the other two read as a machine int32 at every state. That is what lets the
+/// the other two read as the machine type C's usual arithmetic conversions
+/// give the expression -- int32, uint32, or uint64 -- which is a function of
+/// the declared types it names, so it is the same at every state. A reading
+/// whose carrier differs from the other reading's is refused rather than
+/// coerced. That is what lets the
 /// two obligations be built from the two readings of one component without
 /// asking which carrier each reading happened to land in.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CRankingMeasureValue {
     /// A machine int32 quantity, ranked by signed comparison.
     Machine(Bitvector32Term),
+    /// A machine uint32 quantity, ranked by unsigned comparison of the value
+    /// C computes, wraparound included. Every such value is a natural number
+    /// below 2^32, so it is nonnegative by construction.
+    Unsigned32(Bitvector32Term),
+    /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
+    /// value C computes, wraparound included; nonnegative by construction.
+    Unsigned64(Bitvector32Term),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }
@@ -3455,6 +3746,11 @@ impl CFunctionTerminationPlan {
         measures: impl IntoIterator<Item = (usize, CLoopTerminationMeasure)>,
     ) {
         self.loop_measures.extend(measures);
+    }
+
+    /// Drops the function-level measure, keeping every loop measure.
+    pub fn clear_recursive_measure(&mut self) {
+        self.recursive_measure = None;
     }
 }
 
@@ -3527,6 +3823,12 @@ impl CRecursionAnchor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CTerminationError {
     pub(super) message: String,
+    /// The function whose termination was being decided when the check
+    /// failed, for a diagnostic to locate. It is not part of the verdict.
+    pub(super) function: Option<String>,
+    /// The check refused a function-level measure because the function has
+    /// no recursive edge to rank.
+    pub(super) superfluous_recursive_measure: bool,
 }
 
 impl CVerifiedFunctionTerminationRule {
@@ -3545,17 +3847,23 @@ pub struct CVerifiedFunctionContractClaim {
     pub(super) load_equalities: Vec<super::CheckedLoadEquality>,
     /// The loop semantics of the certification this claim came from.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics the certification this claim came from
+    /// applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
-/// one exact function outcome. Contract finalization matches this evidence to
-/// the corresponding independently reconstructed path and contract claim;
-/// the language layer cannot retarget it by changing surface metadata.
+/// one exact function outcome. Contract finalization finds this evidence by
+/// the claim it closed and matches it to the path it was completed on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CCheckedFunctionProposition {
     pub(super) function: CFunction,
     pub(super) specification: CFunctionSpecification,
     pub(super) proposition: Proposition,
+    /// The contract claim this proposition closed: the proof was opened
+    /// from the kernel's goal for that claim, which carries the claim's
+    /// identity through to here. `None` for any other proposition.
+    pub(super) claim: Option<CFunctionContractClaimTarget>,
 }
 
 impl CVerifiedFunctionContractClaim {
@@ -3796,6 +4104,7 @@ pub enum ExecutionLimit {
     ResourceCountPendingWorker,
     /// Authority-mode count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
+    AuthorityCountNeedsResolvedMember,
     /// Both the visible authority fact and checked ledger custody are needed.
     AuthorityCountNeedsOwnership,
     /// The exact population total cannot be represented as C int32.
@@ -3837,6 +4146,10 @@ impl ExecutionLimit {
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "authority-mode count(...) needs one exact base pointer".to_string()
+            }
+            Self::AuthorityCountNeedsResolvedMember => {
+                "count(...) requires resolved member indices or the helper's selected member"
+                    .to_string()
             }
             Self::AuthorityCountNeedsOwnership => {
                 "count(...) requires owning authority for that population".to_string()
@@ -4192,6 +4505,20 @@ impl CMemory {
         });
     }
 
+    /// Whether the two snapshots describe one memory: the same blocks, heap
+    /// lifetimes, union views and forgotten-knowledge marks, and the same
+    /// cells whatever representation each cell store keeps them in
+    /// ([`CellStore::same_cells_as`]). Everything but the cell cache's layout
+    /// is compared exactly as `==` compares it.
+    pub(in crate::kernel) fn same_contents_as(&self, other: &Self) -> bool {
+        self == other
+            || (self.blocks == other.blocks
+                && self.union_cells == other.union_cells
+                && self.forgotten == other.forgotten
+                && self.heap == other.heap
+                && self.cells.same_cells_as(&other.cells))
+    }
+
     /// Whether `self == other`, for two snapshots each derived from `base`'s
     /// storage, comparing only what each changed from `base` (see
     /// [`SnapshotMap::eq_relative_to`]). Exact whatever the snapshots share;
@@ -4351,6 +4678,12 @@ pub(super) struct CPendingReallocation {
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
     pub(super) zeroed_prefix: Option<Bitvector32Term>,
     pub(super) copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+    /// The runs of constant byte offsets of the old block that were
+    /// initialized and lie in the new allocation, cut at its size: a
+    /// successful resize preserves them whether or not a cached cell still
+    /// names their value, and the bytes the new block grows by stay
+    /// uninitialized.
+    pub(super) initialized_prefix: Vec<(i64, u32)>,
 }
 
 /// Every field is a snapshot collection, so the derived `Hash` is O(1).
@@ -4370,10 +4703,16 @@ pub(super) struct CHeapMemory {
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
     pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
-    /// Typed scalar cells that were initialized before a call or loop havoc
-    /// dropped their cached values.  The value is gone, but a later typed
-    /// load must not mistake the cell for never-written fresh storage.
-    pub(super) initialized_cells: SnapshotMap<Pointer, u32>,
+    /// Bytes of storage with an initialization history — fresh heap
+    /// allocations and automatic (`local:`) objects — that a C store has
+    /// initialized, whether or not their cached value survives. A store the
+    /// facts cannot place, a call or loop havoc, or a join forgets values,
+    /// never initialization, so a later load must not mistake such a byte
+    /// for never-written storage. Heap stores record here as they write;
+    /// automatic storage records a cell when its value is forgotten (a
+    /// cached local cell is itself the evidence until then). See
+    /// [`InitializedBytes`].
+    pub(super) initialized: InitializedBytes,
     /// Successful calloc storage reads as zero until individual cells are
     /// written. The set is separate from `uninitialized_allocations` so the
     /// same heap-lifetime machinery can represent both APIs.
@@ -4408,8 +4747,8 @@ impl CHeapMemory {
                 &base.uninitialized_allocations,
             )
             && self
-                .initialized_cells
-                .eq_relative_to(&other.initialized_cells, &base.initialized_cells)
+                .initialized
+                .eq_relative_to(&other.initialized, &base.initialized)
             && self
                 .zeroed_allocations
                 .eq_relative_to(&other.zeroed_allocations, &base.zeroed_allocations)
@@ -4489,6 +4828,19 @@ impl SharedCMemory {
     /// what makes DAG walks terminate.
     pub(crate) fn arena_id(&self) -> (u32, u32) {
         (self.arena, self.id)
+    }
+
+    /// Producer-recorded identity of unchanged program bytes, for graph load
+    /// congruence only. This is trusted-kernel metadata, not snapshot equality
+    /// or access authority. It is fixed at first interning and looked up in O(1).
+    pub(in crate::kernel) fn read_identity(&self) -> (u32, u32) {
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return self.arena_id();
+            }
+            (self.arena, arena.1.read_identities[self.id as usize])
+        })
     }
 
     pub(crate) fn memory(&self) -> &CMemory {
@@ -4898,6 +5250,9 @@ struct CMemoryArena {
     /// Indexed by arena id; `None` for entry states and for any snapshot
     /// whose first interning did not come from a recorded edge.
     derivations: Vec<Option<std::sync::Arc<CMemoryDerivation>>>,
+    /// Immutable load-congruence keys. Producers reuse the base's key only
+    /// for an unconditional byte-preserving transition. No history is queried.
+    read_identities: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -4992,7 +5347,20 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
-    let derived = intern_c_memory_ref(result);
+    let read_identity = match &derivation {
+        CMemoryDerivation::CellsForgotten { base } => Some(base.read_identity()),
+        CMemoryDerivation::CellsSeeded { base, run }
+            if matches!(run.value_mode(), cell_store::RunValueMode::Load)
+                && run.element_width() == run.value_width()
+                && base.read_identity() == run.source().read_identity() =>
+        {
+            // Copying the same bytes already in the base is materialization,
+            // including sibling runs copied from an equivalent earlier source.
+            Some(base.read_identity())
+        }
+        _ => None,
+    };
+    let derived = intern_c_memory_ref_with_read_identity(result, read_identity);
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
     }
@@ -5123,6 +5491,7 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.read_identities.push(id);
         SharedCMemory {
             arena: *token,
             id,
@@ -5158,6 +5527,16 @@ pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
 pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
+    intern_c_memory_ref_with_read_identity(memory, None)
+}
+
+/// First interning wins, including its read identity. Existing snapshots never
+/// change keys underneath registered applications; an earlier unannotated hit
+/// conservatively loses this equality rather than requiring graph rescans.
+fn intern_c_memory_ref_with_read_identity(
+    memory: &CMemory,
+    read_identity: Option<(u32, u32)>,
+) -> SharedCMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
@@ -5197,6 +5576,11 @@ pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.read_identities.push(
+            read_identity
+                .filter(|(source_arena, source)| *source_arena == *token && *source < id)
+                .map_or(id, |(_, source)| source),
+        );
         SharedCMemory {
             arena: *token,
             id,
@@ -5343,8 +5727,7 @@ impl ResourceOccurrenceId {
 #[derive(Default)]
 pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
-    memory_equalities:
-        std::sync::Mutex<Option<std::sync::Arc<memory_equality_index::PairedMemoryIndex>>>,
+    memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
@@ -5538,6 +5921,7 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(super) struct ResourceContextChange {
+    pub(super) depth: usize,
     /// Exact occurrence delta for derived indexes; metadata changes use None.
     pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
     pub(super) fact: CResourceFact,
@@ -5570,6 +5954,10 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
+    /// Constant owned units of quantity-bearing families. A quantity query
+    /// reads one exact key rather than enumerating separately retained units.
+    /// u128 covers every u64 entry ID times a positive signed-32 quantity.
+    pub(super) numeric_owned_units: PersistentMap<CResource, (u128, usize)>,
     /// Presence of composite heads, independent of ownership mode/quantity.
     /// Reuses the population alias index without granting count authority.
     pub(super) population_heads: CountedPopulations,
@@ -5584,24 +5972,20 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Raw address anchors maintained during resource publication, for queries
+    /// before a proof boundary has paired the input with an equality graph.
+    /// Structural candidates maintained at resource publication, independent
+    /// of proof-graph registration. Keys never establish access authority.
+    structural_memory: memory_equality_index::structural::StructuralMemory,
     /// Raw persistent roots for pairing with an equality graph, maintained
     /// alongside the spelling index so pairing never scans the resource store.
     memory_addresses: memory_equality_index::MemoryAddresses,
-    /// Constant byte spans of owned memory, normalized by additive base.
-    /// A predecessor query selects an access's containing span without
-    /// scanning other fields, ranges, or parameters in the same block.
-    pub(super) owned_byte_spans: PersistentMap<(Pointer, i64, i64), ResourceEntryIds>,
-    /// Nonconstant spans require explicit bounds reasoning. Kept apart so
-    /// a missing constant access never scans unrelated constant ranges.
-    pub(super) symbolic_owned_byte_spans: PersistentMap<Pointer, ResourceEntryIds>,
+    memory_objects: memory_equality_index::symbolic::ObjectSuppliers,
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
     /// composition's pairs visits these blocks and not one per allocation.
     pub(super) shared_owned_memory_blocks: PersistentMap<PointerBlock, ()>,
-    pub(super) memory_starts:
-        PersistentMap<(PointerBlock, bool, Bitvector32Term), ResourceEntryIds>,
-    pub(super) memory_ends: PersistentMap<(PointerBlock, bool, Bitvector32Term), ResourceEntryIds>,
     /// Owned and viewed ranges with constant endpoints, keyed by base, mode,
     /// and the **signed** values of those endpoints. The key's order is what
     /// the partition check's predecessor and successor probes stand in for a
@@ -6312,6 +6696,7 @@ pub enum CResourceTerm {
     Memory(CMemorySegment),
     PopulationAuthority {
         protected: Box<CResourceTypeSpec>,
+        population_arity: Option<usize>,
         snapshot: CResourceSnapshot,
     },
     MutexGuard {
@@ -7205,6 +7590,7 @@ mod population_authority_spec_tests {
 
     fn authority_type(resource: CResourceSpec) -> CResourceTerm {
         CResourceTerm::PopulationAuthority {
+            population_arity: None,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(resource),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -7501,6 +7887,20 @@ impl Hash for Proposition {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static PROPOSITION_CLONE_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+pub(crate) fn count_proposition_clone_nodes<T>(body: impl FnOnce() -> T) -> (T, usize) {
+    let before = PROPOSITION_CLONE_NODES.with(std::cell::Cell::get);
+    let value = body();
+    (
+        value,
+        PROPOSITION_CLONE_NODES.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// Clones the logical tree without recursing through a long connective chain.
 /// This is also `Proposition::clone`, so callers cannot accidentally restore
 /// recursive cloning by using the trait method on a deep implication.
@@ -7525,6 +7925,10 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
     let mut frames = vec![Frame::Visit(proposition)];
     let mut values = Vec::new();
     while let Some(frame) = frames.pop() {
+        #[cfg(test)]
+        if matches!(frame, Frame::Visit(_)) {
+            PROPOSITION_CLONE_NODES.with(|count| count.set(count.get() + 1));
+        }
         match frame {
             Frame::Visit(proposition) => match proposition {
                 Proposition::And(left, right) => {
@@ -7934,10 +8338,14 @@ pub struct BitvectorEqualityDerivationStep {
 }
 
 /// Target-directed evidence that two pointer offsets are equal by structural
-/// congruence and exact ground-int32 equality premises.
+/// congruence, exact integer equality premises, and bounded full-width
+/// constant arithmetic.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum PointerOffsetCongruenceEvidence {
     Exact,
+    WideScaledConstant {
+        value: i64,
+    },
     ExactPremise(Box<Proposition>),
     Add {
         first: Box<PointerOffsetCongruenceEvidence>,
@@ -7989,6 +8397,7 @@ pub(crate) enum DirectBitvectorEqualityEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SignedConstantEvidence {
     Constant,
+    ExactEquality(Box<Proposition>),
     SingletonBounds {
         variable: Variable,
         lower: IndexedSignedOrderBoundEvidence,
@@ -7998,6 +8407,7 @@ pub(crate) enum SignedConstantEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IndexedSignedOrderBoundEvidence {
+    pub(in crate::kernel) other_equality: Option<Box<Proposition>>,
     pub(in crate::kernel) endpoint: Bitvector32Term,
     pub(in crate::kernel) other: Bitvector32Term,
     pub(in crate::kernel) strict: bool,
@@ -8128,6 +8538,12 @@ pub(crate) enum PropositionDerivationRule {
         disjunction: Box<Proposition>,
         cases: Vec<PropositionDerivation>,
     },
+    /// An exact disjunction is impossible when every arm's negation is exact.
+    /// No branch context is rebuilt, so opposite condition facts cannot be
+    /// overwritten while establishing the contradiction.
+    RefutedDisjunction {
+        disjunction: Box<Proposition>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -8187,10 +8603,12 @@ pub(crate) struct ForallInt32InstantiationEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AtomicPropositionDerivationEvidence {
+    WidenedUnsignedSumBound,
     MemoryDag(Box<AtomicMemoryLoadEqualityEvidence>),
     LoadAddressCongruence(Box<LoadAddressCongruenceEvidence>),
     PointerOffsetMemoryDag(Box<PointerOffsetEqualityEvidence>),
     BitvectorEqualityPath(Vec<BitvectorEqualityDerivationStep>),
+    Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
@@ -8254,10 +8672,86 @@ pub(crate) enum AtomicConnectionKey {
     Block(PointerBlock),
 }
 
+/// One immutable fact shared by every dependency bucket that names it.
+#[derive(Clone, Debug)]
+pub(crate) struct SharedIndexFact<T>(std::sync::Arc<T>);
+
+impl<T> SharedIndexFact<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self(std::sync::Arc::new(value))
+    }
+}
+impl<T> AsRef<T> for SharedIndexFact<T> {
+    fn as_ref(&self) -> &T {
+        &self.0
+    }
+}
+impl<T> std::borrow::Borrow<T> for SharedIndexFact<T> {
+    fn borrow(&self) -> &T {
+        self.as_ref()
+    }
+}
+impl<T: Ord> PartialEq for SharedIndexFact<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl<T: Ord> Eq for SharedIndexFact<T> {}
+impl<T: Ord> PartialOrd for SharedIndexFact<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T: Ord> Ord for SharedIndexFact<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.0, &other.0) {
+            std::cmp::Ordering::Equal
+        } else {
+            self.as_ref().cmp(other.as_ref())
+        }
+    }
+}
+
+/// Borrowed adjacency entries let selection deduplicate before cloning syntax.
+pub(crate) enum AtomicConnectedFact<'a> {
+    Condition(&'a ConditionTerm, bool),
+    Proposition(&'a Proposition),
+}
+impl AtomicConnectedFact<'_> {
+    pub(crate) fn identity(&self) -> (u8, usize) {
+        match self {
+            Self::Condition(condition, _) => (0, *condition as *const ConditionTerm as usize),
+            Self::Proposition(proposition) => (1, *proposition as *const Proposition as usize),
+        }
+    }
+    pub(crate) fn is_condition(&self) -> bool {
+        matches!(
+            self,
+            Self::Condition(..) | Self::Proposition(Proposition::ConditionIs(..))
+        )
+    }
+    pub(crate) fn matches(&self, goal: &Proposition) -> bool {
+        match self {
+            Self::Condition(condition, value) => {
+                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+            }
+            Self::Proposition(proposition) => *proposition == goal,
+        }
+    }
+    pub(crate) fn to_proposition(&self) -> Proposition {
+        match self {
+            Self::Condition(condition, value) => {
+                Proposition::ConditionIs((*condition).clone(), *value)
+            }
+            Self::Proposition(proposition) => (*proposition).clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct AtomicConnectionFacts {
-    pub conditions: crate::persistent::PersistentSet<Proposition>,
-    pub propositions: crate::persistent::PersistentSet<Proposition>,
+    pub conditions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub propositions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -8266,8 +8760,9 @@ pub struct PureFactContext {
     /// free-variable indexes, this never scans snapshot contents.
     pub(super) atomic_connection_facts:
         crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
-    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<Proposition>,
-    pub(super) atomic_quantified_facts: crate::persistent::PersistentSet<Proposition>,
+    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub(super) atomic_quantified_facts:
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     /// True 64-bit equalities as an undirected adjacency map, derived
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
@@ -8280,13 +8775,13 @@ pub struct PureFactContext {
     /// without inspecting a snapshot.
     pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
     >,
     /// Snapshot-dependent conditions use the complete collector only when
     /// smart premise selection asks for them. Scalar updates share the cache.
     pub(super) snapshot_condition_variable_base: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
     >,
     pub(super) snapshot_condition_variable_changes:
         crate::persistent::PersistentMap<ConditionTerm, Option<bool>>,
@@ -8294,7 +8789,7 @@ pub struct PureFactContext {
         std::sync::OnceLock<
             crate::persistent::PersistentMap<
                 Variable,
-                crate::persistent::PersistentMap<ConditionTerm, bool>,
+                crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
             >,
         >,
     >,
@@ -8365,6 +8860,8 @@ pub struct PureFactContext {
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
+    /// Original alignment premises, retained for graph reconstruction only.
+    pub(super) pointer_alignment_facts: crate::persistent::PersistentMap<(Pointer, u64), ()>,
     pub(super) pointer_block_aliases: crate::persistent::PersistentMap<
         Pointer,
         crate::persistent::PersistentMap<Pointer, ConditionTerm>,
@@ -8438,6 +8935,12 @@ pub struct PureFactContext {
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
     >,
+    /// Unsigned 64-bit order facts indexed by either endpoint. This keeps
+    /// slice-index range transport proportional to the queried order chain.
+    pub(super) uint64_order_bounds: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
+    >,
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks
@@ -8503,6 +9006,9 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: std::sync::Arc<BTreeSet<Proposition>>,
     pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
+    /// Derived provenance-only footprints published with each explicitly
+    /// admitted composition. This is not consumable resource authority.
+    pub(super) composition_object_resources: memory_equality_index::ObjectEvidenceSources,
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
         (Pointer, CType),
         crate::persistent::PersistentSet<Proposition>,
@@ -8854,7 +9360,7 @@ pub struct CFunctionContractExecution {
     /// needs them beside it to see which range the premise fell outside.
     pub(super) reuse_entry_resources: Vec<CResourceFact>,
     /// The pure facts of the contract context that premise was refused in:
-    /// what the certification prover had to derive it from.
+    /// what it was checked against.
     pub(super) reuse_context_facts: Vec<Proposition>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
     /// How this certification ran the function's loops. Under
@@ -8863,13 +9369,18 @@ pub struct CFunctionContractExecution {
     /// paths; under `Verify` an annotated loop may be summarized without
     /// ever exiting. The termination check reads this to know which.
     pub(super) loop_semantics: CLoopSemantics,
+    /// The user-defined tactics the certified proofs applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
 }
 
 /// A kernel-created record of one exact whole-function execution judgment.
 ///
 /// Callers may retain and present this artifact, but cannot manufacture or
-/// alter its execution metadata. Contract certification revalidates the
-/// boundary assumptions before reusing its checked frontier.
+/// alter its execution metadata. Before reusing its checked frontier,
+/// contract certification checks that the contract entry states each of this
+/// artifact's assumptions: the proof started from that entry, so the check
+/// is a lookup, and what it can refuse is an entry case the proof assumed
+/// without covering the others.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCheckedFunctionExecution {
     pub(super) state: CState,
@@ -8901,6 +9412,8 @@ pub struct CCheckedFunctionExecution {
     /// Original contract caller state when a kernel-checked proof entered C
     /// execution through a definitionally equal resource representation.
     pub(super) entry_representation_origin: Option<CState>,
+    /// The user-defined tactics this execution's proof applied.
+    pub(super) applied_tactics: std::collections::BTreeSet<String>,
     /// Original checked input selection; later certification must not rebuild it.
     pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
@@ -8925,6 +9438,7 @@ impl CFunctionContractExecution {
             reuse_context_facts: Vec::new(),
             checked_call_events: Default::default(),
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         }
     }
 

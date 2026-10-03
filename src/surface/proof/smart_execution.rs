@@ -4,11 +4,12 @@ use super::*;
 use std::collections::BTreeSet;
 
 impl<'a> Proof<'a> {
-    /// Searches a straight-line prefix up to one named statement by applying
-    /// every selected `Step` to the current checked descendant. The
-    /// returned fact list is only the prefix's output delta; scope adapters
-    /// use it to retain facts introduced inside their owned representation.
-    pub(super) fn try_linear_execute_until_descendant(
+    /// Runs `execute_until` on checked descendants: the `execute()` search
+    /// with a target, which stops before that source statement and follows
+    /// one path, refusing where it would have to split. The returned fact
+    /// list is only the prefix's output delta; scope adapters use it to
+    /// retain facts introduced inside their owned representation.
+    pub(super) fn try_execute_until_descendant(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
@@ -23,96 +24,74 @@ impl<'a> Proof<'a> {
                 "`execute_until(statement({target}))` cannot move backward from statement({current})"
             )));
         }
-
-        let mut proof = self.clone();
-        let mut introduced_facts = Vec::new();
-        let mut advanced = false;
-        let mut retried_requirements = BTreeSet::new();
-        loop {
-            match proof.current_statement_index()? {
-                Some(current) if current == target => break,
-                Some(current) if current < target => {}
-                Some(_) | None => return Ok(None),
-            }
-            let next =
-                proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?;
-            let Some(next) = next else {
-                return Ok(None);
-            };
-            retried_requirements.clear();
-            for fact in next.added_facts() {
-                if !introduced_facts.contains(fact) {
-                    introduced_facts.push(fact.clone());
-                }
-            }
-            proof = next;
-            advanced = true;
+        if target == current {
+            return Ok(None);
         }
-        Ok(advanced.then_some((proof, introduced_facts)))
+        let mut introduced_facts = Vec::new();
+        let Some(proof) = self.try_focused_execute_to_exit_within(
+            Vec::new(),
+            &mut BTreeSet::new(),
+            &mut 0,
+            Some(&mut introduced_facts),
+            Some(target),
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((proof, introduced_facts)))
     }
 
-    /// Runs the narrow checked `execute_until` search on this Proof and
-    /// returns only the already-accepted descendant.
-    pub(in crate::surface::proof) fn try_linear_execute_until(
+    /// Runs `execute_until` on this Proof and returns only the
+    /// already-accepted descendant.
+    pub(in crate::surface::proof) fn try_execute_until(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<Self>, ClickError> {
         Ok(self
-            .try_linear_execute_until_descendant(region)?
+            .try_execute_until_descendant(region)?
             .map(|(proof, _)| proof))
     }
 
-    /// Runs the narrow linear `execute` search over checked descendants.
-    /// Straight-line statements and audited terminal C branches advance only
-    /// through their Proof operations; a partial path is discarded unless it
-    /// reaches function exit.
-    pub(super) fn try_linear_execute_descendant(
+    /// Runs `execute()` to function exit on checked descendants: one
+    /// statement step at a time, splitting at C branches, call outcomes, and
+    /// path cases. A partial path is discarded unless it reaches function
+    /// exit. The returned fact list is the top-level advances' output delta.
+    pub(super) fn try_execute_to_exit_descendant(
         &self,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
-        let mut proof = self.clone();
-        let mut introduced_facts = Vec::new();
-        let mut advanced = false;
-        // Retrying a refused statement is bounded by the owning smart
-        // operation: one retained-have attempt per distinct requirement
-        // identity.  The set follows this immutable search, rather than a
-        // process-global cache, so unrelated proofs cannot affect it.
-        let mut retried_requirements = BTreeSet::new();
-        while !proof.is_at_function_exit() {
-            let next = if let Some(next) =
-                proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?
-            {
-                next
-            } else {
-                if !proof.is_at_execution_branch()? && !proof.is_at_call_outcomes_frontier()? {
-                    return Ok(None);
-                }
-                let Some(next) =
-                    proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
-                else {
-                    return Ok(None);
-                };
-                next
-            };
-            retried_requirements.clear();
-            for fact in next.added_facts() {
-                if !introduced_facts.contains(fact) {
-                    introduced_facts.push(fact.clone());
-                }
-            }
-            proof = next;
-            advanced = true;
-        }
-        if !advanced {
+        if self.is_at_function_exit() {
             return Ok(None);
         }
-        Ok(Some((proof, introduced_facts)))
+        // The statement steps below run on behalf of `execute()`, and a
+        // refusal names it; the returned descendant carries this proof's own
+        // context again, so checkpoints taken before it still apply.
+        let proof = self.with_execution_step_tactic_name("execute()");
+        // Retrying a refused statement is bounded by the owning smart
+        // operation: one retained-have attempt per distinct requirement
+        // identity. The set follows this immutable search, rather than a
+        // process-global cache, so unrelated proofs cannot affect it.
+        let mut retried_requirements = BTreeSet::new();
+        let mut introduced_facts = Vec::new();
+        let Some(proof) = proof.try_focused_execute_to_exit_within(
+            Vec::new(),
+            &mut retried_requirements,
+            &mut 0,
+            Some(&mut introduced_facts),
+            None,
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((proof.with_context_of(self), introduced_facts)))
     }
 
     /// Returns the already-checked function-exit descendant selected by the
-    /// narrow linear `execute` search.
-    pub(in crate::surface::proof) fn try_linear_execute(&self) -> Result<Option<Self>, ClickError> {
+    /// `execute()` search.
+    pub(in crate::surface::proof) fn try_execute_to_exit(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
         Ok(self
-            .try_linear_execute_descendant()?
+            .try_execute_to_exit_descendant()?
             .map(|(proof, _)| proof))
     }
 
@@ -289,7 +268,7 @@ impl<'a> Proof<'a> {
                 "{description} has no explicit surface-premise certificate: {}",
                 last_error
                     .as_ref()
-                    .map(|error| error.message())
+                    .map(|error| error.raw_summary())
                     .unwrap_or("no candidate was checked")
             )));
         };
@@ -583,7 +562,7 @@ impl<'a> Proof<'a> {
         self.apply_step(step).map_err(|error| {
             self.step_error(format!(
                 "theorem search selected a simple candidate that Proof rejected: {}",
-                error.message()
+                error.raw_summary()
             ))
         })
     }
@@ -783,7 +762,7 @@ impl<'a> Proof<'a> {
                         crate::surface::proof_diagnostics::render::render_proposition(&requirement),
                         snapshot_surface_error
                             .as_ref()
-                            .map(|error| format!(": {}", error.message()))
+                            .map(|error| format!(": {}", error.raw_summary()))
                             .unwrap_or_default(),
                     ))
                 })?;
@@ -930,5 +909,104 @@ impl<'a> Proof<'a> {
             application: application.clone(),
             premises,
         })
+    }
+
+    /// The guarantees of a theorem application as the caller would write
+    /// them: each `ensures` of the applied theorem with the application's
+    /// arguments substituted for its parameters, in declaration order.
+    ///
+    /// This spells conclusions; it establishes nothing. The caller retains
+    /// one only after matching it against a fact the checked application
+    /// added, so an application this cannot spell yields no conclusions
+    /// rather than an error. A generic theorem is spelled only in a pure
+    /// theorem proof, where its type instance is inferred from the
+    /// arguments alone.
+    pub(in crate::surface::proof) fn theorem_application_surface_conclusions(
+        &self,
+        application: &TheoremApplication,
+    ) -> Vec<ClickProposition> {
+        let Ok(application) = self.resolve_theorem_application(application) else {
+            return Vec::new();
+        };
+        let theorem_environment = match self.context.as_ref() {
+            ProofContext::Pure(context) => context.theorem_environment,
+            ProofContext::FixedState(context) => context.theorem_environment,
+            ProofContext::Execution(context) => context.theorem_environment,
+        };
+        let Some(theorem) = theorem_environment.get(&application.name) else {
+            return Vec::new();
+        };
+        let theorem = if theorem.type_parameters().is_empty() {
+            theorem.clone()
+        } else {
+            let ProofContext::Pure(context) = self.context.as_ref() else {
+                return Vec::new();
+            };
+            let state = CState::new().with_memory(context.theorem_context.memory.clone());
+            let recorded_snapshots = RecordedSnapshots::new();
+            let algebraic_values = application
+                .arguments
+                .iter()
+                .flat_map(contract_expression_referenced_names)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|name| {
+                    self.local_algebraic_values()
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| {
+                            context
+                                .structural_induction_setup
+                                .as_ref()?
+                                .algebraic_values
+                                .get(&name)
+                                .cloned()
+                        })
+                        .map(|value| (name, value))
+                })
+                .collect();
+            let application_context = TheoremApplicationContext {
+                values: &context.theorem_context.values,
+                array_refs: &context.theorem_context.array_refs,
+                algebraic_values: &algebraic_values,
+                pre_state: &state,
+                post_state: &state,
+                result: None,
+                recorded_snapshots: &recorded_snapshots,
+                integer_values: &context.theorem_context.integer_values,
+                pointer_element_widths: BTreeMap::new(),
+            };
+            let Ok(theorem) = instantiate_generic_theorem_application_definition(
+                theorem,
+                &application,
+                self.facts().assumptions(),
+                &application_context,
+                context.predicate_environment,
+                context.click_function_environment,
+            ) else {
+                return Vec::new();
+            };
+            theorem
+        };
+        if theorem.parameters().len() != application.arguments.len() {
+            return Vec::new();
+        }
+        let substitutions = theorem
+            .parameters()
+            .iter()
+            .map(FunctionParameter::name)
+            .map(str::to_string)
+            .zip(application.arguments.iter().cloned())
+            .collect::<BTreeMap<_, _>>();
+        theorem
+            .ensures()
+            .iter()
+            .filter_map(|ensure| match ensure.ensure() {
+                Ensure::Proposition(conclusion) => {
+                    substitute_click_proposition(conclusion, &substitutions).ok()
+                }
+                _ => None,
+            })
+            .collect()
     }
 }

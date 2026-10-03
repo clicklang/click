@@ -21,5 +21,5 @@ int32 local_array_rejects_assignment(int32* p) {
 ```
 
 ```expect
-fail: `step()` could not verify C operation: type mismatch
+fail: `execute()` could not verify C operation: type mismatch
 ```

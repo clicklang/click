@@ -5,6 +5,45 @@ use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
+fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
+    let cases = [71_000, 71_001, 71_002].map(|id| {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(id)),
+                Bitvector32Term::Constant(0),
+            ),
+            true,
+        )
+    });
+    let disjunction = Proposition::Or(
+        Box::new(cases[0].clone()),
+        Box::new(Proposition::Or(
+            Box::new(cases[1].clone()),
+            Box::new(cases[2].clone()),
+        )),
+    );
+    let mut context = PureFactContext::new().assume_proposition(disjunction.clone());
+    for case in &cases {
+        context = context.assume_proposition(Proposition::Not(Box::new(case.clone())));
+    }
+    // Inserting an opposite condition ordinarily replaces its polarity.
+    // This witness checks the contradiction without rebuilding case contexts.
+    let goal = Proposition::Equal(Term::CValue(int32(0)), Term::CValue(int32(1)));
+    let derivation = context
+        .derive_proposition(&goal)
+        .expect("all arms are refuted");
+    assert!(derivation.check(&context));
+    assert_eq!(derivation.context_premises().len(), 4);
+    assert!(!derivation.check(&context.without_exact_fact(&disjunction)));
+    for case in &cases {
+        let without = context.without_exact_fact(&Proposition::Not(Box::new(case.clone())));
+        assert!(!derivation.check(&without));
+        assert!(without.derive_proposition(&goal).is_none());
+    }
+    assert!(!derivation.check(&PureFactContext::new()));
+}
+
+#[test]
 fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
     std::thread::Builder::new()
         .name("nested-simp-small-stack".into())
@@ -188,10 +227,6 @@ fn checked_algebraic_constructor_rules_are_sound() {
     let injectivity = injectivity_context
         .derive_simp_proposition(&field_equality)
         .expect("a checked same-constructor equality entails its field equality");
-    assert_eq!(
-        injectivity.algebraic_constructor_injectivity_source(),
-        Some((&constructor_equality, 0))
-    );
     assert!(injectivity.check(&injectivity_context));
 
     let congruence_context = PureFactContext::new().assume_proposition(field_equality);
@@ -992,7 +1027,54 @@ fn contradicts_recognizes_a_comparison_and_its_arithmetic_negation() {
 }
 
 #[test]
-fn equality_graph_queries_share_one_condition_fact_index_build() {
+fn known_scalar_equality_uses_congruence_without_building_a_fact_index() {
+    let a = Bitvector32Term::Variable(Variable(990_001));
+    let b = Bitvector32Term::Variable(Variable(990_002));
+    let c = Bitvector32Term::Variable(Variable(990_003));
+    let left = Bitvector32Term::Add(Box::new(a.clone()), Box::new(c.clone()));
+    let right = Bitvector32Term::Add(Box::new(b.clone()), Box::new(c));
+    let before = PureFactContext::new();
+    assert!(!before.int32_values_known_equal(&left, &right));
+    let sibling = before.clone();
+    let branch = before
+        .clone()
+        .assume_condition(ConditionTerm::equal(a, b), true);
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(branch.int32_values_known_equal(&left, &right));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!before.int32_values_known_equal(&left, &right));
+    assert!(!sibling.int32_values_known_equal(&left, &right));
+}
+
+#[test]
+fn known_scalar_queries_have_bounded_work_beside_growing_classes() {
+    for size in [8u64, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |i| Bitvector32Term::Variable(Variable(991_000 + i));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_condition(ConditionTerm::equal(var(i), var(i + 1)), true);
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(992_000 + i)),
+                    Bitvector32Term::Constant(i as u32),
+                ),
+                true,
+            );
+        }
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.int32_values_known_equal(&sum(var(0)), &sum(var(size))));
+            assert!(!context.int32_values_known_equal(&sum(var(0)), &sum(var(size + 1))));
+        });
+        assert!(work < 128, "size={size}, work={work}");
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    }
+}
+
+#[test]
+fn equality_graph_queries_do_not_build_the_condition_fact_index() {
     let root = Bitvector32Term::Variable(Variable(210_000));
     let mut assumptions = PureFactContext::new();
     let mut connected = Vec::new();
@@ -1011,18 +1093,17 @@ fn equality_graph_queries_share_one_condition_fact_index_build() {
             true,
         );
     }
-    let expected_visits = assumptions.condition_facts.len();
     let _scope = assumptions.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
 
     for term in &connected {
-        assert!(assumptions.bitvector_terms_equal_from_facts(&root, term));
+        assert!(assumptions.int32_values_known_equal(&root, term));
     }
 
     assert_eq!(
         PureFactContext::bitvector_equality_index_fact_visits(),
-        expected_visits,
-        "distinct equality queries must share one index build instead of rescanning ambient facts"
+        0,
+        "known equality queries must not build or scan the legacy fact index"
     );
 }
 
@@ -1097,93 +1178,6 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
     assert!(
         samples.iter().all(|(_, work)| *work == samples[0].1),
         "exact_signed_constant work must not grow with unrelated facts: {samples:?}"
-    );
-}
-
-#[test]
-fn closed_forall_cache_accepts_only_kernel_proved_facts() {
-    let variable = Variable(91_000);
-    let reflexive = Proposition::ForAll {
-        var: variable,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(variable),
-                Bitvector32Term::Variable(variable),
-            ),
-            true,
-        )),
-    };
-    let false_constant = Proposition::ForAll {
-        var: variable,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(variable),
-                Bitvector32Term::Constant(0),
-            ),
-            true,
-        )),
-    };
-
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_context_free_forall(
-            &reflexive
-        )
-    );
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_context_free_forall(
-            &reflexive
-        ),
-        "a previously proved closed fact should remain reusable"
-    );
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_context_free_forall(
-            &false_constant
-        ),
-        "an assumption-dependent or false quantified fact must not enter the cache"
-    );
-}
-
-#[test]
-fn context_free_forall_cache_is_scoped_to_one_verification_session() {
-    let _outer = crate::kernel::VerificationSession::enter();
-    let variable = Variable(91_000);
-    let reflexive = Proposition::ForAll {
-        var: variable,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(variable),
-                Bitvector32Term::Variable(variable),
-            ),
-            true,
-        )),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_context_free_forall(
-            &reflexive
-        )
-    );
-    assert!(
-        crate::kernel::api::contract_certification::context_free_forall_cache_len() >= 1,
-        "a proved closed fact is cached within the session"
-    );
-
-    // A nested entry joins the session and keeps the cache.
-    {
-        let _nested = crate::kernel::VerificationSession::enter();
-        assert!(crate::kernel::api::contract_certification::context_free_forall_cache_len() >= 1);
-    }
-    drop(_outer);
-
-    // A fresh outermost session starts with an empty cache, like every other
-    // per-session kernel table.
-    let _fresh = crate::kernel::VerificationSession::enter();
-    assert_eq!(
-        crate::kernel::api::contract_certification::context_free_forall_cache_len(),
-        0,
-        "a fact proved in one session must be re-derived in the next"
     );
 }
 
@@ -3008,7 +3002,7 @@ fn bitvector_equality_derivation_retains_its_exact_oriented_path() {
 }
 
 #[test]
-fn arithmetic_normalization_does_not_select_contextual_representatives() {
+fn scalar_graph_literal_evaluation_supplies_checkable_simp_equality() {
     let left = Bitvector32Term::Variable(Variable(218));
     let right = Bitvector32Term::Variable(Variable(219));
     let one = Bitvector32Term::Constant(1);
@@ -3027,10 +3021,26 @@ fn arithmetic_normalization_does_not_select_contextual_representatives() {
         .assume_proposition(left_is_one.clone())
         .assume_proposition(right_is_one.clone());
 
+    // Congruence and literal evaluation prove this directly; no contextual
+    // representative search or arithmetic normalization is required.
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(assumptions.int32_values_known_equal(
+        &Bitvector32Term::Add(Box::new(left.clone()), Box::new(right.clone())),
+        &Bitvector32Term::Constant(2),
+    ));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    // Explicit derivation construction may enumerate its premise evidence;
+    // that is separate from the Boolean equality query measured above.
+    assert_checkable_derivation(&assumptions, &goal);
     assert!(
-        assumptions.derive_simp_proposition(&goal).is_none(),
-        "the kernel must not choose equality-class representatives to make an arithmetic goal normalize"
+        PureFactContext::new()
+            .derive_simp_proposition(&goal)
+            .is_none()
     );
+    assert!(!assumptions.int32_values_known_equal(
+        &Bitvector32Term::Add(Box::new(left), Box::new(right)),
+        &Bitvector32Term::Constant(3),
+    ));
 }
 
 #[test]
@@ -3121,6 +3131,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(empty_memory),
             Box::new(owner),
+            crate::kernel::LoadKind::Bits32,
         )),
     );
     let before_local = CMemory::new()
@@ -3133,12 +3144,14 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
     let old_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(old_memory),
         Box::new(owner_field.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(before_local),
                 Box::new(owner_field.clone()),
+                crate::kernel::LoadKind::Bits32,
             ),
             old_load.clone(),
         ),
@@ -3149,6 +3162,7 @@ fn condition_fact_matching_ignores_unrelated_local_memory() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(after_local),
                 Box::new(owner_field),
+                crate::kernel::LoadKind::Bits32,
             ),
             old_load,
         ),
@@ -3178,6 +3192,7 @@ fn bounded_order_check_ignores_unrelated_local_memory() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let assumptions = PureFactContext::new()
@@ -3220,13 +3235,18 @@ fn equality_chains_across_observationally_equivalent_memory_loads() {
     let before_materialized_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before_materialized),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let before_sparse_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before_sparse),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let after_load =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(owner));
+    let after_load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(owner),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(before_materialized_load, Bitvector32Term::Constant(1)),
@@ -3836,6 +3856,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let len = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&entry_memory),
         Box::new(owner.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let after_len = entry_memory
         .clone()
@@ -3843,6 +3864,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let cap = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_len),
         Box::new(field(4)),
+        crate::kernel::LoadKind::Bits32,
     );
     let after_cap = after_len
         .clone()
@@ -3850,6 +3872,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let range_data_offset = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_cap),
         Box::new(field(8)),
+        crate::kernel::LoadKind::Bits32,
     );
     let range_data = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -3861,6 +3884,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let entry_data_offset = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&entry_memory),
         Box::new(field(8)),
+        crate::kernel::LoadKind::Bits32,
     );
     let entry_data = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -3925,6 +3949,7 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
     let loaded_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(indexed_fact_pointer),
+        crate::kernel::LoadKind::Bits32,
     );
     let guarded_fact = forall_int32(
         fact_index,
@@ -4103,6 +4128,7 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let quantified = forall_int32(
@@ -4187,6 +4213,7 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(data.offset_by_int32_elements(value)),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let quantified = forall_int32(
@@ -4243,6 +4270,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
     let indexed_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_term.clone())),
+        crate::kernel::LoadKind::Bits32,
     );
     let guarded_fact = forall_int32(
         index,
@@ -4275,6 +4303,7 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(data.offset_by_int32_elements(concrete_index.clone())),
+                crate::kernel::LoadKind::Bits32,
             ),
             concrete_index,
         ),
@@ -4305,6 +4334,7 @@ fn quantified_copy_fact_certifies_concrete_pointer_indices() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(base.offset_by_int32_elements(index)),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let copied = forall_int32(
@@ -4359,6 +4389,7 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     let loaded_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(data.offset_by_int32_elements(index_bits.clone())),
+        crate::kernel::LoadKind::Bits32,
     );
     let guarded_fact = forall_int32(
         index,
@@ -4667,6 +4698,82 @@ fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
     assert_eq!(above.decide(&fits), Some(false));
 }
 
+/// An unsigned chain `x <u n`, `n <=u 4` is the signed chain over the
+/// sign-bit-flipped atoms, so it gives `x <u 4`, and with it the signed range
+/// `0 <= x` and `x < 4` an index needs. It does not compose with a signed
+/// bound on `n` (a negative `n` is a huge unsigned one), with no bound on
+/// `n`, or through a wrapped `n - 1`.
+#[test]
+fn unsigned_order_chain_bounds_its_low_end_in_signed_order() {
+    let x = Bitvector32Term::Variable(Variable(89_300));
+    let n = Bitvector32Term::Variable(Variable(89_301));
+    let four = Bitvector32Term::Constant(4);
+    let zero = Bitvector32Term::Constant(0);
+    let below_n = ConditionTerm::unsigned_less_than(x.clone(), n.clone());
+    let nonnegative = ConditionTerm::signed_less_equal(zero.clone(), x.clone());
+    let below_four = ConditionTerm::signed_less_than(x.clone(), four.clone());
+    let chained = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::unsigned_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(below_n.clone(), true);
+    assert_eq!(
+        chained.decide(&ConditionTerm::unsigned_less_than(x.clone(), four.clone())),
+        Some(true)
+    );
+    assert_eq!(chained.decide(&nonnegative), Some(true));
+    assert_eq!(chained.decide(&below_four), Some(true));
+    assert_eq!(
+        chained.decide(&ConditionTerm::signed_less_equal(x.clone(), four.clone())),
+        Some(true)
+    );
+    assert_eq!(
+        chained.decide(&ConditionTerm::signed_less_than(
+            x.clone(),
+            Bitvector32Term::Constant(3)
+        )),
+        None,
+        "`x <u 4` admits `x == 3`"
+    );
+
+    let signed_bound = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(below_n.clone(), true);
+    assert_eq!(
+        signed_bound.decide(&nonnegative),
+        None,
+        "a signed bound on `n` does not bound the unsigned `x <u n`"
+    );
+    assert_eq!(signed_bound.decide(&below_four), None);
+
+    let unbounded = PureFactContext::new().assume_condition(below_n, true);
+    assert_eq!(unbounded.decide(&nonnegative), None);
+    assert_eq!(unbounded.decide(&below_four), None);
+
+    let wrapped = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::unsigned_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::unsigned_less_than(
+                x.clone(),
+                Bitvector32Term::Subtract(Box::new(n), Box::new(Bitvector32Term::Constant(1))),
+            ),
+            true,
+        );
+    assert_eq!(
+        wrapped.decide(&nonnegative),
+        None,
+        "`n - 1` wraps when `n` is zero"
+    );
+    assert_eq!(wrapped.decide(&below_four), None);
+}
+
 #[test]
 fn assumptions_do_not_split_a_multi_value_context_variable() {
     let j = Bitvector32Term::Variable(Variable(87));
@@ -4711,6 +4818,7 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
                 block: "arg-memory".into(),
                 offset: PointerOffsetTerm::scale_int32(index, 4),
             }),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     let k = Variable(88);
@@ -4856,6 +4964,7 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
             block: "arg-memory".into(),
             offset: PointerOffsetTerm::scale_int32(k_bits.clone(), 4),
         }),
+        crate::kernel::LoadKind::Bits32,
     );
     let pivot = Bitvector32Term::Variable(Variable(191));
     let successor = Bitvector32Term::Variable(Variable(192));
@@ -5552,28 +5661,6 @@ fn assumptions_prove_by_bounded_disjunction_cases() {
     let proposition = Proposition::Or(Box::new(x_is_one), Box::new(x_is_zero));
     assert!(!assumptions.proves(&proposition));
     assert_checkable_derivation(&assumptions, &proposition);
-}
-
-#[test]
-fn assumptions_eliminate_disjunction_to_prove_atomic_consequence() {
-    let x = Bitvector32Term::Variable(Variable(890));
-    let x_is_zero = Proposition::ConditionIs(
-        ConditionTerm::equal(x.clone(), Bitvector32Term::Constant(0)),
-        true,
-    );
-    let x_is_one = Proposition::ConditionIs(
-        ConditionTerm::equal(x.clone(), Bitvector32Term::Constant(1)),
-        true,
-    );
-    let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::Or(Box::new(x_is_zero), Box::new(x_is_one)));
-    let nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), x),
-        true,
-    );
-
-    assert!(!assumptions.proves(&nonnegative));
-    assert_checkable_derivation(&assumptions, &nonnegative);
 }
 
 #[test]
@@ -6557,6 +6644,7 @@ fn deep_contextual_load_order_contradiction_has_no_index_depth_cutoff() {
             next = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(query_pointer),
+                crate::kernel::LoadKind::Bits32,
             );
             assumptions =
                 assumptions.assume_condition(ConditionTerm::equal(stored_index, query_index), true);
@@ -6686,6 +6774,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                 Box::new(data.offset_by_int32_elements(Bitvector32Term::Variable(
                                     fact_index,
                                 ))),
+                                crate::kernel::LoadKind::Bits32,
                             ),
                             Bitvector32Term::Constant(7),
                         ),
@@ -6717,6 +6806,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                     Box::new(unrelated.offset_by_int32_elements(
                                         Bitvector32Term::Variable(unrelated_index),
                                     )),
+                                    crate::kernel::LoadKind::Bits32,
                                 ),
                                 Bitvector32Term::Constant(9),
                             ),
@@ -6814,6 +6904,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                 let load = Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(cell),
+                    crate::kernel::LoadKind::Bits32,
                 );
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_than(load, Bitvector32Term::Constant(index as u32)),
@@ -6846,7 +6937,11 @@ fn derived_order_contradiction_resolves_load_endpoints() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new().store(cell.clone(), int32(Bitvector32Term::Constant(7)));
-    let load = Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(memory), Box::new(cell));
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory),
+        Box::new(cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_than(load, Bitvector32Term::Constant(7)),
         true,
@@ -6882,10 +6977,12 @@ fn derived_order_contradiction_bridges_snapshot_loads() {
     let before_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before.clone()),
         Box::new(preserved.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let after_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(after.clone()),
         Box::new(preserved),
+        crate::kernel::LoadKind::Bits32,
     );
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CMemoryMutatesOnly {
@@ -7303,6 +7400,40 @@ fn int32_order_observation_axiom_agrees_with_boundary_model() {
             let integer_order = integer(left_integer, left_value, right_value)
                 <= integer(right_integer, left_value, right_value);
             assert_eq!(c_order, integer_order, "{left_value} <= {right_value}");
+        }
+    }
+}
+
+#[test]
+fn int32_integer_equality_bridge_matches_independent_signed_boundary_values() {
+    let theorem = prove_int32_equal_of_to_integer(
+        Bitvector32Term::Variable(Variable(922)),
+        Bitvector32Term::Variable(Variable(923)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("equality needs its Integer premise");
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
+        panic!("expected exact Integer equality");
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(x, y), true) = conclusion.as_ref()
+    else {
+        panic!("expected exact machine equality");
+    };
+    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
+        panic!("expected machine observations");
+    };
+    assert_eq!(a.ty(), MachineIntegerType::Int32);
+    assert_eq!(b.ty(), MachineIntegerType::Int32);
+    assert_eq!(a.value(), x.as_ref());
+    assert_eq!(b.value(), y.as_ref());
+    for left in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
+        for right in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
+            // Evaluate the signed observation and the bit-pattern equality
+            // independently, including pairs with different signs.
+            let observed_equal = i64::from(left) == i64::from(right);
+            let bits_equal = left as u32 == right as u32;
+            assert_eq!(observed_equal, bits_equal, "{left}, {right}");
         }
     }
 }
@@ -8332,6 +8463,14 @@ fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
         Box::new(pool[0].clone()),
         Box::new(Bitvector32Term::Constant(1)),
     ));
+    // Sign-bit flips, the operands of an unsigned order, which the filing
+    // keys as it keys the variables they flip.
+    for id in [0, 1] {
+        pool.push(Bitvector32Term::bitwise_xor(
+            pool[id].clone(),
+            Bitvector32Term::Constant(0x8000_0000),
+        ));
+    }
     let mut state = 0x2545_f491_4f6c_dd1du64;
     let mut next = |bound: usize| {
         state ^= state << 13;
@@ -8451,4 +8590,449 @@ fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
         proved > compared / 10 && proved < compared * 9 / 10,
         "the generated questions should mix answers: {proved} of {compared} proved"
     );
+}
+
+#[test]
+fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
+    let x = Bitvector32Term::Variable(Variable(990_000));
+    let y = Bitvector32Term::Variable(Variable(990_001));
+    let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(x.clone()),
+            Box::new(Bitvector32Term::Constant(1)),
+        ),
+        true,
+    ));
+    assert_eq!(
+        crate::kernel::assumptions::exact_sixty_four_bit_constant(&x, true, &low_word_only),
+        None
+    );
+    let mut prior = None;
+    for size in [4, 16, 64] {
+        let mut facts = PureFactContext::new()
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(x.clone(), Bitvector32Term::UInt64Constant(u64::MAX)),
+                true,
+            ))
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(y.clone(), Bitvector32Term::UInt64Constant(2)),
+                true,
+            ));
+        for index in 0..size {
+            facts = facts.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::Variable(Variable(991_000 + index)),
+                    Bitvector32Term::UInt64Constant(index),
+                ),
+                true,
+            ));
+        }
+        let cases = [
+            (
+                Bitvector32Term::uint64_divide(x.clone(), y.clone()),
+                Some(u64::MAX / 2),
+            ),
+            (
+                Bitvector32Term::uint64_remainder(x.clone(), y.clone()),
+                Some(1),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_and(x.clone(), y.clone()),
+                Some(2),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_or(x.clone(), y.clone()),
+                Some(u64::MAX),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_xor(x.clone(), y.clone()),
+                Some(u64::MAX - 2),
+            ),
+            (Bitvector32Term::uint64_bitwise_not(x.clone()), Some(0)),
+            (
+                Bitvector32Term::uint64_shift_left(x.clone(), Bitvector32Term::Constant(63)),
+                Some(1 << 63),
+            ),
+            (
+                Bitvector32Term::uint64_logical_shift_right(
+                    x.clone(),
+                    Bitvector32Term::Constant(63),
+                ),
+                Some(1),
+            ),
+            (
+                Bitvector32Term::uint64_divide(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                None,
+            ),
+            (
+                Bitvector32Term::uint64_remainder(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                None,
+            ),
+            (
+                Bitvector32Term::uint64_logical_shift_right(
+                    x.clone(),
+                    Bitvector32Term::Constant(64),
+                ),
+                None,
+            ),
+        ];
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (term, expected) in cases {
+                assert_eq!(facts.wide_constant_from_equalities(&term), expected);
+                assert_eq!(
+                    crate::kernel::assumptions::exact_sixty_four_bit_constant(&term, true, &facts,),
+                    expected.and_then(|bits| i64::try_from(bits).ok())
+                );
+            }
+        });
+        assert!(work > 0);
+        if let Some(old) = prior {
+            assert_eq!(work, old);
+        }
+        prior = Some(work);
+    }
+}
+
+#[test]
+fn invalid_unsigned_constant_operations_do_not_panic() {
+    for term in [
+        Bitvector32Term::uint64_divide(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::UInt64Constant(0),
+        ),
+        Bitvector32Term::uint64_remainder(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::UInt64Constant(0),
+        ),
+        Bitvector32Term::uint64_logical_shift_right(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::Constant(64),
+        ),
+    ] {
+        assert_eq!(term.uint64_as_const(), None);
+    }
+    assert_eq!(
+        Bitvector32Term::unsigned_divide(
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(0)
+        )
+        .as_const(),
+        None
+    );
+    assert_eq!(
+        Bitvector32Term::unsigned_remainder(
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(0)
+        )
+        .as_const(),
+        None
+    );
+}
+
+#[test]
+fn wide_scaled_offset_congruence_checks_full_width_and_scale() {
+    let index = Bitvector32Term::Variable(Variable(992_000));
+    let sum = Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::UInt64Constant(1));
+    let offset = PointerOffsetTerm::scale_int64(sum, 4, true);
+    let zero = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(0)),
+        true,
+    ));
+    let four = PointerOffsetTerm::Constant(4);
+    let evidence = zero
+        .pointer_offset_congruence_evidence(&offset, &four)
+        .unwrap();
+    assert!(evidence.checks(&offset, &four, &zero));
+    assert!(!evidence.checks(&offset, &PointerOffsetTerm::Constant(0), &zero));
+    assert!(!evidence.checks(&offset, &four, &PureFactContext::new()));
+    let high = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(4294967296)),
+        true,
+    ));
+    assert!(!evidence.checks(&offset, &four, &high));
+    let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::equal(index, Bitvector32Term::Constant(0)),
+        true,
+    ));
+    assert!(!evidence.checks(&offset, &four, &low_word_only));
+    let overflowing = PointerOffsetTerm::Int64Scaled {
+        value: Box::new(Bitvector32Term::UInt64Constant(i64::MAX as u64)),
+        byte_width: 2,
+        unsigned: true,
+    };
+    assert!(
+        zero.pointer_offset_congruence_evidence(&overflowing, &PointerOffsetTerm::Constant(-2))
+            .is_none()
+    );
+}
+
+#[test]
+fn wide_constant_arithmetic_work_scales_with_selected_expression() {
+    let variable = Bitvector32Term::Variable(Variable(993_000));
+    let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(variable.clone(), Bitvector32Term::UInt64Constant(9)),
+        true,
+    ));
+    let mut prior = None;
+    for size in [4, 16, 64] {
+        let mut expression = variable.clone();
+        for _ in 0..size {
+            expression = Bitvector32Term::UInt64Divide(
+                Box::new(expression),
+                Box::new(Bitvector32Term::UInt64Constant(1)),
+            );
+        }
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.wide_constant_from_equalities(&expression)
+        });
+        assert_eq!(value, Some(9));
+        if let Some(old) = prior {
+            assert!(work <= old * 5, "work grew from {old} to {work}");
+        }
+        prior = Some(work);
+    }
+}
+
+/// Each uint32 order axiom holds at every boundary value: the kernel's own
+/// evaluation of its premise and conclusion over constants never finds the
+/// premise true and the conclusion false. The values straddle zero, the sign
+/// bit the unsigned order is encoded through, and `UINT_MAX`, where an
+/// increment or a decrement wraps.
+#[test]
+fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
+    const BOUNDARIES: [u32; 9] = [
+        0,
+        1,
+        2,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        0xffff_fffd,
+        0xffff_fffe,
+        0xffff_ffff,
+    ];
+    fn holds(theorem: &Theorem) -> bool {
+        let decide = |proposition: &Proposition| {
+            let Proposition::ConditionIs(condition, true) = proposition else {
+                panic!("a uint32 order axiom relates conditions");
+            };
+            PureFactContext::decide_intrinsically(condition)
+                .expect("a condition over constants is decided")
+        };
+        // One premise, or two for a transitivity, then the conclusion.
+        let mut proposition = theorem.proposition();
+        let mut premises = 0usize;
+        while let Proposition::Implies(premise, rest) = proposition {
+            if !decide(premise) {
+                return true;
+            }
+            premises += 1;
+            proposition = rest;
+        }
+        assert!(premises > 0, "a uint32 order axiom has a premise");
+        decide(proposition)
+    }
+    let constant = Bitvector32Term::Constant;
+    let mut premises_true = 0usize;
+    for left in BOUNDARIES {
+        assert!(
+            holds(&prove_uint32_positive_predecessor_strictly_decreases(
+                constant(left)
+            )),
+            "predecessor at {left:#x}"
+        );
+        for right in BOUNDARIES {
+            let pair: [(&str, Theorem); 8] = [
+                (
+                    "increment upper bound",
+                    prove_uint32_increment_upper_bound(constant(left), constant(right)),
+                ),
+                (
+                    "increment increases",
+                    prove_uint32_increment_strictly_increases(constant(left), constant(right)),
+                ),
+                (
+                    "positive difference",
+                    prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
+                ),
+                (
+                    "gt reversed",
+                    prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
+                ),
+                (
+                    "lt reversed",
+                    prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
+                ),
+                (
+                    "ge reversed",
+                    prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
+                ),
+                (
+                    "le reversed",
+                    prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
+                ),
+                (
+                    "difference decreases",
+                    prove_uint32_difference_decreases_after_increment(
+                        constant(left),
+                        constant(right),
+                    ),
+                ),
+            ];
+            for last in BOUNDARIES {
+                let (first, middle) = (constant(left), constant(right));
+                for theorem in [
+                    prove_uint32_lt_le_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_le_lt_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_lt_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_le_transitive(first.clone(), middle.clone(), constant(last)),
+                ] {
+                    assert!(
+                        holds(&theorem),
+                        "transitivity at {left:#x}, {right:#x}, {last:#x}"
+                    );
+                }
+            }
+            for (name, theorem) in &pair {
+                assert!(holds(theorem), "{name} at {left:#x}, {right:#x}");
+            }
+            if left < right {
+                premises_true += 1;
+            }
+        }
+    }
+    // The strict-order premises are exercised, not only vacuous cases.
+    assert_eq!(premises_true, 36);
+
+    // Near-equal pairs, where a bound is tight, and a spread of ordinary
+    // values from a fixed linear congruential sequence.
+    let mut state = 0x2545_f491u32;
+    let mut sampled = Vec::new();
+    for _ in 0..4096 {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let left = state;
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        sampled.push((left, state));
+        for delta in [0u32, 1, 2, u32::MAX, u32::MAX - 1] {
+            sampled.push((left, left.wrapping_add(delta)));
+        }
+    }
+    for left in BOUNDARIES {
+        for delta in [0u32, 1, 2, u32::MAX, u32::MAX - 1] {
+            sampled.push((left, left.wrapping_add(delta)));
+        }
+    }
+    for (left, right) in sampled {
+        assert!(
+            holds(&prove_uint32_positive_predecessor_strictly_decreases(
+                constant(left)
+            )),
+            "predecessor at {left:#x}"
+        );
+        for theorem in [
+            prove_uint32_increment_upper_bound(constant(left), constant(right)),
+            prove_uint32_increment_strictly_increases(constant(left), constant(right)),
+            prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
+            prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
+            prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
+            prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
+            prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
+            prove_uint32_difference_decreases_after_increment(constant(left), constant(right)),
+            prove_uint32_lt_le_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_add(left)),
+            ),
+            prove_uint32_le_lt_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_add(1)),
+            ),
+            prove_uint32_lt_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_mul(3)),
+            ),
+            prove_uint32_le_transitive(constant(left), constant(right), constant(left)),
+        ] {
+            assert!(
+                holds(&theorem),
+                "{:?} at {left:#x}, {right:#x}",
+                theorem.proposition()
+            );
+        }
+    }
+
+    // The check can fail: each conclusion is false where its premise is,
+    // so a statement without its premise would not pass.
+    let conclusion_holds = |theorem: &Theorem| {
+        let mut conclusion = theorem.proposition();
+        while let Proposition::Implies(_, rest) = conclusion {
+            conclusion = rest;
+        }
+        let Proposition::ConditionIs(condition, true) = conclusion else {
+            panic!("a uint32 order axiom relates conditions");
+        };
+        PureFactContext::decide_intrinsically(condition)
+            .expect("a condition over constants is decided")
+    };
+    assert!(!conclusion_holds(
+        &prove_uint32_positive_predecessor_strictly_decreases(constant(0))
+    ));
+    assert!(!conclusion_holds(&prove_uint32_increment_upper_bound(
+        constant(5),
+        constant(5)
+    )));
+    assert!(!conclusion_holds(
+        &prove_uint32_increment_strictly_increases(constant(u32::MAX), constant(0))
+    ));
+    assert!(!conclusion_holds(
+        &prove_uint32_lt_implies_positive_difference(constant(7), constant(7))
+    ));
+    assert!(!conclusion_holds(
+        &prove_uint32_difference_decreases_after_increment(constant(7), constant(7))
+    ));
+    assert!(!conclusion_holds(&prove_uint32_lt_le_transitive(
+        constant(9),
+        constant(3),
+        constant(5)
+    )));
+}
+
+#[test]
+fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
+    let i = Bitvector32Term::Variable(Variable(9_890_001));
+    let n = Bitvector32Term::Variable(Variable(9_890_002));
+    let lower = Proposition::ConditionIs(
+        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), i.clone()),
+        true,
+    );
+    let upper =
+        Proposition::ConditionIs(ConditionTerm::signed_less_equal(i.clone(), n.clone()), true);
+    let pinned = Proposition::ConditionIs(
+        ConditionTerm::equal(n.clone(), Bitvector32Term::Constant(0)),
+        true,
+    );
+    let goal = Proposition::ConditionIs(ConditionTerm::equal(i, n), true);
+    let facts = PureFactContext::new()
+        .assume_proposition(lower.clone())
+        .assume_proposition(upper.clone())
+        .assume_proposition(pinned.clone());
+    let proof = facts
+        .derive_simp_proposition(&goal)
+        .expect("typed singleton equality");
+    assert!(proof.check(&facts));
+    assert!(proof.is_int32_pinned_constant_equality());
+    assert_eq!(
+        proof
+            .context_premises()
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([lower.clone(), upper.clone(), pinned.clone()])
+    );
+    for missing in [lower, upper, pinned] {
+        let restricted = facts.without_exact_fact(&missing);
+        assert!(!proof.check(&restricted));
+        assert!(restricted.derive_simp_proposition(&goal).is_none());
+    }
 }

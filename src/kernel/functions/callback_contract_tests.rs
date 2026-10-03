@@ -896,6 +896,7 @@ fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
                 &CVerifiedFunctionRule {
                     function,
                     loop_semantics: CLoopSemantics::Verify,
+                    applied_tactics: Default::default(),
                 },
             )
             .is_some(),

@@ -16,6 +16,8 @@ pub struct ResourceDescription(Arc<ResourceDescriptionData>);
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct ResourceDescriptionData {
     family: String,
+    /// Full family arity for R(anchor, _, ...); only the anchor is captured.
+    population_arity: Option<usize>,
     arguments: ResourceArguments,
     schema: ResourceFieldSchema,
     resource_arguments: Arc<[ResourceReference]>,
@@ -90,6 +92,7 @@ impl ResourceReference {
                 key,
                 ResourceDescription(Arc::new(ResourceDescriptionData {
                     family: description.family().into(),
+                    population_arity: description.population_arity(),
                     arguments,
                     schema: description.schema().clone(),
                     resource_arguments,
@@ -141,6 +144,7 @@ impl ResourceDescription {
     pub fn new(family: String, arguments: ResourceArguments, schema: ResourceFieldSchema) -> Self {
         Self(Arc::new(ResourceDescriptionData {
             family,
+            population_arity: None,
             arguments,
             schema,
             resource_arguments: Arc::from([]),
@@ -170,6 +174,7 @@ impl ResourceDescription {
     pub fn from_instance(instance: &ResourceInstance) -> Self {
         Self(Arc::new(ResourceDescriptionData {
             family: instance.name.clone(),
+            population_arity: None,
             arguments: instance.arguments.clone(),
             schema: instance.schema.clone(),
             resource_arguments: instance.resource_arguments.clone(),
@@ -178,6 +183,31 @@ impl ResourceDescription {
 
     pub fn family(&self) -> &str {
         &self.0.family
+    }
+
+    /// A population pattern grants no ownership of any particular member.
+    pub fn with_population_arity(self, arity: usize) -> Result<Self, &'static str> {
+        if arity < 2
+            || self.arguments().len() != 1
+            || !matches!(
+                self.arguments()[0],
+                AlgebraicValue::C(super::CValue::Pointer(_))
+            )
+            || !self.resource_arguments().is_empty()
+        {
+            return Err("population authority supports R(anchor, _, ...) scopes");
+        }
+        Ok(Self(Arc::new(ResourceDescriptionData {
+            family: self.0.family.clone(),
+            arguments: self.0.arguments.clone(),
+            schema: self.0.schema.clone(),
+            resource_arguments: self.0.resource_arguments.clone(),
+            population_arity: Some(arity),
+        })))
+    }
+
+    pub fn population_arity(&self) -> Option<usize> {
+        self.0.population_arity
     }
 
     pub fn arguments(&self) -> &[AlgebraicValue] {
@@ -200,7 +230,8 @@ impl ResourceDescription {
         instance: &ResourceInstance,
         assumptions: &PureFactContext,
     ) -> bool {
-        self.family() == instance.name()
+        self.population_arity().is_none()
+            && self.family() == instance.name()
             && self.schema() == instance.schema()
             && self.resource_arguments() == instance.resource_arguments()
             && self.arguments().len() == instance.arguments().len()

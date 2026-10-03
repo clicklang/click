@@ -16,6 +16,26 @@ pub(in crate::surface) fn plan_special_arithmetic_certificate(
     if !charge_proposition(goal) {
         return None;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && crate::kernel::PureFactContext::new()
+            .widened_unsigned_sum_bound_premises(condition)
+            .is_some()
+    {
+        let context = premises
+            .iter()
+            .fold(crate::kernel::PureFactContext::new(), |context, premise| {
+                context.assume_proposition(premise.clone())
+            });
+        if context.decide_widened_sum_bound(condition) == Some(*value) {
+            return Some(KernelCertificate {
+                nodes: vec![KernelNode::UnsignedSumBound {
+                    bounds: (0..premises.len()).collect(),
+                    result: goal.clone(),
+                }],
+                conclusion: 0,
+            });
+        }
+    }
     // `defined(a + b)` or `defined(a - b)` over `int32` or `int64`: cite
     // exactly the listed premises that bound an operand by a constant of
     // the goal's width. The kernel recomputes the operand ranges and
@@ -173,6 +193,18 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                 finite: *finite,
                 result: goal.clone(),
             },
+            KernelNode::UnsignedSumBound { bounds, .. } => {
+                SpecialArithmeticNode::UnsignedSumBound {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
+            KernelNode::IntegerProductBounds { bounds, .. } => {
+                SpecialArithmeticNode::IntegerProductBounds {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::SignedDefined { width, bounds, .. } => {
                 SpecialArithmeticNode::SignedDefined {
                     width: *width,
@@ -262,6 +294,8 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
             | Bitvector32Term::UInt64Add(left, right)
             | Bitvector32Term::UInt64Subtract(left, right)
             | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
             | Bitvector32Term::UInt64BitwiseAnd(left, right)
             | Bitvector32Term::UInt64BitwiseOr(left, right)
             | Bitvector32Term::Float32Binary { left, right, .. }
@@ -360,22 +394,16 @@ fn is_pointer_relation(p: &Proposition) -> bool {
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+        ConditionTerm::Bitvector32SignedLessThan(_, _)
+        | ConditionTerm::Bitvector32SignedLessEqual(_, _)
+        | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
+        | ConditionTerm::Bitvector32SignedGreaterEqual(_, _),
         true,
     ) = p
     else {
         return false;
     };
-    matches!(
-        left.as_ref(),
-        Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-    ) && matches!(
-        right.as_ref(),
-        Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-    )
+    true
 }
 fn is_bitvector64_equality(p: &Proposition) -> bool {
     matches!(
@@ -520,11 +548,14 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             | Bitvector32Term::UInt64Add(left, right)
             | Bitvector32Term::UInt64Subtract(left, right)
             | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
             | Bitvector32Term::UInt64BitwiseAnd(left, right)
             | Bitvector32Term::UInt64BitwiseOr(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
+            Bitvector32Term::UInt32From64(value) => pending.push(value),
             Bitvector32Term::PointerAddress(pointer) if !bounded_offset_work(&pointer.offset) => {
                 return false;
             }
@@ -564,6 +595,9 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             return false;
         }
         match (left, right) {
+            (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
+                pending.push((left, right))
+            }
             (Bitvector32Term::Constant(a), Bitvector32Term::Constant(b)) if a == b => {}
             (Bitvector32Term::Int64Constant(a), Bitvector32Term::Int64Constant(b)) if a == b => {}
             (Bitvector32Term::UInt64Constant(a), Bitvector32Term::UInt64Constant(b)) if a == b => {}

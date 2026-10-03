@@ -112,6 +112,24 @@ Pointer-array `malloc` uses `count * sizeof(int32*)` or
 are uninitialized until stored, and the complete pointer-array range is
 reclaimed by `free`. Matching pointer-array `calloc` uses the same range and
 initializes each cell to the canonical null pointer until a store overwrites it.
+
+Initialization is recorded apart from values. Fresh heap bytes and automatic
+storage start uninitialized; a store initializes its bytes, and nothing but
+the end of the object's lifetime makes them uninitialized again. A store the
+facts cannot place (`a[u] = 7` where `u` may name several elements), a call or
+loop havoc, or a branch join forgets cached values, but the bytes those values
+occupied stay initialized, so a later read of them is an initialized value the
+facts may leave unknown rather than a read of uninitialized storage. A join
+keeps a byte initialized only when every incoming path initialized it, and a
+read at an element index the facts bound (`0 <= i < n`) is initialized when
+every element the index may name is. A declaration with an initializer
+(`int32 a[4] = {1};`) initializes every byte of its object. Whole-struct
+assignment copies a member whose value was forgotten but whose bytes are
+initialized as an unknown value, so the destination member is initialized
+too; a member nothing wrote is still a read of uninitialized storage. A
+successful `realloc` keeps the old block's initialized bytes initialized up
+to the new size, and the bytes it grows by start uninitialized.
+
 Heap arrays of structs are byte-backed allocations whose indexed member
 addresses add `i * sizeof(struct T)` before applying the field offset. This
 keeps the allocation extent and field access aligned with the declared ABI,

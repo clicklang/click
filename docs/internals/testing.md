@@ -77,22 +77,34 @@ cargo test --test examples
 ## Compiler import fixtures
 
 On Linux, the gate runs `tests/compiler_import.rs` against GCC at
-`/usr/bin/gcc`. Provision GCC before running `scripts/check.sh` there (the
-Linux CI runner includes it). Missing GCC fails the preparation fixture; the
-gate never downloads a compiler or silently skips these checks. The fixture
-creates artifacts and locks in an isolated temporary directory, then checks
-offline loading, verification, and expansion. On macOS, compiler-independent
-unit regressions load and verify a relocated C artifact with no GCC or target
-headers installed, and reject changed source, artifact, local header, and lock
-identity bytes. A committed artifact prepared on Ubuntu with GCC additionally
-verifies and expands through the ordinary C import path after relocation; its
-opened Linux system headers and compiler backend are absent on macOS.
+`/usr/bin/gcc`. `scripts/setup-environment.sh` installs GCC on Ubuntu 24.04;
+provision it manually on other Linux distributions. Missing GCC fails the
+preparation fixture; the gate never downloads a compiler or silently skips
+these checks. The fixture creates artifacts and locks in an isolated
+temporary directory, then checks offline loading, verification, and expansion.
+On macOS, compiler-independent unit regressions load and verify a relocated C
+artifact with no GCC or target headers installed, and reject changed source,
+artifact, local header, and lock identity bytes. A committed artifact prepared
+on Ubuntu with GCC additionally verifies and expands through the ordinary C
+import path after relocation; its opened Linux system headers and compiler
+backend are absent on macOS.
 The frozen fork/join C source also has a committed Ubuntu GCC import. Its
 Mac regression loads the relocated artifact and verifies the unchanged worker
 and parent proof under the explicit modeled pthread runtime, without
 provisioning Linux on every development host. The checked result includes the
 locked import identity and the runtime assumption; it does not validate a
 native pthread implementation.
+
+The pinned Linux `lib/rbtree.c` input closure in `integrations/linux-rbtree/`
+is a negative gate fixture, checked by the library tests in
+`src/languages/c/linux_rbtree_tests.rs`. The closure's archive and member
+hashes are checked on every host. Reproducing the preprocessed artifact and
+pinning the first rejection need the recorded GCC, identified by the hashes
+of its driver and `cc1`; Ubuntu 24.04's GCC 13 package is that compiler. On
+another compiler that part reports `linux-rbtree: NOT CHECKED` and passes,
+unless `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` is set. When a C frontend
+change moves the pinned rejection, update the pin and the inventory in
+`issues/kernel-scale-preprocessing.md` in the same change.
 
 The Linux fixtures cover compiler conditional selection, token pasting and
 macro rescanning, contextual headers, configured dependencies, refresh after
@@ -109,9 +121,9 @@ finds, so that installation's headers must be present too (on Debian and
 Ubuntu, `libstdc++-N-dev` for the newest `/usr/lib/gcc/x86_64-linux-gnu/N`);
 a distribution update that moves the libstdc++ runtime forward without its
 headers is the usual cause of a sudden `<algorithm>` not found. The build
-script checks this first and names the missing package. The Linux CI job
-installs the pinned development packages, including those headers, before
-entering the network-free gate.
+script checks this first and names the missing package. On Ubuntu 24.04,
+`scripts/setup-environment.sh` installs the pinned development packages,
+including those headers, before the network-free gate runs.
 
 The C++ fixtures refresh typed artifacts for C++20 functions in a translation
 unit or one selected included project header through one exact JSON
@@ -182,9 +194,11 @@ both fail. A local-aggregate fixture brace-initializes one object with every
 field, lowers its exact layout to checked stack memory, and reads its fields
 after initialization. It also verifies offline and after expansion; missing
 input authority and a false saved-field result fail. Focused frontend checks
-reject methods, bit-fields, inheritance, multiple record types, partial or
-default initialization, copies, unsupported nested object forms, and a second
-local object.
+reject unresolved methods, bit-fields, inheritance, partial or default
+initialization, copies, unsupported nested object forms, and unsupported local
+lifetime combinations. Inventory regressions cover multiple distinct record
+layouts and constant forests, shared lowering indexes, named resource budgets,
+and malformed declaration graphs.
 Destructor coverage additionally checks cleanup on every return, reverse order
 for two top-level objects, and one direct nested block whose object is destroyed
 both on early return and before an outer continuation. A sibling-block fixture
@@ -205,12 +219,59 @@ the gate, and unsupported C++ does not fall back to the C parser.
 ## What the gate runs
 
 `scripts/check.sh` with no options is the single source of truth for "is this
-tree green", and CI runs that full gate for code-affecting changes. In order it
-runs `cargo fmt --check`, then
-`cargo clippy --all-targets -- -D warnings`, then the mdBook render and the
-docs lint, then `cargo nextest run --lib --bins --test documentation`, then
-the mdtest, example, C compiler-import, and C++ semantic-import fixture
-harnesses one after the other. For docs-only changes, CI and the explicit
+tree green". It checks formatting (including the Rust exporter), environment
+setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
+Rust exporters; then runs the unit/API/documentation tests followed by the
+mdtest, example, C compiler-import, C++ import, and Rust import fixtures.
+
+CI uses these internal modes for code-affecting changes:
+
+- `--ci-quality` runs formatting, setup regressions, Clippy, and documentation
+  on its own runner, alongside preparation. It does not delay test runners.
+- `--ci-prepare ARTIFACTS` builds both exporters and one archive containing
+  all selected test binaries. It does not execute tests or quality checks.
+- `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
+  without compiling Click or either exporter. Four deterministic nextest
+  hash partitions cover the unit and compiler-import tests; mdtests and
+  examples each have their own runner and remain serial within that runner.
+
+- The `charon-live` archive suite re-extracts Rust checkpoints and the complete
+  legacy fixture parity inventory with pinned Charon and rustc, then checks
+  their contracts through the shared verification engine. These ignored tests
+  run explicitly on a separate runner. The local counterpart is
+  `scripts/check.sh --charon-live`; build the legacy exporter first.
+
+The final required `test` check requires quality, preparation, every
+partition, and live Charon extraction to pass. A failed or cancelled quality job fails this gate even
+when every test succeeds.
+
+`scripts/setup-environment.sh` installs pinned nextest release binaries and
+reuses matching installed versions, including source builds without commit
+metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
+runners restore those files instead of reinstalling Clang. The Rust exporter
+has a separately pinned compiler/runtime identity in
+`scripts/rust-exporter-toolchain.sh`. CI restores that toolchain before setup;
+ordinary archive consumers require its runtime files but do not install a Rust
+compiler or mdBook. The live Charon consumer also installs the separate compiler
+and rustc development components selected by
+`src/languages/rust/charon-profile.json`. That compiled-in profile owns extractor
+pins, flags, and versioned adapter interpretations; the build script reads the
+same profile. Cargo's extractor dependency pin is checked against it.
+
+The build job caches dependencies, Click's own build artifacts, and
+incremental compilation state under the compiler and dependency identity.
+Each revision saves a new snapshot and later runs restore the latest
+compatible snapshot. Cargo still checks source freshness and rebuilds changed
+code. The quality job uses its own dependency cache. Build snapshots can be
+large, so cache transfer and fresh-checkout rebuild costs must be included
+when comparing CI timings; a cold cache still builds everything normally.
+
+GitHub checks out the same source revision at the same absolute path on every
+runner, preserving fixture and exporter sysroot paths embedded at compile
+time. Test archives are extracted at the checkout root for embedded CLI
+paths. Temporary upload archives stay outside the build cache.
+
+For docs-only changes, CI and the explicit
 `scripts/check.sh --docs-only` path run only the focused documentation gate
 described above. The proof fixtures verify their inputs on every core. Judge
 the verdict from the script's exit status.
@@ -239,12 +300,14 @@ shrink automatically; clean an old target directory only when no task is using
 it.
 
 Prover regressions usually manifest as hangs rather than failures, so the
-suite has a hard per-test time budget enforced by cargo-nextest. Install it
-once with `cargo install cargo-nextest --locked` (or `brew install
-cargo-nextest`). The gate also renders the documentation with the pinned
-mdBook, installed once per machine into a root shared by every worktree with
-`scripts/install-tools.sh`; `scripts/check.sh` only looks tools up and never
-reaches the network. Then run:
+suite has a hard per-test time budget enforced by cargo-nextest. Prepare all
+prerequisites for the full gate once per machine with
+`scripts/setup-environment.sh`. For prose and documentation metadata changes,
+use `scripts/setup-environment.sh --docs-only` to skip the LLVM packages used
+only by the full gate. The setup script installs the Rust toolchain pinned in
+`rust-toolchain.toml`, cargo-nextest, the pinned mdBook, and (on Ubuntu 24.04)
+the pinned LLVM development packages. `scripts/check.sh` only looks tools up
+and never reaches the network. Then run:
 
 ```sh
 cargo nextest run
@@ -654,9 +717,14 @@ resources only) is checked through its importers and is not an entry
 way.
 Every sidecar or selected proof unit has an independent deterministic
 whole-run work budget (`--work-limit`, default 50 million units) and an
-independent ten-minute crash-containment bound (`--time-limit`). An exhausted
-budget exits unsuccessfully and names both the target and the active phase or
-tactic; one expensive project cannot consume the following projects'
+independent ten-minute crash-containment bound (`--time-limit`). Both cover
+the whole run, from loading its sources on: source resolution and C parsing,
+the external-dependency summary, and program-entry storage charge the budget
+and stop at checkpoints like the proof phases do. The summary reads only
+names, signatures, and call graphs; it builds no program-entry storage. An
+exhausted budget exits unsuccessfully and names both the target and the
+active tactic or open phases (`frontend > program-entry storage phase`);
+one expensive project cannot consume the following projects'
 budgets. A run the crash-containment bound stops says so, and that is not a
 verdict about the proof.
 

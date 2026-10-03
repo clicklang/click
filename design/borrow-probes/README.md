@@ -3,6 +3,9 @@
 Synthetic, standalone probes for the
 [supporting more languages design](../supporting-more-languages.md).
 These are synthetic examples, not a supported Rust/C++ verification path.
+The [Rust resource correspondence](../rust-resource-correspondence.md) pairs
+`resource_correspondence.rs` and `resource_correspondence_rejected.rs` with
+independent resource-model tests and gives their reproduction commands.
 The language probes inform frontend planning; the two C
 contract-migration probes also support the stable-views investigation. The
 Rust rejection probes are intentionally invalid programs; successful
@@ -86,3 +89,18 @@ repository or parsed as a production API. The ordinary repository gate does
 not execute these Rust/C++ probes; rerun the commands when revisiting the
 investigation. Compiler rejection tests cover safe-source borrowing only;
 Miri and an unsafe-reference model were not exercised.
+
+## Charon composition and extraction probes
+
+The [Charon assessment](../rust-charon-assessment.md) records the pinned
+extractor/compiler, build commands, measured results, and adoption conditions.
+`charon-composition.rs` combines owned cleanup with conversions, arrays,
+borrowed loops, and resolved operators. `charon-borrow-rejected.rs` and
+`charon-move-rejected.rs` must fail compiler checking without an artifact.
+`charon_probe.py` reproduces these checks and generates array-repeat and CFG
+growth probes in a fresh output directory. Its optional checksum run checks
+the original adler2 source hashes before extracting it.
+
+These probes establish extraction coverage only. They do not run Click's
+checker or prove the checksum, and the normal repository gate does not execute
+them. The compiler pin is separate from the current Rust frontend's pin.

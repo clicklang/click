@@ -70,7 +70,6 @@ impl<'a> Proof<'a> {
             &[],
             &[],
             &[],
-            None,
         )
     }
     /// Reattributes subsequent execution-structure diagnostics to the source
@@ -97,6 +96,40 @@ impl<'a> Proof<'a> {
             state: self.state.clone(),
             node: self.node.clone(),
         })
+    }
+
+    /// Names `step_tactic_name` as the source tactic of the statement steps
+    /// checked from this proof, without changing proof state or provenance:
+    /// a smart `execute()` advancing statement by statement is refused as
+    /// `execute()`, the tactic the proof wrote.
+    pub(in crate::surface::proof) fn with_execution_step_tactic_name(
+        &self,
+        step_tactic_name: &'static str,
+    ) -> Self {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return self.clone();
+        };
+        if context.step_tactic_name == step_tactic_name {
+            return self.clone();
+        }
+        Self {
+            site: self.site.clone(),
+            context: Arc::new(ProofContext::Execution(
+                context.with_step_tactic_name(step_tactic_name),
+            )),
+            state: self.state.clone(),
+            node: self.node.clone(),
+        }
+    }
+
+    /// This proof under `ancestor`'s exact context: undoes
+    /// [`Self::with_execution_step_tactic_name`] once the steps it named have
+    /// run, so certificate checkpoints taken against `ancestor` still apply.
+    pub(in crate::surface::proof) fn with_context_of(self, ancestor: &Self) -> Self {
+        Self {
+            context: ancestor.context.clone(),
+            ..self
+        }
     }
 
     /// Restores an ancestor's exact execution diagnostic context after a
@@ -311,6 +344,7 @@ impl<'a> Proof<'a> {
                     .unwrap_or_else(|| OpenBranch::proposition_in(context, goal))
             }),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -358,7 +392,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -401,7 +434,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -426,7 +458,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: &'a BTreeMap<String, usize>,
     ) -> Self {
         Self::for_fixed_state_goal_with_requirements_inner(
             claim_label,
@@ -447,7 +478,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             original_requirements,
-            requirement_label_indices,
         )
     }
 
@@ -472,7 +502,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: &'a BTreeMap<String, usize>,
     ) -> Self {
         Self::for_fixed_state(
             claim_label,
@@ -493,7 +522,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             original_requirements,
-            Some(requirement_label_indices),
         )
     }
 
@@ -534,7 +562,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -558,7 +585,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: Option<&'a BTreeMap<String, usize>>,
     ) -> Self {
         let facts = ProofFacts::from_ordered(available);
         let lowering_context =
@@ -599,12 +625,12 @@ impl<'a> Proof<'a> {
                 effect_facts,
                 lowering_context: Arc::new(lowering_context),
                 original_requirements,
-                requirement_label_indices,
                 requirement_facts: available,
                 nested_tactic_capture: None,
             })),
             state: KernelProofObject::root(ProofLocals::default(), goal),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,

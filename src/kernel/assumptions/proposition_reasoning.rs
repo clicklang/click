@@ -137,10 +137,10 @@ fn canonical_contradiction_condition(condition: &ConditionTerm) -> ConditionTerm
 fn bitvector_terms_may_be_theory_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     matches!(
         left,
-        Bitvector32Term::MemoryLoad(_, _) | Bitvector32Term::Add(_, _)
+        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
     ) || matches!(
         right,
-        Bitvector32Term::MemoryLoad(_, _) | Bitvector32Term::Add(_, _)
+        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
     ) || matches!(
         (left, right),
         (Bitvector32Term::If { .. }, Bitvector32Term::If { .. })
@@ -265,6 +265,21 @@ impl PureFactContext {
 
     // These are stack-budget boundaries, not alternative search strategies.
     // Keep rule-local by-value temporaries out of the recursive dispatcher.
+
+    /// Whether this context settles `proposition` by an exact route: the
+    /// fact index, read up to the names of bound variables for a quantified
+    /// or conditional proposition, or the frozen checker for one atomic
+    /// shape. It searches no logical structure and instantiates nothing, so
+    /// a proposition it does not settle is left for a tactic to prove.
+    pub(crate) fn settles_exactly(&self, proposition: &Proposition) -> bool {
+        self.proves_exact(proposition)
+            || match proposition {
+                Proposition::ForAll { .. }
+                | Proposition::Exists { .. }
+                | Proposition::Implies(..) => self.states_required_goal(proposition),
+                _ => self.proves_atomic_without_search(proposition),
+            }
+    }
 
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
         match proposition {
@@ -504,7 +519,12 @@ impl PureFactContext {
             else {
                 return false;
             };
+            // The goal may not mention the fact's binder free: renaming the
+            // fact's body cannot reach an occurrence the goal leaves free,
+            // and a witness for the fact says nothing about that variable.
             fact_sort == sort
+                && (*fact_var == var
+                    || !crate::kernel::api::proposition_variables(body).contains(fact_var))
                 && crate::kernel::api::substitute_quantified_body_capture_free(
                     fact_body, *fact_var, var, sort,
                 )
@@ -742,6 +762,14 @@ impl PureFactContext {
         }) {
             return (result, premises_id);
         }
+        if let Proposition::ConditionIs(condition, value) = proposition
+            && self.decide_widened_sum_bound(condition) == Some(*value)
+        {
+            return (
+                Some(AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound),
+                premises_id,
+            );
+        }
         let epoch_before = INCOMPLETE_REASONING_EPOCH.with(Cell::get);
         let memory_evidence = match proposition {
             // Both equality widths reach the history. An `int64` load is a
@@ -787,6 +815,17 @@ impl PureFactContext {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => self
                 .exact_bitvector_equality_path_evidence(left, right)
                 .map(AtomicPropositionDerivationEvidence::BitvectorEqualityPath),
+            _ => None,
+        };
+        let pinned_constant_equality_evidence = match proposition {
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
+                if self.exact_constant_equalities.get(left.as_ref()).is_some()
+                    || self.exact_constant_equalities.get(right.as_ref()).is_some() =>
+            {
+                self.direct_bitvector_equality_evidence(left, right)
+                    .map(Box::new)
+                    .map(AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality)
+            }
             _ => None,
         };
         let le_and_not_lt_equality_evidence = match proposition {
@@ -1271,7 +1310,7 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => condition
                 .as_pointer_alignment()
                 .and_then(|(pointer, alignment)| {
-                    self.pointer_alignment_decision(pointer, alignment)
+                    self.pointer_alignment_certificate_decision(pointer, alignment)
                 })
                 .filter(|(aligned, _)| aligned == value)
                 .map(|(_, premise)| {
@@ -1299,6 +1338,7 @@ impl PureFactContext {
             .or(successor_le_implies_lt_evidence)
             .or(constant_lower_bound_weakening_evidence)
             .or(negated_strict_successor_bound_evidence)
+            .or(pinned_constant_equality_evidence)
             .or(signed_order_evidence)
             .or(increment_upper_bound_evidence)
             .or(increment_constant_upper_bound_evidence)
@@ -1979,6 +2019,15 @@ impl PureFactContext {
                 &value,
                 &Bitvector32Term::Constant(1),
             );
+        }
+        if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
+        {
+            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
+                proposition
+            else {
+                return false;
+            };
+            return evidence.checks(left, right, self);
         }
         if let AtomicPropositionDerivationEvidence::Int32LeAndNotLtImpliesEquality(evidence) =
             evidence
@@ -2700,9 +2749,11 @@ impl PureFactContext {
                     collect_term_candidates(left, right, bound, candidates);
                 }
                 (
-                    Bitvector32Term::MemoryLoad(_, left_pointer),
-                    Bitvector32Term::MemoryLoad(_, right_pointer),
-                ) => collect_pointer_candidates(left_pointer, right_pointer, bound, candidates),
+                    Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+                    Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+                ) if left_kind == right_kind => {
+                    collect_pointer_candidates(left_pointer, right_pointer, bound, candidates)
+                }
                 (left, right) => {
                     if let (Some((left_a, left_b)), Some((right_a, right_b))) =
                         (binary(left), binary(right))
@@ -2921,6 +2972,9 @@ impl PureFactContext {
         }
     }
 
+    /// Broader expression reasoning, including conditionals, folds, and
+    /// checked memory resolution. Maintained int32 equality is queried through
+    /// `int32_values_known_equal` without invoking these rules.
     pub(in crate::kernel) fn bitvector_terms_proven_equal(
         &self,
         left: &Bitvector32Term,
@@ -2981,11 +3035,9 @@ impl PureFactContext {
         right: &Bitvector32Term,
     ) -> bool {
         // Transport compares int32 values, so wrapping equality from the
-        // trusted graph is sufficient here. Check it before the legacy fact
-        // walk; an empty graph should not intern unrelated transport terms.
-        if self.equality_graph.has_term_equivalences()
-            && self.equality_graph.are_int32_equal(left, right)
-            || self.bitvector_terms_equal_from_facts(left, right)
+        // trusted graph is sufficient here. Broader proof reasoning remains
+        // separate from this known-value query.
+        if self.int32_values_known_equal(left, right)
             || self.bitvector_terms_proven_equal(left, right)
         {
             return true;
@@ -3133,7 +3185,7 @@ impl PureFactContext {
             return true;
         }
         match (left, right) {
-            (Bitvector32Term::MemoryLoad(_, _), Bitvector32Term::MemoryLoad(_, _)) => {
+            (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
                 memory_load_terms_equal_for_fact_transport(left, right, self)
             }
             (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
@@ -3223,9 +3275,7 @@ impl PureFactContext {
         left == right
             || self.bitvector_if_terms_proven_equal(left, right)
             || self.range_fold_terms_alpha_equivalent(left, right)
-            || (self.equality_graph.has_term_equivalences()
-                && self.equality_graph.are_int32_equal(left, right))
-            || self.bitvector_terms_equal_from_facts(left, right)
+            || self.int32_values_known_equal(left, right)
             || self.memory_loads_proven_equal(left, right)
     }
 
@@ -3434,7 +3484,7 @@ impl PureFactContext {
 
         let terms_equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
             left == right
-                || self.bitvector_terms_equal_from_facts(left, right)
+                || self.int32_values_known_equal(left, right)
                 || bitvector_terms_may_be_theory_equal(left, right)
                     && self.bitvector_terms_proven_equal(left, right)
         };
@@ -3506,7 +3556,7 @@ impl PureFactContext {
                     Task::Visit(term) => {
                         crate::instrumentation::record_deterministic_work(1);
                         match term {
-                            term @ Bitvector32Term::MemoryLoad(_, _) => {
+                            term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                                 if let Some(resolved) = assumptions.resolve_memory_load_term(&term)
                                 {
                                     tasks.push(Task::Visit(resolved));
@@ -3600,7 +3650,7 @@ impl PureFactContext {
             let mut pending = vec![term.clone()];
             while let Some(term) = pending.pop() {
                 match term {
-                    Bitvector32Term::MemoryLoad(_, _)
+                    Bitvector32Term::MemoryLoad(_, _, _)
                     | Bitvector32Term::If { .. }
                     | Bitvector32Term::RangeFold { .. } => return true,
                     term @ Bitvector32Term::Add(_, _) => {
@@ -3642,7 +3692,7 @@ impl PureFactContext {
             while let Some(term) = pending.pop() {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    term @ Bitvector32Term::MemoryLoad(_, _) => {
+                    term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         keys.insert(LOAD_BUCKET);
                         if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
                             pending.push(resolved);

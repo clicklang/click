@@ -1,54 +1,60 @@
-# Linux rbtree insertion frontier
+# Linux rbtree insertion
 
 This project uses the shared model from `../rbtree-model/rbtree_model.click`.
 The Linux-derived C in `rbtree.h` and `rb_insert_color.c` is unchanged from the
-former `mdtests/rb_insert_color.md` fixture.
+former `mdtests/rb_insert_color.md` fixture; `tests/examples.rs` pins both
+files by SHA-256.
 
-`rbtree_insert.click` is the green project entry: it checks that the shared
-model and unchanged C load together, but intentionally selects no insert
-proof. `rbtree_insert.frontier` contains the full insert contract and current
-proof attempt. The examples integration test selects that frontier separately
-and requires its bounded diagnostic to remain at the first unfinished
-black-uncle path (statement 42 of the loop body, `augment_rotate(gparent,
-parent)`, with 9 `break`s and 4 `continue`s complete). A passing import-only
-entry therefore does not represent the insert proof as complete.
+`rbtree_insert.click` proves the Linux insert fixup, `__rb_insert`, end to end.
+It takes the context and the red subtree at the inserted node
+(`ctx_at(node, root)` and `rb_at(node)`, with the frame-level red-black,
+order, and parent-link facts the case theorems use) and produces the whole
+fixed-up tree at the root as `rb_root_at(root)`: ownership of
+`root->rb_node` and the `rb_at` tree it points to, whose model is red-black
+with a black root, has the entry's in-order sequence, and has consistent
+parent links.
 
-The proof so far covers `initialize`, the root-blackening and black-parent
-`break`s, and the uncle-red `continue` on all four frame combinations: each
-recolours the uncle, the parent, and the grandparent, refolds the three nodes
-at their new models, and closes the loop's nine invariants and the two-frame
-structural descent through `ctx_insert_case1_left_step` or
-`ctx_insert_case1_right_step` from the shared model.
+The fixup stops wherever its rotation or recolouring finishes, with an
+arbitrary number of context frames above that point. Folding them back into
+one subtree at the root takes one `fold` per frame, which no finite script can
+write, and the C has no loop that climbs back up. The user-defined tactic
+`refold_to_root` does it instead. It folds one frame and applies itself to the
+context above, ranked by `decreases ctx_depth(c.model)`, so a single
+application turns any context and focus subtree into the whole tree at the
+root, with `whole.model == plug(c.model, t.model)`. It needs only that the
+plugged tree is parent-consistent, which every exit of the fixup loop
+establishes.
 
-Case 3 on the left-left frames with a black uncle is complete for six of its
-eight leaves: the proof splits on the parent's other child (empty or a node,
-since `if (tmp)` writes its parent word) and on the grandparent's own frame
-(`Top`, `Left`, or `Right`, since `__rb_change_child` writes that frame's child
-cell), steps through the rotation and the inline `__rb_rotate_set_parents`,
-refolds the grandparent and the new frame at the rotated parent, and states
-the three whole-tree facts the post-loop proof will read at the `break`
-through `ctx_insert_case3_left_step`. The two unfinished leaves are the
-`Right` grandparent frame whose other child is a node: that child has to be
-unfolded to decide `parent->rb_left == old`, and it cannot yet be refolded,
-because a fold at the pointer the proof arm bound does not find the cells the
-unfold published under the loaded pointer's spelling. The other three frame
-combinations, the empty-uncle leaves, the body's end, the post-loop proof, and
-`rb_insert_color` remain.
+The proof covers `initialize`, the root-blackening and black-parent `break`s,
+the uncle-red `continue` on all four frame combinations, and all 96 rotation
+`break`s: case 3 on the outer frames and case 2 then case 3 on the inner
+ones, split on the uncle, the rotated nodes' children, and the
+great-grandparent's frame. Every `break` states the three whole-tree facts
+about `plug(c.model, t.model)`, so they survive the loop's exit join, and the
+post-loop proof applies `refold_to_root` once and carries those facts to the
+tree at the root.
 
-Run the normal full rbtree scope with:
+`rb_insert_color`, the exported entry point, is proved too. It calls
+`__rb_insert`, a `static __always_inline` helper, with the no-op
+`dummy_rotate` as its augment callback. The helper has a verified contract,
+so the call applies that contract like any call, and the proof is one call
+step that hands the context and red subtree to `__rb_insert`'s binders and
+takes back `rb_root_at(root)`. It states the same three whole-tree facts.
+
+`tests/examples.rs` also checks that the proof refuses a copy of the C whose
+root case skips `rb_set_parent_color(node, NULL, RB_BLACK)`.
+
+Run it with:
 
 ```sh
 click verify examples/rbtree-model
 click verify examples/rbtree-insert
 ```
 
-Inspect the unfinished proof directly with:
+The sidecar imports the model from the sibling project, so its project root is
+`examples`, the nearest directory holding both. `--trace-to` reaches the
+tactics inside the fixup's proof `match` arms and its `preserve` body:
 
 ```sh
-click verify examples/rbtree-insert/rbtree_insert.frontier
-click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree-insert/rbtree_insert.frontier
+click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree-insert/rbtree_insert.click
 ```
-
-The frontier imports the model from the sibling project, so its project root
-is `examples`, the nearest directory holding both; `--trace-to` reaches the
-tactics inside the fixup's proof `match` arms and its `preserve` body.

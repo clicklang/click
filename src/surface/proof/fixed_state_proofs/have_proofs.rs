@@ -1,6 +1,5 @@
 use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
-use crate::surface::proof::surface_lowering::substitute_lexical_bindings_in_proposition;
 
 struct IterativeSpecPropositionDrop(Option<SpecProposition>);
 
@@ -122,6 +121,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
     state: &CState,
     result: Option<&CValue>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     recorded_snapshots: &RecordedSnapshots,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -135,7 +135,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
         &values,
         &array_refs,
         algebraic_values,
-        &crate::persistent::PersistentMap::default(),
+        integer_values,
         pre_state,
         state,
         result,
@@ -1290,295 +1290,6 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn plan_smart_have_in_current_state(
-    have: &ProofHave,
-    claim_label: &str,
-    outer_tactic_index: usize,
-    available: &[Proposition],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-    pre_state: &CState,
-    state: &CState,
-    recorded_snapshots: &RecordedSnapshots,
-    surface_propositions: &SurfacePropositionMap,
-    predicate_environment: &PredicateEnvironment,
-    click_function_environment: &ClickFunctionEnvironment,
-    unfolded_predicates: &[String],
-    prelowered_goal: Option<&Proposition>,
-    // The proof locals in scope where this `have` was written: a proof
-    // `match` arm's bindings, `let { ... } = unfold(...)` names, call-result binders.
-    // The goal and each `simp() using` premise are lowered with them
-    // resolved, exactly as the enclosing script resolves a `have` goal; the
-    // written spellings stay what certificates record and expansion prints.
-    lexical_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
-) -> Result<(Proposition, SimpEvidence), ClickError> {
-    let resolve = |proposition: &ClickProposition| {
-        substitute_lexical_bindings_in_proposition(proposition, lexical_bindings).map_err(
-            |message| {
-                ClickError::new(format!(
-                    "`{claim_label}` have proof {outer_tactic_index}: could not substitute match bindings: {message}"
-                ))
-            },
-        )
-    };
-    let goal_surface = resolve(&have.proposition)?;
-    // Plan and check this proof once. Surface expansion must lower this exact
-    // plan; it must not search for a different proof if lowering is incomplete.
-    // Snapshot transport belongs to the statement transition that changed the
-    // memory and reaches a later `have` as an exact current-state assumption.
-    let restricted_simp = matches!(
-        &have.proof,
-        SourceProof::Script(tactics)
-            if matches!(tactics.last(), Some(ProofTactic::SimpUsing(_)))
-    );
-    // Restricted simplification must reason from its named equalities; goal
-    // lowering must not silently apply those (or other ambient equalities)
-    // before the smart plan is recorded, or expansion loses a required proof
-    // step. Keep only the facts needed to write direct program values.
-    let _prologue_span = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: lowering fact preparation",
-    );
-    let direct_lowering_facts = if restricted_simp {
-        facts_for_restricted_simp_lowering(available)
-    } else {
-        facts_for_smart_have_lowering(available)
-    };
-    drop(_prologue_span);
-    let goal_lowering = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: goal lowering",
-    );
-    // A caller that already created the checked Proof goal owns its lowering.
-    // Planning against a freshly lowered sibling can emit a certificate that
-    // checks only against an internal representation and fails after surface
-    // expansion re-lowers the goal normally.
-    let fact = if let Some(prelowered_goal) = prelowered_goal {
-        prelowered_goal.clone()
-    } else {
-        match lower_fixed_state_proposition(
-            &goal_surface,
-            &direct_lowering_facts,
-            parameters,
-            arguments,
-            pre_state,
-            state,
-            None,
-            recorded_snapshots,
-            predicate_environment,
-            click_function_environment,
-        ) {
-            Ok(fact) => fact,
-            Err(message) if restricted_simp => {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` have proof {outer_tactic_index}: could not lower restricted `simp` goal without applying an ambient equality: {message}"
-                )));
-            }
-            Err(message) => match lower_fixed_state_proposition(
-                &goal_surface,
-                &facts_for_simple_goal_lowering(available),
-                parameters,
-                arguments,
-                pre_state,
-                state,
-                None,
-                recorded_snapshots,
-                predicate_environment,
-                click_function_environment,
-            ) {
-                Ok(fact) => fact,
-                Err(fallback_message) => {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` have proof {outer_tactic_index}: could not lower pure goal: {fallback_message}\n  direct lowering also failed: {message}"
-                    )));
-                }
-            },
-        }
-    };
-    drop(goal_lowering);
-    let unfold_span = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: predicate unfolding",
-    );
-    let available = if unfolded_predicates.is_empty() {
-        available.to_vec()
-    } else {
-        unfold_available_predicate_facts(
-            predicate_environment,
-            click_function_environment,
-            unfolded_predicates,
-            available,
-        )
-        .map_err(|message| {
-            ClickError::new(format!(
-                "`{claim_label}` have proof {outer_tactic_index}: could not unfold available facts: {message}"
-            ))
-        })?
-    };
-    let assumptions = assumptions_from_propositions(&available);
-    let goal = unfold_predicates_in_proposition(
-        predicate_environment,
-        click_function_environment,
-        unfolded_predicates,
-        &fact,
-        &assumptions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "`{claim_label}` have proof {outer_tactic_index}: could not unfold pure goal: {message}"
-        ))
-    })?;
-    let restricted_surfaces = match &have.proof {
-        SourceProof::Script(tactics) => tactics.last().and_then(|tactic| match tactic {
-            ProofTactic::SimpUsing(simp) => Some(&simp.premises),
-            _ => None,
-        }),
-        _ => None,
-    };
-    let reasoning_available = if let Some(surfaces) = restricted_surfaces {
-        // Restricted simplification limits which facts may prove the goal,
-        // not which certified bounds may establish that a named premise's
-        // memory expressions are defined. Keep scalar/order facts for that
-        // lowering step; the `exact` vector below remains the entire
-        // simplifier context.
-        let lowering_facts = facts_for_restricted_simp_lowering(&available);
-        let mut exact = Vec::new();
-        for surface in surfaces {
-            if let Some(recorded) = surface_propositions.available_kernel(surface, &available) {
-                exact.push(recorded.clone());
-                continue;
-            }
-            let lowered = lower_fixed_state_proposition(
-                &resolve(surface)?,
-                &lowering_facts,
-                parameters,
-                arguments,
-                pre_state,
-                state,
-                None,
-                recorded_snapshots,
-                predicate_environment,
-                click_function_environment,
-            )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "`{claim_label}` have proof {outer_tactic_index}: could not lower `simp` premise `{}`: {message}",
-                    describe_click_proposition(surface)
-                ))
-            })?;
-            let exact_available = available
-                .iter()
-                .find(|fact| *fact == &lowered || condition_polarity_equivalent(fact, &lowered))
-                .cloned()
-                .or_else(|| {
-                    exact_proper_conjunct_is_available(&lowered, &available)
-                        .then_some(lowered.clone())
-                })
-                .or_else(|| exactly_available_fact(&lowered, &available))
-                .or_else(|| {
-                    // Load variables are kernel-internal;
-                    // recorded equalities chained through one are the same
-                    // user-level fact.
-                    super::super::fact_reasoning::premise_bridged_by_load_variable_chain(
-                        &lowered, &available,
-                    )
-                    .then_some(lowered.clone())
-                });
-            let Some(exact_fact) = exact_available else {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` have proof {outer_tactic_index}: `simp` listed a premise that is not exactly available\n  Click: {}\n  lowered: {}",
-                    describe_click_proposition(surface),
-                    describe_pure_fact(&lowered, parameters, arguments),
-                )));
-            };
-            exact.push(exact_fact);
-        }
-        exact
-    } else {
-        available.clone()
-    };
-    drop(unfold_span);
-    let context_span = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: assumption context build",
-    );
-    let assumptions = assumptions_from_propositions(&reasoning_available);
-    drop(context_span);
-    let _equivalence_span = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: exact and equivalent goal checks",
-    );
-    if reasoning_available.contains(&goal) {
-        return Ok((fact, SimpEvidence::Assumption));
-    }
-    if matches!(normalize_proposition(&goal), SimpProposition::True) {
-        return Ok((fact, SimpEvidence::Normalize));
-    }
-    if quantified_equivalent_available_fact(&goal, &reasoning_available).is_some() {
-        return Ok((fact, SimpEvidence::Assumption));
-    }
-    if let Some(equivalent) = reasoning_available
-        .iter()
-        .find(|available| **available == goal)
-        && let Some(derivation) =
-            minimal_proposition_derivation(&goal, std::slice::from_ref(equivalent))?
-    {
-        return Ok((fact, SimpEvidence::Derivation(derivation)));
-    }
-    drop(_equivalence_span);
-    let condition_search = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: condition premise search",
-    );
-    let searched = search_condition_derivation(&goal, &reasoning_available)?;
-    drop(condition_search);
-    if let Some(derivation) = searched {
-        return Ok((fact, SimpEvidence::Derivation(derivation)));
-    }
-
-    let _simp_span = crate::instrumentation::OperationTiming::new(
-        "have",
-        claim_label,
-        "smart have: simp certificate planning",
-    );
-    let Some(plan) = plan_simp_certificate(&goal, &assumptions) else {
-        let mut message = format!(
-            "`{claim_label}` tactic {outer_tactic_index}: `have` failed: {}",
-            describe_missing_pure_fact(
-                &goal,
-                &reasoning_available,
-                state.resources().facts(),
-                parameters,
-                arguments,
-                &[],
-            )
-        );
-        if matches!(goal, Proposition::ConditionIs(_, _)) {
-            message.push_str("\n  ");
-            message.push_str(&describe_condition_search_miss(
-                &goal,
-                &reasoning_available,
-                parameters,
-                arguments,
-            ));
-        }
-        return Err(ClickError::new(message));
-    };
-    if !check_simp_certificate(&goal, &assumptions, &plan) {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {outer_tactic_index}: planned smart `have` certificate failed validation"
-        )));
-    }
-    Ok((fact, plan))
-}
-
-#[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     units: Vec<Proof<'a>>,
@@ -1743,7 +1454,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
                             // A merged record that is not a certificate blocks
                             // this claim's expansion; it never becomes one.
                             Ok(steps) => ProofCertificate::from_steps(steps.clone())
-                                .map_err(|error| error.message().to_string()),
+                                .map_err(|error| error.raw_summary().to_string()),
                             Err(message) => Err(format!(
                                 "could not merge the claim's surface record across branch contexts: {message}"
                             )),

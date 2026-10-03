@@ -122,6 +122,7 @@ struct IntegerConditionAlphaCandidate {
 enum BitvectorEqualityAtomKey {
     Constant(u32),
     Variable(Variable),
+    PointerReadSource(u64),
     ClickFunctionApplication {
         name: String,
         arguments_hash: u64,
@@ -317,7 +318,14 @@ impl ProofFacts {
     }
 
     pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
-        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(facts.len());
+        Self::from_source(facts)
+    }
+
+    /// Index the explicitly supplied root facts while retaining their pure
+    /// context. Cached sources carry the trusted graph lineage already paired
+    /// with entry resources; rebuilding it would disconnect that publication.
+    /// Uncached sources build their context once through PropositionSource.
+    pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
         let mut reserved_variables = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();
@@ -332,10 +340,10 @@ impl ProofFacts {
         let mut by_quantified_equivalence = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
-        let mut assumptions = PureFactContext::new();
+        let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        for fact in facts {
+        for fact in facts.propositions() {
             for variable in crate::kernel::proposition_variables(fact) {
                 reserved_variables = reserved_variables.with_value(variable);
             }
@@ -390,8 +398,6 @@ impl ProofFacts {
             algebraic_equalities_by_term =
                 index_algebraic_equality_fact(algebraic_equalities_by_term, fact.as_ref());
             exact = exact.with_value(crate::kernel::clone_proposition_iteratively(fact.as_ref()));
-            assumptions = assumptions
-                .assume_proposition(crate::kernel::clone_proposition_iteratively(fact.as_ref()));
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
@@ -1603,26 +1609,28 @@ fn index_bitvector_equality_fact(
                 _ => return index,
             }
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
-            match (&left.offset, &right.offset) {
-                (
-                    PointerOffsetTerm::Int32Scaled { value: left, .. },
-                    PointerOffsetTerm::Int32Scaled { value: right, .. },
-                ) => (left.as_ref(), right.as_ref()),
-                _ => return index,
+        Proposition::ConditionIs(condition @ ConditionTerm::PointerEqual(_, _), true) => {
+            let mut atoms = BTreeSet::new();
+            collect_condition_bitvector_atoms(condition, &mut atoms);
+            for atom in atoms {
+                let mut bucket = index.get(&atom).cloned().unwrap_or_default();
+                // Each fact is published once and the atom set is unique.
+                // Do not scan a bucket to rediscover that identity.
+                bucket.push(fact.clone());
+                index = index.with_inserted(atom, bucket);
             }
+            return index;
         }
         _ => return index,
     };
+    let mut atoms = BTreeSet::new();
     for term in [left, right] {
-        let Some(key) = bitvector_equality_atom_key(term) else {
-            continue;
-        };
+        collect_bitvector_atoms(term, &mut atoms);
+    }
+    for key in atoms {
         let mut bucket = index.get(&key).cloned().unwrap_or_default();
-        if !bucket.iter().any(|candidate| Arc::ptr_eq(candidate, fact)) {
-            bucket.push(fact.clone());
-            index = index.with_inserted(key, bucket);
-        }
+        bucket.push(fact.clone());
+        index = index.with_inserted(key, bucket);
     }
     index
 }
@@ -1838,9 +1846,10 @@ fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEquali
                 arguments_hash: hasher.finish(),
             })
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(pointer.as_ref(), &mut hasher);
+            std::hash::Hash::hash(kind, &mut hasher);
             Some(BitvectorEqualityAtomKey::MemoryLoad {
                 memory: memory.arena_id(),
                 pointer_hash: std::hash::Hasher::finish(&hasher),
@@ -1930,8 +1939,8 @@ fn collect_condition_bitvector_atoms(
             collect_pointer_offset_bitvector_atoms(right, atoms);
         }
         ConditionTerm::PointerEqual(left, right) => {
-            collect_pointer_offset_bitvector_atoms(&left.offset, atoms);
-            collect_pointer_offset_bitvector_atoms(&right.offset, atoms);
+            collect_pointer_bitvector_atoms(left, atoms);
+            collect_pointer_bitvector_atoms(right, atoms);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
     }
@@ -2026,12 +2035,10 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
                 collect_bitvector_atoms(&arm.body, atoms);
             }
         }
-        Bitvector32Term::MemoryLoad(_, pointer) => {
-            collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms)
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
+            collect_pointer_bitvector_atoms(pointer, atoms)
         }
-        Bitvector32Term::PointerAddress(pointer) => {
-            collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms)
-        }
+        Bitvector32Term::PointerAddress(pointer) => collect_pointer_bitvector_atoms(pointer, atoms),
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number
@@ -2058,6 +2065,15 @@ fn collect_load_address_atoms(
     let Some((_, pointer)) = crate::kernel::eval::registered_load_for_variable(&variable) else {
         return;
     };
+    let mut source_hasher = std::collections::hash_map::DefaultHasher::new();
+    pointer.hash(&mut source_hasher);
+    atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
+        source_hasher.finish(),
+    ));
+    if let PointerBlock::Symbolic(inner) = pointer.block {
+        atoms.insert(BitvectorEqualityAtomKey::Variable(inner));
+        collect_load_address_atoms(inner, atoms, depth + 1);
+    }
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
@@ -2077,6 +2093,22 @@ fn collect_load_address_atoms(
             PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
         }
     }
+}
+
+fn collect_pointer_bitvector_atoms(
+    pointer: &Pointer,
+    atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
+) {
+    let mut address_hasher = std::collections::hash_map::DefaultHasher::new();
+    pointer.hash(&mut address_hasher);
+    atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
+        address_hasher.finish(),
+    ));
+    if let PointerBlock::Symbolic(variable) = pointer.block {
+        atoms.insert(BitvectorEqualityAtomKey::Variable(variable));
+        collect_load_address_atoms(variable, atoms, 0);
+    }
+    collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms);
 }
 
 fn collect_pointer_offset_bitvector_atoms(
@@ -2298,6 +2330,47 @@ mod integer_equality_fact_index_tests {
         SharedMachineIntegerTerm, Sort, Variable,
     };
 
+    #[test]
+    fn opaque_pointer_alias_selection_ignores_unrelated_facts() {
+        let read = Pointer::symbolic(Variable(949_001));
+        let target = Pointer::symbolic(Variable(949_002));
+        let alias =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(read.clone(), target), true);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(CMemory::new()),
+                    Box::new(read.offset_by_bytes(4)),
+                    crate::kernel::LoadKind::Bits32,
+                ),
+                Bitvector32Term::Constant(42),
+            ),
+            true,
+        );
+        for size in [16_u32, 64, 256, 1024, 4096] {
+            let mut facts = ProofFacts::default();
+            for index in 0..size {
+                facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(950_000 + 2 * u64::from(index))),
+                        Pointer::symbolic(Variable(950_001 + 2 * u64::from(index))),
+                    ),
+                    true,
+                ));
+            }
+            facts = facts.with_kernel_checked_fact(alias.clone());
+            assert_eq!(facts.load_equalities_mentioning(&goal), vec![alias.clone()]);
+            let comparisons = facts
+                .equality_atom_lookup_comparisons(&Bitvector32Term::Variable(Variable(949_001)));
+            let height = (u32::BITS - size.leading_zeros()) as usize;
+            assert!(comparisons <= 2 * height + 4, "{size}: {comparisons}");
+            assert!(
+                !facts.contains(&goal),
+                "candidate selection grants no equality"
+            );
+        }
+    }
+
     fn integer_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Integer {
             start: IntegerTerm::constant_i64(0).into(),
@@ -2356,6 +2429,7 @@ mod integer_equality_fact_index_tests {
                         block: "snapshot-alpha-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             )),
         )
@@ -3396,6 +3470,7 @@ mod integer_equality_fact_index_tests {
                         block: "same-bucket-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 )
             };
             let facts = memories[..size]
@@ -3433,6 +3508,40 @@ mod integer_equality_fact_index_tests {
         for pair in samples.windows(2) {
             assert!(pair[1] >= pair[0]);
             assert!(pair[1] <= pair[0] * 8 + 32, "{samples:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod retained_root_context_tests {
+    use super::*;
+
+    #[test]
+    fn cached_root_sources_share_the_graph_without_readmitting_history() {
+        for size in [16u32, 64, 256, 1024] {
+            let inputs = (0..size)
+                .map(|index| {
+                    Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            Bitvector32Term::Variable(Variable(970_000 + u64::from(index))),
+                            Bitvector32Term::Constant(index),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let source = ProofFacts::from_ordered(&inputs);
+            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+            let retained = ProofFacts::from_source(&source);
+            let rebuilt = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
+            assert_eq!(rebuilt, 0, "cached root readmitted {size} input facts");
+            assert!(
+                retained.assumptions().equality_graph.input_key()
+                    == source.assumptions().equality_graph.input_key(),
+                "root conversion changed the trusted graph lineage"
+            );
+            assert!(retained.contains(inputs.last().unwrap()));
+            assert_eq!(retained.fact_count(), size as usize);
         }
     }
 }

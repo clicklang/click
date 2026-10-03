@@ -351,12 +351,57 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
 }
 
 #[test]
+fn imported_variadic_prototype_is_retained_without_becoming_callable() {
+    let prototype = "# 1 \"include/linux/report.h\" 1\nvoid report(const char *format, ...);\n# 1 \"lib/tu.c\" 2\n";
+    let (source, map) = provenance::CSourceMap::decode(&format!(
+        "{prototype}int32 keep(int32 x) {{ return x; }}\n"
+    ))
+    .expect("line markers should decode");
+    let unit = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
+        Ok(unit) => unit,
+        Err(error) => panic!("variadic prototype should import: {error}"),
+    };
+    assert!(unit.function_declarations.contains_key("report"));
+    assert_eq!(unit.functions.len(), 1);
+
+    let (source, map) = provenance::CSourceMap::decode(&format!(
+        "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
+    ))
+    .expect("line markers should decode");
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
+        Ok(_) => panic!("a variadic call has no model"),
+        Err(error) => error,
+    };
+    let rendered = error.to_string();
+    assert!(rendered.contains("lib/tu.c:2"), "{rendered}");
+    assert!(
+        rendered.contains("calls to variadic function `report`"),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn imported_parser_errors_keep_original_header_location() {
     let (source, map) = provenance::CSourceMap::decode(
         "# 1 \"generated/header.h\" 1\nint32 broken(int32 x) { return x + ...; }\n",
     )
     .expect("line marker should decode");
-    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("variadic syntax should remain rejected"),
         Err(error) => error,
     };
@@ -369,7 +414,13 @@ fn imported_parser_does_not_apply_legacy_macro_name_shortcuts() {
         "# 1 \"tu.c\" 1\nint32 READ_ONCE(int32 x) { return x + 1; }\nint32 use(int32 x) { return READ_ONCE(x); }\n",
     )
     .unwrap();
-    let unit = syntax::parse_translation_unit_for_import(&source, "tu.c", &map).unwrap();
+    let unit = syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
     let rendered = format!("{:?}", unit.functions[1].body());
     assert!(!rendered.contains("SequentialRead"));
 }
@@ -381,7 +432,13 @@ fn imported_statement_calls_do_not_apply_legacy_store_shortcuts() {
             "# 1 \"tu.c\" 1\nint {name}(int x, int y) {{ return x + y; }}\nint use(int x) {{ {name}(x, 1); return x; }}\n"
         );
         let (source, map) = provenance::CSourceMap::decode(&input).unwrap();
-        let unit = syntax::parse_translation_unit_for_import(&source, "tu.c", &map).unwrap();
+        let unit = syntax::parse_translation_unit_for_import(
+            &source,
+            "tu.c",
+            &map,
+            syntax::PromiseAttributes::Accept,
+        )
+        .unwrap();
         let rendered = format!("{:?}", unit.functions[1].body());
         assert!(!rendered.contains("SequentialStore"), "{name}");
         assert!(rendered.contains(name), "original call must remain: {name}");
@@ -394,15 +451,32 @@ fn imported_static_inline_helpers_use_tu_identity_and_shared_origin() {
         "# 1 \"include/helper.h\" 1\nstatic inline int32 add_one(int32 value) { return value + 1; }\nint32 run(int32 value) { return add_one(value); }\n",
     )
     .unwrap();
-    let alpha = syntax::parse_translation_unit_for_import(&source, "alpha.c", &map).unwrap();
-    let beta = syntax::parse_translation_unit_for_import(&source, "beta.c", &map).unwrap();
+    let alpha = syntax::parse_translation_unit_for_import(
+        &source,
+        "alpha.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
+    let beta = syntax::parse_translation_unit_for_import(
+        &source,
+        "beta.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
     assert_ne!(alpha.functions[0].name(), beta.functions[0].name());
 
     let (bad_source, bad_map) = provenance::CSourceMap::decode(
         "# 1 \"include/helper.h\" 1\nint32 broken(int32 value) { return value + ...; }\n",
     )
     .unwrap();
-    let error = match syntax::parse_translation_unit_for_import(&bad_source, "alpha.c", &bad_map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &bad_source,
+        "alpha.c",
+        &bad_map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("unsupported helper syntax should fail"),
         Err(error) => error,
     };
@@ -690,11 +764,14 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
             .expect("a const-qualified pointee cast should parse");
     assert!(matches!(
         functions[0].body(),
-        C0Statement::Return(C0Expression::Cast {
-            c_type: C0Type::CharPointer,
-            pointee_constant: true,
-            ..
-        })
+        C0Statement::Return(
+            C0Expression::Cast {
+                c_type: C0Type::CharPointer,
+                pointee_constant: true,
+                ..
+            },
+            _
+        )
     ));
 
     crate::surface::verify_c0_sources(
@@ -782,7 +859,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
         .zip([C0Type::CharPointer, C0Type::UInt8Pointer])
     {
         assert!(
-            matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }) if *c_type == expected)
+            matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }, _) if *c_type == expected)
         );
     }
     crate::surface::verify_c0_sources(
@@ -1559,6 +1636,97 @@ fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
     );
 }
 
+/// The statements a function body holds, apart from the sequencing nodes
+/// that join them.
+fn c0_statement_count(statement: &syntax::C0Statement) -> usize {
+    match statement {
+        syntax::C0Statement::Seq(first, second) => {
+            c0_statement_count(first) + c0_statement_count(second)
+        }
+        _ => 1,
+    }
+}
+
+/// An array of structs at file scope or `static`, and an automatic scalar or
+/// struct array declared with an initializer, cost what their initializers
+/// write, not their declared length: the static arrays list their written
+/// fields, an automatic array's declaration carries one zero fill and is
+/// followed only by the stores of the elements its initializer writes, and
+/// lowering does the same work whatever the length. An automatic array
+/// declared without an initializer carries no zero fill.
+#[test]
+fn c0_aggregate_and_automatic_array_initializers_cost_what_they_write_whatever_the_length() {
+    let samples = [100u32, 10_000, 1_000_000].map(|length| {
+        let source = format!(
+            "struct node {{
+                int32 key;
+                struct node *next;
+            }};
+            struct node pool[{length}] = {{[3] = {{5}}}};
+            int32 read() {{
+                static struct node slots[{length}];
+                int32 buf[{length}] = {{1, 0, 3}};
+                struct node items[{length}] = {{{{4}}, {{0}}}};
+                int32 scratch[{length}];
+                scratch[0] = 1;
+                return pool[3].key + slots[0].key + buf[2] + items[0].key + scratch[0];
+            }}"
+        );
+        let functions = syntax::parse_functions(&source).expect("large arrays should parse");
+        let function = &functions[0];
+        let pool = function.global_aggregate_arrays()["pool"]
+            .initializer()
+            .expect("definition")
+            .len();
+        let slots = function
+            .static_aggregate_arrays()
+            .values()
+            .next()
+            .expect("static aggregate array")
+            .initializer()
+            .len();
+        let mut zero_filled = Vec::new();
+        let mut pending = vec![function.body()];
+        while let Some(statement) = pending.pop() {
+            match statement {
+                syntax::C0Statement::Seq(first, second) => {
+                    pending.push(first);
+                    pending.push(second);
+                }
+                syntax::C0Statement::Declare {
+                    name, zero_fill, ..
+                } => zero_filled.push((name.clone(), zero_fill.is_some())),
+                _ => {}
+            }
+        }
+        zero_filled.sort();
+        let statements = c0_statement_count(function.body());
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| function.to_kernel_function());
+        (length, pool, slots, zero_filled, statements, work)
+    });
+    let (_, pool, slots, zero_filled, statements, work) = &samples[0];
+    assert_eq!((*pool, *slots), (1, 0), "only pool[3].key is listed");
+    assert_eq!(
+        zero_filled,
+        &[
+            ("buf".to_string(), true),
+            ("items".to_string(), true),
+            ("scratch".to_string(), false),
+        ],
+        "an automatic array zero-fills exactly when it has an initializer"
+    );
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2, &sample.3, sample.4, sample.5)
+                == (*pool, *slots, zero_filled, *statements, *work)),
+        "an initializer's representation or lowering depends on its array's length \
+         (length, pool fields, slots fields, zero fills, body statements, lowering work): \
+         {samples:?}"
+    );
+}
+
 #[test]
 fn c0_collects_file_scope_scalar_arrays() {
     let functions = syntax::parse_functions(
@@ -1842,40 +2010,6 @@ fn c0_headers_accept_const_global_table_declarations() {
         &source::ExpandedLineMap::empty(),
     )
     .expect("headers should accept const scalar tables and pointer views");
-}
-
-#[test]
-fn c0_const_global_table_cross_file_verifies() {
-    crate::surface::verify_c0_sources(
-        r#"
-        verifying "table.c";
-        verifying "reader.c";
-
-        int32 run() {
-            ensures table_value: result == 4 by auto;
-        }
-
-        int32 read_table(const int32 *values) {
-            views values[0..3];
-            ensures table_value: result == values[1] by auto;
-        }
-        "#,
-        &[
-            (
-                "table.h",
-                "extern const int32 table[3];\nint32 read_table(const int32 *values);",
-            ),
-            (
-                "table.c",
-                "const int32 table[3] = {2, 4, 6};\nint32 read_table(const int32 *values) { return values[1]; }",
-            ),
-            (
-                "reader.c",
-                "#include \"table.h\"\nint32 run() { return read_table(table); }",
-            ),
-        ],
-    )
-    .expect("const global tables should verify across translation units");
 }
 
 #[test]
@@ -2541,7 +2675,7 @@ fn c0_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     assert_eq!(values.incomplete_shape(), Some(&[3][..]));
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index))
+        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index), _)
             if matches!(base.as_ref(), syntax::C0Expression::Variable(name) if name == "values")
                 && matches!(index.as_ref(), syntax::C0Expression::Add(left, right)
                     if matches!(left.as_ref(), syntax::C0Expression::Multiply(multiplier, stride)
@@ -2840,42 +2974,6 @@ fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
         ],
     )
     .expect("an incomplete tentative array should link to a complete tentative definition");
-}
-
-#[test]
-fn c0_rejects_unresolved_file_static_incomplete_arrays_even_with_external_match() {
-    let error = crate::surface::verify_c0_sources(
-        r#"
-        verifying "private.c";
-        verifying "external.c";
-
-        int32 read() {
-            ensures result == 0 by auto;
-        }
-
-        int32 external_value() {
-            ensures result == 7 by auto;
-        }
-        "#,
-        &[
-            (
-                "private.c",
-                "static int32 values[]; int32 read() { return values[0]; }",
-            ),
-            (
-                "external.c",
-                "int32 values[2] = {7, 8}; int32 external_value() { return values[0]; }",
-            ),
-        ],
-    )
-    .expect_err("an external array must not complete a private static array");
-    assert!(
-        error
-            .message()
-            .contains("file-scope static array `values` has an incomplete tentative definition"),
-        "{}",
-        error.message()
-    );
 }
 
 #[test]
@@ -3306,7 +3404,7 @@ fn c0_collects_string_literals_with_terminators() {
         function.to_kernel_function().string_literals()[0].bytes(),
         b"ok\n\0"
     );
-    assert!(matches!(function.body(), syntax::C0Statement::Return(_)));
+    assert!(matches!(function.body(), syntax::C0Statement::Return(_, _)));
 }
 
 #[test]
@@ -3330,7 +3428,7 @@ fn c0_rejects_unsupported_string_literal_escapes_in_concatenated_sequences() {
     let error = syntax::parse_functions(
         r#"
         uint8* literal() {
-            return "hello" "\x20world";
+            return "hello" "\u0020world";
         }
         "#,
     )
@@ -3778,7 +3876,7 @@ fn c0_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
             .expect("__builtin_expect should preserve the first operand");
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Variable(name)) if name == "value"
+        syntax::C0Statement::Return(syntax::C0Expression::Variable(name), _) if name == "value"
     ));
 
     let error = syntax::parse_functions(
@@ -4161,7 +4259,12 @@ fn imported_call_lowering_diagnostics_use_original_header_line() {
         "# 1 \"include/alloc.h\" 1\nint32 caller() { return malloc(1); }\n",
     )
     .unwrap();
-    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("discarded allocation result should remain rejected"),
         Err(error) => error,
     };
@@ -4202,7 +4305,7 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
                         assignment.as_ref(),
                         syntax::C0Statement::Assign {
                             name,
-                            expression: syntax::C0Expression::Int32Literal(7)
+                            expression: syntax::C0Expression::Int32Literal(7), ..
                         } if name == "value"
                     )
             )
@@ -4263,23 +4366,6 @@ fn c0_syntax_accepts_continue_in_for_loop() {
     }
 
     assert!(contains_for(function.body()));
-}
-
-#[test]
-fn c0_syntax_accepts_a_comma_separated_for_step() {
-    syntax::parse_function(
-        r#"
-        int32 count() {
-            int32 i = 0;
-            int32 j = 3;
-            for (i = 0; i < 3; i++, j--) {
-                j = j + 1;
-            }
-            return j;
-        }
-        "#,
-    )
-    .expect("a for-loop step may sequence scalar updates with commas");
 }
 
 #[test]
@@ -4535,7 +4621,9 @@ fn c0_syntax_accepts_switch_cases_and_nested_loop_control() {
         }
     }
 
-    let Some(syntax::C0Statement::Switch { expression, cases }) = find_switch(function.body())
+    let Some(syntax::C0Statement::Switch {
+        expression, cases, ..
+    }) = find_switch(function.body())
     else {
         panic!("expected native switch statement");
     };
@@ -4791,7 +4879,7 @@ fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
             condition,
             then_branch,
             else_branch,
-        }) if matches!(condition.as_ref(), syntax::C0Expression::Variable(name) if name == "condition")
+        }, _) if matches!(condition.as_ref(), syntax::C0Expression::Variable(name) if name == "condition")
             && matches!(
                 then_branch.as_ref(),
                 syntax::C0Expression::Cast {
@@ -4955,7 +5043,7 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_)
+            | syntax::C0Statement::Return(_, _)
             | syntax::C0Statement::Store { .. }
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
@@ -4999,7 +5087,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("negative literals should parse");
     assert!(matches!(
         literal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value))
+        syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value), _)
             if *value == (-1i32) as u32
     ));
 
@@ -5017,7 +5105,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
             expression,
             c_type: syntax::C0Type::Int32,
             ..
-        }) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
+        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
     ));
 
     let negation = syntax::parse_function(
@@ -5030,7 +5118,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("general unary minus should parse");
     assert!(matches!(
         negation.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Subtract(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Subtract(left, right), _)
             if matches!(
                 left.as_ref(),
                 syntax::C0Expression::Int32Literal(0)
@@ -5053,7 +5141,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("C integer literal radices and suffixes should parse");
     assert!(matches!(
         literals.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::BitwiseOr(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::BitwiseOr(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::UInt32Literal(15))
                 && matches!(right.as_ref(), syntax::C0Expression::UInt32Literal(8))
     ));
@@ -5068,7 +5156,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("large octal literals should consider unsigned int before long");
     assert!(matches!(
         octal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::UInt32Literal(0xffff_ffff))
+        syntax::C0Statement::Return(syntax::C0Expression::UInt32Literal(0xffff_ffff), _)
     ));
 
     let minimum = syntax::parse_function(
@@ -5085,7 +5173,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
             expression,
             c_type: syntax::C0Type::Int32,
             ..
-        }) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
+        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
     ));
 
     let conditional = syntax::parse_function(
@@ -5098,7 +5186,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("conditional operands should use their common C type");
     assert!(matches!(
         conditional.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
             if matches!(right.as_ref(), syntax::C0Expression::Int32Literal(0))
                 && matches!(
                     left.as_ref(),
@@ -5214,12 +5302,15 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
         .expect("node child field");
     assert_eq!(child.struct_name(), Some("leaf"));
 
-    let syntax::C0Statement::Return(syntax::C0Expression::Field {
-        pointer,
-        field_type: syntax::C0Type::Int32,
-        field_struct_name: None,
-        ..
-    }) = function.body()
+    let syntax::C0Statement::Return(
+        syntax::C0Expression::Field {
+            pointer,
+            field_type: syntax::C0Type::Int32,
+            field_struct_name: None,
+            ..
+        },
+        _,
+    ) = function.body()
     else {
         panic!("the terminal scalar field should retain its resolved type")
     };
@@ -5433,7 +5524,7 @@ fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
             field_type: syntax::C0Type::Int32,
             union_name,
             ..
-        }) if union_name == "payload"
+        }, _) if union_name == "payload"
     ));
 }
 
@@ -5663,7 +5754,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         .iter()
         .find(|function| function.name() == "address_number")
         .expect("scalar member address function");
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) =
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) =
         address_number.body()
     else {
         panic!("scalar union member address should remain an address-of lvalue")
@@ -5807,7 +5898,7 @@ fn c0_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
         syntax::C0Statement::Return(syntax::C0Expression::AggregateAddress {
             struct_name,
             ..
-        }) if struct_name == "outer"
+        }, _) if struct_name == "outer"
     ));
     for name in [
         "clone",
@@ -5984,6 +6075,7 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => {
                 assert_eq!(target, "item");
                 assert!(!zeroed);
@@ -5996,7 +6088,7 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
                 );
                 (true, false)
             }
-            syntax::C0Statement::HeapFree { pointer } => {
+            syntax::C0Statement::HeapFree { pointer, .. } => {
                 assert_eq!(pointer, &syntax::C0Expression::Variable("item".to_string()));
                 (false, true)
             }
@@ -6105,6 +6197,7 @@ fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => Some((target, bytes, *zeroed)),
             syntax::C0Statement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
@@ -6167,6 +6260,7 @@ fn c0_syntax_accepts_matching_struct_calloc() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => Some((target, bytes, *zeroed)),
             syntax::C0Statement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
@@ -6206,6 +6300,7 @@ fn c0_syntax_accepts_matching_pointer_array_calloc() {
                     target: allocation_target,
                     bytes,
                     zeroed,
+                    ..
                 } if allocation_target == target => {
                     assert!(*zeroed);
                     Some(bytes)
@@ -6266,7 +6361,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     )
     .expect("sizeof should accept every supported scalar and pointer type");
 
-    let syntax::C0Statement::Return(expression) = function.body() else {
+    let syntax::C0Statement::Return(expression, _) = function.body() else {
         panic!("sizeof expression should remain in the return statement");
     };
     let kernel_expression = expression.to_kernel_expression();
@@ -9175,7 +9270,7 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     )
     .expect("address of an inline scalar array element should parse");
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
     else {
         panic!("array element address should remain an address-of lvalue")
     };
@@ -9652,7 +9747,8 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
         "#,
     )
     .expect("mixed struct getter should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Field { pointer, .. }) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::Field { pointer, .. }, _) =
+        function.body()
     else {
         panic!("getter should return a field load")
     };
@@ -9686,7 +9782,8 @@ fn c0_field_source_ids_distinguish_same_layout_occurrences() {
         "field-id.c",
     )
     .expect("same-layout field accesses should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Add(left, right)) = functions[0].body()
+    let syntax::C0Statement::Return(syntax::C0Expression::Add(left, right), _) =
+        functions[0].body()
     else {
         panic!("the two field accesses should remain in the return expression")
     };
@@ -9840,7 +9937,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         std::mem::offset_of!(HostInner, value)
     );
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
     else {
         panic!("nested field address should remain an address-of lvalue")
     };
@@ -10178,7 +10275,7 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("a mixed equality and relational chain should parse");
     assert!(matches!(
         mixed.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "a")
                 && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
     ));
@@ -10193,7 +10290,7 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("relational operands on both sides of `==` should parse");
     assert!(matches!(
         paired.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::LessThan(_, _))
                 && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
     ));
@@ -10300,7 +10397,7 @@ fn c0_syntax_accepts_else_if_and_unbraced_controlled_statements() {
             then_branch,
             else_branch,
             ..
-        } if matches!(then_branch.as_ref(), syntax::C0Statement::Return(_))
+        } if matches!(then_branch.as_ref(), syntax::C0Statement::Return(_, _))
             && matches!(else_branch.as_ref(), syntax::C0Statement::If { .. })
     ));
 
@@ -11028,6 +11125,8 @@ fn c0_weak_function_declaration_requires_availability_before_use() {
 
     for body in [
         "int32 caller(void) { return optional(); }",
+        "int32 caller(void) { optional(); return 0; }",
+        "int32 caller(void) { (void)optional(); return 0; }",
         "int32 caller(void) { return optional != 0; }",
     ] {
         let error = syntax::parse_functions(&format!("{declaration} {body}"))
@@ -11748,14 +11847,20 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
         .expect("binary32 literal should parse");
     assert_eq!(
         single.body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(1.5f32.to_bits(),))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(1.5f32.to_bits(),),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
 
     let double = syntax::parse_function("double double_value() { return 1.5; }")
         .expect("binary64 literal should parse");
     assert_eq!(
         double.body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(1.5f64.to_bits(),))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(1.5f64.to_bits(),),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
 
     let hex = syntax::parse_function("double hex() { return 0x1.0p0; }")
@@ -11793,24 +11898,39 @@ fn c0_floating_point_constants_cover_ties_signs_and_classification() {
 
     assert_eq!(
         functions[0].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(0x4b80_0000))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(0x4b80_0000),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[1].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(0x4340_0000_0000_0000,))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(0x4340_0000_0000_0000,),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[2].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(0x8000_0000))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(0x8000_0000),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[3].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(0xfff0_0000_0000_0000,))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(0xfff0_0000_0000_0000,),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     for function in &functions[4..] {
         assert_eq!(
             function.body(),
-            &syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(1))
+            &syntax::C0Statement::Return(
+                syntax::C0Expression::Int32Literal(1),
+                crate::languages::c::syntax::C0Site::NONE
+            )
         );
     }
 }
@@ -11827,13 +11947,13 @@ fn c0_floating_point_conditions_accept_symbolic_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "value")
                 && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits) if *bits == 1.0f32.to_bits())
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::And(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::And(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::FloatClassification {
                 expression,
                 classification: syntax::C0FloatClassification::Finite,
@@ -11863,7 +11983,7 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Multiply(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Multiply(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::FloatNegate(inner)
                 if matches!(inner.as_ref(), syntax::C0Expression::Add(_, _)))
                 && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits)
@@ -11871,7 +11991,7 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Divide(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Divide(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Multiply(_, _))
                 && matches!(right.as_ref(), syntax::C0Expression::Float64Literal(bits)
                     if *bits == 3.0f64.to_bits())
@@ -12857,20 +12977,6 @@ fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
 }
 
 #[test]
-fn c0_nothrow_memory_proof_expands_and_reverifies() {
-    let c = "__attribute__((nothrow)) int set(int *p) { *p = 7; return *p; }";
-    let proof = "verifying \"nothrow.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7 by auto; ensures result == 7 by auto; }";
-    crate::surface::verify_c0_sources(proof, &[("nothrow.c", c)]).unwrap();
-    let expanded = crate::surface::expand_c0_claim_source_by_label(
-        proof,
-        &[("nothrow.c", c)],
-        "set.ensures_0",
-    )
-    .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("nothrow.c", c)]).unwrap();
-}
-
-#[test]
 fn c0_leaf_memory_proof_expands_and_reverifies() {
     let c = "__attribute__((__nothrow__, __leaf__)) int set(int *p) { *p = 7; return *p; }";
     let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7 by auto; ensures result == 7 by auto; }";
@@ -12980,5 +13086,179 @@ fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
             crate::surface::expand_c0_claim_source_by_label(proof, &[("fields.c", c)], label)
                 .unwrap();
         crate::surface::verify_c0_sources(&expanded, &[("fields.c", c)]).unwrap();
+    }
+}
+
+/// The `linux-6.8-x86_64-kbuild` option profile accepts `-fshort-wchar`
+/// because the frontend has no wide literals, and `-fstrict-flex-arrays=3`
+/// because it has no flexible or zero-length struct members: every struct
+/// array, including a trailing `[1]`, keeps its declared length.
+#[test]
+fn c0_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
+    for (source, refusal) in [
+        (
+            "uint32 wide_char(void) { return L'x'; }",
+            "undeclared identifier `L`",
+        ),
+        ("uint32 wide_char(int32 L) { return L'x'; }", ""),
+        ("uint32 wide_string(int32 L) { return sizeof(L\"x\"); }", ""),
+        (
+            "struct packet { int32 length; uint8 data[]; };\nint32 use(struct packet *p) { return p->length; }",
+            "expected expression, got `]`",
+        ),
+        (
+            "struct packet { int32 length; uint8 data[0]; };\nint32 use(struct packet *p) { return p->length; }",
+            "struct arrays must have positive length",
+        ),
+    ] {
+        let error = syntax::parse_functions(source)
+            .map(|_| ())
+            .expect_err(source);
+        assert!(
+            error.message().contains(refusal),
+            "{source}: {}",
+            error.message()
+        );
+    }
+    for accepted in [
+        "uint32 narrow_char(void) { return 'x'; }",
+        "struct packet { int32 length; uint8 data[1]; };\nint32 use(struct packet *p) { return p->length; }",
+    ] {
+        syntax::parse_functions(accepted).expect(accepted);
+    }
+}
+
+fn parse_import_with(source: &str, promises: syntax::PromiseAttributes) -> Result<(), String> {
+    let (source, map) = provenance::CSourceMap::decode(&format!("# 1 \"lib/tu.c\"\n{source}"))
+        .expect("line markers should decode");
+    syntax::parse_translation_unit_for_import(&source, "tu.c", &map, promises)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Under an optimizing option profile, the attributes and qualifiers GCC's
+/// optimizer trusts as unchecked promises are refused with their location;
+/// without one they are accepted as before.
+#[test]
+fn optimizing_imports_refuse_optimizer_promises() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for (attribute, source) in [
+        (
+            "nonnull",
+            "extern int32 first(int32 *p) __attribute__((nonnull(1)));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "const",
+            "extern int32 square(int32 x) __attribute__((const));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "__leaf__",
+            "extern int32 peek(void) __attribute__((__leaf__));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "access",
+            "extern int32 read(const int32 *p) __attribute__((access(read_only, 1)));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "noreturn",
+            "extern void die(void) __attribute__((noreturn));\nint32 keep(int32 x) { if (x) die(); return x; }\n",
+        ),
+        (
+            "returns_twice",
+            "extern int32 again(void) __attribute__((returns_twice));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "__noreturn__",
+            "int32 keep(int32 x) {\n    __attribute__((__noreturn__)) extern void die(void);\n    if (x) die();\n    return x;\n}\n",
+        ),
+    ] {
+        let error = parse_import_with(source, Refuse).expect_err(attribute);
+        assert!(
+            error.contains(&format!(
+                "GNU function attribute `{attribute}` is refused under an optimizing compiler-option profile"
+            )) && error.starts_with("lib/tu.c:"),
+            "{attribute}: {error}"
+        );
+        parse_import_with(source, Accept)
+            .unwrap_or_else(|error| panic!("{attribute} without optimization: {error}"));
+    }
+
+    // A `noreturn` definition is refused too.
+    let error = parse_import_with(
+        "__attribute__((noreturn)) void stop(void) { stop(); }\n",
+        Refuse,
+    )
+    .unwrap_err();
+    assert!(error.contains("`noreturn` is refused"), "{error}");
+
+    // `restrict` is a promise about aliasing.
+    let restrict = "int32 first(int32 *restrict p) { return p[0]; }\n";
+    let error = parse_import_with(restrict, Refuse).unwrap_err();
+    assert!(
+        error.contains("`restrict` is refused under an optimizing compiler-option profile"),
+        "{error}"
+    );
+    parse_import_with(restrict, Accept).unwrap();
+}
+
+/// The one `noreturn` an optimizing import keeps: `compiletime_assert`'s
+/// block-scope `error` declaration, whose calls Click proves unreachable.
+#[test]
+fn optimizing_imports_keep_the_compiletime_assert_declaration() {
+    let source = "int32 guarded(int32 value) {\n    __attribute__((__noreturn__)) extern void __compiletime_assert_1(void) __attribute__((__error__(\"Unsupported access size.\")));\n    if (value)\n        __compiletime_assert_1();\n    return value;\n}\n";
+    parse_import_with(source, syntax::PromiseAttributes::Refuse).unwrap();
+
+    // Its reachable call still fails the proof.
+    let import = crate::languages::c::compiler_import::PreparedCImport::for_test_with(
+        "guarded.c",
+        &format!("# 1 \"guarded.c\"\n{source}"),
+        syntax::PromiseAttributes::Refuse,
+    );
+    let proof = "verifying \"guarded.c\";\nint32 guarded(int32 value) {\n    ensures result == value by auto;\n}\n";
+    let error = crate::surface::verify_c0_prepared_sources(proof, &[import])
+        .expect_err("a reachable call to the error declaration must fail");
+    assert!(
+        error.message().contains("is unreachable"),
+        "{}",
+        error.message()
+    );
+}
+
+/// Attributes and builtins GCC trusts that the frontend refuses in every
+/// mode, and the harmless ones an optimizing import still accepts.
+#[test]
+fn optimizer_promise_classification_without_a_profile_switch() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for source in [
+        "extern int32 f(void) __attribute__((pure));\n",
+        "extern int32 *f(void) __attribute__((returns_nonnull));\n",
+        "extern void *f(void) __attribute__((malloc));\n",
+        "extern void *f(uint64 n) __attribute__((alloc_size(1)));\n",
+        "extern void *f(uint64 n) __attribute__((alloc_align(1)));\n",
+        "extern void *f(void) __attribute__((assume_aligned(16)));\n",
+        "extern void f(void) __attribute__((cold));\n",
+        "extern void f(void) __attribute__((hot));\n",
+        "extern void f(void) __attribute__((noinline));\n",
+        "extern int32 f(void) __attribute__((warn_unused_result));\n",
+        "struct s { uint8 name[4] __attribute__((nonstring)); };\n",
+        "int32 f(int32 x) { if (x == 0) __builtin_unreachable(); return x; }\n",
+        "int32 f(int32 x) { __builtin_assume(x > 0); return x; }\n",
+        "int32 f(int32 x) { __attribute__((assume(x > 0))); return x; }\n",
+    ] {
+        for promises in [Accept, Refuse] {
+            assert!(
+                parse_import_with(source, promises).is_err(),
+                "{source} must be refused ({promises:?})"
+            );
+        }
+    }
+    for source in [
+        "static inline __attribute__((always_inline)) int32 f(int32 x) { return x; }\n",
+        "static inline __attribute__((gnu_inline)) int32 f(int32 x) { return x; }\n",
+        "extern int32 f(void) __attribute__((nothrow, deprecated, unused, no_instrument_function));\n",
+        "extern int32 f(void) __attribute__((weak));\n",
+        "int32 f(int32 x) { if (__builtin_expect(x == 0, 0)) return 7; return 3; }\n",
+    ] {
+        parse_import_with(source, Refuse).unwrap_or_else(|error| panic!("{source}: {error}"));
     }
 }

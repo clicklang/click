@@ -75,12 +75,12 @@ The simple assignment-expression form and the short-circuit loop exits are now
 supported. The full guard still stops at the first left frame, a position this
 fixture's older parameter-keyed contract cannot name, which is why package C4b
 owns `rb_next` in full; see
-[`rb_next_conjunctive_guard.md`](rb_next_conjunctive_guard.md).
+[`rb_next.md`](rb_next.md).
 
 The loop carries the same structural measure the scaffold ascent does,
 `decreases c;`, even though its body calls the contract-less inline
-`rb_parent`. An inline body has no contract boundary: it executes at the call
-site, so termination reads it as a call-graph node of its own rather than as an
+`rb_parent`. A contract-less inline body has no call boundary: it executes at
+the call site, so termination reads it as a call-graph node of its own rather than as an
 opaque callee needing a verified rule. `rb_parent`'s body is one return of a
 masked load, with no loop, no recursion, and no further call, so it terminates
 by construction and the ascent's own ranking is the whole of the obligation.

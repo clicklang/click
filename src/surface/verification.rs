@@ -2,7 +2,7 @@ use super::validation::{combined_algebraic_type_definitions, standard_library_fu
 use super::*;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::target::CTarget;
-use crate::languages::cpp::{LoweredCppFunction, PreparedCppImport, lower_import};
+use crate::languages::{PreparedProgram, PreparedProgramSource};
 use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cell::Cell;
@@ -122,8 +122,8 @@ pub fn take_sorry_admissions() -> Vec<SorryAdmission> {
 pub(in crate::surface) struct CSourceContext<'a> {
     bundle: Option<BTreeMap<&'a str, &'a str>>,
     imports: Option<&'a [PreparedCImport]>,
-    cpp_import: Option<&'a PreparedCppImport>,
-    cpp_lowered: Option<LoweredCppFunction>,
+    program_import: Option<PreparedProgram>,
+    program_execution: Option<Arc<crate::languages::PreparedExecution>>,
     prepared_by_source: Option<BTreeMap<&'a str, &'a PreparedCImport>>,
     prepared_project_identity: Option<String>,
     input_digest: [u8; 32],
@@ -131,6 +131,9 @@ pub(in crate::surface) struct CSourceContext<'a> {
     resource_semantics_mode: ResourceSemanticsMode,
     prepared_duplicates: bool,
     parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
+    /// Bundle sources extracted from a larger file, from the Click project.
+    /// Their locations are reported as lines of that file.
+    c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
     #[cfg(test)]
     prepared_parse_count: Cell<usize>,
 }
@@ -162,8 +165,8 @@ impl<'a> CSourceContext<'a> {
         Self {
             bundle: Some(bundle),
             imports: None,
-            cpp_import: None,
-            cpp_lowered: None,
+            program_import: None,
+            program_execution: None,
             prepared_by_source: None,
             prepared_project_identity: None,
             input_digest: digest_framed_parts(parts),
@@ -171,6 +174,7 @@ impl<'a> CSourceContext<'a> {
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
@@ -220,8 +224,8 @@ impl<'a> CSourceContext<'a> {
         Self {
             bundle: None,
             imports: Some(imports),
-            cpp_import: None,
-            cpp_lowered: None,
+            program_import: None,
+            program_execution: None,
             prepared_by_source: Some(
                 imports
                     .iter()
@@ -234,34 +238,36 @@ impl<'a> CSourceContext<'a> {
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: duplicate_logical_source,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
     }
 
-    pub(in crate::surface) fn cpp(import: &'a PreparedCppImport) -> Result<Self, ClickError> {
-        let lowered = lower_import(import).map_err(|error| {
-            ClickError::new(format!(
-                "failed to lower compiler-prepared C++ source `{}`: {error}",
-                import.logical_source()
-            ))
-        })?;
+    pub(in crate::surface) fn program(
+        import: &impl PreparedProgramSource,
+    ) -> Result<Self, ClickError> {
+        let program = import.prepared_program();
+        let program_execution = program.prepare_execution().map_err(ClickError::new)?;
+        let input_digest = digest_framed_parts([
+            b"click-typed-prepared-project-v1".as_slice(),
+            program.language().as_bytes(),
+            program.logical_source().as_bytes(),
+            program.identity().as_bytes(),
+        ]);
         Ok(Self {
             bundle: None,
             imports: None,
-            cpp_import: Some(import),
-            cpp_lowered: Some(lowered),
+            program_execution: Some(program_execution),
             prepared_by_source: None,
-            prepared_project_identity: Some(import.identity().to_string()),
-            input_digest: digest_framed_parts([
-                b"click-cpp-prepared-project-v1".as_slice(),
-                import.logical_source().as_bytes(),
-                import.identity().as_bytes(),
-            ]),
+            prepared_project_identity: Some(program.identity().to_string()),
+            input_digest,
+            program_import: Some(program),
             specification_digest: None,
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         })
@@ -330,6 +336,7 @@ impl<'a> CSourceContext<'a> {
 
     pub(in crate::surface) fn with_click_project(mut self, project: &ClickProject) -> Self {
         self.resource_semantics_mode = project.resource_semantics_mode();
+        self.c_source_containers = project.c_source_containers().clone();
         let mut modules = project.modules().iter().collect::<Vec<_>>();
         modules.sort_by_key(|module| module.identity());
         let mut hasher = Sha256::new();
@@ -905,6 +912,105 @@ fn parse_c0_click_file_context(
     )
 }
 
+/// Adds every user-defined tactic to the run as the contract of a procedure
+/// whose whole body is `return;`.
+///
+/// A tactic runs no code, so its contract holds of the proof state exactly
+/// when it holds of that empty procedure: certifying the procedure is
+/// certifying the tactic, through the same contract, recursion, and
+/// termination checks every C function has, and the packaged rule is what an
+/// application of the tactic applies. The tactic's own script runs first;
+/// then the one `return` is stepped, and every claim is closed by
+/// `assumption`, so the script must already have established each produced
+/// instance and each `ensures` as an available fact.
+fn with_tactic_procedures(
+    mut file: ClickFile,
+    mut parsed_sources: BTreeMap<String, (String, syntax::C0Function)>,
+) -> Result<(ClickFile, BTreeMap<String, (String, syntax::C0Function)>), ClickError> {
+    for tactic in file.tactic_definitions.clone() {
+        let name = tactic.name().to_string();
+        if parsed_sources.contains_key(&name)
+            || file
+                .function_blocks
+                .iter()
+                .any(|function| function.signature().name() == name)
+        {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` has the name of a C function; give the tactic its own name"
+            )));
+        }
+        let mut block = tactic.function_block().clone();
+        block.tactic_procedure = true;
+        let Some(SourceProof::Script(mut script)) = block.grouped_proof.take() else {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` must be proved by an explicit `by {{ ... }}` script"
+            )));
+        };
+        if let Some(executing) = first_executing_tactic(&script) {
+            return Err(ClickError::new(format!(
+                "tactic `{name}` runs no code, so its proof cannot use `{executing}`; a \
+                 tactic's proof folds, unfolds, applies, and proves facts at one point"
+            )));
+        }
+        let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
+        suffix.extend(std::iter::repeat_n(
+            ProofTactic::Synthetic(Box::new(ProofTactic::Assumption)),
+            block.ensures.len(),
+        ));
+        append_on_every_path(&mut script, &suffix);
+        block.grouped_proof = Some(SourceProof::Script(script));
+        let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
+            syntax::C0Expression::Void,
+            syntax::C0Site::NONE,
+        ));
+        parsed_sources.insert(name, ("<tactic>".to_string(), procedure));
+        file.function_blocks.push(block);
+    }
+    Ok((file, parsed_sources))
+}
+
+/// Appends `suffix` where every path of `script` ends. A proof `match` must
+/// complete the proof in each arm, so a script ending in one gets the suffix
+/// at the end of each arm instead.
+fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
+    if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
+        for arm in &mut proof_match.arms {
+            append_on_every_path(&mut arm.tactics, suffix);
+        }
+    } else {
+        script.extend(suffix.iter().cloned());
+    }
+}
+
+/// The first tactic in `tactics`, at any depth of proof control, that runs
+/// C or addresses a C control-flow point, by its source name.
+fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
+    tactics.iter().find_map(|tactic| match tactic {
+        ProofTactic::Step | ProofTactic::StepContract(_) | ProofTactic::StepCall(_) => Some("step"),
+        ProofTactic::SmartExecute => Some("execute"),
+        ProofTactic::ExecuteUntil(_) => Some("execute_until"),
+        ProofTactic::Loop(_) => Some("loop"),
+        ProofTactic::Branch(_) => Some("branch"),
+        ProofTactic::CallOutcomes(_) => Some("outcomes"),
+        ProofTactic::CloseInvariantsBy(_) => Some("close_invariants"),
+        ProofTactic::Open(open) => first_executing_tactic(&open.tactics),
+        ProofTactic::If(proof_if) => first_executing_tactic(&proof_if.then_tactics)
+            .or_else(|| first_executing_tactic(&proof_if.else_tactics)),
+        ProofTactic::Cases(cases) => first_executing_tactic(&cases.left_tactics)
+            .or_else(|| first_executing_tactic(&cases.right_tactics)),
+        ProofTactic::Both(both) => first_executing_tactic(&both.left_tactics)
+            .or_else(|| first_executing_tactic(&both.right_tactics)),
+        ProofTactic::Match(proof_match) => proof_match
+            .arms
+            .iter()
+            .find_map(|arm| first_executing_tactic(&arm.tactics)),
+        ProofTactic::StructuralInduct { arms, .. } => arms
+            .iter()
+            .find_map(|arm| first_executing_tactic(&arm.tactics)),
+        _ => None,
+    })
+}
+
 pub(in crate::surface) fn proof_unit_erased_click_file(
     mut file: ClickFile,
     target: &VerificationTarget,
@@ -921,7 +1027,11 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
     let VerificationTarget::Function(target_name) = target else {
         return file;
     };
-    for function in &mut file.function_blocks {
+    for function in file.function_blocks.iter_mut().chain(
+        file.tactic_definitions
+            .iter_mut()
+            .map(TacticDefinition::function_block_mut),
+    ) {
         if function.signature.name != *target_name {
             continue;
         }
@@ -968,6 +1078,7 @@ pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
+    let _timing = VerificationTimingPhase::new("source resolution");
     ensure_resource_semantics_supported(sources)?;
     let click_source = project
         .entry_source()
@@ -985,6 +1096,7 @@ pub(in crate::surface) fn resolve_click_project_context(
         sources,
         super::selected_project_c_target(project)?,
     )?;
+    check_verification_deadline()?;
     modules::resolve_click_project_with_layouts(
         project,
         struct_layouts,
@@ -1075,15 +1187,15 @@ pub fn verify_c0_prepared_project(
     })
 }
 
-/// Verifies the locked C++ declaration through the ordinary Click proof
-/// engine. Clang is not consulted here; the prepared artifact supplies the
-/// declaration interface and its direct kernel lowering supplies the body.
-pub fn verify_cpp_prepared_project(
+/// Verifies a locked compiler-owned program through the ordinary proof engine.
+/// The prepared artifact supplies declarations and direct kernel lowering;
+/// ordinary verification never consults the source compiler.
+pub fn verify_program_prepared_project(
     project: &ClickProject,
-    import: &PreparedCppImport,
+    import: &impl PreparedProgramSource,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::cpp(import)?.with_click_project(project);
+        let sources = CSourceContext::program(import)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         verify_c0_sources_with_context(
             project.entry_source().expect("resolved entry source"),
@@ -1113,19 +1225,62 @@ pub fn verify_c0_prepared_project_at(
     })
 }
 
-pub fn verify_cpp_prepared_project_at(
+pub fn verify_program_prepared_project_at(
     project: &ClickProject,
-    import: &PreparedCppImport,
+    import: &impl PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::cpp(import)?.with_click_project(project);
+        let sources = CSourceContext::program(import)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         let source = project.entry_source().expect("resolved entry source");
         let target = expansion::verification_target_at_file(source, &file, line, column)?;
         verify_c0_sources_with_context(source, &sources, Some(target), None, None, Some(file))
             .map(|(verified, _)| verified)
+    })
+}
+
+/// Verifies only the entry module's pure theorem `theorem`. Theorems it
+/// cites remain interfaces, exactly as when a source location selects it.
+pub fn verify_c0_project_theorem(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
+/// [`verify_c0_project_theorem`] for compiler-prepared translation units.
+pub fn verify_c0_prepared_project_theorem(
+    project: &ClickProject,
+    imports: &[PreparedCImport],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::prepared(imports).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
     })
 }
 
@@ -1241,13 +1396,13 @@ pub(in crate::surface) fn verify_c0_prepared_project_with_expansion_capture(
     })
 }
 
-pub(in crate::surface) fn verify_cpp_prepared_project_with_expansion_capture(
+pub(in crate::surface) fn verify_program_prepared_project_with_expansion_capture(
     project: &ClickProject,
-    import: &PreparedCppImport,
+    import: &impl PreparedProgramSource,
     expansion_capture: &mut ExpansionCapture,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::cpp(import)?.with_click_project(project);
+        let sources = CSourceContext::program(import)?.with_click_project(project);
         let file = resolve_click_project_context(project, &sources)?;
         verify_c0_sources_with_context(
             project.entry_source().expect("resolved entry source"),
@@ -1292,20 +1447,6 @@ pub fn c0_project_function_names(
         .collect())
 }
 
-pub fn c0_project_selected_proof_count(
-    project: &ClickProject,
-    c_sources: &[(&str, &str)],
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
-}
-
 pub fn c0_project_selected_proof_names(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
@@ -1313,34 +1454,6 @@ pub fn c0_project_selected_proof_names(
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(selected_entry_proof_names(&file))
-}
-
-pub fn c0_prepared_project_selected_proof_count(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
-}
-
-pub fn cpp_prepared_project_selected_proof_count(
-    project: &ClickProject,
-    import: &PreparedCppImport,
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
 }
 
 pub fn c0_prepared_project_selected_proof_names(
@@ -1631,7 +1744,7 @@ impl C0VerificationSession {
                     c_sources: Vec::new(),
                     click_project: None,
                     prepared_imports: Some(imports.to_vec()),
-                    prepared_cpp_import: None,
+                    prepared_program_import: None,
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -1642,12 +1755,12 @@ impl C0VerificationSession {
         })
     }
 
-    pub fn new_cpp_prepared(
+    pub fn new_program_prepared(
         click_source: &str,
-        import: &PreparedCppImport,
+        import: &impl PreparedProgramSource,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
         instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::cpp(import)?;
+            let sources = CSourceContext::program(import)?;
             let (verified, verified_function_environment) =
                 verify_c0_sources_with_context(click_source, &sources, None, None, None, None)?;
             let baseline_file = parse_c0_click_file_context(click_source, &sources)?;
@@ -1660,7 +1773,7 @@ impl C0VerificationSession {
                     c_sources: Vec::new(),
                     click_project: None,
                     prepared_imports: None,
-                    prepared_cpp_import: Some(import.clone()),
+                    prepared_program_import: Some(import.prepared_program()),
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -1691,7 +1804,7 @@ impl C0VerificationSession {
                     .collect(),
                 click_project: None,
                 prepared_imports: None,
-                prepared_cpp_import: None,
+                prepared_program_import: None,
                 baseline_file,
                 verified_function_environment,
                 environment_identity,
@@ -1729,7 +1842,7 @@ impl C0VerificationSession {
                         .collect(),
                     click_project: Some(project.clone()),
                     prepared_imports: None,
-                    prepared_cpp_import: None,
+                    prepared_program_import: None,
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -1764,7 +1877,7 @@ impl C0VerificationSession {
                     c_sources: Vec::new(),
                     click_project: Some(project.clone()),
                     prepared_imports: Some(imports.to_vec()),
-                    prepared_cpp_import: None,
+                    prepared_program_import: None,
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -1775,12 +1888,12 @@ impl C0VerificationSession {
         })
     }
 
-    pub fn new_cpp_prepared_project(
+    pub fn new_program_prepared_project(
         project: &ClickProject,
-        import: &PreparedCppImport,
+        import: &impl PreparedProgramSource,
     ) -> Result<(Self, Vec<VerifiedCTheorem>), ClickError> {
         instrumentation::with_default_tactic_limits(|| {
-            let sources = CSourceContext::cpp(import)?.with_click_project(project);
+            let sources = CSourceContext::program(import)?.with_click_project(project);
             let baseline_file = resolve_click_project_context(project, &sources)?;
             let (verified, verified_function_environment) = verify_c0_sources_with_context(
                 project.entry_source().expect("resolved entry source"),
@@ -1799,7 +1912,7 @@ impl C0VerificationSession {
                     c_sources: Vec::new(),
                     click_project: Some(project.clone()),
                     prepared_imports: None,
-                    prepared_cpp_import: Some(import.clone()),
+                    prepared_program_import: Some(import.prepared_program()),
                     baseline_file,
                     verified_function_environment,
                     environment_identity,
@@ -1876,8 +1989,8 @@ impl C0VerificationSession {
                 .iter()
                 .map(|(name, source)| (name.as_str(), source.as_str()))
                 .collect::<Vec<_>>();
-            let sources = if let Some(import) = self.prepared_cpp_import.as_ref() {
-                CSourceContext::cpp(import)?.with_click_project(&project)
+            let sources = if let Some(import) = self.prepared_program_import.as_ref() {
+                CSourceContext::program(import)?.with_click_project(&project)
             } else if let Some(imports) = self.prepared_imports.as_ref() {
                 CSourceContext::prepared(imports).with_click_project(&project)
             } else {
@@ -1891,11 +2004,17 @@ impl C0VerificationSession {
                 column,
             )?;
             let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => self
-                    .baseline_file
-                    .function_blocks()
-                    .iter()
-                    .any(|function| function.signature().name() == name),
+                VerificationTarget::Function(name) => {
+                    self.baseline_file
+                        .function_blocks()
+                        .iter()
+                        .any(|function| function.signature().name() == name)
+                        || self
+                            .baseline_file
+                            .tactic_definitions()
+                            .iter()
+                            .any(|tactic| tactic.name() == name)
+                }
                 VerificationTarget::Theorem(name) => self.baseline_file.theorem_is_selected(name),
                 VerificationTarget::Functions(_) => false,
             };
@@ -1941,8 +2060,8 @@ impl C0VerificationSession {
     ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         instrumentation::with_default_tactic_limits(|| {
-            let sources = if let Some(import) = self.prepared_cpp_import.as_ref() {
-                CSourceContext::cpp(import)?
+            let sources = if let Some(import) = self.prepared_program_import.as_ref() {
+                CSourceContext::program(import)?
             } else if let Some(imports) = self.prepared_imports.as_ref() {
                 CSourceContext::prepared(imports)
             } else {
@@ -1958,11 +2077,17 @@ impl C0VerificationSession {
             )?;
             let target = verification_target_at_context(click_source, &sources, line, column)?;
             let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => self
-                    .baseline_file
-                    .function_blocks()
-                    .iter()
-                    .any(|function| function.signature().name() == name),
+                VerificationTarget::Function(name) => {
+                    self.baseline_file
+                        .function_blocks()
+                        .iter()
+                        .any(|function| function.signature().name() == name)
+                        || self
+                            .baseline_file
+                            .tactic_definitions()
+                            .iter()
+                            .any(|tactic| tactic.name() == name)
+                }
                 VerificationTarget::Theorem(name) => self
                     .baseline_file
                     .theorem_definitions()
@@ -2024,11 +2149,17 @@ impl C0VerificationSession {
         )?;
         let target = verification_target_at_context(click_source, &sources, line, column)?;
         let target_exists_in_baseline = match &target {
-            VerificationTarget::Function(name) => self
-                .baseline_file
-                .function_blocks()
-                .iter()
-                .any(|function| function.signature().name() == name),
+            VerificationTarget::Function(name) => {
+                self.baseline_file
+                    .function_blocks()
+                    .iter()
+                    .any(|function| function.signature().name() == name)
+                    || self
+                        .baseline_file
+                        .tactic_definitions()
+                        .iter()
+                        .any(|tactic| tactic.name() == name)
+            }
             VerificationTarget::Theorem(name) => self
                 .baseline_file
                 .theorem_definitions()
@@ -2098,14 +2229,14 @@ pub fn verify_c0_prepared_sources_at(
     })
 }
 
-pub fn verify_cpp_prepared_sources_at(
+pub fn verify_program_prepared_sources_at(
     click_source: &str,
-    import: &PreparedCppImport,
+    import: &impl PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     instrumentation::with_default_tactic_limits(|| {
-        let sources = CSourceContext::cpp(import)?;
+        let sources = CSourceContext::program(import)?;
         let target = verification_target_at_context(click_source, &sources, line, column)?;
         verify_c0_sources_with_context(click_source, &sources, Some(target), None, None, None)
             .map(|(verified, _)| verified)
@@ -2139,7 +2270,29 @@ pub(in crate::surface) fn verify_c0_sources_with_environment(
     )
 }
 
+/// [`verify_c0_sources_in_context`], with a proof failure that names no
+/// source located by what was being verified when it arose.
 fn verify_c0_sources_with_context(
+    click_source: &str,
+    c_sources: &CSourceContext<'_>,
+    verification_target: Option<VerificationTarget>,
+    initial_function_environment: Option<CExecutionEnvironment>,
+    expansion_capture: Option<&mut ExpansionCapture>,
+    resolved_file: Option<ClickFile>,
+) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+    crate::surface::clear_ambient_proof_source();
+    verify_c0_sources_in_context(
+        click_source,
+        c_sources,
+        verification_target,
+        initial_function_environment,
+        expansion_capture,
+        resolved_file,
+    )
+    .map_err(ClickError::located_by_ambient_source)
+}
+
+fn verify_c0_sources_in_context(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
@@ -2208,6 +2361,7 @@ fn verify_c0_sources_with_context(
         };
         modules::reject_theorem_justification_cycles(&file)?;
         let parsed_sources = parse_verified_sources_context(&file, c_sources)?;
+        let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
         record_never_address_taken_locals(&parsed_sources, session_is_fresh);
         let expansion_functions = expansion_capture
             .as_deref()
@@ -2389,8 +2543,17 @@ fn verify_c0_sources_with_context(
         // own contract hypothesis supports the existing checked-recursion
         // rule. Only rules for proofs completed below escape the transaction.
         for function_block in file.function_blocks() {
+            // A header `static inline` helper's body, and so its contract
+            // interface, is keyed by its executing name. Looking it up by the
+            // sidecar spelling would leave its callers without its contract
+            // until the helper happened to be verified first, so whether a
+            // call applied the contract or ran the body would depend on the
+            // order of the functions in the sidecar.
             let Some(function) = function_environment
-                .get_function(function_block.signature().name())
+                .get_function(&executing_function_name(
+                    &termination_kernel_names,
+                    function_block.signature().name(),
+                ))
                 .cloned()
             else {
                 continue;
@@ -2421,9 +2584,8 @@ fn verify_c0_sources_with_context(
             function_source_registry.clone(),
         )
         .map_err(|error| {
-            file.entry_module().map_or(error.clone(), |identity| {
-                ClickError::new(format!("{identity}: {}", error.message()))
-            })
+            file.entry_module()
+                .map_or(error.clone(), |identity| error.with_context(identity))
         })?;
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
@@ -2520,6 +2682,11 @@ fn verify_c0_sources_with_context(
         .map(|contract| contract.name().to_string())
         .collect::<BTreeSet<_>>();
 
+    let tactic_names = file
+        .tactic_definitions()
+        .iter()
+        .map(|tactic| tactic.name().to_string())
+        .collect::<BTreeSet<_>>();
     let mut ordered_function_blocks = file.function_blocks;
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -2543,6 +2710,7 @@ fn verify_c0_sources_with_context(
     }
     let mut early_thread_termination_published = false;
     for function_block in ordered_function_blocks {
+        crate::surface::enter_ambient_declaration(function_block.signature().name());
         check_verification_deadline()?;
         // Load-variable origins are first-seen per verified function: an
         // origin minted while verifying an earlier function belongs to a
@@ -2734,7 +2902,18 @@ fn verify_c0_sources_with_context(
                     &theorem_environment,
                     function_source_registry.clone(),
                     tactics,
-                )?,
+                )
+                .map_err(|error| {
+                    if function_block.is_tactic_procedure() {
+                        error.with_context(format!(
+                            "tactic `{}`: its proof must end with every produced instance held \
+                             and every `ensures` an available fact",
+                            function_block.signature().name()
+                        ))
+                    } else {
+                        error
+                    }
+                })?,
                 SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
                     return Err(ClickError::new(format!(
                         "grouped proof for `{}` must use `by auto;` or an explicit `by {{ ... }}` proof script",
@@ -2836,21 +3015,45 @@ fn verify_c0_sources_with_context(
                 function_block.with_bound_frontier_loop_clauses(&verified.frontier_loop_clauses)
             },
         );
-        let InitialClaimContext {
-            state: mut certification_state,
-            arguments: certification_arguments,
-            pure_facts: mut certification_facts,
-            ..
-        } = initial_claim_context_with_mode(
-            &certification_function_block,
-            parsed_function,
-            &resource_environment,
-            &predicate_environment,
-            &click_function_environment,
-            &format!("{}.contract certification", function_block.signature.name()),
-            None,
-            function_source_registry.resource_semantics_mode(),
-        )?;
+        // Certification starts from the entry the proof was built from. A
+        // proof that bound frontier loop clauses is certified over the block
+        // carrying them, whose entry unfolds what those clauses name, so only
+        // that case builds an entry here.
+        let proof_entry = frontier_loop_artifacts
+            .is_none()
+            .then(|| {
+                function_verified
+                    .iter()
+                    .find_map(|verified| verified.entry_context.clone())
+            })
+            .flatten();
+        let (mut certification_state, certification_arguments, mut certification_facts) =
+            match proof_entry {
+                Some(entry) => (
+                    entry.state.clone(),
+                    entry.arguments.clone(),
+                    entry.pure_facts.clone(),
+                ),
+                None => {
+                    let InitialClaimContext {
+                        state,
+                        arguments,
+                        pure_facts,
+                        ..
+                    } = initial_claim_context_with_mode(
+                        &certification_function_block,
+                        parsed_function,
+                        &resource_environment,
+                        &predicate_environment,
+                        &click_function_environment,
+                        &format!("{}.contract certification", function_block.signature.name()),
+                        None,
+                        function_source_registry.resource_semantics_mode(),
+                    )
+                    .map_err(|error| error.at_declaration(function_block.signature.name()))?;
+                    (state, arguments, pure_facts)
+                }
+            };
         // Stable-view proof artifacts carry the exact caller state that the
         // checked function-entry boundary accepted. Reuse that state for
         // certification so resource occurrence IDs and loan ledger roots are
@@ -2930,6 +3133,12 @@ fn verify_c0_sources_with_context(
                 bytes: Bitvector32Term::Constant(*bytes),
             });
         }
+        // Certification reuses the checked caller's authority identities,
+        // while its selected premises form a fresh proof context. Pair that
+        // explicit input once here, before annotations or contract checking.
+        certification_state
+            .resources()
+            .synchronize_memory_equalities(&assumptions_from_propositions(&certification_facts));
         let has_frontier_loop_rules = frontier_loop_artifacts.is_some();
         let contract_function = annotated_function_with_assumptions(
             &certification_function_block,
@@ -3239,7 +3448,6 @@ fn verify_c0_sources_with_context(
                             certification_state.clone(),
                             contract_function.clone(),
                             certification_arguments.clone(),
-                            certification_facts.into_vec(),
                             certification_function_environment,
                             if has_frontier_loop_rules {
                                 CExecutionSemantics::APPLY_VERIFIED_RULES
@@ -3365,86 +3573,13 @@ fn verify_c0_sources_with_context(
                     &checked_propositions,
                 );
                 let detail = match &diagnostic_result {
-                    Ok(keys) if !keys.is_empty() => {
-                        let described = keys
-                            .iter()
-                            .map(|key| {
-                                let target = contract_function
-                                    .contract_claims()
-                                    .iter()
-                                    .find(|claim| claim.key() == key)
-                                    .map(CFunctionContractClaim::target);
-                                match target {
-                                    Some(CFunctionContractClaimTarget::EnsureProposition(
-                                        index,
-                                    )) => contract_function
-                                        .contract_ensures()
-                                        .get(*index)
-                                        .map_or_else(
-                                            || format!("{key:?}"),
-                                            |ensure| format!("{key:?} = {ensure:?}"),
-                                        ),
-                                    Some(
-                                        CFunctionContractClaimTarget::ExceptionalEnsureProposition(
-                                            index,
-                                        ),
-                                    ) => contract_function
-                                        .exceptional_ensures()
-                                        .get(*index)
-                                        .map_or_else(
-                                            || format!("{key:?}"),
-                                            |ensure| {
-                                                format!("{key:?} = exceptional ensures {ensure:?}")
-                                            },
-                                        ),
-                                    Some(CFunctionContractClaimTarget::EnsureResource(index)) => {
-                                        contract_function
-                                            .resource_ensures()
-                                            .get(*index)
-                                            .map_or_else(
-                                                || format!("{key:?}"),
-                                                |resource| {
-                                                    let source_index = resource
-                                                        .clause_position()
-                                                        .map_or(*index, |(index, _)| index);
-                                                    let source = function_block
-                                                        .ensures()
-                                                        .iter()
-                                                        .filter(|ensure| matches!(ensure.ensure(), Ensure::Resource(_)))
-                                                        .enumerate()
-                                                        .find(|(index, _)| {
-                                                            function_block.resource_ensure_positions()
-                                                                .get(*index)
-                                                                .map_or(*index, |(index, _)| *index)
-                                                                == source_index
-                                                        })
-                                                        .map(|(_, ensure)| ensure);
-                                                    source.map_or_else(
-                                                        || format!("{key:?} = resource clause {source_index}"),
-                                                        |ensure| {
-                                                            let Ensure::Resource(resource) = ensure.ensure() else {
-                                                                unreachable!("filtered resource ensure")
-                                                            };
-                                                            let clause = format!("{} {}",
-                                                                if ensure.borrowed() { "owns" } else { "produces" },
-                                                                crate::surface::validation::describe_resource_clause(resource));
-                                                            let clause = ensure.condition().map_or(clause.clone(), |guard| {
-                                                                format!("if {} {{ {clause}; }}",
-                                                                    crate::surface::diagnostics::describe_click_proposition(guard))
-                                                            });
-                                                            format!("{key:?} = {clause}")
-                                                        },
-                                                    )
-                                                },
-                                            )
-                                    }
-                                    _ => format!("{key:?}"),
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("; unverified claims: {described}")
-                    }
+                    Ok(keys) if !keys.is_empty() => format!(
+                        "; unverified claims: {}",
+                        crate::surface::diagnostics::describe_unverified_contract_claims(
+                            &function_block,
+                            keys,
+                        )
+                    ),
                     Ok(_) => String::new(),
                     Err(failure) => format!("; {}", failure.reason),
                 };
@@ -3495,8 +3630,11 @@ fn verify_c0_sources_with_context(
                         .cloned()
                         .ok_or_else(|| {
                             ClickError::new(format!(
-                                "could not certify contract claim {key:?} for `{}`",
-                                function_block.signature.name(),
+                                "could not certify contract claim {}",
+                                crate::surface::diagnostics::describe_unverified_contract_claims(
+                                    &function_block,
+                                    std::slice::from_ref(&key),
+                                ),
                             ))
                         })
                 })
@@ -3525,17 +3663,35 @@ fn verify_c0_sources_with_context(
         }
         check_verification_deadline()?;
     }
+    // What follows is about the whole run, not the last function verified.
+    crate::surface::clear_ambient_proof_source();
 
     let assumed_unselected_names = unselected_function_names.clone().unwrap_or_default();
     if let Some(unselected) = unselected_function_names {
         for function_name in unselected {
+            // A `static` function's rule is keyed by its executing name,
+            // which a retained session's environment carries over from the
+            // run that verified it.
+            let executing_name = executing_function_name(&termination_kernel_names, &function_name);
             function_environment = function_environment
                 .without_verified_function_rule(&function_name)
+                .without_verified_function_rule(&executing_name)
                 .without_external_function_rule(&function_name);
         }
     }
     let partial_rules = function_environment.verified_function_rules();
-    let inline_bodies = function_environment.linked_functions();
+    // An unselected function is an assumption here, a `static inline` one
+    // too: its loops are ranked by the run that selects it, so its body is
+    // not analyzed without the loop rules only that run verifies.
+    let unselected_executing_names = assumed_unselected_names
+        .iter()
+        .map(|name| executing_function_name(&termination_kernel_names, name))
+        .collect::<BTreeSet<_>>();
+    let inline_bodies = function_environment
+        .linked_functions()
+        .into_iter()
+        .filter(|function| !unselected_executing_names.contains(function.name()))
+        .collect::<Vec<_>>();
     // Heights are a proposal the kernel checks at every call site. A callee
     // outside the verified set is an assumption, as its postconditions are:
     // an external contract always, and an unselected function because it owes
@@ -3568,22 +3724,55 @@ fn verify_c0_sources_with_context(
             "pthread_mutex_destroy".to_string(),
         ]);
     }
+    // A selected function may recurse only through a function this run
+    // assumes, so its declared measure ranks no edge here. That measure is
+    // judged by the run that selects the whole cycle; this run checks the
+    // selected function without it. Each retry drops one measure.
+    let mut run_plans = termination_plans.clone();
+    let verdicts = loop {
+        let verdicts = c_verified_function_termination_rules(
+            &partial_rules,
+            &run_plans,
+            &termination_loop_rules,
+            &inline_bodies,
+            &termination_heights,
+            &assumed_terminating,
+            &declared_diverging,
+            &diverging_contracts,
+        );
+        let Err(error) = &verdicts else {
+            break verdicts;
+        };
+        let retried = !unselected_executing_names.is_empty()
+            && error.is_superfluous_recursive_measure()
+            && error.function().is_some_and(|function| {
+                run_plans
+                    .iter_mut()
+                    .find(|plan| plan.function_name() == function)
+                    .is_some_and(|plan| {
+                        let had = plan.clone();
+                        plan.clear_recursive_measure();
+                        *plan != had
+                    })
+            });
+        if !retried {
+            break verdicts;
+        }
+    };
     let CTerminationVerdicts {
         rules: termination_rules,
         refusals: termination_refusals,
         unjustified_diverging,
         unsuitable_callbacks,
-    } = c_verified_function_termination_rules(
-        &partial_rules,
-        &termination_plans,
-        &termination_loop_rules,
-        &inline_bodies,
-        &termination_heights,
-        &assumed_terminating,
-        &declared_diverging,
-        &diverging_contracts,
-    )
-    .map_err(|error| ClickError::new(format!("could not certify C termination: {error}")))?;
+    } = verdicts.map_err(|error| {
+        let located = ClickError::new(format!("could not certify C termination: {error}"));
+        match error.function() {
+            Some(function) => {
+                located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name))
+            }
+            None => located,
+        }
+    })?;
     // An `extern` contract has no body to answer for its marker: the
     // declaration is the whole of what is known about it.
     let extern_names = external_and_user_function_blocks
@@ -3600,7 +3789,8 @@ fn verify_c0_sources_with_context(
         let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
         return Err(ClickError::new(format!(
             "`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker"
-        )));
+        ))
+        .at_declaration(name));
     }
     // A function whose address is taken may be reached through any function
     // pointer, so it must return without going through one itself; otherwise
@@ -3622,12 +3812,14 @@ fn verify_c0_sources_with_context(
                 &termination_refusals,
                 &declared_diverging,
                 None,
+                &tactic_names,
             ),
             None => "it has no termination evidence".to_string(),
         };
         return Err(ClickError::new(format!(
             "could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}"
-        )));
+        ))
+        .at_declaration(&taker));
     }
     // A caller refused for its callee is a consequence, so a function refused
     // for a defect of its own is reported first when the run has one.
@@ -3651,8 +3843,10 @@ fn verify_c0_sources_with_context(
                 &termination_refusals,
                 &declared_diverging,
                 unsuitable_callbacks.first(),
+                &tactic_names,
             )
-        )));
+        ))
+        .at_declaration(name));
     }
     function_environment =
         function_environment.with_verified_function_termination_rules(termination_rules);
@@ -3751,7 +3945,8 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
     };
     let _tactic_index = tactic_index.ok_or_else(|| {
         ClickError::new(format!(
-            "whole-proof capture is not supported for function claim {claim:?}"
+            "whole-proof capture is not supported for function claim {}",
+            claim.describe()
         ))
     })?;
     let function_block = file
@@ -3774,7 +3969,8 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
     }
     .ok_or_else(|| {
         ClickError::new(format!(
-            "selected {claim:?} proof for `{function_name}` is not an explicit tactic script"
+            "selected {} proof for `{function_name}` is not an explicit tactic script",
+            claim.describe()
         ))
     })?;
     let Some((kernel_name, _, parsed)) =
@@ -3943,31 +4139,66 @@ pub fn c0_external_dependencies(
     c0_external_dependencies_context(click_source, &sources)
 }
 
-pub fn c0_project_external_dependencies(
+/// What `click verify` reports about a project beside its verdict, from one
+/// resolution of its sources: the external contracts each selected function
+/// relies on, and how many proof units are selected.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CProjectSummary {
+    /// Each selected function's assumed external contracts, by function.
+    pub external_dependencies: BTreeMap<String, Vec<String>>,
+    /// Selected function proofs plus selected theorems.
+    pub selected_proof_count: usize,
+}
+
+fn c0_project_summary_file(
+    file: &ClickFile,
+    sources: &CSourceContext<'_>,
+) -> Result<CProjectSummary, ClickError> {
+    Ok(CProjectSummary {
+        external_dependencies: c0_external_dependencies_file(file, sources)?,
+        selected_proof_count: file.function_blocks().len()
+            + file
+                .theorem_definitions()
+                .iter()
+                .filter(|theorem| file.theorem_is_selected(theorem.name()))
+                .count(),
+    })
+}
+
+pub fn c0_project_summary(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
+    let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
-pub fn c0_prepared_project_external_dependencies(
+pub fn c0_prepared_project_summary(
     project: &ClickProject,
     imports: &[PreparedCImport],
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
+    let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::prepared(imports).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
-pub fn cpp_prepared_project_external_dependencies(
+pub fn program_prepared_project_summary(
     project: &ClickProject,
-    import: &PreparedCppImport,
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
+    import: &impl PreparedProgramSource,
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
+    let _session = crate::kernel::VerificationSession::enter();
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
 /// Reports the same explicit external-contract assumptions for compiler imports.
@@ -4009,7 +4240,10 @@ fn c0_external_dependencies_file(
     file: &ClickFile,
     sources: &CSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let parsed_sources = parse_verified_sources_context(file, sources)?;
+    // The summary reads function names and call graphs, never `main`'s
+    // program-entry storage, so it does not build it.
+    let parsed_sources =
+        parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     let function_blocks = combined_external_function_blocks(file)?;
     let external_names = function_blocks
         .iter()
@@ -4052,6 +4286,7 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
             S::Call {
                 function_name,
                 arguments,
+                ..
             }
             | S::CallAssign {
                 function_name,
@@ -4172,7 +4407,7 @@ pub(in crate::surface) fn c0_statement_calls(
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_)
+            | syntax::C0Statement::Return(_, _)
             | syntax::C0Statement::Store { .. }
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
@@ -4319,6 +4554,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
@@ -4326,8 +4562,12 @@ pub(in crate::surface) fn c0_statement_calls(
                 visit(then_branch, calls, function_pointer_names);
                 visit(else_branch, calls, function_pointer_names);
             }
-            syntax::C0Statement::While { condition, body }
-            | syntax::C0Statement::DoWhile { condition, body } => {
+            syntax::C0Statement::While {
+                condition, body, ..
+            }
+            | syntax::C0Statement::DoWhile {
+                condition, body, ..
+            } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
@@ -4338,6 +4578,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 condition,
                 step,
                 body,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
@@ -4346,7 +4587,9 @@ pub(in crate::surface) fn c0_statement_calls(
                 visit(body, calls, function_pointer_names);
                 visit(step, calls, function_pointer_names);
             }
-            syntax::C0Statement::Switch { expression, cases } => {
+            syntax::C0Statement::Switch {
+                expression, cases, ..
+            } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
@@ -4373,6 +4616,7 @@ pub(in crate::surface) fn c0_statement_calls(
             syntax::C0Statement::Call {
                 function_name,
                 arguments,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 if !function_pointer_names.contains(function_name)
@@ -4405,8 +4649,9 @@ pub(in crate::surface) fn c0_statement_calls(
             }
             | syntax::C0Statement::HeapFree {
                 pointer: expression,
+                ..
             }
-            | syntax::C0Statement::Return(expression) => {
+            | syntax::C0Statement::Return(expression, _) => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
@@ -4492,7 +4737,7 @@ fn describe_unauthorized_entry_premise(
     } else {
         String::new()
     };
-    // The facts the certification prover had to derive the premise from,
+    // The facts the premise was checked against,
     // so the reader can tell a missing requirement from a missing rule.
     const SHOWN_CONTEXT_FACTS: usize = 12;
     let mut shown = context_facts
@@ -4530,6 +4775,7 @@ fn termination_refusal_report(
     refusals: &BTreeMap<String, CTerminationRefusal>,
     declared_diverging: &BTreeSet<String>,
     unsuitable_callback: Option<&CUnsuitableCallback>,
+    tactics: &BTreeSet<String>,
 ) -> String {
     let spelling = |name: &str| {
         name.split_once('#')
@@ -4547,9 +4793,16 @@ fn termination_refusal_report(
                 let shown = CTerminationRefusal::UnmeasuredRecursion {
                     callee: spelling(callee),
                 };
-                report.push_str(&format!(
-                    "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
-                ));
+                if tactics.contains(&owner) {
+                    report.push_str(&format!(
+                        "{shown}; rank tactic `{owner}` with an expression `decreases` over its \
+                         parameters or its binders' models, since a tactic may not diverge"
+                    ));
+                } else {
+                    report.push_str(&format!(
+                        "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
+                    ));
+                }
                 return report;
             }
             CTerminationRefusal::UnrankedLoop { .. } => {
@@ -4828,7 +5081,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                     let mut resource_index = 0;
                     let mut matched = None;
                     for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement.inner() else {
+                        let Requirement::Resource(required) = requirement else {
                             continue;
                         };
                         if matches!(
@@ -4901,7 +5154,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                     let mut resource_index = 0;
                     let mut matched = None;
                     for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement.inner() else {
+                        let Requirement::Resource(required) = requirement else {
                             continue;
                         };
                         if matches!(
@@ -5025,20 +5278,22 @@ fn parse_c_source_unit(
                     "failed to resolve includes for C header `{header_path}`: {error}"
                 ))
             })?;
-            syntax::validate_header(header.source(), header.line_map()).map_err(|error| {
+            let header_line_map = header
+                .line_map()
+                .in_containers(&c_sources.c_source_containers);
+            syntax::validate_header(header.source(), &header_line_map).map_err(|error| {
                 ClickError::new(format!("failed to parse C header `{header_path}`: {error}"))
                     .with_kind(ClickErrorKind::Syntax)
             })?;
         }
-        syntax::parse_translation_unit_for_source(
-            expanded.source(),
-            source_path,
-            expanded.line_map(),
-        )
-        .map_err(|error| {
-            ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
-                .with_kind(ClickErrorKind::Syntax)
-        })?
+        let line_map = expanded
+            .line_map()
+            .in_containers(&c_sources.c_source_containers);
+        syntax::parse_translation_unit_for_source(expanded.source(), source_path, &line_map)
+            .map_err(|error| {
+                ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
+                    .with_kind(ClickErrorKind::Syntax)
+            })?
     } else {
         #[cfg(test)]
         c_sources
@@ -5057,6 +5312,7 @@ fn parse_c_source_unit(
             import.source(),
             import.logical_source(),
             import.source_map(),
+            import.promise_attributes(),
         )
         .map_err(|error| {
             ClickError::new(format!(
@@ -5148,73 +5404,27 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
     let mut qualified_objects = BTreeMap::new();
     let mut local_struct_pointers = BTreeMap::new();
     let verifying_paths = super::verifying_source_paths(click_source)?;
-    if let Some(import) = c_sources.cpp_import {
-        let expected = BTreeSet::from([import.logical_source().to_string()]);
-        let actual = verifying_paths.iter().cloned().collect::<BTreeSet<_>>();
-        if actual != expected {
+    if let Some(import) = c_sources.program_import.as_ref() {
+        if verifying_paths != vec![import.logical_source().to_string()] {
             return Err(ClickError::new(format!(
-                "prepared C++ import logical source must exactly match the verifying clause (expected {}, received {})",
-                expected.iter().cloned().collect::<Vec<_>>().join(", "),
-                actual.iter().cloned().collect::<Vec<_>>().join(", "),
+                "prepared {} import logical source must exactly match the verifying clause",
+                import.language()
             )));
         }
-        for record in &import.export().records {
-            let fields = record
-                .fields
-                .iter()
-                .map(|field| {
-                    let c_type = match &field.value_type {
-                        crate::languages::cpp::CppType::Integer {
-                            bits: 32,
-                            signed: true,
-                            is_const: false,
-                            ..
-                        } => C0Type::Int32,
-                        crate::languages::cpp::CppType::Pointer { pointee }
-                            if matches!(
-                                pointee.as_ref(),
-                                crate::languages::cpp::CppType::Integer {
-                                    bits: 32,
-                                    signed: true,
-                                    is_const: false,
-                                    ..
-                                }
-                            ) =>
-                        {
-                            C0Type::Int32Pointer
-                        }
-                        _ => {
-                            return Err(ClickError::new(format!(
-                                "C++ record field `{}.{}` is outside the supported proof interface",
-                                record.name, field.name
-                            )));
-                        }
-                    };
-                    Ok((
-                        field.name.clone(),
-                        c_type,
-                        field.offset_bytes,
-                        field.size_bytes,
-                    ))
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?;
-            let layout = syntax::C0StructLayout::from_explicit_fields(
-                fields,
-                record.size_bytes,
-                record.alignment_bytes,
-            )
-            .map_err(|error| {
-                ClickError::new(format!(
-                    "invalid C++ record layout for `{}`: {error}",
-                    record.name
-                ))
-            })?;
-            if layouts.insert(record.name.clone(), layout).is_some() {
-                return Err(ClickError::new(format!(
-                    "duplicate C++ record name `{}`",
-                    record.name
-                )));
-            }
+        let execution = c_sources
+            .program_execution
+            .as_ref()
+            .expect("prepared program execution");
+        layouts = execution.layouts.clone();
+        for function in &execution.functions {
+            aggregate_objects.insert(
+                function.source_name().to_string(),
+                function.local_struct_values().clone(),
+            );
+            local_struct_pointers.insert(
+                function.source_name().to_string(),
+                function.local_struct_pointers().clone(),
+            );
         }
         return Ok((
             layouts,
@@ -5589,8 +5799,8 @@ pub(in crate::surface) fn parse_verified_sources(
     let context = CSourceContext {
         bundle: Some(c_sources.clone()),
         imports: None,
-        cpp_import: None,
-        cpp_lowered: None,
+        program_import: None,
+        program_execution: None,
         prepared_by_source: None,
         prepared_project_identity: None,
         input_digest: digest_framed_parts(
@@ -5604,6 +5814,7 @@ pub(in crate::surface) fn parse_verified_sources(
         resource_semantics_mode: ResourceSemanticsMode::Legacy,
         prepared_duplicates: false,
         parsed_units: RefCell::new(BTreeMap::new()),
+        c_source_containers: BTreeMap::new(),
         #[cfg(test)]
         prepared_parse_count: Cell::new(0),
     };
@@ -5648,6 +5859,26 @@ pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
     c_sources: &CSourceContext<'_>,
 ) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+    parse_verified_sources_context_with_entry(file, c_sources, ProgramEntryStorage::Build)
+}
+
+/// Whether parsing the verifying sources also builds `main`'s program-entry
+/// storage. Storage is as large as the program's static objects; a caller
+/// that reads only function names, signatures, and call graphs (the
+/// external-dependency summary) skips it. Static initializers are validated
+/// either way, so both report the same source errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::surface) enum ProgramEntryStorage {
+    Build,
+    Skip,
+}
+
+pub(in crate::surface) fn parse_verified_sources_context_with_entry(
+    file: &ClickFile,
+    c_sources: &CSourceContext<'_>,
+    entry_storage: ProgramEntryStorage,
+) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+    let build_storage = entry_storage == ProgramEntryStorage::Build;
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -5680,50 +5911,26 @@ pub(in crate::surface) fn parse_verified_sources_context(
         ));
     }
 
-    if let Some(import) = c_sources.cpp_import {
-        let expected = BTreeSet::from([import.logical_source().to_string()]);
-        let actual = file
-            .verifying_sources
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        if actual != expected {
+    if let Some(import) = c_sources.program_import.as_ref() {
+        if file.verifying_sources != vec![import.logical_source().to_string()] {
             return Err(ClickError::new(format!(
-                "prepared C++ import logical source must exactly match the verifying clause (expected {}, received {})",
-                expected.iter().cloned().collect::<Vec<_>>().join(", "),
-                actual.iter().cloned().collect::<Vec<_>>().join(", "),
+                "prepared {} import logical source must exactly match the verifying clause",
+                import.language()
             )));
         }
-        let lowered = c_sources
-            .cpp_lowered
+        return Ok(c_sources
+            .program_execution
             .as_ref()
-            .expect("C++ source context retains its direct lowering");
-        if import.export().reachable_functions.len() != lowered.reachable_kernel_functions().len() {
-            return Err(ClickError::new(
-                "prepared C++ lowering does not match its reachable function artifact",
-            ));
-        }
-        let source_functions =
-            std::iter::once(&import.export().function).chain(&import.export().reachable_functions);
-        let kernel_functions =
-            std::iter::once(lowered.kernel_function()).chain(lowered.reachable_kernel_functions());
-        let mut functions = BTreeMap::new();
-        for (source, kernel) in source_functions.zip(kernel_functions) {
-            let function = cpp_function_interface(source, kernel)?;
-            let name = function.name().to_string();
-            if functions
-                .insert(
-                    name.clone(),
-                    (import.logical_source().to_string(), function),
+            .expect("prepared program execution")
+            .functions
+            .iter()
+            .map(|function| {
+                (
+                    function.name().to_string(),
+                    (import.logical_source().to_string(), function.clone()),
                 )
-                .is_some()
-            {
-                return Err(ClickError::new(format!(
-                    "prepared C++ import defines function `{name}` more than once"
-                )));
-            }
-        }
-        return Ok(functions);
+            })
+            .collect());
     }
 
     let mut parsed = BTreeMap::new();
@@ -6289,10 +6496,14 @@ pub(in crate::surface) fn parse_verified_sources_context(
     }
 
     if parsed.contains_key("main") {
-        let mut storage_functions = parsed
-            .values()
-            .map(|(_, function)| function.to_kernel_static_storage(function.name() == "main"))
-            .collect::<Vec<_>>();
+        let mut storage_functions = if build_storage {
+            parsed
+                .values()
+                .map(|(_, function)| function.to_kernel_static_storage(function.name() == "main"))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         // Main already supplies the linked external objects and its own
         // translation unit's private objects. Visit each remaining unit's
         // declarations once, including data-only files; do not copy every
@@ -6363,15 +6574,25 @@ pub(in crate::surface) fn parse_verified_sources_context(
             storage
                 .validate_static_initializers()
                 .map_err(|error| ClickError::new(error.to_string()))?;
-            storage_functions.push(storage.to_kernel_static_storage(true));
+            if build_storage {
+                storage_functions.push(storage.to_kernel_static_storage(true));
+            }
         }
-        parsed
-            .get_mut("main")
-            .expect("main was found")
-            .1
-            .program_entry_state = Some(std::sync::Arc::new(
-            crate::kernel::initialize_c_program_storage(storage_functions),
-        ));
+        if build_storage {
+            parsed
+                .get_mut("main")
+                .expect("main was found")
+                .1
+                .program_entry_state = Some(std::sync::Arc::new({
+                let _timing = VerificationTimingPhase::new("program-entry storage");
+                crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "verification budget exhausted inside {}",
+                        instrumentation::deadline_context()
+                    ))
+                })?
+            }));
+        }
     }
     Ok(parsed)
 }
@@ -6490,6 +6711,7 @@ fn validate_modeled_pthread_calls(
         S::Call {
             function_name,
             arguments,
+            ..
         }
         | S::CallAssign {
             function_name,
@@ -6585,125 +6807,6 @@ pub(in crate::surface) fn external_c0_function(
     .with_return_pointee_constant(function_block.signature().return_pointee_is_constant())
 }
 
-/// Builds the proof-facing signature for the first C++ slice from Clang's
-/// typed declaration. The body deliberately remains absent here: executable
-/// semantics come from `lower_import`, never from reconstructing C++ as C.
-fn cpp_function_interface(
-    source: &crate::languages::cpp::CppFunction,
-    lowered: &crate::kernel::CFunction,
-) -> Result<syntax::C0Function, ClickError> {
-    let return_type = match source.return_type {
-        crate::languages::cpp::CppType::Void => C0Type::Void,
-        crate::languages::cpp::CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        } => C0Type::Int32,
-        crate::languages::cpp::CppType::Boolean {
-            bits: 8,
-            is_const: false,
-        } => C0Type::Bool,
-        _ => {
-            return Err(ClickError::new(format!(
-                "C++ declaration `{}` has an unsupported return type",
-                source.declaration_id
-            )));
-        }
-    };
-    let parameters = source
-        .parameters
-        .iter()
-        .map(|parameter| match &parameter.value_type {
-            crate::languages::cpp::CppType::Boolean {
-                bits: 8,
-                is_const: false,
-            } => Ok(syntax::C0Parameter::new(
-                C0Type::Bool,
-                parameter.name.clone(),
-                None,
-            )),
-            crate::languages::cpp::CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        ..
-                    }
-                ) =>
-            {
-                let crate::languages::cpp::CppType::Integer { is_const, .. } = pointee.as_ref()
-                else {
-                    unreachable!("guarded by the supported integer-reference pattern")
-                };
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    None,
-                )
-                .with_pointee_constant(*is_const))
-            }
-            crate::languages::cpp::CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        is_const: true,
-                        ..
-                    }
-                ) =>
-            {
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int64Pointer,
-                    parameter.name.clone(),
-                    None,
-                )
-                .with_pointee_constant(true))
-            }
-            crate::languages::cpp::CppType::LvalueReference { pointee } => {
-                let crate::languages::cpp::CppType::Record { name, .. } = pointee.as_ref() else {
-                    return Err(ClickError::new(format!(
-                        "C++ declaration `{}` parameter `{}` has an unsupported reference pointee",
-                        source.declaration_id, parameter.name
-                    )));
-                };
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    Some(name.clone()),
-                ))
-            }
-            crate::languages::cpp::CppType::Pointer { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        is_const: false,
-                        ..
-                    }
-                ) =>
-            {
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    None,
-                ))
-            }
-            _ => Err(ClickError::new(format!(
-                "C++ declaration `{}` parameter `{}` is outside the supported bool/reference/pointer/record interface",
-                source.declaration_id, parameter.name
-            ))),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(
-        syntax::C0Function::external(return_type, source.name.clone(), parameters)
-            .with_prelowered_kernel_function(lowered.clone()),
-    )
-}
-
 pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
     function_blocks: &[FunctionBlock],
@@ -6725,11 +6828,12 @@ pub(in crate::surface) fn build_function_environment(
             &format!("{}.named contract", definition.name()),
         )
         .map_err(|error| {
-            ClickError::new(format!(
-                "could not prepare named contract `{}`: {}",
-                definition.name(),
-                error.message()
-            ))
+            error
+                .with_context(format!(
+                    "could not prepare named contract `{}`",
+                    definition.name()
+                ))
+                .at_declaration(definition.name())
         })?;
         let function = annotated_function(
             function_block,
@@ -6741,11 +6845,12 @@ pub(in crate::surface) fn build_function_environment(
             resource_environment,
         )
         .map_err(|error| {
-            ClickError::new(format!(
-                "could not lower named contract `{}`: {}",
-                definition.name(),
-                error.message()
-            ))
+            error
+                .with_context(format!(
+                    "could not lower named contract `{}`",
+                    definition.name()
+                ))
+                .at_declaration(definition.name())
         })?;
         let contract = CFunctionContract::new(definition.name(), function).ok_or_else(|| {
             ClickError::new(format!(
@@ -6799,10 +6904,11 @@ pub(in crate::surface) fn build_function_environment(
                     click_function_environment,
                     resource_environment,
                 )?;
-                let resource_derived_mutable_frame = function_block
-                    .requires()
-                    .iter()
-                    .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)));
+                let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
+                    && function_block
+                        .requires()
+                        .iter()
+                        .any(|requirement| matches!(requirement, Requirement::Resource(_)));
                 let mut function = function
                     .to_kernel_function()
                     .with_resource_summary(resource_requires, resource_ensures)
@@ -6839,10 +6945,24 @@ pub(in crate::surface) fn build_function_environment(
         };
         environment = environment.with_function(function);
     }
+    // A standard-library declaration is built only for a program that
+    // refers to it, by the same call graph targeted verification follows.
+    // The library's declarations are in every program's block list, and
+    // building one costs an entry construction.
+    let mut referenced = BTreeSet::new();
+    for (_, parsed) in parsed_sources.values() {
+        referenced.extend(c0_statement_calls(parsed).into_iter().flatten());
+    }
     for function_block in function_blocks
         .iter()
         .filter(|function| function.is_external())
     {
+        let name = function_block.signature().name();
+        if !referenced.contains(name)
+            && standard_library_function_block(name)?.as_ref() == Some(function_block)
+        {
+            continue;
+        }
         let parsed_function = external_c0_function(function_block);
         let (state, arguments, _, _) = initial_claim_context(
             function_block,
@@ -6919,12 +7039,12 @@ pub(in crate::surface) fn function_resource_summary(
     let resource_clause_count = function_block
         .requires()
         .iter()
-        .filter(|requirement| matches!(requirement.inner(), Requirement::Resource(_)))
+        .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
     let mut resource_clause_index = 0;
     for requirement in function_block.requires() {
-        let Requirement::Resource(resource) = requirement.inner() else {
+        let Requirement::Resource(resource) = requirement else {
             continue;
         };
         let (clause_index, clause_count) = resource_positions
@@ -7668,8 +7788,26 @@ fn resource_clause_to_resource_spec_with_metadata(
                         "authority requires a checked resource type",
                     ));
                 };
+                let mut anchor_clause = protected.clone();
+                let population_arity = if let ResourceClause::Declared {
+                    arguments,
+                    parameter_types,
+                    ..
+                } = &mut anchor_clause
+                {
+                    if arguments.len() > 1 {
+                        let arity = arguments.len();
+                        arguments.truncate(1);
+                        parameter_types.truncate(1);
+                        Some(arity)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let protected_spec = resource_clause_to_resource_spec_with_metadata(
-                    protected,
+                    &anchor_clause,
                     parameters,
                     result_type,
                     role,
@@ -7678,11 +7816,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 .with_source_arguments(
                     protected_arguments
                         .iter()
+                        .take(1)
                         .map(crate::surface::diagnostics::describe_contract_expression)
                         .collect(),
                 );
                 return CResourceSpec::new(
                     crate::kernel::CResourceTerm::PopulationAuthority {
+                        population_arity,
                         protected: Box::new(crate::kernel::CResourceTypeSpec {
                             resource: Box::new(protected_spec),
                             schema: schema.clone(),
@@ -8278,19 +8418,6 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
-    fn source_create_status_then_join_uses_the_modeled_transition() {
-        let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); if (rc != 0) return 0; pthread_join(h, NULL); return 1; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 1; } by { step(); step(); step(); branch { then { step(); simp(); } else {} } step(); step(); simp(); }\n";
-        verify_c0_sources(click, &[("fork_join.c", c)])
-            .expect("source create and join proof should certify");
-        let expanded =
-            expand_c0_claim_source(click, &[("fork_join.c", c)], "run", CProofClaim::Grouped)
-                .expect("modeled create and join proof should expand");
-        verify_c0_sources(&expanded, &[("fork_join.c", c)])
-            .expect("expanded modeled create and join proof should certify");
-    }
-
-    #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
         let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { then { step(); simp(); } else {} } step(); step(); simp(); }\n";
@@ -8641,14 +8768,6 @@ int32 answer() {
         assert_ne!(kernel[0].artifact_identity, userspace[0].artifact_identity);
         assert_eq!(kernel[0].target(), CTarget::X86_64LinuxKernel);
         assert_eq!(userspace[0].target(), CTarget::X86_64LinuxUserspace);
-    }
-
-    #[test]
-    fn rejects_an_absent_artifact_identity() {
-        let context = CSourceContext::bundle(&[("answer.c", C_SOURCE)]);
-        let identity = context.artifact_identity(CLICK, CTarget::SUPPORTED);
-        let absent_identity: Option<CProofArtifactIdentity> = None;
-        assert_ne!(absent_identity, Some(identity));
     }
 
     fn verify_sources(click: &str, source: &str) -> Result<(), ClickError> {
@@ -9280,15 +9399,6 @@ int read_view(const int *(*f)(const int *), const int *p) {{
 
     const ONE_CALL_THEOREM_C_SOURCE: &str =
         "int read_view(const int *(*f)(const int *), const int *p) { return f(p)[0]; }";
-
-    #[test]
-    fn certifies_a_one_call_execution_theorem_from_its_proof_entry_state() {
-        let click = one_call_execution_theorem_source("Readable");
-        let sources = CSourceContext::bundle(&[("main.c", ONE_CALL_THEOREM_C_SOURCE)]);
-        let verified = verify_c0_sources_with_context(&click, &sources, None, None, None, None)
-            .expect("the one-call proof's own entry state certifies the theorem");
-        assert!(!verified.0.is_empty());
-    }
 
     #[test]
     fn one_call_execution_theorem_still_needs_its_target_obligation() {

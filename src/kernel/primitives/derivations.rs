@@ -13,6 +13,19 @@ impl Theorem {
 }
 
 impl PropositionDerivation {
+    /// Whether this equality retained exact constants and singleton bounds.
+    /// Surface transcription uses only the retained context premises to emit
+    /// an independently checked signed arithmetic certificate.
+    pub fn is_int32_pinned_constant_equality(&self) -> bool {
+        matches!(
+            &self.rule,
+            PropositionDerivationRule::ContextualAtomic {
+                evidence: AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(_),
+                ..
+            }
+        )
+    }
+
     pub fn conclusion(&self) -> &Proposition {
         &self.conclusion
     }
@@ -552,19 +565,6 @@ impl PropositionDerivation {
         premises.into_iter().collect()
     }
 
-    /// The exact constructor equality cited by a checked injectivity step.
-    /// Certificate lowering uses this only to select the existing `extract`
-    /// syntax; proof checking recomputes the field equality independently.
-    pub(crate) fn algebraic_constructor_injectivity_source(&self) -> Option<(&Proposition, usize)> {
-        match &self.rule {
-            PropositionDerivationRule::AlgebraicConstructorInjectivity {
-                source,
-                field_index,
-            } => Some((source, *field_index)),
-            _ => None,
-        }
-    }
-
     fn collect_context_premises(&self, premises: &mut BTreeSet<Proposition>) {
         fn collect_local_assumptions(
             proposition: &Proposition,
@@ -662,6 +662,14 @@ impl PropositionDerivation {
                 equality.collect_context_premises(premises);
                 body.collect_context_premises(premises);
             }
+            PropositionDerivationRule::RefutedDisjunction { disjunction } => {
+                premises.insert(disjunction.as_ref().clone());
+                let mut cases = Vec::new();
+                collect_or_cases(disjunction, &mut cases);
+                for case in cases {
+                    premises.insert(Proposition::Not(Box::new(case)));
+                }
+            }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
                 premises.insert(disjunction.as_ref().clone());
                 let mut case_propositions = Vec::new();
@@ -684,7 +692,7 @@ impl PropositionDerivation {
 impl PointerOffsetCongruenceEvidence {
     fn equality_paths(&self) -> Vec<&[BitvectorEqualityDerivationStep]> {
         match self {
-            Self::Exact | Self::ExactPremise(_) => Vec::new(),
+            Self::Exact | Self::ExactPremise(_) | Self::WideScaledConstant { .. } => Vec::new(),
             Self::Add { first, second, .. } => {
                 let mut paths = first.equality_paths();
                 paths.extend(second.equality_paths());
@@ -705,6 +713,14 @@ impl PointerOffsetCongruenceEvidence {
     ) -> bool {
         match self {
             Self::Exact => left == right,
+            Self::WideScaledConstant { value } => {
+                crate::kernel::assumptions::exact_wide_scaled_offset_constant(left, assumptions)
+                    == Some(*value)
+                    && crate::kernel::assumptions::exact_wide_scaled_offset_constant(
+                        right,
+                        assumptions,
+                    ) == Some(*value)
+            }
             Self::ExactPremise(premise) => {
                 let Proposition::ConditionIs(
                     ConditionTerm::PointerOffsetEqual(premise_left, premise_right),
@@ -837,6 +853,25 @@ impl PointerOffsetCongruenceEvidence {
     }
 }
 
+impl SignedConstantEvidence {
+    pub(in crate::kernel) fn exact_equality_value(
+        term: &Bitvector32Term,
+        source: &Proposition,
+    ) -> Option<i64> {
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = source
+        else {
+            return None;
+        };
+        if left.as_ref() == term {
+            signed_bitvector_constant(right)
+        } else if right.as_ref() == term {
+            signed_bitvector_constant(left)
+        } else {
+            None
+        }
+    }
+}
+
 impl DirectBitvectorEqualityEvidence {
     pub(in crate::kernel) fn checks(
         &self,
@@ -864,6 +899,11 @@ impl DirectBitvectorEqualityEvidence {
                     |term: &Bitvector32Term, evidence: &SignedConstantEvidence| match evidence {
                         SignedConstantEvidence::Constant => {
                             signed_bitvector_constant(term) == Some(*value)
+                        }
+                        SignedConstantEvidence::ExactEquality(source) => {
+                            assumptions.contains_assumed_exact(source)
+                                && SignedConstantEvidence::exact_equality_value(term, source)
+                                    == Some(*value)
                         }
                         SignedConstantEvidence::SingletonBounds {
                             variable,
@@ -911,7 +951,17 @@ impl DirectBitvectorEqualityEvidence {
                                     {
                                         return None;
                                     }
-                                    let bound = signed_bitvector_constant(&evidence.other)?;
+                                    let bound = if let Some(source) = &evidence.other_equality {
+                                        if !assumptions.contains_assumed_exact(source) {
+                                            return None;
+                                        }
+                                        SignedConstantEvidence::exact_equality_value(
+                                            &evidence.other,
+                                            source,
+                                        )?
+                                    } else {
+                                        signed_bitvector_constant(&evidence.other)?
+                                    };
                                     if lower_bound {
                                         if evidence.strict {
                                             bound.checked_add(1)
@@ -965,9 +1015,19 @@ impl DirectBitvectorEqualityEvidence {
     fn collect_context_premises(&self, premises: &mut BTreeSet<Proposition>) {
         let collect_signed = |evidence: &SignedConstantEvidence,
                               premises: &mut BTreeSet<Proposition>| {
-            if let SignedConstantEvidence::SingletonBounds { lower, upper, .. } = evidence {
-                premises.insert(lower.source.as_ref().clone());
-                premises.insert(upper.source.as_ref().clone());
+            match evidence {
+                SignedConstantEvidence::Constant => {}
+                SignedConstantEvidence::ExactEquality(source) => {
+                    premises.insert(source.as_ref().clone());
+                }
+                SignedConstantEvidence::SingletonBounds { lower, upper, .. } => {
+                    for bound in [lower, upper] {
+                        premises.insert(bound.source.as_ref().clone());
+                        if let Some(source) = &bound.other_equality {
+                            premises.insert(source.as_ref().clone());
+                        }
+                    }
+                }
             }
         };
         match self {
@@ -1012,7 +1072,12 @@ impl LoadAddressCongruenceEvidence {
         ) else {
             return false;
         };
+        // Congruent addresses in one snapshot name one value only when the two
+        // reads are one kind of read.
         left_memory == right_memory
+            && crate::kernel::eval::registered_load_kind_for_variable(left).is_some()
+            && crate::kernel::eval::registered_load_kind_for_variable(left)
+                == crate::kernel::eval::registered_load_kind_for_variable(right)
             && left_pointer == self.left_pointer
             && right_pointer == self.right_pointer
             && left_pointer.block == right_pointer.block
@@ -1726,7 +1791,8 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
                 cost.add_expression(1usize.saturating_add(c_expression_source_steps(pointer)));
                 cost.add_expression(c_expression_source_steps(value));
             }
-            CStatement::CopyAggregate { target, source, .. } => {
+            CStatement::CopyAggregate { target, source, .. }
+            | CStatement::InitializeScalarArray { target, source, .. } => {
                 cost.add_expression(c_expression_source_steps(target));
                 cost.add_expression(c_expression_source_steps(source));
             }

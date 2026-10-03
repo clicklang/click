@@ -54,8 +54,7 @@ Euclidean division: for nonzero `d`,
 `a == (a / d) * d + a % d` and `0 <= a % d < abs(d)`.
 
 Thus `-7 / 3 == -3` and `-7 % 3 == 2`; this is distinct from C's truncation
-toward zero. A zero divisor is a definedness obligation. See the deferred
-[division and remainder issue](https://github.com/clicklang/click/blob/master/issues/integer-division-and-remainder.md).
+toward zero. A zero divisor is a definedness obligation.
 
 Every checked conversion and every future checked division must establish its
 definedness in the current proof context before a theorem or execution
@@ -131,6 +130,27 @@ zero-premise tautologies are valid, while sparse or altered premise indices
 fail locally. Expansion prints ordinary proof steps, and ordinary verification
 rechecks those steps without rerunning the planner. Profiling and audit use the
 same checked boundary.
+
+A bounded nonlinear rule is available explicitly: the `integer_product_bounds`
+node in the special arithmetic family consumes four named constant-endpoint
+inequalities for the two operands. Multiplication is monotone in each operand
+when the other is fixed, with its direction set by that operand's sign; its
+extrema on a rectangle therefore occur at the four corners. The kernel checks
+those four exact products against the claimed constant lower or upper bound,
+including intervals crossing zero. This does not extend the arithmetic planner
+or reinterpret a machine product as an exact Integer product. The rule also
+checks interval ordering, proposition polarity, references, operand identity,
+and the selected conclusion.
+
+Operand comparison uses shared Integer node identities. One node reads exactly
+four premises; unused premises and deep operand subtrees do not increase its
+checking work. Big-integer multiplication and comparisons are charged from the
+numeric bit lengths before arithmetic starts. Deterministic regressions measure
+node inventories, unused facts, operand depth, magnitude, and the work-budget
+boundary. Pure Integer certificates round-trip and expand/reverify. A synthetic
+unchanged C identity wrapper checks a mathematical machine-observer product range
+across
+verification, expansion/reverification, profiling, and retained audit.
 
 Fold reasoning uses explicit empty-range and next-element laws. Fold terms are
 opaque affine atoms in the bounded certificate fragment. The planner accepts

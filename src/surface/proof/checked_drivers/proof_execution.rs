@@ -66,7 +66,7 @@ pub(in crate::surface::proof) fn take_region_depth_decline() -> bool {
 /// terminal diagnostic.
 #[track_caller]
 fn decline_operation<T>(operation: String, reason: &ClickError) -> Result<Option<T>, ClickError> {
-    let reason = reason.message();
+    let reason = reason.raw_summary();
     let reason = reason.split("\nproof context:").next().unwrap_or(reason);
     DECLINED_OPERATION.with(|declined| {
         *declined.borrow_mut() = Some(format!("{operation} was refused: {}", reason.trim()));
@@ -98,12 +98,31 @@ fn arm_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     }
 }
 
+/// Whether a tactic only relates facts and resources at the frontier where it
+/// stands, without running C: what an arm may do before the `contradiction`
+/// that refutes it.
+fn bridges_without_executing(tactic: &ProofTactic) -> bool {
+    matches!(
+        tactic,
+        ProofTactic::Have(_)
+            | ProofTactic::UnfoldResource(_)
+            | ProofTactic::UnfoldPredicate(_)
+            | ProofTactic::UnfoldFunction(_)
+            | ProofTactic::UnfoldFunctionUsing { .. }
+            | ProofTactic::ObserveResource(_)
+            | ProofTactic::ApplyTheorem(_)
+            | ProofTactic::ApplyTheoremUsing { .. }
+            | ProofTactic::UserTactic(_)
+    )
+}
+
 fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
+        ProofTactic::UserTactic(application) => Some(ProofStep::UserTactic(application.clone())),
         ProofTactic::TransportUsing {
             source,
             target,
@@ -156,7 +175,7 @@ fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
 fn expanded_execution_arm_supported(steps: &[ProofStep]) -> bool {
     steps.is_empty()
         || (matches!(steps.first(), Some(ProofStep::Step))
-            && matches!(steps.last(), Some(ProofStep::Step)))
+            && matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })))
 }
 
 fn linear_execution_tactics(node: &InternalProofNode) -> Option<&[IndexedTactic]> {
@@ -246,10 +265,7 @@ fn checked_execution_arm_tactics_end(
             flat_post_execution_tactic(&indexed.tactic)?;
             continue;
         }
-        if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             at_function_exit = true;
             continue;
         }
@@ -553,7 +569,6 @@ fn checked_linear_continuation_tactic(tactic: &ProofTactic) -> bool {
                 | ProofTactic::Have(_)
                 | ProofTactic::ExecuteUntil(_)
                 | ProofTactic::SmartExecute
-                | ProofTactic::SmartExecuteAllPaths
                 | ProofTactic::Loop(_)
         )
 }
@@ -827,24 +842,20 @@ fn advance_checked_linear_continuation<'a>(
                 })?;
             selected.join()?
         } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-            match proof.try_linear_execute_until(region)? {
-                Some(executed) => executed,
-                None => proof.apply_planned_execute_until(region, indexed.index)?,
-            }
-        } else if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
-            match proof.try_linear_execute()? {
+            match proof.try_execute_until(region)? {
                 Some(executed) => executed,
                 None => {
-                    // The planner fallback constructs the explicit checked
-                    // operations through the same law the interpreter used.
-                    let force_all_paths =
-                        matches!(indexed.tactic, ProofTactic::SmartExecuteAllPaths);
-                    // The planner's failure is the answer: it applies the
-                    // same statement steps with nothing more to see.
-                    proof.apply_planned_smart_execute(force_all_paths, indexed.index)?
+                    return Err(proof
+                        .step_error("`execute_until` found no checked step from this frontier"));
+                }
+            }
+        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
+            match proof.try_execute_to_exit()? {
+                Some(executed) => executed,
+                None => {
+                    return Err(proof.step_error(
+                        "`execute()` found no checked path from this frontier to function exit",
+                    ));
                 }
             }
         } else if let ProofTactic::Loop(clause) = &indexed.tactic {
@@ -904,7 +915,7 @@ fn advance_checked_linear_continuation<'a>(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn try_check_flat_function_proof<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -952,7 +963,7 @@ pub(in crate::surface::proof) fn try_check_flat_function_proof<'a>(
 #[allow(clippy::too_many_arguments)]
 fn try_check_flat_function_proof_inner<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -978,7 +989,7 @@ fn try_check_flat_function_proof_inner<'a>(
         claim_label,
         tactics[0].index,
         execution.clone(),
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         function_block,
         function,
@@ -1034,7 +1045,7 @@ fn try_check_flat_function_proof_inner<'a>(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -1082,7 +1093,7 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
 #[allow(clippy::too_many_arguments)]
 fn try_check_structural_function_proof_inner<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -1106,7 +1117,7 @@ fn try_check_structural_function_proof_inner<'a>(
             ClickError::new(format!("`{claim_label}` has no structural proof tactics"))
         })?,
         execution.clone(),
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         function_block,
         function,
@@ -1673,22 +1684,19 @@ pub(super) fn solve_nested_have<'a>(
     Ok(selected.filter(ProofScope::is_complete))
 }
 
-/// One smart statement step on a preservation-region descendant: the exact
-/// Proof selection first, the planner construction second, with the checked
-/// certificate delta pushed into the path's surface record. Shared by the
-/// preservation driver and the automatic-preservation search.
+/// One smart statement step on a preservation-region descendant, with the
+/// checked certificate delta pushed into the path's surface record. Shared
+/// by the preservation driver and the automatic-preservation search. A
+/// frontier the step declines (an undecided C `if`, a loop, a call's
+/// outcomes) is refused with the bare step's own diagnostic.
 pub(in crate::surface::proof) fn preservation_smart_step<'a>(
     proof: Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
     let mut retried_requirements = std::collections::BTreeSet::new();
-    let advanced = if let Some(stepped) =
-        proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?
-    {
-        stepped
-    } else {
-        proof.apply_planned_smart_step(0)?
-    };
-    Ok(advanced)
+    match proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)? {
+        Some(stepped) => Ok(stepped),
+        None => proof.apply_step(ProofStep::Step),
+    }
 }
 
 /// Drives one preservation program region on the typed boundary `Proof`.
@@ -1890,6 +1898,14 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         proof = proof
                             .with_execution_tactic_index(indexed.index)?
                             .at_source_tactic(indexed.source_index);
+                        let statement_index = proof.execution_frontier_index().unwrap_or_default();
+                        let _timing = TacticTiming::new(
+                            claim_label,
+                            indexed.index,
+                            indexed.source_index,
+                            &indexed.tactic,
+                            statement_index,
+                        );
                         let checkpoint = proof.checkpoint();
                         proof = proof.apply_step(ProofStep::Step)?;
                         if indexed.source_index != owning_source_index
@@ -2444,13 +2460,15 @@ fn advance_focused_execution_arm<'a>(
                 indexed.index,
                 indexed.source_index,
             )?
-        } else if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let mut retried_requirements = std::collections::BTreeSet::new();
-            let Some(next) =
-                proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
+            let Some(next) = proof.try_focused_execute_to_exit_within(
+                Vec::new(),
+                &mut retried_requirements,
+                &mut 0,
+                None,
+                None,
+            )?
             else {
                 return decline();
             };
@@ -2591,7 +2609,58 @@ fn advance_execution_match<'a>(
     }
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
-    let plan = proof.plan_execution_match(source)?;
+    let mut plan = proof.plan_execution_match(source)?;
+    // An arm that only bridges facts and then refutes itself owes no C
+    // outcome either. Its bridge (`have`s, unfolds, theorem applications, no
+    // C step) runs in the arm, and its `contradiction` excludes the
+    // constructor from the facts the bridge reached, so it is planned like a
+    // sole `contradiction` rather than executed as a live arm that would
+    // have to reach function exit.
+    for (index, arm) in arms.iter().enumerate() {
+        if plan.excluded_certificate(index).is_some() {
+            continue;
+        }
+        let InternalProofNode::Linear {
+            tactics,
+            continuation,
+        } = arm
+        else {
+            continue;
+        };
+        let Some((last, bridge)) = tactics.split_last() else {
+            continue;
+        };
+        let ProofTactic::Contradiction(surface) = &last.tactic else {
+            continue;
+        };
+        if !matches!(continuation.as_ref(), InternalProofNode::Done)
+            || !bridge
+                .iter()
+                .all(|indexed| bridges_without_executing(&indexed.tactic))
+        {
+            continue;
+        }
+        let scoped = proof.enter_execution_match_arm(&plan, index)?;
+        let entered = scoped.checkpoint();
+        let Some(scoped) =
+            advance_focused_execution_arm(scoped, bridge, None, proof_site, owning_source_index)?
+        else {
+            continue;
+        };
+        let scoped = scoped.at_source_tactic(last.source_index);
+        scoped.exclude_execution_match_arm_after_bridge(
+            &mut plan,
+            index,
+            &entered,
+            surface,
+            last.source_index,
+        )?;
+    }
+    if plan.live_cases().is_empty() {
+        return Err(ClickError::new(
+            "proof match with every constructor excluded is not yet supported",
+        ));
+    }
     // A checked contradiction covers its dead constructor without a C outcome,
     // so only the live arms are executed and joined. Certificates are placed by
     // constructor index, not by the order the live arms are visited.
@@ -3353,19 +3422,74 @@ fn advance_checked_branch_arms<'a>(
     }))
 }
 
-fn linear_execution_steps(node: &InternalProofNode) -> Option<Vec<ProofStep>> {
-    linear_execution_tactics(node)?
-        .iter()
-        .map(|indexed| arm_proof_step(&indexed.tactic))
-        .collect()
+/// The simple execution steps an expanded arm spells: its simple tactics,
+/// and a nested proof `if` whose arms each spell simple steps that advance
+/// execution (a case split inside the arm, or a nested C branch). Anything
+/// else, including an `if` after the path has exited, is left to the
+/// structural driver.
+fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<ProofStep>> {
+    if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        return None;
+    }
+    let mut steps = Vec::new();
+    let mut node = node;
+    loop {
+        match node {
+            InternalProofNode::Done => return Some(steps),
+            InternalProofNode::Linear {
+                tactics,
+                continuation,
+            } => {
+                for indexed in tactics {
+                    steps.push(arm_proof_step(&indexed.tactic)?);
+                }
+                node = continuation;
+            }
+            InternalProofNode::If {
+                condition,
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            } => {
+                let then_steps = arm_execution_steps(then_branch, depth + 1)?;
+                let else_steps = arm_execution_steps(else_branch, depth + 1)?;
+                if !steps_advance_execution(&then_steps) || !steps_advance_execution(&else_steps) {
+                    return None;
+                }
+                steps.push(ProofStep::If {
+                    condition: condition.clone(),
+                    then_proof: Box::new(ProofCertificate::from_steps(then_steps).ok()?),
+                    else_proof: Box::new(ProofCertificate::from_steps(else_steps).ok()?),
+                });
+                node = continuation;
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn steps_advance_execution(steps: &[ProofStep]) -> bool {
+    steps.iter().any(|step| match step {
+        ProofStep::Step => true,
+        ProofStep::If {
+            then_proof,
+            else_proof,
+            ..
+        } => {
+            steps_advance_execution(then_proof.steps())
+                && steps_advance_execution(else_proof.steps())
+        }
+        _ => false,
+    })
 }
 
 fn expanded_execution_if_steps(
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
 ) -> Option<(Vec<ProofStep>, Vec<ProofStep>)> {
-    let then_steps = linear_execution_steps(then_branch)?;
-    let else_steps = linear_execution_steps(else_branch)?;
+    let then_steps = arm_execution_steps(then_branch, 0)?;
+    let else_steps = arm_execution_steps(else_branch, 0)?;
     (expanded_execution_arm_supported(&then_steps)
         && expanded_execution_arm_supported(&else_steps)
         && !(then_steps.is_empty() && else_steps.is_empty()))
@@ -3394,7 +3518,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(applied) = scope.try_theorem_application(application)? else {
+            let Some(applied) = scope.apply_theorem_application(application)? else {
                 return decline();
             };
             scope = applied;
@@ -3430,12 +3554,9 @@ fn advance_linear_open_scope<'a>(
             }
             continue;
         }
-        if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_linear_execute()? else {
+            let Some(executed) = scope.try_execute_to_exit()? else {
                 return decline();
             };
             scope = executed;
@@ -3454,7 +3575,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_linear_execute_until(region)? else {
+            let Some(executed) = scope.try_execute_until(region)? else {
                 return decline();
             };
             scope = executed;
@@ -3502,7 +3623,8 @@ fn advance_linear_open_scope<'a>(
         let nested = scope.begin_have(have.proposition.clone())?;
         let selected = solve_nested_have(nested, have)?;
         let Some(selected) = selected else {
-            return decline();
+            let fact = crate::surface::diagnostics::describe_click_proposition(&have.proposition);
+            return Err(ClickError::new(format!("Requires {fact}")));
         };
         scope = scope.join_nested(selected)?;
         if indexed.source_index != owning_source_index
@@ -3961,7 +4083,8 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepCall(transport) => transport.to_string(),
-        ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths => "execute()".to_string(),
+        ProofTactic::UserTactic(application) => application.tactic_spelling(),
+        ProofTactic::SmartExecute => "execute()".to_string(),
         ProofTactic::ExecuteUntil(region) => format!(
             "execute_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)

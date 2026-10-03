@@ -256,11 +256,20 @@ pub(in crate::surface) fn check_resource_field_schemas(
             );
         }
     }
-    for function in file.function_blocks.iter_mut().chain(
-        file.contract_definitions
-            .iter_mut()
-            .map(|contract| &mut contract.function_block),
-    ) {
+    for function in file
+        .function_blocks
+        .iter_mut()
+        .chain(
+            file.contract_definitions
+                .iter_mut()
+                .map(|contract| &mut contract.function_block),
+        )
+        .chain(
+            file.tactic_definitions
+                .iter_mut()
+                .map(TacticDefinition::function_block_mut),
+        )
+    {
         let mut bindings = BTreeMap::new();
         let parameter_names = function
             .signature
@@ -935,10 +944,11 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         click_function_environment,
         resource_environment,
     )?;
-    let resource_derived_mutable_frame = function_block
-        .requires()
-        .iter()
-        .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)));
+    let resource_derived_mutable_frame = !function_block.is_tactic_procedure()
+        && function_block
+            .requires()
+            .iter()
+            .any(|requirement| matches!(requirement, Requirement::Resource(_)));
     // A resource-derived function's write footprint is never lowered from
     // source: the kernel projects it from the checked resource transition,
     // and a loop inherits it as validated ranges installed at function
@@ -1016,7 +1026,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     lowerer.loop_resources = loop_resources;
     let parsed_kernel_function = parsed_function.to_kernel_function();
     let body = if parsed_function.prelowered_kernel_function().is_some() {
-        parsed_kernel_function.body().clone()
+        lowerer.lower_kernel_statement(parsed_kernel_function.body())?
     } else {
         lowerer.lower_statement(parsed_function.body(), parsed_function.control_targets())?
     };
@@ -1301,6 +1311,7 @@ fn fixed_state_elaboration<'a>(
         context
             .values
             .insert("result".to_string(), SpecExpression::Value(result.clone()));
+        context.contract_result_in_scope = true;
     }
     (lowerer, context)
 }
@@ -1737,12 +1748,12 @@ pub(in crate::surface) fn function_contract_summary(
         }
     }
     for (source_index, requirement) in function_block.requires().iter().enumerate() {
-        let proposition = match requirement.inner() {
+        let proposition = match requirement {
             Requirement::Proposition(proposition) => proposition.clone(),
             Requirement::LoadableSegment { segment } => ClickProposition::Loadable {
                 segment: segment.clone(),
             },
-            Requirement::Resource(_) | Requirement::Labeled { .. } => continue,
+            Requirement::Resource(_) => continue,
         };
         let opaque_predicate = matches!(
             &proposition,
@@ -1780,6 +1791,10 @@ pub(in crate::surface) fn function_contract_summary(
         .map(|parameter| parameter.name().to_string())
         .collect();
     let mut ensures = Vec::new();
+    // A postcondition is read in the exit state, where `result` is the
+    // contract result.
+    let mut ensures_context = context.clone();
+    ensures_context.contract_result_in_scope = true;
     for proposition in function_block
         .ensures()
         .iter()
@@ -1793,7 +1808,7 @@ pub(in crate::surface) fn function_contract_summary(
             ClickProposition::PredicateCall { name, .. }
                 if predicate_environment.get(name).is_some()
         )
-        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &context))
+        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
         .transpose();
         let Ok(proposition) = unfold_contract_predicates(proposition) else {
             opaque_contract_supported = false;
@@ -1803,7 +1818,7 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
-        match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
+        match lowerer.click_proposition_to_spec_proposition(&proposition, &ensures_context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
@@ -2331,6 +2346,92 @@ fn spec_integer_to_term(
 }
 
 impl AnnotationLowerer<'_> {
+    /// Attach the same checked loop clauses to compiler-lowered statements.
+    fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
+        Ok(match statement {
+            CStatement::Seq(a, b) => c_seq(
+                self.lower_kernel_statement(a)?,
+                self.lower_kernel_statement(b)?,
+            ),
+            CStatement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.next_statement_index();
+                c_if(
+                    condition.clone(),
+                    self.lower_kernel_statement(then_branch)?,
+                    self.lower_kernel_statement(else_branch)?,
+                )
+            }
+            CStatement::While {
+                condition,
+                invariant,
+                invariant_checks,
+                effect_checks,
+                resource_specs,
+                ranking_measures,
+                structural_measure,
+                do_while,
+                backedge_target,
+                natural_exit_target,
+                body,
+            } => {
+                self.next_statement_index();
+                let index = self.next_loop_index();
+                let body = self.lower_kernel_statement(body)?;
+                let (measures, structural) = self.loop_measure_clauses(index)?;
+                if (!ranking_measures.is_empty() || structural_measure.is_some())
+                    && (!measures.is_empty() || structural.is_some())
+                {
+                    return Err(ClickError::new("duplicate typed-frontend loop measures"));
+                }
+                let mut checks = invariant_checks.clone();
+                checks.extend(self.loop_invariant_checks(index)?);
+                let mut effects = effect_checks.clone();
+                effects.extend(self.loop_frame_checks(index)?);
+                let mut resources = resource_specs.clone();
+                resources.extend(self.loop_resource_specs(index));
+                CStatement::While {
+                    condition: condition.clone(),
+                    invariant: invariant.clone(),
+                    invariant_checks: checks,
+                    effect_checks: effects,
+                    resource_specs: resources,
+                    ranking_measures: if measures.is_empty() {
+                        ranking_measures.clone()
+                    } else {
+                        measures
+                    },
+                    structural_measure: structural.or_else(|| structural_measure.clone()),
+                    do_while: *do_while,
+                    backedge_target: *backedge_target,
+                    natural_exit_target: *natural_exit_target,
+                    body: Box::new(body),
+                }
+            }
+            CStatement::TryCatchInt32 {
+                try_body,
+                binding,
+                handler,
+                cleanup_unwind,
+            } => {
+                self.next_statement_index();
+                crate::kernel::c_try_catch_int32_with_cleanup(
+                    self.lower_kernel_statement(try_body)?,
+                    binding.clone(),
+                    self.lower_kernel_statement(handler)?,
+                    *cleanup_unwind,
+                )
+            }
+            _ => {
+                self.next_statement_index();
+                statement.clone()
+            }
+        })
+    }
+
     fn lower_statement(
         &mut self,
         statement: &syntax::C0Statement,
@@ -2341,8 +2442,12 @@ impl AnnotationLowerer<'_> {
                 self.lower_statement(first, control_targets)?,
                 self.lower_statement(second, control_targets)?,
             ),
-            syntax::C0Statement::While { condition, body }
-            | syntax::C0Statement::DoWhile { condition, body } => {
+            syntax::C0Statement::While {
+                condition, body, ..
+            }
+            | syntax::C0Statement::DoWhile {
+                condition, body, ..
+            } => {
                 self.next_statement_index();
                 let loop_index = self.next_loop_index();
                 let lowered_body = self.lower_statement(body, control_targets)?;
@@ -2379,6 +2484,7 @@ impl AnnotationLowerer<'_> {
                 condition,
                 step,
                 body,
+                ..
             } => {
                 let lowered_initializer = self.lower_statement(initializer, control_targets)?;
                 self.next_statement_index();
@@ -2408,6 +2514,7 @@ impl AnnotationLowerer<'_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.next_statement_index();
                 c_if(
@@ -2540,6 +2647,41 @@ impl AnnotationLowerer<'_> {
                 written.unwrap_or(expression),
             );
             let context = SpecElaborationContext::for_loop_invariant(loop_index);
+            // A `Nat` measure ranks by its Integer image: `to_integer` is the
+            // kernel's checked observation of a structural natural, so the
+            // two members are the Integer ones over that image and its
+            // nonnegativity is the conversion's own law. Any other algebraic
+            // value has no order the ranking members can compare.
+            if let Some(ClickType::Algebraic(value_type)) =
+                self.contract_expression_click_type(expression, &context)
+            {
+                if value_type.name() != "Nat" || !value_type.arguments().is_empty() {
+                    return Err(ClickError::new(format!(
+                        "loop {loop_index} `decreases` component `{source}` has type `{}`, which \
+                         has no order a termination measure can rank; a component must be an \
+                         int32, unsigned, `Integer`, or `Nat` expression. To rank a loop by the \
+                         structure it walks, name its resource binder (`decreases c;`) or a \
+                         function of the binder's model into `Integer` or `Nat`",
+                        value_type.name()
+                    )));
+                }
+                let observed = ContractExpression::Call {
+                    name: "to_integer".to_string(),
+                    arguments: vec![expression.clone()],
+                };
+                let lowered = self
+                    .lower_contract_integer_to_spec(&observed, &context)
+                    .map_err(|message| {
+                        ClickError::new(format!(
+                            "loop {loop_index} `decreases` component `{source}`: {message}"
+                        ))
+                    })?;
+                components.push(crate::kernel::CRankingComponent::PureInteger {
+                    source,
+                    expression: lowered,
+                });
+                continue;
+            }
             // A measure whose declared type is `Integer` is lowered in the
             // Integer carrier, by the same rule that picks the carrier for an
             // invariant's operand. Its two obligations are the same two, built
@@ -4226,6 +4368,7 @@ impl AnnotationLowerer<'_> {
             CExpression::TypedLoad {
                 value_type:
                     CType::Int32Array(_)
+                    | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
                     | CType::Int64Array(_)
                     | CType::UInt64Array(_),
@@ -4471,6 +4614,12 @@ impl AnnotationLowerer<'_> {
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
             ContractExpression::CBinding(name) => {
+                if name == "result" && environment.contract_result_in_scope {
+                    return Err(
+                        "`c(result)` cannot name a C binding where the contract `result` is in scope; read it through a snapshot such as `old(c(result))` or `at(statement(N).entry, c(result))`"
+                            .to_string(),
+                    );
+                }
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
             ContractExpression::ResourceCount(resource) => {
@@ -4492,13 +4641,16 @@ impl AnnotationLowerer<'_> {
                                 .to_string(),
                         );
                     }
-                    if arguments.len() != 1
-                        || arguments.iter().any(|argument| {
+                    if arguments.is_empty()
+                        || matches!(arguments[0], ContractExpression::ResourceWildcard)
+                        || (arguments.iter().skip(1).any(|argument| {
                             matches!(argument, ContractExpression::ResourceWildcard)
-                        })
+                        }) && arguments.iter().skip(1).any(|argument| {
+                            !matches!(argument, ContractExpression::ResourceWildcard)
+                        }))
                     {
                         return Err(
-                            "authority-mode `count(R(p))` needs one exact pointer argument"
+                            "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
                                 .to_string(),
                         );
                     }
@@ -4798,7 +4950,10 @@ impl AnnotationLowerer<'_> {
                     && !c_value_matches_click_type(fixed, *c_type)
                 {
                     return Err(format!(
-                        "let binding `{name}` evaluated to {fixed:?}, which does not match {c_type:?}"
+                        "let binding `{name}` evaluated to `{}` of type `{}`, which does not match the declared type `{}`",
+                        crate::surface::diagnostics::describe_c_value(fixed, &[], &[]),
+                        crate::kernel::c_type_spelling(fixed.c_type()),
+                        crate::surface::validation::describe_c0_type(*c_type)
                     ));
                 }
                 let mut body_environment = environment.clone();
@@ -5580,6 +5735,7 @@ impl AnnotationLowerer<'_> {
             function_contract: false,
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
+            contract_result_in_scope: false,
         })
     }
 
@@ -5692,6 +5848,23 @@ impl AnnotationLowerer<'_> {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             CExpression::Variable(name) => match environment.values.get(name) {
                 Some(value) => Ok(value.clone()),
+                None if environment.snapshot_state.as_ref().is_some_and(|state| {
+                    state.locals().aggregate_object_pointer(name).is_some()
+                }) =>
+                {
+                    // Automatic aggregates are places rather than ordinary
+                    // object-value bindings. Resolve only the named place in
+                    // this recorded state, including after it leaves scope.
+                    let pointer = environment
+                        .snapshot_state
+                        .as_ref()
+                        .and_then(|state| state.locals().aggregate_object_pointer(name))
+                        .expect("checked aggregate snapshot binding");
+                    Ok(SpecExpression::Value(CValue::typed_pointer(
+                        pointer.clone(),
+                        CType::UInt8Pointer,
+                    )))
+                }
                 None if self.entry_state.global_object_type(name).is_some() => {
                     Ok(SpecExpression::MemoryLoad {
                         memory: environment.current_memory.clone(),
@@ -5803,11 +5976,15 @@ impl AnnotationLowerer<'_> {
             CExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_c_fragment_to_spec(expression, environment)?,
             ))),
+            // A signed-word cast around a byte read must keep the source
+            // pointee type; raw C inference could make it a four-byte load.
             CExpression::Cast {
                 expression,
                 target_type,
                 ..
-            } if *target_type == CType::UInt32 || target_type.is_pointer() => {
+            } if matches!(target_type, CType::Int32 | CType::UInt32)
+                || target_type.is_pointer() =>
+            {
                 Ok(SpecExpression::Cast(
                     Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
                     *target_type,
@@ -5850,6 +6027,7 @@ impl AnnotationLowerer<'_> {
                 pointer,
                 value_type:
                     CType::Int32Array(_)
+                    | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
                     | CType::Int64Array(_)
                     | CType::UInt64Array(_),
@@ -6215,6 +6393,7 @@ impl AnnotationLowerer<'_> {
                 }),
             CExpression::TypedLoad { value_type, .. } => match value_type {
                 CType::Int32Array(_) => Some(CType::Int32),
+                CType::UInt32Array(_) => Some(CType::UInt32),
                 CType::Int64Array(_) => Some(CType::Int64),
                 CType::UInt64Array(_) => Some(CType::UInt64),
                 CType::UInt8Array(_) => Some(CType::UInt8),
@@ -6346,6 +6525,7 @@ fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
             pointer,
             value_type:
                 CType::Int32Array(_)
+                | CType::UInt32Array(_)
                 | CType::UInt8Array(_)
                 | CType::Int64Array(_)
                 | CType::UInt64Array(_),

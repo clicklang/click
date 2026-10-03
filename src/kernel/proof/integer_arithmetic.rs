@@ -996,7 +996,11 @@ mod tests {
                     Variable(item),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone())),
+                        Bitvector32Term::MemoryLoad(
+                            memory.clone(),
+                            Box::new(pointer.clone()),
+                            crate::kernel::LoadKind::Bits32,
+                        ),
                     )),
                 )
             };
