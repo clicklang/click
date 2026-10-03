@@ -183,6 +183,21 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             )
             .unwrap();
         }
+        if name == "loops" {
+            let original = fs::read_to_string(p.root.join("loops.rs")).unwrap();
+            // Add an unrelated compiler local without editing the frozen fixture.
+            fs::write(
+                p.root.join("loops.rs"),
+                original.replacen("let mut i = 0;", "let unrelated = n; let mut i = 0;", 1),
+            )
+            .unwrap();
+            refresh_import(&p.config()).unwrap();
+            let prepared = load_import(&p.config()).unwrap();
+            let sidecar = assignment_frontier_sidecar();
+            C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+            fs::write(p.root.join("loops.rs"), original).unwrap();
+            refresh_import(&p.config()).unwrap();
+        }
         if name != "headers" {
             continue;
         }
@@ -216,5 +231,34 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             .unwrap();
             refresh_import(&p.config()).unwrap();
         }
+    }
+}
+
+fn assignment_frontier_sidecar() -> &'static str {
+    include_str!("../../design/charon-trial/loop-headers/loops-assignments.click")
+}
+
+#[test]
+fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
+    let p = project("loops", true);
+    let sidecar = assignment_frontier_sidecar();
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for (from, to) in [
+        ("assignment(i, 0)", "assignment(absent, 0)"),
+        ("have i == 0", "have i == 1"),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&sidecar.replace(from, to), &prepared)
+                .is_err()
+        );
+    }
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
     }
 }

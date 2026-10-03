@@ -1866,3 +1866,66 @@ fn verifications_on_one_thread_are_independent() {
             .unwrap_or_else(|error| panic!("`{project}` failed: {error:?}"));
     }
 }
+
+#[test]
+fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
+    let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
+    let proof = r#"verifying "assignment.c";
+int32 f() {ensures result==4;} by {
+    execute_until(assignment(x, 0)); step();
+    have x==3 by {simp();}
+    execute_until(assignment(x, 1));
+    have x==3 by {simp();}
+    step(); have x==4 by {simp();}
+    execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    for (from, to, diagnostic) in [
+        (
+            "assignment(x, 0)",
+            "assignment(absent, 0)",
+            "cannot resolve assignment(absent, 0)",
+        ),
+        (
+            "assignment(x, 1)",
+            "assignment(x, 2)",
+            "cannot resolve assignment(x, 2)",
+        ),
+        ("assignment(x, 1)", "assignment(x, 0)", "backward"),
+        ("have x==3", "have x==4", "x"),
+    ] {
+        let error =
+            verify_c0_sources(&proof.replace(from, to), &[("assignment.c", source)]).unwrap_err();
+        assert!(error.message().contains(diagnostic), "{error:?}");
+    }
+}
+
+#[test]
+fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
+    let source = "int32 id(int32 n) {return n;} int32 f() {int32 x; int32 other; x=id(3); other=8; x=id(4); return x;}";
+    let proof = r#"verifying "assignment.c";
+int32 id(int32 n) {ensures result==n;} by {execute(); simp();}
+int32 f() {ensures result==4;} by {
+    execute_until(assignment(x, 0)); step(); have x==3 by {simp();}
+    execute_until(assignment(x, 1)); have x==3 by {simp();}
+    step(); execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    let exited = proof.replace(
+        "step(); execute(); simp();",
+        "step(); execute(); execute_until(assignment(x, 1)); simp();",
+    );
+    let error = verify_c0_sources(&exited, &[("assignment.c", source)]).unwrap_err();
+    assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
+    assert!(error.message().contains("function exit"), "{error:?}");
+    for source in [
+        "int32 f(int32 n) {int32 x; if(n==0) {x=1;} else {x=2;} return x;}",
+        "int32 f(int32 n) {int32 x; if(0==1) {x=1;} else {x=2;} return x;}",
+    ] {
+        let proof = r#"verifying "assignment.c";
+int32 f(int32 n) {ensures result==1;} by {execute_until(assignment(x, 0)); step(); execute(); simp();}"#;
+        assert!(verify_c0_sources(proof, &[("assignment.c", source)]).is_err());
+    }
+    let snapshots = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
+    assert!(verify_c0_sources(&snapshots, &[("assignment.c", source)]).is_err());
+}

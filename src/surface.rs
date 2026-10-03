@@ -5455,6 +5455,12 @@ pub enum CodeRegionRef {
     Loop(usize),
     Statement(usize),
     Label(String),
+    /// A static local assignment occurrence in the executable layout.
+    /// Currently accepted by `execute_until`, not snapshot expressions.
+    Assignment {
+        local: String,
+        occurrence: usize,
+    },
 }
 
 /// A proof-visible name for one recorded symbolic state.

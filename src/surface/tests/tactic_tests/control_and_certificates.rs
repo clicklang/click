@@ -1059,3 +1059,35 @@ fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
         )
     });
 }
+
+#[test]
+fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
+    for (spelling, region) in [
+        (
+            "assignment(i, 2)",
+            CodeRegionRef::Assignment {
+                local: "i".into(),
+                occurrence: 2,
+            },
+        ),
+        ("assignment", CodeRegionRef::Label("assignment".into())),
+    ] {
+        let source = FILL3_CLICK.replace(
+            "by auto;",
+            &format!("by {{ execute_until({spelling}); execute(); simp(); }}"),
+        );
+        let file = parse(&source).unwrap();
+        assert_eq!(
+            file.function_blocks()[0].ensures()[0]
+                .proof()
+                .tactics()
+                .unwrap()[0],
+            ProofTactic::ExecuteUntil(region)
+        );
+    }
+    for spelling in ["assignment(i, -1)", "assignment(i)", "assignment(, 0)"] {
+        let source =
+            FILL3_CLICK.replace("by auto;", &format!("by {{ execute_until({spelling}); }}"));
+        assert!(parse(&source).is_err());
+    }
+}

@@ -573,6 +573,16 @@ the frozen numeric statement selectors still fail. Next provide stable proof
 observations for these frontiers and legacy iterator state without generated
 processed counts; also close owned iterator resolution and tuple/slice return
 shapes. Proof-adapted sidecars do not count as unchanged fixture parity.
+The shared proof layout now indexes named ordinary assignments, local compound updates, and call-result
+assignments for `execute_until(assignment(local, N))`. Source-local initialization
+proofs survive unrelated compiler locals without counting helper statements.
+Both syntax and typed-kernel paths retain checked forward execution, static
+occurrence ordering, immutable sharing, and deterministic scaling regressions.
+`loop(N)` still selects loop entry; `mark` names reached states. A final-store
+selector does not precede its earlier right-hand-side helpers, and assignment
+selectors are not snapshot expressions. This mechanism adds no generated ghost
+state and does not close frozen numeric-selector or iterator-observation gaps;
+fixture parity remains 10/16 (62.5%) and imports 14/16 (87.5%).
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate

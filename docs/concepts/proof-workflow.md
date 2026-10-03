@@ -411,6 +411,18 @@ resources established by preceding `step()`, `unfold`, `fold`, and other
 ordinary proof tactics. It proves its proposition on every active proof path
 and adds the resulting fact to the following context.
 
+`execute_until(assignment(local, N))` selects the zero-based static occurrence
+of an ordinary local assignment, local compound update, or call-result assignment in the executable
+layout. It pauses before that store. Declarations and stores to other locals
+do not count, so unrelated compiler temporaries do not shift the selection.
+Occurrences follow structural preorder, including branch arms and loop bodies;
+repeated loop iterations reuse the same static occurrence. The selector does
+not execute an unreachable arm or move backward. A frontend may evaluate a
+right-hand side in earlier helper statements: selecting the final local store
+does not move the frontier before those helpers. Use `loop(N)` to stop before
+a loop's header/body work and `mark` to name a reached state. Assignment
+selectors currently serve `execute_until`, not `at(...)` snapshot expressions.
+
 `statement(N)` selects the Nth source statement code region in structural
 order for execution targets and snapshots:
 

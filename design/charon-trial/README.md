@@ -632,3 +632,13 @@ sidecar. The original numeric-selector sidecars remain frozen and counted as
 proof gaps. `split-shared-slice-while-header-v1` versions the interpretation;
 checkpoint locks are refreshed without changing prior ULLBC bytes or compiler
 pins. Deterministic scaling checks cover header work and emitted code size.
+
+The shared proof interface now also accepts
+`execute_until(assignment(local, N))`, selecting a named ordinary store, local compound update, or
+call-result assignment by zero-based static occurrence. The loop checkpoint
+proves source-local initialization through this selector, including live
+re-extraction with an unrelated compiler local. Indexed selection avoids
+counting unrelated helper statements; it preserves checked forward execution.
+Selecting a final store does not move before right-hand-side helpers. This
+adds a stable observation mechanism without changing frozen numeric-selector
+sidecars, Rust interpretation pins, locks, or parity percentages.

@@ -40,3 +40,24 @@ Current fixture parity is 10/16 (62.5%); import coverage is 14/16 (87.5%). Next
 resolve stable proof observations for numeric frontiers and iterator state,
 plus the remaining owned-iterator and tuple/slice-return normalization gaps,
 before switching the default and retiring legacy extraction.
+
+## Named assignment frontiers
+
+`loops-assignments.click` additionally selects `assignment(i, 0)` and checks
+that the first real store initializes `i` to zero, before selecting the loop.
+All three unchanged Rust loop bodies verify; false initialization claims fail.
+The shared proof layout indexes ordinary local assignments, local compound updates, and call-result
+assignments by local name and zero-based static occurrence. Unrelated locals
+and stores do not shift these targets. Every crossed transition and the selected
+store still need checked execution; branches and backward/unreachable targets
+are not bypassed. The selector stops before the store itself, which may follow
+compiler-generated right-hand-side helpers. `loop(N)` selects the loop entry;
+`mark` names a reached state. Assignment selectors are not snapshot expressions.
+
+Both syntax and typed-kernel layouts index these targets once, with immutable
+sharing and deterministic scaling at 8, 128, and 1024 store pairs. Live Charon
+re-extraction verifies the same proof after inserting an unrelated compiler
+local in an isolated probe. Verification, profiling, auditing, and expanded
+certificates agree. Frozen sources and original sidecars are unchanged; parity
+remains 10/16 and imports 14/16. Numeric-selector compatibility and stable
+iterator observations remain migration work.

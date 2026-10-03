@@ -876,6 +876,13 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`execute_until` requires an execution proof"));
         };
+        if let CodeRegionRef::Assignment { local, occurrence } = region {
+            return context
+                .constants
+                .source_layout
+                .assignment_entry(local, *occurrence)
+                .map_err(|message| self.step_error(message));
+        }
         let region = resolve_code_region_ref(
             context.function_block,
             region,
