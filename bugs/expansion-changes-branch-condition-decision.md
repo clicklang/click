@@ -6,7 +6,48 @@ A smart tactic that verifies must expand to explicit tactics that verify the sam
 
 After expansion, execution reaches a C `if` that the unexpanded proof decided and reports it undecided (`got 2 feasible condition paths`) or reports `focused outcome records both sides of the post-execution if condition`. The expanded prefix leaves a different fact set at the branch than the smart tactic did.
 
-The root cause has not been investigated. The fixtures below may not all share one; split this file if they do not.
+## What is known
+
+Investigated on `a_bounded_argument_to_a_narrow_parameter_is_in_its_range`
+(2026-10-02); the other fixture was not examined.
+
+Since the struct-subscript and post-execution fixes, the audit fails earlier
+than the message below: at the `simp` site (`:41:19`) with
+`focused outcome records both sides of the post-execution `if` condition`.
+
+`pass_checked` has the C branch `if (0 <= y && y <= 255)`. The `simp()`
+after `execute()` expands to a nested case split:
+
+```
+if 0 <= y {
+    if at(statement(0).entry, 0) <= at(statement(0).entry, y) and at(statement(0).entry, y) <= at(statement(0).entry, 255) {
+        ...
+    } else { ... }
+} else { ... }
+```
+
+The outer split is on the first operand of the short-circuit, the inner one
+on the whole condition. When the expansion is checked, the inner `if` is
+decided by `checked_outcome_if_value`
+(`src/surface/proof/proof_object/fixed_state_steps.rs`) from the focused
+outcome's recorded branch decisions. On the path where `0 <= y` holds and
+`y <= 255` does not, those decisions contain the whole condition twice, once
+`false` and once `true`:
+
+```
+[(whole, false), (0 <= y, true), (0 <= y, true), (whole, true)]
+```
+
+so the check refuses it. The `false` entry is consistent with the path. Which
+mechanism records the `true` one is not established. Candidates are the
+terminal C join (`merge_terminal_execution_join` in
+`src/surface/proof/proof_object/execution_joins.rs`, which records the whole
+condition per C arm) and the proof case split the smart planner chose, each
+recording a decision for the same short-circuit `if`. A fix should make one
+path record one value for one condition, and make the expansion split on
+conditions the check can decide (either the whole condition once, or the
+two operands in order), not a mix of the two.
+
 
 ## Reproduction
 
