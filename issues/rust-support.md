@@ -425,10 +425,12 @@ operator-specific arithmetic axioms. A compiler regression checks two `AddAssign
 overloads with replacement semantics, alongside panic, authority, incorrect-lane
 and expanded-proof rejection coverage.
 
-The checkpoint proves bounded doubling, nonzero remainder, borrowed addition
-and a concrete local two-call case. General symbolic multiplication and symbolic
-successive-call composition expose tracked proof-engine limitations. By-value
-aggregate operator operands and crate extraction remain migration work before
+The checkpoint now proves general unsigned multiplication with explicit
+zero-or-safe lane premises, nonzero remainder, borrowed addition and symbolic
+local two-call composition. Checked contradiction evidence, unsigned expression
+reconstruction and indexed congruence preserve arithmetic obligations and memory
+snapshots; scalar full-width boundaries and expanded proofs have separate
+regressions. By-value aggregate operator operands and crate extraction remain migration work before
 importing and proving the unchanged checksum loop. The default frontend is
 unchanged.
 

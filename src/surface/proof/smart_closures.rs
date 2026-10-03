@@ -4764,9 +4764,9 @@ impl<'a> Proof<'a> {
                     break;
                 };
                 let selected = focused_branch
-                    .try_simp_closure()
+                    .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
                     .ok()
-                    .flatten()
+                    .or_else(|| focused_branch.try_simp_closure().ok().flatten())
                     .or_else(|| {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;

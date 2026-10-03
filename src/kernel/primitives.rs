@@ -8497,6 +8497,12 @@ pub(crate) enum PropositionDerivationRule {
         disjunction: Box<Proposition>,
         cases: Vec<PropositionDerivation>,
     },
+    /// An exact disjunction is impossible when every arm's negation is exact.
+    /// No branch context is rebuilt, so opposite condition facts cannot be
+    /// overwritten while establishing the contradiction.
+    RefutedDisjunction {
+        disjunction: Box<Proposition>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

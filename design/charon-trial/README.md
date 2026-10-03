@@ -443,12 +443,20 @@ False lane results, overflow, zero divisors, missing authority and writes throug
 shared operands are rejected. Verification, profiling, auditing, expansion and
 expanded-certificate rechecking exercise the ordinary call path.
 
-The sidecar proves bounded doubling, arbitrary nonzero remainder, bounded
-borrowed addition with preserved input lanes, and a concrete two-call local
-construction. Source bodies remain fixed. General symbolic multiplication and
-symbolic successive-call composition currently encounter documented proof-engine
-limitations; see [the multiplication report](../../bugs/rust-symbolic-multiplication-precondition-not-matched.md)
-and [the successive-call report](../../bugs/rust-successive-array-field-calls-lose-symbolic-values.md).
+The sidecar proves general unsigned multiplication under each lane's explicit
+zero-or-safe precondition, arbitrary nonzero remainder, bounded borrowed addition
+with preserved input lanes, and symbolic composition of two calls on a locally
+constructed array-field record. Source bodies remain fixed. The
+[symbolic scalar checkpoint](symbolic-multiply/probe.click) separately verifies
+primitive multiplication, zero factors, full-width boundaries, and rejection of
+missing safety premises, overflow and unguarded division by zero.
+
+The proof machinery retains a checked refuted-disjunction witness for unreachable
+panic-check paths. Equality congruence propagates through unsigned division,
+remainder and XOR while preserving operation tags and load snapshots; it grants
+no arithmetic definedness. Reconstructed expressions keep unsigned casts and
+explicit snapshots, including lane zero. Both checkpoints exercise expansion and
+rechecking, and indexed equality work is tested at 16/64/256/1024 inputs.
 By-value aggregate operands, generic implementations, other operator traits,
 external implementation bodies and dynamic dispatch remain rejected.
 

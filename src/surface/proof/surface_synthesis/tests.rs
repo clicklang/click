@@ -2173,9 +2173,8 @@ fn a_local_indexes_only_addresses_formed_from_it() {
 /// A 32-bit unsigned comparison reaches the kernel as a signed comparison of
 /// sign-flipped operands. Its spelling is the unsigned comparison over the
 /// `uint32` local, never the bias `(-2147483648 ^ x) < -2147483644`, and it
-/// lowers back to the condition it was spelled from. An operand no `uint32`
-/// local names keeps the literal spelling in the source form, which a
-/// refusal prints as the unsigned comparison marked `(unsigned)`.
+/// lowers back to the condition it was spelled from. A signed local needs an
+/// explicit uint32 cast to preserve the unsigned interpretation.
 #[test]
 fn unsigned_comparison_is_spelled_without_its_sign_bias() {
     let x = Bitvector32Term::Variable(Variable(300_000));
@@ -2212,19 +2211,67 @@ fn unsigned_comparison_is_spelled_without_its_sign_bias() {
         true,
     );
     let synthesized = synthesize_surface_proposition(&fact, &[], &[], &signed)
-        .expect("the literal spelling remains");
+        .expect("a signed local can be explicitly cast");
     assert!(
-        crate::surface::printing::source_click_proposition(&synthesized).contains('^'),
-        "a signed local's name would make the comparison signed"
+        crate::surface::printing::source_click_proposition(&synthesized).contains("uint32"),
+        "a signed local needs an explicit unsigned cast"
     );
-    // A refusal reads the same form as the unsigned comparison it is, and
-    // marks it so it is not taken for the signed comparison of `y`.
-    assert_eq!(
-        crate::surface::diagnostics::with_refusal_spelling(|| {
-            crate::surface::diagnostics::describe_click_proposition(&synthesized)
-        }),
-        "y < 4 (unsigned)"
+    assert_eq!(relower_written_proposition(&synthesized, &signed), Ok(fact));
+}
+
+#[test]
+fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
+    let [x, divisor, result] =
+        [300_010, 300_011, 300_012].map(|id| Bitvector32Term::Variable(Variable(id)));
+    let state = CState::new()
+        .with_local("x", CValue::Int32(x.clone()))
+        .with_local("divisor", CValue::Int32(divisor.clone()))
+        .with_local("result", CValue::Int32(result.clone()));
+    let quotient = Bitvector32Term::UnsignedDivide(
+        Box::new(Bitvector32Term::Constant(u32::MAX)),
+        Box::new(divisor.clone()),
     );
+    let remainder = Bitvector32Term::UnsignedRemainder(Box::new(x.clone()), Box::new(divisor));
+    for condition in [
+        ConditionTerm::Bitvector32Equal(Box::new(quotient.clone()), Box::new(result.clone())),
+        ConditionTerm::Bitvector32Equal(Box::new(remainder), Box::new(result)),
+        ConditionTerm::unsigned_less_equal(x, quotient),
+    ] {
+        for polarity in [true, false] {
+            let fact = Proposition::ConditionIs(condition.clone(), polarity);
+            let surface = synthesize_surface_proposition(&fact, &[], &[], &state).unwrap();
+            assert_eq!(relower_written_proposition(&surface, &state), Ok(fact));
+        }
+    }
+}
+
+#[test]
+fn synthesized_uint32_cast_preserves_its_snapshot() {
+    let selector = SnapshotSelector::Mark("before".into());
+    let expression = synthesize_uint32_operand(ContractExpression::At {
+        selector: selector.clone(),
+        expression: Box::new(ContractExpression::CFragment(CExpression::Variable(
+            "x".into(),
+        ))),
+    })
+    .unwrap();
+    assert!(
+        matches!(&expression, ContractExpression::At { selector: actual, .. } if actual == &selector)
+    );
+    let surface = ClickProposition::Comparison {
+        left: expression,
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+            Bitvector32Term::Constant(u32::MAX),
+        ))),
+    };
+    let before = CState::new().with_local("x", int32(u32::MAX));
+    let after = CState::new().with_local("x", int32(0));
+    let mut snapshots = RecordedSnapshots::new();
+    snapshots.insert(selector, before.clone());
+    let lowered =
+        relower_written_proposition_with_snapshots(&surface, &before, &after, &snapshots).unwrap();
+    assert!(crate::kernel::planning_api::solve_builtin_prop(&lowered));
 }
 
 #[test]
