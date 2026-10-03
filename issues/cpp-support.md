@@ -330,10 +330,21 @@ large constants, deterministic scaling, expansion/reverification, profiling,
 and retained audit have coverage. This is shared proof arithmetic available to
 C, Rust, and C++; it does not yet execute native `__int128`.
 
-Next add native wide scalars through the shared typed machine model: signed
-and unsigned width, storage/layout, literal range, conversions, checked
-multiplication, and definedness must retain the source's resolved machine
-semantics. Then cover wide truncating division/remainder and checked narrowing
+The shared fixed-width constant and conversion layer is delivered. Formats
+record signedness and 8–128-bit width; private checked payloads preserve the
+full signed and unsigned 128-bit ranges. Checked numeric conversion and explicit
+modulo conversion have distinct APIs, with exhaustive small-value and exact
+wide-endpoint oracle tests. Existing machine bounds, Integer observations and
+reverse conversions, rewrite normalization, and C++ literals/constant casts
+use this layer. Runtime bridges still admit only their existing 8–64-bit
+types and require an exact format match. This is representation groundwork;
+symbolic `__int128` execution and its source types remain unsupported.
+
+Next extend the shared symbolic machine model and runtime for wide scalars:
+terms, storage/layout, source admission, checked multiplication, and definedness
+must retain the source's resolved machine semantics. Use the shared formats
+and conversion policies rather than inventing a C++-specific numeric carrier.
+Then cover wide truncating division/remainder and checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before
