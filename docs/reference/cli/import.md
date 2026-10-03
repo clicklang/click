@@ -336,10 +336,19 @@ value cannot change across the nested call, and their evaluation is total, so
 all C++ argument orders agree. Namespace-scope signed-64 `constexpr` constants
 with internal linkage are accepted with or without explicit `static`, under the
 existing bounded constant-graph checks. Concrete Boolean template substitutions
-also retain their resolved constant value. Reference reads, dereferences, field reads,
+also retain their resolved constant value. Field reads and supported casts of
+field reads are also admitted when the one nested call has only scalar value
+inputs, with no reference/pointer arguments or further input calls. In this
+closed profile, mutable globals and external calls are rejected, so such a
+callee cannot acquire an alias to the caller's storage. Its field siblings are
+checked and captured before the call; their values agree in every argument
+order, and a throwing call cannot skip a read's authority check. This covers
+`Div(Mul(fee, at_size), size, RoundDown)` with field-backed `fee` and `size`.
+General alias analysis is not provided. Reference reads, dereferences,
 arithmetic, additional calls, and side effects in sibling arguments fail import.
-This restriction also applies when the nested call throws; no unsafe sibling
-operation can be hidden by selecting an argument order that skips it.
+No unsafe sibling operation can be hidden by selecting an argument order that
+skips it. Resource-bearing exceptional contracts remain outside the proof
+surface slice.
 
 Each nested result has a checked typed capture; an inner exception skips the
 outer call and uses the return's cleanup edge. Verification, selected-caller
@@ -356,7 +365,7 @@ unsupported.
 Scalar evaluation is normalized within the C++ frontend into explicit
 statements followed by a typed value. Initializer and return artifact wrappers
 retain source context; they do not select separate evaluation semantics.
-The same stable-sibling policy applies to integer-local initializer, return,
+The same ordering policy applies to integer-local initializer, return,
 and discarded call arguments. Constructor arguments remain outside nested-call
 support. Regressions cover scalar widths/signedness, initializer capture before
 cleanup, exception propagation, unsafe siblings in each source position, and
@@ -451,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 35;
+its documented application invariant. The typed artifact schema is now 36;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -520,7 +529,7 @@ scalar parameters/locals and locked constants: supported casts, comparisons,
 and logical conjunction. Reference/pointer/field reads, runtime calls, arithmetic,
 and side effects are rejected. Compiler-folded constants retain the existing
 pinned-Clang constant policy. Bitcoin's library `Assume` macro and general
-assertion/abort behavior remain unsupported. Schema 35 requires an explicit
+assertion/abort behavior remain unsupported. Schema 36 requires an explicit
 refresh of earlier locks.
 
 Scalar interpretation is shared by the artifact validator, execution lowering,

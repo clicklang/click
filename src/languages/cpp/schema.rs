@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 35;
+pub(crate) const EXPORT_SCHEMA: u32 = 36;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1905,15 +1905,25 @@ fn validate_call(
         .iter()
         .filter(|argument| matches!(argument, CppCallArgument::Call { .. }))
         .count();
+    let isolated = arguments
+        .iter()
+        .find_map(|argument| match argument {
+            CppCallArgument::Call { arguments, .. } => Some(scalar_only_arguments(arguments)),
+            _ => None,
+        })
+        .unwrap_or(false);
     if nested_calls > 1
         || (nested_calls == 1
             && arguments.iter().any(|argument| match argument {
                 CppCallArgument::Call { .. } => false,
-                CppCallArgument::Value { value } => !stable_scalar_argument(value, places),
+                CppCallArgument::Value { value } => {
+                    !stable_scalar_argument(value, places)
+                        && !(isolated && field_scalar_argument(value))
+                }
                 CppCallArgument::Reference { .. } => true,
             }))
     {
-        return Err("nested C++ call arguments require one call and stable scalar siblings to preserve evaluation order".into());
+        return Err("nested C++ call arguments require one call and order-independent scalar siblings to preserve evaluation order".into());
     }
     span.validate(logical_source)?;
     callee.span.validate(logical_source)?;
@@ -1924,6 +1934,28 @@ fn validate_call(
         argument.validate(places, records, logical_source)?;
     }
     Ok(())
+}
+
+// No pointer or reference crosses this call boundary, and no input is another
+// call. Mutable globals and external calls are not admitted by
+// this profile, so reachable code cannot acquire an alias to caller storage.
+fn scalar_only_arguments(arguments: &[CppCallArgument]) -> bool {
+    arguments.iter().all(|argument| {
+        crate::instrumentation::record_deterministic_work(1);
+        match argument {
+            CppCallArgument::Value { value } => Scalar::of(value.value_type()).is_some(),
+            CppCallArgument::Call { .. } | CppCallArgument::Reference { .. } => false,
+        }
+    })
+}
+
+pub(super) fn field_scalar_argument(expression: &CppExpression) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match expression {
+        CppExpression::MemberLoad { value_type, .. } => Scalar::of(value_type).is_some(),
+        CppExpression::IntegralCast { value, .. } => field_scalar_argument(value),
+        _ => false,
+    }
 }
 
 // A sibling must be total and invariant across the nested call. Scalar
@@ -3940,6 +3972,119 @@ mod tests {
                 .unwrap_err()
                 .contains("evaluation order")
         );
+    }
+
+    #[test]
+    fn field_sibling_artifacts_require_a_scalar_isolated_input_call() {
+        let record = CppRecord {
+            declaration_id: "record".into(),
+            name: "Box".into(),
+            size_bytes: 4,
+            alignment_bytes: 4,
+            destructor: None,
+            span: cleanup_span(),
+            fields: vec![CppField {
+                declaration_id: "field".into(),
+                name: "value".into(),
+                value_type: signed_integer(32, false),
+                offset_bytes: 0,
+                size_bytes: 4,
+                span: cleanup_span(),
+            }],
+        };
+        let records = BTreeMap::from([("record".into(), &record)]);
+        let places = validation_places([
+            (
+                "box".into(),
+                (
+                    "box".into(),
+                    CppType::LvalueReference {
+                        pointee: Box::new(CppType::Record {
+                            declaration_id: "record".into(),
+                            name: "Box".into(),
+                            is_const: false,
+                        }),
+                    },
+                ),
+            ),
+            (
+                "borrow".into(),
+                (
+                    "borrow".into(),
+                    CppType::LvalueReference {
+                        pointee: Box::new(signed_integer(32, false)),
+                    },
+                ),
+            ),
+        ]);
+        let reference = |id: &str| CppPlaceReference {
+            declaration_id: id.into(),
+            name: id.into(),
+            span: cleanup_span(),
+        };
+        let callee = CppFunctionReference {
+            declaration_id: "inner".into(),
+            name: "inner".into(),
+            span: cleanup_span(),
+        };
+        let value = CppCallArgument::Value {
+            value: CppExpression::IntegerLiteral {
+                value: "7".into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            },
+        };
+        let inner = |arguments| CppCallArgument::Call {
+            callee: callee.clone(),
+            arguments,
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let field = CppCallArgument::Value {
+            value: CppExpression::MemberLoad {
+                object: reference("box"),
+                field: CppFieldReference {
+                    record_declaration_id: "record".into(),
+                    declaration_id: "field".into(),
+                    name: "value".into(),
+                    span: cleanup_span(),
+                },
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            },
+        };
+        let validate = |argument| {
+            validate_call(
+                &callee,
+                &[argument, field.clone()],
+                &cleanup_span(),
+                &places,
+                &records,
+                "fixture.cpp",
+            )
+        };
+        validate(inner(vec![value.clone()])).unwrap();
+        for hostile in [
+            CppCallArgument::Reference {
+                place: reference("borrow"),
+            },
+            CppCallArgument::Value {
+                value: CppExpression::AddressOf {
+                    place: reference("borrow"),
+                    value_type: CppType::Pointer {
+                        pointee: Box::new(signed_integer(32, false)),
+                    },
+                    span: cleanup_span(),
+                },
+            },
+            inner(vec![value]),
+        ] {
+            assert!(
+                validate(inner(vec![hostile]))
+                    .unwrap_err()
+                    .contains("evaluation order")
+            );
+        }
     }
 
     #[test]

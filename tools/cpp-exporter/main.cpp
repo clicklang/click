@@ -245,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 35;
+    artifact["schema"] = 36;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1497,6 +1497,38 @@ private:
     return false;
   }
 
+  bool scalar_only_call(const clang::CallExpr *call) const {
+    const auto *callee = call->getDirectCallee();
+    if (callee == nullptr) return false;
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
+    if (method != nullptr && !method->isStatic()) return false;
+    for (const auto *parameter : callee->parameters())
+      if (!parameter->getType()->isIntegerType()) return false;
+    for (const auto *argument : call->arguments()) {
+      if (!argument->getType()->isIntegerType()) return false;
+      if (const auto *nested = llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens()))
+        if (!is_numeric_limits_max_call(nested)) return false;
+    }
+    return true;
+  }
+
+  bool field_scalar_argument(const clang::Expr *expression) const {
+    expression = expression->IgnoreParens();
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      switch (cast->getCastKind()) {
+      case clang::CK_LValueToRValue:
+      case clang::CK_IntegralCast:
+      case clang::CK_IntegralToBoolean:
+      case clang::CK_NoOp:
+        return field_scalar_argument(cast->getSubExpr());
+      default: return false;
+      }
+    }
+    return llvm::isa<clang::MemberExpr>(expression) &&
+           expression->getType()->isIntegerType() &&
+           !expression->getType().isVolatileQualified();
+  }
+
   // The builtin does not evaluate its operand. Only total, side-effect-free
   // scalar conditions can be checked as an obligation without adding an
   // evaluation effect or hiding undefined behavior on another argument order.
@@ -1595,11 +1627,17 @@ private:
       }
       if (nested_calls > 1 || (nested_calls != 0 && has_receiver)) {
         fail(call->getExprLoc(),
-             "nested C++ call arguments require one call and stable scalar "
+             "nested C++ call arguments require one call and order-independent scalar "
              "siblings to preserve evaluation order");
         return std::nullopt;
       }
       if (nested_calls == 1) {
+        bool isolated = false;
+        for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
+          const auto *nested = llvm::dyn_cast<clang::CallExpr>(call->getArg(index)->IgnoreParens());
+          if (nested != nullptr && !is_numeric_limits_max_call(nested))
+            isolated = scalar_only_call(nested);
+        }
         for (unsigned index = argument_offset; index < call->getNumArgs();
              ++index) {
           const auto *argument = call->getArg(index);
@@ -1607,9 +1645,10 @@ private:
               llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens());
           if (nested != nullptr && !is_numeric_limits_max_call(nested))
             continue;
-          if (!stable_scalar_argument(argument, caller)) {
+          if (!stable_scalar_argument(argument, caller) &&
+              !(isolated && field_scalar_argument(argument))) {
             fail(argument->getExprLoc(),
-                 "nested C++ call arguments require one call and stable scalar "
+                 "nested C++ call arguments require one call and order-independent scalar "
                  "siblings to preserve evaluation order");
             return std::nullopt;
           }
