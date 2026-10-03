@@ -776,6 +776,15 @@ fn write_special_arithmetic_certificate(
     }
     for node in &certificate.nodes {
         let text = match node {
+            SpecialArithmeticNode::IntegerProductBounds { bounds, result } => format!(
+                "integer_product_bounds bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,

@@ -491,6 +491,10 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
             ConditionTerm::Bitvector64SignedSubtractOverflows(left_first, left_second),
             ConditionTerm::Bitvector64SignedSubtractOverflows(right_first, right_second),
         ) => left_first == right_first && left_second == right_second,
+        (
+            ConditionTerm::IntegerLessEqual(left_first, left_second),
+            ConditionTerm::IntegerLessEqual(right_first, right_second),
+        ) => left_first == right_first && left_second == right_second,
         _ => false,
     }
 }
@@ -550,6 +554,12 @@ fn proposition_identity(left: &Proposition, right: &Proposition) -> bool {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SpecialArithmeticNode {
+    /// Bound an exact mathematical product using four explicit constant
+    /// endpoint bounds: left lower/upper, then right lower/upper.
+    IntegerProductBounds {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: Proposition,
@@ -609,6 +619,7 @@ pub(crate) struct SpecialArithmeticCertificate {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[allow(dead_code)]
 pub(crate) enum SpecialArithmeticCheckError {
+    InvalidIntegerProductBounds(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
     InvalidRelation(usize),
@@ -665,6 +676,9 @@ impl SpecialArithmeticCertificate {
         premises: &[Proposition],
     ) -> Result<(), SpecialArithmeticCheckError> {
         match node {
+            SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
+                super::integer_product_bounds::check(index, bounds, premises, result)
+            }
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,
@@ -1051,6 +1065,7 @@ impl SpecialArithmeticNode {
     fn result(&self) -> &Proposition {
         match self {
             Self::UnsignedSumBound { result, .. }
+            | Self::IntegerProductBounds { result, .. }
             | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }
             | Self::PointerWordEquality { result, .. }

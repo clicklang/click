@@ -1269,12 +1269,24 @@ impl<'a> Proof<'a> {
             SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticCheckError,
             SpecialArithmeticNode as KernelNode,
         };
+        let has_integer_product = certificate
+            .nodes
+            .iter()
+            .any(|node| matches!(node, SpecialArithmeticNode::IntegerProductBounds { .. }));
         let mut premises = Vec::with_capacity(certificate.premises.len());
         for premise in &certificate.premises {
-            premises.push(self.lower_surface_proposition_direct(
-                premise,
-                "special arithmetic certificate premise",
-            )?);
+            let lowered = if has_integer_product {
+                self.lower_integer_surface_proposition(
+                    premise,
+                    "special arithmetic certificate premise",
+                )?
+            } else {
+                self.lower_surface_proposition_direct(
+                    premise,
+                    "special arithmetic certificate premise",
+                )?
+            };
+            premises.push(lowered);
         }
         let lower_result = |result: &ClickProposition| {
             self.lower_surface_proposition_direct(result, "special arithmetic certificate result")
@@ -1291,6 +1303,18 @@ impl<'a> Proof<'a> {
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for node in &certificate.nodes {
             let lowered = match node {
+                SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
+                    KernelNode::IntegerProductBounds {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer product bound result",
+                        )?,
+                    }
+                }
                 SpecialArithmeticNode::PointerTranslation {
                     relation,
                     bounds,
@@ -3023,6 +3047,9 @@ fn describe_special_arithmetic_check_error(
 ) -> String {
     use crate::kernel::proof::arithmetic_special::SpecialArithmeticCheckError as Error;
     match error {
+        Error::InvalidIntegerProductBounds(index) => format!(
+            "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"
+        ),
         Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
         Error::InvalidNodeReference(index) => {
             format!("node {index} is referenced but is not an earlier node")

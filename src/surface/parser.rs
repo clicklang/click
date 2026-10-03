@@ -6639,6 +6639,15 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
                 }
+                "integer_product_bounds" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer product bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerProductBounds { bounds, result });
+                }
                 "int32_defined" | "int64_defined" => {
                     let width = if keyword == "int32_defined" {
                         crate::kernel::SignedDefinedWidth::Int32

@@ -5209,6 +5209,10 @@ pub struct SpecialArithmeticCertificate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpecialArithmeticNode {
+    IntegerProductBounds {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: ClickProposition,
