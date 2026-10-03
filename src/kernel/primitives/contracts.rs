@@ -2926,6 +2926,12 @@ impl CTerminationError {
     pub fn function(&self) -> Option<&str> {
         self.function.as_deref()
     }
+
+    /// Whether the check refused a function-level measure on a function
+    /// with no recursive edge to rank.
+    pub fn is_superfluous_recursive_measure(&self) -> bool {
+        self.superfluous_recursive_measure
+    }
 }
 
 impl std::fmt::Display for CTerminationError {
