@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 34;
+pub(crate) const EXPORT_SCHEMA: u32 = 35;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -428,6 +428,10 @@ pub enum CppStatement {
     },
     Throw {
         value: CppExpression,
+        span: CppSpan,
+    },
+    Assume {
+        condition: CppExpression,
         span: CppSpan,
     },
     TryCatchInt32 {
@@ -1705,6 +1709,15 @@ impl CppStatement {
                 }
                 Ok(())
             }
+            Self::Assume { condition, span } => {
+                span.validate(logical_source)?;
+                condition.validate(places, records, logical_source)?;
+                require_bool(condition.value_type(), false, "assumption condition")?;
+                if !total_assumption_condition(condition, places) {
+                    return Err("C++ __builtin_assume requires a total scalar condition without memory reads or side effects".into());
+                }
+                Ok(())
+            }
             Self::Throw { value, span } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
@@ -1928,6 +1941,35 @@ fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<
         ),
         CppExpression::IntegralCast { value, .. } => stable_scalar_argument(value, places),
         _ => false,
+    }
+}
+
+fn total_assumption_condition(expression: &CppExpression, places: &ValidationPlaces<'_>) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    match expression {
+        CppExpression::Binary {
+            operator: CppBinaryOperator::LogicalAnd,
+            left,
+            right,
+            ..
+        } => total_assumption_condition(left, places) && total_assumption_condition(right, places),
+        CppExpression::Binary {
+            operator:
+                CppBinaryOperator::Equal
+                | CppBinaryOperator::LessThan
+                | CppBinaryOperator::GreaterThan
+                | CppBinaryOperator::LessEqual
+                | CppBinaryOperator::GreaterEqual,
+            left,
+            right,
+            ..
+        } => stable_scalar_argument(left, places) && stable_scalar_argument(right, places),
+        CppExpression::IntegralCast {
+            value,
+            value_type: CppType::Boolean { .. },
+            ..
+        } => total_assumption_condition(value, places),
+        _ => stable_scalar_argument(expression, places),
     }
 }
 
@@ -2463,6 +2505,7 @@ impl CppStatement {
             | Self::Assign { .. }
             | Self::Store { .. }
             | Self::MemberStore { .. }
+            | Self::Assume { .. }
             | Self::Call { .. } => false,
         }
     }
@@ -2722,6 +2765,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 }
             }
             CppStatement::Throw { .. }
+            | CppStatement::Assume { .. }
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. } => {}
@@ -3071,7 +3115,10 @@ fn validate_statement_constant_references(
             CppStatement::Assign { value, .. }
             | CppStatement::MemberStore { value, .. }
             | CppStatement::Return { value, .. }
-            | CppStatement::Throw { value, .. } => {
+            | CppStatement::Throw { value, .. }
+            | CppStatement::Assume {
+                condition: value, ..
+            } => {
                 value.validate_constant_references(
                     logical_source,
                     constants,
@@ -3512,6 +3559,83 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn forged_assumptions_cannot_bypass_totality_type_or_place_checks() {
+        let places = validation_places([
+            ("n".into(), ("n".into(), signed_integer(32, false))),
+            (
+                "r".into(),
+                (
+                    "r".into(),
+                    CppType::LvalueReference {
+                        pointee: Box::new(signed_integer(32, false)),
+                    },
+                ),
+            ),
+        ]);
+        let literal = || CppExpression::IntegerLiteral {
+            value: "0".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let load = |id: &str| CppExpression::Load {
+            place: CppPlaceReference {
+                declaration_id: id.into(),
+                name: id.into(),
+                span: cleanup_span(),
+            },
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let assume = |left| CppStatement::Assume {
+            condition: CppExpression::Binary {
+                operator: CppBinaryOperator::GreaterThan,
+                left: Box::new(left),
+                right: Box::new(literal()),
+                value_type: CppType::Boolean {
+                    bits: 8,
+                    is_const: false,
+                },
+                span: cleanup_span(),
+            },
+            span: cleanup_span(),
+        };
+        let validate =
+            |statement: &CppStatement| statement.validate(&places, &BTreeMap::new(), "fixture.cpp");
+        validate(&assume(load("n"))).unwrap();
+        assert!(
+            validate(&assume(load("r")))
+                .unwrap_err()
+                .contains("total scalar condition")
+        );
+        let partial = CppExpression::Binary {
+            operator: CppBinaryOperator::Divide,
+            left: Box::new(load("n")),
+            right: Box::new(literal()),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        assert!(
+            validate(&assume(partial))
+                .unwrap_err()
+                .contains("total scalar condition")
+        );
+        assert!(
+            validate(&assume(load("unknown")))
+                .unwrap_err()
+                .contains("unknown declaration")
+        );
+        let non_boolean = CppStatement::Assume {
+            condition: literal(),
+            span: cleanup_span(),
+        };
+        assert!(
+            validate(&non_boolean)
+                .unwrap_err()
+                .contains("assumption condition")
+        );
     }
 
     #[test]

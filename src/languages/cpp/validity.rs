@@ -312,7 +312,11 @@ impl Metadata<'_> {
                     self.cleanups(cleanups)?;
                     span
                 }
-                CppStatement::Throw { value, span } => {
+                CppStatement::Throw { value, span }
+                | CppStatement::Assume {
+                    condition: value,
+                    span,
+                } => {
                     self.expression(value)?;
                     span
                 }
@@ -459,6 +463,7 @@ mod tests {
             json!({"kind":"return_call","callee":reference(),"arguments":call_arguments(),"value_type":ty(),"cleanups":[cleanup()],"span":span()}),
             json!({"kind":"call","callee":reference(),"arguments":call_arguments(),"span":span()}),
             json!({"kind":"throw","value":literal(),"span":span()}),
+            json!({"kind":"assume","condition":literal(),"span":span()}),
         ]);
         // The same metadata is valid inside unsupported deeper arrangements.
         fixture(json!([{"kind":"if","condition":literal(),"then_branch":[
