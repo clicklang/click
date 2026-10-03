@@ -429,6 +429,14 @@ without authority supplies the bound. The `authority_owned_count_*` regressions
 cover helper calls, nonnegative remaining counts, and exact/stale/unauthorized
 count refusals. This does not enable general `observe` in authority mode.
 
+**Private predicate facts slice:** Private member fact instantiation retains
+the current verification model and population state instead of starting a
+legacy state. Definition-local parameters and the member's own body remain
+the only local bindings and read permissions. The count-independent memory
+predicate fixture now uses explicit empty-family authority and keeps its
+original C and predicate claim through a checked birth. Foreign-memory facts
+remain rejected, and checking work stays bounded beside unrelated caller locals.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

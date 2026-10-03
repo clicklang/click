@@ -6653,7 +6653,7 @@ impl CState {
             let instantiated = crate::kernel::functions::instantiate_private_member_body_facts(
                 selected,
                 definition,
-                &self.memory,
+                self,
                 assumptions,
             )
             .ok_or("Requires ownership of every cell read by member body facts")?;

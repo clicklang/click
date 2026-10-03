@@ -219,7 +219,7 @@ impl<'a> Proof<'a> {
             crate::kernel::instantiate_private_member_body_facts(
                 &selected,
                 compiled_definition,
-                execution.core.state.memory(),
+                &execution.core.state,
                 before_facts.assumptions(),
             )
             .ok_or_else(|| {

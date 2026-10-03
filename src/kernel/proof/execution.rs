@@ -925,7 +925,7 @@ impl CheckedPopulationMemberRewrite {
         let allowed = crate::kernel::functions::instantiate_private_member_body_facts(
             &self.selected,
             &self.definition,
-            self.before_state.memory(),
+            &self.before_state,
             self.before_facts.assumptions(),
         )?
         .propositions
@@ -1952,7 +1952,7 @@ impl CheckedResourceRewrite {
                 let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
                     selected,
                     definition,
-                    after_state.memory(),
+                    after_state,
                     assumptions,
                 )
                 .ok_or("Requires ownership of every cell read by member body facts")?;
@@ -13266,10 +13266,40 @@ mod population_authority_rewrite_tests {
             crate::kernel::functions::instantiate_private_member_body_facts(
                 &member,
                 &definition,
-                &memory,
+                &CState::new()
+                    .with_population_creation_tracking()
+                    .with_memory(memory.clone())
+                    .with_resource_context(resources.clone()),
                 &assumptions,
             )
             .is_none()
+        );
+        let work = [8, 32, 128, 512].map(|locals| {
+            let mut state = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(memory.clone())
+                .with_resource_context(resources.clone());
+            for index in 0..locals {
+                state = state.with_local(format!("unrelated_{index}"), crate::kernel::int32(index));
+            }
+            let (instantiated, work) = crate::persistent::measure_persistent_work(|| {
+                crate::kernel::functions::instantiate_private_member_body_facts(
+                    &member,
+                    &definition,
+                    &state,
+                    &assumptions,
+                )
+            });
+            assert!(instantiated.is_none());
+            work
+        });
+        assert!(
+            work[0] > 0,
+            "member fact checking must charge work: {work:?}"
+        );
+        assert!(
+            work.iter().all(|sample| *sample <= work[0] + 128),
+            "member fact checking must not visit unrelated caller locals: {work:?}"
         );
     }
 
