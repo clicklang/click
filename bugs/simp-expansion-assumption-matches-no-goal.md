@@ -2,32 +2,37 @@
 
 ## Violated invariant
 
-A smart tactic that verifies must expand to explicit tactics that verify the same claim: `click expand` output has to parse, re-verify in the retained session and through the direct targeted entry point, and contain no smart tactic at the audited site. `click audit` checks exactly this, and CLAUDE.md lists an expansion that fails or does not re-verify as a tooling defect that blocks feature work.
+A smart tactic that verifies must expand to explicit tactics that verify the
+same claim (`click audit` checks this).
 
-The expansion of `simp` ends in an `assumption` that finds no current proposition goal to match.
+Tactics written after `execute()` are deferred and run against the function's
+claims. A deferred `witness` (or `intro`) opens the claim's own proof. A
+following `simp()` expands to the whole claim's certificate,
+`have <claim> by { ... }; assumption();`, and when the expansion is checked that `assumption`
+matches no goal.
 
-The root cause has not been investigated. The fixtures below may not all share one; split this file if they do not.
+The `intro` case is fixed: `simp()` now records only the steps it adds to
+the proof the `intro`s opened, and deferred `normalize`, `assumption` and
+arithmetic closers continue that proof
+(`post_execution_closer_continues_the_proof_intros_opened`).
 
-## Reproduction
+The `witness` case remains, in `mdtests/cstr_stdlib.md`
+(`plain_cstr.exposes_ghost_length`: `unfold(cstr); let ... satisfy ...;
+witness(len = found_len); simp();`). Applying the same change to
+`witness`-opened proofs makes that fixture audit clean but breaks two
+properties:
 
-On `master` at `b3ab98334`, the fixture verifies (`MDTEST_FILTER=cstr_stdlib cargo test --test mdtests`) and its audit fails:
+- `post_execution_choose_and_witness_share_the_retained_outcome_proof`
+  requires that changing the witness invalidates the expanded proof. With
+  the shorter expansion, a deferred `assumption` that does not close the
+  opened proof has to fall back to the claim-level reading, which can close
+  the claim from ambient facts and ignore the witness.
+- `bounded_range_witness_closes_on_the_checked_outcome_scope` needs that
+  claim-level fallback: its `assumption` does not close the opened proof's
+  goal, a conjunction.
 
-```
-click audit mdtests/cstr_stdlib.md
-```
-
-fails at `mdtests/cstr_stdlib.md:69:9` (`simp`) with:
-
-```
-`plain_cstr.exposes_ghost_length` path 0, tactic 5: `assumption` did not match any current proposition goal
-```
-
-The gate does not audit fixtures, which is why these pass `scripts/check.sh`.
-
-Affected fixtures (2), each failing `click audit` the same way:
-
-- `mdtests/cstr_stdlib.md`
-- `mdtests/post_execution_intro_quantified_ensure.md`
+So the fix needs a closer that continues a `witness`-opened proof without
+silently dropping the witness.
 
 ## Intended regression
 
