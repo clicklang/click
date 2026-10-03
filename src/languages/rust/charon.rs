@@ -1,5 +1,6 @@
 //! Opt-in, deliberately narrow ULLBC adapter. All bodies use the same CFG path.
 //! Charon owns Rust normalization; Click owns execution and checked authority.
+mod assignment_operators;
 mod chunks;
 mod protocol;
 mod shared_arrays;
@@ -859,6 +860,7 @@ impl BodyAdapter<'_, '_> {
                     .fun_decls
                     .get(id)
                     .ok_or_else(|| unsupported("missing call definition"))?;
+                self.adapter.assignment_operator_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
                     let [a::Operand::Move(p)] = call.args.as_slice() else {
                         return Err(unsupported("mem::drop operand"));
@@ -986,7 +988,9 @@ pub(super) fn decode(
                     continue;
                 }
                 if tr.item_meta.lang_item != Some(LangItem::Drop) {
-                    return Err(unsupported("source trait method other than Drop"));
+                    let name = adapter.assignment_operator_name(f)?;
+                    adapter.functions.insert(id, name);
+                    continue;
                 }
                 let imp = krate
                     .trait_impls
@@ -1249,6 +1253,112 @@ mod tests {
             &prepared,
         )
         .unwrap();
+    }
+
+    const OPERATOR_ARTIFACT: &[u8] =
+        include_bytes!("../../../design/charon-trial/assignment-operators/operators.ullbc");
+    const OPERATOR_SOURCE: &[u8] =
+        include_bytes!("../../../design/charon-trial/assignment-operators/operators.rs");
+
+    #[test]
+    fn charon_assignment_operators_import_source_bodies_and_ordinary_calls() {
+        let export = decode(OPERATOR_ARTIFACT, "operators.rs", OPERATOR_SOURCE).unwrap();
+        for (caller, method) in [
+            ("scaled", "U32X4_mul_assign_u32"),
+            ("reduced", "U32X4_rem_assign_u32"),
+            ("added", "U32X4_add_assign_ref_U32X4"),
+        ] {
+            let body = export.functions.iter().find(|f| f.name == method).unwrap();
+            assert!(body.mir.is_some() && body.body.is_empty());
+            let caller = export.functions.iter().find(|f| f.name == caller).unwrap();
+            assert!(
+                caller.mir.as_ref().unwrap().blocks.iter().any(
+                    |b| matches!(&b.terminator, T::Call { function, .. } if function == method)
+                )
+            );
+        }
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        C0VerificationSession::new_program_prepared(
+            include_str!("../../../design/charon-trial/assignment-operators/operators.click"),
+            &prepared,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn charon_assignment_operators_reject_forged_identity_signatures_and_calls() {
+        for mutation in 0..15 {
+            let mut artifact: TrialArtifact = serde_json::from_slice(OPERATOR_ARTIFACT).unwrap();
+            let krate = &mut artifact.data.translated;
+            if mutation < 12 {
+                let f = krate.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "mul_assign")).unwrap();
+                let a::FunSource::TraitImpl {
+                    trait_ref,
+                    impl_ref,
+                    ..
+                } = &f.src
+                else {
+                    panic!()
+                };
+                match mutation {
+                    0 => krate.trait_decls[trait_ref.id].item_meta.is_local = true,
+                    1 => krate.trait_decls[trait_ref.id].is_unsafe = true,
+                    2 => {
+                        krate.trait_decls[trait_ref.id].item_meta.name.name[0] =
+                            a::PathElem::Ident("impostor".into(), a::Disambiguator::ZERO)
+                    }
+                    3 => {
+                        krate.trait_decls[trait_ref.id].item_meta.lang_item =
+                            Some(LangItem::AddAssign)
+                    }
+                    4 => krate.trait_impls[impl_ref.id].is_negative = true,
+                    5 => krate.trait_impls[impl_ref.id].is_unsafe = true,
+                    6 => krate.trait_impls[impl_ref.id].item_meta.is_local = false,
+                    7 => f.signature.is_unsafe = true,
+                    8 => f.signature.output = f.signature.inputs[1].clone(),
+                    9 => f.signature.inputs[0] = f.signature.inputs[1].clone(),
+                    10 => f.signature.inputs[1] = f.signature.inputs[0].clone(),
+                    11 => {
+                        f.item_meta.name.name[2] =
+                            a::PathElem::Ident("add_assign".into(), a::Disambiguator::ZERO)
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                let f = krate.fun_decls.iter_mut().find(|f| matches!(f.item_meta.name.name.last(), Some(a::PathElem::Ident(n, _)) if n == "scaled")).unwrap();
+                let a::Body::Unstructured(body) = &mut f.body else {
+                    panic!()
+                };
+                let call = body
+                    .body
+                    .iter_mut()
+                    .find_map(|b| match &mut b.terminator.kind {
+                        u::TerminatorKind::Call { call, .. } => Some(call),
+                        _ => None,
+                    })
+                    .unwrap();
+                match mutation {
+                    12 => call.args[0] = call.args[1].clone(),
+                    13 => call.args.clear(),
+                    14 => {
+                        let a::FnOperand::Regular(ptr) = &mut call.func else {
+                            panic!()
+                        };
+                        ptr.generics.regions.clear();
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            assert!(
+                decode(
+                    &serde_json::to_vec(&artifact).unwrap(),
+                    "operators.rs",
+                    OPERATOR_SOURCE
+                )
+                .is_err(),
+                "mutation {mutation}"
+            );
+        }
     }
 
     const ITERATION_ARTIFACT: &[u8] =

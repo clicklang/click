@@ -402,9 +402,9 @@ primitive lossless unsigned `From` calls, including `u32::from(u8/u16)`. The
 fixed accumulator wrap-boundary case and generic reference/field updates with
 read/write authority and preserved neighbors. Conversion operands evaluate
 once in order; casts truncate to sixteen bits and arithmetic checks that width.
-This is not an arbitrary checksum proof. Tuple structs, array iteration,
-indexed compound assignments, and checksum-specific operator implementations
-still block the unchanged adler2 loop.
+This is not an arbitrary checksum proof. The Charon checkpoints subsequently cover tuple structs, shared array iteration
+and indexed compound assignments. By-value aggregate operator operands and
+crate extraction still block the unchanged adler2 loop.
 Shared byte-slice `split_at` now supports two plain local tuple bindings,
 full-width panic bounds, and an explicit signed-word pointer-offset limit.
 Both slice lengths and reads through variable split points have regressions,
@@ -414,6 +414,23 @@ general tuple values, and range subscripts remain outstanding.
 By-value array parameters/returns, non-byte slices, and crate extraction also
 remain outstanding. Neither library is verified
 by this assessment.
+
+The Charon trial now imports resolved local `MulAssign<u32>`, `RemAssign<u32>`
+and `AddAssign<&U32X4>` implementations through ordinary checked function calls.
+The [operator checkpoint](../design/charon-trial/assignment-operators/operators.click)
+keeps Adler2's multiplication and remainder bodies unchanged. Dispatch checks
+core trait identity, local implementation identity and receiver/operand types;
+proof names include the RHS type to distinguish overloads. There are no
+operator-specific arithmetic axioms. A compiler regression checks two `AddAssign`
+overloads with replacement semantics, alongside panic, authority, incorrect-lane
+and expanded-proof rejection coverage.
+
+The checkpoint proves bounded doubling, nonzero remainder, borrowed addition
+and a concrete local two-call case. General symbolic multiplication and symbolic
+successive-call composition expose tracked proof-engine limitations. By-value
+aggregate operator operands and crate extraction remain migration work before
+importing and proving the unchanged checksum loop. The default frontend is
+unchanged.
 
 ## Milestone 1: experimental safe Rust
 
