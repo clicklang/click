@@ -26,6 +26,14 @@ void initialize_pair(struct pool* source, struct pool* destination) {
 }
 ```
 
+```c filename=forward.c
+struct pool { int32 checked_out; int32 capacity; };
+void initialize_pair(struct pool* source, struct pool* destination);
+void forward(struct pool* source, struct pool* destination) {
+    initialize_pair(source, destination);
+}
+```
+
 ```click resource_semantics=authority
 resource pool_slot(pool: struct pool*) {}
 resource pool_object(pool: struct pool*, object: int32*) {}
@@ -49,6 +57,7 @@ predicate valid_pool(pool: struct pool*) {
 }
 verifying "pool_init.c";
 verifying "pair.c";
+verifying "forward.c";
 void pool_init(struct pool* pool, int32 capacity) {
     consumes pool_storage(pool);
     requires 0 <= capacity;
@@ -88,6 +97,23 @@ void initialize_pair(struct pool* source, struct pool* destination) {
     open(pool_control(source)) { step(); }
     execute(); simp();
 }
+void forward(struct pool* source, struct pool* destination) {
+    requires source != destination;
+    consumes pool_storage(source);
+    consumes pool_storage(destination);
+    requires count(pool_slot(source)) == 0;
+    requires count(pool_slot(destination)) == 0;
+    requires count(pool_object(source, _)) == 0;
+    requires count(pool_object(destination, _)) == 0;
+    produces pool_control(source);
+    produces pool_control(destination);
+    produces pool_slot(source);
+    produces pool_slot(destination);
+    ensures source->capacity == 1;
+    ensures destination->capacity == 1;
+    ensures count(pool_slot(source)) == 1;
+    ensures count(pool_slot(destination)) == 1;
+} by { execute(); simp(); }
 ```
 
 ```expect
