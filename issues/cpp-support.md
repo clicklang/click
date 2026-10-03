@@ -113,6 +113,17 @@ and exact division, including concrete Boolean template wrappers; zero divisors
 and unproved product bounds are rejected.
 This does not yet import Bitcoin's wide helper path or field-reading siblings.
 
+Static scalar helpers now retain class and declaration identity without an
+implicit receiver or importing unrelated object layouts. Ordinary
+`Class::helper` selection, class-qualified/unqualified calls, and reachable
+concrete template instances support the existing scalar call positions,
+including stable nested arguments. The synthetic static `Mul`/`Div` rounding
+fixture verifies both signs through Boolean template wrappers, expansion and
+audit. Scalar-type, distinct-class, initializer, exception, false-claim, and
+artifact regressions are covered. Object-qualified calls and pointer/reference
+signatures remain rejected. Bitcoin's wide path, `Assume`, and field-reading
+siblings still require further support.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -137,7 +148,7 @@ and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
-cases. The selected upstream source still requires `__int128`, static scalar helpers,
+cases. The selected upstream source still requires `__int128`,
 assumption obligations, and argument-order support for field-reading siblings
 in `Div(Mul(...), size, RoundDown)` on this target. Stable scalar sibling arguments
 are now supported; upstream `EvaluateFee` is not yet supported.
