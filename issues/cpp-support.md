@@ -338,7 +338,8 @@ wide-endpoint oracle tests. Existing machine bounds, Integer observations and
 reverse conversions, rewrite normalization, and C++ literals/constant casts
 use this layer. Runtime bridges require an exact format match. General
 source-level `__int128` execution remains unsupported; the bounded kernel
-wide scalar profile below does not claim arithmetic or frontend admission.
+wide scalar profile below admits only the listed operations, without frontend
+admission.
 
 The shared runtime now has an explicit modulo cast boundary for existing
 8–64-bit integer values. C++20 and Rust select the same symbolic conversion
@@ -352,8 +353,8 @@ The bounded shared wide scalar runtime is delivered: typed 128-bit literals
 and variables, scalar locals and function parameters/results, substitution,
 16-byte scalar size/alignment under the pinned profile, and exact Integer
 observations. Reverse Integer conversions retain both wide range obligations;
-truthiness observes all bits. Legacy arithmetic carriers, native arithmetic,
-and address-based wide access are refused.
+truthiness observes all bits. Legacy arithmetic carriers and address-based
+wide access are refused; native arithmetic is admitted only in the slices below.
 C0 identities carry the kernel types without adding source parser admission.
 
 Symbolic wide widening, narrowing, and signedness changes are delivered at
@@ -362,12 +363,20 @@ constant substitution preserves every bit and sign extension. Ordinary C
 wide signed conversions retain representability obligations. Exact Integer
 observation preserves numeric widening, while value-changing casts remain
 typed machine observations. Root construction and validation stay bounded,
-including large operands; native arithmetic and source admission remain open.
+including large operands; source admission remains open.
 
-Next add checked wide multiplication and its definedness rules.
-Wide addressable storage/loads and
-frontend source admission must retain the source's resolved machine semantics. Use the shared formats
-and conversion policies rather than inventing a C++-specific numeric carrier.
+Checked signed 128-bit multiplication is delivered. Exact operand observations
+feed a shared Integer product; both native range guards must hold before the
+shared checked machine conversion produces the typed result. Unknown bounds
+retain both signed-overflow paths. Existing 64-by-32 product-bounds certificates
+discharge the guards without admitting unproved native definedness. Boundary
+oracles, earlier operand undefined behavior, narrow operand promotion, function
+results, specification capture, and indexed work scaling are covered.
+Unsigned wrapping multiplication and other native wide operations remain open.
+
+Next add wide addressable storage/loads and frontend source admission,
+retaining the source's resolved machine semantics. Use the shared formats and
+conversion policies rather than inventing a C++-specific numeric carrier.
 Then cover wide truncating division/remainder and checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
