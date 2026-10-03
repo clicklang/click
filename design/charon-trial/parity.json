@@ -68,8 +68,8 @@
   },
   {
     "config": "examples/rust-split-at/split.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "Charon trial does not support type (raw pointers and general generics remain later work)"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "config": "examples/rust-unsigned/arithmetic.click.import.json",

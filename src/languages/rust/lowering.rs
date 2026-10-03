@@ -587,6 +587,19 @@ impl Context<'_> {
         left: &super::schema::Place,
         right: &super::schema::Place,
     ) -> Result<CStatement, String> {
+        self.slice_split_slots(slice, midpoint, left, right, true)
+    }
+    fn slice_split_slots(
+        &mut self,
+        slice: &E,
+        midpoint: &E,
+        left: &super::schema::Place,
+        right: &super::schema::Place,
+        declare: bool,
+    ) -> Result<CStatement, String> {
+        if left.name == right.name {
+            return Err("split_at results require distinct slice slots".into());
+        }
         let E::Local { name } = slice else {
             return Err("split_at requires a shared byte-slice local".into());
         };
@@ -647,38 +660,45 @@ impl Context<'_> {
             if place.value_type != (Type::ByteSlice { mutable: false }) {
                 return Err("split_at results must be shared byte slices".into());
             }
-            let length_name = format!("{}_len", place.name);
-            if !self.locals.insert(place.name.clone()) || !self.locals.insert(length_name.clone()) {
-                return Err("duplicate split_at local identity".into());
-            }
-            self.slices
-                .insert(place.name.clone(), (length_name.clone(), true));
+            let length_name = if declare {
+                let length_name = format!("{}_len", place.name);
+                if !self.locals.insert(place.name.clone())
+                    || !self.locals.insert(length_name.clone())
+                {
+                    return Err("duplicate split_at local identity".into());
+                }
+                self.slices
+                    .insert(place.name.clone(), (length_name.clone(), true));
+                result = c_seq(
+                    result,
+                    c_seq(
+                        c_declare_with_all_qualifiers(
+                            &place.name,
+                            CType::UInt8Pointer,
+                            false,
+                            false,
+                            false,
+                            true,
+                        ),
+                        c_declare(&length_name, CType::UInt64),
+                    ),
+                );
+                length_name
+            } else {
+                self.slices
+                    .get(&place.name)
+                    .filter(|(_, constant)| *constant)
+                    .map(|(length, _)| length.clone())
+                    .ok_or("split_at requires declared shared slice results")?
+            };
             result = c_seq(
                 result,
                 c_seq(
-                    c_declare_with_all_qualifiers(
+                    c_assign(
                         &place.name,
-                        CType::UInt8Pointer,
-                        false,
-                        false,
-                        false,
-                        true,
+                        c_cast_with_pointee_qualifiers(pointer, CType::UInt8Pointer, false, true),
                     ),
-                    c_seq(
-                        c_declare(&length_name, CType::UInt64),
-                        c_seq(
-                            c_assign(
-                                &place.name,
-                                c_cast_with_pointee_qualifiers(
-                                    pointer,
-                                    CType::UInt8Pointer,
-                                    false,
-                                    true,
-                                ),
-                            ),
-                            c_assign(length_name, length),
-                        ),
-                    ),
+                    c_assign(length_name, length),
                 ),
             );
         }

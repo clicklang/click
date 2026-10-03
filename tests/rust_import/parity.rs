@@ -81,14 +81,14 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
     );
     assert_eq!(
         entries.iter().filter(|e| e.outcome == "verified").count(),
-        10
+        11
     );
     assert_eq!(
         entries
             .iter()
             .filter(|e| e.outcome == "verified" || e.migrated_sidecar.is_some())
             .count(),
-        12
+        13
     );
 }
 
