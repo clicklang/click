@@ -358,6 +358,14 @@ authority cannot justify it. At function entry the count is arbitrary,
 constrained by the control invariant and supplied preconditions; it is not zero.
 Contracts and proof expressions use the same checked rule.
 
+Locally created concrete batches can be consumed in pieces: after
+`fold(3 of token(p))`, `unfold(token(p))` leaves two members, and
+`unfold(2 of token(p))` leaves none. Each change requires the matching authority;
+zero quantities also require authority and leave the population unchanged.
+Retirement still requires all members to have been consumed. The
+[local numeric batch fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_local_numeric_batch.md)
+checks this without enumerating the members.
+
 A resource quantity may read memory supplied by another required resource in
 that contract section. For example, `owns control(pool)` can supply the field
 read in `owns pool->capacity of slot(pool)` when its body owns the pool's

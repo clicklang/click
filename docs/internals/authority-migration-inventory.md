@@ -272,6 +272,12 @@ controls. Explicit member consumption precedes invariant restoration; reopening
 does not consume again. Nested calls and both reporting branches verify, while
 the unchanged two-unit increment is rejected for failing the counter/count fact.
 
+`authority_local_numeric_batch.md` covers a locally created concrete batch,
+including zero changes and partial consumption. Concrete quantities use the
+same custody ledger as units; kernel tests also preserve exact wildcard member
+counts and check quantity-independent work. True symbolic-batch/unit mixing
+is still a separate migration capability.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
