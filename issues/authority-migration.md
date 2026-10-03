@@ -420,6 +420,15 @@ The produced-population predicate fixture and its ordinary caller also select
 authority semantics. They require an empty entry family explicitly and retain
 the original C and ensured predicate through positive and zero quantities.
 
+**Owned-count certification slice:** Independent contract certification now
+retains the count evaluator's authenticated member bounds under authority
+semantics. A helper with one owned member and matching authority can certify
+`1 <= count(...)` without assuming the global total is exactly one. Consumption
+uses the updated count, and neither an untracked resource fact nor a member
+without authority supplies the bound. The `authority_owned_count_*` regressions
+cover helper calls, nonnegative remaining counts, and exact/stale/unauthorized
+count refusals. This does not enable general `observe` in authority mode.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

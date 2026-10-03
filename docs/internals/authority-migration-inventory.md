@@ -286,6 +286,14 @@ in `produced_population_count_in_ensured_predicate.md` now receive explicit
 authority for an empty entry family. Their ensured predicate observes checked
 births, including the zero-quantity branch, with unchanged C.
 
+The `authority_owned_count_*` fixtures cover contract-entry lower bounds from
+authenticated member custody. A directly owned member and matching authority
+entail a lower bound, including through an ordinary helper, without assuming
+an exact global total. Checked consumption preserves nonnegativity and rejects
+reuse of the earlier bound. Member ownership without authority cannot supply
+these count facts. A kernel regression distinguishes authenticated custody
+from a resource fact inserted without ledger membership.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
