@@ -413,6 +413,13 @@ cover splitting, overconsumption, overflow, live-member retirement, and exact
 wildcard member counts. Deterministic quantity scaling checks constant work;
 true symbolic-batch/unit mixing remains a separate boundary.
 
+**Contract-transition slice:** The count-transition positive and negative now
+use explicit authority and a checked member birth. The positive states the
+entry-to-post count relation; the negative rejects its fixed post-count claim.
+The produced-population predicate fixture and its ordinary caller also select
+authority semantics. They require an empty entry family explicitly and retain
+the original C and ensured predicate through positive and zero quantities.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

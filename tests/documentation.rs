@@ -1076,7 +1076,7 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
             let mut in_click = false;
             let mut checked_click = String::new();
             for line in fixture.lines() {
-                if line.trim() == "```click" {
+                if line.split_whitespace().next() == Some("```click") {
                     in_click = true;
                     continue;
                 }
