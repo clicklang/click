@@ -2477,23 +2477,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_focused_execute_to_exit(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_focused_execute_to_exit_within(Vec::new(), &mut BTreeSet::new(), &mut 0)
-    }
-
-    /// Smart focused execution variant used by automatic execution callers.
-    /// Retry identities belong to this one search and are threaded through
-    /// nested branch arms, so a repeated refusal cannot grow an unbounded
-    /// retained-have chain.
-    ///
-    /// `steps` counts the statement steps the owning `execute()` has taken,
-    /// across every nested arm: [`Self::charge_execute_step`] refuses the
-    /// search at its fixed budget.
-    pub(in crate::surface::proof) fn try_focused_execute_to_exit_with_retries(
-        &self,
-        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
-        steps: &mut usize,
-    ) -> Result<Option<Self>, ClickError> {
-        self.try_focused_execute_to_exit_within(Vec::new(), retried_requirements, steps)
+        self.try_focused_execute_to_exit_within(Vec::new(), &mut BTreeSet::new(), &mut 0, None)
     }
 
     /// Charges one statement step of a smart `execute()` against its fixed
@@ -2522,12 +2506,28 @@ impl<'a> Proof<'a> {
     /// last: reaching a bounded arm's typed boundary consumes one record to
     /// continue privately into that arm's parent continuation, so a terminal
     /// path escapes exactly as many regions as it is nested inside.
-    fn try_focused_execute_to_exit_within(
+    ///
+    /// `steps` counts the statement steps the owning `execute()` has taken,
+    /// across every nested arm: [`Self::charge_execute_step`] refuses the
+    /// search at its fixed budget. `introduced`, given only at the top level,
+    /// collects the facts each advance there adds, for a scope that retains
+    /// what its body introduced.
+    pub(in crate::surface::proof) fn try_focused_execute_to_exit_within(
         &self,
         enclosing: Vec<&ExecutionSplit<'a>>,
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
+        mut introduced: Option<&mut Vec<Proposition>>,
     ) -> Result<Option<Self>, ClickError> {
+        let mut record_added = |proof: &Self| {
+            if let Some(introduced) = introduced.as_deref_mut() {
+                for fact in proof.added_facts() {
+                    if !introduced.contains(fact) {
+                        introduced.push(fact.clone());
+                    }
+                }
+            }
+        };
         let mut proof = self.clone();
         let mut enclosing = enclosing;
         loop {
@@ -2544,6 +2544,7 @@ impl<'a> Proof<'a> {
             if let Some(next) =
                 proof.try_smart_statement_step(ProofStep::Step, retried_requirements)?
             {
+                record_added(&next);
                 proof = next;
                 retried_requirements.clear();
                 continue;
@@ -2563,12 +2564,16 @@ impl<'a> Proof<'a> {
                         let Some(condition) = error.path_case_condition() else {
                             return Ok(None);
                         };
-                        return proof.try_focused_execute_cases_to_exit(
+                        let cases = proof.try_focused_execute_cases_to_exit(
                             condition.clone(),
                             &enclosing,
                             retried_requirements,
                             steps,
-                        );
+                        )?;
+                        if let Some(cases) = &cases {
+                            record_added(cases);
+                        }
+                        return Ok(cases);
                     }
                     Err(error) => return Err(error),
                 };
@@ -2585,12 +2590,16 @@ impl<'a> Proof<'a> {
                         let Some(condition) = error.path_case_condition() else {
                             return Ok(None);
                         };
-                        proof.try_focused_execute_cases_to_exit(
+                        let cases = proof.try_focused_execute_cases_to_exit(
                             condition.clone(),
                             &enclosing,
                             retried_requirements,
                             steps,
-                        )
+                        )?;
+                        if let Some(cases) = &cases {
+                            record_added(cases);
+                        }
+                        Ok(cases)
                     }
                     // The statement cannot run here in the whole proof
                     // context; its refusal is the answer.
@@ -2611,6 +2620,7 @@ impl<'a> Proof<'a> {
                         arm_enclosing,
                         retried_requirements,
                         steps,
+                        None,
                     )?
                 else {
                     return Ok(None);
@@ -2624,6 +2634,7 @@ impl<'a> Proof<'a> {
             } else {
                 advanced.join_focused_execution_terminal(&record)?
             };
+            record_added(&proof);
             retried_requirements.clear();
         }
     }
@@ -2646,6 +2657,7 @@ impl<'a> Proof<'a> {
                     enclosing.to_vec(),
                     retried_requirements,
                     steps,
+                    None,
                 )?
             else {
                 return Ok(None);

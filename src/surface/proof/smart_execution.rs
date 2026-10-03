@@ -79,64 +79,45 @@ impl<'a> Proof<'a> {
             .map(|(proof, _)| proof))
     }
 
-    /// Runs the narrow linear `execute` search over checked descendants.
-    /// Straight-line statements and audited terminal C branches advance only
-    /// through their Proof operations; a partial path is discarded unless it
-    /// reaches function exit.
-    pub(super) fn try_linear_execute_descendant(
+    /// Runs `execute()` to function exit on checked descendants: one
+    /// statement step at a time, splitting at C branches, call outcomes, and
+    /// path cases. A partial path is discarded unless it reaches function
+    /// exit. The returned fact list is the top-level advances' output delta.
+    pub(super) fn try_execute_to_exit_descendant(
         &self,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
+        if self.is_at_function_exit() {
+            return Ok(None);
+        }
         // The statement steps below run on behalf of `execute()`, and a
         // refusal names it; the returned descendant carries this proof's own
         // context again, so checkpoints taken before it still apply.
-        let mut proof = self.with_execution_step_tactic_name("execute()");
-        let mut introduced_facts = Vec::new();
-        let mut advanced = false;
+        let proof = self.with_execution_step_tactic_name("execute()");
         // Retrying a refused statement is bounded by the owning smart
         // operation: one retained-have attempt per distinct requirement
-        // identity.  The set follows this immutable search, rather than a
+        // identity. The set follows this immutable search, rather than a
         // process-global cache, so unrelated proofs cannot affect it.
         let mut retried_requirements = BTreeSet::new();
-        let mut steps = 0;
-        while !proof.is_at_function_exit() {
-            proof.charge_execute_step(&mut steps)?;
-            let next = if let Some(next) =
-                proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?
-            {
-                next
-            } else {
-                // A structural frontier (a C branch, a call's outcomes, or a
-                // statement such as a `switch` whose successors are path
-                // cases) runs to exit through the focused split recursion.
-                let Some(next) = proof.try_focused_execute_to_exit_with_retries(
-                    &mut retried_requirements,
-                    &mut steps,
-                )?
-                else {
-                    return Ok(None);
-                };
-                next
-            };
-            retried_requirements.clear();
-            for fact in next.added_facts() {
-                if !introduced_facts.contains(fact) {
-                    introduced_facts.push(fact.clone());
-                }
-            }
-            proof = next;
-            advanced = true;
-        }
-        if !advanced {
+        let mut introduced_facts = Vec::new();
+        let Some(proof) = proof.try_focused_execute_to_exit_within(
+            Vec::new(),
+            &mut retried_requirements,
+            &mut 0,
+            Some(&mut introduced_facts),
+        )?
+        else {
             return Ok(None);
-        }
+        };
         Ok(Some((proof.with_context_of(self), introduced_facts)))
     }
 
     /// Returns the already-checked function-exit descendant selected by the
-    /// narrow linear `execute` search.
-    pub(in crate::surface::proof) fn try_linear_execute(&self) -> Result<Option<Self>, ClickError> {
+    /// `execute()` search.
+    pub(in crate::surface::proof) fn try_execute_to_exit(
+        &self,
+    ) -> Result<Option<Self>, ClickError> {
         Ok(self
-            .try_linear_execute_descendant()?
+            .try_execute_to_exit_descendant()?
             .map(|(proof, _)| proof))
     }
 
