@@ -717,7 +717,12 @@ const-dropping cast rule. A predecessor claim is refused only by `simp`
 exhausting its budget (`bugs/simp-exhausts-its-budget-on-a-false-list-postcondition.md`),
 so there is no wrong-position negative.
 
-**Chunk 9. `rb_prev`.** The mirror of chunk 8. Depends on 8.
+**Chunk 9. `rb_prev`.** The mirror of chunk 8. Certified (2026-10-02):
+`mdtests/rb_prev.md` proves the predecessor contract on the Linux body, with
+`mdtests/rb_prev_rejects_a_dropped_context.md` as its negative. The model's
+list lemmas are not symmetric, so it adds `ctx_descends_from_left`,
+`ctx_is_left`, `plug_predecessor` and `rb_inorder_first_through_left`. Its
+parameter is declared without `const` for the same reason as chunk 8's.
 
 ### Erase (D3, D4, D10)
 

@@ -707,6 +707,10 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   proof that never opens the entry node; and
   `mdtests/rb_next_const_signature.md` keeps the `const` signature Linux
   declares, which C0 refuses at the cast that returns the node.
+- `mdtests/rb_prev.md`: the Linux `rb_prev` with its predecessor contract,
+  certified, the mirror of `rb_next.md` with its own list lemmas where the
+  model's are not symmetric; `mdtests/rb_prev_rejects_a_dropped_context.md` is
+  its negative.
 - `mdtests/rb_augment_callbacks_table.md` and the neighboring
   `rb_augment_callbacks_helper*.md` fixtures: the augmented-rbtree callback
   suite as a const table of function pointers, with the effect and ownership
