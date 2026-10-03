@@ -443,12 +443,20 @@ False lane results, overflow, zero divisors, missing authority and writes throug
 shared operands are rejected. Verification, profiling, auditing, expansion and
 expanded-certificate rechecking exercise the ordinary call path.
 
-The sidecar proves bounded doubling, arbitrary nonzero remainder, bounded
-borrowed addition with preserved input lanes, and a concrete two-call local
-construction. Source bodies remain fixed. General symbolic multiplication and
-symbolic successive-call composition currently encounter documented proof-engine
-limitations; see [the multiplication report](../../bugs/rust-symbolic-multiplication-precondition-not-matched.md)
-and [the successive-call report](../../bugs/rust-successive-array-field-calls-lose-symbolic-values.md).
+The sidecar proves general unsigned multiplication under each lane's explicit
+zero-or-safe precondition, arbitrary nonzero remainder, bounded borrowed addition
+with preserved input lanes, and symbolic composition of two calls on a locally
+constructed array-field record. Source bodies remain fixed. The
+[symbolic scalar checkpoint](symbolic-multiply/probe.click) separately verifies
+primitive multiplication, zero factors, full-width boundaries, and rejection of
+missing safety premises, overflow and unguarded division by zero.
+
+The proof machinery retains a checked refuted-disjunction witness for unreachable
+panic-check paths. Equality congruence propagates through unsigned division,
+remainder and XOR while preserving operation tags and load snapshots; it grants
+no arithmetic definedness. Reconstructed expressions keep unsigned casts and
+explicit snapshots, including lane zero. Both checkpoints exercise expansion and
+rechecking, and indexed equality work is tested at 16/64/256/1024 inputs.
 By-value aggregate operands, generic implementations, other operator traits,
 external implementation bodies and dynamic dispatch remain rejected.
 
@@ -522,3 +530,40 @@ reborrows and local calls through that same boundary. Stored exact-chunk state,
 owned moves, typed Option dispatch and remainder now pass through it as well.
 Nested iterator composition and byte-array coercions now pass through it too.
 Next import the unchanged checksum loop and establish supported-fixture parity before switching the default and retiring legacy extraction.
+
+
+## Parity and continuous extraction
+
+The [parity inventory](parity.json) records every legacy Rust example config.
+Entries remain when fixtures switch backends. A normal regression rejects
+missing or duplicate entries; the required live CI
+gate copies each unchanged Rust source and Click sidecar into an isolated
+project, replaces only its import configuration, extracts ULLBC, and runs the
+shared checker. `verified` means the whole existing sidecar passes. `rejected`
+means extraction/normalization is missing; `proof-gap` means extraction succeeds
+but the existing proof observations or contracts do not yet work. Expected gaps
+must retain their diagnostic; any changed outcome fails the gate so the
+inventory is revised with the implementation. This is fixture-level parity,
+not a percentage of the Rust language.
+
+Current result: **8 of 16 legacy fixtures verify unchanged**, six reject during
+normalization, and two import but need stable proof observations. Array length
+calls block `rust-arrays` and `rust-array-values`; loop headers block
+`rust-byte-sum` and `rust-loops`; owned iterator resolution blocks
+`rust-iterators`; tuple/slice return types block `rust-split-at`. The remaining
+proof gaps are legacy iterator ghost names in `rust-chunks-exact` and
+`rust-iter-references`. Resolve these observations in the adapter/proof interface
+without restoring a generated processed count or rewriting Rust bodies.
+
+The gate also runs all existing live compiler/borrow-checker rejection tests.
+Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
+CI builds pinned Charon, reuses the prepared Click test archive, and requires
+this separate gate in its final `test` check. Locked-artifact tests remain in
+the ordinary partitions.
+
+[charon-profile.json](../../src/languages/rust/charon-profile.json) centralizes
+compiler/extractor pins, extraction flags, and named semantic versions. It is
+compiled into the adapter and read by the compiler build script. The existing
+identity byte sequence, including its historical combined array entry, remains
+stable; existing locks need no refresh. Future interpretation changes must
+version their named entry and deliberately refresh affected locks.

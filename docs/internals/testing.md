@@ -224,7 +224,7 @@ setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
 Rust exporters; then runs the unit/API/documentation tests followed by the
 mdtest, example, C compiler-import, C++ import, and Rust import fixtures.
 
-CI uses three internal modes for code-affecting changes:
+CI uses these internal modes for code-affecting changes:
 
 - `--ci-quality` runs formatting, setup regressions, Clippy, and documentation
   on its own runner, alongside preparation. It does not delay test runners.
@@ -235,8 +235,14 @@ CI uses three internal modes for code-affecting changes:
   hash partitions cover the unit and compiler-import tests; mdtests and
   examples each have their own runner and remain serial within that runner.
 
-The final required `test` check requires quality, preparation, and every
-partition to pass. A failed or cancelled quality job fails this gate even
+- The `charon-live` archive suite re-extracts Rust checkpoints and the complete
+  legacy fixture parity inventory with pinned Charon and rustc, then checks
+  their contracts through the shared verification engine. These ignored tests
+  run explicitly on a separate runner. The local counterpart is
+  `scripts/check.sh --charon-live`; build the legacy exporter first.
+
+The final required `test` check requires quality, preparation, every
+partition, and live Charon extraction to pass. A failed or cancelled quality job fails this gate even
 when every test succeeds.
 
 `scripts/setup-environment.sh` installs pinned nextest release binaries and
@@ -245,8 +251,12 @@ metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
 runners restore those files instead of reinstalling Clang. The Rust exporter
 has a separately pinned compiler/runtime identity in
 `scripts/rust-exporter-toolchain.sh`. CI restores that toolchain before setup;
-archive consumers require its runtime files but do not install a Rust
-compiler or mdBook.
+ordinary archive consumers require its runtime files but do not install a Rust
+compiler or mdBook. The live Charon consumer also installs the separate compiler
+and rustc development components selected by
+`src/languages/rust/charon-profile.json`. That compiled-in profile owns extractor
+pins, flags, and versioned adapter interpretations; the build script reads the
+same profile. Cargo's extractor dependency pin is checked against it.
 
 The build job caches dependencies, Click's own build artifacts, and
 incremental compilation state under the compiler and dependency identity.

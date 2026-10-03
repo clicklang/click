@@ -1657,7 +1657,7 @@ impl CLocalEnvironment {
         }
     }
 
-    pub(in crate::kernel) fn scalar_object_type(&self, name: &str) -> Option<CType> {
+    pub(crate) fn scalar_object_type(&self, name: &str) -> Option<CType> {
         match self.binding(name) {
             Some(CLocalBinding::Object { c_type, .. }) => Some(*c_type),
             Some(CLocalBinding::UninitializedObject { c_type, .. }) => Some(*c_type),

@@ -4341,6 +4341,12 @@ impl<'a> Proof<'a> {
     /// The surface spelling of an exact fact, looked up as `simp` resolves
     /// the premises of a derivation it selected.
     fn unsigned_surface_fact(&self, kernel: &Proposition) -> Option<ClickProposition> {
+        // A reconstructible spelling is not evidence that the fact is held.
+        // In particular, a positive difference may need to be derived from
+        // the unsigned guard before the predecessor lemma can use it.
+        if !self.facts().contains(kernel) {
+            return None;
+        }
         match self.context.as_ref() {
             ProofContext::Pure(context) => self.available_surface_fact(
                 &context.theorem_context.surface_requirements,
@@ -4763,9 +4769,9 @@ impl<'a> Proof<'a> {
                     break;
                 };
                 let selected = focused_branch
-                    .try_simp_closure()
+                    .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
                     .ok()
-                    .flatten()
+                    .or_else(|| focused_branch.try_simp_closure().ok().flatten())
                     .or_else(|| {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;

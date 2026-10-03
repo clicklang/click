@@ -1111,6 +1111,14 @@ impl PropositionSearch for PureFactContext {
             if cases.len() < 2 {
                 continue;
             }
+            if cases
+                .iter()
+                .all(|case| self.contains_assumed_exact(&Proposition::Not(Box::new(case.clone()))))
+            {
+                return Some(PropositionDerivationRule::RefutedDisjunction {
+                    disjunction: Box::new(disjunction.clone()),
+                });
+            }
             // A branch retains the disjunction and adds its chosen case.
             // Once a case is present, splitting this disjunction again adds
             // nothing and would recurse on the same proof context.

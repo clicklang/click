@@ -1,6 +1,7 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
 //! int32 addition and registered same-snapshot int32 loads, connected by int32
-//! scaling. Other scalar operations stay opaque.
+//! scaling. Unsigned division/remainder and bitwise XOR have congruence only;
+//! all other scalar operations stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
@@ -9,12 +10,22 @@ use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm,
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
+/// These tags keep signed division and wider integer operations distinct.
+/// Congruence does not establish C/Rust arithmetic definedness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Int32Binary {
+    UnsignedDivide,
+    UnsignedRemainder,
+    BitwiseXor,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Address(u64, u64),
     Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
+    Int32Binary(Int32Binary, u64, u64),
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
@@ -30,6 +41,7 @@ enum Application {
     Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
+    Int32Binary(Int32Binary, u64, u64),
     Int32Scaled(u64, i64),
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
@@ -39,9 +51,10 @@ enum Application {
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
-            Self::Add(left, right) | Self::Int32Add(left, right) | Self::Footprint(left, right) => {
-                [Some(left), Some(right)]
-            }
+            Self::Add(left, right)
+            | Self::Int32Add(left, right)
+            | Self::Int32Binary(_, left, right)
+            | Self::Footprint(left, right) => [Some(left), Some(right)],
             Self::Address(_, value)
             | Self::Int32Scaled(value, _)
             | Self::Int32Load(_, _, value) => [Some(value), None],
@@ -56,6 +69,9 @@ impl Application {
             Self::Footprint(start, end) => Self::Footprint(classes.root(start), classes.root(end)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
+            Self::Int32Binary(op, left, right) => {
+                Self::Int32Binary(op, classes.root(left), classes.root(right))
+            }
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
             Self::Int32Load(snapshot, block, offset) => {
                 Self::Int32Load(snapshot, block, classes.root(offset))
@@ -434,6 +450,9 @@ impl TermClasses {
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
+            Node::Int32Binary(op, left, right) => {
+                Some(Application::Int32Binary(*op, *left, *right))
+            }
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
@@ -507,6 +526,7 @@ impl TermClasses {
         enum Work<'a> {
             Term(&'a Bitvector32Term),
             Add,
+            Binary(Int32Binary),
         }
         let mut pending = vec![Work::Term(&term)];
         let mut values = Vec::new();
@@ -518,6 +538,28 @@ impl TermClasses {
                     pending.push(Work::Term(right));
                     pending.push(Work::Term(left));
                     continue;
+                }
+                Work::Term(
+                    term @ (Bitvector32Term::UnsignedDivide(left, right)
+                    | Bitvector32Term::UnsignedRemainder(left, right)
+                    | Bitvector32Term::BitwiseXor(left, right)),
+                ) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let op = match term {
+                        Bitvector32Term::UnsignedDivide(..) => Int32Binary::UnsignedDivide,
+                        Bitvector32Term::UnsignedRemainder(..) => Int32Binary::UnsignedRemainder,
+                        Bitvector32Term::BitwiseXor(..) => Int32Binary::BitwiseXor,
+                        _ => unreachable!(),
+                    };
+                    pending.push(Work::Binary(op));
+                    pending.push(Work::Term(right));
+                    pending.push(Work::Term(left));
+                    continue;
+                }
+                Work::Binary(op) => {
+                    let right = values.pop().expect("right int32 operand");
+                    let left = values.pop().expect("left int32 operand");
+                    Node::Int32Binary(op, left, right)
                 }
                 Work::Term(term) => Node::Int32(MachineAtom::int32(term.clone())),
                 Work::Add => {
@@ -546,7 +588,11 @@ impl TermClasses {
         // still need registration because their definitions can join classes.
         let opaque = |term: &Bitvector32Term| {
             let supported = |term: &Bitvector32Term| match term {
-                Bitvector32Term::Add(..) | Bitvector32Term::MemoryLoad(..) => true,
+                Bitvector32Term::Add(..)
+                | Bitvector32Term::MemoryLoad(..)
+                | Bitvector32Term::UnsignedDivide(..)
+                | Bitvector32Term::UnsignedRemainder(..)
+                | Bitvector32Term::BitwiseXor(..) => true,
                 Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
                 _ => false,
             };
@@ -602,7 +648,7 @@ impl TermClasses {
             || self.uses.get(&root).is_some_and(|uses| {
                 uses.iter().any(|parent| {
                     crate::instrumentation::record_deterministic_work(1);
-                    matches!(self.applications.get(parent), Some(Application::Int32Add(..)))
+                    matches!(self.applications.get(parent), Some(Application::Int32Add(..) | Application::Int32Binary(..)))
                 })
             })
     }

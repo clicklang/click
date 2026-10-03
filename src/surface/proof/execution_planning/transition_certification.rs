@@ -838,11 +838,6 @@ fn certified_transitions_from_execution(
                             )
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
-                            || prerequisite_assumptions
-                                .derive_proposition(proposition)
-                                .is_some_and(|derivation| {
-                                    derivation.check(&prerequisite_assumptions)
-                                })
                             || matches!(normalize_proposition(proposition), SimpProposition::True)
                             || (matches!(
                                 proposition,
@@ -854,6 +849,11 @@ fn certified_transitions_from_execution(
                                 .is_some())
                         {
                             None
+                        } else if let Some(derivation) = prerequisite_assumptions
+                            .derive_proposition(proposition)
+                            .filter(|derivation| derivation.check(&prerequisite_assumptions))
+                        {
+                            Some(derivation)
                         } else {
                             return Err(missing_prerequisite_error(
                                 format!(

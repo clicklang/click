@@ -662,6 +662,14 @@ impl PropositionDerivation {
                 equality.collect_context_premises(premises);
                 body.collect_context_premises(premises);
             }
+            PropositionDerivationRule::RefutedDisjunction { disjunction } => {
+                premises.insert(disjunction.as_ref().clone());
+                let mut cases = Vec::new();
+                collect_or_cases(disjunction, &mut cases);
+                for case in cases {
+                    premises.insert(Proposition::Not(Box::new(case)));
+                }
+            }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
                 premises.insert(disjunction.as_ref().clone());
                 let mut case_propositions = Vec::new();

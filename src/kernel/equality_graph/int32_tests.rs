@@ -9,6 +9,129 @@ fn eq(left: &Bitvector32Term, right: &Bitvector32Term) -> ConditionTerm {
     ConditionTerm::equal(left.clone(), right.clone())
 }
 
+fn unsigned_composition(value: Bitvector32Term) -> Bitvector32Term {
+    Bitvector32Term::BitwiseXor(
+        Box::new(Bitvector32Term::UnsignedRemainder(
+            Box::new(value.clone()),
+            Box::new(var(90_001)),
+        )),
+        Box::new(Bitvector32Term::UnsignedDivide(
+            Box::new(value),
+            Box::new(var(90_002)),
+        )),
+    )
+}
+
+#[test]
+fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coercion() {
+    let (a, b) = (var(90_003), var(90_004));
+    let mut graph = EqualityGraph::default();
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let parent = graph.clone();
+    graph.add_int32_equality(&a, &b);
+    assert!(graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let sibling = parent;
+    assert!(!sibling.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let unsigned = Bitvector32Term::UnsignedRemainder(Box::new(a.clone()), Box::new(var(90_001)));
+    let signed = Bitvector32Term::Remainder(Box::new(b.clone()), Box::new(var(90_001)));
+    let quotient = Bitvector32Term::UnsignedDivide(Box::new(b.clone()), Box::new(var(90_001)));
+    assert!(!graph.are_int32_equal(&unsigned, &signed));
+    assert!(!graph.are_int32_equal(&unsigned, &quotient));
+    let mut results_only = EqualityGraph::default();
+    results_only.add_int32_equality(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone()),
+    );
+    assert!(!results_only.are_int32_equal(&a, &b));
+    let undefined =
+        Bitvector32Term::UnsignedDivide(Box::new(a), Box::new(Bitvector32Term::Constant(0)));
+    assert!(!graph.are_int32_equal(&undefined, &Bitvector32Term::Constant(0)));
+}
+
+#[test]
+fn unsigned_congruence_withdraws_with_its_operand_fact() {
+    let (a, b) = (var(90_010), var(90_011));
+    let fact = Proposition::ConditionIs(eq(&a, &b), true);
+    let context = PureFactContext::new().assume_proposition(fact.clone());
+    assert!(context.equality_graph.are_int32_equal(
+        &unsigned_composition(a.clone()),
+        &unsigned_composition(b.clone())
+    ));
+    let withdrawn = context.without_exact_fact(&fact);
+    assert!(
+        !withdrawn
+            .equality_graph
+            .are_int32_equal(&unsigned_composition(a), &unsigned_composition(b))
+    );
+}
+
+#[test]
+fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("unsigned", 4));
+    let pointer = Pointer {
+        block: "unsigned".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer.clone(),
+        CValue::UInt32(Bitvector32Term::Constant(9)),
+    ));
+    let load = |memory, kind| Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), kind);
+    let old = load(before.clone(), LoadKind::Bits32);
+    let value = var(90_012);
+    let mut graph = EqualityGraph::default();
+    graph.add_int32_equality(&old, &value);
+    assert!(graph.are_int32_equal(
+        &unsigned_composition(old),
+        &unsigned_composition(value.clone())
+    ));
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(load(after, LoadKind::Bits32)),
+        &unsigned_composition(value.clone())
+    ));
+    assert!(!graph.are_int32_equal(
+        &unsigned_composition(load(before, LoadKind::UInt16)),
+        &unsigned_composition(value)
+    ));
+}
+
+#[test]
+fn unsigned_congruence_registration_and_late_merges_scale_with_touched_uses() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let mut graph = EqualityGraph::default();
+                for i in 0..size {
+                    let (a, b) = (var(i), var(i + size));
+                    let (left, right) = (
+                        unsigned_composition(a.clone()),
+                        unsigned_composition(b.clone()),
+                    );
+                    assert!(!graph.are_int32_equal(&left, &right));
+                    graph.add_int32_equality(&a, &b);
+                    assert!(graph.are_int32_equal(&left, &right));
+                }
+            })
+        });
+        assert!(work < 1000 * size as usize, "size={size}, work={work}");
+        assert!(
+            map_work < 10_000 * size as usize * (size.ilog2() as usize + 1),
+            "size={size}, map work={map_work}"
+        );
+    }
+}
+
 #[test]
 fn int32_equality_is_transitive_symmetric_and_branch_local() {
     let (a, b, c) = (var(1), var(2), var(3));

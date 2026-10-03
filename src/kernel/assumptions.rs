@@ -5414,6 +5414,15 @@ impl PropositionDerivation {
                     && equality.checks(&variable_term, &constant, available)
                     && body.check(available)
             }
+            PropositionDerivationRule::RefutedDisjunction { disjunction } => {
+                let mut cases = Vec::new();
+                collect_or_cases(disjunction, &mut cases);
+                cases.len() >= 2
+                    && available.contains_assumed_exact(disjunction)
+                    && cases.iter().all(|case| {
+                        available.contains_assumed_exact(&Proposition::Not(Box::new(case.clone())))
+                    })
+            }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
                 if !available.prop_facts.contains(disjunction.as_ref()) {
                     return false;
