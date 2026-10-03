@@ -180,11 +180,9 @@ multi-size deterministic work checks for affected hot paths.
    inventory slice below is delivered. Continue separating structural validity
    from semantic-profile rules at the recursive statement/type boundary. Replace
    the remaining fixed local/scope counts now that scope validation borrows its
-   outer environment. Index per-function places for graph validation before
-   growing cleanup inventories, so reference/destructor checks do not repeatedly
-   scan the function body. Preserve the
-   independent exporter/checker trust boundary. Budget diagnostics must name the
-   exhausted limit; semantic diagnostics must identify the missing operation.
+   outer environment and graph validation indexes each function's places once.
+   Preserve the independent exporter/checker trust boundary. Budget diagnostics
+   must name the exhausted limit; semantic diagnostics must identify the missing operation.
    Acceptance requires multi-size sibling/local/scope regressions, malformed
    graphs, and verification/expansion/audit agreement for the existing lifetime
    profiles before broader lifetime combinations are admitted.
@@ -216,8 +214,20 @@ catch handler neither clones outer types nor scans all outer names. Catch names
 belong to the handler environment. Multi-size deterministic regressions check
 shared outer storage, local-only entry counts, sibling isolation, duplicate
 identities, shadowing, and forged references. The existing lifetime profiles and
-count limits remain; the next bounded cleanup is per-function graph place
-indexing followed by named local/scope budgets and growing lifetime regressions.
+count limits remain.
+
+Graph place indexing is delivered. Each visited function builds one index of
+borrowed declaration IDs and places, including parameters, locals, and catch
+bindings across blocks and branches. Reference arguments and destructor edges
+use indexed type lookup. Duplicate IDs anywhere in a function are structural
+errors, including reuse across disjoint sibling scopes; equal readable names
+with distinct IDs remain valid. Lexical environments still establish visibility
+and lifetime checks still establish cleanup order. Deterministic regressions
+cover growing parameters, locals, and reference edges without repeated body
+searches, plus malformed IDs. Source regressions verify, expand, and audit
+reference-call proofs with growing unrelated places and reject false claims.
+The next bounded cleanup is named local/scope budgets and growing lifetime
+regressions, followed by the remaining recursive validity/profile separation.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction

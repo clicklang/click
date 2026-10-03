@@ -615,10 +615,6 @@ id = "language.word.count"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.counted"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.decreases"
 path = "reference/language/grammar.md#word-index"
 
@@ -1151,14 +1147,6 @@ path = "reference/language/index.md#pure-click-functions"
 [[item]]
 id = "language.predicate-call"
 path = "reference/language/index.md#predicates"
-
-[[item]]
-id = "language.modifies"
-path = "reference/language/index.md#write-footprints"
-
-[[item]]
-id = "language.preserves"
-path = "reference/language/index.md#write-footprints"
 
 [[item]]
 id = "language.effect"

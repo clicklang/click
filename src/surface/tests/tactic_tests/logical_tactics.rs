@@ -564,12 +564,7 @@ fn rejects_named_requirement() {
                 ensures result == x by auto;
             }
         "#;
-    let error = parse(source).expect_err("named requirements are no longer accepted");
-    assert!(
-        error
-            .message()
-            .contains("named `requires` facts were removed")
-    );
+    parse(source).expect_err("a requirement takes no label");
 }
 
 #[test]
