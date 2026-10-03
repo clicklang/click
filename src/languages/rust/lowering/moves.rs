@@ -14,6 +14,19 @@ pub(super) fn lower(
     let mut live = BTreeMap::new();
     let mut declarations = c_skip();
     for (index, local) in mir.locals.iter().enumerate() {
+        if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
+            &local.value_type
+        {
+            declarations = c_seq(
+                declarations,
+                cx.shared_array_storage(
+                    &local.name,
+                    element,
+                    matches!(local.value_type, Type::SharedArrayOption { .. }),
+                )?,
+            );
+            continue;
+        }
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
             declarations = c_seq(
                 declarations,
@@ -29,7 +42,12 @@ pub(super) fn lower(
         }
         let statement = match &local.value_type {
             Type::Unit => c_skip(),
-            Type::Reference { pointee, .. } if **pointee == Type::ChunkIterator => c_skip(),
+            Type::Reference { pointee, .. }
+                if **pointee == Type::ChunkIterator
+                    || matches!(pointee.as_ref(), Type::SharedArrayIterator { .. }) =>
+            {
+                c_skip()
+            }
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
                 let flag = format!("__rust_owned_live_{index}");
@@ -53,6 +71,31 @@ pub(super) fn lower(
                                 .to_kernel_aggregate_layout(),
                         ),
                     ),
+                )
+            }
+            Type::SharedScalarSlice { element } => {
+                let element_type = scalar_type(element)?.to_kernel_type();
+                let pointer_type = scalar_type(&Type::Reference {
+                    mutable: false,
+                    pointee: element.clone(),
+                })?
+                .to_kernel_type();
+                let length = format!("{}_len", local.name);
+                if !cx.locals.insert(length.clone()) {
+                    return Err("MIR scalar slice length collision".into());
+                }
+                cx.shared_scalar_slices
+                    .insert(local.name.clone(), (length.clone(), element_type));
+                c_seq(
+                    c_declare_with_all_qualifiers(
+                        &local.name,
+                        pointer_type,
+                        false,
+                        false,
+                        false,
+                        true,
+                    ),
+                    c_declare(length, CType::UInt64),
                 )
             }
             Type::ByteSlice { mutable } => {
@@ -113,6 +156,14 @@ pub(super) fn lower(
                     ),
                 )
             }
+            Type::Reference { mutable, .. } => c_declare_with_all_qualifiers(
+                local.name.clone(),
+                scalar_type(&local.value_type)?.to_kernel_type(),
+                false,
+                false,
+                false,
+                !mutable,
+            ),
             t => c_declare(local.name.clone(), scalar_type(t)?.to_kernel_type()),
         };
         declarations = c_seq(declarations, statement);
@@ -172,7 +223,9 @@ pub(super) fn lower(
                     Some(_) => {
                         return Err("destructor body missing from prepared Rust input".into());
                     }
-                    None if cx.mir_chunk_iterators.contains(local) => {
+                    None if cx.mir_chunk_iterators.contains(local)
+                        || cx.shared_array_iterators.contains_key(local) =>
+                    {
                         c_assign(format!("{local}_live"), c_int32_literal(0))
                     }
                     None => c_skip(),
@@ -207,6 +260,13 @@ pub(super) fn lower(
         let mut statements = c_skip();
         for s in &mir.blocks[block].statements {
             let statement = match s {
+                S::SharedArrayInitialize { target, source } => {
+                    cx.shared_array_initialize(target, source)?
+                }
+                S::SharedArrayMove { target, source } => cx.shared_array_move(target, source)?,
+                S::SharedArrayNext { iterator, option } => {
+                    cx.shared_array_next(iterator, option)?
+                }
                 S::ChunkInitialize {
                     target,
                     slice,
@@ -401,13 +461,16 @@ pub(super) fn lower(
                             c_assign(flag, c_int32_literal(0))
                         }
                     }
-                    None if cx.mir_chunk_iterators.contains(local) => {
+                    None if cx.mir_chunk_iterators.contains(local)
+                        || cx.shared_array_iterators.contains_key(local) =>
+                    {
                         c_assign(format!("{local}_live"), c_int32_literal(0))
                     }
                     None => c_skip(),
                 },
             };
             let inputs: Vec<&E> = match s {
+                S::SharedArrayInitialize { source, .. } => vec![source],
                 S::Assign { target, value } => vec![target, value],
                 S::Initialize { fields, .. } => fields.iter().collect(),
                 _ => Vec::new(),
@@ -719,6 +782,9 @@ mod tests {
             let functions = BTreeMap::new();
             let mut cx = Context {
                 references: BTreeMap::new(),
+                shared_array_iterators: BTreeMap::new(),
+                shared_array_options: BTreeMap::new(),
+                shared_scalar_slices: BTreeMap::new(),
                 chunk_iterators: BTreeSet::new(),
                 mir_chunk_iterators: BTreeSet::new(),
                 chunk_options: BTreeSet::new(),

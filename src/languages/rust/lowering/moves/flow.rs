@@ -35,6 +35,7 @@ pub(super) fn header_condition(
                 }
             }
             E::ChunkHasNext { .. }
+            | E::SharedArrayHasNext { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
             | E::Boolean { .. } => value.clone(),

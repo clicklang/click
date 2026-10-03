@@ -14,8 +14,8 @@ shared/mutable byte slices with full-width length, dynamic bounds, reborrows and
 local calls, plus stored shared exact-chunk state, owned moves, typed
 `next`/Option dispatch and remainder, nested iterator loops, and shared/mutable
 byte-array coercions, unsigned checksum arithmetic and borrowed scalar array
-fields, with compact owned array-field construction, moves and nonuniform
-snapshot copies, through
+fields, with compact owned array-field construction, moves, nonuniform
+snapshot copies and stored shared scalar array iteration, through
 one ULLBC body representation
 and the same engine. It has a separate pinned compiler/profile and a narrower
 accepted subset. The sections below describe the existing default frontend;

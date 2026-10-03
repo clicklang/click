@@ -2600,7 +2600,7 @@ fn comparison_proposition_matches(
         _ => return false,
     };
     equivalent_explicit_with_sign_flip(terms, left, expected_left)
-        && terms.equivalent_explicit(right, expected_right)
+        && equivalent_explicit_with_sign_flip(terms, right, expected_right)
 }
 
 fn equivalent_explicit_with_sign_flip(
