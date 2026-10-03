@@ -1242,6 +1242,48 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 }
 
 #[test]
+fn catch_binding_names_do_not_escape_the_handler_scope() {
+    let cpp = "int helper(bool fail) { if (fail) { throw 7; } return 7; }
+        int caller(bool fail) { try { helper(fail); } catch (int caught) { return caught; }
+        int caught = 7; return caught; }";
+    let project = Project::with_fixture("caller.cpp", "caller", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("caller", "caller.cpp", true, "scalar_int32");
+    refresh_import(&project.config())
+        .expect("a later local may reuse a finished catch binding name");
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "caller.cpp";
+int32 helper(bool fail) throws int32 { ensures result == 7; exceptional ensures exception == 7; }
+int32 caller(bool fail) { ensures result == 7; }
+"#;
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&parsed, &import, "caller.ensures_0")
+            .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "caller.ensures_0", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let hostile = source.replace(
+        "int32 caller(bool fail) { ensures result == 7; }",
+        "int32 caller(bool fail) { ensures result == 8; }",
+    );
+    let hostile = read_click_project(&sidecar, &hostile).unwrap();
+    verify_program_prepared_project(&hostile, &import)
+        .expect_err("neither the local nor the caught payload is eight");
+}
+
+#[test]
 fn scalar_int32_profile_rejects_unsupported_handler_shapes() {
     let cases = [
         (
