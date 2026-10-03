@@ -2637,6 +2637,41 @@ impl AnnotationLowerer<'_> {
                 written.unwrap_or(expression),
             );
             let context = SpecElaborationContext::for_loop_invariant(loop_index);
+            // A `Nat` measure ranks by its Integer image: `to_integer` is the
+            // kernel's checked observation of a structural natural, so the
+            // two members are the Integer ones over that image and its
+            // nonnegativity is the conversion's own law. Any other algebraic
+            // value has no order the ranking members can compare.
+            if let Some(ClickType::Algebraic(value_type)) =
+                self.contract_expression_click_type(expression, &context)
+            {
+                if value_type.name() != "Nat" || !value_type.arguments().is_empty() {
+                    return Err(ClickError::new(format!(
+                        "loop {loop_index} `decreases` component `{source}` has type `{}`, which \
+                         has no order a termination measure can rank; a component must be an \
+                         int32, unsigned, `Integer`, or `Nat` expression. To rank a loop by the \
+                         structure it walks, name its resource binder (`decreases c;`) or a \
+                         function of the binder's model into `Integer` or `Nat`",
+                        value_type.name()
+                    )));
+                }
+                let observed = ContractExpression::Call {
+                    name: "to_integer".to_string(),
+                    arguments: vec![expression.clone()],
+                };
+                let lowered = self
+                    .lower_contract_integer_to_spec(&observed, &context)
+                    .map_err(|message| {
+                        ClickError::new(format!(
+                            "loop {loop_index} `decreases` component `{source}`: {message}"
+                        ))
+                    })?;
+                components.push(crate::kernel::CRankingComponent::PureInteger {
+                    source,
+                    expression: lowered,
+                });
+                continue;
+            }
             // A measure whose declared type is `Integer` is lowered in the
             // Integer carrier, by the same rule that picks the carrier for an
             // invariant's operand. Its two obligations are the same two, built

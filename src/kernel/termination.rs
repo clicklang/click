@@ -1191,6 +1191,27 @@ fn reject_address_escaped_expression_measure(
     Ok(())
 }
 
+/// What one pure `decreases` component reads, collected from its lowered
+/// expression: the C locals it names, whether it reads C memory, and whether
+/// it reads the algebraic model of a resource binder.
+#[derive(Default)]
+struct MeasureReads {
+    variables: BTreeSet<String>,
+    memory: bool,
+    model: bool,
+}
+
+impl MeasureReads {
+    /// The first C read, by spelling, for a refusal that names it.
+    fn first_c_read(&self) -> Option<String> {
+        self.variables
+            .iter()
+            .next()
+            .map(|name| format!("the C variable `{name}`"))
+            .or_else(|| self.memory.then(|| "C memory".to_string()))
+    }
+}
+
 /// The same check for one certified `decreases` component.
 ///
 /// A measure names a local's *value*, so a local whose address escapes is not
@@ -1199,42 +1220,127 @@ fn reject_address_escaped_expression_measure(
 /// names it reads are collected from the lowered expression. A lowered form
 /// this collection does not cover is refused outright rather than passed
 /// unchecked: the escape check is the kernel's, not the surface's.
+///
+/// A component that reads a resource binder's algebraic model is a model
+/// measure: a function of the loop binders' models alone. It may not also
+/// read C state. Its two readings are the head binders' models and the
+/// rebound binders' models, and nothing else may move between them.
 fn reject_address_escaped_ranking_component(
     function_name: &str,
     component: &CRankingComponent,
     body: &CStatement,
 ) -> Result<(), CTerminationError> {
-    match component {
+    let (source, collected) = match component {
         CRankingComponent::CExpression(expression) => {
-            reject_address_escaped_expression_measure(function_name, expression, body)
+            return reject_address_escaped_expression_measure(function_name, expression, body);
         }
         CRankingComponent::Pure { source, expression } => {
-            let mut variables = BTreeSet::new();
-            if !collect_spec_expression_c_variables(expression, &mut variables) {
-                return Err(error(format!(
-                    "the `decreases` component `{source}` in `{function_name}` uses a \
-                     specification form whose C variables cannot be collected, so it cannot be \
-                     checked against address-escaped locals"
-                )));
+            let mut reads = MeasureReads::default();
+            (
+                source,
+                collect_spec_expression_c_variables(expression, &mut reads).map(|()| reads),
+            )
+        }
+        CRankingComponent::PureInteger { source, expression } => {
+            let mut reads = MeasureReads::default();
+            (
+                source,
+                collect_spec_integer_expression_c_variables(expression, &mut reads).map(|()| reads),
+            )
+        }
+    };
+    let reads = collected.map_err(|form| {
+        error(format!(
+            "the `decreases` component `{source}` in `{function_name}` contains {form}, which a \
+             termination measure cannot contain; write the measure as arithmetic over C values, \
+             resource fields and models, and pure function applications"
+        ))
+    })?;
+    if reads.model
+        && let Some(read) = reads.first_c_read()
+    {
+        return Err(error(format!(
+            "the `decreases` component `{source}` in `{function_name}` reads a resource binder's \
+             model and also {read}; a measure over a model may read only the loop's resource \
+             binders' models and fields, constants, and pure functions of them"
+        )));
+    }
+    for variable in reads.variables {
+        reject_address_escaped_measure(function_name, &variable, body)?;
+    }
+    Ok(())
+}
+
+/// The form a measure collection does not read, named for the refusal.
+type UncollectedForm = &'static str;
+
+fn collect_pure_function_arguments(
+    arguments: &[SpecPureFunctionArgument],
+    reads: &mut MeasureReads,
+) -> Result<(), UncollectedForm> {
+    for argument in arguments {
+        match argument {
+            SpecPureFunctionArgument::Value(value) => {
+                collect_spec_expression_c_variables(value, reads)?
             }
-            for variable in variables {
-                reject_address_escaped_measure(function_name, &variable, body)?;
+            SpecPureFunctionArgument::ArrayRef { pointer, .. } => {
+                reads.memory = true;
+                collect_spec_expression_c_variables(pointer, reads)?
+            }
+            SpecPureFunctionArgument::Integer(value) => {
+                collect_spec_integer_expression_c_variables(value, reads)?
+            }
+            SpecPureFunctionArgument::Algebraic(value) => {
+                collect_spec_algebraic_expression_c_variables(value, reads)?
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The same collection for a lowered algebraic specification expression.
+///
+/// A resource field in this carrier is a binder's model, which is what marks
+/// the component a model measure. An algebraic variable or a match binding is
+/// a pure value, not a C local.
+fn collect_spec_algebraic_expression_c_variables(
+    expression: &SpecAlgebraicExpression,
+    reads: &mut MeasureReads,
+) -> Result<(), UncollectedForm> {
+    charge_termination_work(1);
+    match &expression.node {
+        SpecAlgebraicExpressionNode::Variable(_) | SpecAlgebraicExpressionNode::Binding(_) => {
+            Ok(())
+        }
+        SpecAlgebraicExpressionNode::ResourceField(_) => {
+            reads.model = true;
+            Ok(())
+        }
+        SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
+            for field in fields {
+                match field {
+                    SpecAlgebraicValue::C(value) => {
+                        collect_spec_expression_c_variables(value, reads)?
+                    }
+                    SpecAlgebraicValue::Integer(value) => {
+                        collect_spec_integer_expression_c_variables(value, reads)?
+                    }
+                    SpecAlgebraicValue::Algebraic(value) => {
+                        collect_spec_algebraic_expression_c_variables(value, reads)?
+                    }
+                }
             }
             Ok(())
         }
-        CRankingComponent::PureInteger { source, expression } => {
-            let mut variables = BTreeSet::new();
-            if !collect_spec_integer_expression_c_variables(expression, &mut variables) {
-                return Err(error(format!(
-                    "the `decreases` component `{source}` in `{function_name}` uses a \
-                     specification form whose C variables cannot be collected, so it cannot be \
-                     checked against address-escaped locals"
-                )));
-            }
-            for variable in variables {
-                reject_address_escaped_measure(function_name, &variable, body)?;
+        SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
+            collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            for arm in arms {
+                collect_spec_algebraic_expression_c_variables(&arm.body, reads)?;
             }
             Ok(())
+        }
+        SpecAlgebraicExpressionNode::PureFunctionApplication { arguments, .. } => {
+            collect_pure_function_arguments(arguments, reads)
         }
     }
 }
@@ -1248,67 +1354,54 @@ fn reject_address_escaped_ranking_component(
 /// `SpecExpression::Value` does in the machine carrier.
 fn collect_spec_integer_expression_c_variables(
     expression: &SpecIntegerExpression,
-    names: &mut BTreeSet<String>,
-) -> bool {
+    reads: &mut MeasureReads,
+) -> Result<(), UncollectedForm> {
     charge_termination_work(1);
-    let both = |left: &SpecIntegerExpression,
-                right: &SpecIntegerExpression,
-                names: &mut BTreeSet<String>| {
-        collect_spec_integer_expression_c_variables(left, names)
-            && collect_spec_integer_expression_c_variables(right, names)
-    };
     match expression {
-        SpecIntegerExpression::Term(_) => true,
+        SpecIntegerExpression::Term(_) => Ok(()),
         // A resource field reads the binder's instance, not a C local.
-        SpecIntegerExpression::ResourceField(_) => true,
+        SpecIntegerExpression::ResourceField(_) => Ok(()),
         SpecIntegerExpression::FromMachine(value) => {
-            collect_spec_expression_c_variables(value, names)
+            collect_spec_expression_c_variables(value, reads)
         }
         SpecIntegerExpression::Negate(inner) => {
-            collect_spec_integer_expression_c_variables(inner, names)
+            collect_spec_integer_expression_c_variables(inner, reads)
         }
         SpecIntegerExpression::Add(left, right)
         | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right) => both(left, right, names),
+        | SpecIntegerExpression::Multiply(left, right) => {
+            collect_spec_integer_expression_c_variables(left, reads)?;
+            collect_spec_integer_expression_c_variables(right, reads)
+        }
         SpecIntegerExpression::PureFunctionApplication { arguments, .. } => {
-            arguments.iter().all(|argument| match argument {
-                SpecPureFunctionArgument::Value(value) => {
-                    collect_spec_expression_c_variables(value, names)
-                }
-                SpecPureFunctionArgument::ArrayRef { pointer, .. } => {
-                    collect_spec_expression_c_variables(pointer, names)
-                }
-                SpecPureFunctionArgument::Integer(value) => {
-                    collect_spec_integer_expression_c_variables(value, names)
-                }
-                SpecPureFunctionArgument::Algebraic(_) => false,
-            })
+            collect_pure_function_arguments(arguments, reads)
         }
-        SpecIntegerExpression::AlgebraicMatch { .. } | SpecIntegerExpression::RangeFold { .. } => {
-            false
+        SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
+            collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            for arm in arms {
+                collect_spec_integer_expression_c_variables(&arm.body, reads)?;
+            }
+            Ok(())
         }
+        SpecIntegerExpression::RangeFold { .. } => Err("a range fold"),
     }
 }
 
 /// Collects the C locals one lowered specification expression reads, or
-/// reports that it contains a form this collection does not cover.
+/// names the form it contains that this collection does not cover.
 ///
 /// Work is linear in the expression, which is the declared component; nothing
 /// ambient is scanned.
 fn collect_spec_expression_c_variables(
     expression: &SpecExpression,
-    names: &mut BTreeSet<String>,
-) -> bool {
+    reads: &mut MeasureReads,
+) -> Result<(), UncollectedForm> {
     charge_termination_work(1);
-    let both = |left: &SpecExpression, right: &SpecExpression, names: &mut BTreeSet<String>| {
-        collect_spec_expression_c_variables(left, names)
-            && collect_spec_expression_c_variables(right, names)
-    };
     match expression {
-        SpecExpression::Value(_) => true,
+        SpecExpression::Value(_) => Ok(()),
         SpecExpression::CExpression(expression) => {
-            collect_c_expression_variables(expression, names);
-            true
+            collect_c_expression_variables(expression, &mut reads.variables);
+            Ok(())
         }
         SpecExpression::Add(left, right)
         | SpecExpression::Subtract(left, right)
@@ -1319,39 +1412,43 @@ fn collect_spec_expression_c_variables(
         | SpecExpression::ShiftRight(left, right)
         | SpecExpression::BitwiseAnd(left, right)
         | SpecExpression::BitwiseOr(left, right)
-        | SpecExpression::BitwiseXor(left, right) => both(left, right, names),
-        SpecExpression::BitwiseNot(value) | SpecExpression::Cast(value, _) => {
-            collect_spec_expression_c_variables(value, names)
+        | SpecExpression::BitwiseXor(left, right)
+        | SpecExpression::PointerOffset {
+            pointer: left,
+            elements: right,
+            ..
+        } => {
+            collect_spec_expression_c_variables(left, reads)?;
+            collect_spec_expression_c_variables(right, reads)
         }
-        SpecExpression::PointerOffset {
-            pointer, elements, ..
-        } => both(pointer, elements, names),
+        SpecExpression::BitwiseNot(value) | SpecExpression::Cast(value, _) => {
+            collect_spec_expression_c_variables(value, reads)
+        }
         SpecExpression::MemoryLoad { pointer, .. } => {
-            collect_spec_expression_c_variables(pointer, names)
+            reads.memory = true;
+            collect_spec_expression_c_variables(pointer, reads)
         }
         SpecExpression::PureFunctionApplication { arguments, .. } => {
-            arguments.iter().all(|argument| match argument {
-                SpecPureFunctionArgument::Value(value) => {
-                    collect_spec_expression_c_variables(value, names)
-                }
-                SpecPureFunctionArgument::ArrayRef { pointer, .. } => {
-                    collect_spec_expression_c_variables(pointer, names)
-                }
-                SpecPureFunctionArgument::Integer(_) | SpecPureFunctionArgument::Algebraic(_) => {
-                    false
-                }
-            })
+            collect_pure_function_arguments(arguments, reads)
+        }
+        SpecExpression::IntegerToMachine { value, .. } => {
+            collect_spec_integer_expression_c_variables(value, reads)
+        }
+        SpecExpression::AlgebraicMatch { scrutinee, arms } => {
+            collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            for arm in arms {
+                collect_spec_expression_c_variables(&arm.body, reads)?;
+            }
+            Ok(())
         }
         // A resource field reads the binder's instance, not a C local.
-        SpecExpression::ResourceField { .. } => true,
-        SpecExpression::IntegerToMachine { .. }
-        | SpecExpression::AlgebraicMatch { .. }
-        | SpecExpression::CountedResourceCount { .. }
-        | SpecExpression::If { .. }
-        | SpecExpression::RangeFold { .. }
-        | SpecExpression::Let { .. }
-        | SpecExpression::LoopEntrySnapshot(_)
-        | SpecExpression::AggregateFieldValue { .. } => false,
+        SpecExpression::ResourceField { .. } => Ok(()),
+        SpecExpression::CountedResourceCount { .. } => Err("a counted-resource count"),
+        SpecExpression::If { .. } => Err("a conditional `if` expression"),
+        SpecExpression::RangeFold { .. } => Err("a range fold"),
+        SpecExpression::Let { .. } => Err("a `let` expression"),
+        SpecExpression::LoopEntrySnapshot(_) => Err("a loop-entry snapshot"),
+        SpecExpression::AggregateFieldValue { .. } => Err("a by-value aggregate field"),
     }
 }
 
@@ -1972,7 +2069,9 @@ pub(super) fn c_ranking_measure_term(
 ///
 /// An unsigned reading is a natural number by construction, so its member is
 /// the constant `true`: it keeps the bundle's one-member-per-component shape
-/// without asking a proof for anything.
+/// without asking a proof for anything. The Integer image `to_integer(n)` of
+/// a `Nat` is the same case: the checked conversion law
+/// `nat_integer_nonnegative` states exactly this member.
 pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> Proposition {
     Proposition::ConditionIs(
         match value {
@@ -1980,6 +2079,9 @@ pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> P
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone())
             }
             CRankingMeasureValue::Unsigned32(_) | CRankingMeasureValue::Unsigned64(_) => {
+                ConditionTerm::Constant(true)
+            }
+            CRankingMeasureValue::Integer(term) if crate::kernel::is_nat_integer_image(term) => {
                 ConditionTerm::Constant(true)
             }
             CRankingMeasureValue::Integer(term) => {
