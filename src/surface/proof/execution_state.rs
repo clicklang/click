@@ -1495,7 +1495,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::UnfoldFunction { .. } => ("unfold", "simple"),
         PostExecutionTactic::ApplyUsing { .. } => ("apply", "simple"),
         PostExecutionTactic::Choose(_) => ("choose", "simple"),
-        PostExecutionTactic::LetSatisfy(_) => ("let satisfy", "simple"),
+        PostExecutionTactic::LetSatisfy(_) => ("obtain", "simple"),
         PostExecutionTactic::Witness(_) => ("witness", "simple"),
         PostExecutionTactic::Intro => ("intro", "simple"),
         PostExecutionTactic::Assumption => ("assumption", "simple"),

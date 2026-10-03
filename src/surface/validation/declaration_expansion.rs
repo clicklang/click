@@ -1017,10 +1017,10 @@ fn expand_declared_resource_tactic_with_expressions(
                 .collect::<Result<_, _>>()?;
             Ok(ProofTactic::ApplyTheorem(application))
         }
-        ProofTactic::Witness(mut witness) => {
-            witness.value =
-                expand_declared_resource_expression(witness.value, resource_definitions)?;
-            Ok(ProofTactic::Witness(witness))
+        ProofTactic::Witness(witness) => {
+            Ok(ProofTactic::Witness(witness.try_map_values(|value| {
+                expand_declared_resource_expression(value.clone(), resource_definitions)
+            })?))
         }
         ProofTactic::ApplyInduction {
             hypothesis,

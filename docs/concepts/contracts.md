@@ -42,7 +42,7 @@ let k: int32 where k == x;
 
 ensures result == k by {
     execute();
-    witness(k = x);
+    witness { k: x };
     simp();
 }
 ```
@@ -89,7 +89,7 @@ requires x > 0;
 ```
 
 To use an existential requirement in a proof, state its proposition in
-`let (...) satisfy { ... };` after it is available.
+`obtain (...) { ... };` after it is available.
 
 ## Guarantees
 

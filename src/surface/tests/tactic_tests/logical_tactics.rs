@@ -406,7 +406,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 requires x == 0;
                 let saved: Integer = x;
                 ensures exists (x: Integer) { saved == 1 } by {
-                    witness(x = 1);
+                    witness { x: 1 };
                     normalize();
                 }
             }
@@ -450,7 +450,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
         theorem existential(x: Integer) {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
-                witness(x = x);
+                witness { x: x };
                 normalize();
             }
         }
@@ -460,7 +460,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             ensures exists (z: Integer) {
                 forall (x: Integer) { z == saved }
             } by {
-                witness(z = x);
+                witness { z: x };
                 intro();
                 have x == x by { normalize(); }
                 normalize();
@@ -534,7 +534,7 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "by auto;",
-        "by { execute(); let (k: int32) satisfy { k == k }; witness(j = k + 1); simp(); }",
+        "by { execute(); obtain (k: int32) { k == k }; witness { j: k + 1 }; simp(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -545,13 +545,13 @@ fn parses_existential_proof_tactics() {
         if binding.bindings == [("k".to_string(), ClickType::C(C0Type::Int32))]));
     assert_eq!(
         tactics[2],
-        ProofTactic::Witness(ProofWitness {
-            name: "j".to_string(),
-            value: ContractExpression::Add(
+        ProofTactic::Witness(ProofWitness::single(
+            "j".to_string(),
+            ContractExpression::Add(
                 Box::new(ContractExpression::Binding("k".to_string())),
                 Box::new(current_int(1)),
-            ),
-        })
+            )
+        ))
     );
     assert!(matches!(tactics[3], ProofTactic::Simp));
 }
@@ -1245,7 +1245,7 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
                 ensures exists (j: int32) { j == result };
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness(j = x);
+                    witness { j: x };
                     simp();
                 }
                 execute();
@@ -1319,8 +1319,8 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    let (k: int32) satisfy { k == x };
-                    witness(j = k);
+                    obtain (k: int32) { k == x };
+                    witness { j: k };
                     simp();
                 }
                 execute();
@@ -1382,7 +1382,7 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
     verify_c0_sources(&rewritten, &[("choose_witness.c", c_source)])
         .expect("the serialized choose proof should independently verify");
 
-    let corrupted = rewritten.replacen("witness(j = k);", "witness(j = 0);", 1);
+    let corrupted = rewritten.replacen("witness { j: k }", "witness { j: 0 }", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked witness"
@@ -1401,7 +1401,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness(j = x);
+                    witness { j: x };
                     normalize();
                 }
                 execute();
@@ -1440,7 +1440,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == 0 and y == 0 } by {
-                    witness(j = x);
+                    witness { j: x };
                     simp();
                 }
                 execute();
@@ -1468,7 +1468,10 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
         ..expanded
             .find("execute();")
             .expect("expansion should retain the proof suffix")];
-    assert!(expanded_have.contains("witness(j = x);"), "{expanded_have}");
+    assert!(
+        expanded_have.contains("witness { j: x }"),
+        "{expanded_have}"
+    );
     assert!(expanded_have.contains("split();"), "{expanded_have}");
     assert!(!expanded_have.contains("simp();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("witness_pair.c", c_source)])
@@ -2144,7 +2147,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     ensures exists (k: int32) { k == result };
                 } by {
                     execute();
-                    witness(k = result);
+                    witness { k: result };
                     simp();
                 }
             "#,
@@ -2158,7 +2161,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     requires exists (k: int32) { k == x };
                     ensures result == x;
                 } by {
-                    let (k: int32) satisfy { k == x };
+                    obtain (k: int32) { k == x };
                     execute();
                     simp();
                 }

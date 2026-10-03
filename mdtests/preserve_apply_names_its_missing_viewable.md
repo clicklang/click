@@ -140,7 +140,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
     step();
     step();
     have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-        witness(fuel = Nat::Zero);
+        witness { fuel: Nat::Zero };
         unfold(walk(next, from, Nat::Zero));
         simp();
     }
@@ -157,7 +157,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         initialize by { simp(); }
         preserve by {
             mark iter;
-            let (previous: Nat) satisfy { walk(next, from, previous) == cur };
+            obtain (previous: Nat) { walk(next, from, previous) == cur };
             have at(iter, forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
             }) by { assumption(); }
@@ -285,7 +285,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 simp() using { walk(next, from, previous) == at(iter, cur); }
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-                witness(fuel = Nat::Succ(previous));
+                witness { fuel: Nat::Succ(previous) };
                 unfold(walk(next, from, Nat::Succ(previous)));
             }
             close_invariants();

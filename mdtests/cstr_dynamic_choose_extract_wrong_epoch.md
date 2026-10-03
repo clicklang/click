@@ -25,7 +25,7 @@ int32 read_terminator(uint8 bytes[]) {
                 bytes[len] == '\0' and
                 forall (k: int32) { 0 <= k and k < len + 1 implies defined(bytes[k]) }
         } by {
-            let (found_len: int32) satisfy {
+            obtain (found_len: int32) {
                 at(function.entry,
                     0 <= found_len and
                     viewable(bytes[0..found_len + 1]) and
@@ -35,7 +35,7 @@ int32 read_terminator(uint8 bytes[]) {
                     bytes[found_len] == '\0' and
                     forall (k: int32) { 0 <= k and k < found_len + 1 implies defined(bytes[k]) })
             };
-            witness(len = found_len);
+            witness { len: found_len };
             both {
                 simp();
             } and {

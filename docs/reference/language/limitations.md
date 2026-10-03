@@ -306,11 +306,11 @@ lowering concept for parameters written as `int32 p[]`, `int32* p`,
 `exists (k: int32) { ... }` and multiple-binder forms such as
 `exists (x: int32, y: int32) { ... }` are supported. Symbolic
 `(lo..hi).any(...)` lowers to a bounded existential. Proof scripts prove an
-existential goal with `witness(k = expression);`. To open an already established
-existential fact, write `let (k: int32) satisfy { ... };`; the same form accepts
+existential goal with `witness { k: expression };`. To open an already established
+existential fact, write `obtain (k: int32) { ... };`; the same form accepts
 multiple typed bindings. A predicate requirement can be unfolded first.
 
-`auto` does not synthesize witnesses. `let ... satisfy` requires the exact
+`auto` does not synthesize witnesses. `obtain` requires the exact
 existential to be available; use `have` to establish it if necessary. Concrete
 `.any` ranges still unroll to finite disjunctions.
 

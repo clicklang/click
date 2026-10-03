@@ -1470,10 +1470,10 @@ int32 contains(uint8 p[], int32 n) {
     ensures bytes_contains(p, 0, n, 'x') by {
         execute();
         unfold(bytes_contains);
-        let (found: int32) satisfy {
+        obtain (found: int32) {
             0 <= found and found < n and p[found] == 'x'
         };
-        witness(k = found);
+        witness { k: found };
         simp();
     }
 }"#;
@@ -1490,7 +1490,7 @@ int32 contains(uint8 p[], int32 n) {
     // The `simp` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
-        expanded.contains("witness(k = found);\n        assumption();"),
+        expanded.contains("witness { k: found };\n        assumption();"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("contains.c", c_source)])

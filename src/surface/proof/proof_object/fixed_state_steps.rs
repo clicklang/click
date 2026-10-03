@@ -790,7 +790,7 @@ impl<'a> Proof<'a> {
         binding: &ProofLetSatisfy,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if binding.bindings.is_empty() {
-            return Err(self.step_error("`let (...) satisfy` needs at least one binding"));
+            return Err(self.step_error("`obtain (...)` needs at least one binding"));
         }
         for (name, _) in &binding.bindings {
             if name == "result"
@@ -839,10 +839,10 @@ impl<'a> Proof<'a> {
                         crate::surface::printing::source_click_proposition(&binding.proposition),
                     ),
                 PropositionCloseError::IntegerChoiceWrongSort => self.step_error(
-                    "`let (...) satisfy` has more binders than the available existential, or an unsupported binder type",
+                    "`obtain (...)` has more binders than the available existential, or an unsupported binder type",
                 ),
                 PropositionCloseError::IntegerChoiceFresheningExhausted => {
-                    self.step_error("`let (...) satisfy` could not allocate fresh bindings")
+                    self.step_error("`obtain (...)` could not allocate fresh bindings")
                 }
                 _ => self.step_error("could not open the stated existential"),
             })?;
@@ -1465,10 +1465,10 @@ impl<'a> Proof<'a> {
             .map_err(|error| self.step_error(error.message))?;
         let array_refs = array_refs_for_parameters(view.parameters, &values, view.state.memory());
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, view.state);
-        let checked_witness = ProofWitness {
-            name: witness.name.clone(),
-            value: self.substitute_fixed_state_locals_in_expression(&witness.value)?,
-        };
+        let checked_witness = ProofWitness::single(
+            witness.name().to_string(),
+            self.substitute_fixed_state_locals_in_expression(witness.value())?,
+        );
         if let Proposition::Exists {
             name,
             var,
@@ -1476,13 +1476,13 @@ impl<'a> Proof<'a> {
             body,
         } = &goal
         {
-            if name != &witness.name {
+            if name != witness.name() {
                 return Err(self.step_error(format!(
                     "`witness` binds `{name}`, but proof provided `{}`",
-                    witness.name
+                    witness.name()
                 )));
             }
-            let names = contract_expression_referenced_names(&checked_witness.value);
+            let names = contract_expression_referenced_names(checked_witness.value());
             let algebraic_values = names
                 .into_iter()
                 .filter_map(|name| {
@@ -1493,7 +1493,7 @@ impl<'a> Proof<'a> {
                 })
                 .collect();
             let value = capture_fixed_state_algebraic_value(
-                &checked_witness.value,
+                checked_witness.value(),
                 self.facts().assumptions(),
                 &values,
                 &array_refs,
@@ -1520,8 +1520,8 @@ impl<'a> Proof<'a> {
                     written_name,
                     body,
                     ..
-                }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                    let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+                }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                    let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
                             self.step_error(format!(
@@ -1569,8 +1569,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1585,8 +1585,8 @@ impl<'a> Proof<'a> {
                 item,
                 written_item,
                 body,
-            }) if written_item.as_ref().unwrap_or(item) == &witness.name => {
-                let substitutions = BTreeMap::from([(item.clone(), witness.value.clone())]);
+            }) if written_item.as_ref().unwrap_or(item) == witness.name() => {
+                let substitutions = BTreeMap::from([(item.clone(), witness.value().clone())]);
                 let start =
                     substitute_contract_expression(start, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1599,7 +1599,7 @@ impl<'a> Proof<'a> {
                             "could not instantiate Surface range end: {message}"
                         ))
                     })?;
-                let value = substitute_contract_expression(&witness.value, &substitutions)
+                let value = substitute_contract_expression(witness.value(), &substitutions)
                     .map_err(|message| {
                         self.step_error(format!(
                             "could not instantiate Surface range witness: {message}"
@@ -1656,13 +1656,13 @@ impl<'a> Proof<'a> {
                 "pure `witness` currently requires an Integer existential proposition",
             ));
         };
-        if name != witness.name {
+        if name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name
+                witness.name()
             )));
         }
-        let value = self.capture_pure_integer_witness(&witness.value)?;
+        let value = self.capture_pure_integer_witness(witness.value())?;
         let proposition =
             crate::kernel::substitute_integer_variable_in_pure_proposition(&body, var, &value)
                 .map_err(|error| {
@@ -1674,8 +1674,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1713,13 +1713,13 @@ impl<'a> Proof<'a> {
                 "pure algebraic `witness` requires an algebraic existential proposition",
             ));
         };
-        if name != witness.name {
+        if name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name
+                witness.name()
             )));
         }
-        let value = self.capture_pure_algebraic_witness(&witness.value)?;
+        let value = self.capture_pure_algebraic_witness(witness.value())?;
         if value.algebraic_type != algebraic_type {
             return Err(self.step_error("algebraic witness has the wrong datatype"));
         }
@@ -1732,8 +1732,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(

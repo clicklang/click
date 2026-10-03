@@ -2468,7 +2468,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
-        ProofStep::LetSatisfy(_) => "let satisfy",
+        ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
         ProofStep::UnfoldPredicate(_)
         | ProofStep::UnfoldFunction(_)

@@ -539,9 +539,12 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output,
             &prefix,
             &format!(
-                "witness({} = {});",
-                witness.name,
-                describe_contract_expression(&witness.value)
+                "witness {{ {} }}",
+                witness
+                    .bindings()
+                    .map(|(name, value)| format!("{name}: {}", describe_contract_expression(value)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         ),
         ProofTactic::Choose(choice) => line(
@@ -587,7 +590,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(
                 output,
                 &prefix,
-                &format!("let ({bindings}) satisfy {{ {body} }};"),
+                &format!("obtain ({bindings}) {{ {body} }}"),
             );
         }
         ProofTactic::Assumption => line(output, &prefix, "assumption();"),

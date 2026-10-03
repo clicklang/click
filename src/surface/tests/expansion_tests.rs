@@ -149,7 +149,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("let (len: int32) satisfy { at(function.entry,"),
+        expanded_source.contains("obtain (len: int32) { at(function.entry,"),
         "the expansion should state the established entry existential: {expanded_source}"
     );
     assert!(
@@ -916,11 +916,11 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 /// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
 #[test]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness(len = found_len);\n        simp();";
+    let anchor = "witness { len: found_len };\n        simp();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
-        "witness(len = found_len);\n        ".len(),
+        "witness { len: found_len };\n        ".len(),
     );
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
@@ -1051,7 +1051,7 @@ theorem integer_forall_simp() {
 }
 theorem integer_exists_simp(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
-        witness(z = x);
+        witness { z: x };
         simp();
     }
 }
@@ -1061,8 +1061,8 @@ theorem integer_forall_logical_simp() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        let (candidate: Integer) satisfy { candidate == candidate };
-        witness(k = candidate);
+        obtain (candidate: Integer) { candidate == candidate };
+        witness { k: candidate };
         assumption();
     }
 }
@@ -1089,11 +1089,11 @@ theorem integer_exists_choose() {
             assert!(expanded.contains("both {"), "{label}: {expanded}");
         } else {
             assert!(
-                expanded.contains("let (candidate: Integer) satisfy { candidate == candidate };"),
+                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
                 "{label}: {expanded}"
             );
             assert!(
-                expanded.contains("witness(k = candidate);"),
+                expanded.contains("witness { k: candidate }"),
                 "{label}: {expanded}"
             );
         }
@@ -1114,10 +1114,10 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        let (candidate: Integer) satisfy {
+        obtain (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
         };
-        witness(k = candidate);
+        witness { k: candidate };
         assumption();
     }
 }
@@ -1133,7 +1133,7 @@ theorem fixed_integer_witness(value: int32) {
     ensures witness_fixed: exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         both {
             both {
                 assumption();
@@ -1163,7 +1163,7 @@ theorem missing_integer_definedness(value: int32) {
     ensures exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         simp();
     }
 }
@@ -1254,7 +1254,7 @@ theorem indexed_integer_exists(values: int32[]) {
     ensures exists (z: Integer) {
         z == to_integer(values[to_int32(z)])
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         both {
             both { simp(); } and { simp(); }
         } and {
@@ -3280,7 +3280,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
         int32 identity(int32 x) {
             ensures exists (j: int32) { j == result } by {
                 execute();
-                witness(j = result);
+                witness { j: result };
                 simp();
             }
         }
@@ -3303,7 +3303,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
         position.column,
     )
     .expect("the checked existential obligation should expand");
-    assert!(expanded.contains("witness(j = result);"), "{expanded}");
+    assert!(expanded.contains("witness { j: result };"), "{expanded}");
     assert!(expanded.contains("normalize();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the retained witness/normalize scope should verify independently");
@@ -3319,8 +3319,8 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 execute();
-                let (k: int32) satisfy { k == x };
-                witness(j = k);
+                obtain (k: int32) { k == x };
+                witness { j: k };
                 simp();
             }
         }
@@ -3342,20 +3342,20 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("let (k: int32) satisfy { k == x };"),
+        expanded.contains("obtain (k: int32) { k == x };"),
         "{expanded}"
     );
-    assert!(expanded.contains("witness(j = k);"), "{expanded}");
+    assert!(expanded.contains("witness { j: k };"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized choose/witness proof should independently verify");
 
     let witness_offset = expanded
-        .rfind("witness(j = k);")
+        .rfind("witness { j: k };")
         .expect("the extracted nested proof should retain its witness");
     let mut corrupted = expanded.clone();
     corrupted.replace_range(
-        witness_offset..witness_offset + "witness(j = k);".len(),
-        "witness(j = k + 1);",
+        witness_offset..witness_offset + "witness { j: k };".len(),
+        "witness { j: k + 1 };",
     );
     assert_ne!(
         corrupted, expanded,
@@ -3379,7 +3379,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
             requires 0 < n;
             ensures found_zero: (0..n).any(|k| { k == result }) by {
                 execute();
-                witness(k = 0);
+                witness { k: 0 };
                 simp();
             }
         }
@@ -3396,7 +3396,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
         CProofClaim::Ensure(0),
     )
     .expect("the retained bounded witness should expand");
-    assert!(expanded.contains("witness(k = 0);"), "{expanded}");
+    assert!(expanded.contains("witness { k: 0 }"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the retained bounded witness should check independently");
 }
@@ -13376,7 +13376,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { simp(); }
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { simp(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
-        witness(z = to_integer(x));
+        witness { z: to_integer(x) };
         normalize();
     }
 }
@@ -13391,7 +13391,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     }
     for invalid in [
         "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { simp(); } }",
-        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness(z = to_integer(x + 1)); simp(); } }",
+        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; simp(); } }",
         "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { simp(); } }",
     ] {
         assert!(

@@ -631,13 +631,13 @@ function reaches its return frontier:
 ```click
 execute();
 have exists (k: int32) { k == result } by {
-    witness(k = result);
+    witness { k: result };
     simp();
 }
 simp();
 ```
 
-The scoped proof may use `let ... satisfy` and `witness`. Its established proposition is
+The scoped proof may use `obtain` and `witness`. Its established proposition is
 added to every completed execution path, so later `simp()` can use it to close
 the matching postcondition without applying those existential steps to other
 contract claims.
@@ -1211,7 +1211,7 @@ consumes p[0..1];
 
 `requires` clauses have no fact labels. `ensures` labels still identify
 postcondition claims. To open an available existential precondition, spell its
-proposition with `let (...) satisfy { ... };`.
+proposition with `obtain (...) { ... };`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 `int32` element ranges. The byte count is derived from the base pointer's
@@ -2313,7 +2313,7 @@ range item name is the existential binder:
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     execute();
-    witness(k = lo);
+    witness { k: lo };
     simp();
 }
 ```
@@ -2641,7 +2641,7 @@ let k: int32 where k == x;
 
 ensures result == k by {
     execute();
-    witness(k = x);
+    witness { k: x };
     simp();
 }
 ```

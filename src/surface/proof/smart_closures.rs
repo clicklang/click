@@ -3041,10 +3041,7 @@ impl<'a> Proof<'a> {
         )));
         for value in candidates {
             check_verification_deadline()?;
-            let witness = ProofWitness {
-                name: name.to_string(),
-                value,
-            };
+            let witness = ProofWitness::single(name.to_string(), value);
             let Some(introduced) =
                 attempt::candidate_outcome(self.apply_step(ProofStep::Witness(witness)))?
             else {
@@ -7036,12 +7033,12 @@ impl<'a> Proof<'a> {
                             } = &surface
                             {
                                 let witnessed = attempt::candidate_outcome(have.apply_step(
-                                    ProofStep::Witness(ProofWitness {
-                                        name: written_name.as_ref().unwrap_or(name).clone(),
-                                        value: ContractExpression::CFragment(CExpression::Value(
+                                    ProofStep::Witness(ProofWitness::single(
+                                        written_name.as_ref().unwrap_or(name).clone(),
+                                        ContractExpression::CFragment(CExpression::Value(
                                             CValue::Int32(Bitvector32Term::Constant(0)),
                                         )),
-                                    }),
+                                    )),
                                 ))?;
                                 match witnessed {
                                     Some(witnessed) => {
@@ -7211,11 +7208,12 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let witness_name = written_name.as_ref().unwrap_or(name).clone();
-        let Some(witnessed) =
-            attempt::candidate_outcome(chosen.apply_step(ProofStep::Witness(ProofWitness {
-                name: witness_name,
-                value: ContractExpression::CFragment(CExpression::Variable(choice_name)),
-            })))?
+        let Some(witnessed) = attempt::candidate_outcome(chosen.apply_step(ProofStep::Witness(
+            ProofWitness::single(
+                witness_name,
+                ContractExpression::CFragment(CExpression::Variable(choice_name)),
+            ),
+        )))?
         else {
             return Ok(None);
         };

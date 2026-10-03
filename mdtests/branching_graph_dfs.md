@@ -110,7 +110,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     } else {}
     branch then {
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness(path = Path::Here);
+            witness { path: Path::Here };
             unfold(walk(old(left), old(right), cur, Path::Here));
             simp();
         }
@@ -198,7 +198,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         have exists (path: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), path) == to
         } by { simp(); }
-        let (rest: Path) satisfy {
+        obtain (rest: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
         };
         have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
@@ -207,7 +207,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }
         apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness(path = Path::Left(rest));
+            witness { path: Path::Left(rest) };
             simp() using {
                 walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
                 walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
@@ -286,7 +286,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         have exists (path: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), path) == to
         } by { simp(); }
-        let (right_rest: Path) satisfy {
+        obtain (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
         };
         have walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to by {
@@ -295,7 +295,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }
         apply(walk_frame(old(left), old(right), at(before_right, left), at(before_right, right), n, cur, Path::Right(right_rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness(path = Path::Right(right_rest));
+            witness { path: Path::Right(right_rest) };
             simp() using {
                 walk(old(left), old(right), cur, Path::Right(right_rest)) == walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest));
                 walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to;

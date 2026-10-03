@@ -2845,10 +2845,10 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         sort: Sort::CInt32,
         body: Box::new(expected),
     };
-    let witness = ProofWitness {
-        name: "chosen".to_string(),
-        value: ContractExpression::CFragment(CExpression::Value(int32(7))),
-    };
+    let witness = ProofWitness::single(
+        "chosen".to_string(),
+        ContractExpression::CFragment(CExpression::Value(int32(7))),
+    );
     let expected_surface = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("chosen".to_string())),
         operator: ComparisonOperator::Equal,
@@ -2861,7 +2861,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         body: Box::new(expected_surface),
     };
     let instantiated_surface = ClickProposition::Comparison {
-        left: witness.value.clone(),
+        left: witness.value().clone(),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(7))),
     };
@@ -2887,10 +2887,10 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             &[],
         );
         let retained_root = root.clone();
-        let wrong_name = ProofStep::Witness(ProofWitness {
-            name: "other".to_string(),
-            value: ContractExpression::CFragment(CExpression::Value(int32(7))),
-        });
+        let wrong_name = ProofStep::Witness(ProofWitness::single(
+            "other".to_string(),
+            ContractExpression::CFragment(CExpression::Value(int32(7))),
+        ));
         let error = root
             .apply_step(wrong_name)
             .err()
@@ -3133,12 +3133,10 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         assert_eq!(chosen.certificate().steps(), &[ProofStep::Choose(choice)]);
 
         let completed = chosen
-            .apply_step(ProofStep::Witness(ProofWitness {
-                name: "witness".to_string(),
-                value: ContractExpression::CFragment(CExpression::Variable(
-                    "candidate".to_string(),
-                )),
-            }))
+            .apply_step(ProofStep::Witness(ProofWitness::single(
+                "witness".to_string(),
+                ContractExpression::CFragment(CExpression::Variable("candidate".to_string())),
+            )))
             .expect("witness should resolve the one referenced proof local")
             .apply_step(ProofStep::Assumption)
             .expect("the chosen existential fact should close the refined goal");
