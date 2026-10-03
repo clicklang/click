@@ -7908,6 +7908,20 @@ impl Hash for Proposition {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static PROPOSITION_CLONE_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+pub(crate) fn count_proposition_clone_nodes<T>(body: impl FnOnce() -> T) -> (T, usize) {
+    let before = PROPOSITION_CLONE_NODES.with(std::cell::Cell::get);
+    let value = body();
+    (
+        value,
+        PROPOSITION_CLONE_NODES.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// Clones the logical tree without recursing through a long connective chain.
 /// This is also `Proposition::clone`, so callers cannot accidentally restore
 /// recursive cloning by using the trait method on a deep implication.
@@ -7932,6 +7946,10 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
     let mut frames = vec![Frame::Visit(proposition)];
     let mut values = Vec::new();
     while let Some(frame) = frames.pop() {
+        #[cfg(test)]
+        if matches!(frame, Frame::Visit(_)) {
+            PROPOSITION_CLONE_NODES.with(|count| count.set(count.get() + 1));
+        }
         match frame {
             Frame::Visit(proposition) => match proposition {
                 Proposition::And(left, right) => {
@@ -8669,8 +8687,103 @@ pub struct AlgebraicVariantEvidence {
     pub variant: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum AtomicConnectionKey {
+    Variable(Variable),
+    Block(PointerBlock),
+}
+
+/// One immutable fact shared by every dependency bucket that names it.
+#[derive(Clone, Debug)]
+pub(crate) struct SharedIndexFact<T>(std::sync::Arc<T>);
+
+impl<T> SharedIndexFact<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self(std::sync::Arc::new(value))
+    }
+}
+impl<T> AsRef<T> for SharedIndexFact<T> {
+    fn as_ref(&self) -> &T {
+        &self.0
+    }
+}
+impl<T> std::borrow::Borrow<T> for SharedIndexFact<T> {
+    fn borrow(&self) -> &T {
+        self.as_ref()
+    }
+}
+impl<T: Ord> PartialEq for SharedIndexFact<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl<T: Ord> Eq for SharedIndexFact<T> {}
+impl<T: Ord> PartialOrd for SharedIndexFact<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T: Ord> Ord for SharedIndexFact<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.0, &other.0) {
+            std::cmp::Ordering::Equal
+        } else {
+            self.as_ref().cmp(other.as_ref())
+        }
+    }
+}
+
+/// Borrowed adjacency entries let selection deduplicate before cloning syntax.
+pub(crate) enum AtomicConnectedFact<'a> {
+    Condition(&'a ConditionTerm, bool),
+    Proposition(&'a Proposition),
+}
+impl AtomicConnectedFact<'_> {
+    pub(crate) fn identity(&self) -> (u8, usize) {
+        match self {
+            Self::Condition(condition, _) => (0, *condition as *const ConditionTerm as usize),
+            Self::Proposition(proposition) => (1, *proposition as *const Proposition as usize),
+        }
+    }
+    pub(crate) fn is_condition(&self) -> bool {
+        matches!(
+            self,
+            Self::Condition(..) | Self::Proposition(Proposition::ConditionIs(..))
+        )
+    }
+    pub(crate) fn matches(&self, goal: &Proposition) -> bool {
+        match self {
+            Self::Condition(condition, value) => {
+                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+            }
+            Self::Proposition(proposition) => *proposition == goal,
+        }
+    }
+    pub(crate) fn to_proposition(&self) -> Proposition {
+        match self {
+            Self::Condition(condition, value) => {
+                Proposition::ConditionIs((*condition).clone(), *value)
+            }
+            Self::Proposition(proposition) => (*proposition).clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct AtomicConnectionFacts {
+    pub conditions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub propositions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Persistent syntax adjacency for atomic certificate planning. Unlike
+    /// free-variable indexes, this never scans snapshot contents.
+    pub(super) atomic_connection_facts:
+        crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
+    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub(super) atomic_quantified_facts:
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     /// True 64-bit equalities as an undirected adjacency map, derived
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
@@ -8679,6 +8792,28 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
     >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    /// Incremental adjacency for conditions whose variables can be read
+    /// without inspecting a snapshot.
+    pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+    >,
+    /// Snapshot-dependent conditions use the complete collector only when
+    /// smart premise selection asks for them. Scalar updates share the cache.
+    pub(super) snapshot_condition_variable_base: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+    >,
+    pub(super) snapshot_condition_variable_changes:
+        crate::persistent::PersistentMap<ConditionTerm, Option<bool>>,
+    pub(super) snapshot_condition_variables: std::sync::Arc<
+        std::sync::OnceLock<
+            crate::persistent::PersistentMap<
+                Variable,
+                crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+            >,
+        >,
+    >,
     /// The condition facts `condition_matches` can relate to a query spelled
     /// differently, keyed by their kind and the canonical forms of their two
     /// sides (`condition_match_key`): an equality under its unordered pair of

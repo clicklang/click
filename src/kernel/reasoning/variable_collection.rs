@@ -1,7 +1,45 @@
 use super::*;
 
 thread_local! {
+    static CONNECTION_BLOCKS: std::cell::RefCell<Option<BTreeSet<PointerBlock>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Explicit values and addresses a fact names; snapshot contents are not
+/// dependencies merely because two propositions carry the same snapshot.
+pub(crate) fn collect_atomic_connection_keys(
+    proposition: &Proposition,
+) -> BTreeSet<AtomicConnectionKey> {
+    struct Scope(Option<BTreeSet<PointerBlock>>);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            CONNECTION_BLOCKS.with(|blocks| *blocks.borrow_mut() = self.0.take());
+        }
+    }
+    let prior = CONNECTION_BLOCKS.with(|blocks| blocks.replace(Some(BTreeSet::new())));
+    let _scope = Scope(prior);
+    let mut variables = BTreeSet::new();
+    collect_proposition_connection_variables(proposition, &mut variables);
+    let mut keys = variables
+        .into_iter()
+        .map(AtomicConnectionKey::Variable)
+        .collect::<BTreeSet<_>>();
+    CONNECTION_BLOCKS.with(|blocks| {
+        keys.extend(
+            blocks
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .iter()
+                .cloned()
+                .map(AtomicConnectionKey::Block),
+        )
+    });
+    keys
+}
+
+thread_local! {
     static CONNECTION_VARIABLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static CONNECTION_LOAD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn collecting_connection_variables() -> bool {
@@ -25,9 +63,14 @@ pub(crate) fn collect_proposition_frame_variables(
     proposition: &Proposition,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let previous = COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(true));
-    collect_proposition_bitvector_variables(proposition, variables);
-    COLLECTING_HAVOC_RANGES.with(|flag| flag.set(previous));
+    struct Scope(bool);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            COLLECTING_HAVOC_RANGES.with(|flag| flag.set(self.0));
+        }
+    }
+    let _scope = Scope(COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(true)));
+    collect_proposition_connection_variables(proposition, variables);
 }
 
 /// Every variable through which `proposition` can be related to another
@@ -40,9 +83,14 @@ pub(crate) fn collect_proposition_connection_variables(
     proposition: &Proposition,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let previous = CONNECTION_VARIABLES.with(|flag| flag.replace(true));
+    struct Scope(bool);
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            CONNECTION_VARIABLES.with(|flag| flag.set(self.0));
+        }
+    }
+    let _scope = Scope(CONNECTION_VARIABLES.with(|flag| flag.replace(true)));
     collect_proposition_bitvector_variables(proposition, variables);
-    CONNECTION_VARIABLES.with(|flag| flag.set(previous));
 }
 
 pub(in crate::kernel) fn bitvector_same_base_nonzero_const_offset(
@@ -1973,6 +2021,44 @@ fn checked_collection_checkpoint() -> bool {
     crate::instrumentation::checked_collection_exhausted()
 }
 
+thread_local! {
+    // Condition-index insertion reads syntax, never snapshot contents. A
+    // snapshot-dependent fact is indexed lazily by the ordinary collector.
+    static DEFER_CONDITION_SNAPSHOTS: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+struct ConditionSnapshotDeferral(Option<bool>);
+
+impl Drop for ConditionSnapshotDeferral {
+    fn drop(&mut self) {
+        DEFER_CONDITION_SNAPSHOTS.with(|state| state.set(self.0));
+    }
+}
+
+fn defer_condition_snapshot() -> bool {
+    DEFER_CONDITION_SNAPSHOTS.with(|state| {
+        if state.get().is_some() {
+            state.set(Some(true));
+            true
+        } else {
+            false
+        }
+    })
+}
+
+/// Collect the ordinary condition variables, stopping at each snapshot.
+/// Returns whether a snapshot was encountered. If so, the caller must defer
+/// the whole fact to the complete collector to preserve its connections.
+pub(in crate::kernel) fn collect_condition_index_variables(
+    condition: &ConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
+    let prior = DEFER_CONDITION_SNAPSHOTS.with(|state| state.replace(Some(false)));
+    let _scope = ConditionSnapshotDeferral(prior);
+    collect_condition_bitvector_variables(condition, variables);
+    DEFER_CONDITION_SNAPSHOTS.with(|state| state.get() == Some(true))
+}
+
 pub(crate) fn collect_condition_bitvector_variables(
     condition: &ConditionTerm,
     variables: &mut BTreeSet<Variable>,
@@ -1982,7 +2068,12 @@ pub(crate) fn collect_condition_bitvector_variables(
             collect_algebraic_term_bitvector_variables(left, variables);
             collect_algebraic_term_bitvector_variables(right, variables);
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        ConditionTerm::Constant(_) => {}
+        ConditionTerm::Variable(variable) => {
+            if collecting_connection_variables() {
+                variables.insert(*variable);
+            }
+        }
         ConditionTerm::Bitvector32SignedLessThan(left, right)
         | ConditionTerm::Bitvector32SignedLessEqual(left, right)
         | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
@@ -2808,6 +2899,32 @@ fn collect_shared_integer_variables(
     collect_integer_variables_seen(term, variables, seen);
 }
 
+fn collect_stored_load_connection_variables(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if collecting_connection_variables() {
+        // A written load depends on the value at its exact address,
+        // rather than every value stored in the same snapshot.
+        struct Depth(usize);
+        impl Drop for Depth {
+            fn drop(&mut self) {
+                CONNECTION_LOAD_DEPTH.with(|depth| depth.set(self.0));
+            }
+        }
+        let depth = CONNECTION_LOAD_DEPTH.with(std::cell::Cell::get);
+        if depth < HAVOC_RANGE_HOPS {
+            let _scope = Depth(depth);
+            CONNECTION_LOAD_DEPTH.with(|current| current.set(depth + 1));
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(value) = memory.memory().cells.explicitly_stored_value(pointer) {
+                collect_c_value_bitvector_variables(value, variables);
+            }
+        }
+    }
+}
+
 pub(crate) fn collect_bitvector_variables(
     term: &Bitvector32Term,
     variables: &mut BTreeSet<Variable>,
@@ -2818,7 +2935,10 @@ pub(crate) fn collect_bitvector_variables(
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Variable(variable) => {
-            variables.insert(*variable);
+            let newly_seen = variables.insert(*variable);
+            if collecting_connection_variables() && !newly_seen {
+                return;
+            }
             // A load variable denotes its load, so the variables
             // of that load's address (a bound index, a loop counter) are
             // free in the term: a case split or substitution keyed on the
@@ -2829,6 +2949,15 @@ pub(crate) fn collect_bitvector_variables(
             {
                 collect_shared_memory_bitvector_variables(&memory, variables);
                 collect_pointer_bitvector_variables(&pointer, variables);
+                collect_stored_load_connection_variables(&memory, &pointer, variables);
+                if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
+                    && let Some((origin, _)) =
+                        crate::kernel::eval::registered_load_origin_for_variable(variable)
+                {
+                    // The canonical snapshot may be a jumped placeholder.
+                    // Frame dependencies belong to the live origin DAG.
+                    collect_shared_memory_bitvector_variables(&origin, variables);
+                }
             }
         }
         Bitvector32Term::Add(left, right)
@@ -2949,6 +3078,7 @@ pub(crate) fn collect_bitvector_variables(
         Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             collect_shared_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
+            collect_stored_load_connection_variables(memory, pointer, variables);
         }
         Bitvector32Term::PointerAddress(pointer) => {
             collect_pointer_bitvector_variables(pointer, variables);
@@ -4974,6 +5104,25 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
 ) {
+    CONNECTION_BLOCKS.with(|blocks| {
+        // ExternalArgument is the shared address arena of all formal array
+        // parameters. Their offset variables identify the actual objects;
+        // sharing that arena must not connect otherwise unrelated arrays.
+        // Null is another shared constant: unrelated non-null assertions must
+        // not connect all their objects through the null pointer.
+        if let Some(blocks) = blocks.borrow_mut().as_mut()
+            && !matches!(
+                pointer.block,
+                PointerBlock::ExternalArgument
+                    | PointerBlock::Symbolic(_)
+                    | PointerBlock::FunctionSymbolic(_)
+                    | PointerBlock::ExternalObject(_)
+            )
+            && !pointer.is_in_null_block()
+        {
+            blocks.insert(pointer.block.clone());
+        }
+    });
     match &pointer.block {
         PointerBlock::Symbolic(variable)
         | PointerBlock::FunctionSymbolic(variable)
@@ -5191,7 +5340,11 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
             let Some(derivation) = current.derivation() else {
                 break;
             };
+            crate::instrumentation::record_deterministic_work(1);
             match derivation.as_ref() {
+                CMemoryDerivation::Store { pointer, .. } => {
+                    collect_pointer_bitvector_variables(pointer, variables);
+                }
                 CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
                         collect_c_memory_range_bitvector_variables(range, variables);
@@ -5210,6 +5363,10 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
             current = derivation.base().clone();
         }
     }
+    if collecting_connection_variables() || defer_condition_snapshot() {
+        return;
+    }
+
     variables.extend(
         shared_memory_variable_counts(memory, WholeCount::Charged)
             .keys()
@@ -5474,11 +5631,13 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
-    // Two facts about one snapshot are not thereby related: what relates
-    // them is the address or value they speak of.
     if collecting_connection_variables() {
         return;
     }
+    if defer_condition_snapshot() {
+        return;
+    }
+
     // A live state's memory is the interned storage its last derivation
     // left, so its variables are that snapshot's remembered counts, counted
     // once per session from its derivation base's: the work of what changed,
@@ -5507,6 +5666,13 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if collecting_connection_variables() {
+        return;
+    }
+    if defer_condition_snapshot() {
+        return;
+    }
+
     for (block, contents) in memory.blocks.iter() {
         match block {
             PointerBlock::Symbolic(variable)

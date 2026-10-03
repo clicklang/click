@@ -1408,6 +1408,12 @@ impl CellStore {
         self.logical = OnceLock::new();
     }
 
+    /// An explicitly stored value, without synthesizing a run-slot value.
+    /// Dependency selection must not introduce a run's generated load atoms.
+    pub(in crate::kernel) fn explicitly_stored_value(&self, pointer: &Pointer) -> Option<&CValue> {
+        self.concrete.get(pointer)
+    }
+
     /// The cell at `pointer`, read from a run slot without building the
     /// logical map.
     pub(crate) fn get(&self, pointer: &Pointer) -> Option<CValue> {

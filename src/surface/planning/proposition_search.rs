@@ -28,7 +28,9 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 /// Nested disjunction case splits allowed inside one derivation.
 const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
@@ -468,24 +470,20 @@ impl PropositionSearch for PureFactContext {
                 return evidence.map(|evidence| (candidate, premises_id, evidence));
             }
         }
-        if !exclude_exact_goal && atomic_premise_minimization_disabled() {
-            let (evidence, premises_id) =
-                self.proves_atomic_for_derivation_with_id(proposition, for_simp);
-            return evidence.map(|evidence| (self.clone(), premises_id, evidence));
-        }
+        let mut condition_sources = Vec::new();
         if condition_goal {
-            // Keep the connected condition component. Order/equality
-            // reasoning can only cross a fact that shares a symbolic term
-            // with the component already reachable from the goal. Growing
-            // that component once selects a conservative proof graph without
-            // rerunning the prover once per ambient premise.
-            let selected = connected_condition_component(self, proposition, exclude_exact_goal);
-            let candidate = self.restricted_to_facts(&selected, &[]);
+            let (selected, _, _, _) =
+                connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;
+            let candidate = atomic_context_from_facts(self, &selected, &[]);
             let (evidence, premises_id) =
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
             if let Some(evidence) = evidence {
                 return Some((candidate, premises_id, evidence));
             }
+            condition_sources = selected
+                .into_iter()
+                .map(|(condition, value)| Proposition::ConditionIs(condition, value))
+                .collect();
         }
 
         let candidate_family = |fact: &Proposition| match proposition {
@@ -556,9 +554,13 @@ impl PropositionSearch for PureFactContext {
         // a differently placed fact, can still be proved from one of them.
         // Loadability needs none: its prover reads the block bucket alone.
         let family_fallback = |tried: &[Proposition]| {
-            if goal_base.is_some() {
+            if !matches!(
+                proposition,
+                Proposition::CMemoryReadDefined { .. } | Proposition::CResourceSeparate { .. }
+            ) {
                 return Vec::new();
             }
+            let tried = tried.iter().collect::<BTreeSet<_>>();
             self.proposition_facts()
                 .inspect(|_| record_candidate_visit())
                 .filter(|fact| candidate_family(fact) && usable(fact) && !tried.contains(fact))
@@ -566,25 +568,24 @@ impl PropositionSearch for PureFactContext {
                 .collect::<Vec<_>>()
         };
         let candidates = indexed.unwrap_or_default();
-        // A trial cites its sources and the condition facts connected to
-        // them or to the goal through shared values.
-        let condition_index = std::cell::OnceCell::new();
-        let goal_variables = std::cell::OnceCell::new();
+        // Every trial is rebuilt only from explicitly selected dependencies.
+        // The kernel must establish the goal again in that restricted context.
         let trial = |sources: &[Proposition]| {
-            let index = condition_index
-                .get_or_init(|| ConditionIndex::new(self, proposition, exclude_exact_goal));
-            let mut variables = goal_variables
-                .get_or_init(|| {
-                    let mut variables = BTreeSet::new();
-                    collect_proposition_connection_variables(proposition, &mut variables);
-                    variables
-                })
-                .clone();
-            for source in sources {
-                collect_proposition_connection_variables(source, &mut variables);
+            let direct = atomic_context_from_facts(self, &[], sources);
+            let (evidence, premises_id) =
+                direct.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            if let Some(evidence) = evidence {
+                return Some((direct, premises_id, evidence));
             }
-            let conditions = index.component(variables);
-            let candidate = self.restricted_to_facts(&conditions, sources);
+            let (conditions, propositions, _, _) = connected_atomic_premises(
+                self,
+                proposition,
+                sources,
+                false,
+                false,
+                exclude_exact_goal,
+            )?;
+            let candidate = atomic_context_from_facts(self, &conditions, &propositions);
             let (evidence, premises_id) =
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
             evidence.map(|evidence| (candidate, premises_id, evidence))
@@ -628,7 +629,15 @@ impl PropositionSearch for PureFactContext {
             } = proposition
             && candidates.len() > 1
         {
-            let sources = self.with_only_proposition_facts(&candidates);
+            let (conditions, propositions, _, _) = connected_atomic_premises(
+                self,
+                proposition,
+                &candidates,
+                false,
+                false,
+                exclude_exact_goal,
+            )?;
+            let sources = atomic_context_from_facts(self, &conditions, &propositions);
             if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes)
                 && let Some(found) = trial(&premises)
             {
@@ -636,8 +645,8 @@ impl PropositionSearch for PureFactContext {
             }
         }
         let fallback = family_fallback(&candidates);
-        // A lone fallback fact is the whole family: the full context below
-        // decides the goal from it just as well.
+        // A lone fallback fact will be available to the joint dependency
+        // selection below.
         if fallback.len() + candidates.len() > 1 {
             match try_each(&fallback) {
                 Err(()) => return None,
@@ -648,43 +657,82 @@ impl PropositionSearch for PureFactContext {
         if exclude_exact_goal {
             None
         } else {
-            // No single source decided the goal. Cite every fact connected
-            // to it through a shared value, of either kind, rather than the
-            // whole context: an order goal over a load needs the frame facts
-            // of that load's address, and nothing about unrelated values.
-            // The first selection relates facts through the values they
-            // name. The second also follows the values the goal's memory
-            // snapshots hold and admits every universally quantified fact,
-            // which can speak of an address the goal names only by a
-            // constant.
-            let mut tried = None;
-            for widened in [false, true] {
-                let selected = connected_facts(self, proposition, widened);
-                // The wider selection often adds nothing; asking the same
-                // question again would only double a failure's cost.
-                if tried.as_ref() == Some(&selected) {
-                    break;
+            // Smart equality failures can be expensive history walks. Use
+            // the shared ambient oracle only to reject an unprovable goal;
+            // a positive answer still needs selected premises and a fresh
+            // restricted kernel query before it can become evidence.
+            if for_simp
+                && matches!(
+                    proposition,
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(..)
+                            | ConditionTerm::Bitvector64Equal(..)
+                            | ConditionTerm::PointerOffsetEqual(..),
+                        _
+                    )
+                )
+                && self
+                    .proves_atomic_for_derivation_with_id(proposition, for_simp)
+                    .0
+                    .is_none()
+            {
+                return None;
+            }
+            // The condition-only query above already checked this fact set.
+            // Compare facts, not traversal keys: widening can reach more keys
+            // without adding any premise and must not repeat the same query.
+            let mut tried = condition_goal.then(|| {
+                (
+                    condition_sources
+                        .iter()
+                        .filter_map(|fact| match fact {
+                            Proposition::ConditionIs(condition, value) => {
+                                Some((condition.clone(), *value))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    Vec::new(),
+                )
+            });
+            // Condition selection already made the narrow attempt. Its
+            // fallback includes frame and quantified dependencies in one
+            // query, rather than retrying a partial snapshot context first.
+            let widths: &[bool] = if condition_goal {
+                &[true]
+            } else {
+                &[false, true]
+            };
+            for &widened in widths {
+                let selected = connected_atomic_premises(
+                    self,
+                    proposition,
+                    &condition_sources,
+                    true,
+                    widened,
+                    false,
+                )?;
+                let (conditions, propositions, reached, _) = &selected;
+                if tried
+                    .as_ref()
+                    .is_some_and(|(prior_conditions, prior_propositions)| {
+                        prior_conditions == conditions && prior_propositions == propositions
+                    })
+                {
+                    continue;
                 }
-                let (conditions, propositions) = &selected;
-                // A selection of every fact is this context: asking it
-                // directly keeps what is already known about it, where a
-                // rebuilt copy would be decided from scratch.
-                let whole = conditions.len() == self.condition_fact_pairs().count()
-                    && propositions.len() == self.proposition_facts().count();
-                let candidate = if whole {
-                    self.clone()
-                } else {
-                    self.restricted_to_facts(conditions, propositions)
-                };
+                let candidate = atomic_context_from_facts(self, conditions, propositions);
                 let (evidence, premises_id) =
                     candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
                 if let Some(evidence) = evidence {
                     return Some((candidate, premises_id, evidence));
                 }
-                if whole {
+                if !widened
+                    && !atomic_widening_adds_dependencies(self, proposition, &candidate, reached)
+                {
                     break;
                 }
-                tried = Some(selected);
+                tried = Some((conditions.clone(), propositions.clone()));
             }
             None
         }
@@ -1299,224 +1347,423 @@ pub(crate) fn reset_condition_selection_visits() {
     CONDITION_SELECTION_VISITS.with(|visits| visits.set(0));
 }
 
-/// The condition facts connected to `proposition` through shared symbolic
-/// variables, in the context's own order.
-fn connected_condition_component(
+/// Follow the variable/fact graph through the context's adjacency indexes.
+/// Scalar facts are indexed incrementally; snapshot-dependent facts use a
+/// complete, lazy index. Each reachable variable and fact is expanded once.
+#[cfg(test)]
+fn connected_condition_premises(
     context: &PureFactContext,
     proposition: &Proposition,
     exclude_exact_goal: bool,
-) -> Vec<(ConditionTerm, bool)> {
+) -> Option<Vec<(ConditionTerm, bool)>> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "condition premise selection");
     let mut reached = BTreeSet::new();
-    collect_proposition_connection_variables(proposition, &mut reached);
-    ConditionIndex::new(context, proposition, exclude_exact_goal).component(reached)
-}
-
-/// A context's condition facts indexed by the variables they mention.
-///
-/// One pass builds the index; each component walk then visits a fact of the
-/// component once per variable it mentions. A chain stated in any order
-/// therefore costs the context once, not once per link, and several
-/// selections against one context share that one pass.
-struct ConditionIndex<'a> {
-    facts: Vec<(&'a ConditionTerm, bool, BTreeSet<Variable>)>,
-    facts_by_variable: BTreeMap<Variable, Vec<usize>>,
-    /// The goal's own statement, taken whole when it may be used.
-    always: Vec<bool>,
-}
-
-impl<'a> ConditionIndex<'a> {
-    fn new(context: &'a PureFactContext, goal: &Proposition, exclude_exact_goal: bool) -> Self {
-        let mut facts = Vec::new();
-        let mut facts_by_variable: BTreeMap<Variable, Vec<usize>> = BTreeMap::new();
-        let mut always = Vec::new();
-        let fact_variables = fact_connection_variables(context);
-        for ((condition, value), fact_variables) in context
-            .condition_fact_pairs()
-            .zip(&fact_variables.conditions)
-        {
+    collect_proposition_bitvector_variables(proposition, &mut reached);
+    let mut frontier = reached.iter().copied().collect::<Vec<_>>();
+    let mut selected = BTreeMap::new();
+    while let Some(variable) = frontier.pop() {
+        if simp_reasoning_interrupted() {
+            return None;
+        }
+        // The cooperative checkpoint charges this variable visit.
+        for (condition, value) in context.condition_facts_mentioning_variable(variable)? {
             #[cfg(test)]
             CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
-            let index = facts.len();
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            // The checkpoint likewise charges each adjacency visit.
             let exact_goal_fact = matches!(
-                goal,
+                proposition,
                 Proposition::ConditionIs(goal, expected)
                     if goal == condition && *expected == value
             );
-            let mut variables = BTreeSet::new();
-            // The goal's own statement is taken or left as a whole; it never
-            // extends the component.
-            if !exact_goal_fact {
-                variables.clone_from(fact_variables);
-                for variable in &variables {
-                    facts_by_variable.entry(*variable).or_default().push(index);
-                }
-            }
-            always.push(exact_goal_fact && !exclude_exact_goal);
-            facts.push((condition, value, variables));
-        }
-        Self {
-            facts,
-            facts_by_variable,
-            always,
-        }
-    }
-
-    /// The facts connected to the variables in `reached`.
-    fn component(&self, mut reached: BTreeSet<Variable>) -> Vec<(ConditionTerm, bool)> {
-        let mut chosen = self.always.clone();
-        let mut pending = reached.iter().copied().collect::<Vec<_>>();
-        while let Some(variable) = pending.pop() {
-            for &index in self.facts_by_variable.get(&variable).into_iter().flatten() {
-                #[cfg(test)]
-                CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
-                if std::mem::replace(&mut chosen[index], true) {
-                    continue;
-                }
-                for &next in &self.facts[index].2 {
-                    if reached.insert(next) {
-                        pending.push(next);
-                    }
-                }
-            }
-        }
-        self.facts
-            .iter()
-            .zip(chosen)
-            .filter(|(_, chosen)| *chosen)
-            .map(|((condition, value, _), _)| ((*condition).clone(), *value))
-            .collect()
-    }
-}
-
-/// The connection variables of each fact of a context, in the order
-/// [`PureFactContext::condition_fact_pairs`] and
-/// [`PureFactContext::proposition_facts`] yield them.
-struct FactConnectionVariables {
-    conditions: Vec<BTreeSet<Variable>>,
-    propositions: Vec<BTreeSet<Variable>>,
-}
-
-/// How many contexts' fact variables are remembered at once.
-const FACT_VARIABLE_CACHE_CONTEXTS: usize = 16;
-
-thread_local! {
-    /// Recently indexed contexts, most recent last, keyed by their
-    /// content-derived identity. A search asks about one context many
-    /// times; collecting every fact's variables again for each question is
-    /// the cost a prompt failure cannot afford.
-    static FACT_VARIABLE_CACHE: std::cell::RefCell<
-        Vec<(u64, std::rc::Rc<FactConnectionVariables>)>,
-    > = const { std::cell::RefCell::new(Vec::new()) };
-}
-
-fn fact_connection_variables(context: &PureFactContext) -> std::rc::Rc<FactConnectionVariables> {
-    let id = unsalted_assumptions_memo_id(context);
-    let cached = FACT_VARIABLE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let position = cache.iter().position(|(cached, _)| *cached == id)?;
-        let entry = cache.remove(position);
-        cache.push(entry.clone());
-        Some(entry.1)
-    });
-    if let Some(cached) = cached {
-        return cached;
-    }
-    let variables_of = |proposition: &Proposition| {
-        let mut variables = BTreeSet::new();
-        collect_proposition_connection_variables(proposition, &mut variables);
-        variables
-    };
-    let collected = std::rc::Rc::new(FactConnectionVariables {
-        conditions: context
-            .condition_fact_pairs()
-            .map(|(condition, value)| {
-                variables_of(&Proposition::ConditionIs(condition.clone(), value))
-            })
-            .collect(),
-        propositions: context.proposition_facts().map(variables_of).collect(),
-    });
-    FACT_VARIABLE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= FACT_VARIABLE_CACHE_CONTEXTS {
-            cache.remove(0);
-        }
-        cache.push((id, collected.clone()));
-    });
-    collected
-}
-
-/// The condition and proposition facts connected to `goal` through shared
-/// values, in the context's own order, with the condition facts that
-/// mention no value at all: nothing could connect those, and a fact about a
-/// constant or a nullary function is small.
-fn connected_facts(
-    context: &PureFactContext,
-    goal: &Proposition,
-    widened: bool,
-) -> (Vec<(ConditionTerm, bool)>, Vec<Proposition>) {
-    enum Fact<'a> {
-        Condition(&'a ConditionTerm, bool),
-        Proposition(&'a Proposition),
-    }
-    let mut facts = Vec::new();
-    let mut variables_of = Vec::new();
-    let mut facts_by_variable: BTreeMap<Variable, Vec<usize>> = BTreeMap::new();
-    let mut chosen = Vec::new();
-    let mut reached = BTreeSet::new();
-    let conditions = context
-        .condition_fact_pairs()
-        .map(|(condition, value)| Fact::Condition(condition, value));
-    let propositions = context.proposition_facts().map(Fact::Proposition);
-    let fact_variables = fact_connection_variables(context);
-    let all_variables = fact_variables
-        .conditions
-        .iter()
-        .chain(&fact_variables.propositions);
-    for (fact, variables) in conditions.chain(propositions).zip(all_variables) {
-        let variables = variables.clone();
-        for variable in &variables {
-            facts_by_variable
-                .entry(*variable)
-                .or_default()
-                .push(facts.len());
-        }
-        let general = widened && matches!(fact, Fact::Proposition(Proposition::ForAll { .. }));
-        if general {
-            reached.extend(variables.iter().copied());
-        }
-        chosen.push(general || matches!(fact, Fact::Condition(..)) && variables.is_empty());
-        variables_of.push(variables);
-        facts.push(fact);
-    }
-    collect_proposition_connection_variables(goal, &mut reached);
-    if widened {
-        collect_proposition_frame_variables(goal, &mut reached);
-    }
-    let mut pending = reached.iter().copied().collect::<Vec<_>>();
-    while let Some(variable) = pending.pop() {
-        for &index in facts_by_variable.get(&variable).into_iter().flatten() {
-            if std::mem::replace(&mut chosen[index], true) {
+            if exclude_exact_goal && exact_goal_fact || selected.contains_key(condition) {
                 continue;
             }
-            for &next in &variables_of[index] {
+            let mut variables = BTreeSet::new();
+            collect_condition_bitvector_variables(condition, &mut variables);
+            for next in variables {
+                crate::instrumentation::record_deterministic_work(1);
                 if reached.insert(next) {
-                    pending.push(next);
+                    frontier.push(next);
+                }
+            }
+            selected.insert(condition.clone(), value);
+        }
+    }
+    if !exclude_exact_goal
+        && let Proposition::ConditionIs(condition, value) = proposition
+        && context.contains_assumed_exact(proposition)
+    {
+        selected.insert(condition.clone(), *value);
+    }
+    Some(selected.into_iter().collect())
+}
+
+#[cfg(test)]
+mod condition_premise_tests {
+    use super::*;
+
+    fn term(index: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(index))
+    }
+
+    fn order(left: u64, right: u64) -> ConditionTerm {
+        ConditionTerm::Bitvector32SignedLessThan(Box::new(term(left)), Box::new(term(right)))
+    }
+
+    fn chain_fact(index: u64) -> ConditionTerm {
+        if index == 1 {
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(term(1)),
+                Box::new(Bitvector32Term::Constant(1000)),
+            )
+        } else {
+            order(index, index - 1)
+        }
+    }
+
+    fn chain(size: usize, unrelated: usize) -> (PureFactContext, Proposition) {
+        let mut context = PureFactContext::new();
+        // The goal mentions only the highest variable. In ascending fact
+        // order each full scan discovers just one new descending chain link.
+        for index in (1..=size as u64).rev() {
+            context = context.assume_condition(chain_fact(index), true);
+        }
+        for index in 0..unrelated as u64 {
+            context = context.assume_condition(order(10_000 + index * 2, 10_001 + index * 2), true);
+        }
+        let goal = ConditionTerm::Bitvector32SignedLessThan(
+            Box::new(term(size as u64)),
+            Box::new(Bitvector32Term::Constant(1000)),
+        );
+        (context, Proposition::ConditionIs(goal, true))
+    }
+
+    // Keep the former planner as a test oracle, counting whole-context
+    // visits separately so its quadratic curve cannot hide in kernel work.
+    fn scanned_component(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> (Vec<(ConditionTerm, bool)>, usize) {
+        let mut connected = BTreeSet::new();
+        collect_proposition_bitvector_variables(goal, &mut connected);
+        let mut selected = BTreeMap::new();
+        let mut visits = 0;
+        loop {
+            let mut changed = false;
+            for (condition, value) in context.condition_fact_pairs() {
+                visits += 1;
+                if selected.contains_key(condition) {
+                    continue;
+                }
+                let mut variables = BTreeSet::new();
+                collect_condition_bitvector_variables(condition, &mut variables);
+                if !variables.is_disjoint(&connected) {
+                    connected.extend(variables);
+                    selected.insert(condition.clone(), value);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        (selected.into_iter().collect(), visits)
+    }
+
+    #[test]
+    fn indexed_component_preserves_scan_answers_and_removes_its_quadratic_work() {
+        let mut visits = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let (context, goal) = chain(size, size * 4);
+            let (scanned, count) = scanned_component(&context, &goal);
+            assert_eq!(
+                connected_condition_premises(&context, &goal, false).unwrap(),
+                scanned
+            );
+            visits.push(count);
+        }
+        assert!(
+            visits.windows(2).all(|pair| pair[1] > pair[0] * 3),
+            "old scan must reproduce superlinear work: {visits:?}"
+        );
+        eprintln!("former whole-context visits: {visits:?}");
+    }
+
+    #[test]
+    fn condition_component_keeps_load_address_and_snapshot_variables() {
+        let pointer = Pointer {
+            block: "cell".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(term(40)),
+                byte_width: 4,
+            },
+        };
+        let memory = CMemory::new().with_block("cell", 64).store(
+            Pointer {
+                block: "cell".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::Int32(term(70)),
+        );
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(pointer),
+            LoadKind::Bits32,
+        );
+        let fact = ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(term(50)));
+        let context = PureFactContext::new()
+            .assume_condition(fact.clone(), true)
+            .assume_condition(order(40, 41), true)
+            .assume_condition(order(70, 71), true)
+            .assume_condition(order(90, 91), true);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(load), Box::new(term(60))),
+            true,
+        );
+        let selected = connected_condition_premises(&context, &goal, false).unwrap();
+        assert_eq!(selected, scanned_component(&context, &goal).0);
+        assert_eq!(selected.len(), 3);
+    }
+
+    #[test]
+    fn wide_condition_index_construction_charges_its_variable_entries() {
+        let mut samples = Vec::new();
+        for size in [4, 8, 16, 32] {
+            let mut terms = (0..size)
+                .map(|index| term(40_000 + (size * 100 + index) as u64))
+                .collect::<Vec<_>>();
+            while terms.len() > 1 {
+                terms = terms
+                    .chunks(2)
+                    .map(|pair| {
+                        if pair.len() == 1 {
+                            pair[0].clone()
+                        } else {
+                            Bitvector32Term::Add(
+                                Box::new(pair[0].clone()),
+                                Box::new(pair[1].clone()),
+                            )
+                        }
+                    })
+                    .collect();
+            }
+            let condition = ConditionTerm::Bitvector32Equal(
+                Box::new(terms.pop().unwrap()),
+                Box::new(Bitvector32Term::Constant(0)),
+            );
+            let ((context, work), events) = crate::instrumentation::collect(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    PureFactContext::new().assume_condition(condition, true)
+                })
+            });
+            assert_eq!(context.condition_fact_pairs().count(), 1);
+            let index_work = events
+                .into_iter()
+                .filter_map(|event| {
+                    if let crate::instrumentation::VerificationEvent::OperationFinished {
+                        name,
+                        work,
+                        ..
+                    } = event
+                    {
+                        (name == "condition variable indexing").then_some(work)
+                    } else {
+                        None
+                    }
+                })
+                .sum::<usize>();
+            // The existing context-entry charge covers the first variable.
+            assert_eq!(index_work, size - 1);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+            "{samples:?}"
+        );
+    }
+
+    #[test]
+    fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
+        let mut cold_samples = Vec::new();
+        let mut warm_samples = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let (mut context, goal) = chain(8, 0);
+            let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
+            let mut snapshot_facts = Vec::new();
+            for index in 0..size {
+                let condition = ConditionTerm::Bitvector32Equal(
+                    Box::new(term(20_000 + index as u64)),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(Pointer {
+                            block: "other".into(),
+                            offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                        }),
+                        crate::kernel::LoadKind::Bits32,
+                    )),
+                );
+                context = context.assume_condition(condition.clone(), true);
+                snapshot_facts.push(Proposition::ConditionIs(condition, true));
+            }
+            let (selected, cold) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&context, &goal, false).unwrap()
+            });
+            assert_eq!(selected.len(), 8);
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&context, &goal, false).unwrap()
+            });
+            assert!(
+                cold >= warm + size,
+                "snapshot construction must be charged: {cold}, {warm}"
+            );
+            cold_samples.push(cold);
+            warm_samples.push(warm);
+            let scalar_branch = context
+                .clone()
+                .assume_condition(order(30_000, 30_001), true);
+            let (_, branch_work) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&scalar_branch, &goal, false).unwrap()
+            });
+            assert_eq!(
+                branch_work, warm,
+                "scalar insertion must share the completed snapshot index"
+            );
+            let withdrawn = context.without_exact_fact(&snapshot_facts[0]);
+            let (selected, rebuilt) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&withdrawn, &goal, false).unwrap()
+            });
+            assert_eq!(selected, scanned_component(&withdrawn, &goal).0);
+            assert!(
+                rebuilt > warm && rebuilt <= warm + 8,
+                "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
+            );
+            let extra = ConditionTerm::Bitvector32Equal(
+                Box::new(term(90_000)),
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: "other".into(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    }),
+                    crate::kernel::LoadKind::Bits32,
+                )),
+            );
+            let extended = scalar_branch.assume_condition(extra, true);
+            let (selected, extended_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    connected_condition_premises(&extended, &goal, false).unwrap()
+                });
+            assert_eq!(selected.len(), 8);
+            assert!(
+                extended_work > warm && extended_work <= warm + 8,
+                "snapshot insertion must apply only its delta: {extended_work}, {warm}"
+            );
+            eprintln!("snapshot bucket {size}: cold {cold}, warm {warm}");
+        }
+        assert!(
+            warm_samples.iter().all(|work| *work == warm_samples[0]),
+            "{warm_samples:?}"
+        );
+        assert!(
+            cold_samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+            "{cold_samples:?}"
+        );
+    }
+
+    #[test]
+    fn connected_condition_selection_scales_linearly_in_chain_and_context() {
+        for grow_chain in [false, true] {
+            let mut samples = Vec::new();
+            let mut complete = Vec::new();
+            for size in [8, 16, 32, 64] {
+                let length = if grow_chain { size } else { 8 };
+                let (context, goal) = chain(length, size * 4);
+                let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    connected_condition_premises(&context, &goal, false).unwrap()
+                });
+                assert_eq!(selected.len(), length);
+                assert!(
+                    work >= length && work <= 16 * (length + size * 4),
+                    "{length}: {work}"
+                );
+                samples.push(work);
+                let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .derive_atomic_proposition(&goal)
+                        .expect("connected order chain proves goal")
+                });
+                complete.push(total);
+                assert!(proof.check(&context));
+                assert_eq!(proof.context_premises().len(), length);
+                eprintln!(
+                    "chain {length}, unrelated {}: selection {work}, complete {total}",
+                    size * 4
+                );
+                // Every link is necessary, and withdrawing it must also
+                // change the selected component and invalidate the certificate.
+                for index in 1..=length as u64 {
+                    let weakened = context
+                        .without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
+                    assert!(!proof.check(&weakened));
+                }
+                let broken = context.without_exact_fact(&Proposition::ConditionIs(
+                    chain_fact(length as u64 / 2),
+                    true,
+                ));
+                assert!(broken.derive_atomic_proposition(&goal).is_none());
+            }
+            if !grow_chain {
+                assert!(
+                    samples.iter().all(|work| *work == samples[0]),
+                    "{samples:?}"
+                );
+                assert!(
+                    complete.iter().all(|work| *work == complete[0]),
+                    "{complete:?}"
+                );
+            }
+            for curve in [&samples, &complete] {
+                for pair in curve.windows(2) {
+                    assert!(pair[1] <= pair[0] * 3, "{curve:?}");
                 }
             }
         }
     }
-    let mut conditions = Vec::new();
-    let mut propositions = Vec::new();
-    for (fact, chosen) in facts.into_iter().zip(chosen) {
-        match fact {
-            Fact::Condition(condition, value) if chosen => {
-                conditions.push((condition.clone(), value))
-            }
-            Fact::Proposition(proposition) if chosen => propositions.push(proposition.clone()),
-            _ => {}
-        }
+
+    #[test]
+    fn condition_selection_tracks_restriction_replacement_and_exclusion() {
+        let (context, goal) = chain(8, 20);
+        let selected = connected_condition_premises(&context, &goal, false).unwrap();
+        let restricted = context.restricted_to_facts(&selected, &[]);
+        assert_eq!(
+            connected_condition_premises(&restricted, &goal, false).unwrap(),
+            selected
+        );
+        let condition = chain_fact(1);
+        let replaced = context.clone().assume_condition(condition.clone(), false);
+        assert!(
+            connected_condition_premises(&replaced, &goal, false)
+                .unwrap()
+                .contains(&(condition, false))
+        );
+        let stated = context.assume_proposition(goal.clone());
+        assert_eq!(
+            connected_condition_premises(&stated, &goal, true).unwrap(),
+            selected
+        );
+        let constant = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let context = PureFactContext::new().assume_proposition(constant.clone());
+        assert_eq!(
+            connected_condition_premises(&context, &constant, false)
+                .unwrap()
+                .len(),
+            1
+        );
     }
-    (conditions, propositions)
 }
 
 #[cfg(test)]
@@ -1527,6 +1774,9 @@ thread_local! {
 /// Counts one proposition fact examined as a possible source for an atomic
 /// memory or resource goal, apart from the kernel's checking work.
 fn record_candidate_visit() {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "proposition candidate selection");
+    crate::instrumentation::record_deterministic_work(1);
     #[cfg(test)]
     CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
 }
@@ -1539,4 +1789,188 @@ pub(crate) fn candidate_visits() -> usize {
 #[cfg(test)]
 pub(crate) fn reset_candidate_visits() {
     CANDIDATE_VISITS.with(|visits| visits.set(0));
+}
+
+type AtomicPremiseSelection = (
+    Vec<(ConditionTerm, bool)>,
+    Vec<Proposition>,
+    BTreeSet<AtomicConnectionKey>,
+    bool,
+);
+
+/// Walk syntax adjacency, never rebuilding an index of the ambient context.
+/// A wider smart fallback follows recent havoc bounds and general facts;
+/// its result still has to pass the restricted kernel query.
+fn connected_atomic_premises(
+    context: &PureFactContext,
+    goal: &Proposition,
+    sources: &[Proposition],
+    include_propositions: bool,
+    widened: bool,
+    exclude_exact_goal: bool,
+) -> Option<AtomicPremiseSelection> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "atomic dependency selection");
+    let mut selected = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    let mut reached = collect_atomic_connection_keys(goal);
+    let mut select = |fact: &Proposition| {
+        visited.insert((1, fact as *const Proposition as usize));
+        reached.extend(collect_atomic_connection_keys(fact));
+        selected.insert(fact.clone());
+    };
+    for source in sources {
+        select(source);
+    }
+    if widened {
+        for fact in context.atomic_general_facts() {
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            if (!exclude_exact_goal || fact != goal)
+                && (include_propositions || matches!(fact, Proposition::ConditionIs(..)))
+            {
+                select(fact);
+            }
+        }
+    }
+    if widened {
+        let mut frame_variables = BTreeSet::new();
+        collect_proposition_frame_variables(goal, &mut frame_variables);
+        reached.extend(
+            frame_variables
+                .into_iter()
+                .map(AtomicConnectionKey::Variable),
+        );
+    }
+    let mut joint_adds = false;
+    let mut pending = reached.iter().cloned().collect::<Vec<_>>();
+    while let Some(key) = pending.pop() {
+        if simp_reasoning_interrupted() {
+            return None;
+        }
+        let (facts, has_propositions) =
+            context.atomic_facts_connected_to(&key, include_propositions);
+        joint_adds |= has_propositions;
+        for fact in facts {
+            #[cfg(test)]
+            if fact.is_condition() {
+                CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
+            }
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            if !visited.insert(fact.identity())
+                || (exclude_exact_goal && fact.matches(goal))
+                || (!include_propositions && !fact.is_condition())
+            {
+                continue;
+            }
+            let fact = fact.to_proposition();
+            if selected.contains(&fact) {
+                continue;
+            }
+            for next in collect_atomic_connection_keys(&fact) {
+                crate::instrumentation::record_deterministic_work(1);
+                if reached.insert(next.clone()) {
+                    pending.push(next);
+                }
+            }
+            selected.insert(fact);
+        }
+    }
+    let mut conditions = Vec::new();
+    let mut propositions = Vec::new();
+    for fact in selected {
+        match fact {
+            Proposition::ConditionIs(condition, value) => conditions.push((condition, value)),
+            other => propositions.push(other),
+        }
+    }
+    Some((conditions, propositions, reached, joint_adds))
+}
+
+/// A completed component already contains every dependency of its seeds.
+/// Avoid walking it a second time if widening introduces no new seeds.
+fn atomic_widening_adds_dependencies(
+    context: &PureFactContext,
+    goal: &Proposition,
+    selected: &PureFactContext,
+    reached: &BTreeSet<AtomicConnectionKey>,
+) -> bool {
+    for fact in context.atomic_general_facts() {
+        if simp_reasoning_interrupted() || !selected.contains_assumed_exact(fact) {
+            return true;
+        }
+    }
+    let mut frame_variables = BTreeSet::new();
+    collect_proposition_frame_variables(goal, &mut frame_variables);
+    frame_variables.into_iter().any(|variable| {
+        crate::instrumentation::record_deterministic_work(1);
+        !reached.contains(&AtomicConnectionKey::Variable(variable))
+    })
+}
+
+/// Retain typing support only when its defining equation is selected.
+fn atomic_context_from_facts(
+    available: &PureFactContext,
+    conditions: &[(ConditionTerm, bool)],
+    propositions: &[Proposition],
+) -> PureFactContext {
+    // Selections consist of distinct facts drawn from `available`. When
+    // every fact was selected, preserve the persistent context and its
+    // derived reasoning indexes rather than rebuilding equivalent state.
+    if available.fact_counts() == (conditions.len(), propositions.len()) {
+        available.clone()
+    } else {
+        available.restricted_to_facts(conditions, propositions)
+    }
+}
+
+#[cfg(test)]
+mod shared_atomic_premise_tests {
+    use super::*;
+
+    #[test]
+    fn wide_atomic_premise_cloning_scales_with_its_syntax() {
+        let mut samples = Vec::new();
+        for size in [8u64, 16, 32, 64] {
+            let predicate = |index| Proposition::Predicate {
+                name: "wide-index".to_string(),
+                arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(
+                    800_000 + index,
+                )))],
+            };
+            let mut body = predicate(0);
+            for index in 1..size {
+                body = Proposition::And(Box::new(body), Box::new(predicate(index)));
+            }
+            let source = Proposition::ForAll {
+                var: Variable(900_000),
+                sort: Sort::CInt32,
+                body: Box::new(body),
+            };
+            let (context, clones) = crate::kernel::count_proposition_clone_nodes(|| {
+                let context = PureFactContext::new().assume_proposition(source.clone());
+                let (_, selected, _, _) =
+                    connected_atomic_premises(&context, &predicate(0), &[], true, false, false)
+                        .expect("all variable buckets must lead to the same wide premise");
+                assert_eq!(selected, vec![source.clone()]);
+                let proof = context
+                    .derive_atomic_proposition(&source)
+                    .expect("the stated premise is available");
+                assert!(proof.check(&context));
+                assert!(!proof.check(&context.without_exact_fact(&source)));
+                context
+            });
+            assert!(context.proves_exact(&source));
+            samples.push((size, clones));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 3,
+                "deep premise cloning became superlinear: {samples:?}"
+            );
+        }
+    }
 }

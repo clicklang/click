@@ -436,7 +436,6 @@ fn equality_graph_term_key(term: &Bitvector32Term) -> Bitvector32Term {
 thread_local! {
     static SIMP_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
         const { RefCell::new(BTreeSet::new()) };
-    static ATOMIC_PREMISE_MINIMIZATION_DEPTH: Cell<usize> = const { Cell::new(0) };
     static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<ConditionTerm>> =
         const { RefCell::new(BTreeSet::new()) };
     static REASONING_PROVENANCE_STACK: RefCell<Vec<ReasoningProvenanceFrame>> =
@@ -670,10 +669,6 @@ pub(crate) fn implicit_reasoning_provenance_capturing() -> bool {
     CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.get() != 0)
 }
 
-pub(crate) fn atomic_premise_minimization_disabled() -> bool {
-    ATOMIC_PREMISE_MINIMIZATION_DEPTH.with(|depth| depth.get() != 0)
-}
-
 /// True while any condition decision is in progress on this thread. Deep
 /// reasoning helpers use this to avoid re-entering `decide` from inside a
 /// decision, which would cycle through order-fact matching and memory-load
@@ -900,9 +895,69 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
             next.set(id + 1);
             id
         });
-        ids.insert(assumptions.clone(), id);
+        // This table owns identity keys, never contexts used for planning.
+        // Do not keep dependency indexes from every transient restricted
+        // context alive until the next verification boundary. They are
+        // excluded from PureFactContext equality and hashing.
+        let mut key = assumptions.clone();
+        key.atomic_connection_facts = crate::persistent::PersistentMap::default();
+        key.atomic_ground_facts = crate::persistent::PersistentSet::default();
+        key.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
+        key.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        // Lazy query caches may be populated *after* this clone is interned.
+        // The identity table must not own their shared OnceLocks either.
+        key.bitvector_equality_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        key.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
+        ids.insert(key, id);
         id
     })
+}
+
+#[cfg(test)]
+mod planning_index_memo_lifetime_tests {
+    use super::*;
+
+    #[test]
+    fn memo_identity_does_not_retain_transient_indexes() {
+        clear_assumption_memos();
+        for size in [8u64, 16, 32, 64] {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context.assume_proposition(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(size * 1000 + index))),
+                        Box::new(Bitvector32Term::Constant(7)),
+                    ),
+                    true,
+                ));
+            }
+            let cache = std::sync::Arc::downgrade(&context.snapshot_condition_variables);
+            let equality_cache = std::sync::Arc::downgrade(&context.bitvector_equality_facts);
+            let id = assumptions_memo_id(&context);
+            // The identity key exists before the live context populates a
+            // shared cache; dropping only already-built data is insufficient.
+            let _ = context.bitvector_equality_index();
+            assert!(context.bitvector_equality_facts.get().is_some());
+            assert_eq!(assumptions_memo_id(&context), id);
+            let copy = context.clone();
+            assert_eq!(assumptions_memo_id(&copy), id);
+            drop(copy);
+            drop(context);
+            assert!(
+                equality_cache.upgrade().is_none(),
+                "size {size}: memo identity retained a lazy equality index"
+            );
+            assert!(
+                cache.upgrade().is_none(),
+                "size {size}: memo identity retained planning state"
+            );
+        }
+        clear_assumption_memos();
+    }
 }
 
 /// The content-derived memo id of a fact set, never salted by a search
@@ -3465,6 +3520,10 @@ impl PureFactContext {
     fn rebuild_condition_match_indexes(&mut self) {
         let prior_typed_reads = self.typed_pointer_read_definitions.clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
         self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
@@ -3477,26 +3536,43 @@ impl PureFactContext {
         self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
-            self.adjust_condition_match_indexes(condition, *value, true);
+            self.adjust_condition_variable_index(condition, *value, true, false);
+            self.adjust_condition_side_indexes(condition, *value, true);
             self.adjust_pointer_block_alias(condition, *value, true);
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
         }
-        for (variable, definitions) in prior_typed_reads.iter() {
+        // Restore typing support by the selected equations' load variables,
+        // rather than walking every pointer read in the ambient context.
+        for (condition, value) in conditions.iter() {
+            if !*value {
+                continue;
+            }
+            let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+                continue;
+            };
+            let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _, _)) =
+                (left.as_ref(), right.as_ref())
+            else {
+                continue;
+            };
             let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable) else {
                 continue;
             };
-            for ((_, address), (pointer_value, memory)) in definitions.iter() {
-                let condition = ConditionTerm::Bitvector32Equal(
-                    Box::new(Bitvector32Term::Variable(*variable)),
-                    Box::new(Bitvector32Term::MemoryLoad(
-                        memory.clone(),
-                        Box::new(address.clone()),
-                        kind,
-                    )),
-                );
-                if self.condition_facts.get(&condition) == Some(&true) {
-                    self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+            if let Some(definitions) = prior_typed_reads.get(variable) {
+                for ((_, address), (pointer_value, memory)) in definitions.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let definition = ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(*variable)),
+                        Box::new(Bitvector32Term::MemoryLoad(
+                            memory.clone(),
+                            Box::new(address.clone()),
+                            kind,
+                        )),
+                    );
+                    if self.condition_facts.get(&definition) == Some(&true) {
+                        self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+                    }
                 }
             }
         }
@@ -3505,6 +3581,80 @@ impl PureFactContext {
     /// Files or withdraws one condition fact under its match key and, when
     /// a side is not an atom, among the open facts of its family.
     fn adjust_condition_match_indexes(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        let proposition = Proposition::ConditionIs(condition.clone(), value);
+        if !insert {
+            self.adjust_atomic_connection_fact(&proposition, false);
+        }
+        self.adjust_condition_variable_index(condition, value, insert, true);
+        self.adjust_condition_side_indexes(condition, value, insert);
+        if insert {
+            self.adjust_atomic_connection_fact(&proposition, true);
+        }
+    }
+
+    fn adjust_condition_variable_index(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+        entry_charged: bool,
+    ) {
+        let _index_timing =
+            crate::instrumentation::OperationTiming::new("", "", "condition variable indexing");
+        // assume_condition charges one unit for filing the context entry,
+        // including its first adjacency. A restriction rebuild has no such
+        // entry charge. Account for additional variables separately so a
+        // wide condition remains charged in proportion to its syntax.
+        if !entry_charged {
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        let mut variables = BTreeSet::new();
+        let deferred = super::reasoning::variable_collection::collect_condition_index_variables(
+            condition,
+            &mut variables,
+        );
+        if deferred {
+            // Extend the last completed index by a deferred delta. Adding a
+            // new snapshot fact must not re-index older snapshot facts.
+            if let Some(index) = self.snapshot_condition_variables.get() {
+                self.snapshot_condition_variable_base = index.clone();
+                self.snapshot_condition_variable_changes =
+                    crate::persistent::PersistentMap::default();
+            }
+            self.snapshot_condition_variable_changes = self
+                .snapshot_condition_variable_changes
+                .with_inserted(condition.clone(), insert.then_some(value));
+            self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        } else {
+            crate::instrumentation::record_deterministic_work(variables.len().saturating_sub(1));
+            let indexed = SharedIndexFact::new(condition.clone());
+            for variable in variables {
+                let facts = self
+                    .condition_facts_by_variable
+                    .get(&variable)
+                    .cloned()
+                    .unwrap_or_default();
+                let facts = if insert {
+                    facts.with_inserted(indexed.clone(), value)
+                } else {
+                    facts.without_key(&indexed)
+                };
+                self.condition_facts_by_variable = if facts.is_empty() {
+                    self.condition_facts_by_variable.without_key(&variable)
+                } else {
+                    self.condition_facts_by_variable
+                        .with_inserted(variable, facts)
+                };
+            }
+        }
+    }
+
+    fn adjust_condition_side_indexes(
         &mut self,
         condition: &ConditionTerm,
         value: bool,
@@ -3873,6 +4023,7 @@ impl PureFactContext {
 
     pub(super) fn clear_proposition_facts(&mut self) {
         self.prop_facts = imbl::OrdSet::new();
+        self.rebuild_atomic_connection_facts();
         self.rebuild_stated_proposition_index();
         self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
         self.disjunction_facts = std::sync::Arc::new(BTreeSet::new());
@@ -3909,6 +4060,7 @@ impl PureFactContext {
                 .cloned()
                 .collect(),
         );
+        self.rebuild_atomic_connection_facts();
         self.rebuild_algebraic_constructor_field_equalities();
         self.rebuild_memory_loadable_facts();
         self.rebuild_memory_separation_facts();
@@ -4554,6 +4706,7 @@ impl PureFactContext {
             .insert(crate::kernel::clone_proposition_iteratively(&proposition))
             .is_none()
         {
+            self.adjust_atomic_connection_fact(&proposition, true);
             self.adjust_stated_proposition_index(&proposition, true);
             if matches!(proposition, Proposition::Or(_, _)) {
                 std::sync::Arc::make_mut(&mut self.disjunction_facts)
@@ -4573,6 +4726,7 @@ impl PureFactContext {
 
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
+            self.adjust_atomic_connection_fact(proposition, false);
             self.adjust_stated_proposition_index(proposition, false);
             if matches!(proposition, Proposition::Or(_, _)) {
                 std::sync::Arc::make_mut(&mut self.disjunction_facts).remove(proposition);
@@ -5048,6 +5202,155 @@ impl PureFactContext {
         facts
     }
 
+    fn adjust_atomic_connection_fact(&mut self, proposition: &Proposition, insert: bool) {
+        let _timing =
+            crate::instrumentation::OperationTiming::new("", "", "atomic dependency indexing");
+        let all_keys =
+            crate::kernel::reasoning::variable_collection::collect_atomic_connection_keys(
+                proposition,
+            );
+        let mut keys = all_keys.clone();
+        let mut covered_variables = 0;
+        if let Proposition::ConditionIs(condition, _) = proposition {
+            let has_variables = all_keys
+                .iter()
+                .any(|key| matches!(key, AtomicConnectionKey::Variable(_)));
+            let mut indexed_variables = BTreeSet::new();
+            let deferred = super::reasoning::variable_collection::collect_condition_index_variables(
+                condition,
+                &mut indexed_variables,
+            );
+            let covered = all_keys
+                .iter()
+                .filter_map(|key| match key {
+                    AtomicConnectionKey::Variable(variable)
+                        if !deferred && indexed_variables.contains(variable) =>
+                    {
+                        Some(*variable)
+                    }
+                    _ => None,
+                })
+                .collect::<BTreeSet<_>>();
+            covered_variables = covered.len();
+            keys.retain(|key| match key {
+                AtomicConnectionKey::Variable(variable) => !covered.contains(variable),
+                // Snapshot equations can define a load named by its address,
+                // so retain their reverse address-block adjacency as well.
+                // Scalar facts reuse their existing value-variable index.
+                AtomicConnectionKey::Block(_) => !has_variables || covered.is_empty(),
+            });
+        }
+        // Filing already charges the first entry. Existing scalar adjacency
+        // covers its variables; charge only genuinely additional syntax keys.
+        let extra_work = if covered_variables > 0 {
+            keys.len()
+        } else {
+            keys.len().saturating_sub(1)
+        };
+        crate::instrumentation::record_deterministic_work(extra_work);
+        let shared = SharedIndexFact::new(proposition.clone());
+        if all_keys.is_empty() {
+            self.atomic_ground_facts = if insert {
+                self.atomic_ground_facts.with_value(shared.clone())
+            } else {
+                self.atomic_ground_facts.without_value(&shared)
+            };
+        }
+        for key in keys {
+            let mut bucket = self
+                .atomic_connection_facts
+                .get(&key)
+                .cloned()
+                .unwrap_or_default();
+            let facts = if matches!(proposition, Proposition::ConditionIs(..)) {
+                &mut bucket.conditions
+            } else {
+                &mut bucket.propositions
+            };
+            *facts = if insert {
+                facts.with_value(shared.clone())
+            } else {
+                facts.without_value(&shared)
+            };
+            self.atomic_connection_facts =
+                if bucket.conditions.is_empty() && bucket.propositions.is_empty() {
+                    self.atomic_connection_facts.without_key(&key)
+                } else {
+                    self.atomic_connection_facts.with_inserted(key, bucket)
+                };
+        }
+        if matches!(proposition, Proposition::ForAll { .. }) {
+            self.atomic_quantified_facts = if insert {
+                self.atomic_quantified_facts.with_value(shared.clone())
+            } else {
+                self.atomic_quantified_facts.without_value(&shared)
+            };
+        }
+    }
+
+    fn rebuild_atomic_connection_facts(&mut self) {
+        self.atomic_connection_facts = crate::persistent::PersistentMap::default();
+        self.atomic_ground_facts = crate::persistent::PersistentSet::default();
+        self.atomic_quantified_facts = crate::persistent::PersistentSet::default();
+        let conditions = self.condition_facts.clone();
+        for (condition, value) in conditions.iter() {
+            self.adjust_atomic_connection_fact(
+                &Proposition::ConditionIs(condition.clone(), *value),
+                true,
+            );
+        }
+        let propositions = self.prop_facts.clone();
+        for proposition in propositions.iter() {
+            self.adjust_atomic_connection_fact(proposition, true);
+        }
+    }
+
+    pub(crate) fn atomic_facts_connected_to(
+        &self,
+        key: &AtomicConnectionKey,
+        include_propositions: bool,
+    ) -> (impl Iterator<Item = AtomicConnectedFact<'_>>, bool) {
+        let scalar = match key {
+            AtomicConnectionKey::Variable(variable) => {
+                self.condition_facts_by_variable.get(variable)
+            }
+            AtomicConnectionKey::Block(_) => None,
+        };
+        let scalar = scalar.into_iter().flat_map(|facts| {
+            facts.iter().map(|(condition, value)| {
+                AtomicConnectedFact::Condition(condition.as_ref(), *value)
+            })
+        });
+        let bucket = self.atomic_connection_facts.get(key);
+        let has_propositions = bucket.is_some_and(|bucket| !bucket.propositions.is_empty());
+        let conditions = bucket.map(|bucket| &bucket.conditions);
+        let propositions = include_propositions
+            .then(|| bucket.map(|bucket| &bucket.propositions))
+            .flatten();
+        (
+            scalar.chain(
+                conditions
+                    .into_iter()
+                    .chain(propositions)
+                    .flat_map(crate::persistent::PersistentSet::iter)
+                    .map(|fact| AtomicConnectedFact::Proposition(fact.as_ref())),
+            ),
+            has_propositions,
+        )
+    }
+
+    /// Constant-time cardinalities for a selection drawn from these fact sets.
+    pub(crate) fn fact_counts(&self) -> (usize, usize) {
+        (self.condition_facts.len(), self.prop_facts.len())
+    }
+
+    pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
+        self.atomic_ground_facts
+            .iter()
+            .chain(self.atomic_quantified_facts.iter())
+            .map(SharedIndexFact::as_ref)
+    }
+
     /// The condition facts of this context, in the index's own order.
     ///
     /// This is a read-only view for a planner outside the kernel: it names
@@ -5056,6 +5359,67 @@ impl PureFactContext {
         self.condition_facts
             .iter()
             .map(|(condition, value)| (condition, *value))
+    }
+
+    /// Read-only variable adjacency for smart premise planning. Snapshot
+    /// facts are indexed once on demand; this is necessary because a fact
+    /// can connect to the goal through a variable stored in its snapshot,
+    /// even when their written syntax shares no variable. The kernel still
+    /// checks every retained premise and the resulting atomic evidence.
+    pub fn condition_facts_mentioning_variable(
+        &self,
+        variable: Variable,
+    ) -> Option<impl Iterator<Item = (&ConditionTerm, bool)>> {
+        let snapshot_index = if let Some(index) = self.snapshot_condition_variables.get() {
+            index
+        } else {
+            let _timing = crate::instrumentation::OperationTiming::new(
+                "",
+                "",
+                "snapshot condition premise indexing",
+            );
+            let mut index = self.snapshot_condition_variable_base.clone();
+            for (condition, value) in self.snapshot_condition_variable_changes.iter() {
+                if reasoning_interrupted() {
+                    return None;
+                }
+                let mut variables = BTreeSet::new();
+                collect_condition_bitvector_variables(condition, &mut variables);
+                let indexed = SharedIndexFact::new(condition.clone());
+                for variable in variables {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let facts = index.get(&variable).cloned().unwrap_or_default();
+                    let facts = if let Some(value) = value {
+                        facts.with_inserted(indexed.clone(), *value)
+                    } else {
+                        facts.without_key(&indexed)
+                    };
+                    index = if facts.is_empty() {
+                        index.without_key(&variable)
+                    } else {
+                        index.with_inserted(variable, facts)
+                    };
+                }
+            }
+            if reasoning_interrupted() {
+                return None;
+            }
+            let _ = self.snapshot_condition_variables.set(index);
+            self.snapshot_condition_variables.get()?
+        };
+        Some(
+            self.condition_facts_by_variable
+                .get(&variable)
+                .into_iter()
+                .flat_map(|facts| facts.iter())
+                .chain(
+                    snapshot_index
+                        .get(&variable)
+                        .into_iter()
+                        .flat_map(|facts| facts.iter()),
+                )
+                .map(|(condition, value)| (condition.as_ref(), *value)),
+        )
     }
 
     /// The proposition facts of this context, in the index's own order.
@@ -5180,6 +5544,7 @@ impl PureFactContext {
     }
 
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
+        crate::instrumentation::record_deterministic_work(1);
         self.condition_facts = self.condition_facts.without_key(condition);
         self.adjust_condition_match_indexes(condition, assumed, false);
         self.adjust_stated_proposition_index(
