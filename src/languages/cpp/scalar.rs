@@ -103,29 +103,13 @@ impl ScalarLiteral {
     }
 }
 
-/// C++20 signed conversions are congruent modulo the destination width.
-/// Shared C casts handle Boolean, unsigned, widening, and same-width int32
-/// conversions. These two cases explicitly retain bits for signed results.
+/// Clang has already resolved both integer types. C++20 selects the shared
+/// modulo policy explicitly; Boolean conversions retain their separate rules.
 pub(super) fn convert(value: CExpression, source: ScalarKind, target: ScalarKind) -> CExpression {
-    if let (CExpression::Value(constant), Some(source), Some(target)) = (
-        &value,
-        MachineIntegerType::from_c_type(source.kernel_type()),
-        MachineIntegerType::from_c_type(target.kernel_type()),
-    ) && let Some(constant) = source.constant_from_value(constant)
-    {
-        let converted = constant.convert_modulo(target.format());
-        return CExpression::Value(
-            target
-                .constant_value(converted)
-                .expect("a converted constant must have the requested runtime format"),
-        );
-    }
-    match (source, target) {
-        (ScalarKind::UInt64, ScalarKind::Int64) => kernel::c_uint64_bits_to_int64(value),
-        (ScalarKind::Int64 | ScalarKind::UInt64, ScalarKind::Int32) => {
-            kernel::c_cast(kernel::c_cast(value, CType::UInt32), CType::Int32)
-        }
-        _ => kernel::c_cast(value, target.kernel_type()),
+    if source.is_integer() && target.is_integer() {
+        kernel::c_integer_cast_modulo(value, target.kernel_type())
+    } else {
+        kernel::c_cast(value, target.kernel_type())
     }
 }
 
@@ -307,17 +291,29 @@ mod tests {
                 source,
                 target,
             );
-            assert_eq!(
-                converted,
-                target.parse_literal(expected).unwrap().kernel_expression()
-            );
+            let actual =
+                kernel::prove_c_expression_evaluation(kernel::CState::new(), converted).unwrap();
+            let expected = kernel::prove_c_expression_evaluation(
+                kernel::CState::new(),
+                target.parse_literal(expected).unwrap().kernel_expression(),
+            )
+            .unwrap();
+            let outcome = |theorem: &kernel::Theorem| {
+                let kernel::Proposition::CExpressionEvaluates { outcome, .. } =
+                    theorem.proposition()
+                else {
+                    panic!("expected expression evaluation");
+                };
+                outcome.clone()
+            };
+            assert_eq!(outcome(&actual), outcome(&expected));
         }
         // Nonconstant casts retain the checked runtime operation and its
         // language-specific policy; constant folding does not erase operands.
         let variable = crate::kernel::c_variable("wide");
         assert_eq!(
             convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
-            kernel::c_uint64_bits_to_int64(variable)
+            kernel::c_integer_cast_modulo(variable, CType::Int64)
         );
     }
 }

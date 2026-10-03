@@ -238,8 +238,8 @@ The ordinary reverse conversion from Integer always uses the checked operation.
 
 The existing 8–64-bit runtime types use the shared format for their bounds,
 constant observations, Integer conversions, and constant rewrite normalization.
-C++ literals and constant casts use it as well. The runtime bridge requires an
-exact format match, including signedness; narrow signed constants retain the
+C++ literals use it as well. The runtime bridge requires an exact format match,
+including signedness; narrow signed constants retain the
 existing sign-extended 32-bit carrier. An arbitrary Integer larger than the
 format is refused from its cached bit length before inspecting its limbs.
 Parsing work scales with the explicitly written decimal spelling, and numeric
@@ -250,6 +250,26 @@ and narrowing are represented and tested against independent exact arithmetic.
 Symbolic 128-bit terms, runtime storage/ABI, source types, arithmetic definedness,
 and frontend admission remain separate work. This layer does not yet enable
 `__int128` execution or surface `int128` / `uint128` types.
+
+
+## Explicit machine modulo casts
+
+The shared kernel `c_integer_cast_modulo` boundary implements Rust integer `as`
+and C++20 integral conversions for the admitted 8–64-bit runtime types. It
+checks the evaluated source and destination types, folds root constants through
+`MachineIntegerConstant`, and retains symbolic operands in the common term
+arena. Narrow signed results keep the existing sign-extended 32-bit carrier;
+unsigned results retain the low destination bits. Widening uses source
+signedness before the destination interpretation. Conversion construction
+inspects only a bounded number of root nodes.
+
+Boolean sources observe their normalized zero-or-one numeric value. Boolean
+results, floats, pointers, arrays, and unsupported widths are refused at this
+integer boundary; their ordinary conversions use their own rules. Evaluation
+of the operand still carries its definedness obligations, including overflow.
+This explicit policy does not relax ordinary C casts or checked Integer
+conversions, and does not admit native 128-bit runtime values.
+
 
 ## Work budgets and certificate scaling
 

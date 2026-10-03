@@ -59,23 +59,10 @@ fn array_field_parts(t: CType) -> Option<(CType, u32)> {
         _ => None,
     }
 }
-// Rust narrow unsigned casts truncate; the shared coercion requires a range
-// proof. Mask first and use the existing checked coercion on that value.
+// Rust integer `as` uses the same explicit modulo policy as C++20.
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
-    if matches!(target, CType::UInt8 | CType::UInt16) {
-        c_cast(
-            c_cast(
-                c_bitwise_and(
-                    c_cast(value, CType::UInt32),
-                    c_uint32_literal(if target == CType::UInt8 { 255 } else { 65535 }),
-                ),
-                CType::Int32,
-            ),
-            target,
-        )
-    } else if target == CType::Int32 {
-        // Rust narrowing retains the low word, then reinterprets its sign.
-        c_cast(c_cast(value, CType::UInt32), CType::Int32)
+    if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
+        c_integer_cast_modulo(value, target)
     } else {
         c_cast(value, target)
     }

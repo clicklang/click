@@ -1578,6 +1578,17 @@ pub fn c_source_cast_with_pointee_qualifiers_and_struct(
     }
 }
 
+/// Explicit modulo conversion between admitted machine integer types.
+/// The evaluator checks both runtime types. This policy is shared by Rust and
+/// C++20; ordinary C casts continue to use `c_cast` and its checked policy.
+pub fn c_integer_cast_modulo(expression: CExpression, target_type: CType) -> CExpression {
+    let mut result = c_cast(expression, target_type);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::Modulo;
+    }
+    result
+}
+
 /// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
 pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
     let mut result = c_cast(expression, CType::Int64);

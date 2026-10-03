@@ -1582,7 +1582,11 @@ fn evaluate_c_cast_paths(
             CExpressionOutcome::Value(value) => {
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                let coerced = if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
+                let coerced = if integer_mode == CIntegerCastMode::Modulo {
+                    MachineIntegerType::from_c_type(target_type)
+                        .and_then(|destination| destination.convert_modulo_value(value))
+                        .ok_or(CRuntimeError::TypeMismatch)
+                } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value) {
                         (CType::Int64, CValue::UInt64(bits)) => {
                             Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
