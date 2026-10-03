@@ -252,9 +252,89 @@ impl MachineIntegerType {
         })
     }
 
+    /// Convert an evaluated, typed machine value modulo this type's width.
+    /// Only root constants fold here; symbolic operands are retained in the
+    /// existing term arena. The value wrapper supplies source signedness.
+    pub(crate) fn convert_modulo_value(self, value: CValue) -> Option<CValue> {
+        crate::instrumentation::record_deterministic_work(1);
+        // Boolean values are normalized 0/1 and have their own storage type.
+        // Integer conversion observes that numeric value without retagging
+        // arbitrary bytes as a Boolean.
+        let value = match value {
+            CValue::Bool(term) => CValue::UInt8(term),
+            value => value,
+        };
+        let source = Self::from_c_type(value.c_type())?;
+        if let Some(constant) = source.constant_from_value(&value) {
+            return self.constant_value(constant.convert_modulo(self.format()));
+        }
+        if source == self {
+            return Some(value);
+        }
+        let term = match value {
+            CValue::Int8(term)
+            | CValue::UInt8(term)
+            | CValue::Int16(term)
+            | CValue::UInt16(term)
+            | CValue::Int32(term)
+            | CValue::UInt32(term)
+            | CValue::Int64(term)
+            | CValue::UInt64(term) => term,
+            _ => return None,
+        };
+        let source_format = source.format();
+        let destination = self.format();
+        let term = if destination.bits() == 64 {
+            match (
+                destination.is_signed(),
+                source_format.bits(),
+                source_format.is_signed(),
+            ) {
+                (true, 64, _) => Bitvector32Term::int64_from_uint64_bits(term),
+                (false, 64, _) => Bitvector32Term::uint64_from_int64(term),
+                (true, _, true) => Bitvector32Term::int64_from_32(term),
+                (true, _, false) => Bitvector32Term::int64_from_uint32(term),
+                (false, _, true) => Bitvector32Term::uint64_from_int32(term),
+                (false, _, false) => Bitvector32Term::uint64_from_32(term),
+            }
+        } else {
+            let word = if source_format.bits() == 64 {
+                Bitvector32Term::uint32_from_64(term)
+            } else {
+                term
+            };
+            if destination.bits() == 32 {
+                word
+            } else if destination.is_signed() {
+                // The narrow signed value still uses a sign-extended word.
+                // Mask first, flip the sign bit, then subtract it. The masked
+                // intermediate is at most 65535, so subtraction cannot
+                // overflow the 32-bit carrier (unlike a signed left shift).
+                let mask = (1u32 << destination.bits()) - 1;
+                let sign = 1u32 << (destination.bits() - 1);
+                Bitvector32Term::subtract(
+                    Bitvector32Term::bitwise_xor(
+                        Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(mask)),
+                        Bitvector32Term::Constant(sign),
+                    ),
+                    Bitvector32Term::Constant(sign),
+                )
+            } else {
+                Bitvector32Term::bitwise_and(
+                    word,
+                    Bitvector32Term::Constant((1u32 << destination.bits()) - 1),
+                )
+            }
+        };
+        Some(self.value_from_term(term))
+    }
+
     pub(crate) fn constant_value(self, value: MachineIntegerConstant) -> Option<CValue> {
-        let term = self.constant_term(value)?;
-        Some(match self {
+        Some(self.value_from_term(self.constant_term(value)?))
+    }
+
+    fn value_from_term(self, term: Bitvector32Term) -> CValue {
+        match self {
             Self::Int8 => CValue::Int8(term),
             Self::UInt8 => CValue::UInt8(term),
             Self::Int16 => CValue::Int16(term),
@@ -263,7 +343,7 @@ impl MachineIntegerType {
             Self::UInt32 => CValue::UInt32(term),
             Self::Int64 => CValue::Int64(term),
             Self::UInt64 => CValue::UInt64(term),
-        })
+        }
     }
 
     pub(crate) fn constant_from_term(
@@ -309,6 +389,118 @@ impl MachineIntegerType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn symbolic_modulo_conversions_match_exact_numeric_oracle_after_substitution() {
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_term;
+        use crate::kernel::{Term, Variable};
+        let types = [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ];
+        let variable = Variable(138_001);
+        for source in types {
+            let format = source.format();
+            let (min, max) = format.bounds();
+            let mut samples = vec![
+                min.clone(),
+                min + 1,
+                max.clone() - 1,
+                max,
+                BigInt::from(0),
+                BigInt::from(1),
+            ];
+            if format.is_signed() {
+                samples.push(BigInt::from(-1));
+            }
+            if format.bits() == 8 {
+                samples.extend((0..=255).map(|bits| {
+                    if format.is_signed() {
+                        BigInt::from(bits as u8 as i8)
+                    } else {
+                        BigInt::from(bits)
+                    }
+                }));
+            }
+            for destination in types {
+                let symbolic = destination
+                    .convert_modulo_value(
+                        source.value_from_term(Bitvector32Term::Variable(variable)),
+                    )
+                    .unwrap();
+                assert_eq!(symbolic.c_type(), destination.c_type());
+                for integer in &samples {
+                    let constant = MachineIntegerConstant::from_integer(format, integer).unwrap();
+                    let substituted = substitute_bitvector_variable_in_term(
+                        &Term::CValue(symbolic.clone()),
+                        variable,
+                        &source.constant_term(constant).unwrap(),
+                    );
+                    let Term::CValue(actual) = substituted else {
+                        unreachable!()
+                    };
+                    let modulus = BigInt::from(1u8) << destination.format().bits();
+                    let mut expected = ((integer % &modulus) + &modulus) % &modulus;
+                    if destination.format().is_signed() && expected >= (&modulus >> 1) {
+                        expected -= &modulus;
+                    }
+                    let term = match actual {
+                        CValue::Int8(t)
+                        | CValue::UInt8(t)
+                        | CValue::Int16(t)
+                        | CValue::UInt16(t)
+                        | CValue::Int32(t)
+                        | CValue::UInt32(t)
+                        | CValue::Int64(t)
+                        | CValue::UInt64(t) => t,
+                        _ => unreachable!(),
+                    };
+                    let observed = match (
+                        destination.format().bits(),
+                        destination.format().is_signed(),
+                    ) {
+                        (64, true) => term.int64_as_const().map(BigInt::from),
+                        (64, false) => term.uint64_as_const().map(BigInt::from),
+                        (_, true) => term.as_const().map(|bits| BigInt::from(bits as i32)),
+                        (_, false) => term.as_const().map(BigInt::from),
+                    };
+                    assert_eq!(
+                        observed.as_ref(),
+                        Some(&expected),
+                        "{source:?} -> {destination:?}: {integer}; {term:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
+        for right_nested in [false, true] {
+            for size in [16, 64, 256, 1024] {
+                let mut term = Bitvector32Term::Variable(super::super::Variable(138_002));
+                for _ in 0..size {
+                    let one = Bitvector32Term::UInt64Constant(1);
+                    term = if right_nested {
+                        Bitvector32Term::UInt64Add(Box::new(one), Box::new(term))
+                    } else {
+                        Bitvector32Term::UInt64Add(Box::new(term), Box::new(one))
+                    };
+                }
+                let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    MachineIntegerType::Int16.convert_modulo_value(CValue::UInt64(term))
+                });
+                assert_eq!(converted.unwrap().c_type(), super::super::CType::Int16);
+                assert_eq!(work, 1, "size {size}, right nested {right_nested}");
+            }
+        }
+    }
 
     fn formats() -> impl Iterator<Item = MachineIntegerFormat> {
         use MachineIntegerWidth::*;

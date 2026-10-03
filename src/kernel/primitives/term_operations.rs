@@ -1403,14 +1403,11 @@ impl Bitvector32Term {
             }
         }
         match value {
-            Self::UInt64Add(a, b) if b.uint64_as_const().is_some() => Self::add(
-                root(*a),
-                Self::Constant(b.uint64_as_const().unwrap() as u32),
-            ),
-            Self::UInt64Add(a, b) if a.uint64_as_const().is_some() => Self::add(
-                Self::Constant(a.uint64_as_const().unwrap() as u32),
-                root(*b),
-            ),
+            Self::UInt64Add(a, b) => match (*a, *b) {
+                (a, Self::UInt64Constant(b)) => Self::add(root(a), Self::Constant(b as u32)),
+                (Self::UInt64Constant(a), b) => Self::add(Self::Constant(a as u32), root(b)),
+                (a, b) => root(Self::UInt64Add(Box::new(a), Box::new(b))),
+            },
             value => root(value),
         }
     }

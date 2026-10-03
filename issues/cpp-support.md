@@ -340,6 +340,14 @@ use this layer. Runtime bridges still admit only their existing 8–64-bit
 types and require an exact format match. This is representation groundwork;
 symbolic `__int128` execution and its source types remain unsupported.
 
+The shared runtime now has an explicit modulo cast boundary for existing
+8–64-bit integer values. C++20 and Rust select the same symbolic conversion
+policy; constant conversions use the shared checked payloads. Width,
+signedness, and operand definedness remain explicit. Narrow signed carriers
+are sign-extended, and cast construction stays local to the operand root.
+Ordinary C narrowing and checked Integer conversions retain their separate
+rules. This removes frontend mask/cast sequences before extending widths.
+
 Next extend the shared symbolic machine model and runtime for wide scalars:
 terms, storage/layout, source admission, checked multiplication, and definedness
 must retain the source's resolved machine semantics. Use the shared formats

@@ -1155,7 +1155,10 @@ pub(super) enum CLValueStorage {
 pub enum CIntegerCastMode {
     #[default]
     Standard,
-    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    /// Preserve the numeric value modulo the destination width. Used by
+    /// Rust integer casts and C++20 integer conversions; never implicit in C.
+    Modulo,
+    /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
 }
 
