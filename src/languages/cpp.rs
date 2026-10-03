@@ -10,7 +10,9 @@ mod interface;
 mod lifetime;
 mod lowering;
 mod names;
+mod scalar;
 mod schema;
+mod validity;
 
 pub use import::{PreparedCppImport, load_import, refresh_import};
 pub use lowering::{LoweredCppFunction, lower_import};

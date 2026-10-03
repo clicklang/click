@@ -12,6 +12,7 @@
 
 use super::lifetime::{LifetimePlan, LifetimeState};
 use super::names::ResolvedNames;
+use super::scalar::{self, Scalar, ScalarKind};
 use std::collections::BTreeMap;
 
 use super::{
@@ -23,10 +24,10 @@ use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
     c_call_assign, c_cast, c_declare, c_declare_aggregate, c_divide, c_equal, c_function,
-    c_greater_equal, c_greater_than, c_if, c_int32_literal, c_int64_literal, c_less_equal,
-    c_less_than, c_multiply, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq,
-    c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
-    c_typed_load_with_source, c_typed_store, c_uint32_literal, c_uint64_literal, c_variable,
+    c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
+    c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract,
+    c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source, c_typed_store,
+    c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -175,49 +176,16 @@ fn lower_function(
         0,
     )?;
     let return_type = match &source.function_kind {
-        CppFunctionKind::Free
-        | CppFunctionKind::StaticMethod { .. }
-        | CppFunctionKind::Method { .. }
-            if matches!(
-                source.return_type,
-                CppType::Integer {
-                    bits: 32 | 64,
-                    is_const: false,
-                    ..
-                }
-            ) =>
-        {
-            cpp_scalar_kernel_type(&source.return_type)?
-        }
-        CppFunctionKind::Free
-        | CppFunctionKind::StaticMethod { .. }
-        | CppFunctionKind::Method { .. }
-            if matches!(
-                source.return_type,
-                CppType::Boolean {
-                    bits: 8,
-                    is_const: false
-                }
-            ) =>
-        {
-            CType::Bool
-        }
-        CppFunctionKind::Free
-        | CppFunctionKind::StaticMethod { .. }
-        | CppFunctionKind::Method { .. }
-            if source.return_type == CppType::Void =>
-        {
-            CType::Void
-        }
-        CppFunctionKind::Free
-        | CppFunctionKind::StaticMethod { .. }
-        | CppFunctionKind::Method { .. } => {
-            return Err(format!(
-                "C++ function `{}` has a return type outside direct lowering",
-                source.name
-            ));
-        }
         CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
+        _ if source.return_type == CppType::Void => CType::Void,
+        _ => Scalar::mutable_kind(&source.return_type)
+            .map(ScalarKind::kernel_type)
+            .ok_or_else(|| {
+                format!(
+                    "C++ function `{}` has a return type outside direct lowering",
+                    source.name
+                )
+            })?,
     };
     Ok(c_function(
         return_type,
@@ -780,18 +748,10 @@ impl LoweringContext<'_> {
             }
             | CppExpression::CompilerConstant {
                 value, value_type, ..
-            } => {
-                let error = || format!("unsupported C++ integer constant `{value}`");
-                Ok(match cpp_scalar_kernel_type(value_type)? {
-                    CType::Int32 => {
-                        c_int32_literal(value.parse::<i32>().map_err(|_| error())? as u32)
-                    }
-                    CType::Int64 => c_int64_literal(value.parse::<i64>().map_err(|_| error())?),
-                    CType::UInt32 => c_uint32_literal(value.parse::<u32>().map_err(|_| error())?),
-                    CType::UInt64 => c_uint64_literal(value.parse::<u64>().map_err(|_| error())?),
-                    _ => return Err(error()),
-                })
-            }
+            } => Scalar::mutable_kind(value_type)
+                .and_then(|kind| kind.parse_literal(value))
+                .map(|literal| literal.kernel_expression())
+                .ok_or_else(|| format!("unsupported C++ integer constant `{value}`")),
             CppExpression::ConstantReference { constant, .. } => {
                 let resolved = self
                     .constants
@@ -914,40 +874,15 @@ impl LoweringContext<'_> {
             CppExpression::IntegralCast {
                 value, value_type, ..
             } => {
-                let target = if is_mutable_bool(value_type) {
-                    CType::Bool
-                } else {
-                    cpp_scalar_kernel_type(value_type)?
-                };
-                let value_expression = self.lower_expression(value)?;
-                if matches!(
-                    value.value_type(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: false,
-                        ..
-                    }
-                ) && matches!(
-                    value_type,
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        ..
-                    }
-                ) {
-                    return Ok(crate::kernel::c_uint64_bits_to_int64(value_expression));
-                }
-                // C++20 signed narrowing is congruent modulo 2^32. The shared
-                // unsigned conversion truncates bits; int32 then reinterprets them.
-                Ok(
-                    if matches!(value.value_type(), CppType::Integer { bits: 64, .. })
-                        && is_mutable_int32(value_type)
-                    {
-                        c_cast(c_cast(value_expression, CType::UInt32), CType::Int32)
-                    } else {
-                        c_cast(value_expression, target)
-                    },
-                )
+                let source = Scalar::mutable_kind(value.value_type())
+                    .ok_or_else(|| "unsupported C++ integral cast operand".to_string())?;
+                let target = Scalar::mutable_kind(value_type)
+                    .ok_or_else(|| "unsupported C++ integral cast result".to_string())?;
+                Ok(scalar::convert(
+                    self.lower_expression(value)?,
+                    source,
+                    target,
+                ))
             }
             CppExpression::Binary {
                 operator,
@@ -1166,106 +1101,35 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
-    if matches!(
-        value_type,
-        CppType::Boolean {
-            bits: 8,
-            is_const: false
-        }
-    ) {
-        Ok(CType::Bool)
-    } else {
-        cpp_scalar_kernel_type(value_type)
-    }
+    Scalar::mutable_kind(value_type)
+        .map(ScalarKind::kernel_type)
+        .ok_or_else(|| "unsupported C++ scalar kernel type".into())
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    match value_type {
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        } => Ok(CType::Int32),
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: false,
-            ..
-        } => Ok(CType::Int64),
-        CppType::Integer {
-            bits: 32,
-            signed: false,
-            is_const: false,
-            ..
-        } => Ok(CType::UInt32),
-        CppType::Integer {
-            bits: 64,
-            signed: false,
-            is_const: false,
-            ..
-        } => Ok(CType::UInt64),
-        _ if is_mutable_int32_pointer(value_type) => Ok(CType::Int32Pointer),
-        _ => Err("unsupported C++ scalar kernel type".into()),
+    if let Some(kind) = Scalar::mutable_kind(value_type).filter(|kind| kind.is_integer()) {
+        Ok(kind.kernel_type())
+    } else if is_mutable_int32_pointer(value_type) {
+        Ok(CType::Int32Pointer)
+    } else {
+        Err("unsupported C++ scalar kernel type".into())
     }
 }
 
 fn is_mutable_int32(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int32, false)
 }
-
 fn is_mutable_bool(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Boolean {
-            bits: 8,
-            is_const: false
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Bool, false)
 }
-
 fn is_mutable_int64(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: false,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int64, false)
 }
-
 fn is_const_int32(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: true,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int32, true)
 }
-
 fn is_const_int64(value_type: &CppType) -> bool {
-    matches!(
-        value_type,
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: true,
-            ..
-        }
-    )
+    Scalar::is(value_type, ScalarKind::Int64, true)
 }
 
 fn is_mutable_int32_pointer(value_type: &CppType) -> bool {

@@ -7678,3 +7678,50 @@ fn exporter_enforces_named_lifetime_budgets_and_keeps_outputs_atomic() {
         }
     }
 }
+
+#[test]
+fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
+    for (cpp, signature, precondition, expected) in [
+        (
+            "long convert(unsigned long n) noexcept { return static_cast<long>(n); }",
+            "int64 convert(uint64 n)",
+            "n == 18446744073709551615u64",
+            "-1i64",
+        ),
+        (
+            "long convert(bool n) noexcept { return static_cast<long>(n); }",
+            "int64 convert(bool n)",
+            "n == 1",
+            "1i64",
+        ),
+        (
+            "unsigned convert(bool n) noexcept { return static_cast<unsigned>(n); }",
+            "uint32 convert(bool n)",
+            "n == 0",
+            "0u32",
+        ),
+    ] {
+        let project = Project::with_fixture("scalar.cpp", "convert", cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = format!(
+            "verifying \"scalar.cpp\"; {signature} {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+        let false_value = if signature.starts_with("int64") {
+            "2i64"
+        } else {
+            "2u32"
+        };
+        let hostile = proof.replace(
+            &format!("ensures result == {expected};"),
+            &format!("ensures result == {false_value};"),
+        );
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("conversion must reject a false claim");
+    }
+}

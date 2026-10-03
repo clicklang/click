@@ -1,3 +1,4 @@
+use super::scalar::{Scalar, ScalarKind, same_scalar_type, same_unqualified_integer_type};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -914,9 +915,7 @@ impl CppFunction {
         exception_behavior: CppExceptionBehavior,
     ) -> Result<(), String> {
         super::budget::check_function(self)?;
-        if self.name.is_empty() || self.declaration_id.is_empty() {
-            return Err("C++ function is missing declaration identity".into());
-        }
+        super::validity::check_function(self, logical_source, alias_sources)?;
         match &self.function_kind {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }
@@ -974,7 +973,6 @@ impl CppFunction {
                 }
             }
         }
-        self.return_type.validate_aliases_in(alias_sources)?;
         if !self.declared_noexcept
             && (!exceptions_enabled
                 || matches!(
@@ -1001,13 +999,8 @@ impl CppFunction {
                 self.name
             ));
         }
-        self.span.validate(logical_source)?;
         let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
-            parameter.span.validate(logical_source)?;
-            if parameter.declaration_id.is_empty() || parameter.name.is_empty() {
-                return Err("C++ parameter is missing declaration identity".into());
-            }
             match &parameter.value_type {
                 CppType::Boolean { .. } => {
                     require_bool(&parameter.value_type, false, "by-value parameter")?;
@@ -1054,7 +1047,6 @@ impl CppFunction {
             if !places.insert_name(parameter.name.clone()) {
                 return Err(format!("duplicate C++ parameter name `{}`", parameter.name));
             }
-            parameter.value_type.validate_aliases_in(alias_sources)?;
         }
         if let CppFunctionKind::Method {
             record_declaration_id,
@@ -2061,29 +2053,9 @@ impl CppExpression {
                 span,
             } => {
                 require_scalar_integer(value_type, "integer constant type")?;
-                let valid = match value_type {
-                    CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        ..
-                    } => value.parse::<i32>().is_ok(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        ..
-                    } => value.parse::<i64>().is_ok(),
-                    CppType::Integer {
-                        bits: 32,
-                        signed: false,
-                        ..
-                    } => value.parse::<u32>().is_ok(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: false,
-                        ..
-                    } => value.parse::<u64>().is_ok(),
-                    _ => false,
-                };
+                let valid = Scalar::mutable_kind(value_type)
+                    .and_then(|kind| kind.parse_literal(value))
+                    .is_some();
                 if !valid {
                     return Err(format!("unsupported C++ integer constant `{value}`"));
                 }
@@ -3297,34 +3269,6 @@ impl CppExpression {
     }
 }
 
-impl CppSpan {
-    fn validate(&self, logical_source: &str) -> Result<(), String> {
-        if self.file != logical_source
-            || self.start_line == 0
-            || self.start_column == 0
-            || self.end_line == 0
-            || self.end_column == 0
-            || (self.end_line, self.end_column) < (self.start_line, self.start_column)
-        {
-            return Err(format!("invalid C++ source span in `{}`", self.file));
-        }
-        Ok(())
-    }
-
-    fn validate_in(&self, sources: &BTreeSet<String>) -> Result<(), String> {
-        if !sources.contains(&self.file)
-            || self.start_line == 0
-            || self.start_column == 0
-            || self.end_line == 0
-            || self.end_column == 0
-            || (self.end_line, self.end_column) < (self.start_line, self.start_column)
-        {
-            return Err(format!("invalid C++ source span in `{}`", self.file));
-        }
-        Ok(())
-    }
-}
-
 fn valid_relative_source_path(value: &str) -> bool {
     let path = Path::new(value);
     !value.is_empty()
@@ -3431,41 +3375,34 @@ fn validate_member_reference<'a>(
 }
 
 fn require_int32(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const,
-            ..
-        } if allow_const || !is_const => Ok(()),
-        _ => Err(format!("{label} is outside the first C++ `int` slice")),
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Int32 && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!("{label} is outside the first C++ `int` slice"))
     }
 }
 
 fn require_signed_int64(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const,
-            ..
-        } if allow_const || !is_const => Ok(()),
-        _ => Err(format!(
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Int64 && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} is outside the supported C++ signed 64-bit slice"
-        )),
+        ))
     }
 }
 
 fn require_scalar_integer(value: &CppType, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 32 | 64,
-            is_const: false,
-            ..
-        } => Ok(()),
-        _ => Err(format!(
+    if Scalar::mutable_kind(value).is_some_and(ScalarKind::is_integer) {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} requires a mutable signed or unsigned 32/64-bit integer"
-        )),
+        ))
     }
 }
 
@@ -3478,92 +3415,12 @@ fn require_integral_scalar(value: &CppType, label: &str) -> Result<(), String> {
 }
 
 fn require_const_signed_int64(value: &CppType, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: true,
-            ..
-        } => Ok(()),
-        _ => Err(format!(
+    if Scalar::is(value, ScalarKind::Int64, true) {
+        Ok(())
+    } else {
+        Err(format!(
             "{label} is outside the supported C++ `const` signed 64-bit slice"
-        )),
-    }
-}
-
-impl CppType {
-    fn validate_aliases(&self, logical_source: &str) -> Result<(), String> {
-        self.validate_aliases_in(&BTreeSet::from([logical_source.to_string()]))
-    }
-
-    fn validate_aliases_in(&self, sources: &BTreeSet<String>) -> Result<(), String> {
-        match self {
-            Self::Integer { source_aliases, .. } => {
-                let mut identities = BTreeSet::new();
-                for alias in source_aliases {
-                    if alias.declaration_id.is_empty() || alias.name.is_empty() {
-                        return Err("C++ integer type alias is missing declaration identity".into());
-                    }
-                    if !identities.insert(alias.declaration_id.as_str()) {
-                        return Err("C++ integer type alias chain contains a cycle".into());
-                    }
-                    alias.span.validate_in(sources)?;
-                }
-                Ok(())
-            }
-            Self::LvalueReference { pointee } | Self::Pointer { pointee } => {
-                pointee.validate_aliases_in(sources)
-            }
-            Self::Void | Self::Boolean { .. } | Self::Record { .. } => Ok(()),
-        }
-    }
-}
-
-fn same_unqualified_integer_type(left: &CppType, right: &CppType) -> bool {
-    matches!(
-        (left, right),
-        (
-            CppType::Integer {
-                bits: left_bits,
-                signed: left_signed,
-                ..
-            },
-            CppType::Integer {
-                bits: right_bits,
-                signed: right_signed,
-                ..
-            }
-        ) if left_bits == right_bits && left_signed == right_signed
-    )
-}
-
-fn same_scalar_type(left: &CppType, right: &CppType) -> bool {
-    match (left, right) {
-        (
-            CppType::Integer {
-                bits: left_bits,
-                signed: left_signed,
-                is_const: left_const,
-                ..
-            },
-            CppType::Integer {
-                bits: right_bits,
-                signed: right_signed,
-                is_const: right_const,
-                ..
-            },
-        ) => left_bits == right_bits && left_signed == right_signed && left_const == right_const,
-        (
-            CppType::Boolean {
-                bits: left_bits,
-                is_const: left_const,
-            },
-            CppType::Boolean {
-                bits: right_bits,
-                is_const: right_const,
-            },
-        ) => left_bits == right_bits && left_const == right_const,
-        _ => left == right,
+        ))
     }
 }
 
@@ -3611,9 +3468,12 @@ fn require_mutable_int32_pointer(value: &CppType, label: &str) -> Result<(), Str
 }
 
 fn require_bool(value: &CppType, allow_const: bool, label: &str) -> Result<(), String> {
-    match value {
-        CppType::Boolean { bits: 8, is_const } if allow_const || !is_const => Ok(()),
-        _ => Err(format!("{label} is outside the supported C++ `bool` slice")),
+    if Scalar::of(value)
+        .is_some_and(|scalar| scalar.kind == ScalarKind::Bool && (allow_const || !scalar.is_const))
+    {
+        Ok(())
+    } else {
+        Err(format!("{label} is outside the supported C++ `bool` slice"))
     }
 }
 
@@ -3652,6 +3512,73 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn recursive_metadata_is_checked_before_unsupported_nested_scope_policy() {
+        let span = cleanup_span();
+        let literal = CppExpression::IntegerLiteral {
+            value: "1".into(),
+            value_type: signed_integer(32, false),
+            span: span.clone(),
+        };
+        let mut function = CppFunction {
+            declaration_id: "root".into(),
+            name: "root".into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters: vec![],
+            declared_noexcept: true,
+            span: span.clone(),
+            body: vec![CppStatement::If {
+                condition: CppExpression::IntegralCast {
+                    value: Box::new(literal.clone()),
+                    value_type: CppType::Boolean {
+                        bits: 8,
+                        is_const: false,
+                    },
+                    span: span.clone(),
+                },
+                then_branch: vec![CppStatement::Scope {
+                    body: vec![CppStatement::Return {
+                        value: literal,
+                        cleanups: vec![],
+                        span: span.clone(),
+                    }],
+                    cleanups: vec![],
+                    span: span.clone(),
+                }],
+                else_branch: vec![],
+                span,
+            }],
+        };
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        super::super::validity::check_function(&function, "fixture.cpp", &sources).unwrap();
+        let validate = |function: &CppFunction| {
+            function.validate(
+                "fixture.cpp",
+                &sources,
+                &BTreeMap::new(),
+                false,
+                CppExceptionBehavior::NormalOnly,
+            )
+        };
+        assert!(validate(&function).unwrap_err().contains("nested scope"));
+        let CppStatement::If { then_branch, .. } = &mut function.body[0] else {
+            unreachable!()
+        };
+        let CppStatement::Scope { body, .. } = &mut then_branch[0] else {
+            unreachable!()
+        };
+        let CppStatement::Return { span, .. } = &mut body[0] else {
+            unreachable!()
+        };
+        span.start_line = 0;
+        assert!(
+            validate(&function)
+                .unwrap_err()
+                .contains("invalid C++ source span")
+        );
     }
 
     #[test]

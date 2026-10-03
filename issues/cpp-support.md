@@ -169,31 +169,29 @@ library, but their layouts and other semantically relevant information must
 still be validated. Preserve unchanged upstream source as the integration
 regression for every new slice.
 
-## Next work: finish the design consolidation
+## Delivered design consolidation
 
-Complete these design steps before extending the Bitcoin fee arithmetic slice.
-Each should be a coherent change with unchanged-source regressions, hostile
-artifacts and false claims, verification/expansion/audit agreement, and
-multi-size deterministic work checks for affected hot paths.
+The planned cleanup steps are delivered. Continue with the fee arithmetic
+milestone above, preserving unchanged-source proofs, hostile-artifact and false
+claim rejection, verification/expansion/audit agreement, and deterministic work
+bounds. Wider arithmetic must extend the shared scalar model and common kernel,
+including execution types, contract types, and definedness obligations.
 
-1. **Finish artifact validity, supported semantics, and scope budgets.** The
-   inventory slice below is delivered. Continue separating structural validity
-   from semantic-profile rules at the recursive statement/type boundary.
-   Inventory and lifetime-count budgets are delivered, with borrowed lexical
-   environments and indexed graph places.
-   Preserve the independent exporter/checker trust boundary. Budget diagnostics
-   must name the exhausted limit; semantic diagnostics must identify the missing operation.
-   Acceptance requires multi-size sibling/local/scope regressions, malformed
-   graphs, and verification/expansion/audit agreement for the existing lifetime
-   profiles before broader lifetime combinations are admitted.
-2. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
-   interpretation and conversions across the artifact validator, kernel
-   lowering, and contract-facing interfaces. Specify widths, signedness,
-   promotions, narrowing, Boolean conversions, overflow and division
-   definedness against the pinned target. Reuse shared C/Rust operations where
-   semantics agree and keep language-specific policies explicit. Add
-   `__int128` only after its execution, contract types, and proof obligations
-   fit that design; do not introduce another isolated family of matches.
+Scalar interpretation now uses one descriptor for the pinned target's Boolean
+and signed/unsigned 32/64-bit value kinds, with qualification kept separate.
+The validator, execution lowering, and contract interfaces share classification,
+scalar type comparisons, and checked literal interpretation. One conversion
+policy selects shared kernel casts and the explicit C++20 signed-bit cases;
+Clang retains promotions and usual arithmetic conversions as typed nodes.
+Arithmetic still uses the common kernel: signed overflow is undefined,
+unsigned arithmetic wraps, division truncates toward zero, and division/remainder
+require nonzero divisors and exclude the signed minimum/-1 pair. Reference and
+field restrictions stay position-specific. New boundary tests check scalar
+qualification, unsupported widths, and literal ranges. Offline source proofs
+cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
+retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
+artifact schema remains 34. `__int128` remains a feature prerequisite for the
+full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
 leaf-plus-dependent constant shape caps are replaced by named declaration
@@ -213,8 +211,9 @@ parent and own only newly declared places and names. Entering a normal scope or
 catch handler neither clones outer types nor scans all outer names. Catch names
 belong to the handler environment. Multi-size deterministic regressions check
 shared outer storage, local-only entry counts, sibling isolation, duplicate
-identities, shadowing, and forged references. The existing lifetime combinations remain constrained by their semantic profile;
-lifetime inventory counts use the named budgets described below.
+identities, shadowing, and forged references. The existing lifetime combinations
+remain constrained by their semantic profile; lifetime inventory counts use
+the named budgets described below.
 
 Graph place indexing is delivered. Each visited function builds one index of
 borrowed declaration IDs and places, including parameters, locals, and catch
@@ -239,8 +238,21 @@ overlapping outer/sibling combinations, and the existing conditional/exception
 arrangement restrictions remain semantic-profile limitations. Artifact schema 34
 requires an explicit refresh of earlier locks.
 
-Next finish the recursive validity/profile separation, then consolidate scalar
-interpretation before wide arithmetic.
+Recursive function metadata validity is delivered in its own module. Before a
+function's semantic profile is checked, a borrowed traversal validates every
+statement, expression, initializer, argument, cleanup, and type-alias chain,
+including both branch arms and nested scopes/handlers that the current profile
+will reject. Declaration metadata, source spans, and alias provenance/cycles
+are structural checks; supported widths, operand relationships, lexical
+visibility, and lifetime arrangements remain semantic checks. The existing
+serialized nesting budget bounds recursive input. Local semantic validators
+reuse the metadata helpers when checked in isolation. Regressions mutate every
+span and identity in a corpus covering all recursive variants, distinguish
+malformed metadata from unsupported nested lifetimes, and measure growing
+syntax/alias work without cloning lexical environments. Artifact schema remains
+34 and existing supported-source proofs remain unchanged.
+
+Next extend the shared scalar and kernel design for the fee arithmetic milestone.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction

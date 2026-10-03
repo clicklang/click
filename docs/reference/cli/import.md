@@ -454,6 +454,14 @@ the real project profile. This does not prove the class's other methods or
 its documented application invariant. The typed artifact schema is now 34;
 previous artifacts require an explicit lock refresh.
 
+The offline checker validates recursive function metadata before checking the
+supported semantic profile. It checks source spans, declaration metadata, and
+type-alias provenance and cycles throughout both branch arms, scopes, handlers,
+initializers, calls, and cleanup lists. A malformed node inside an unsupported
+lifetime arrangement reports a metadata error first. Supported widths, operand
+types, lexical visibility, and cleanup ordering are checked separately; valid
+metadata alone does not make a construct supported.
+
 Artifact resource limits are independent of the supported C++ semantic profile:
 
 | Budget | Limit |
@@ -497,6 +505,15 @@ encoded names, as do spellings that are not valid sidecar identifiers
 `contract_name(declaration_id)`.
 Reachable overloads are supported; selecting an overloaded declaration directly
 still fails until a signature selector is available.
+
+Scalar interpretation is shared by the artifact validator, execution lowering,
+and proof-facing signatures. It distinguishes mutable and const qualification
+from the five supported value kinds: Boolean, int32, int64, uint32, and uint64.
+Integer literals use one checked parser in validation and lowering. Source
+aliases preserve provenance without changing the value kind. Reference and
+record-field restrictions remain specific to their positions in the profile.
+Explicit integral casts use one C++ conversion policy over the common kernel;
+the frontend does not re-infer promotions from source syntax.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
 `%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked
