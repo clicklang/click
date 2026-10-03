@@ -4,11 +4,12 @@ use super::*;
 use std::collections::BTreeSet;
 
 impl<'a> Proof<'a> {
-    /// Searches a straight-line prefix up to one named statement by applying
-    /// every selected `Step` to the current checked descendant. The
-    /// returned fact list is only the prefix's output delta; scope adapters
-    /// use it to retain facts introduced inside their owned representation.
-    pub(super) fn try_linear_execute_until_descendant(
+    /// Runs `execute_until` on checked descendants: the `execute()` search
+    /// with a target, which stops before that source statement and follows
+    /// one path, refusing where it would have to split. The returned fact
+    /// list is only the prefix's output delta; scope adapters use it to
+    /// retain facts introduced inside their owned representation.
+    pub(super) fn try_execute_until_descendant(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
@@ -23,59 +24,31 @@ impl<'a> Proof<'a> {
                 "`execute_until(statement({target}))` cannot move backward from statement({current})"
             )));
         }
-
-        let mut proof = self.clone();
-        let mut introduced_facts = Vec::new();
-        let mut advanced = false;
-        let mut retried_requirements = BTreeSet::new();
-        loop {
-            let region_start = match proof.current_statement_index()? {
-                Some(current) if current == target => break,
-                Some(current) if current < target => current,
-                Some(current) => {
-                    return Err(self.step_error(format!(
-                        "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
-                    )));
-                }
-                None => {
-                    return Err(self.step_error(format!(
-                        "`execute_until(statement({target}))` reached function exit before its target"
-                    )));
-                }
-            };
-            let next =
-                proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?;
-            let Some(next) = next else {
-                // `execute_until` runs one path and does not split it: a
-                // frontier the bare step cannot take (an undecided C `if`)
-                // is refused with that step's own diagnostic.
-                return match proof.apply_step(ProofStep::Step) {
-                    Err(error) => Err(error),
-                    Ok(_) => Err(self.step_error(format!(
-                        "`execute_until(statement({target}))` could not advance statement({region_start})"
-                    ))),
-                };
-            };
-            retried_requirements.clear();
-            for fact in next.added_facts() {
-                if !introduced_facts.contains(fact) {
-                    introduced_facts.push(fact.clone());
-                }
-            }
-            proof = next;
-            advanced = true;
+        if target == current {
+            return Ok(None);
         }
-        Ok(advanced.then_some((proof, introduced_facts)))
+        let mut introduced_facts = Vec::new();
+        let Some(proof) = self.try_focused_execute_to_exit_within(
+            Vec::new(),
+            &mut BTreeSet::new(),
+            &mut 0,
+            Some(&mut introduced_facts),
+            Some(target),
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((proof, introduced_facts)))
     }
 
-    /// Runs the narrow checked `execute_until` search on this Proof and
-    /// returns only the already-accepted descendant.
-    pub(in crate::surface::proof) fn try_linear_execute_until(
+    /// Runs `execute_until` on this Proof and returns only the
+    /// already-accepted descendant.
+    pub(in crate::surface::proof) fn try_execute_until(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<Self>, ClickError> {
         Ok(self
-            .try_linear_execute_until_descendant(region)?
+            .try_execute_until_descendant(region)?
             .map(|(proof, _)| proof))
     }
 
@@ -104,6 +77,7 @@ impl<'a> Proof<'a> {
             &mut retried_requirements,
             &mut 0,
             Some(&mut introduced_facts),
+            None,
         )?
         else {
             return Ok(None);
