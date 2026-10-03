@@ -145,12 +145,9 @@ An aliased second birth is rejected by a source regression. Constant ownership
 quantities are now observed from an indexed tally without merging or duplicating
 retained occurrences; views contribute no units and arithmetic never wraps.
 
-The original bounded-pool sidecar still selects legacy semantics. Its migration
-needs symbolic batch
-forwarding, and the remaining resize/transfer/cleanup pipeline checks. The
-roadmap in `issues/authority-migration.md` records these as
-remaining dependencies; the new fixtures are partial progress, not evidence
-that the original pipeline has migrated.
+The original bounded-pool sidecar has completed its authority migration;
+the milestone-one status at the start of this inventory supersedes the earlier
+partial checkpoints above.
 
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
@@ -240,6 +237,17 @@ including all 2,569 mdtests and the frozen shared-heap example checks.
 `examples/jsonc-refcount/README.md` and the `mdtests/jsonc_refcount_{getter,increment,setter}.md` fixtures describe a separate JSON-C resource/model-field example; inspect them during the final source/doc audit, but their `count` search hits include ordinary C/API naming and should not be assumed to be Click population observations.
 
 ## Sequential mdtest dependency groups
+
+The milestone-three constant-quantity slice migrates
+`let_bound_constant_quantity.md` and `fold_rejects_a_negative_quantity.md` to
+authority semantics. The former retains the let-bound contract quantity and
+an ordinary authority-bearing control; the latter retains both zero acceptance
+and rejection of a negative coefficient with its missing nonnegative fact.
+`fold_negative_quantity_legacy_control.md` retains the original signed-quantity
+regression until the final legacy-removal milestone; its authority replacement
+is `fold_rejects_a_negative_quantity.md`.
+The unresolved symbolic-plus-unit and global-pattern count boundaries are
+recorded in the migration issue; their original fixtures remain unchanged.
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,

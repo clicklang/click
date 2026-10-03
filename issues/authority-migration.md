@@ -361,6 +361,25 @@ These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
+**First small slice:** The constant-quantity fixtures now use authority semantics.
+`let_bound_constant_quantity.md` packages allocation, counter memory, and
+authority in an ordinary control; its contract still consumes the quantity
+selected by `let k = 2`. `fold_rejects_a_negative_quantity.md` preserves the
+zero/negative boundary with a separate reference family and owned counter
+memory. Negative coefficients report the required nonnegative fact rather
+than `InvalidQuantity`. C source is unchanged.
+
+**Next boundaries found:** A symbolic helper birth followed by a unit birth is
+currently rejected because numeric and symbolic ledger effects cannot mix.
+The reduced reproduction is the original pair of
+`population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
+authority and defined-addition contracts. Separately, the unanchored global
+counts in `resource_count_patterns.md` and
+`counted_distinct_populations_symbolic_sum.md` need a scope decision: current
+authority requires a fixed pointer anchor and does not authorize summing all
+independently anchored populations. Do not silently weaken these fixtures or
+present them as migrated.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

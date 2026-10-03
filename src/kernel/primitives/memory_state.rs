@@ -5967,6 +5967,14 @@ impl CState {
         else {
             return Err("Requires owns R(p)".into());
         };
+        if let Some(value) = quantity.as_const()
+            && (value as i32) < 0
+        {
+            return Err(format!(
+                "Requires 0 <= {} (resource quantity)",
+                value as i32
+            ));
+        }
         let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()

@@ -14,25 +14,28 @@ void take_two(struct child* obj) {
 }
 ```
 
-```click
-resource child_ref(obj: struct child*) {
+```click resource_semantics=authority
+resource child_ref(obj: struct child*) {}
+resource control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));
 }
 
 verifying "let_bound_constant_quantity.c";
 
 void take_two(struct child* obj) {
+    owns control(obj);
     requires 2 <= obj->refs;
     let k: int32 = 2;
-    owns k of child_ref(obj);
     consumes k of child_ref(obj);
 } by {
-    open(child_ref(obj)) {
-        execute();
+    open(control(obj)) {
+        unfold(2 of child_ref(obj));
+        step();
     }
-    simp();
+    execute(); simp();
 }
 ```
 
