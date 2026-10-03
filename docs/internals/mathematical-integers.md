@@ -307,13 +307,23 @@ by retagging their wrapper. Validation examines the root and any strictly
 widening conversion chain (bounded by the five machine widths); substitutions,
 alpha keys, snapshot identities, and bounded walks keep the full payload.
 
-This profile does not yet admit native wide arithmetic,
+Signed native 128-bit multiplication observes each integral operand exactly,
+computes its Integer product, and checks both signed 128-bit bounds. Unknown
+bounds retain separate normal and signed-overflow paths; known failed bounds
+produce signed overflow. The normal symbolic result uses the shared checked
+Integer-to-machine node, retaining its machine type rather than erasing it to
+an Integer. Existing product-bounds certificates can discharge these guards.
+At least one operand must already be signed 128-bit; a later widening cast
+cannot rescue overflow in an earlier narrow multiplication. Operand undefined
+behavior and proof obligations remain attached to the result.
+
+Other native wide arithmetic, including unsigned wrapping multiplication,
 wide pointer/array types, aggregate field access,
-byte loads, callbacks, or any C/C++/Rust source spelling. Internal C0 type
-identities preserve the kernel sorts without adding parser admission. The
-frontends continue to reject reachable `__int128` behavior. Checked
-multiplication, storage access, and source admission are later slices;
-existing implementation fixtures remain unchanged.
+byte loads, callbacks, and C/C++/Rust source spellings remain unsupported.
+Internal C0 type identities preserve the kernel sorts without adding parser
+admission. The frontends continue to reject reachable `__int128` behavior.
+Wide storage access and source admission are later slices; existing
+implementation fixtures remain unchanged.
 
 ## Work budgets and certificate scaling
 
