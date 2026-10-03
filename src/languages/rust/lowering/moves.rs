@@ -321,7 +321,15 @@ pub(super) fn lower(
                     value,
                 } if !records.contains_key(name.as_str()) => cx.assign(name, value)?,
                 S::Assign { target, value } => {
-                    if let E::Field { record, field, .. } = target
+                    if let E::Deref {
+                        value_type: Type::Array { element, length },
+                        ..
+                    } = target
+                    {
+                        let address = cx.address(target)?;
+                        let element = scalar_type(element)?.to_kernel_type();
+                        cx.assign_array_region(address, element, *length, value)?
+                    } else if let E::Field { record, field, .. } = target
                         && let Some((element, length)) = cx
                             .fields
                             .get(&(record.as_str(), field.as_str()))
