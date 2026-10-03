@@ -50,12 +50,6 @@ pub(super) const CONTRACT_LET_CHAIN_LIMIT: usize = 128;
 /// recursive, so keep that separate nesting path deliberately small.
 const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 
-/// The memory-range fact was spelled `loadable(...)` before it was named after
-/// the `views` clause it shadows. There is no compatibility alias, so a source
-/// still using the old spelling is refused by name rather than reported as an
-/// unknown call.
-const RETIRED_LOADABLE_SPELLING: &str = "`loadable(...)` was renamed `viewable(...)`";
-
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
 /// types, so the element type travels with the name to give a byte or
@@ -889,9 +883,6 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
                 resource_definitions.push(self.parse_resource_definition(false)?);
-            } else if self.peek_ident() == Some("counted") {
-                return Err(self
-                    .error("`counted resource` has been removed; declare an ordinary `resource`"));
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
             } else {
@@ -2623,11 +2614,6 @@ impl Parser {
                         .map_err(|message| self.error(message))?,
                     );
                 }
-                Some("immutable" | "mutable") => {
-                    return Err(self.error(
-                        "effect clauses were removed; declare ownership with `owns` and `views` (a narrow write is `views X; owns Y;`)",
-                    ));
-                }
                 Some("constructs") => {
                     self.position += 1;
                     let resource = self.parse_owned_resource_target()?;
@@ -3509,16 +3495,8 @@ impl Parser {
 
     fn parse_requirement(&mut self) -> Result<Requirement, ClickError> {
         self.expect_ident_spelling("requires")?;
-        if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::Colon) {
-            return Err(
-                self.error("named `requires` facts were removed; write `requires proposition;`")
-            );
-        }
         let requirement = match (self.peek_ident(), self.peek_next()) {
             (Some("viewable"), Some(Token::LParen)) => self.parse_loadable_requirement()?,
-            (Some("loadable"), Some(Token::LParen)) => {
-                return Err(self.error(RETIRED_LOADABLE_SPELLING));
-            }
             _ => {
                 let proposition = self.parse_proposition()?;
                 self.expect(Token::Semicolon)?;
@@ -4190,19 +4168,10 @@ impl Parser {
                 self.expect(Token::Semicolon)?;
                 Ok(vec![StructuralItem { claim: proposition }])
             }
-            Some(Token::Ident(kind))
-                if kind == "immutable" || kind == "mutable" || kind == "step" =>
-            {
-                Err(self.error(
-                    "loop effect clauses were removed; a loop frames by ownership by default, or declares `owns`/`views` of its own",
-                ))
+            Some(Token::Ident(kind)) => {
+                Err(self.error(format!("expected `invariant`, got `{kind}`")))
             }
-            Some(Token::Ident(kind)) => Err(self.error(format!(
-                "expected `invariant`, got `{kind}`"
-            ))),
-            Some(token) => Err(self.error(format!(
-                "expected `invariant`, got {token}"
-            ))),
+            Some(token) => Err(self.error(format!("expected `invariant`, got {token}"))),
             None => Err(self.error("expected `invariant`, got end of input")),
         }
     }
@@ -4545,10 +4514,6 @@ impl Parser {
         if self.peek_ident() == Some("viewable") && self.peek_next() == Some(&Token::LParen) {
             let segment = self.parse_loadable_segment()?;
             return Ok(ClickProposition::Loadable { segment });
-        }
-
-        if self.peek_ident() == Some("loadable") && self.peek_next() == Some(&Token::LParen) {
-            return Err(self.error(RETIRED_LOADABLE_SPELLING));
         }
 
         if self.peek_ident() == Some("aligned") && self.peek_next() == Some(&Token::LParen) {

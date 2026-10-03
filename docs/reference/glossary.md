@@ -404,8 +404,6 @@ An obligation relating an operation's pre-state, post-state, and owned write
 footprint. It proves preservation outside the owned memory. Ownership
 discharges these conditions with no tactic of its own.
 
-Historically Click spelled the footprint with `mutable`/`immutable` effect
-clauses and closed the condition with a `frame` tactic. Both were removed:
 `owns` and `views` are the footprint. A function that writes one part of an
 object and reads another owns the part it writes and views the disjoint
 remainder; inside a composite it owns the whole and promises the cells it
