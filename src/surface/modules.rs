@@ -122,7 +122,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         // closure, and the standard library, but never an importer-only name.
         let closure_ids = transitive_imports(identity, &modules)?;
         let mut combined = merge_modules(&closure_ids, identity, &locals)?;
-        combined = validation::expand_declared_resource_clauses(combined).map_err(|error| {
+        combined = validation::expand_declared_resource_clauses_with_semantics(
+            combined,
+            project.resource_semantics_mode(),
+        )
+        .map_err(|error| {
             error
                 .with_kind(ClickErrorKind::Type)
                 .located_by_ambient_declaration()
@@ -174,7 +178,11 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             combined.thread_runtime = runtime;
         }
     }
-    combined = validation::expand_declared_resource_clauses(combined).map_err(|error| {
+    combined = validation::expand_declared_resource_clauses_with_semantics(
+        combined,
+        project.resource_semantics_mode(),
+    )
+    .map_err(|error| {
         error
             .with_kind(ClickErrorKind::Type)
             .located_by_ambient_declaration()

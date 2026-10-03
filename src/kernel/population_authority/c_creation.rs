@@ -1244,6 +1244,26 @@ impl CreationEvents {
             .is_some_and(|families| families.contains(&description.family().to_owned()))
     }
 
+    /// Recover the declared field schema for an explicit local count pattern.
+    /// This indexed type lookup grants no ownership or observation permission.
+    pub(in crate::kernel) fn population_type_description(
+        &self,
+        pattern: &ResourceDescription,
+    ) -> ResourceDescription {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = pattern.arguments().first() else {
+            return pattern.clone();
+        };
+        self.0
+            .scopes
+            .get(&(pointer.pointer().block.clone(), pattern.family().to_owned()))
+            .filter(|scope| {
+                scope.arguments() == pattern.arguments()
+                    && scope.population_arity() == pattern.population_arity()
+            })
+            .cloned()
+            .unwrap_or_else(|| pattern.clone())
+    }
+
     /// Resolve one explicit member to its governing scope without enumerating
     /// other pools or members. A scope is not itself a member assertion.
     pub(in crate::kernel) fn governing_authority(
@@ -1609,6 +1629,11 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
+        if !description.schema().is_countable() {
+            // Named occurrences carry independent fields, not an anonymous
+            // quantity that can be produced without those owned instances.
+            return Err(CreationRefusal::InvalidMember);
+        }
         // A helper may select the complete numerical batch by an entry field
         // rather than a literal. Keep the symbolic-batch path unchanged.
         let numerical = (!produce && quantity.as_const().is_none())
@@ -2966,11 +2991,7 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::InvalidMember);
         }
-        let after = if description.population_arity().is_some() {
-            self.establish_scoped(block, description.family(), Some(description))?
-        } else {
-            self.establish(block, description.family())?
-        };
+        let after = self.establish_scoped(block, description.family(), Some(description))?;
         let evidence = CheckedPopulationAuthorityExchange {
             before: self.0.identity,
             after: after.0.identity,

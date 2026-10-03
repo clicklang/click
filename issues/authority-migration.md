@@ -331,11 +331,26 @@ each occurrence identity and field values; the population ledger records only
 births and consumption. Certificate rechecking accepts exactly that checked
 ledger successor. Duplicate identities, altered field values, missing authority,
 repeat consumption, retirement with live members, and authority establishment
-after prior members are rejected. The surface still rejects field-bearing
-population types; connecting that existing syntax is the next narrow checkpoint.
+after prior members are rejected. The following surface checkpoint connects the existing syntax.
 Validation: the independent named-member regression, all 2,514 kernel tests
 (including scaling tests), and the complete Markdown corpus passed through
 `scripts/check.sh`.
+
+**Local surface checkpoint:** Authority-mode module expansion admits a unary
+field-bearing resource type in `authority(...)` and `count(...)`. The local
+ledger retains its declared type schema, and count evaluation resolves that
+schema through an indexed lookup before checking actual authority ownership.
+Two named occurrences with equal arguments retain distinct proof fields; their
+count progresses from zero to two to one to zero under checked fold/unfold.
+Replacement negatives cover late establishment, live-member retirement, and
+consumption while the authority control stays closed. Legacy field-count and
+quantity rejections remain in place. Wildcard field-bearing families and helper
+transport remain the next checkpoints; no new notation is introduced.
+Validation: all kernel and declaration-expansion tests (2,521), the complete
+Markdown corpus, the final four field-member fixtures, and all 10 positive
+expansion-audit sites passed. Anonymous quantities cannot manufacture named
+instances with missing fields; kernel cases reject unit, multi-unit, and
+symbolic quantity requests for these families.
 
 
 1. Define/check population occurrence identity independently of proof fields;

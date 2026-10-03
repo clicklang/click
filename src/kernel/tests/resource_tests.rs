@@ -8076,6 +8076,28 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
             .observe(&block, "ticket")
             .unwrap()
     };
+    for quantity in [
+        Bitvector32Term::Constant(1),
+        Bitvector32Term::Constant(2),
+        Bitvector32Term::Variable(Variable::allocate_fresh().unwrap()),
+    ] {
+        assert!(
+            empty
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &quantity,
+                    &assumptions
+                )
+                .is_err(),
+            "an anonymous quantity cannot replace named occurrences and their fields"
+        );
+    }
     let one = rewrite(&empty, &first, false).unwrap();
     assert_eq!(count(&one), 1);
     assert_eq!(

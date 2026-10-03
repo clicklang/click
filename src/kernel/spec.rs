@@ -6077,6 +6077,7 @@ fn evaluate_resource_count_paths(
                 // aliases of this explicit anchor, authenticating the held
                 // description in the live ledger before using its count.
                 let owned_description = |candidate: &ResourceDescription| {
+                    let candidate = creation.population_type_description(candidate);
                     let required =
                         CResourceFact::own(CResource::PopulationAuthority(candidate.clone()));
                     state
@@ -6110,7 +6111,8 @@ fn evaluate_resource_count_paths(
                             owned_description(&candidate)
                         })
                 });
-                let description = canonical.unwrap_or(description);
+                let description =
+                    canonical.unwrap_or_else(|| creation.population_type_description(&description));
                 let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };

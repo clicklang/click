@@ -105,13 +105,24 @@ one population of the declared resource type `reference(p)`. The empty
 population may be established with `fold(authority(reference(p)))` only in the
 execution proof that created `p`'s storage. It may be retired with
 `unfold(authority(reference(p)))` only when its member count is zero. The
-current authority mode also admits exact field-free members with private owned
-memory, their current `count(...)`, and direct authority/member helper
-contracts. An ordinary field-free resource can package owned counter memory,
-one authority, and a fact such as `p[0] == count(reference(p))`; opening it
-exposes both permissions, and closing it checks the fact at the updated count.
-Packaged control transfer through a helper contract and broader member shapes
-remain pending.
+authority mode admits exact field-free members with private owned memory,
+their current `count(...)`, and direct authority/member helper contracts. An
+ordinary field-free control can package counter memory, authorities, and facts
+relating the memory to population counts. Ordinary helper contracts transfer
+these controls, concrete members, and checked symbolic groups.
+
+Local unary families can also have C or integer proof fields. For example,
+`authority(ticket(p))` governs separately named `ticket(p)` instances; their
+identities and field values remain distinct even when their arguments agree.
+`let first = fold(ticket(p), { serial: 1 });` creates one member, and
+`unfold(first)` consumes that exact member. Both operations require the matching
+owned authority. `count(ticket(p))` observes the population total, not field
+values or ownership of individual members. Retirement requires zero members.
+Field-bearing wildcard scopes and helper transport are separate migration
+checkpoints; symbolic quantities of heterogeneous named instances are not
+supported. Legacy mode retains its existing field-count restriction.
+
+**Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
 
 **Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
 
