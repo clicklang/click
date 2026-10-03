@@ -457,8 +457,12 @@ bounded admission rule now composes two independent unit births and returns
 both controls with unchanged anchors and authority scopes. The reduced pair
 initializer verifies; independent admission cases reject missing controls,
 wrong anchors, nonunit or duplicate births, and lost returned authority. The
-extra-member source regression rejects closing an invalid control. Integrating
-the original transfer pipeline remains the next slice. Keep additional
+extra-member source regression rejects closing an invalid control. The original transfer pipeline now also verifies through helper calls,
+including the object's unchanged value. Ordinary storage/control openings
+establish memory framing, explicit population bounds precede transfer, and the
+checkout contract now states its true value-preservation guarantee. The next
+slice switches the original bounded-pool project to this authority sidecar and
+removes its legacy inventory entry. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.

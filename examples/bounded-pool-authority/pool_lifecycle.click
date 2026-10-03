@@ -295,6 +295,7 @@ verifying "../bounded-pool/pool_zero_pipeline.c";
 verifying "../bounded-pool/pool_checkout.c";
 verifying "../bounded-pool/pool_return.c";
 verifying "../bounded-pool/pool_transfer.c";
+verifying "../bounded-pool/pool_transfer_pipeline.c";
 verifying "../bounded-pool/pool_pipeline.c";
 verifying "../bounded-pool/pool_grow.c";
 verifying "../bounded-pool/pool_shrink.c";
@@ -368,6 +369,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
     ensures pool->capacity == old(pool->capacity);
     ensures valid_pool(pool);
+    ensures object->value == old(object->value);
 } by {
     open(pool_control(pool)) {
         have 1 <= count(pool_slot(pool)) by simp;
@@ -791,5 +793,53 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have destination->capacity == destination->checked_out + count(pool_slot(destination)) by simp;
         }
     }
+    execute(); unfold(valid_pool); simp();
+}
+
+void pool_transfer_pipeline(struct pool* source, struct pool* destination, struct object* object) {
+    requires source != destination;
+    consumes pool_storage(source);
+    consumes pool_storage(destination);
+    consumes object(object);
+    requires count(pool_slot(source)) == 0;
+    requires count(pool_slot(destination)) == 0;
+    requires count(pool_object(source, _)) == 0;
+    requires count(pool_object(destination, _)) == 0;
+    produces pool_control(source);
+    produces pool_control(destination);
+    produces pool_object(destination, object);
+    produces pool_slot(source);
+    ensures valid_pool(source);
+    ensures valid_pool(destination);
+    ensures source->checked_out == 0;
+    ensures source->capacity == 1;
+    ensures destination->checked_out == 1;
+    ensures destination->capacity == 1;
+    ensures count(pool_object(source, _)) == 0;
+    ensures count(pool_object(destination, _)) == 1;
+    ensures count(pool_slot(source)) == 1;
+    ensures count(pool_slot(destination)) == 0;
+    ensures object->value == old(object->value);
+} by {
+    open(pool_storage(source)) {
+        open(pool_storage(destination)) {
+            have object->value == old(object->value) by simp;
+        }
+    }
+    step();
+    have object->value == old(object->value) by simp;
+    open(pool_control(source)) { step(); }
+    have object->value == old(object->value) by simp;
+    have count(pool_object(source, _)) == 0 by simp;
+    have defined(count(pool_object(source, _)) + 1) by simp;
+    open(pool_control(destination)) { step(); }
+    have object->value == old(object->value) by simp;
+    have count(pool_object(source, object)) == 1 by simp;
+    have count(pool_object(destination, object)) == 0 by simp;
+    have count(pool_slot(source)) == 0 by simp;
+    have count(pool_object(destination, _)) == 0 by simp;
+    have defined(count(pool_slot(source)) + 1) by simp;
+    have defined(count(pool_object(destination, _)) + 1) by simp;
+    step();
     execute(); unfold(valid_pool); simp();
 }

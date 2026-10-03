@@ -4,7 +4,7 @@ This is the first project-level authority checkpoint for the bounded pool.
 The sidecar references the C files in `../bounded-pool` directly; no C source
 is copied or changed. It proves initialization, checkout, return,
 growth, shrink, transfer, and cleanup, plus the original zero-capacity, two-object, and resize
-pipelines.
+and transfer pipelines.
 
 `pool_storage(pool)` owns pool memory and both population authorities.
 Initialization takes that resource explicitly, requires both populations to
@@ -59,5 +59,10 @@ source's concrete object member and one destination slot, and produces the
 destination member and one source slot. Its proof updates the original C
 counters, preserves the object's private value and both capacities, and restores
 both conservation invariants. The supplied member and slot establish safe
-counter updates; no extra counter-bound precondition is needed. Integrating the
-original transfer pipeline is the next separate checkpoint.
+counter updates; no extra counter-bound precondition is needed. The original transfer
+pipeline verifies through both initialization helpers, checkout, and transfer.
+The proof briefly opens storage bodies to establish memory separation, exposes
+the untouched pool control while the other pool changes, and proves each
+population increment defined before calling transfer. Checkout explicitly
+preserves the private value, allowing that guarantee to compose through the
+whole pipeline. Both controls and the transferred member remain owned on exit.

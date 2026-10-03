@@ -5,7 +5,7 @@ This is the consumer inventory for `issues/authority-migration.md`, not a specif
 The authority-mode companion in `examples/bounded-pool-authority` references
 unchanged C in the original project. It verifies initialization, checkout,
 return, cleanup, growth, shrink, and transfer, plus the original zero-capacity, two-object, and
-resize pipelines. Shrink consumes a symbolic owned slot quantity under the
+resize and transfer pipelines. Shrink consumes a symbolic owned slot quantity under the
 control's authority while preserving the global remainder and checked-out
 members. Growth produces only its requested slot quantity under the existing
 control, preserves both populations' old members, and checks signed capacity
@@ -14,7 +14,7 @@ controls, preserving private object memory and restoring both invariants. Its
 reduced four-unit exchange is
 covered by `authority_four_effect_exchange.md`: all four authorities and exact
 member effects are checked, neighboring ownership survives, and final cleanup
-is exact. The original transfer pipeline remains the next integration slice. The
+is exact. The original transfer pipeline now verifies through ordinary helper contracts. The
 reduced `authority_two_control_init_call.md` checks initialization with an
 independent caller-held control. Allocation reconciliation projects each
 control using its actual owner's ledger, preserving caller authority and
@@ -22,8 +22,12 @@ population counts. `authority_two_control_birth_helpers.md` now checks two initi
 returning two controls and two independent unit slots. Each control preserves
 its anchor and authority scopes; ordinary `open` supplies the memory-framing
 facts for the intervening call. An extra-member regression rejects restoring
-an invalid control invariant. The original transfer pipeline remains a
-separate integration checkpoint.
+an invalid control invariant. The original transfer pipeline now also verifies, preserving the private value
+and returning both controls, the destination member, and the source slot. Its
+proof establishes memory separation by opening ordinary storage resources;
+checkout's contract explicitly preserves the object's value. No C or syntax
+changed. Switching the original project off legacy semantics is the next
+checkpoint.
 
 ## Discovery boundary
 
