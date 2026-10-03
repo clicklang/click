@@ -1242,6 +1242,58 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 }
 
 #[test]
+fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() {
+    for size in [4usize, 16, 64] {
+        let parameters = (0..size)
+            .map(|index| format!("int unused{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let locals = (0..size)
+            .map(|index| format!("int local{index} = {index};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let calls = "read(value);\n".repeat(size);
+        let cpp = format!(
+            "int read(int& value) noexcept {{ return value; }}\nint many({parameters}, int& value) noexcept {{ {locals} {calls} return value; }}"
+        );
+        let project = Project::with_fixture("places.cpp", "many", &cpp);
+        refresh_import(&project.config())
+            .expect("export growing caller parameters and local declarations");
+        let import = load_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let parameters = (0..size)
+            .map(|index| format!("int32 unused{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            r#"verifying "places.cpp";
+int32 read(int32* value) {{ owns value[0..1]; ensures result == old(value[0]); ensures value[0] == old(value[0]); }} by {{ execute(); simp(); }}
+int32 many({parameters}, int32* value) {{ owns value[0..1]; requires value[0] == 7; ensures result == 7; ensures value[0] == 7; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        // Refuse the false result with a simple closer, rather than spending
+        // the smart search budget trying to synthesize an impossible proof.
+        let hostile = source
+            .replace("ensures result == 7;", "ensures result == 8;")
+            .replace(
+                "ensures value[0] == 7; } by { execute(); simp(); }",
+                "ensures value[0] == 7; } by { execute(); assumption(); }",
+            );
+        let sidecar = project.directory.join("bad.click");
+        fs::write(&sidecar, &hostile).unwrap();
+        let parsed = read_click_project(&sidecar, &hostile).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import)
+            .expect_err("indexed reference calls must preserve the loaded value");
+        assert!(
+            !error.message().contains("budget exhausted"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn catch_binding_names_do_not_escape_the_handler_scope() {
     let cpp = "int helper(bool fail) { if (fail) { throw 7; } return 7; }
         int caller(bool fail) { try { helper(fail); } catch (int caught) { return caught; }

@@ -474,8 +474,15 @@ semantics. Acyclic constant forests may have multiple leaves and longer chains;
 each initializer retains the supported literal-leaf or literal-times-prior-constant
 form, and the checker independently recomputes every evaluated value. Multiple
 record layouts reuse the existing field-type, explicit ABI, and ownership rules.
-Lifetime shape limits described below remain semantic restrictions pending the
-scope-environment cleanup.
+The fixed local and scope count limits described below remain until the
+lifetime-budget cleanup.
+
+C++ graph validation indexes each function's parameter, local, and catch-binding
+identities once. Reference arguments and destructor edges use borrowed type
+lookups. Reusing a declaration ID anywhere in the function is rejected, including
+across sibling scopes. Equal local names in disjoint scopes remain distinct
+when their declaration IDs differ. Separate lexical and lifetime validation
+checks visibility, construction, and cleanup order.
 
 C++ calls and contracts bind through Clang declaration IDs. Unique readable
 names are preserved; free namespace names replace `::` with `_`. If reachable

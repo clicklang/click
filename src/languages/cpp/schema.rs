@@ -905,16 +905,6 @@ impl CppRecord {
 }
 
 impl CppFunction {
-    fn place_type(&self, declaration_id: &str) -> Option<&CppType> {
-        self.parameters
-            .iter()
-            .find(|place| place.declaration_id == declaration_id)
-            .map(|place| &place.value_type)
-            .or_else(|| {
-                find_declared_place(&self.body, declaration_id).map(|place| &place.value_type)
-            })
-    }
-
     fn validate(
         &self,
         logical_source: &str,
@@ -2298,50 +2288,77 @@ fn sequence_constructs_record(statements: &[CppStatement]) -> bool {
     })
 }
 
-fn find_declared_place<'a>(
-    statements: &'a [CppStatement],
-    declaration_id: &str,
-) -> Option<&'a CppPlace> {
-    for statement in statements {
-        match statement {
-            CppStatement::Declare { local, .. } if local.declaration_id == declaration_id => {
-                return Some(local);
-            }
-            CppStatement::Scope { body, .. } => {
-                if let Some(local) = find_declared_place(body, declaration_id) {
-                    return Some(local);
-                }
-            }
-            CppStatement::TryCatchInt32 {
-                try_body,
-                binding,
-                handler,
-                ..
-            } => {
-                if binding.declaration_id == declaration_id {
-                    return Some(binding);
-                }
-                if let Some(local) = find_declared_place(try_body, declaration_id)
-                    .or_else(|| find_declared_place(handler, declaration_id))
-                {
-                    return Some(local);
-                }
-            }
-            CppStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                if let Some(local) = find_declared_place(then_branch, declaration_id)
-                    .or_else(|| find_declared_place(else_branch, declaration_id))
-                {
-                    return Some(local);
-                }
-            }
-            _ => {}
+// Graph validation needs declaration identities throughout the function, not
+// lexical visibility. Build this index once per visited function; lexical
+// ValidationPlaces separately rejects uses before construction or after scope
+// exit. Borrow keys and places so graph edges never copy a declaration's type.
+struct FunctionPlaces<'a> {
+    function: &'a CppFunction,
+    declarations: BTreeMap<&'a str, &'a CppPlace>,
+}
+
+impl<'a> FunctionPlaces<'a> {
+    fn new(function: &'a CppFunction) -> Result<Self, String> {
+        let mut places = Self {
+            function,
+            declarations: BTreeMap::new(),
+        };
+        for parameter in &function.parameters {
+            places.insert(parameter)?;
         }
+        let mut pending = vec![function.body.as_slice()];
+        while let Some(body) = pending.pop() {
+            for statement in body {
+                crate::instrumentation::record_deterministic_work(1);
+                match statement {
+                    CppStatement::Declare { local, .. } => places.insert(local)?,
+                    CppStatement::Scope { body, .. } => pending.push(body),
+                    CppStatement::TryCatchInt32 {
+                        try_body,
+                        binding,
+                        handler,
+                        ..
+                    } => {
+                        places.insert(binding)?;
+                        pending.push(try_body);
+                        pending.push(handler);
+                    }
+                    CppStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        pending.push(then_branch);
+                        pending.push(else_branch);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(places)
     }
-    None
+
+    fn insert(&mut self, place: &'a CppPlace) -> Result<(), String> {
+        crate::instrumentation::record_deterministic_work(1);
+        if self
+            .declarations
+            .insert(&place.declaration_id, place)
+            .is_some()
+        {
+            return Err(format!(
+                "duplicate C++ place declaration identity `{}` in function `{}`",
+                place.declaration_id, self.function.name
+            ));
+        }
+        Ok(())
+    }
+
+    fn place_type(&self, declaration_id: &str) -> Option<&'a CppType> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.declarations
+            .get(declaration_id)
+            .map(|place| &place.value_type)
+    }
 }
 
 fn validate_nested_scope(
@@ -2536,6 +2553,7 @@ fn validate_reachable_calls(
         format!("C++ reachable graph refers to missing declaration `{declaration_id}`")
     })?;
     visiting.push(declaration_id.to_string());
+    let places = FunctionPlaces::new(function)?;
     let mut calls = Vec::new();
     collect_calls(&function.body, &mut calls);
     let mut depth = 1usize;
@@ -2580,7 +2598,7 @@ fn validate_reachable_calls(
                     ));
                 }
                 validate_call_arguments(
-                    function,
+                    &places,
                     target.name.as_str(),
                     &target.parameters,
                     arguments,
@@ -2614,7 +2632,7 @@ fn validate_reachable_calls(
                     ));
                 };
                 validate_call_arguments(
-                    function,
+                    &places,
                     target.name.as_str(),
                     explicit_parameters,
                     arguments,
@@ -2632,7 +2650,7 @@ fn validate_reachable_calls(
                     ));
                 };
                 if !matches!(
-                    function.place_type(&object.declaration_id),
+                    places.place_type(&object.declaration_id),
                     Some(CppType::Record { declaration_id, name, .. })
                         if declaration_id == record_declaration_id && name == record_name
                 ) {
@@ -2791,7 +2809,7 @@ fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<Co
 }
 
 fn validate_call_arguments(
-    caller: &CppFunction,
+    caller: &FunctionPlaces<'_>,
     callee_name: &str,
     parameters: &[CppPlace],
     arguments: &[CppCallArgument],
@@ -2799,7 +2817,7 @@ fn validate_call_arguments(
     if arguments.len() != parameters.len() {
         return Err(format!(
             "C++ call from `{}` to `{}` has {} arguments for {} parameters",
-            caller.name,
+            caller.function.name,
             callee_name,
             arguments.len(),
             parameters.len()
@@ -2884,7 +2902,7 @@ fn validate_call_arguments(
         if !compatible {
             return Err(format!(
                 "C++ call from `{}` to `{}` has unsupported argument {} for parameter `{}`",
-                caller.name,
+                caller.function.name,
                 callee_name,
                 index + 1,
                 parameter.name
@@ -4310,14 +4328,28 @@ mod tests {
                 span: cleanup_span(),
             },
         }];
-        validate_call_arguments(&function, "read", &actual, &arguments).unwrap();
+        validate_call_arguments(
+            &FunctionPlaces::new(&function).unwrap(),
+            "read",
+            &actual,
+            &arguments,
+        )
+        .unwrap();
         let mut writable = actual;
         if let CppType::LvalueReference { pointee } = &mut writable[0].value_type
             && let CppType::Record { is_const, .. } = pointee.as_mut()
         {
             *is_const = false;
         }
-        assert!(validate_call_arguments(&function, "write", &writable, &arguments).is_err());
+        assert!(
+            validate_call_arguments(
+                &FunctionPlaces::new(&function).unwrap(),
+                "write",
+                &writable,
+                &arguments
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -4534,6 +4566,186 @@ mod tests {
             leaf
         }];
         validate_constant_inventory(&leaves, "fixture.cpp", &sources).unwrap();
+    }
+
+    #[test]
+    fn graph_reference_checks_index_growing_caller_places_once() {
+        for size in [4usize, 32, 256, 2048] {
+            let reference_type = CppType::LvalueReference {
+                pointee: Box::new(signed_integer(32, false)),
+            };
+            let place = |id: String, value_type| CppPlace {
+                name: id.clone(),
+                declaration_id: id,
+                value_type,
+                span: cleanup_span(),
+            };
+            let mut caller = CppFunction {
+                declaration_id: "caller".into(),
+                name: "caller".into(),
+                function_kind: CppFunctionKind::Free,
+                return_type: signed_integer(32, false),
+                parameters: (0..size)
+                    .map(|index| place(format!("parameter-{index}"), reference_type.clone()))
+                    .collect(),
+                declared_noexcept: true,
+                span: cleanup_span(),
+                body: Vec::new(),
+            };
+            for index in 0..size {
+                caller.body.push(CppStatement::Declare {
+                    local: place(format!("local-{index}"), signed_integer(32, false)),
+                    initializer: CppInitializer::Value {
+                        value: CppExpression::IntegerLiteral {
+                            value: "0".into(),
+                            value_type: signed_integer(32, false),
+                            span: cleanup_span(),
+                        },
+                    },
+                    span: cleanup_span(),
+                });
+                caller.body.push(CppStatement::Call {
+                    callee: CppFunctionReference {
+                        declaration_id: "read".into(),
+                        name: "read".into(),
+                        span: cleanup_span(),
+                    },
+                    arguments: vec![CppCallArgument::Reference {
+                        place: CppPlaceReference {
+                            declaration_id: format!("parameter-{}", size - 1),
+                            name: format!("parameter-{}", size - 1),
+                            span: cleanup_span(),
+                        },
+                    }],
+                    span: cleanup_span(),
+                });
+            }
+            let callee = CppFunction {
+                declaration_id: "read".into(),
+                name: "read".into(),
+                function_kind: CppFunctionKind::Free,
+                return_type: signed_integer(32, false),
+                parameters: vec![place("parameter-0".into(), reference_type)],
+                declared_noexcept: true,
+                span: cleanup_span(),
+                body: vec![],
+            };
+            let functions = BTreeMap::from([("caller".into(), &caller), ("read".into(), &callee)]);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_reachable_calls(
+                    "caller",
+                    &functions,
+                    &mut Vec::new(),
+                    &mut BTreeMap::new(),
+                    "fixture.cpp",
+                )
+            });
+            assert_eq!(result.unwrap(), 2);
+            assert!(
+                work >= size && work <= 10 * size + 16,
+                "{size} places and reference edges: {work} work"
+            );
+            let places = FunctionPlaces::new(&caller).unwrap();
+            assert_eq!(places.declarations.len(), 2 * size);
+            assert!(std::ptr::eq(
+                places.place_type("parameter-0").unwrap(),
+                &caller.parameters[0].value_type
+            ));
+            assert!(places.place_type("unknown").is_none());
+        }
+    }
+
+    #[test]
+    fn function_place_index_rejects_identity_reuse_across_lexical_scopes() {
+        let place = |id: &str| CppPlace {
+            declaration_id: id.into(),
+            name: "same_spelling".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let declaration = |id: &str| CppStatement::Declare {
+            local: place(id),
+            initializer: CppInitializer::Value {
+                value: CppExpression::IntegerLiteral {
+                    value: "0".into(),
+                    value_type: signed_integer(32, false),
+                    span: cleanup_span(),
+                },
+            },
+            span: cleanup_span(),
+        };
+        let scope = |id: &str| CppStatement::Scope {
+            body: vec![declaration(id)],
+            cleanups: vec![],
+            span: cleanup_span(),
+        };
+        let mut function = CppFunction {
+            declaration_id: "root".into(),
+            name: "root".into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters: vec![place("parameter")],
+            declared_noexcept: false,
+            span: cleanup_span(),
+            body: vec![
+                scope("first"),
+                CppStatement::If {
+                    condition: CppExpression::IntegerLiteral {
+                        value: "1".into(),
+                        value_type: signed_integer(32, false),
+                        span: cleanup_span(),
+                    },
+                    then_branch: vec![scope("then")],
+                    else_branch: vec![scope("else")],
+                    span: cleanup_span(),
+                },
+                CppStatement::TryCatchInt32 {
+                    try_body: vec![scope("try")],
+                    binding: place("catch"),
+                    handler: vec![scope("handler")],
+                    span: cleanup_span(),
+                },
+            ],
+        };
+        let places = FunctionPlaces::new(&function).unwrap();
+        for id in [
+            "parameter",
+            "first",
+            "then",
+            "else",
+            "try",
+            "catch",
+            "handler",
+        ] {
+            assert!(places.place_type(id).is_some(), "missing {id}");
+        }
+        assert_eq!(places.declarations.len(), 7);
+        for id in [
+            "first",
+            "parameter",
+            "catch",
+            "then",
+            "else",
+            "try",
+            "handler",
+        ] {
+            function.body.push(scope(id));
+            let functions = BTreeMap::from([("root".into(), &function)]);
+            let error = validate_reachable_calls(
+                "root",
+                &functions,
+                &mut Vec::new(),
+                &mut BTreeMap::new(),
+                "fixture.cpp",
+            )
+            .unwrap_err();
+            assert!(
+                error.contains("duplicate C++ place declaration identity"),
+                "{error}"
+            );
+            assert!(error.contains(id), "{error}");
+            function.body.pop();
+        }
     }
 
     #[test]
