@@ -153,6 +153,21 @@ remain for the validity/profile/budget cleanup below. Partial construction,
 temporaries, copy/move, broader scope arrangements, and wider exceptions are
 future lifetime events/admissions, rather than additional lowering paths.
 
+Checked compiler-assumption obligations are delivered. A direct
+`__builtin_assume` statement is identified by Clang's builtin declaration and
+lowered to a labeled assertion in the common kernel. Its condition must be
+proved at the site, never silently trusted. Because the builtin does not
+evaluate its operand, supported conditions are total scalar predicates over
+by-value parameters/locals and locked constants, with supported casts,
+comparisons, and conjunction. Memory reads, runtime calls, arithmetic, and
+side effects remain rejected. Offline regressions cover missing/false
+conditions, conditional execution, constant reachability, normal destruction,
+expansion/reverification, retained audit, forged artifacts, and growing statement
+inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
+the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
+needs separate support. Artifact schema is now 35 and earlier locks require
+an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -190,7 +205,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema remains 34. `__int128` remains a feature prerequisite for the
+artifact schema is now 35. `__int128` remains a feature prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -235,7 +250,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 34
+arrangement restrictions remain semantic-profile limitations. Artifact schema 35
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -250,7 +265,7 @@ reuse the metadata helpers when checked in isolation. Regressions mutate every
 span and identity in a corpus covering all recursive variants, distinguish
 malformed metadata from unsupported nested lifetimes, and measure growing
 syntax/alias work without cloning lexical environments. Artifact schema remains
-34 and existing supported-source proofs remain unchanged.
+35 and existing supported-source proofs remain unchanged.
 
 Next extend the shared scalar and kernel design for the fee arithmetic milestone.
 
@@ -286,7 +301,7 @@ division, and a nonzero remainder. Concrete Boolean template instances and `if c
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
 cases. The selected upstream source still requires `__int128`,
-assumption obligations, and argument-order support for field-reading siblings
+support for its library `Assume` annotation, and argument-order support for field-reading siblings
 in `Div(Mul(...), size, RoundDown)` on this target. Stable scalar sibling arguments
 are now supported; upstream `EvaluateFee` is not yet supported.
 

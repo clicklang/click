@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 34);
+    assert_eq!(prepared.export().schema, 35);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1746,7 +1746,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1861,7 +1861,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1972,7 +1972,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2033,7 +2033,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2079,7 +2079,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2707,7 +2707,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2785,7 +2785,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2903,7 +2903,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3041,7 +3041,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3143,7 +3143,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3243,7 +3243,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3382,7 +3382,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3532,7 +3532,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let destructor = import
         .export()
         .reachable_functions
@@ -3718,7 +3718,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3821,7 +3821,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 34);
+    assert_eq!(import.export().schema, 35);
     let destructor = import
         .export()
         .reachable_functions
@@ -7723,5 +7723,140 @@ fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
         let parsed = read_click_project(&path, &hostile).unwrap();
         verify_program_prepared_project(&parsed, &import)
             .expect_err("conversion must reject a false claim");
+    }
+}
+
+#[test]
+fn compiler_assumptions_require_proof_and_keep_normal_cleanup() {
+    let cpp = "struct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint guarded(int n) noexcept { Guard guard(n); __builtin_assume(n > 0); return n; }";
+    let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[1],
+        CppStatement::Assume { .. }
+    ));
+    let contracts = r#"verifying "assume.cpp";
+void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+"#;
+    let source = format!(
+        "{contracts}\nint32 guarded(int32 n) {{ requires n > 0; ensures result == n; }} by {{ execute(); simp(); }}"
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    for requires in ["", "requires n == 0;"] {
+        let hostile = source.replace("requires n > 0;", requires);
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("__builtin_assume"),
+            "{}",
+            error.message()
+        );
+    }
+    let hostile = source.replace("ensures result == n;", "ensures result == n + 1;");
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a proved assumption cannot prove a false result");
+}
+
+#[test]
+fn compiler_assumptions_cover_total_predicates_and_scale_with_statements() {
+    for size in [4usize, 16, 64, 256] {
+        let body = "__builtin_assume(n > 0 && bool(n));\n".repeat(size);
+        let cpp = format!("int guarded(int n) noexcept {{ {body} return n; }}");
+        let project = Project::with_fixture("assume.cpp", "guarded", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 64 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work <= 32 * size + 128, "{size}: {work}");
+        if size == 4 {
+            let proof = "verifying \"assume.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+            check_return_call_sidecar(&project, &import, proof);
+        }
+    }
+}
+
+#[test]
+fn compiler_assumptions_reject_unevaluated_effects_and_partial_or_memory_conditions() {
+    for (parameters, condition) in [
+        ("int n", "++n > 0"),
+        ("int n", "(n = 1) > 0"),
+        ("int n", "n + 1 > 0"),
+        ("int n", "1 / n > 0"),
+        ("int& n", "n > 0"),
+        ("int* n", "*n > 0"),
+    ] {
+        let cpp = format!(
+            "int guarded({parameters}) noexcept {{ __builtin_assume({condition}); return 1; }}"
+        );
+        let project = Project::with_fixture("assume.cpp", "guarded", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("total scalar condition"),
+            "{condition}: {error}"
+        );
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn user_named_assume_calls_are_not_compiler_assumptions() {
+    let cpp = "void Assume(bool condition) noexcept { int ignored = 0; }\nint guarded(int n) noexcept { Assume(n > 0); return n; }";
+    let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(matches!(
+        import.export().function.body[0],
+        CppStatement::Call { .. }
+    ));
+    let proof = "verifying \"assume.cpp\"; void Assume(bool condition) { ensures condition == condition; } by { execute(); simp(); } int32 guarded(int32 n) { ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let hostile = proof.replace("ensures result == n;", "ensures n > 0;");
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a library spelling cannot introduce a compiler assumption");
+}
+
+#[test]
+fn compiler_assumptions_preserve_conditional_execution_and_constant_reachability() {
+    for (cpp, requires) in [
+        (
+            "int guarded(int n) noexcept { if (n > 0) { __builtin_assume(n > 0); } return n; }",
+            "",
+        ),
+        (
+            "constexpr long LIMIT = 5; int guarded(int n) noexcept { __builtin_assume(n < LIMIT); return n; }",
+            "requires n == 3;",
+        ),
+    ] {
+        let project = Project::with_fixture("assume.cpp", "guarded", cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(
+            import.export().constants.len(),
+            usize::from(cpp.starts_with("constexpr"))
+        );
+        let proof = format!(
+            "verifying \"assume.cpp\"; int32 guarded(int32 n) {{ {requires} ensures result == n; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &proof);
     }
 }
