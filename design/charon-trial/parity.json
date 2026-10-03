@@ -12,12 +12,12 @@
   {
     "config": "examples/rust-array-values/arrays.click.import.json",
     "outcome": "rejected",
-    "diagnostic": "Charon trial does not support slice len declaration/type mismatch"
+    "diagnostic": "by-value Rust arrays as parameters or returns are not supported"
   },
   {
     "config": "examples/rust-arrays/arrays.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "Charon trial does not support slice len declaration/type mismatch"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "config": "examples/rust-byte-sum/sum.click.import.json",

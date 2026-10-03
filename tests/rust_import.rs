@@ -3629,3 +3629,6 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
 
 #[path = "rust_import/parity.rs"]
 mod parity;
+
+#[path = "rust_import/array_lengths.rs"]
+mod array_lengths;

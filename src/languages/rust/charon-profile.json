@@ -24,7 +24,8 @@
     "borrowed-scalar-array-fields-v1",
     "compact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1",
     "shared-scalar-array-iteration-v1",
-    "resolved-source-assignment-operators-v1"
+    "resolved-source-assignment-operators-v1",
+    "shared-scalar-slice-length-v1"
   ],
   "extractor_version": "0.1.279"
 }

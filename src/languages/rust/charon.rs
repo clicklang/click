@@ -1,5 +1,7 @@
 //! Opt-in, deliberately narrow ULLBC adapter. All bodies use the same CFG path.
 //! Charon owns Rust normalization; Click owns execution and checked authority.
+#[cfg(test)]
+mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
 mod protocol;
@@ -335,9 +337,18 @@ impl BodyAdapter<'_, '_> {
                 || !signature
                 || self.adapter.ty(&callee.signature.output)? != Type::Usize
                 || ptr.generics.types.len() != 1
-                || self.adapter.ty(&ptr.generics.types[0])? != Type::U8
                 || !ptr.generics.const_generics.is_empty()
-                || self.adapter.ty(argument.ty())? != (Type::ByteSlice { mutable: false })
+                || !match (
+                    self.adapter.ty(&ptr.generics.types[0])?,
+                    self.adapter.ty(argument.ty())?,
+                ) {
+                    (Type::U8, Type::ByteSlice { mutable: false }) => true,
+                    (
+                        element @ (Type::I32 | Type::U32),
+                        Type::SharedScalarSlice { element: actual },
+                    ) => element == *actual,
+                    _ => false,
+                }
                 || self.adapter.ty(&call.dest.ty)? != Type::Usize
             {
                 return Err(unsupported("slice len declaration/type mismatch"));

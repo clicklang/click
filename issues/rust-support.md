@@ -539,14 +539,20 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Eight of 16 fixtures verify unchanged; six have
+extraction/proof gaps. Nine of 16 fixtures verify unchanged; five have
 normalization gaps and two depend on legacy iterator proof observations. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
 A single compiled-in [Charon profile](../src/languages/rust/charon-profile.json)
 now owns extraction pins, flags, and semantic interpretation versions, and the
-build script reads it. This cleanup preserves existing lock identities.
+build script reads it. The initial profile cleanup preserved lock identities. The subsequent
+`shared-scalar-slice-length-v1` expansion deliberately versions interpretation
+and updates checkpoint locks. Shared scalar array `.len()` now verifies the
+unchanged `rust-arrays` fixture through compiler-resolved slice metadata;
+`rust-array-values` reaches a remaining by-value array signature gap. Empty,
+signed, and million-element length checks stay bounded and require no byte
+read authority. External Charon locks need an explicit refresh.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate
