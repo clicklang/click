@@ -389,6 +389,15 @@ increments the counter, creates one member, establishes the new predicate,
 and restores the control. The proof retains the current predicate and returned
 pointer claims without reusing the entry predicate for the updated state.
 
+**Exact-two slice:** `counted_resource_contribution_counter.md` now uses
+authority semantics for all seven original C functions. Empty contribution
+members are separate from an ordinary counter/authority control. Initialization
+takes storage with empty authority; each increment explicitly consumes one
+member and states its count and memory effects. Both caller pipelines prove two
+contributions, and final cleanup consumes the remaining member before retiring
+authority and returning memory. Whole symbolic cleanup and the zero/one-value
+cleanup cases retain their original results. C source is unchanged.
+
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.

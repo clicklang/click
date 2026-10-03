@@ -259,6 +259,13 @@ members. Its unchanged C retain operation restores a fresh predicate after the
 checked member birth; the predicate's entry snapshot cannot substitute for
 that updated relation.
 
+`counted_resource_contribution_counter.md` selects authority semantics for all
+seven functions. It separates empty contribution members from an ordinary
+counter/authority control and supplies empty authority through storage. One
+member is consumed per increment; exact-two callers consume their final member
+and retire authority before returning memory. Whole symbolic cleanup and direct
+zero/one/two-value pipelines preserve their original C and result guarantees.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
