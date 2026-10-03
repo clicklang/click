@@ -539,9 +539,8 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Nine of 16 fixtures verify unchanged; four have
-normalization gaps and three have proof gaps (external borrowed array copies
-and legacy iterator proof observations). The required `test` gate also requires the existing live
+extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); twelve import (75%). Four have
+normalization gaps and two have legacy iterator proof-observation gaps. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -551,19 +550,26 @@ build script reads it. The initial profile cleanup preserved lock identities. Th
 `shared-scalar-slice-length-v1` expansion deliberately versions interpretation
 and updates checkpoint locks. Shared scalar array `.len()` now verifies the
 unchanged `rust-arrays` fixture through compiler-resolved slice metadata;
-`rust-array-values` now imports after whole-array reference assignments use
-the checked compact region path. Its earlier signature diagnostic was
-misleading: the unchanged fixture has no by-value array signatures. The actual
-remaining boundary is compact copies from arbitrary borrowed storage; the
-current kernel requires represented local storage. Local reference assignments
-verify constructor order, repeated fills, self-copy, independent snapshots,
-and empty arrays, with bounded work at 8/1024/million elements. The profile entry
-`local-scalar-array-reference-assignment-v1` versions this expansion. Close the
-external-storage kernel gap before counting this fixture as verified; genuine
-by-value array parameters and aggregate returns remain unsupported separately. Empty,
-signed, and million-element length checks stay bounded and require no byte
-read authority. External Charon locks need an explicit refresh.
+`rust-array-values` now verifies its unchanged source and all sixteen contracts.
+Whole-array reference assignments use the checked compact region path;
+`external-scalar-array-snapshot-v1` adds immutable borrowed snapshots and writes.
+Full read/write authority, read-only qualifiers, destination loans, alignment,
+known bounds, and local initialization remain checked. Captured source runs and
+sparse lanes preserve bytes independently after mutation without per-element
+materialization; external copies/fills and kernel work are checked at
+8/1024/million elements. Indexed source selection avoids unrelated parameter
+cells. Heap/union storage and general symbolic pointer expressions remain
+outside the compact path, and genuine by-value array parameters and aggregate
+returns remain separate adapter gaps. Empty, signed, and million-element
+length checks stay bounded and require no byte read authority. External Charon
+locks need an explicit refresh. Next close loop-header normalization against
+`rust-byte-sum` and `rust-loops`, then iterator resolution, return shapes, and
+stable iterator proof observations without generated processed counts.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate
 imports; the current flat-name subset still rejects those shapes.
+
+Compact external writes require a whole-footprint decision for existing possibly
+aliasing runs. If separation cannot be checked compactly, they refuse promptly
+rather than traversing the logical array extent.

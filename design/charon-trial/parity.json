@@ -11,8 +11,8 @@
   },
   {
     "config": "examples/rust-array-values/arrays.click.import.json",
-    "outcome": "proof-gap",
-    "diagnostic": "scalar-array copy requires a valid aligned initialized local source region"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "config": "examples/rust-arrays/arrays.click.import.json",
