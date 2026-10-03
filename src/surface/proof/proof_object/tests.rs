@@ -2015,7 +2015,7 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     }
     let (_, base_height, base_allocations) = allocation_samples[0];
     assert!(
-        base_allocations <= 57,
+        base_allocations <= 65,
         "small persistent fact insertion allocated {base_allocations} nodes (identity index included)"
     );
     for (size, height, allocations) in allocation_samples {
@@ -2025,8 +2025,10 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
         // order fact such as these), and the stated-requirement identity map
         // plus its bucket. Every one is an AVL path copy. The identity map
         // and bucket add two constant base nodes and the order-fact index
-        // seven (57 rather than the former 48); adding two tree levels may
-        // therefore add at most 24 nodes (measured: 16).
+        // seven (57 rather than the former 48). The condition-variable
+        // adjacency adds its one-variable outer node and a fact-bucket path,
+        // eight more base nodes (65). Adding two tree levels must still add
+        // at most 24 nodes; the new bucket adds one path, not an ambient copy.
         let allocation_bound = base_allocations + 12 * (height - base_height);
         assert!(
             allocations <= allocation_bound,

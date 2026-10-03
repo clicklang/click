@@ -3375,6 +3375,10 @@ impl PureFactContext {
     fn rebuild_condition_match_indexes(&mut self) {
         let prior_typed_reads = self.typed_pointer_read_definitions.clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
+        self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
+        self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
@@ -3386,7 +3390,8 @@ impl PureFactContext {
         self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.iter() {
-            self.adjust_condition_match_indexes(condition, *value, true);
+            self.adjust_condition_variable_index(condition, *value, true, false);
+            self.adjust_condition_side_indexes(condition, *value, true);
             self.adjust_pointer_block_alias(condition, *value, true);
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
@@ -3410,6 +3415,72 @@ impl PureFactContext {
     /// Files or withdraws one condition fact under its match key and, when
     /// a side is not an atom, among the open facts of its family.
     fn adjust_condition_match_indexes(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        self.adjust_condition_variable_index(condition, value, insert, true);
+        self.adjust_condition_side_indexes(condition, value, insert);
+    }
+
+    fn adjust_condition_variable_index(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+        entry_charged: bool,
+    ) {
+        let _index_timing =
+            crate::instrumentation::OperationTiming::new("", "", "condition variable indexing");
+        // assume_condition charges one unit for filing the context entry,
+        // including its first adjacency. A restriction rebuild has no such
+        // entry charge. Account for additional variables separately so a
+        // wide condition remains charged in proportion to its syntax.
+        if !entry_charged {
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        let mut variables = BTreeSet::new();
+        let deferred = super::reasoning::variable_collection::collect_condition_index_variables(
+            condition,
+            &mut variables,
+        );
+        if deferred {
+            // Extend the last completed index by a deferred delta. Adding a
+            // new snapshot fact must not re-index older snapshot facts.
+            if let Some(index) = self.snapshot_condition_variables.get() {
+                self.snapshot_condition_variable_base = index.clone();
+                self.snapshot_condition_variable_changes =
+                    crate::persistent::PersistentMap::default();
+            }
+            self.snapshot_condition_variable_changes = self
+                .snapshot_condition_variable_changes
+                .with_inserted(condition.clone(), insert.then_some(value));
+            self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
+        } else {
+            crate::instrumentation::record_deterministic_work(variables.len().saturating_sub(1));
+            for variable in variables {
+                let facts = self
+                    .condition_facts_by_variable
+                    .get(&variable)
+                    .cloned()
+                    .unwrap_or_default();
+                let facts = if insert {
+                    facts.with_inserted(condition.clone(), value)
+                } else {
+                    facts.without_key(condition)
+                };
+                self.condition_facts_by_variable = if facts.is_empty() {
+                    self.condition_facts_by_variable.without_key(&variable)
+                } else {
+                    self.condition_facts_by_variable
+                        .with_inserted(variable, facts)
+                };
+            }
+        }
+    }
+
+    fn adjust_condition_side_indexes(
         &mut self,
         condition: &ConditionTerm,
         value: bool,
@@ -4849,6 +4920,66 @@ impl PureFactContext {
             .map(|(condition, value)| (condition, *value))
     }
 
+    /// Read-only variable adjacency for smart premise planning. Snapshot
+    /// facts are indexed once on demand; this is necessary because a fact
+    /// can connect to the goal through a variable stored in its snapshot,
+    /// even when their written syntax shares no variable. The kernel still
+    /// checks every retained premise and the resulting atomic evidence.
+    pub fn condition_facts_mentioning_variable(
+        &self,
+        variable: Variable,
+    ) -> Option<impl Iterator<Item = (&ConditionTerm, bool)>> {
+        let snapshot_index = if let Some(index) = self.snapshot_condition_variables.get() {
+            index
+        } else {
+            let _timing = crate::instrumentation::OperationTiming::new(
+                "",
+                "",
+                "snapshot condition premise indexing",
+            );
+            let mut index = self.snapshot_condition_variable_base.clone();
+            for (condition, value) in self.snapshot_condition_variable_changes.iter() {
+                if reasoning_interrupted() {
+                    return None;
+                }
+                let mut variables = BTreeSet::new();
+                collect_condition_bitvector_variables(condition, &mut variables);
+                for variable in variables {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let facts = index.get(&variable).cloned().unwrap_or_default();
+                    let facts = if let Some(value) = value {
+                        facts.with_inserted(condition.clone(), *value)
+                    } else {
+                        facts.without_key(condition)
+                    };
+                    index = if facts.is_empty() {
+                        index.without_key(&variable)
+                    } else {
+                        index.with_inserted(variable, facts)
+                    };
+                }
+            }
+            if reasoning_interrupted() {
+                return None;
+            }
+            let _ = self.snapshot_condition_variables.set(index);
+            self.snapshot_condition_variables.get()?
+        };
+        Some(
+            self.condition_facts_by_variable
+                .get(&variable)
+                .into_iter()
+                .flat_map(|facts| facts.iter())
+                .chain(
+                    snapshot_index
+                        .get(&variable)
+                        .into_iter()
+                        .flat_map(|facts| facts.iter()),
+                )
+                .map(|(condition, value)| (condition, *value)),
+        )
+    }
+
     /// The proposition facts of this context, in the index's own order.
     pub fn proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
         self.prop_facts.iter()
@@ -4971,6 +5102,7 @@ impl PureFactContext {
     }
 
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
+        crate::instrumentation::record_deterministic_work(1);
         self.condition_facts = self.condition_facts.without_key(condition);
         self.adjust_condition_match_indexes(condition, assumed, false);
         self.adjust_stated_proposition_index(

@@ -8258,6 +8258,28 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
     >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    /// Incremental adjacency for conditions whose variables can be read
+    /// without inspecting a snapshot.
+    pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<ConditionTerm, bool>,
+    >,
+    /// Snapshot-dependent conditions use the complete collector only when
+    /// smart premise selection asks for them. Scalar updates share the cache.
+    pub(super) snapshot_condition_variable_base: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<ConditionTerm, bool>,
+    >,
+    pub(super) snapshot_condition_variable_changes:
+        crate::persistent::PersistentMap<ConditionTerm, Option<bool>>,
+    pub(super) snapshot_condition_variables: std::sync::Arc<
+        std::sync::OnceLock<
+            crate::persistent::PersistentMap<
+                Variable,
+                crate::persistent::PersistentMap<ConditionTerm, bool>,
+            >,
+        >,
+    >,
     /// The condition facts `condition_matches` can relate to a query spelled
     /// differently, keyed by their kind and the canonical forms of their two
     /// sides (`condition_match_key`): an equality under its unordered pair of

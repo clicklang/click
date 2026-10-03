@@ -28,7 +28,7 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Nested disjunction case splits allowed inside one derivation.
 const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
@@ -457,39 +457,7 @@ impl PropositionSearch for PureFactContext {
             return evidence.map(|evidence| (self.clone(), premises_id, evidence));
         }
         if condition_goal {
-            // Keep the connected condition component. Order/equality
-            // reasoning can only cross a fact that shares a symbolic term
-            // with the component already reachable from the goal. Growing
-            // that component once selects a conservative proof graph without
-            // rerunning the prover once per ambient premise.
-            let mut connected_variables = BTreeSet::new();
-            collect_proposition_bitvector_variables(proposition, &mut connected_variables);
-            let mut selected: Vec<(ConditionTerm, bool)> = Vec::new();
-            let mut changed = true;
-            while changed {
-                changed = false;
-                for (condition, value) in self.condition_fact_pairs() {
-                    if selected.iter().any(|(chosen, _)| chosen == condition) {
-                        continue;
-                    }
-                    let mut variables = BTreeSet::new();
-                    collect_condition_bitvector_variables(condition, &mut variables);
-                    let exact_goal_fact = matches!(
-                        proposition,
-                        Proposition::ConditionIs(goal, expected)
-                            if goal == condition && *expected == value
-                    );
-                    if !exclude_exact_goal && exact_goal_fact
-                        || (!exact_goal_fact
-                            && !variables.is_empty()
-                            && !variables.is_disjoint(&connected_variables))
-                    {
-                        connected_variables.extend(variables);
-                        selected.push((condition.clone(), value));
-                        changed = true;
-                    }
-                }
-            }
+            let selected = connected_condition_premises(self, proposition, exclude_exact_goal)?;
             let candidate = self.restricted_to_facts(&selected, &[]);
             let (evidence, premises_id) =
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
@@ -1150,6 +1118,416 @@ mod monotone_forall_tests {
         assert!(
             facts.derive_proposition(&invalid).is_none(),
             "an outer fact cannot establish a body that uses the new binder"
+        );
+    }
+}
+
+/// Follow the variable/fact graph through the context's adjacency indexes.
+/// Scalar facts are indexed incrementally; snapshot-dependent facts use a
+/// complete, lazy index. Each reachable variable and fact is expanded once.
+fn connected_condition_premises(
+    context: &PureFactContext,
+    proposition: &Proposition,
+    exclude_exact_goal: bool,
+) -> Option<Vec<(ConditionTerm, bool)>> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "condition premise selection");
+    let mut reached = BTreeSet::new();
+    collect_proposition_bitvector_variables(proposition, &mut reached);
+    let mut frontier = reached.iter().copied().collect::<Vec<_>>();
+    let mut selected = BTreeMap::new();
+    while let Some(variable) = frontier.pop() {
+        if simp_reasoning_interrupted() {
+            return None;
+        }
+        // The cooperative checkpoint charges this variable visit.
+        for (condition, value) in context.condition_facts_mentioning_variable(variable)? {
+            if simp_reasoning_interrupted() {
+                return None;
+            }
+            // The checkpoint likewise charges each adjacency visit.
+            let exact_goal_fact = matches!(
+                proposition,
+                Proposition::ConditionIs(goal, expected)
+                    if goal == condition && *expected == value
+            );
+            if exclude_exact_goal && exact_goal_fact || selected.contains_key(condition) {
+                continue;
+            }
+            let mut variables = BTreeSet::new();
+            collect_condition_bitvector_variables(condition, &mut variables);
+            for next in variables {
+                crate::instrumentation::record_deterministic_work(1);
+                if reached.insert(next) {
+                    frontier.push(next);
+                }
+            }
+            selected.insert(condition.clone(), value);
+        }
+    }
+    if !exclude_exact_goal
+        && let Proposition::ConditionIs(condition, value) = proposition
+        && context.contains_assumed_exact(proposition)
+    {
+        selected.insert(condition.clone(), *value);
+    }
+    Some(selected.into_iter().collect())
+}
+
+#[cfg(test)]
+mod condition_premise_tests {
+    use super::*;
+
+    fn term(index: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(index))
+    }
+
+    fn order(left: u64, right: u64) -> ConditionTerm {
+        ConditionTerm::Bitvector32SignedLessThan(Box::new(term(left)), Box::new(term(right)))
+    }
+
+    fn chain_fact(index: u64) -> ConditionTerm {
+        if index == 1 {
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(term(1)),
+                Box::new(Bitvector32Term::Constant(1000)),
+            )
+        } else {
+            order(index, index - 1)
+        }
+    }
+
+    fn chain(size: usize, unrelated: usize) -> (PureFactContext, Proposition) {
+        let mut context = PureFactContext::new();
+        // The goal mentions only the highest variable. In ascending fact
+        // order each full scan discovers just one new descending chain link.
+        for index in (1..=size as u64).rev() {
+            context = context.assume_condition(chain_fact(index), true);
+        }
+        for index in 0..unrelated as u64 {
+            context = context.assume_condition(order(10_000 + index * 2, 10_001 + index * 2), true);
+        }
+        let goal = ConditionTerm::Bitvector32SignedLessThan(
+            Box::new(term(size as u64)),
+            Box::new(Bitvector32Term::Constant(1000)),
+        );
+        (context, Proposition::ConditionIs(goal, true))
+    }
+
+    // Keep the former planner as a test oracle, counting whole-context
+    // visits separately so its quadratic curve cannot hide in kernel work.
+    fn scanned_component(
+        context: &PureFactContext,
+        goal: &Proposition,
+    ) -> (Vec<(ConditionTerm, bool)>, usize) {
+        let mut connected = BTreeSet::new();
+        collect_proposition_bitvector_variables(goal, &mut connected);
+        let mut selected = BTreeMap::new();
+        let mut visits = 0;
+        loop {
+            let mut changed = false;
+            for (condition, value) in context.condition_fact_pairs() {
+                visits += 1;
+                if selected.contains_key(condition) {
+                    continue;
+                }
+                let mut variables = BTreeSet::new();
+                collect_condition_bitvector_variables(condition, &mut variables);
+                if !variables.is_disjoint(&connected) {
+                    connected.extend(variables);
+                    selected.insert(condition.clone(), value);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        (selected.into_iter().collect(), visits)
+    }
+
+    #[test]
+    fn indexed_component_preserves_scan_answers_and_removes_its_quadratic_work() {
+        let mut visits = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let (context, goal) = chain(size, size * 4);
+            let (scanned, count) = scanned_component(&context, &goal);
+            assert_eq!(
+                connected_condition_premises(&context, &goal, false).unwrap(),
+                scanned
+            );
+            visits.push(count);
+        }
+        assert!(
+            visits.windows(2).all(|pair| pair[1] > pair[0] * 3),
+            "old scan must reproduce superlinear work: {visits:?}"
+        );
+        eprintln!("former whole-context visits: {visits:?}");
+    }
+
+    #[test]
+    fn condition_component_keeps_load_address_and_snapshot_variables() {
+        let pointer = Pointer {
+            block: "cell".into(),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(term(40)),
+                byte_width: 4,
+            },
+        };
+        let memory = CMemory::new().with_block("cell", 64).store(
+            Pointer {
+                block: "cell".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::Int32(term(70)),
+        );
+        let load = Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer));
+        let fact = ConditionTerm::Bitvector32Equal(Box::new(load.clone()), Box::new(term(50)));
+        let context = PureFactContext::new()
+            .assume_condition(fact.clone(), true)
+            .assume_condition(order(40, 41), true)
+            .assume_condition(order(70, 71), true)
+            .assume_condition(order(90, 91), true);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(load), Box::new(term(60))),
+            true,
+        );
+        let selected = connected_condition_premises(&context, &goal, false).unwrap();
+        assert_eq!(selected, scanned_component(&context, &goal).0);
+        assert_eq!(selected.len(), 3);
+    }
+
+    #[test]
+    fn wide_condition_index_construction_charges_its_variable_entries() {
+        let mut samples = Vec::new();
+        for size in [4, 8, 16, 32] {
+            let mut terms = (0..size)
+                .map(|index| term(40_000 + (size * 100 + index) as u64))
+                .collect::<Vec<_>>();
+            while terms.len() > 1 {
+                terms = terms
+                    .chunks(2)
+                    .map(|pair| {
+                        if pair.len() == 1 {
+                            pair[0].clone()
+                        } else {
+                            Bitvector32Term::Add(
+                                Box::new(pair[0].clone()),
+                                Box::new(pair[1].clone()),
+                            )
+                        }
+                    })
+                    .collect();
+            }
+            let condition = ConditionTerm::Bitvector32Equal(
+                Box::new(terms.pop().unwrap()),
+                Box::new(Bitvector32Term::Constant(0)),
+            );
+            let ((context, work), events) = crate::instrumentation::collect(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    PureFactContext::new().assume_condition(condition, true)
+                })
+            });
+            assert_eq!(context.condition_fact_pairs().count(), 1);
+            let index_work = events
+                .into_iter()
+                .filter_map(|event| {
+                    if let crate::instrumentation::VerificationEvent::OperationFinished {
+                        name,
+                        work,
+                        ..
+                    } = event
+                    {
+                        (name == "condition variable indexing").then_some(work)
+                    } else {
+                        None
+                    }
+                })
+                .sum::<usize>();
+            // The existing context-entry charge covers the first variable.
+            assert_eq!(index_work, size - 1);
+            samples.push(work);
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+            "{samples:?}"
+        );
+    }
+
+    #[test]
+    fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
+        let mut cold_samples = Vec::new();
+        let mut warm_samples = Vec::new();
+        for size in [8, 16, 32, 64] {
+            let (mut context, goal) = chain(8, 0);
+            let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
+            let mut snapshot_facts = Vec::new();
+            for index in 0..size {
+                let condition = ConditionTerm::Bitvector32Equal(
+                    Box::new(term(20_000 + index as u64)),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(Pointer {
+                            block: "other".into(),
+                            offset: PointerOffsetTerm::Constant(index as i64 * 4),
+                        }),
+                    )),
+                );
+                context = context.assume_condition(condition.clone(), true);
+                snapshot_facts.push(Proposition::ConditionIs(condition, true));
+            }
+            let (selected, cold) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&context, &goal, false).unwrap()
+            });
+            assert_eq!(selected.len(), 8);
+            let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&context, &goal, false).unwrap()
+            });
+            assert!(
+                cold >= warm + size,
+                "snapshot construction must be charged: {cold}, {warm}"
+            );
+            cold_samples.push(cold);
+            warm_samples.push(warm);
+            let scalar_branch = context
+                .clone()
+                .assume_condition(order(30_000, 30_001), true);
+            let (_, branch_work) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&scalar_branch, &goal, false).unwrap()
+            });
+            assert_eq!(
+                branch_work, warm,
+                "scalar insertion must share the completed snapshot index"
+            );
+            let withdrawn = context.without_exact_fact(&snapshot_facts[0]);
+            let (selected, rebuilt) = crate::instrumentation::measure_deterministic_work(|| {
+                connected_condition_premises(&withdrawn, &goal, false).unwrap()
+            });
+            assert_eq!(selected, scanned_component(&withdrawn, &goal).0);
+            assert!(
+                rebuilt > warm && rebuilt <= warm + 8,
+                "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
+            );
+            let extra = ConditionTerm::Bitvector32Equal(
+                Box::new(term(90_000)),
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: "other".into(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    }),
+                )),
+            );
+            let extended = scalar_branch.assume_condition(extra, true);
+            let (selected, extended_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    connected_condition_premises(&extended, &goal, false).unwrap()
+                });
+            assert_eq!(selected.len(), 8);
+            assert!(
+                extended_work > warm && extended_work <= warm + 8,
+                "snapshot insertion must apply only its delta: {extended_work}, {warm}"
+            );
+            eprintln!("snapshot bucket {size}: cold {cold}, warm {warm}");
+        }
+        assert!(
+            warm_samples.iter().all(|work| *work == warm_samples[0]),
+            "{warm_samples:?}"
+        );
+        assert!(
+            cold_samples.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+            "{cold_samples:?}"
+        );
+    }
+
+    #[test]
+    fn connected_condition_selection_scales_linearly_in_chain_and_context() {
+        for grow_chain in [false, true] {
+            let mut samples = Vec::new();
+            let mut complete = Vec::new();
+            for size in [8, 16, 32, 64] {
+                let length = if grow_chain { size } else { 8 };
+                let (context, goal) = chain(length, size * 4);
+                let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    connected_condition_premises(&context, &goal, false).unwrap()
+                });
+                assert_eq!(selected.len(), length);
+                assert!(
+                    work >= length && work <= 16 * (length + size * 4),
+                    "{length}: {work}"
+                );
+                samples.push(work);
+                let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .derive_atomic_proposition(&goal)
+                        .expect("connected order chain proves goal")
+                });
+                complete.push(total);
+                assert!(proof.check(&context));
+                assert_eq!(proof.context_premises().len(), length);
+                eprintln!(
+                    "chain {length}, unrelated {}: selection {work}, complete {total}",
+                    size * 4
+                );
+                // Every link is necessary, and withdrawing it must also
+                // change the selected component and invalidate the certificate.
+                for index in 1..=length as u64 {
+                    let weakened = context
+                        .without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
+                    assert!(!proof.check(&weakened));
+                }
+                let broken = context.without_exact_fact(&Proposition::ConditionIs(
+                    chain_fact(length as u64 / 2),
+                    true,
+                ));
+                assert!(broken.derive_atomic_proposition(&goal).is_none());
+            }
+            if !grow_chain {
+                assert!(
+                    samples.iter().all(|work| *work == samples[0]),
+                    "{samples:?}"
+                );
+                assert!(
+                    complete.iter().all(|work| *work == complete[0]),
+                    "{complete:?}"
+                );
+            }
+            for curve in [&samples, &complete] {
+                for pair in curve.windows(2) {
+                    assert!(pair[1] <= pair[0] * 3, "{curve:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn condition_selection_tracks_restriction_replacement_and_exclusion() {
+        let (context, goal) = chain(8, 20);
+        let selected = connected_condition_premises(&context, &goal, false).unwrap();
+        let restricted = context.restricted_to_facts(&selected, &[]);
+        assert_eq!(
+            connected_condition_premises(&restricted, &goal, false).unwrap(),
+            selected
+        );
+        let condition = chain_fact(1);
+        let replaced = context.clone().assume_condition(condition.clone(), false);
+        assert!(
+            connected_condition_premises(&replaced, &goal, false)
+                .unwrap()
+                .contains(&(condition, false))
+        );
+        let stated = context.assume_proposition(goal.clone());
+        assert_eq!(
+            connected_condition_premises(&stated, &goal, true).unwrap(),
+            selected
+        );
+        let constant = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let context = PureFactContext::new().assume_proposition(constant.clone());
+        assert_eq!(
+            connected_condition_premises(&context, &constant, false)
+                .unwrap()
+                .len(),
+            1
         );
     }
 }

@@ -1926,6 +1926,44 @@ fn checked_collection_checkpoint() -> bool {
     crate::instrumentation::checked_collection_exhausted()
 }
 
+thread_local! {
+    // Condition-index insertion reads syntax, never snapshot contents. A
+    // snapshot-dependent fact is indexed lazily by the ordinary collector.
+    static DEFER_CONDITION_SNAPSHOTS: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+struct ConditionSnapshotDeferral(Option<bool>);
+
+impl Drop for ConditionSnapshotDeferral {
+    fn drop(&mut self) {
+        DEFER_CONDITION_SNAPSHOTS.with(|state| state.set(self.0));
+    }
+}
+
+fn defer_condition_snapshot() -> bool {
+    DEFER_CONDITION_SNAPSHOTS.with(|state| {
+        if state.get().is_some() {
+            state.set(Some(true));
+            true
+        } else {
+            false
+        }
+    })
+}
+
+/// Collect the ordinary condition variables, stopping at each snapshot.
+/// Returns whether a snapshot was encountered. If so, the caller must defer
+/// the whole fact to the complete collector to preserve its connections.
+pub(in crate::kernel) fn collect_condition_index_variables(
+    condition: &ConditionTerm,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
+    let prior = DEFER_CONDITION_SNAPSHOTS.with(|state| state.replace(Some(false)));
+    let _scope = ConditionSnapshotDeferral(prior);
+    collect_condition_bitvector_variables(condition, variables);
+    DEFER_CONDITION_SNAPSHOTS.with(|state| state.get() == Some(true))
+}
+
 pub(crate) fn collect_condition_bitvector_variables(
     condition: &ConditionTerm,
     variables: &mut BTreeSet<Variable>,
@@ -5082,6 +5120,10 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
     memory: &SharedCMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if defer_condition_snapshot() {
+        return;
+    }
+
     variables.extend(
         shared_memory_variable_counts(memory, WholeCount::Charged)
             .keys()
@@ -5346,6 +5388,10 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if defer_condition_snapshot() {
+        return;
+    }
+
     // A live state's memory is the interned storage its last derivation
     // left, so its variables are that snapshot's remembered counts, counted
     // once per session from its derivation base's: the work of what changed,
@@ -5374,6 +5420,10 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if defer_condition_snapshot() {
+        return;
+    }
+
     for (block, contents) in memory.blocks.iter() {
         match block {
             PointerBlock::Symbolic(variable)

@@ -4416,3 +4416,50 @@ fn resource_reference_entry_setup_has_near_linear_work() {
         );
     }
 }
+
+/// Exercise selection through a smart tactic, retained evidence, expansion,
+/// and independent checking. Reverse-spelled chains defeated the old repeated
+/// whole-context walk; unrelated requirements must not multiply chain work.
+#[test]
+fn connected_condition_chain_expands_and_rechecks_at_multiple_sizes() {
+    let mut verification = Vec::new();
+    let mut expansion_samples = Vec::new();
+    let mut rechecks = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let parameters = (1..=size)
+            .map(|index| format!("x{index}: int32"))
+            .chain((0..size).map(|index| format!("u{index}: int32")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let requirements = (2..=size)
+            .rev()
+            .map(|index| format!("requires x{index} < x{};", index - 1))
+            .chain(std::iter::once("requires x1 < 1000;".to_string()))
+            .chain((0..size).map(|index| format!("requires u{index} < 1000;")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = format!(
+            "theorem chain({parameters}) {{ {requirements} ensures x{} < 1000 by {{ simp(); }} }}",
+            size
+        );
+        let (verified, sample) = scaling_sample(size, || verify_click_theorems(&source));
+        verified.unwrap_or_else(|error| panic!("chain {size}: {}", error.message()));
+        verification.push(sample);
+        let position = expansion::position_at_offset(&source, source.find("simp();").unwrap());
+        let (expanded, sample) = scaling_sample(size, || {
+            expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+        });
+        let expanded =
+            expanded.unwrap_or_else(|error| panic!("expand chain {size}: {}", error.message()));
+        assert!(!expanded.contains("simp();"), "{expanded}");
+        expansion_samples.push(sample);
+        let (verified, sample) = scaling_sample(size, || verify_click_theorems(&expanded));
+        verified.expect("expanded chain verifies independently");
+        rechecks.push(sample);
+        let missing = expanded.replace(&format!("requires x{} < x{};", size / 2 + 1, size / 2), "");
+        assert!(verify_click_theorems(&missing).is_err());
+    }
+    assert_near_linear_scaling("connected condition chain verification", &verification);
+    assert_near_linear_scaling("connected condition chain expansion", &expansion_samples);
+    assert_near_linear_scaling("connected condition chain recheck", &rechecks);
+}

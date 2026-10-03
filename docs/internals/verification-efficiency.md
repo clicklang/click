@@ -506,6 +506,41 @@ loads of settled classes at the same memory-blind address. The regression
 is `counter_call_chain_ensure_lowering_stays_flat_per_call`
 (`src/surface/tests/scaling_tests.rs`).
 
+Atomic condition-premise selection follows a persistent variable-to-fact
+adjacency index. Facts whose variables can be read without inspecting a
+snapshot update the index as they are filed or withdrawn. The context-entry
+charge covers the first variable entry; additional variables are charged
+separately, and a restriction rebuild pays its own entry charge. Construction
+is attributed to `condition variable indexing`, and worklist traversal to
+`condition premise selection`. Each reachable variable and fact is expanded
+once, preserving fact-index order for the unchanged kernel checker.
+
+Snapshot-dependent facts need the complete collector: a condition can connect
+to a goal through a variable stored in its snapshot even when their written
+syntax shares none. Their variable entries are deferred to smart planning,
+charged as `snapshot condition premise indexing`, and cached only after a
+complete construction. Scalar changes share this cache; snapshot-fact changes
+extend the last completed index with a deferred insertion or withdrawal,
+rather than re-indexing older facts. The first query pays for the pending
+snapshot facts and their variables, so this fallback remains linear in that
+bucket's collected entries. It never walks the complete context per chain
+link, and ordinary fact insertion never scans snapshot contents.
+
+`connected_condition_selection_scales_linearly_in_chain_and_context` pins
+selection at 39, 79, 159, and 319 work units for descending chains of 8, 16,
+32, and 64 links; complete atomic derivation costs 86, 174, 350, and 702.
+An eight-link chain stays at 39/86 units beside 32 to 256 unrelated facts.
+The former scan, retained as a test oracle, visits 360 to 20,800 facts on the
+growing-chain axis. `snapshot_condition_index_builds_once_and_survives_scalar_updates`
+pins cold construction at 57 to 169 units over 8 to 64 unrelated snapshot
+facts, warm traversal at a flat 38, and a single snapshot-fact insertion or
+withdrawal at no more than eight additional units. Wide-condition construction
+is pinned separately so the entry charge cannot hide a large variable list.
+Every required chain link is checked by withdrawing it from the certificate
+context. `connected_condition_chain_expands_and_rechecks_at_multiple_sizes`
+pins complete smart verification, expansion, and independent checking over
+four chain sizes, including rejection when a link is missing.
+
 Condition premise search tries single candidates, then candidate pairs that
 some derivation could connect: two facts sharing a bitvector variable
 (collected through load pointers and memories, so snapshot forms still
