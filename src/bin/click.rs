@@ -1313,6 +1313,49 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         fs::remove_dir_all(directory).unwrap();
     }
 
+    #[test]
+    fn integer_product_bounds_tools_agree_on_wide_ranges_and_retained_audit() {
+        let mdtest = click::cli::parse_mdtest(
+            std::path::Path::new("integer_product_bounds.md"),
+            include_str!("../../mdtests/integer_product_bounds.md"),
+        )
+        .unwrap();
+        let source = mdtest.click_source.unwrap();
+        with_supported_boundary(
+            "integer-product-bounds",
+            source,
+            |source_path, expanded_path| {
+                for (name, source) in &mdtest.c_sources {
+                    fs::write(source_path.parent().unwrap().join(name), source).unwrap();
+                }
+                entry(["verify".to_string(), source_path.display().to_string()])?;
+                entry([
+                    "expand".to_string(),
+                    "--claim".to_string(),
+                    "bounded_identity.contract".to_string(),
+                    "--output".to_string(),
+                    expanded_path.display().to_string(),
+                    source_path.display().to_string(),
+                ])?;
+                let expanded = fs::read_to_string(expanded_path).unwrap();
+                assert!(expanded.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
+                assert!(
+                    !expanded.contains("execute();"),
+                    "the selected execution must expand"
+                );
+                entry(["verify".to_string(), expanded_path.display().to_string()])?;
+                entry(["profile".to_string(), source_path.display().to_string()])?;
+                entry([
+                    "audit".to_string(),
+                    "--claim".to_string(),
+                    "bounded_identity.contract".to_string(),
+                    source_path.display().to_string(),
+                ])?;
+                Ok(())
+            },
+        );
+    }
+
     fn with_supported_boundary(
         label: &str,
         source: String,

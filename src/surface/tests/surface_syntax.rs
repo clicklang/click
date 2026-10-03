@@ -1779,6 +1779,70 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
 }
 
 #[test]
+fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds() {
+    let source = r#"
+        theorem product_bounds(x: Integer, y: Integer) {
+            requires -2 <= x;
+            requires x <= 3;
+            requires -4 <= y;
+            requires y <= 5;
+            ensures x * y <= 15 by {
+                arithmetic_certificate special {
+                    premise 0: -2 <= x => -2 <= x;
+                    premise 1: x <= 3 => x <= 3;
+                    premise 2: -4 <= y => -4 <= y;
+                    premise 3: y <= 5 => y <= 5;
+                    integer_product_bounds bounds [0, 1, 2, 3] => x * y <= 15;
+                    conclusion 0;
+                }
+            }
+        }
+    "#;
+    let file = parse(source).unwrap();
+    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
+        panic!("expected a certificate script");
+    };
+    let printed = super::printing::format_partial_tactic_sequence(tactics);
+    assert!(printed.contains("integer_product_bounds bounds [0, 1, 2, 3]"));
+    let round_trip = parse(&format!(
+        "theorem product_bounds(x: Integer, y: Integer) {{ ensures x * y <= 15 by {{ {printed} }} }}"
+    )).unwrap();
+    assert_eq!(
+        round_trip.theorem_definitions()[0].ensures()[0].proof(),
+        file.theorem_definitions()[0].ensures()[0].proof()
+    );
+    let (verified, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_click_theorems(source)
+    });
+    let verified = verified.expect("explicit product range should verify");
+    assert_eq!(planning, 0);
+    let expanded = verified[0]
+        .expanded_proof_source()
+        .expect("certificate should expand");
+    let start = source.find("by {").unwrap();
+    let rechecked = format!("{}{}\n}}", &source[..start], expanded);
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_click_theorems(&rechecked)
+    });
+    result.expect("expanded product certificate should independently reverify");
+    assert_eq!(planning, 0);
+    for tampered in [
+        source.replace("requires x <= 3;", ""),
+        source.replace("requires y <= 5;", "requires y <= 6;"),
+        source.replace("bounds [0, 1, 2, 3]", "bounds [0, 1, 2]"),
+        source.replace("bounds [0, 1, 2, 3]", "bounds [0, 1, 2, 4]"),
+        source.replace("bounds [0, 1, 2, 3]", "bounds [1, 0, 2, 3]"),
+        source.replace("x * y <= 15", "x * y <= 14"),
+        source.replace("=> x * y <= 15", "=> x * y <= 16"),
+        source.replace("-2 <= x", "-2 < x"),
+        source.replace("x * y <= 15", "x + y <= 15"),
+        source.replace("x: Integer, y: Integer", "x: int64, y: int64"),
+    ] {
+        verify_click_theorems(&tampered).expect_err("altered range evidence must reject");
+    }
+}
+
+#[test]
 fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let source = r#"
         theorem finite_float_reflexive(value: float) {

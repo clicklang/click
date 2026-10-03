@@ -321,6 +321,24 @@ and support for its library `Assume` annotation on this target. Stable scalar
 and isolated field-reading sibling arguments in `Div(Mul(...), size, RoundDown)`
 are now supported; upstream `EvaluateFee` is not yet supported.
 
+The shared exact multiplication-range prerequisite is delivered. An explicit
+`integer_product_bounds` certificate checks the four corner products of two
+constant-bounded mathematical Integer operands. A checked lemma proves that
+a signed 64-by-32-bit product fits the signed 128-bit range; machine values
+compose through their separate `to_integer` observers. Hostile certificates,
+large constants, deterministic scaling, expansion/reverification, profiling,
+and retained audit have coverage. This is shared proof arithmetic available to
+C, Rust, and C++; it does not yet execute native `__int128`.
+
+Next add native wide scalars through the shared typed machine model: signed
+and unsigned width, storage/layout, literal range, conversions, checked
+multiplication, and definedness must retain the source's resolved machine
+semantics. Then cover wide truncating division/remainder and checked narrowing
+for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
+separate, especially its planned Euclidean division. The library `Assume`
+annotation remains an explicit contract/assumption boundary to resolve before
+the upstream fee proof.
+
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false
 rounding claims, zero divisors, unproved overflow or narrowing bounds, and

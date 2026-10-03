@@ -792,6 +792,12 @@ fn expand_declared_resource_certificate(
                 .into_iter()
                 .map(|node| {
                     Ok(match node {
+                        SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
+                            SpecialArithmeticNode::IntegerProductBounds {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
                             SpecialArithmeticNode::UnsignedSumBound {
                                 bounds,
