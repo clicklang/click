@@ -4099,14 +4099,14 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
 /// The diagnostic for a function-exit tactic written before execution
 /// reached function exit.
 fn pre_exit_outcome_tactic_error(tactic: &ProofTactic) -> Option<String> {
-    let name = match tactic {
-        ProofTactic::Witness(_) => "witness",
-        ProofTactic::Choose(_) => "choose",
-        ProofTactic::Simp => "simp",
+    let (name, alternative) = match tactic {
+        ProofTactic::Witness(_) => ("witness", ""),
+        ProofTactic::Choose(_) => ("choose", ""),
+        ProofTactic::Simp => ("simp", ", or prove the claim `by auto;`"),
         _ => return None,
     };
     Some(format!(
-        "`{name}` requires execution to reach function exit first"
+        "`{name}` requires execution to reach function exit first; write `execute();` before it{alternative}"
     ))
 }
 
