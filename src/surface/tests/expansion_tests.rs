@@ -910,6 +910,21 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
     assert!(!expanded.contains("have forall"), "{expanded}");
 }
 
+/// The same for a proof a `witness` opened: the `simp()` expands to the steps
+/// it adds after the witness, checked inside that proof, so a changed
+/// witness cannot be closed from the claims instead
+/// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
+#[test]
+fn post_execution_closer_continues_the_proof_a_witness_opened() {
+    let anchor = "witness(len = found_len);\n        simp();";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/cstr_stdlib.md",
+        anchor,
+        "witness(len = found_len);\n        ".len(),
+    );
+    assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
