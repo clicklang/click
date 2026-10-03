@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 33);
+    assert_eq!(prepared.export().schema, 34);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1746,7 +1746,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1861,7 +1861,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1972,7 +1972,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2033,7 +2033,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2079,7 +2079,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2707,7 +2707,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2785,7 +2785,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2903,7 +2903,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3041,7 +3041,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3143,7 +3143,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3243,7 +3243,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3382,7 +3382,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3532,7 +3532,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let destructor = import
         .export()
         .reachable_functions
@@ -3718,7 +3718,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3789,20 +3789,26 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded reverse-cleanup proof must reverify");
 
-    let rejected = Project::reverse_destructor_order();
+    let growing = Project::reverse_destructor_order();
     fs::write(
-        rejected.source(),
+        growing.source(),
         REVERSE_DESTRUCTOR_SOURCE.replace(
             "Restore second(&value);",
             "Restore second(&value);\n    Restore third(&value);",
         ),
     )
     .unwrap();
-    let error = refresh_import(&rejected.config()).unwrap_err();
-    assert!(error.contains("restore_twice.cpp"), "{error}");
-    assert!(
-        error.contains("exactly two destructible objects"),
-        "{error}"
+    refresh_import(&growing.config()).expect("a third destructible local is supported");
+    let growing_import = load_import(&growing.config()).unwrap();
+    assert_eq!(
+        destructor_object_order(
+            lower_import(&growing_import)
+                .unwrap()
+                .kernel_function()
+                .body(),
+            "Restore_destructor"
+        ),
+        ["third", "second", "first", "third", "second", "first"]
     );
 }
 
@@ -3815,7 +3821,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 33);
+    assert_eq!(import.export().schema, 34);
     let destructor = import
         .export()
         .reachable_functions
@@ -4030,22 +4036,43 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the second scope must clean up before the final outer return");
 
-    let rejected = Project::sibling_scope_destructors();
+    let growing = Project::sibling_scope_destructors();
     fs::write(
-        rejected.source(),
+        growing.source(),
         SIBLING_SCOPE_DESTRUCTORS_SOURCE.replace(
             "    return value;\n}",
             "    {\n        Restore guard(&value);\n        value = 13;\n    }\n    return value;\n}",
         ),
     )
     .unwrap();
-    let error = refresh_import(&rejected.config()).unwrap_err();
-    assert!(error.contains("sibling_restore.cpp"), "{error}");
-    assert!(
-        error.contains("at most two sibling cleanup scopes"),
-        "{error}"
+    refresh_import(&growing.config()).expect("a third sibling scope is supported");
+    let growing_import = load_import(&growing.config()).unwrap();
+    assert_eq!(
+        growing_import
+            .export()
+            .function
+            .body
+            .iter()
+            .filter(|statement| matches!(statement, CppStatement::Scope { .. }))
+            .count(),
+        3
     );
-    assert!(!rejected.artifact().exists());
+    let (contracts, _) = SIBLING_SCOPE_DESTRUCTORS_SIDECAR
+        .rsplit_once("} by {")
+        .unwrap();
+    let proof = r#"step(); step();
+    branch { then { execute(); simp(); } else { } }
+    step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    step(); step();
+    branch { then { execute(); simp(); } else { } }
+    step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    step(); step(); step(); step();
+    have value[0] == old(value[0]) by { simp(); }
+    execute(); simp();"#;
+    let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
+    check_return_call_sidecar(&growing, &growing_import, &source);
 }
 
 #[test]
@@ -4446,7 +4473,7 @@ fn cpp_local_aggregate_rejects_partial_default_copy_nested_and_second_objects() 
         ),
         (
             "struct RestoreState { int* pointer; int saved; };\nint stage_restore(int& value) noexcept {\n    RestoreState first{&value, value};\n    RestoreState second{&value, value};\n    return value;\n}\n",
-            "one aggregate object or exactly two destructible objects",
+            "multiple aggregate objects only when all require destruction",
         ),
     ] {
         fs::write(project.source(), source).unwrap();
@@ -7529,4 +7556,125 @@ fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
     fs::write(&path, &missing_authority).unwrap();
     let parsed = read_click_project(&path, &missing_authority).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+const GROWING_GUARD_SOURCE: &str = "struct Guard { int value; explicit Guard(int initial) noexcept : value(initial) {} ~Guard() noexcept { value = 0; } };\n";
+
+#[test]
+fn growing_lifetime_inventories_keep_prefix_returns_and_reverse_cleanup() {
+    for mode in ["top", "siblings", "block"] {
+        for size in [3usize, 8, 32, 128] {
+            let mut body = String::new();
+            if mode == "block" {
+                body.push_str("{\n");
+            }
+            for index in 0..size {
+                if mode == "siblings" {
+                    body.push_str("{ Guard guard(value);\n");
+                } else {
+                    body.push_str(&format!("Guard g{index}(value);\n"));
+                }
+                if index == 0 {
+                    body.push_str("if (early) { return value; }\n");
+                }
+                if mode == "siblings" {
+                    body.push_str("}\n");
+                }
+            }
+            if mode == "block" {
+                body.push_str("}\n");
+            }
+            let cpp = format!(
+                "{GROWING_GUARD_SOURCE}int many(bool early, int value) noexcept {{ {body} return value; }}"
+            );
+            let project = Project::with_fixture("guards.cpp", "many", &cpp);
+            refresh_import(&project.config()).unwrap();
+            let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+            let (import, validation_work) =
+                click::instrumentation::measure_deterministic_work(|| {
+                    load_import(&project.config())
+                });
+            let import = import.unwrap();
+            assert!(
+                validation_work <= bytes + 64 * size + 256,
+                "{mode}, {size}: {validation_work} validation work for {bytes} bytes"
+            );
+            let (lowered, work) =
+                click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+            let lowered = lowered.unwrap();
+            assert!(
+                work <= 32 * size + 128,
+                "{mode}, {size}: {work} lowering work"
+            );
+            let order =
+                destructor_object_order(lowered.kernel_function().body(), "Guard_destructor");
+            let expected = if mode == "siblings" {
+                vec!["guard".to_string(); size + 1]
+            } else {
+                std::iter::once("g0".to_string())
+                    .chain((0..size).rev().map(|index| format!("g{index}")))
+                    .collect()
+            };
+            assert_eq!(order, expected);
+            // Larger inventories check importer/lowering work; small ones also
+            // exercise complete proofs, rewritten certificates, and audit.
+            if size <= 8 {
+                let source = r#"verifying "guards.cpp";
+void Guard_constructor(struct Guard* self, int32 initial) { owns self->value; ensures self->value == initial; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+int32 many(bool early, int32 value) { ensures result == value; } by { execute(); simp(); }
+"#;
+                check_return_call_sidecar(&project, &import, source);
+                let hostile = source.replace(
+                    "ensures result == value; } by { execute(); simp(); }",
+                    "requires value == 5; ensures result == 6; } by { execute(); assumption(); }",
+                );
+                let sidecar = project.directory.join("bad.click");
+                fs::write(&sidecar, &hostile).unwrap();
+                let parsed = read_click_project(&sidecar, &hostile).unwrap();
+                let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+                assert!(
+                    !error.message().contains("budget exhausted"),
+                    "{}",
+                    error.message()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn exporter_enforces_named_lifetime_budgets_and_keeps_outputs_atomic() {
+    for (kind, boundary) in [("locals", 1024usize), ("scopes", 256)] {
+        for size in [boundary, boundary + 1] {
+            let body = if kind == "locals" {
+                (0..size)
+                    .map(|index| format!("int n{index} = 0;\n"))
+                    .collect::<String>()
+            } else {
+                "{ Guard guard(value); }\n".repeat(size)
+            };
+            let cpp = format!(
+                "{GROWING_GUARD_SOURCE}int many(int value) noexcept {{ {body} return value; }}"
+            );
+            let project = Project::with_fixture("budget.cpp", "many", &cpp);
+            if size == boundary {
+                refresh_import(&project.config()).unwrap();
+                load_import(&project.config()).unwrap();
+            } else {
+                let error = refresh_import(&project.config()).unwrap_err();
+                let expected = if kind == "locals" {
+                    "local declarations per function"
+                } else {
+                    "cleanup scopes per function"
+                };
+                assert!(
+                    error.contains(&format!("artifact budget exhausted: {expected}")),
+                    "{error}"
+                );
+                assert!(!project.artifact().exists());
+                assert!(!project.lock().exists());
+            }
+        }
+    }
 }

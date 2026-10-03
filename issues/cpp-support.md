@@ -178,9 +178,9 @@ multi-size deterministic work checks for affected hot paths.
 
 1. **Finish artifact validity, supported semantics, and scope budgets.** The
    inventory slice below is delivered. Continue separating structural validity
-   from semantic-profile rules at the recursive statement/type boundary. Replace
-   the remaining fixed local/scope counts now that scope validation borrows its
-   outer environment and graph validation indexes each function's places once.
+   from semantic-profile rules at the recursive statement/type boundary.
+   Inventory and lifetime-count budgets are delivered, with borrowed lexical
+   environments and indexed graph places.
    Preserve the independent exporter/checker trust boundary. Budget diagnostics
    must name the exhausted limit; semantic diagnostics must identify the missing operation.
    Acceptance requires multi-size sibling/local/scope regressions, malformed
@@ -213,8 +213,8 @@ parent and own only newly declared places and names. Entering a normal scope or
 catch handler neither clones outer types nor scans all outer names. Catch names
 belong to the handler environment. Multi-size deterministic regressions check
 shared outer storage, local-only entry counts, sibling isolation, duplicate
-identities, shadowing, and forged references. The existing lifetime profiles and
-count limits remain.
+identities, shadowing, and forged references. The existing lifetime combinations remain constrained by their semantic profile;
+lifetime inventory counts use the named budgets described below.
 
 Graph place indexing is delivered. Each visited function builds one index of
 borrowed declaration IDs and places, including parameters, locals, and catch
@@ -226,8 +226,21 @@ and lifetime checks still establish cleanup order. Deterministic regressions
 cover growing parameters, locals, and reference edges without repeated body
 searches, plus malformed IDs. Source regressions verify, expand, and audit
 reference-call proofs with growing unrelated places and reject false claims.
-The next bounded cleanup is named local/scope budgets and growing lifetime
-regressions, followed by the remaining recursive validity/profile separation.
+Lifetime inventory budgets are delivered: each function allows up to 1,024
+local declarations, including catch bindings, and 256 cleanup scopes. Exporter
+and checker count independently, including both branch arms. Larger inventories
+of top-level destructible objects, sibling scopes, and objects within a supported
+scope share the existing construction stack and reverse cleanup checks.
+Multi-size regressions cover prefix returns, cleanup order, validation/lowering
+work, proofs, expansion, audit, malformed exit lists, and atomic budget failures.
+The three-scope restore proof records restoration at each boundary with explicit
+steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
+overlapping outer/sibling combinations, and the existing conditional/exception
+arrangement restrictions remain semantic-profile limitations. Artifact schema 34
+requires an explicit refresh of earlier locks.
+
+Next finish the recursive validity/profile separation, then consolidate scalar
+interpretation before wide arithmetic.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction

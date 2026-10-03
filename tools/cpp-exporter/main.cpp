@@ -47,6 +47,8 @@ namespace {
 constexpr std::size_t kMaxRecordDeclarations = 256;
 constexpr std::size_t kMaxConstantDeclarations = 1024;
 constexpr std::size_t kMaxFunctionDeclarations = 1024;
+constexpr unsigned kMaxLocalDeclarations = 1024;
+constexpr unsigned kMaxCleanupScopes = 256;
 
 constexpr const char *kClangVersion = "19.1.7";
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
@@ -242,7 +244,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 33;
+    artifact["schema"] = 34;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -953,6 +955,9 @@ private:
            "scalar int32 handler requires one named by-value `int` binding");
       return std::nullopt;
     }
+    if (!remember_local_declaration(function, binding)) {
+      return std::nullopt;
+    }
     auto binding_type =
         lower_type(binding->getType(), binding->getLocation(),
                    direct_source_alias(binding->getTypeSourceInfo()));
@@ -1059,6 +1064,19 @@ private:
     return Json(std::move(result));
   }
 
+  bool remember_local_declaration(const clang::FunctionDecl *function,
+                                  const clang::VarDecl *local) {
+    unsigned &count = local_declaration_counts_[function->getCanonicalDecl()];
+    if (count == kMaxLocalDeclarations) {
+      fail(local->getLocation(),
+           "C++ artifact budget exhausted: local declarations per function (limit " +
+               std::to_string(kMaxLocalDeclarations) + ")");
+      return false;
+    }
+    ++count;
+    return true;
+  }
+
   std::optional<Json>
   lower_local_declaration(const clang::DeclStmt *statement,
                           const clang::FunctionDecl *function,
@@ -1073,6 +1091,9 @@ private:
     if (local == nullptr || !local->hasLocalStorage() || local->isStaticLocal()) {
       fail(statement->getBeginLoc(),
            "the supported C++ local must have automatic storage");
+      return std::nullopt;
+    }
+    if (!remember_local_declaration(function, local)) {
       return std::nullopt;
     }
     const bool mutable_int = local->getType()->isIntegerType() &&
@@ -1124,9 +1145,9 @@ private:
         if (!functions_with_aggregate_local_.insert(canonical).second) {
           const auto previous = cleanup_locals_.find(canonical);
           if (!destructible || previous == cleanup_locals_.end() ||
-              previous->second.size() != 1) {
+              previous->second.empty()) {
             fail(local->getLocation(),
-                 "the supported C++ slice permits one aggregate object or exactly two destructible objects per function");
+                 "the supported C++ slice permits multiple aggregate objects only when all require destruction");
             return std::nullopt;
           }
         }
@@ -1325,9 +1346,10 @@ private:
            "nested-scope cleanup cannot yet be combined with an unsupported outer destructible object");
       return std::nullopt;
     }
-    if (!has_outer_aggregate && scope_count == 2) {
+    if (scope_count == kMaxCleanupScopes) {
       fail(scope->getLBracLoc(),
-           "the supported C++ slice permits at most two sibling cleanup scopes per function");
+           "C++ artifact budget exhausted: cleanup scopes per function (limit " +
+               std::to_string(kMaxCleanupScopes) + ")");
       return std::nullopt;
     }
     functions_with_nested_scope_.insert(canonical);
@@ -1350,9 +1372,9 @@ private:
     }
     const std::size_t new_count =
         active.size() < entry_count ? 0 : active.size() - entry_count;
-    if (local_count != new_count || new_count == 0 || new_count > 2) {
+    if (local_count != new_count || new_count == 0) {
       fail(scope->getLBracLoc(),
-           "the nested-scope slice requires one or two destructible objects and no other locals");
+           "the nested-scope slice requires destructible objects and no other locals");
       return std::nullopt;
     }
     llvm::json::Array cleanups;
@@ -2838,6 +2860,7 @@ private:
   std::string compilation_file_;
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
+  std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
   std::vector<clang::FunctionDecl *> matches_;
