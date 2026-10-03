@@ -2104,10 +2104,12 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
     let corrupted_result = { verify_c0_sources(&corrupted, &[("universal_haves.c", c_source)]) };
     let error = corrupted_result
         .expect_err("tampering with a universal instantiation must invalidate the proof");
+    // The instantiation at the wrong argument adds a different fact, so it
+    // no longer closes the `have` goal.
     assert!(
         error
             .message()
-            .contains("`assumption` requires the current goal as an available semantic fact"),
+            .contains("its body ran to the end with the goal still open"),
         "the checked Proof operation should reject the tamper directly: {error:?}"
     );
 }

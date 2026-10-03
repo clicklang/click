@@ -5211,8 +5211,9 @@ impl<'a> Proof<'a> {
                     };
                     let conclusion = current.clone();
                     if &conclusion == goal || conclusion.clone() == goal.clone() {
-                        if let Ok(closed) = instantiated_proof.apply_step(ProofStep::Assumption) {
-                            return Some(closed);
+                        // The instantiation added the goal, so it closed it.
+                        if instantiated_proof.is_complete() {
+                            return Some(instantiated_proof);
                         }
                         continue;
                     }
@@ -6508,14 +6509,20 @@ impl<'a> Proof<'a> {
                     tactic_name(tactic)
                 )));
             }
-            // A theorem can close the goal before a written suffix. Retain
-            // that completed application as a checked have, keeping the
-            // outer goal open so every remaining explicit step is checked.
+            // A step that adds a fact can close the goal before a written
+            // suffix. Retain that completed step as a checked have, keeping
+            // the outer goal open so every remaining explicit step is
+            // checked; only a final step, or one followed by a harmless
+            // closer, leaves the goal closed.
             let retain_application = matches!(
                 tactic,
                 ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::ApplyInductionUsing { .. }
                     | ProofTactic::ApplyInduction { .. }
+                    | ProofTactic::InstantiateUsing { .. }
+                    | ProofTactic::Transport { .. }
+                    | ProofTactic::TransportUsing { .. }
+                    | ProofTactic::LetSatisfy(_)
             ) && tactics
                 .get(index + 1)
                 .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Simp));

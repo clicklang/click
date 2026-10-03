@@ -581,6 +581,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         ))
     }
 
+    /// Closes the focused proposition goal when the step that produced this
+    /// state added it as a fact. A goal that was already available before
+    /// the step stays open; only `assumption` closes that.
+    pub(crate) fn closed_if_goal_was_added(&self) -> Option<Self> {
+        let (goal, _) = self.focused_proposition()?;
+        self.state
+            .added_facts
+            .contains(goal.proposition())
+            .then(|| self.closed_focused())
+    }
+
     fn focused_proposition(
         &self,
     ) -> Option<(

@@ -3223,7 +3223,7 @@ mod tests {
         assert!(verified.kernel_authority.is_some());
         assert!(matches!(
             verified.proof.as_ref().unwrap().steps(),
-            [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+            [ProofStep::InstantiateUsing { .. }]
         ));
     }
 
@@ -3398,13 +3398,11 @@ mod tests {
             let before = crate::persistent::persistent_node_allocations();
             let instantiated = root.apply_step(certificate.steps()[0].clone()).unwrap();
             allocations.push(crate::persistent::persistent_node_allocations() - before);
-            assert!(!instantiated.is_complete());
-            assert_eq!(instantiated.goal(), Some(&goal));
+            // The instantiation adds the goal, which closes it.
+            assert!(instantiated.is_complete());
             assert!(root.certificate().steps().is_empty());
             assert!(!root.facts().contains(&goal));
-            assert!(instantiated.facts().contains(&goal));
-            let completed = instantiated.apply_step(ProofStep::Assumption).unwrap();
-            completed.completed_proposition().unwrap();
+            instantiated.completed_proposition().unwrap();
         }
         for pair in allocations.windows(2) {
             assert!(
@@ -3498,10 +3496,7 @@ mod tests {
                 _ => panic!("the checked certificate must retain both branches"),
             };
             for arm in arms {
-                assert!(matches!(
-                    arm.steps(),
-                    [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
-                ));
+                assert!(matches!(arm.steps(), [ProofStep::InstantiateUsing { .. }]));
             }
             let prefix = source.split_once(" by {").unwrap().0;
             let expanded = format!(
