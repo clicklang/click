@@ -194,7 +194,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::UnfoldResource(resource) => line(
             output,
             &prefix,
-            &format!("unfold({});", format_resource_call(resource)),
+            &format!(
+                "unfold({});",
+                if matches!(resource, ResourceClause::Named { .. }) {
+                    format_resource_call(resource)
+                } else {
+                    format_resource_target(resource)
+                }
+            ),
         ),
         ProofTactic::FoldResource(ResourceClause::Named { binding, resource })
             if binding.fold_fields.is_some() =>
