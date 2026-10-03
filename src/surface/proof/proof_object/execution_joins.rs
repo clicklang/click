@@ -2478,7 +2478,13 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_focused_execute_to_exit(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_focused_execute_to_exit_within(Vec::new(), &mut BTreeSet::new(), &mut 0, None)
+        self.try_focused_execute_to_exit_within(
+            Vec::new(),
+            &mut BTreeSet::new(),
+            &mut 0,
+            None,
+            None,
+        )
     }
 
     /// Charges one statement step of a smart `execute()` against its fixed
@@ -2512,13 +2518,16 @@ impl<'a> Proof<'a> {
     /// across every nested arm: [`Self::charge_execute_step`] refuses the
     /// search at its fixed budget. `introduced`, given only at the top level,
     /// collects the facts each advance there adds, for a scope that retains
-    /// what its body introduced.
+    /// what its body introduced. `until` stops the run before that source
+    /// statement instead of at function exit; such a run follows one path
+    /// and refuses where it would have to split.
     pub(in crate::surface::proof) fn try_focused_execute_to_exit_within(
         &self,
         enclosing: Vec<&ExecutionSplit<'a>>,
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
         mut introduced: Option<&mut Vec<Proposition>>,
+        until: Option<usize>,
     ) -> Result<Option<Self>, ClickError> {
         let mut record_added = |proof: &Self| {
             if let Some(introduced) = introduced.as_deref_mut() {
@@ -2538,7 +2547,22 @@ impl<'a> Proof<'a> {
                 };
                 proof = proof.continue_arm_into_parent_frontier(record)?;
             }
-            if proof.is_at_function_exit() {
+            if let Some(target) = until {
+                match proof.current_statement_index()? {
+                    Some(current) if current == target => return Ok(Some(proof)),
+                    Some(current) if current < target => {}
+                    Some(current) => {
+                        return Err(proof.step_error(format!(
+                            "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
+                        )));
+                    }
+                    None => {
+                        return Err(proof.step_error(format!(
+                            "`execute_until(statement({target}))` reached function exit before its target"
+                        )));
+                    }
+                }
+            } else if proof.is_at_function_exit() {
                 return Ok(Some(proof));
             }
             proof.charge_execute_step(steps)?;
@@ -2549,6 +2573,17 @@ impl<'a> Proof<'a> {
                 proof = next;
                 retried_requirements.clear();
                 continue;
+            }
+            if let Some(target) = until {
+                // `execute_until` runs one path and does not split it: a
+                // frontier the bare step cannot take (an undecided C `if`)
+                // is refused with that step's own diagnostic.
+                return match proof.apply_step(ProofStep::Step) {
+                    Err(error) => Err(error),
+                    Ok(_) => Err(proof.step_error(format!(
+                        "`execute_until(statement({target}))` could not advance this statement"
+                    ))),
+                };
             }
             let Some((split, record, call_outcomes)) = (if proof.is_at_call_outcomes_frontier()? {
                 proof
@@ -2622,6 +2657,7 @@ impl<'a> Proof<'a> {
                         retried_requirements,
                         steps,
                         None,
+                        None,
                     )?
                 else {
                     return Ok(None);
@@ -2658,6 +2694,7 @@ impl<'a> Proof<'a> {
                     enclosing.to_vec(),
                     retried_requirements,
                     steps,
+                    None,
                     None,
                 )?
             else {

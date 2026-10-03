@@ -2044,3 +2044,46 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
         .join()
         .unwrap();
 }
+
+/// `execute_until` shares `execute()`'s search and its step budget, so a
+/// loop that never exits before the target is refused at that budget.
+#[test]
+fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
+    let c_source = r#"
+        int32 spin_then() {
+            int32 i = 0;
+            while (1) {
+                i = 0;
+            }
+            i = 1;
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "spin_then.c";
+
+        int32 spin_then() {
+            ensures result == 1;
+        } by {
+            execute_until(statement(3));
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let error = verify_c0_sources(click_source, &[("spin_then.c", c_source)])
+                .expect_err("the loop never reaches the target statement");
+            assert!(
+                error
+                    .message()
+                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                "expected the step budget refusal, got: {}",
+                error.message()
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

@@ -1768,13 +1768,6 @@ impl<'a> Proof<'a> {
         )))
     }
 
-    /// The planner fallback for a smart `execute`: a scratch planning pass
-    /// constructs the explicit checked operations for the remaining
-    /// execution (a linear sequence, or a planned `if` tree for
-    /// whole-function branches), and this Proof applies exactly those
-    /// operations. This is the one smart-execute planner law: the source
-    /// interpreter reports its errors directly, while the direct driver
-    /// treats any error as a decline.
     /// The one mid-execution `transport` premise law, shared by the drivers:
     /// the source and target are lowered at the frontier, the premise
     /// planner names the premises, and this Proof applies the explicit

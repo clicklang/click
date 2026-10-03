@@ -474,14 +474,13 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs the narrow straight-line `execute_until` search on checked
-    /// descendants and stops before the selected source statement.
-    pub(in crate::surface::proof) fn try_linear_execute_until(
+    /// Runs `execute_until` on checked descendants and stops before the
+    /// selected source statement.
+    pub(in crate::surface::proof) fn try_execute_until(
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) = self.body.try_linear_execute_until_descendant(region)?
-        else {
+        let Some((body, added_facts)) = self.body.try_execute_until_descendant(region)? else {
             return Ok(None);
         };
         let mut introduced_facts = self.introduced_facts.clone();

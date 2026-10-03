@@ -823,7 +823,7 @@ fn advance_checked_linear_continuation<'a>(
                 })?;
             selected.join()?
         } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-            match proof.try_linear_execute_until(region)? {
+            match proof.try_execute_until(region)? {
                 Some(executed) => executed,
                 None => {
                     return Err(proof
@@ -2451,6 +2451,7 @@ fn advance_focused_execution_arm<'a>(
                 &mut retried_requirements,
                 &mut 0,
                 None,
+                None,
             )?
             else {
                 return decline();
@@ -3507,7 +3508,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_linear_execute_until(region)? else {
+            let Some(executed) = scope.try_execute_until(region)? else {
                 return decline();
             };
             scope = executed;

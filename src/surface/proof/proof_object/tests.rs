@@ -4165,7 +4165,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         &theorem_environment,
     );
     let Some((until, _)) = root
-        .try_linear_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
         .expect("execute_until should use the checked smart step route")
     else {
         panic!("execute_until should advance to its target");
@@ -4420,7 +4420,7 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         &theorem_environment,
     );
     let Some((at_call, _)) = root
-        .try_linear_execute_until_descendant(&CodeRegionRef::Statement(1))
+        .try_execute_until_descendant(&CodeRegionRef::Statement(1))
         .expect("declaration should advance to the need call")
     else {
         panic!("execution should reach the call frontier");
