@@ -348,14 +348,32 @@ argument positions, casts, mixed-width branches, memory writes by the inner
 call, normal destruction, and object-free exception propagation. Name allocation
 and argument lowering have deterministic scaling coverage. Artifact validation
 checks every nested callee, capture type, and sibling storage type and rejects
-recursive graphs. Nesting in local initializers, general value expressions,
-converted call results, and returned references or objects remains unsupported.
+recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
+normalization and ordering checks as return calls. Calls in general value
+expressions, converted call results, and returned references or objects remain
+unsupported.
+
+Scalar evaluation is normalized within the C++ frontend into explicit
+statements followed by a typed value. Initializer and return artifact wrappers
+retain source context; they do not select separate evaluation semantics.
+The same stable-sibling policy applies to integer-local initializer, return,
+and discarded call arguments. Constructor arguments remain outside nested-call
+support. Regressions cover scalar widths/signedness, initializer capture before
+cleanup, exception propagation, unsafe siblings in each source position, and
+verification/expansion/reverification/audit agreement.
+
+The frontend also prepares contract-facing signatures, Clang layouts, and
+local-object metadata alongside kernel execution. C++ and Rust feed the same
+prepared execution package to the verifier, using the signature/layout
+vocabulary shared with plain C. The shared verifier does not reinterpret C++
+artifacts or re-traverse C++ bodies; the original source and locked semantic
+identity remain attached to the prepared input.
 
 The synthetic fee fixture preserves `Div(Mul(fee, at_size), divisor, round_down)`
 and verifies concrete positive/negative rounding and exact division with
 64-bit helpers. It rejects hostile rounding claims, zero divisors, and unproved
 product bounds. This does not import upstream Bitcoin fee evaluation: its
-`__int128` and static helpers, `Assume` annotations, and field-reading sibling
+`__int128`, `Assume` annotations, and field-reading sibling
 arguments still need support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
@@ -385,6 +403,26 @@ The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
+Static scalar methods use a distinct `static_method` artifact kind with their
+class and declaration identities, without an implicit receiver or object-layout
+requirement. Select an ordinary declaration with `Class::helper`; reachable
+concrete function-template instances retain their existing distinct names.
+Class-qualified and unqualified calls support the existing scalar initializer
+and return-call positions, including one nested call with stable scalar siblings.
+Parameters and results must be supported by-value integer or Boolean scalars.
+Object-qualified static calls are rejected, including calls whose receiver has
+side effects. Virtual dispatch and reference/pointer helper signatures remain
+outside this slice. An unrelated unsupported field does not block a static
+helper that never accesses object storage.
+
+The synthetic `static-helpers.cpp` fixture preserves static `Mul`, `Div`, and
+Boolean template forwarding, with positive and negative rounding proofs.
+Selected-caller verification, expansion/reverification, and retained audit
+agree. Regressions cover every scalar type, distinct classes, initializer calls,
+scalar exception propagation, false claims, and malformed artifact identities
+and signatures. This removes the static-helper prerequisite; Bitcoin's wide
+arithmetic, checked `Assume`, and field-reading sibling arguments remain open.
+
 The `value-methods` fixtures add non-static, non-virtual ordinary methods on
 that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
 `"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
@@ -413,7 +451,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 28;
+its documented application invariant. The typed artifact schema is now 31;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
@@ -546,20 +584,32 @@ checked destructor, then returns the captured value. The fixture proves that
 the destructor restores caller memory while the result retains the value seen
 before cleanup; missing and false destructor contracts are rejected.
 
+Lifetime planning derives each destructor from the typed local and record
+identity, independently of the artifact's cleanup lists. A scoped construction
+stack supplies cleanup for returns, lexical fallthrough, and exceptional exits;
+validation checks that exported lists match the live objects in reverse order.
+An initializer's exceptional continuation never activates its destination.
+Catch boundaries delimit unwinding, while returning captures the result before
+destruction. This replaces arrangement-specific lowering and final-return-based
+destructor discovery. Constructors remain nonthrowing in this profile; partial
+construction, temporaries, copy/move, and wider exceptions remain unsupported.
+
 The `early-return-destructor` fixture permits structured `if` statements after
 one destructible object has been constructed directly in the function body.
 Every return edge captures its result and then invokes that same checked
 destructor. It verifies the original two-path `Restore` example: the early path
 returns 7, the final path returns 9, and both restore the referenced integer to
-its entry value. A return before construction is rejected rather than assigned
-a cleanup for an object that is not alive.
+its entry value. Returns before construction carry no cleanup for the future
+object. The `construction_prefix` fixture also returns between two constructions;
+each return destroys only its successfully constructed prefix.
 The `examples/basic-cpp/` project also selects a modular caller starting with
 41: either captured result is retained while the referenced cell is 41 after
 the call.
 
 The `reverse-destructor-order` fixture permits exactly two such top-level
 objects when both use the supported constructor and destructor. Both objects
-must be constructed before any return. Each return records the second object's
+are activated individually after successful initialization. A return after both
+constructions records the second object's
 destructor before the first object's destructor, and lowering checks those
 calls in that order. The fixture makes the ordering observable: the second
 guard restores 7 before the first guard restores the caller's entry value.

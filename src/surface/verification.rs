@@ -2,7 +2,6 @@ use super::validation::{combined_algebraic_type_definitions, standard_library_fu
 use super::*;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::target::CTarget;
-use crate::languages::cpp::{LoweredCppFunction, lower_import};
 use crate::languages::{PreparedProgram, PreparedProgramSource};
 use sha2::{Digest, Sha256};
 #[cfg(test)]
@@ -124,8 +123,7 @@ pub(in crate::surface) struct CSourceContext<'a> {
     bundle: Option<BTreeMap<&'a str, &'a str>>,
     imports: Option<&'a [PreparedCImport]>,
     program_import: Option<PreparedProgram>,
-    cpp_lowered: Option<LoweredCppFunction>,
-    rust_lowered: Option<Arc<crate::languages::rust::lowering::LoweredRust>>,
+    program_execution: Option<Arc<crate::languages::PreparedExecution>>,
     prepared_by_source: Option<BTreeMap<&'a str, &'a PreparedCImport>>,
     prepared_project_identity: Option<String>,
     input_digest: [u8; 32],
@@ -168,8 +166,7 @@ impl<'a> CSourceContext<'a> {
             bundle: Some(bundle),
             imports: None,
             program_import: None,
-            cpp_lowered: None,
-            rust_lowered: None,
+            program_execution: None,
             prepared_by_source: None,
             prepared_project_identity: None,
             input_digest: digest_framed_parts(parts),
@@ -228,8 +225,7 @@ impl<'a> CSourceContext<'a> {
             bundle: None,
             imports: Some(imports),
             program_import: None,
-            cpp_lowered: None,
-            rust_lowered: None,
+            program_execution: None,
             prepared_by_source: Some(
                 imports
                     .iter()
@@ -252,15 +248,7 @@ impl<'a> CSourceContext<'a> {
         import: &impl PreparedProgramSource,
     ) -> Result<Self, ClickError> {
         let program = import.prepared_program();
-        let (cpp_lowered, rust_lowered) = match &program {
-            PreparedProgram::Cpp(p) => (Some(lower_import(p).map_err(ClickError::new)?), None),
-            PreparedProgram::Rust(p) => (
-                None,
-                Some(Arc::new(
-                    crate::languages::rust::lower(p.export()).map_err(ClickError::new)?,
-                )),
-            ),
-        };
+        let program_execution = program.prepare_execution().map_err(ClickError::new)?;
         let input_digest = digest_framed_parts([
             b"click-typed-prepared-project-v1".as_slice(),
             program.language().as_bytes(),
@@ -270,8 +258,7 @@ impl<'a> CSourceContext<'a> {
         Ok(Self {
             bundle: None,
             imports: None,
-            cpp_lowered,
-            rust_lowered,
+            program_execution: Some(program_execution),
             prepared_by_source: None,
             prepared_project_identity: Some(program.identity().to_string()),
             input_digest,
@@ -5260,24 +5247,19 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
     let mut qualified_objects = BTreeMap::new();
     let mut local_struct_pointers = BTreeMap::new();
     let verifying_paths = super::verifying_source_paths(click_source)?;
-    if let Some(PreparedProgram::Rust(import)) = c_sources.program_import.as_ref() {
+    if let Some(import) = c_sources.program_import.as_ref() {
         if verifying_paths != vec![import.logical_source().to_string()] {
-            return Err(ClickError::new(
-                "prepared Rust source must exactly match the verifying clause",
-            ));
+            return Err(ClickError::new(format!(
+                "prepared {} import logical source must exactly match the verifying clause",
+                import.language()
+            )));
         }
-        layouts = c_sources
-            .rust_lowered
+        let execution = c_sources
+            .program_execution
             .as_ref()
-            .expect("prepared Rust lowering")
-            .1
-            .clone();
-        for function in &c_sources
-            .rust_lowered
-            .as_ref()
-            .expect("prepared Rust lowering")
-            .0
-        {
+            .expect("prepared program execution");
+        layouts = execution.layouts.clone();
+        for function in &execution.functions {
             aggregate_objects.insert(
                 function.source_name().to_string(),
                 function.local_struct_values().clone(),
@@ -5286,132 +5268,6 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 function.source_name().to_string(),
                 function.local_struct_pointers().clone(),
             );
-        }
-        return Ok((
-            layouts,
-            union_layouts,
-            aggregate_objects,
-            aggregate_array_objects,
-            global_array_shapes,
-            qualified_objects,
-            local_struct_pointers,
-        ));
-    }
-    if let Some(PreparedProgram::Cpp(import)) = c_sources.program_import.as_ref() {
-        let expected = BTreeSet::from([import.logical_source().to_string()]);
-        let actual = verifying_paths.iter().cloned().collect::<BTreeSet<_>>();
-        if actual != expected {
-            return Err(ClickError::new(format!(
-                "prepared C++ import logical source must exactly match the verifying clause (expected {}, received {})",
-                expected.iter().cloned().collect::<Vec<_>>().join(", "),
-                actual.iter().cloned().collect::<Vec<_>>().join(", "),
-            )));
-        }
-        for function in
-            std::iter::once(&import.export().function).chain(&import.export().reachable_functions)
-        {
-            let mut locals = BTreeMap::new();
-            let mut ambiguous = BTreeSet::new();
-            let mut pending = vec![function.body.as_slice()];
-            while let Some(body) = pending.pop() {
-                for statement in body {
-                    use crate::languages::cpp::{CppStatement as S, CppType as T};
-                    match statement {
-                        S::Declare { local, .. } => {
-                            if let T::Record { name, .. } = &local.value_type {
-                                if locals.get(&local.name).is_some_and(|known| known != name) {
-                                    ambiguous.insert(local.name.clone());
-                                }
-                                locals.insert(local.name.clone(), name.clone());
-                            }
-                        }
-                        S::Scope { body, .. } => pending.push(body),
-                        S::If {
-                            then_branch,
-                            else_branch,
-                            ..
-                        } => {
-                            pending.push(then_branch);
-                            pending.push(else_branch);
-                        }
-                        S::TryCatchInt32 {
-                            try_body, handler, ..
-                        } => {
-                            pending.push(try_body);
-                            pending.push(handler);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            for name in ambiguous {
-                locals.remove(&name);
-            }
-            aggregate_objects.insert(function.name.clone(), locals);
-        }
-        for record in &import.export().records {
-            let fields = record
-                .fields
-                .iter()
-                .map(|field| {
-                    let c_type = match &field.value_type {
-                        crate::languages::cpp::CppType::Integer {
-                            bits: 32,
-                            signed: true,
-                            is_const: false,
-                            ..
-                        } => C0Type::Int32,
-                        crate::languages::cpp::CppType::Integer {
-                            bits: 64,
-                            signed: true,
-                            is_const: false,
-                            ..
-                        } => C0Type::Int64,
-                        crate::languages::cpp::CppType::Pointer { pointee }
-                            if matches!(
-                                pointee.as_ref(),
-                                crate::languages::cpp::CppType::Integer {
-                                    bits: 32,
-                                    signed: true,
-                                    is_const: false,
-                                    ..
-                                }
-                            ) =>
-                        {
-                            C0Type::Int32Pointer
-                        }
-                        _ => {
-                            return Err(ClickError::new(format!(
-                                "C++ record field `{}.{}` is outside the supported proof interface",
-                                record.name, field.name
-                            )));
-                        }
-                    };
-                    Ok((
-                        field.name.clone(),
-                        c_type,
-                        field.offset_bytes,
-                        field.size_bytes,
-                    ))
-                })
-                .collect::<Result<Vec<_>, ClickError>>()?;
-            let layout = syntax::C0StructLayout::from_explicit_fields(
-                fields,
-                record.size_bytes,
-                record.alignment_bytes,
-            )
-            .map_err(|error| {
-                ClickError::new(format!(
-                    "invalid C++ record layout for `{}`: {error}",
-                    record.name
-                ))
-            })?;
-            if layouts.insert(record.name.clone(), layout).is_some() {
-                return Err(ClickError::new(format!(
-                    "duplicate C++ record name `{}`",
-                    record.name
-                )));
-            }
         }
         return Ok((
             layouts,
@@ -5787,8 +5643,7 @@ pub(in crate::surface) fn parse_verified_sources(
         bundle: Some(c_sources.clone()),
         imports: None,
         program_import: None,
-        cpp_lowered: None,
-        rust_lowered: None,
+        program_execution: None,
         prepared_by_source: None,
         prepared_project_identity: None,
         input_digest: digest_framed_parts(
@@ -5899,70 +5754,26 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         ));
     }
 
-    if let Some(PreparedProgram::Rust(import)) = c_sources.program_import.as_ref() {
+    if let Some(import) = c_sources.program_import.as_ref() {
         if file.verifying_sources != vec![import.logical_source().to_string()] {
-            return Err(ClickError::new(
-                "prepared Rust source must exactly match the verifying clause",
-            ));
+            return Err(ClickError::new(format!(
+                "prepared {} import logical source must exactly match the verifying clause",
+                import.language()
+            )));
         }
         return Ok(c_sources
-            .rust_lowered
+            .program_execution
             .as_ref()
-            .expect("prepared Rust lowering")
-            .0
+            .expect("prepared program execution")
+            .functions
             .iter()
-            .map(|f| {
+            .map(|function| {
                 (
-                    f.name().to_string(),
-                    (import.logical_source().to_string(), f.clone()),
+                    function.name().to_string(),
+                    (import.logical_source().to_string(), function.clone()),
                 )
             })
             .collect());
-    }
-    if let Some(PreparedProgram::Cpp(import)) = c_sources.program_import.as_ref() {
-        let expected = BTreeSet::from([import.logical_source().to_string()]);
-        let actual = file
-            .verifying_sources
-            .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        if actual != expected {
-            return Err(ClickError::new(format!(
-                "prepared C++ import logical source must exactly match the verifying clause (expected {}, received {})",
-                expected.iter().cloned().collect::<Vec<_>>().join(", "),
-                actual.iter().cloned().collect::<Vec<_>>().join(", "),
-            )));
-        }
-        let lowered = c_sources
-            .cpp_lowered
-            .as_ref()
-            .expect("C++ source context retains its direct lowering");
-        if import.export().reachable_functions.len() != lowered.reachable_kernel_functions().len() {
-            return Err(ClickError::new(
-                "prepared C++ lowering does not match its reachable function artifact",
-            ));
-        }
-        let source_functions =
-            std::iter::once(&import.export().function).chain(&import.export().reachable_functions);
-        let kernel_functions =
-            std::iter::once(lowered.kernel_function()).chain(lowered.reachable_kernel_functions());
-        let mut functions = BTreeMap::new();
-        for (source, kernel) in source_functions.zip(kernel_functions) {
-            let function = cpp_function_interface(source, kernel)?;
-            let name = function.name().to_string();
-            if functions
-                .insert(
-                    name.clone(),
-                    (import.logical_source().to_string(), function),
-                )
-                .is_some()
-            {
-                return Err(ClickError::new(format!(
-                    "prepared C++ import defines function `{name}` more than once"
-                )));
-            }
-        }
-        return Ok(functions);
     }
 
     let mut parsed = BTreeMap::new();
@@ -6837,144 +6648,6 @@ pub(in crate::surface) fn external_c0_function(
             .collect(),
     )
     .with_return_pointee_constant(function_block.signature().return_pointee_is_constant())
-}
-
-/// Builds the proof-facing signature for the first C++ slice from Clang's
-/// typed declaration. The body deliberately remains absent here: executable
-/// semantics come from `lower_import`, never from reconstructing C++ as C.
-fn cpp_function_interface(
-    source: &crate::languages::cpp::CppFunction,
-    lowered: &crate::kernel::CFunction,
-) -> Result<syntax::C0Function, ClickError> {
-    let return_type = match source.return_type {
-        crate::languages::cpp::CppType::Void => C0Type::Void,
-        crate::languages::cpp::CppType::Integer {
-            bits: 32,
-            signed: true,
-            is_const: false,
-            ..
-        } => C0Type::Int32,
-        crate::languages::cpp::CppType::Integer {
-            bits: 64,
-            signed: true,
-            is_const: false,
-            ..
-        } => C0Type::Int64,
-        crate::languages::cpp::CppType::Integer {
-            bits: 32,
-            signed: false,
-            is_const: false,
-            ..
-        } => C0Type::UInt32,
-        crate::languages::cpp::CppType::Integer {
-            bits: 64,
-            signed: false,
-            is_const: false,
-            ..
-        } => C0Type::UInt64,
-        crate::languages::cpp::CppType::Boolean {
-            bits: 8,
-            is_const: false,
-        } => C0Type::Bool,
-        _ => {
-            return Err(ClickError::new(format!(
-                "C++ declaration `{}` has an unsupported return type",
-                source.declaration_id
-            )));
-        }
-    };
-    let parameters = source
-        .parameters
-        .iter()
-        .map(|parameter| match &parameter.value_type {
-            crate::languages::cpp::CppType::Integer { bits, signed, is_const: false, .. } if *bits == 32 || *bits == 64 => Ok(syntax::C0Parameter::new(match (*bits, *signed) { (32,true) => C0Type::Int32, (64,true) => C0Type::Int64, (32,false) => C0Type::UInt32, _ => C0Type::UInt64 }, parameter.name.clone(), None)),
-            crate::languages::cpp::CppType::Boolean {
-                bits: 8,
-                is_const: false,
-            } => Ok(syntax::C0Parameter::new(
-                C0Type::Bool,
-                parameter.name.clone(),
-                None,
-            )),
-            crate::languages::cpp::CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        ..
-                    }
-                ) =>
-            {
-                let crate::languages::cpp::CppType::Integer { is_const, .. } = pointee.as_ref()
-                else {
-                    unreachable!("guarded by the supported integer-reference pattern")
-                };
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    None,
-                )
-                .with_pointee_constant(*is_const))
-            }
-            crate::languages::cpp::CppType::LvalueReference { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        is_const: true,
-                        ..
-                    }
-                ) =>
-            {
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int64Pointer,
-                    parameter.name.clone(),
-                    None,
-                )
-                .with_pointee_constant(true))
-            }
-            crate::languages::cpp::CppType::LvalueReference { pointee } => {
-                let crate::languages::cpp::CppType::Record { name, is_const, .. } = pointee.as_ref() else {
-                    return Err(ClickError::new(format!(
-                        "C++ declaration `{}` parameter `{}` has an unsupported reference pointee",
-                        source.declaration_id, parameter.name
-                    )));
-                };
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    Some(name.clone()),
-                ).with_pointee_constant(*is_const))
-            }
-            crate::languages::cpp::CppType::Pointer { pointee }
-                if matches!(
-                    pointee.as_ref(),
-                    crate::languages::cpp::CppType::Integer {
-                        bits: 32,
-                        signed: true,
-                        is_const: false,
-                        ..
-                    }
-                ) =>
-            {
-                Ok(syntax::C0Parameter::new(
-                    C0Type::Int32Pointer,
-                    parameter.name.clone(),
-                    None,
-                ))
-            }
-            _ => Err(ClickError::new(format!(
-                "C++ declaration `{}` parameter `{}` is outside the supported bool/reference/pointer/record interface",
-                source.declaration_id, parameter.name
-            ))),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(
-        syntax::C0Function::external(return_type, source.name.clone(), parameters)
-            .with_prelowered_kernel_function(lowered.clone()),
-    )
 }
 
 pub(in crate::surface) fn build_function_environment(

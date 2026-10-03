@@ -148,8 +148,7 @@ public:
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
-        (declaration->getNameAsString() == selected_name_ ||
-         declaration->getQualifiedNameAsString() == selected_name_) &&
+        declaration->getQualifiedNameAsString() == selected_name_ &&
         is_in_logical_source(declaration->getLocation())) {
       matches_.push_back(declaration);
     }
@@ -239,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 28;
+    artifact["schema"] = 31;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -296,12 +295,11 @@ private:
     const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
     const bool ordinary_method =
         method != nullptr && constructor == nullptr && destructor == nullptr;
-    if (ordinary_method &&
-        (method->isStatic() || method->isVirtual() || method->isVolatile() ||
-         method->getRefQualifier() != clang::RQ_None || method->isDeleted() ||
-         method->isVariadic())) {
+    if (ordinary_method && (method->isVirtual() || method->isVolatile() ||
+                            method->getRefQualifier() != clang::RQ_None ||
+                            method->isDeleted() || method->isVariadic())) {
       fail(method->getLocation(),
-           "supported C++ methods must be non-static, non-virtual, "
+           "supported C++ methods must be non-virtual, "
            "non-volatile, non-deleted, unqualified, and non-variadic");
       return std::nullopt;
     }
@@ -354,18 +352,22 @@ private:
       if (!return_type) {
         return std::nullopt;
       }
-      function_kind["kind"] = ordinary_method ? "method" : "free";
+      function_kind["kind"] =
+          ordinary_method ? (method->isStatic() ? "static_method" : "method")
+                          : "free";
       if (ordinary_method) {
         const auto *record = method->getParent()->getDefinition();
-        if (record == nullptr || !remember_record(record))
+        if (record == nullptr ||
+            (!method->isStatic() && !remember_record(record)))
           return std::nullopt;
         function_kind["record_declaration_id"] = declaration_id(record);
         function_kind["record_name"] = record->getNameAsString();
-        function_kind["is_const"] = method->isConst();
+        if (!method->isStatic())
+          function_kind["is_const"] = method->isConst();
       }
     }
     llvm::json::Array parameters;
-    if (method != nullptr) {
+    if (method != nullptr && !method->isStatic()) {
       const auto *method = llvm::cast<clang::CXXMethodDecl>(declaration);
       const auto *record = method->getParent()->getDefinition();
       llvm::json::Object record_type;
@@ -384,6 +386,13 @@ private:
       parameters.push_back(std::move(self));
     }
     for (const clang::ParmVarDecl *parameter : declaration->parameters()) {
+      if (ordinary_method && method->isStatic() &&
+          (!parameter->getType()->isIntegerType() ||
+           parameter->getType().hasQualifiers())) {
+        fail(parameter->getLocation(),
+             "static C++ helpers require by-value scalar parameters");
+        return std::nullopt;
+      }
       auto lowered = lower_parameter(parameter);
       if (!lowered) {
         return std::nullopt;
@@ -909,7 +918,7 @@ private:
 
   std::optional<Json> lower_call(const clang::CallExpr *call,
                                  const clang::FunctionDecl *caller) {
-    auto lowered = lower_call_operation(call, caller);
+    auto lowered = lower_call_operation(call, caller, true);
     if (!lowered) {
       return std::nullopt;
     }
@@ -1241,7 +1250,7 @@ private:
              "C++ call capture requires matching return and local types");
         return std::nullopt;
       }
-      auto lowered = lower_call_operation(call, function);
+      auto lowered = lower_call_operation(call, function, true);
       if (!lowered) {
         return std::nullopt;
       }
@@ -1408,37 +1417,7 @@ private:
            "the return-cleanup slice requires one final return after object construction");
       return false;
     }
-    bool constructed = false;
-    for (auto iterator = body->body_begin(); iterator != body->body_end();
-         ++iterator) {
-      const clang::Stmt *statement = *iterator;
-      if (const auto *declarations =
-              llvm::dyn_cast<clang::DeclStmt>(statement)) {
-        for (const clang::Decl *declaration : declarations->decls()) {
-          if (declaration == local) {
-            constructed = true;
-          }
-        }
-      }
-      if (!constructed && statement_contains_return(statement)) {
-        fail(statement->getBeginLoc(),
-             "returns before automatic object construction are outside the return-cleanup slice");
-        return false;
-      }
-    }
     return true;
-  }
-
-  bool statement_contains_return(const clang::Stmt *statement) const {
-    if (llvm::isa<clang::ReturnStmt>(statement)) {
-      return true;
-    }
-    for (const clang::Stmt *child : statement->children()) {
-      if (child != nullptr && statement_contains_return(child)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   bool stable_scalar_argument(const clang::Expr *expression,
@@ -1491,9 +1470,16 @@ private:
     const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
     const clang::Expr *receiver = nullptr;
     unsigned argument_offset = 0;
-    if (method != nullptr) {
-      if (method->isStatic() || method->isVirtual() ||
-          llvm::isa<clang::CXXConstructorDecl>(method) ||
+    if (method != nullptr && method->isStatic() &&
+        !llvm::isa<clang::DeclRefExpr>(
+            call->getCallee()->IgnoreParenImpCasts())) {
+      fail(call->getExprLoc(),
+           "static C++ calls require class-qualified or unqualified dispatch");
+      return std::nullopt;
+    }
+    const bool has_receiver = method != nullptr && !method->isStatic();
+    if (has_receiver) {
+      if (method->isVirtual() || llvm::isa<clang::CXXConstructorDecl>(method) ||
           llvm::isa<clang::CXXDestructorDecl>(method)) {
         fail(call->getExprLoc(), "unsupported C++ method dispatch");
         return std::nullopt;
@@ -1544,7 +1530,7 @@ private:
         if (nested != nullptr && !is_numeric_limits_max_call(nested))
           ++nested_calls;
       }
-      if (nested_calls > 1 || (nested_calls != 0 && method != nullptr)) {
+      if (nested_calls > 1 || (nested_calls != 0 && has_receiver)) {
         fail(call->getExprLoc(),
              "nested C++ call arguments require one call and stable scalar "
              "siblings to preserve evaluation order");
@@ -1585,7 +1571,7 @@ private:
       std::optional<Json> argument;
       if (allow_nested && nested != nullptr &&
           !is_numeric_limits_max_call(nested)) {
-        if (method != nullptr ||
+        if (has_receiver ||
             definition->getParamDecl(index)->getType()->isReferenceType() ||
             !context_.hasSameType(source_argument->getType(),
                                   definition->getParamDecl(index)->getType())) {

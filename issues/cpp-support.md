@@ -113,6 +113,46 @@ and exact division, including concrete Boolean template wrappers; zero divisors
 and unproved product bounds are rejected.
 This does not yet import Bitcoin's wide helper path or field-reading siblings.
 
+Static scalar helpers now retain class and declaration identity without an
+implicit receiver or importing unrelated object layouts. Ordinary
+`Class::helper` selection, class-qualified/unqualified calls, and reachable
+concrete template instances support the existing scalar call positions,
+including stable nested arguments. The synthetic static `Mul`/`Div` rounding
+fixture verifies both signs through Boolean template wrappers, expansion and
+audit. Scalar-type, distinct-class, initializer, exception, false-claim, and
+artifact regressions are covered. Object-qualified calls and pointer/reference
+signatures remain rejected. Bitcoin's wide path, `Assume`, and field-reading
+siblings still require further support.
+
+Scalar call evaluation now uses one normalization path: explicit evaluation
+statements followed by a typed value. Return and integer-local initializer
+wrappers retain their source role, but nested calls and their ordering checks
+are shared with discarded calls. Supported nested initializers no longer need
+source rewriting into return calls. Returns still capture before destruction;
+exceptional evaluations use the existing active cleanup edges. Ambiguous sibling
+reads/effects remain rejected in every context.
+
+C++ now prepares execution, contract-facing signatures, explicit layouts, and
+local-object metadata within its frontend. C++ and Rust supply the same
+prepared execution package to the shared verifier. The verifier no longer
+traverses C++ bodies or translates C++ types. Original typed artifacts,
+load source identities, and locked compiler/source identities remain attached
+to the prepared input. The plain C parser already supplies the same signature
+and layout vocabulary; its lazy translation-unit path remains intact.
+
+Lifetime cleanup is now derived from typed declaration/record identities and
+one scoped construction stack, independently of the artifact's exit lists.
+Validation and lowering use the same lifetime events: successful construction,
+lexical exit, return, and unwinding to a catch boundary. Returns before any
+construction and between two constructions have unchanged-source regressions;
+normal return capture, reverse destruction, conditional/sibling scopes, and
+scalar exception fixtures retain their behavior. No per-branch live-environment
+clone or scan of a final return's cleanup list is needed. Deterministic tests
+cover growing event and cleanup-edge counts. Existing semantic-profile limits
+remain for the validity/profile/budget cleanup below. Partial construction,
+temporaries, copy/move, broader scope arrangements, and wider exceptions are
+future lifetime events/admissions, rather than additional lowering paths.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -129,6 +169,45 @@ library, but their layouts and other semantically relevant information must
 still be validated. Preserve unchanged upstream source as the integration
 regression for every new slice.
 
+## Next work: finish the design consolidation
+
+Complete these design steps before extending the Bitcoin fee arithmetic slice.
+Each should be a coherent change with unchanged-source regressions, hostile
+artifacts and false claims, verification/expansion/audit agreement, and
+multi-size deterministic work checks for affected hot paths.
+
+1. **Resolved identity and contract names.** Carry declaration identities
+   through execution and contract binding independently of readable names.
+   Define deterministic, unambiguous names for namespace members, overloads,
+   and concrete template instances. Preserve existing ordinary names where
+   unambiguous. Regression cases must distinguish equal spellings in different
+   scopes and equal-width source types; name collisions must never bind the
+   wrong definition.
+2. **Artifact validity, supported semantics, and budgets.** Separate structural
+   validation from the supported semantic profile and resource limits. Keep
+   independent artifact checks; duplicated exporter/checker validation is
+   intentional at the trust boundary. Replace numerical example-shape limits
+   such as one record, two constants, and fixed scope counts only when the
+   corresponding algorithms support bounded growth. Budget diagnostics should
+   identify the exhausted limit, while unsupported-semantics diagnostics name
+   the missing operation. Acceptance requires multi-size constant/record/scope
+   regressions and explicit rejection of malformed graphs.
+3. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
+   interpretation and conversions across the artifact validator, kernel
+   lowering, and contract-facing interfaces. Specify widths, signedness,
+   promotions, narrowing, Boolean conversions, overflow and division
+   definedness against the pinned target. Reuse shared C/Rust operations where
+   semantics agree and keep language-specific policies explicit. Add
+   `__int128` only after its execution, contract types, and proof obligations
+   fit that design; do not introduce another isolated family of matches.
+
+The expression normalizer and prepared execution boundary are delivered in
+this consolidation. Future expression positions and richer ordering support
+must extend the same normalizer. In particular, calls inside arithmetic,
+conditions, assignments, and constructor arguments remain outside this slice;
+integer local initialization, return calls, and discarded calls share the
+current stable-sibling policy.
+
 ## Next bounded milestone: fee arithmetic
 
 Select unchanged `FeeFrac::EvaluateFeeDown/Up` and their instantiated helpers
@@ -137,7 +216,7 @@ and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
-cases. The selected upstream source still requires `__int128`, static scalar helpers,
+cases. The selected upstream source still requires `__int128`,
 assumption obligations, and argument-order support for field-reading siblings
 in `Div(Mul(...), size, RoundDown)` on this target. Stable scalar sibling arguments
 are now supported; upstream `EvaluateFee` is not yet supported.

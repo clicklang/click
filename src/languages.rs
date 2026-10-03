@@ -65,6 +65,13 @@ pub enum PreparedProgram {
     Rust(rust::PreparedRustImport),
 }
 impl PreparedProgram {
+    pub(crate) fn prepare_execution(&self) -> Result<std::sync::Arc<PreparedExecution>, String> {
+        match self {
+            Self::Cpp(import) => Ok(cpp::lower_import(import)?.prepared_execution()),
+            Self::Rust(import) => rust::prepare_execution(import),
+        }
+    }
+
     pub fn logical_source(&self) -> &str {
         match self {
             Self::Cpp(p) => p.logical_source(),
@@ -101,4 +108,12 @@ impl PreparedProgramSource for rust::PreparedRustImport {
     fn prepared_program(&self) -> PreparedProgram {
         PreparedProgram::Rust(self.clone())
     }
+}
+
+/// A frontend's checked execution and contract-facing metadata. Language-specific
+/// interpretation is complete before the shared verifier consumes this package.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedExecution {
+    pub functions: Vec<c::syntax::C0Function>,
+    pub layouts: std::collections::BTreeMap<String, c::syntax::C0StructLayout>,
 }
