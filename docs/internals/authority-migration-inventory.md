@@ -365,6 +365,15 @@ checked lifecycle change; the missing-write case has count authority and a
 read view, but is refused the unchanged C store. No post-count promise grants
 write ownership or another control invariant. All four C programs are unchanged.
 
+`load_origin_first_seen_per_function.md` now selects authority semantics.
+Initialization receives empty slot authority and explicitly creates its capacity
+batch while keeping pool memory owned separately. Reset preserves membership
+without requiring authority; callers retain their own authorities. Both the
+zero-capacity reset pipeline and the two-pool initializer preserve their
+original C and postconditions, including the first pool's count predicate
+across the second pool's call. Verification and expansion audit cover all four
+functions; reordering the sidecar declarations also preserves the verdict.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

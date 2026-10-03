@@ -361,6 +361,12 @@ These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
+**Load-origin fixture slice:** The first-seen-per-function regression uses
+explicit empty slot authorities and checked capacity-batch creation. Pool
+memory remains independently owned; the reset helper performs no population
+operation. The unchanged zero-reset and two-pool C pipelines preserve their
+postconditions and the first pool's predicate across the second call.
+
 **First small slice:** The constant-quantity fixtures now use authority semantics.
 `let_bound_constant_quantity.md` packages allocation, counter memory, and
 authority in an ordinary control; its contract still consumes the quantity

@@ -11,6 +11,11 @@ could not be carried across `pool_init(b, 1)`: the same file with
 `two_inits` declared first verified. The origin is now first-seen within the
 function being verified, so declaration order does not change the verdict.
 
+The authority version keeps slot members separate from owned pool memory.
+Initialization receives an empty population authority and explicitly creates
+the capacity batch. Reset does not change membership; the caller retains its
+authority. Both pipelines retain their original C and result/predicate claims.
+
 ```c filename=load_origin_first_seen_per_function.c
 struct pool {
     int32 checked_out;
@@ -38,9 +43,8 @@ void two_inits(struct pool* a, struct pool* b) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 resource pool_slot(pool: struct pool*) {
-    views object(pool);
 }
 
 predicate valid_pool(pool: struct pool*) {
@@ -51,23 +55,20 @@ predicate valid_pool(pool: struct pool*) {
 verifying "load_origin_first_seen_per_function.c";
 
 void pool_init(struct pool* pool, int32 capacity) {
+    requires count(pool_slot(pool)) == 0;
     requires 0 <= capacity;
     owns object(pool);
+    owns authority(pool_slot(pool));
     produces capacity of pool_slot(pool);
     ensures valid_pool(pool);
     ensures pool->capacity == capacity;
 } by {
+    step();
+    step();
+    fold(capacity of pool_slot(pool));
     execute();
-    if 0 < capacity {
-        fold(capacity of pool_slot(pool));
-        simp();
-    } else {
-        apply(int32_ge_and_not_gt_implies_eq(capacity, 0)) using {
-            0 <= capacity;
-            not (0 < capacity);
-        }
-        simp();
-    }
+    unfold(valid_pool);
+    simp();
 }
 
 void pool_reset(struct pool* pool) {
@@ -76,7 +77,9 @@ void pool_reset(struct pool* pool) {
 } by auto;
 
 void reset_pipeline(struct pool* pool) {
+    requires count(pool_slot(pool)) == 0;
     owns object(pool);
+    owns authority(pool_slot(pool));
     ensures pool->capacity == 0;
 } by {
     step();
@@ -89,6 +92,10 @@ void two_inits(struct pool* a, struct pool* b) {
     requires a != b;
     owns object(a);
     owns object(b);
+    owns authority(pool_slot(a));
+    owns authority(pool_slot(b));
+    requires count(pool_slot(a)) == 0;
+    requires count(pool_slot(b)) == 0;
     produces 1 of pool_slot(a);
     produces 1 of pool_slot(b);
     ensures valid_pool(a);
