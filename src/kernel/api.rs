@@ -5207,6 +5207,53 @@ fn theorem_from_exact_context_fact(
     Some(Theorem::new(proposition))
 }
 
+/// Check the domain of a + (b + c) from the three explicit domains of
+/// a + b, (a + b) + c, and b + c. The first two put the mathematical total
+/// in signed range; the third makes the regrouped inner sum denote that total.
+/// This reads only the named guards through the indexed atomic checker.
+pub(in crate::kernel) fn checked_int32_reassociated_add_domain(
+    assumptions: &PureFactContext,
+    goal: &Proposition,
+) -> bool {
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false) =
+        goal
+    else {
+        return false;
+    };
+    let (a, b, c) = match (left.as_ref(), right.as_ref()) {
+        (a, Bitvector32Term::Add(b, c)) | (Bitvector32Term::Add(b, c), a) => {
+            (a, b.as_ref(), c.as_ref())
+        }
+        _ => return false,
+    };
+    [
+        ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+        ConditionTerm::signed_add_overflows(Bitvector32Term::add(a.clone(), b.clone()), c.clone()),
+        ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
+    ]
+    .iter()
+    .all(|condition| {
+        PureFactContext::settles_exactly(
+            assumptions,
+            &Proposition::ConditionIs(condition.clone(), false),
+        ) || PureFactContext::settles_exactly(
+            assumptions,
+            &Proposition::ConditionIs(
+                match condition {
+                    ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
+                        ConditionTerm::signed_add_overflows(
+                            right.as_ref().clone(),
+                            left.as_ref().clone(),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+                false,
+            ),
+        )
+    })
+}
+
 /// Certifies the exact count lower bound witnessed by owned declared-resource
 /// authority in a concrete ghost state. The returned theorem is bound to the
 /// proposition reconstructed here and retains its contextual proof premises;

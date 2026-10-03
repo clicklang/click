@@ -1,4 +1,4 @@
-# A symbolic population increment bounded
+# A symbolic birth and a unit birth retain an arbitrary entry total
 
 ```c filename=population_symbolic_increment_bounded.c
 void mint_n(int32* o, int32 n) {}
@@ -17,10 +17,12 @@ void mint_n(int32* o, int32 n) {
 } by { fold(n of tok(o)); execute(); simp(); }
 void increment(int32* o, int32 n) {
     owns authority(tok(o));
-    requires count(tok(o)) == 0;
+    requires defined(count(tok(o)) + n);
+    requires defined((count(tok(o)) + n) + 1);
+    requires defined(n + 1);
     requires 0 < n;
     requires n < 2147483647;
-    ensures count(tok(o)) == n + 1;
+    ensures count(tok(o)) == old(count(tok(o))) + (n + 1);
 } by { execute(); simp(); }
 ```
 

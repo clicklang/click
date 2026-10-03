@@ -396,6 +396,17 @@ Kernel checks reject unrelated facts and resource deltas and measure bounded
 work beside increasing amounts of unrelated state. Both proofs and all four
 original expansion-audit sites pass.
 
+`population_symbolic_increment_bounded.md` and
+`population_symbolic_increment_overflow.md` now select authority semantics.
+Their original C and claims are retained: a symbolic helper birth followed by
+a unit birth proves `count == n + 1` when bounded and rejects the second
+addition when overflowing. Count observations and contract effects retain both
+deltas. Numerical fragments keep separate checked custody from the symbolic
+batch, including helper transfer and consumption. Companion regressions cover
+an arbitrary entry total and refusal to drop the unit delta; kernel regressions
+cover custody, repeated spend, missing authority, and deterministic scaling.
+Regrouped signed sums require all three addition domains at certification.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

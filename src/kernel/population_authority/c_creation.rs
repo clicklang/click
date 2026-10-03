@@ -152,6 +152,32 @@ pub(in crate::kernel) struct SymbolicPopulationCount {
     pub symbolic_delta: Option<(bool, Bitvector32Term)>,
 }
 
+impl SymbolicPopulationCount {
+    /// Preserve both components of a checked symbolic birth followed by
+    /// numerical births. Other mixed directions are not admitted by the ledger.
+    pub(in crate::kernel) fn combined_delta(&self) -> Option<(bool, Bitvector32Term)> {
+        match (&self.symbolic_delta, self.delta) {
+            (Some((true, quantity)), delta) if delta > 0 => Some((
+                true,
+                Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(delta as u32)),
+            )),
+            (Some(delta), _) => Some(delta.clone()),
+            (None, delta) if delta != 0 => {
+                Some((delta > 0, Bitvector32Term::Constant(delta.unsigned_abs())))
+            }
+            (None, _) => None,
+        }
+    }
+}
+
+impl OpaqueImport {
+    fn has_composable_symbolic_birth(&self) -> bool {
+        self.entry_symbolic_members.is_none()
+            && self.entry_owned_members == 0
+            && matches!(self.symbolic_delta, Some((true, _)))
+    }
+}
+
 /// Inputs of a checked C lifetime event. Each key is proportional to the
 /// pointer or family named by that one operation.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -917,6 +943,15 @@ impl CreationEvents {
         {
             return None;
         }
+        if import.has_composable_symbolic_birth() {
+            return Some((
+                true,
+                Bitvector32Term::add(
+                    import.symbolic_delta.as_ref()?.1.clone(),
+                    Bitvector32Term::Constant(import.owned_members),
+                ),
+            ));
+        }
         import.symbolic_delta.clone().or_else(|| {
             if import.entry_symbolic_members.is_some()
                 || (import.entry_count.is_none()
@@ -1102,7 +1137,16 @@ impl CreationEvents {
         } else {
             None
         };
-        let symbolic_batch = !authority_fact && symbolic_quantity.is_some();
+        let numeric_custody = quantity.as_const().is_some_and(|quantity| {
+            quantity > 0
+                && quantity
+                    <= import
+                        .member_holders
+                        .get(&from.0.opaque_actor)
+                        .copied()
+                        .unwrap_or(0)
+        });
+        let symbolic_batch = !authority_fact && symbolic_quantity.is_some() && !numeric_custody;
         let quantity = if symbolic_batch {
             if !same_quantity(symbolic_quantity.unwrap(), quantity, assumptions) {
                 return Err(CreationRefusal::InvalidQuantity);
@@ -1163,7 +1207,9 @@ impl CreationEvents {
                 holders = Self::adjust_rights(holders, receiver, false, true);
             }
         } else {
-            if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
+            if (import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some())
+                && !import.has_composable_symbolic_birth()
+            {
                 return Err(CreationRefusal::InvalidQuantity);
             }
             let private_key = Self::exact_count_key(member_description);
@@ -1709,11 +1755,11 @@ impl CreationEvents {
             .as_const()
             .filter(|amount| *amount <= i32::MAX as u32)
             && let Some(import) = self.0.opaque_imports.get(description)
-            && import.entry_symbolic_members.is_none()
-            && import.symbolic_delta.is_none()
+            && (import.entry_symbolic_members.is_none() && import.symbolic_delta.is_none()
+                || import.has_composable_symbolic_birth())
             && description.population_arity().is_none()
         {
-            if produce && amount > 0 {
+            if produce && amount > 0 && !import.has_composable_symbolic_birth() {
                 let entry = import
                     .entry_count
                     .clone()
@@ -2095,11 +2141,38 @@ impl CreationEvents {
                     }
                 }
             }
-            // Numeric transitions retain their exact net cardinality. Mixing a
-            // unit transition with an imported symbolic batch would lose one
-            // of the deltas from its population count.
+            // A born symbolic batch and separately held numerical fragments
+            // retain independent custody. The count summary composes both deltas.
             if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
-                return Err(CreationRefusal::InvalidQuantity);
+                if scope.population_arity().is_some() || !import.has_composable_symbolic_birth() {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
+                if produce && amount > 0 {
+                    let current = self
+                        .observe_symbolic(&scope)
+                        .and_then(|count| {
+                            Some(Bitvector32Term::add(
+                                count.entry_count.clone(),
+                                count.combined_delta()?.1,
+                            ))
+                        })
+                        .ok_or(CreationRefusal::MissingAuthority)?;
+                    let condition = crate::kernel::ConditionTerm::signed_add_overflows(
+                        current.clone(),
+                        Bitvector32Term::Constant(amount),
+                    );
+                    if !assumptions.is_some_and(|facts| {
+                        facts.exact_condition_value(&condition) == Some(false)
+                            || facts
+                                .indexed_constant_interval(&current)
+                                .is_some_and(|(_, high)| {
+                                    high + i64::from(amount) <= i64::from(i32::MAX)
+                                })
+                            || PureFactContext::decide_intrinsically(&condition) == Some(false)
+                    }) {
+                        return Err(CreationRefusal::InvalidQuantity);
+                    }
+                }
             }
             // Opaque custody follows only checked exact contract transfers;
             // numeric exchanges change the global fragment total separately.

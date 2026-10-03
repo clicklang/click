@@ -397,11 +397,19 @@ zero/negative boundary with a separate reference family and owned counter
 memory. Negative coefficients report the required nonnegative fact rather
 than `InvalidQuantity`. C source is unchanged.
 
-**Next boundaries found:** A symbolic helper birth followed by a unit birth is
-currently rejected because numeric and symbolic ledger effects cannot mix.
-The reduced reproduction is the original pair of
-`population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
-authority and defined-addition contracts.
+**Mixed-birth slice:** The original
+`population_symbolic_increment_{bounded,overflow}.md` pair now uses explicit
+authority and defined-addition contracts with unchanged C. A checked symbolic
+birth can be followed by numerical births and consumption of those separately
+held numerical fragments; the count retains both deltas. The bounded case
+preserves `count == n + 1`; the overflowing case rejects the second helper's
+undefined addition. Numerical custody transfers independently of the symbolic
+batch, preserving exact quantities, authority custody, and single-spend checks.
+An arbitrary-entry companion and a false-total companion check that neither
+the entry total nor the unit delta disappears. Signed regrouping checks all
+three addition domains rather than accepting modular equality as a domain proof.
+This does not admit splitting a symbolic batch or mixing a symbolic input/spend
+with numerical effects; those remain separate ledger boundaries.
 
 **Global-count decision resolved:** Remove the two obsolete fixtures that
 counted across all independently anchored populations or used integer-only

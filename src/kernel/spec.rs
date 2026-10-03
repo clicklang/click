@@ -6180,7 +6180,7 @@ fn evaluate_resource_count_paths(
                     creation.observe_symbolic(&description)
                 };
                 if let Some(symbolic) = symbolic {
-                    let entry = symbolic.entry_count;
+                    let entry = symbolic.entry_count.clone();
                     // An imported control's checked equality to a population
                     // count entails this bound, including any member owned by
                     // the helper at entry. It is not an arbitrary C assumption.
@@ -6193,21 +6193,27 @@ fn evaluate_resource_count_paths(
                         true,
                     );
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
-                    let delta =
-                        symbolic
-                            .symbolic_delta
-                            .clone()
-                            .or_else(|| match symbolic.delta.cmp(&0) {
-                                std::cmp::Ordering::Less => Some((
-                                    false,
-                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
-                                )),
-                                std::cmp::Ordering::Greater => Some((
-                                    true,
-                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
-                                )),
-                                std::cmp::Ordering::Equal => None,
-                            });
+                    // The composed quantity is itself signed arithmetic. A
+                    // wrapped inner sum must not disappear inside entry + delta.
+                    if let Some((true, quantity)) = &symbolic.symbolic_delta
+                        && symbolic.delta > 0
+                    {
+                        let overflow = ConditionTerm::signed_add_overflows(
+                            quantity.clone(),
+                            Bitvector32Term::Constant(symbolic.delta as u32),
+                        );
+                        let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                        if !path_assumptions.proves_exact(&no_overflow)
+                            && PureFactContext::decide_intrinsically(&overflow) != Some(false)
+                            && path_assumptions.decide(&overflow) != Some(false)
+                        {
+                            obligations.push(
+                                ProofObligation::verification_condition(no_overflow)
+                                    .with_context("composed member quantity fits in int32"),
+                            );
+                        }
+                    }
+                    let delta = symbolic.combined_delta();
                     let count = match delta {
                         None => entry,
                         Some((true, quantity)) => {
@@ -6220,6 +6226,10 @@ fn evaluate_resource_count_paths(
                             if !bounded.proves_exact(&no_overflow)
                                 && PureFactContext::decide_intrinsically(&overflow) != Some(false)
                                 && bounded.decide(&overflow) != Some(false)
+                                && !crate::kernel::api::checked_int32_reassociated_add_domain(
+                                    &bounded,
+                                    &no_overflow,
+                                )
                             {
                                 obligations.push(
                                     ProofObligation::verification_condition(no_overflow)

@@ -6152,7 +6152,7 @@ impl CState {
                 let imported = events
                     .observe_symbolic(&description)
                     .ok_or("Requires a current authority count")?;
-                if let Some((produce, quantity)) = imported.symbolic_delta {
+                if let Some((produce, quantity)) = imported.combined_delta() {
                     if produce {
                         Bitvector32Term::add(imported.entry_count, quantity)
                     } else {

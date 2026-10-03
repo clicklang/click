@@ -938,6 +938,173 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
 }
 
 #[test]
+fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(940_150));
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_add_overflows(quantity.clone(), Bitvector32Term::Constant(3)),
+            false,
+        );
+    let work = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(Bitvector32Term::Constant(0)),
+                None,
+                None,
+            )
+            .unwrap();
+        let symbolic = entry
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &assumptions)
+            .unwrap()
+            .0;
+        assert!(matches!(
+            symbolic.checked_member_exchange_quantity(
+                &block,
+                &description,
+                true,
+                &Bitvector32Term::Constant(3),
+                &PureFactContext::new()
+            ),
+            Err(CreationRefusal::InvalidQuantity)
+        ));
+        let (_, work) = crate::persistent::measure_persistent_work(|| {
+            let born = symbolic
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(3),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            let observed = born.observe_symbolic(&description).unwrap();
+            assert_eq!(observed.delta, 3);
+            assert_eq!(
+                observed.combined_delta(),
+                Some((
+                    true,
+                    Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(3))
+                ))
+            );
+            assert_eq!(
+                born.imported_member_delta_since_entry(&description),
+                observed.combined_delta()
+            );
+            let child = born.enter_call();
+            let sent = child
+                .transfer_call_fact(&born, &child, &description, true)
+                .unwrap()
+                .transfer_call_fact(&born, &child, &description, false)
+                .unwrap();
+            // A numerical fragment can be passed and spent independently of the
+            // caller's framed symbolic batch and two other numerical members.
+            let spent = sent
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            assert_eq!(spent.observe_symbolic(&description).unwrap().delta, 2);
+            let returned = spent
+                .transfer_call_fact(&child, &born, &description, true)
+                .unwrap()
+                .finish_call(&born)
+                .unwrap();
+            let restored = returned
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(2),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            assert_eq!(
+                restored
+                    .observe_symbolic(&description)
+                    .unwrap()
+                    .combined_delta(),
+                Some((true, quantity.clone()))
+            );
+            assert!(restored.owns_population_member(&description));
+            assert!(matches!(
+                restored.checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions
+                ),
+                Err(CreationRefusal::MissingMembers)
+            ));
+            let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+            assert!(
+                restored
+                    .transfer_call_fact_quantity(
+                        &born,
+                        &child,
+                        &description,
+                        false,
+                        &wrong,
+                        &assumptions
+                    )
+                    .is_err()
+            );
+            let lent = restored
+                .transfer_call_fact(&born, &child, &description, true)
+                .unwrap();
+            assert!(matches!(
+                lent.checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions
+                ),
+                Err(CreationRefusal::MissingAuthority)
+            ));
+        });
+        work
+    });
+    assert!(work[0] > 0);
+    assert!(
+        work.iter().all(|sample| *sample <= work[0] + 256),
+        "mixed batch work scanned unrelated populations: {work:?}"
+    );
+}
+
+#[test]
 fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     let description = member_description(PointerBlock::ExternalArgument);
     // Keep this a genuinely symbolic batch: fixed numerical batches now
@@ -1006,7 +1173,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     assert!(born.owns_population_member(&description));
     assert!(matches!(
         born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
-        Err(CreationRefusal::InvalidQuantity)
+        Err(CreationRefusal::MissingMembers)
     ));
 }
 
