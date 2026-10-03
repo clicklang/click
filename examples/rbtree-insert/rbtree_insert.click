@@ -10416,3 +10416,23 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         },
     }
 }
+
+void rb_insert_color(struct rb_node* node, struct rb_root* root) {
+    consumes c: ctx_at(node, root);
+    consumes t: rb_at(node);
+    requires t.model != RbTree::Empty;
+    requires rb_color_bit(t.model) == 0;
+    requires ctx_holds(c.model, t.model) == 1;
+    requires is_rb(t.model) == 1;
+    requires ctx_almost_rb_insert(c.model, black_height(t.model)) == 1;
+    requires rb_tree_parent_consistent(plug(c.model, t.model)) == 1;
+    produces tree: rb_tree_at(root);
+    ensures rb_inorder(focus_tree(tree.model))
+        == rb_inorder(plug(old(c.model), old(t.model)));
+    ensures is_rb_root(focus_tree(tree.model)) == 1;
+    ensures rb_tree_parent_consistent(focus_tree(tree.model)) == 1;
+} by {
+    let { tree: tree } = step(__rb_insert(node, root, dummy_rotate), { c: c, t: t });
+    step();
+    simp();
+}

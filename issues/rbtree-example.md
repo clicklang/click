@@ -22,9 +22,10 @@ tree and produces another cannot state that without an abstract model.
 **`__rb_insert` verifies end to end** on the unchanged Linux C
 (`examples/rbtree-insert/rbtree_insert.click`, in the example gate), with a
 restated contract that produces the fixed-up tree at its focus rather than at
-`root->rb_node`; see chunk 7. **`rb_insert_color` does not**: it calls the
-inline `__rb_insert`, whose contract Click never applies at a call site.
-Both need the owner's decision before chunk 7 can be called complete.
+`root->rb_node`; see chunk 7. **`rb_insert_color` verifies too** (2026-10-03):
+inline helpers with a verified contract are now called through it, so its one
+call to `__rb_insert` applies that contract. Restoring the root-form contract
+waits on recursive lemmas.
 
 ## Priorities, 2026-09-13
 
@@ -723,17 +724,14 @@ the whole-tree model are the same. This needs the owner's review: it is the
 bottom-up form of D4, and callers that want the root form face the same
 unbounded fold.
 
-`rb_insert_color` is not proved. Its only statement calls
-`static __always_inline __rb_insert`, and Click executes an inline helper's
-body at every call site and never applies its contract (documented in
-`docs/reference/language/c0.md`), so a proof would have to run the fixup loop
-again inline, without invariants. Executing that symbolic loop also runs
-away instead of failing promptly:
-`bugs/inline-helper-symbolic-loop-call-runs-away.md`. A call step's binder
-map on an inline helper was refused as if the call were missing; it is now
-refused by name (`mdtests/call_step_binder_map_on_inline_helper_rejected.md`).
-Proving `rb_insert_color` needs a decision about verified contracts of inline
-helpers, which this chunk does not make.
+`rb_insert_color` is proved (2026-10-03). Its only statement calls
+`static __always_inline __rb_insert`. By the owner's decision, an inline
+helper with a verified contract is called through that contract like any
+function, and only a contract-less helper runs its body at the call site
+(`docs/reference/language/c0.md`). The proof is one call step binding the
+context and red subtree to `__rb_insert`'s `consumes` binders. A contract-less
+helper with a symbolic loop still runs away instead of failing promptly
+(`bugs/inline-helper-symbolic-loop-call-runs-away.md`).
 
 `examples/rbtree-insert/rbtree_insert.click` is now the proof and passes in
 the example gate; the `.frontier` file is gone. `tests/examples.rs` keeps the
