@@ -59,9 +59,10 @@ const PROJECTED_FUNCTIONS: &[&str] = &[
 /// File-scope items the projection keeps and omits.
 const PROJECTED_ITEMS: (usize, usize) = (32, 2543);
 
-/// The existing compiler-import profile refuses the recorded kernel
-/// compiler arguments before it runs the compiler.
-const IMPORT_REJECTION: &str = "unsupported compiler argument `-fmacro-prefix-map=./=`";
+/// The configured option profile classifies every recorded argument and
+/// still refuses `-O2`, the 50th, before it runs the compiler. See the
+/// classification in `docs/reference/cli/import.md`.
+const IMPORT_REJECTION: &str = "source `lib/rbtree.c`: unsupported compiler argument 50 `-O2`: option profile `linux-6.8-x86_64-kbuild` refuses it";
 
 /// Set to a non-empty value to fail, instead of reporting, when the host
 /// toolchain is not the recorded one.
@@ -347,18 +348,18 @@ fn linux_rbtree_closure_matches_its_provenance() {
     );
     assert!(closure.0.join("lib/rbtree.c").is_file());
 
-    // The import configuration names the recorded invocation: the recorded
-    // arguments without the ones the importer's kernel profile fixes itself.
+    // The import configuration names the recorded invocation: every recorded
+    // argument, in order, except `-E` and the source operand, which the
+    // importer supplies itself.
     let config: serde_json::Value =
         serde_json::from_slice(&fs::read(fixture().join("rbtree.click.import.json")).unwrap())
             .unwrap();
-    let fixed = ["-E", "-nostdinc", "-std=gnu11", "-funsigned-char", "-m64"];
     let mut recorded = provenance["preprocess"]["argv"]
         .as_array()
         .unwrap()
         .iter()
         .map(|argument| argument.as_str().unwrap())
-        .filter(|argument| !fixed.contains(argument))
+        .filter(|argument| *argument != "-E")
         .collect::<Vec<_>>();
     assert_eq!(recorded.pop(), Some("lib/rbtree.c"));
     let configured = config["sources"][0]["args"]
@@ -386,8 +387,8 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
         return;
     }
 
-    // The import route: the importer's profile refuses the recorded
-    // arguments, so no lock and no artifact are produced.
+    // The import route: the option profile refuses `-O2`, so no lock and no
+    // artifact are produced.
     for name in ["rbtree.click", "rbtree.click.import.json"] {
         fs::copy(fixture().join(name), closure.0.join(name)).unwrap();
     }
@@ -402,8 +403,7 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
         ),
     )
     .unwrap();
-    let error = create_lock(&config_path)
-        .expect_err("the importer profile does not accept the kernel compiler arguments");
+    let error = create_lock(&config_path).expect_err("the option profile does not accept -O2");
     assert!(error.contains(IMPORT_REJECTION), "{error}");
     assert!(!closure.0.join("rbtree.click.import.lock.json").exists());
     assert!(!closure.0.join("rbtree.i").exists());

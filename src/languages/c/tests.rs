@@ -13039,3 +13039,42 @@ fn c0_const_pointer_fields_store_proof_expands_and_reverifies() {
         crate::surface::verify_c0_sources(&expanded, &[("fields.c", c)]).unwrap();
     }
 }
+
+/// The `linux-6.8-x86_64-kbuild` option profile accepts `-fshort-wchar`
+/// because the frontend has no wide literals, and `-fstrict-flex-arrays=3`
+/// because it has no flexible or zero-length struct members: every struct
+/// array, including a trailing `[1]`, keeps its declared length.
+#[test]
+fn c0_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
+    for (source, refusal) in [
+        (
+            "uint32 wide_char(void) { return L'x'; }",
+            "undeclared identifier `L`",
+        ),
+        ("uint32 wide_char(int32 L) { return L'x'; }", ""),
+        ("uint32 wide_string(int32 L) { return sizeof(L\"x\"); }", ""),
+        (
+            "struct packet { int32 length; uint8 data[]; };\nint32 use(struct packet *p) { return p->length; }",
+            "expected expression, got `]`",
+        ),
+        (
+            "struct packet { int32 length; uint8 data[0]; };\nint32 use(struct packet *p) { return p->length; }",
+            "struct arrays must have positive length",
+        ),
+    ] {
+        let error = syntax::parse_functions(source)
+            .map(|_| ())
+            .expect_err(source);
+        assert!(
+            error.message().contains(refusal),
+            "{source}: {}",
+            error.message()
+        );
+    }
+    for accepted in [
+        "uint32 narrow_char(void) { return 'x'; }",
+        "struct packet { int32 length; uint8 data[1]; };\nint32 use(struct packet *p) { return p->length; }",
+    ] {
+        syntax::parse_functions(accepted).expect(accepted);
+    }
+}

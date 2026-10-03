@@ -10,11 +10,13 @@
       "LANG": "C"
     }
   },
+  "option_profile": "linux-6.8-x86_64-kbuild",
   "sources": [
     {
       "logical_source": "lib/rbtree.c",
       "path": "lib/rbtree.c",
       "args": [
+        "-nostdinc",
         "-I./arch/x86/include",
         "-I./arch/x86/include/generated",
         "-I./include",
@@ -31,7 +33,9 @@
         "-D__KERNEL__",
         "-fmacro-prefix-map=./=",
         "-Werror",
+        "-std=gnu11",
         "-fshort-wchar",
+        "-funsigned-char",
         "-fno-common",
         "-fno-PIE",
         "-fno-strict-aliasing",
@@ -42,6 +46,7 @@
         "-mno-avx",
         "-fcf-protection=branch",
         "-fno-jump-tables",
+        "-m64",
         "-falign-jumps=1",
         "-falign-loops=1",
         "-mno-80387",

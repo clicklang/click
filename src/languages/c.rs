@@ -3,6 +3,7 @@
 pub(crate) mod address_taken;
 pub mod compiler_import;
 pub(crate) mod integer_specifiers;
+pub(crate) mod option_profile;
 pub(crate) mod projection;
 pub(crate) mod provenance;
 pub mod source;

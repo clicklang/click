@@ -44,13 +44,15 @@ the recorded arguments.
 
 `linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier` needs
 the recorded compiler, identified by the SHA-256 of the driver and of `cc1`.
-With it, the test checks three things:
+With it, the test checks four things:
 
-1. `click import lock` refuses the configuration, because the importer's
-   kernel profile accepts only `-D`, `-U`, `-I`, `-isystem`, and `-include`.
-   The first refused argument is `-fmacro-prefix-map=./=`. Which of the
-   recorded options the profile should accept is an open decision; the
-   options are not removed to make the import fit.
+1. `click import lock` refuses the configuration at `-O2`, argument 50. The
+   configuration carries every recorded argument except `-E` and the source
+   operand, which the importer supplies, and selects the `linux-6.8-x86_64-kbuild` option
+   profile. That profile accepts every other recorded option and keeps
+   `-O2` refused; the classification and reasons are in
+   [`docs/reference/cli/import.md`](../../docs/reference/cli/import.md).
+   The options are not removed to make the import fit.
 2. The recorded preprocessing, run directly in the extracted closure, yields
    exactly the recorded 637,604 bytes.
 3. Click's C frontend rejects that artifact first at
@@ -66,9 +68,11 @@ the closure, prints `linux-rbtree: NOT CHECKED` with the reason, and passes:
 a different GCC is not a defect in the tree under test. Set
 `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` to make that case fail instead.
 
-The configuration omits `HOME` from the recorded environment because the
-importer does not allowlist it; preprocessing does not read it. The direct
-preprocessing step uses the recorded environment unchanged.
+The configuration omits `HOME` from the recorded environment, and the
+importer does not allowlist it, because preprocessing does not read it: the
+compiler driver and `cc1` do not name it, a traced run opens nothing under
+it, and the output is byte-identical with it unset or set elsewhere. The
+direct preprocessing step uses the recorded environment unchanged.
 
 ## Measuring the frontier
 

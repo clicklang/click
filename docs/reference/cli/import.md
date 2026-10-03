@@ -648,8 +648,9 @@ supply their actual selected roots. Lock preparation may succeed while Click's
 C parser still refuses an unsupported declaration in a real system header.
 
 Configured forced includes and ordered `-D` and `-U` options select additional
-preprocessing inputs. Unsupported compiler options, response files, plugins,
-and execution hooks are rejected. The compiler runs with a cleared environment;
+preprocessing inputs. Other compiler options are rejected unless a named option
+profile, described below, lists their exact spelling. Response files, plugins,
+and execution hooks are always rejected. The compiler runs with a cleared environment;
 only the configuration's supported variables are supplied. Use explicit
 `SOURCE_DATE_EPOCH` when source depends on date/time macros.
 
@@ -673,6 +674,136 @@ partial successful import.
 Compiler imports initially reject incremental `--changed-since` requests and
 do not use verification markers. Their proofs are checked through the same
 engine used for ordinary verification, profiling, audit, and expansion.
+
+### Option profile `linux-6.8-x86_64-kbuild`
+
+A configuration may set `"option_profile"` to a named option profile. The
+profile admits further options beside the preprocessing options above, and
+only for its target. The lock records the profile name beside each source's
+complete argument vector, and loading refuses a lock whose profile differs
+from the configuration's.
+
+The one profile, `linux-6.8-x86_64-kbuild`, is the option set of the recorded
+Linux v6.8.12 `x86_64_defconfig` Kbuild compilation of `lib/rbtree.c` with
+GCC 13, for the `x86_64-linux-kernel` target. It exists for that in-repository
+import. An option is accepted only where ignoring it cannot make Click accept
+a program the compiler treats differently: the option affects only
+preprocessing, whose result is the locked artifact, or only diagnostics, or
+only code generation, or it makes the compiler's semantics stricter than
+Click's or no weaker. The list is closed and keyed to exact spellings. A
+different value, an unlisted sibling, or an unknown option is refused with its
+source and argument position, for example
+``source `lib/rbtree.c`: unsupported compiler argument 50 `-O2`: ...``.
+
+Besides `-E` and the source operand, which the importer supplies itself, the
+recorded vector has 102 options: 15 base preprocessing options, 4 that the
+target fixes, and 83 others with 79 distinct spellings. Of those 79, 78 are
+accepted, two of them only beside `-mno-80387`, and one, `-O2`, is
+rejected. Because `-O2` stays rejected, the recorded configuration does not
+lock yet.
+
+| Recorded option | Verdict | Reason |
+| --- | --- | --- |
+| `-I<dir>` (7) | Base | Include search; the files read are in the lock. |
+| `-include <file>` (3) | Base | Forced include; the files read are in the lock. |
+| `-D<macro>` (5) | Base | Macro definition; its effect is in the artifact. |
+| `-nostdinc` | Fixed | The target's own argument. |
+| `-std=gnu11` | Fixed | The target's own argument; Click's kernel C is GNU C11. |
+| `-funsigned-char` | Fixed | The target's own argument; Click's plain `char` is unsigned. |
+| `-m64` | Fixed | The target's own argument; Click's ABI is LP64. |
+| `-fmacro-prefix-map=./=` | Accepted | Rewrites the paths `__FILE__` expands to, in the artifact; Click refuses `__builtin_FILE`. |
+| `-Wall` | Accepted | Diagnostics only. |
+| `-Werror` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=date-time` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=designated-init` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=implicit-function-declaration` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=implicit-int` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=incompatible-pointer-types` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=return-type` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Werror=strict-prototypes` | Accepted | Diagnostics only; it can only make the compiler refuse. |
+| `-Wcast-function-type` | Accepted | Diagnostics only. |
+| `-Wenum-conversion` | Accepted | Diagnostics only. |
+| `-Wframe-larger-than=2048` | Accepted | Diagnostics only. |
+| `-Wimplicit-fallthrough=5` | Accepted | Diagnostics only. |
+| `-Wmissing-declarations` | Accepted | Diagnostics only. |
+| `-Wmissing-prototypes` | Accepted | Diagnostics only. |
+| `-Wundef` | Accepted | Diagnostics only. |
+| `-Wvla` | Accepted | Diagnostics only. |
+| `-Wno-address-of-packed-member` | Accepted | Diagnostics only. |
+| `-Wno-alloc-size-larger-than` | Accepted | Diagnostics only. |
+| `-Wno-array-bounds` | Accepted | Diagnostics only. |
+| `-Wno-dangling-pointer` | Accepted | Diagnostics only. |
+| `-Wno-format-overflow` | Accepted | Diagnostics only. |
+| `-Wno-format-security` | Accepted | Diagnostics only. |
+| `-Wno-format-truncation` | Accepted | Diagnostics only. |
+| `-Wno-frame-address` | Accepted | Diagnostics only. |
+| `-Wno-main` | Accepted | Diagnostics only. |
+| `-Wno-maybe-uninitialized` | Accepted | Diagnostics only. |
+| `-Wno-missing-field-initializers` | Accepted | Diagnostics only. |
+| `-Wno-override-init` | Accepted | Diagnostics only. |
+| `-Wno-packed-not-aligned` | Accepted | Diagnostics only. |
+| `-Wno-pointer-sign` | Accepted | Diagnostics only. |
+| `-Wno-restrict` | Accepted | Diagnostics only. |
+| `-Wno-shift-negative-value` | Accepted | Diagnostics only. |
+| `-Wno-sign-compare` (twice) | Accepted | Diagnostics only. |
+| `-Wno-stringop-overflow` | Accepted | Diagnostics only. |
+| `-Wno-stringop-truncation` | Accepted | Diagnostics only. |
+| `-Wno-trigraphs` | Accepted | Diagnostics only; GNU C11 does not replace trigraphs. |
+| `-Wno-type-limits` | Accepted | Diagnostics only. |
+| `-Wno-unused-but-set-variable` (twice) | Accepted | Diagnostics only. |
+| `-Wno-unused-const-variable` (twice) | Accepted | Diagnostics only. |
+| `-fno-common` | Accepted | GCC 13's default; a tentative definition is one zero-initialized definition, as Click models it. |
+| `-fno-delete-null-pointer-checks` | Accepted | Stops GCC assuming that a dereferenced pointer is not null; Click refuses any access through a possibly null pointer. |
+| `-fno-strict-aliasing` | Accepted | Removes GCC's type-based alias assumptions; Click never assumes them, and refuses accesses that do not fit the cell. |
+| `-fno-strict-overflow` | Accepted | Makes signed and pointer overflow wrap; Click treats both as undefined, which is stricter. |
+| `-fshort-wchar` | Accepted | Changes `wchar_t` and the wide-literal element type; the predefines are in the artifact and Click has no wide literals. |
+| `-fstrict-flex-arrays=3` | Accepted | Only `[]` is a flexible member; Click has no flexible or zero-length members and bounds every struct array by its declared length. |
+| `-ftrivial-auto-var-init=zero` | Accepted | Zeroes uninitialized automatic storage; Click refuses any read of uninitialized storage. |
+| `-fno-allow-store-data-races` | Accepted | GCC 13's default; forbids invented stores, so it only removes transformations. |
+| `-falign-functions=16` | Accepted | Code layout only. |
+| `-falign-jumps=1` | Accepted | Code layout only. |
+| `-falign-loops=1` | Accepted | Code layout only. |
+| `-fcf-protection=branch` | Accepted | Adds `endbr64` landing pads; its `__CET__` predefine acts only through preprocessing. |
+| `-fconserve-stack` | Accepted | Inlining and frame-size heuristics only. |
+| `-fno-PIE` | Accepted | Position-dependent code; dropping `__pie__` and `__PIE__` acts only through preprocessing. |
+| `-fno-asynchronous-unwind-tables` | Accepted | Omits unwind tables only. |
+| `-fno-jump-tables` (twice) | Accepted | Switch lowering only. |
+| `-fno-stack-check` | Accepted | Stack probing only. |
+| `-fno-stack-clash-protection` | Accepted | Stack probing only. |
+| `-fomit-frame-pointer` | Accepted | Frame layout only; Click refuses `__builtin_frame_address`. |
+| `-fpatchable-function-entry=16,16` | Accepted | Padding before function entry only. |
+| `-fstack-protector-strong` | Accepted | Adds stack canaries; Click refuses the overflows they detect. |
+| `-mcmodel=kernel` | Accepted | Code and data addresses in the top 2 GiB; Click assumes nothing about address values beyond null. |
+| `-mfunction-return=thunk-extern` | Accepted | Return thunks only. |
+| `-mindirect-branch-cs-prefix` | Accepted | Instruction encoding only. |
+| `-mindirect-branch-register` | Accepted | Indirect-branch code generation only. |
+| `-mindirect-branch=thunk-extern` | Accepted | Indirect-branch thunks only. |
+| `-mno-3dnow` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-80387` | Accepted | Floating point uses no x87; it fails to compile or calls libgcc's IEEE routines, without excess precision. |
+| `-mno-avx` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-fp-ret-in-387` | Accepted | Return convention for x87 values, which Click has no operations on. |
+| `-mno-mmx` | Accepted | Restricts instruction selection; no floating-point evaluation change. |
+| `-mno-red-zone` | Accepted | Stack layout only. |
+| `-mno-sse` | Accepted with `-mno-80387` | Alone it moves floating point to the x87 with excess precision (`__FLT_EVAL_METHOD__` 2), which Click does not model. |
+| `-mno-sse2` | Accepted with `-mno-80387` | Alone it moves `double` to the x87 with excess precision (`__FLT_EVAL_METHOD__` -1), which Click does not model. |
+| `-mpreferred-stack-boundary=3` | Accepted | Stack alignment only; GCC realigns frames that need more. |
+| `-mskip-rax-setup` | Accepted | Variadic-call register setup only. |
+| `-mtune=generic` | Accepted | Instruction scheduling only. |
+| `-O2` | Rejected | See below. |
+
+`-O2` stays rejected because the frontend accepts the `nonnull`, `const`, and
+`noreturn` function attributes without modeling them, and GCC relies on all
+three from `-O1` up. With GCC 13 at `-O2`, a definition whose parameter is
+declared `nonnull` loses its own null check, even with
+`-fno-delete-null-pointer-checks`; two calls to a `const` function on either
+side of a store are merged into one; and no code follows a `noreturn` call. At
+`-O0` GCC does none of these, and Click's model agrees with that build. Before
+`-O2` can be accepted, Click would have to treat a `nonnull` parameter as a
+caller obligation, check or refuse `const` on definitions and model a `const`
+call as a function of its arguments, and treat a `noreturn` call as one that
+does not return, or else refuse these attributes under an optimizing profile.
+The `leaf` attribute, which Click also accepts, needs the same review, since
+GCC assumes a `leaf` call leaves the unit's unescaped static data unchanged.
 
 ## Dependency-closure projection
 
@@ -722,10 +853,12 @@ Reproducing its invocation is not a formal proof that its preprocessing is
 correct. It supplies neither executable C semantics nor proof authority to
 Click: those remain in Click's frontend and independent kernel checker.
 
-The captured Linux 6.8.12 rbtree translation unit is not yet supported by this
-first profile. Its full header graph includes unsupported C forms, effectful
-assembly, storage-producing exports, and additional compiler options. The
-pinned input closure in `integrations/linux-rbtree/` is a negative gate
+The captured Linux 6.8.12 rbtree translation unit does not lock yet. Its
+configuration selects the `linux-6.8-x86_64-kbuild` option profile, which
+classifies every recorded option and still rejects `-O2`. Its full header
+graph also includes unsupported C forms, effectful assembly, and
+storage-producing exports, which the dependency-closure projection leaves out.
+The pinned input closure in `integrations/linux-rbtree/` is a negative gate
 fixture: it reproduces the preprocessed artifact and pins the first rejection
 on each route. It is not a passing verification fixture.
 

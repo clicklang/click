@@ -28,3 +28,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
 - [`do { ... } while (0)` over a parameter or its memory fails with an internal evidence error](do-while-zero-over-parameter-state-fails-with-internal-evidence-error.md)
 - [An error in the standard library is reported against the user's module](standard-library-error-names-the-user-module.md)
+- [A struct retyping cast diagnostic omits the struct tags](struct-retyping-cast-diagnostic-omits-struct-tags.md)

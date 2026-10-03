@@ -15,6 +15,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::option_profile::OptionProfile;
 use super::provenance::CSourceMap;
 use super::target::CTarget;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
@@ -100,6 +101,11 @@ struct Config {
     compiler: PathBuf,
     working_directory: String,
     environment: Environment,
+    /// A named compiler-option profile; see `option_profile`. Omitted, only
+    /// the preprocessing options and the target's fixed arguments are
+    /// accepted.
+    #[serde(default)]
+    option_profile: Option<String>,
     sources: Vec<SourceConfig>,
     #[serde(skip)]
     config_directory: PathBuf,
@@ -115,6 +121,13 @@ impl Config {
     // Configs enter the compiler path only after validate_config.
     fn c_target(&self) -> CTarget {
         CTarget::from_name(&self.target).expect("validated compiler target")
+    }
+
+    // Likewise, a configured profile name was resolved by validate_config.
+    fn profile(&self) -> Option<&'static OptionProfile> {
+        self.option_profile.as_deref().map(|name| {
+            OptionProfile::named(name, self.c_target()).expect("validated option profile")
+        })
     }
 }
 
@@ -148,6 +161,10 @@ struct Lock {
     working_directory: String,
     config_directory: String,
     invocation_sha256: String,
+    /// The configured option profile, recorded beside the full argument
+    /// vectors it admitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    option_profile: Option<String>,
     toolchain: ToolchainIdentity,
     sources: Vec<LockedSource>,
 }
@@ -233,6 +250,9 @@ fn load_imports_inner(config_path: &Path) -> Result<Vec<PreparedCImport>, String
     let lock: Lock =
         serde_json::from_slice(&lock_bytes).map_err(|e| format!("parse import lock: {e}"))?;
     validate_lock_shape(&lock, &config)?;
+    if lock.option_profile != config.option_profile {
+        return Err("import lock option profile does not match the import config".into());
+    }
     if lock.config_sha256 != hex_digest(&config_bytes) {
         return Err("import lock does not match the import config".into());
     }
@@ -354,6 +374,7 @@ fn create_lock_inner(config_path: &Path) -> Result<(), String> {
             .to_string_lossy()
             .into_owned(),
         invocation_sha256: context.invocation_sha256.clone(),
+        option_profile: config.option_profile.clone(),
         toolchain: context.toolchain.clone(),
         sources: locked,
     };
@@ -438,7 +459,7 @@ fn preprocess(context: &Context<'_>, source: &SourceConfig) -> Result<Preprocess
     let dep_path = unique_temp_path("click-import-deps", ".d")?;
     let _cleanup = RemoveFile(dep_path.clone());
     let mut args = fixed_args(context.config.c_target());
-    append_user_args(&mut args, &source.args, context.config.c_target())?;
+    append_user_args(&mut args, source, context.config)?;
     args.extend([
         "-x".into(),
         "c".into(),
@@ -645,8 +666,13 @@ fn fixed_args(target: CTarget) -> Vec<String> {
     }
     args
 }
-fn append_user_args(out: &mut Vec<String>, args: &[String], target: CTarget) -> Result<(), String> {
-    validate_args(args, target)?;
+fn append_user_args(
+    out: &mut Vec<String>,
+    source: &SourceConfig,
+    config: &Config,
+) -> Result<(), String> {
+    let args = &source.args;
+    validate_source_args(source, config)?;
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
@@ -775,6 +801,9 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
             return Err(format!("environment variable `{key}` is not allowlisted"));
         }
     }
+    if let Some(name) = &config.option_profile {
+        OptionProfile::named(name, config.c_target())?;
+    }
     if config.sources.is_empty() || config.sources.len() > MAX_SOURCES {
         return Err("import source count is outside bounds".into());
     }
@@ -795,7 +824,7 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
                 source.logical_source
             ));
         }
-        validate_args(&source.args, config.c_target())?;
+        validate_source_args(source, config)?;
         if let Some(projection) = &source.projection
             && projection != super::projection::DEPENDENCY_CLOSURE
         {
@@ -830,7 +859,16 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_args(args: &[String], target: CTarget) -> Result<(), String> {
+fn validate_source_args(source: &SourceConfig, config: &Config) -> Result<(), String> {
+    validate_args(&source.args, config.c_target(), config.profile())
+        .map_err(|error| format!("source `{}`: {error}", source.logical_source))
+}
+
+fn validate_args(
+    args: &[String],
+    target: CTarget,
+    profile: Option<&OptionProfile>,
+) -> Result<(), String> {
     if args.len() > MAX_ARGUMENTS
         || args.iter().map(String::len).sum::<usize>() > MAX_ARGUMENT_BYTES
     {
@@ -852,11 +890,20 @@ fn validate_args(args: &[String], target: CTarget) -> Result<(), String> {
             || arg.starts_with("-Wa,")
             || arg.starts_with("-Wl,")
         {
-            return Err(format!("unsupported compiler argument `{arg}`"));
+            return Err(format!("unsupported compiler argument {} `{arg}`", i + 1));
         }
-        if profile_args.contains(arg) {
+        if profile_args.contains(arg) || profile.is_some_and(|profile| profile.accepts(arg)) {
             i += 1;
             continue;
+        }
+        if let Some(profile) = profile
+            && let Some(reason) = profile.rejection(arg)
+        {
+            return Err(format!(
+                "unsupported compiler argument {} `{arg}`: option profile `{}` refuses it because {reason}",
+                i + 1,
+                profile.name
+            ));
         }
         let separate = matches!(arg.as_str(), "-D" | "-U" | "-I" | "-isystem" | "-include");
         let prefix = arg.starts_with("-D")
@@ -865,9 +912,17 @@ fn validate_args(args: &[String], target: CTarget) -> Result<(), String> {
             || arg.starts_with("-isystem")
             || arg.starts_with("-include");
         if !prefix {
-            return Err(format!(
-                "unsupported compiler argument `{arg}`; only -D/-U/-I/-isystem/-include are supported"
-            ));
+            return Err(match profile {
+                None => format!(
+                    "unsupported compiler argument {} `{arg}`; only -D/-U/-I/-isystem/-include are supported",
+                    i + 1
+                ),
+                Some(profile) => format!(
+                    "unsupported compiler argument {} `{arg}`; option profile `{}` accepts only its listed spellings beside -D/-U/-I/-isystem/-include",
+                    i + 1,
+                    profile.name
+                ),
+            });
         }
         if !separate
             && ((arg.starts_with("-isystem") && arg.len() == 8)
@@ -888,6 +943,9 @@ fn validate_args(args: &[String], target: CTarget) -> Result<(), String> {
             reject_profile_define(&arg[2..], target)?;
         }
         i += 1;
+    }
+    if let Some(profile) = profile {
+        profile.check_vector(args)?;
     }
     Ok(())
 }
@@ -1876,6 +1934,7 @@ mod tests {
                 working_directory,
                 config_directory: "/toolchain/include".to_string(),
                 invocation_sha256,
+                option_profile: None,
                 toolchain,
                 sources: vec![locked],
             };
@@ -1932,15 +1991,20 @@ mod tests {
         assert!(load_imports(&fixture.config()).is_ok());
         let lock_file = lock_path(&fixture.config());
         let original_lock = fs::read(&lock_file).unwrap();
-        for field in ["toolchain", "local_dependencies"] {
+        for field in ["toolchain", "local_dependencies", "option_profile"] {
             let mut altered: serde_json::Value = serde_json::from_slice(&original_lock).unwrap();
             if field == "toolchain" {
                 altered["toolchain"]["driver_sha256"] = serde_json::json!(hex_digest(b"other"));
+            } else if field == "option_profile" {
+                altered["option_profile"] = serde_json::json!("linux-6.8-x86_64-kbuild");
             } else {
                 altered["sources"][0]["local_dependencies"] = serde_json::json!({});
             }
             fs::write(&lock_file, serde_json::to_vec(&altered).unwrap()).unwrap();
-            assert!(load_imports(&fixture.config()).is_err(), "altered {field}");
+            let error = load_imports(&fixture.config()).expect_err(field);
+            if field == "option_profile" {
+                assert!(error.contains("option profile does not match"), "{error}");
+            }
         }
         fs::write(&lock_file, original_lock).unwrap();
         assert!(load_imports(&fixture.config()).is_ok());
@@ -2147,9 +2211,9 @@ mod tests {
 
     #[test]
     fn rejects_ambient_or_executable_compiler_options() {
-        assert!(validate_args(&["-fplugin=evil.so".into()], CTarget::SUPPORTED).is_err());
-        assert!(validate_args(&["-c".into()], CTarget::SUPPORTED).is_err());
-        assert!(validate_args(&["@args.rsp".into()], CTarget::SUPPORTED).is_err());
+        assert!(validate_args(&["-fplugin=evil.so".into()], CTarget::SUPPORTED, None).is_err());
+        assert!(validate_args(&["-c".into()], CTarget::SUPPORTED, None).is_err());
+        assert!(validate_args(&["@args.rsp".into()], CTarget::SUPPORTED, None).is_err());
     }
 
     #[test]
@@ -2169,8 +2233,264 @@ mod tests {
                 "config.h".into(),
             ],
             CTarget::SUPPORTED,
+            None,
         )
         .unwrap();
+    }
+
+    fn args(spellings: &[&str]) -> Vec<String> {
+        spellings
+            .iter()
+            .map(|spelling| spelling.to_string())
+            .collect()
+    }
+
+    fn kbuild() -> Option<&'static OptionProfile> {
+        Some(&super::super::option_profile::LINUX_KBUILD)
+    }
+
+    #[test]
+    fn kbuild_profile_accepts_each_listed_spelling_only_when_selected() {
+        let profile = kbuild().unwrap();
+        validate_args(
+            &args(profile.accepted()),
+            CTarget::X86_64LinuxKernel,
+            kbuild(),
+        )
+        .unwrap();
+        for spelling in profile.accepted() {
+            // `-mno-sse` and `-mno-sse2` need `-mno-80387` beside them.
+            let mut vector = args(&[spelling]);
+            if spelling.starts_with("-mno-sse") {
+                vector.push("-mno-80387".into());
+            }
+            validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild())
+                .unwrap_or_else(|error| panic!("{spelling}: {error}"));
+            let error = validate_args(&vector, CTarget::X86_64LinuxKernel, None)
+                .expect_err("profile options need the profile");
+            assert!(
+                error.contains(&format!("argument 1 `{spelling}`"))
+                    && error.contains("only -D/-U/-I/-isystem/-include"),
+                "{spelling}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn kbuild_profile_refuses_near_misses_with_a_located_message() {
+        // For each accepted family, a different value and an unlisted
+        // sibling. Several of these are themselves harmless; the profile is
+        // closed, so they are refused until classified.
+        for near_miss in [
+            // Preprocessing.
+            "-fmacro-prefix-map=/=",
+            "-ffile-prefix-map=./=",
+            "-fdebug-prefix-map=./=",
+            // Diagnostics, and the `-W` spellings that pass options on.
+            "-Wframe-larger-than=1",
+            "-Wimplicit-fallthrough=3",
+            "-Werror=vla",
+            "-Wno-vla",
+            "-Wextra",
+            "-Wp,-DX=1",
+            "-Wa,--noexecstack",
+            "-Wl,-z,now",
+            // Source semantics.
+            "-fcommon",
+            "-fdelete-null-pointer-checks",
+            "-fstrict-aliasing",
+            "-fstrict-overflow",
+            "-fwrapv",
+            "-fsigned-char",
+            "-fno-short-wchar",
+            "-fshort-enums",
+            "-fpack-struct",
+            "-fstrict-flex-arrays=2",
+            "-fstrict-flex-arrays",
+            "-ftrivial-auto-var-init=pattern",
+            "-ftrivial-auto-var-init=uninitialized",
+            "-fallow-store-data-races",
+            "-ffast-math",
+            // Code generation.
+            "-falign-functions=32",
+            "-falign-labels=1",
+            "-fpatchable-function-entry=16,0",
+            "-fcf-protection=full",
+            "-fstack-protector-all",
+            "-fPIE",
+            "-fno-omit-frame-pointer",
+            // Target.
+            "-mcmodel=large",
+            "-mindirect-branch=thunk",
+            "-mfunction-return=keep",
+            "-mpreferred-stack-boundary=4",
+            "-mtune=native",
+            "-march=native",
+            "-mno-sse3",
+            "-msse",
+            "-m80387",
+            "-m32",
+            "-mabi=ms",
+            // Optimization levels.
+            "-O0",
+            "-O3",
+            "-Os",
+            "-O",
+            // Fixed by the target, with another value.
+            "-std=gnu17",
+            "-std=c11",
+        ] {
+            let error = validate_args(
+                &args(&["-mno-80387", near_miss]),
+                CTarget::X86_64LinuxKernel,
+                kbuild(),
+            )
+            .expect_err(near_miss);
+            assert!(
+                error.contains(&format!("argument 2 `{near_miss}`")),
+                "{near_miss}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn kbuild_profile_keeps_its_rejected_options_refused_with_the_reason() {
+        let error = validate_args(
+            &args(&["-Wall", "-O2"]),
+            CTarget::X86_64LinuxKernel,
+            kbuild(),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("argument 2 `-O2`")
+                && error.contains("linux-6.8-x86_64-kbuild")
+                && error.contains("`nonnull`"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn kbuild_profile_disables_sse_only_beside_the_x87() {
+        for option in ["-mno-sse", "-mno-sse2"] {
+            let error = validate_args(
+                &args(&["-Wall", option]),
+                CTarget::X86_64LinuxKernel,
+                kbuild(),
+            )
+            .unwrap_err();
+            assert!(
+                error.contains(&format!("argument 2 `{option}` needs `-mno-80387`"))
+                    && error.contains("excess precision"),
+                "{error}"
+            );
+            validate_args(
+                &args(&["-mno-80387", option]),
+                CTarget::X86_64LinuxKernel,
+                kbuild(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn option_profiles_are_named_and_target_bound() {
+        assert!(
+            OptionProfile::named("linux-6.8-x86_64-kbuild", CTarget::X86_64LinuxKernel).is_ok()
+        );
+        let unknown = OptionProfile::named("linux-6.9-x86_64-kbuild", CTarget::X86_64LinuxKernel)
+            .unwrap_err();
+        assert!(
+            unknown.contains("unknown compiler option profile"),
+            "{unknown}"
+        );
+        let wrong_target =
+            OptionProfile::named("linux-6.8-x86_64-kbuild", CTarget::X86_64LinuxUserspace)
+                .unwrap_err();
+        assert!(
+            wrong_target.contains("applies only to target"),
+            "{wrong_target}"
+        );
+    }
+
+    /// Every recorded rbtree option is classified: under the profile the
+    /// configured vector stops only at the options the profile rejects.
+    #[test]
+    fn linux_rbtree_vector_is_classified_by_the_kbuild_profile() {
+        let config: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("integrations/linux-rbtree/rbtree.click.import.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(config["option_profile"], "linux-6.8-x86_64-kbuild");
+        let vector = config["sources"][0]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|argument| argument.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        let error = validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap_err();
+        assert!(error.contains("`-O2`: option profile"), "{error}");
+        let rejected = kbuild()
+            .unwrap()
+            .rejected()
+            .iter()
+            .map(|(spelling, _)| *spelling)
+            .collect::<Vec<_>>();
+        let accepted_part = vector
+            .iter()
+            .filter(|argument| !rejected.contains(&argument.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        validate_args(&accepted_part, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
+    }
+
+    /// The classification table in the `click import` reference lists exactly
+    /// the profile's accepted and rejected spellings.
+    #[test]
+    fn kbuild_profile_matches_its_documented_classification() {
+        let docs = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/cli/import.md"),
+        )
+        .unwrap();
+        let heading = "### Option profile `linux-6.8-x86_64-kbuild`";
+        let section = docs
+            .split_once(heading)
+            .unwrap_or_else(|| panic!("missing `{heading}`"))
+            .1;
+        let section = section.split("\n## ").next().unwrap();
+        let mut accepted = BTreeSet::new();
+        let mut rejected = BTreeSet::new();
+        for row in section.lines().filter(|line| line.starts_with("| `")) {
+            let cells = row.split(" | ").collect::<Vec<_>>();
+            let spelling = cells[0]
+                .trim_start_matches("| `")
+                .split('`')
+                .next()
+                .unwrap()
+                .to_string();
+            match cells[1] {
+                verdict if verdict.starts_with("Accepted") => assert!(accepted.insert(spelling)),
+                "Rejected" => assert!(rejected.insert(spelling)),
+                "Base" | "Fixed" => {}
+                verdict => panic!("unknown verdict `{verdict}` in {row}"),
+            }
+        }
+        let profile = kbuild().unwrap();
+        assert_eq!(
+            accepted,
+            profile.accepted().iter().map(|s| s.to_string()).collect()
+        );
+        assert_eq!(
+            rejected,
+            profile
+                .rejected()
+                .iter()
+                .map(|(s, _)| s.to_string())
+                .collect()
+        );
     }
 
     #[test]

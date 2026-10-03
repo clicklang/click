@@ -602,10 +602,11 @@ Stage 0 record:
 
 The gate pins the first rejection on each route:
 
-- Import route: `click import lock` refuses the recorded arguments, first
-  `-fmacro-prefix-map=./=`. The profile accepts only `-D`, `-U`, `-I`,
-  `-isystem`, and `-include`; 83 of the recorded arguments are other options.
-  The importer also does not allowlist `HOME`.
+- Import route: `click import lock` refuses the recorded arguments at
+  `-O2`, argument 50. The configuration selects the
+  `linux-6.8-x86_64-kbuild` option profile, which classifies every recorded
+  option (see "Option profile", below). `HOME` stays outside the
+  importer's environment allowlist.
 - C frontend, on the reproduced artifact:
   `././include/linux/compiler_types.h:172`, `expected union name`, the
   anonymous union member of the artifact's first declaration. Before octal
@@ -677,8 +678,39 @@ translation-unit-local helpers from it and its two rbtree headers. The gate pins
 artifact still stops at `compiler_types.h:172`, and the gate pins that too.
 
 What remains before the sidecars can attach is the import route itself:
-`click import lock` still refuses the recorded compiler arguments, so there
-is no lock for the projected unit yet.
+`click import lock` still refuses `-O2`, so there is no lock for the
+projected unit yet.
+
+Option profile, 2026-10-02. The configuration now carries the recorded
+vector unchanged except for `-E` and the source operand, which the importer
+supplies, and selects the named option profile `linux-6.8-x86_64-kbuild`. The
+classification table and each option's reason are in
+`docs/reference/cli/import.md`; a test keeps the table and the profile's
+exact-spelling lists equal. Of the 83 recorded options outside the base
+preprocessing options and the target's fixed four, 79 spellings are distinct:
+78 are accepted (`-mno-sse` and `-mno-sse2` only beside `-mno-80387`, since
+alone they move floating point to the x87 with excess precision), and `-O2`
+is rejected. GCC 13 at `-O2` deletes a `nonnull` parameter's null check even
+with `-fno-delete-null-pointer-checks`, merges `const` calls across a store,
+and drops the code after a `noreturn` call. The frontend accepts all three
+attributes without modeling them, and at `-O0` GCC does none of these, so
+ignoring `-O2` could make Click accept a program the compiler treats
+differently. Accepting it needs those attributes modeled (a `nonnull`
+parameter as a caller obligation, `const` checked or refused on definitions
+and a `const` call as a function of its arguments, a `noreturn` call as not
+returning) or refused under an optimizing profile; `leaf` needs the same
+review. The rbtree code itself declares none of them.
+
+`HOME`: the recorded capture environment set `HOME=/tmp`. Neither the GCC 13
+driver nor `cc1` contains the string `HOME`, a traced run of the recorded
+preprocessing with `HOME` set to an unused path opens nothing under it, and
+the preprocessed output is the recorded 637,604 bytes and SHA-256 with `HOME`
+unset, `/tmp`, a nonexistent directory, or a real home directory. The
+importer-style invocation (the target's fixed arguments first, then the
+configured vector, `-x c -E -MD -MF`, with `HOME` unset) also reproduces the
+recorded output. Preprocessing does not read `HOME`, so it stays outside the
+allowlist: allowing it would add an ambient input to the invocation identity
+without selecting anything.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.
