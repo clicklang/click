@@ -2093,6 +2093,9 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
+        if let Some(arithmetic) = self.try_function_exit_signed_arithmetic() {
+            return Ok(Some(arithmetic));
+        }
         // The pure signed certificate already ran above on this same proof
         // state; repeating it here would redo identical work for an
         // identical answer.
@@ -2106,9 +2109,37 @@ impl<'a> Proof<'a> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             return None;
         };
+        self.try_indexed_signed_arithmetic(&context.theorem_context.surface_requirements, None)
+    }
+
+    /// The same indexed bound selection at function exit, where a bound can
+    /// also sit inside a written conjunction or be the negation of a branch
+    /// condition. Loop and statement-frontier goals keep their own closers,
+    /// whose premises name the loop head and contract. Runs last, after
+    /// every route whose selected steps it would otherwise hide in
+    /// expansion.
+    fn try_function_exit_signed_arithmetic(&self) -> Option<Self> {
+        let ProofContext::Execution(_) = self.context.as_ref() else {
+            return None;
+        };
+        let data = self.focused_outcome_data()?;
+        self.try_indexed_signed_arithmetic(&data.surface_propositions, data.premise_anchor.as_ref())
+    }
+
+    /// Each goal variable's bound bucket is an O(log n) lookup, and each
+    /// bound it lists costs one indexed fact or conjunct membership test. A
+    /// bound held only as a proper conjunct of a fact is made a fact by one
+    /// checked `extract` step before the certificate cites it.
+    fn try_indexed_signed_arithmetic(
+        &self,
+        surfaces: &SurfacePropositionMap,
+        anchor: Option<&ProgramPointRef>,
+    ) -> Option<Self> {
         let goal = self.goal()?;
         let surface_goal = self.surface_goal()?;
-        let mut selected = BTreeSet::new();
+        let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
+        let mut available = BTreeSet::new();
+        let mut conjuncts = BTreeSet::new();
         for variable in crate::kernel::proposition_variables(goal) {
             for (endpoint, other, strict, forward) in self
                 .facts()
@@ -2126,34 +2157,51 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
                 };
                 let fact = Proposition::ConditionIs(condition, true);
+                let mut found = false;
                 for form in std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact)) {
                     if self.facts().contains(&form) {
-                        selected.insert(form);
+                        available.insert(form);
+                        found = true;
                     }
+                }
+                if !found && !is_pure && self.facts().contains_proper_conjunct(&fact) {
+                    conjuncts.insert(fact);
                 }
             }
         }
-        let pairs = selected
-            .into_iter()
-            .filter_map(|fact| {
-                let source = self.available_surface_fact(
-                    &context.theorem_context.surface_requirements,
-                    None,
-                    &fact,
-                )?;
-                Some((fact, source))
-            })
-            .collect::<Vec<_>>();
+        let mut pairs = Vec::new();
+        for fact in available {
+            let source = self
+                .available_surface_fact(surfaces, anchor, &fact)
+                .or_else(|| (!is_pure).then(|| self.spelled_comparison_surface(&fact))?);
+            if let Some(source) = source {
+                pairs.push((fact, source));
+            }
+        }
+        let mut proof = None;
+        for fact in conjuncts {
+            let Some(source) = self.spelled_comparison_surface(&fact) else {
+                continue;
+            };
+            let current = proof.as_ref().unwrap_or(self);
+            let Ok(extracted) = current.apply_step(ProofStep::Extract(source.clone())) else {
+                continue;
+            };
+            proof = Some(extracted);
+            pairs.push((fact, source));
+        }
         let kernels = pairs
             .iter()
             .map(|(fact, _)| fact.clone())
             .collect::<Vec<_>>();
         let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
-        let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
-        self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-            family: ArithmeticCertificateFamily::SignedInt32(certificate),
-        }))
-        .ok()
+        let proof = proof.unwrap_or_else(|| self.clone());
+        let certificate = proof.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
+        proof
+            .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+                family: ArithmeticCertificateFamily::SignedInt32(certificate),
+            }))
+            .ok()
     }
 
     /// Select only guards actually occurring in the goal, through indexed

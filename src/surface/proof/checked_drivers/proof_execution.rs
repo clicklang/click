@@ -607,6 +607,12 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             premises: premises.clone(),
         }),
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
+        // After execution, `extract(P)` adds `P` to every path exactly as
+        // `have P by { extract(P); }` does, through the same checked scope.
+        ProofTactic::Extract(proposition) => Some(PostExecutionTactic::Have(ProofHave {
+            proposition: proposition.clone(),
+            proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
+        })),
         ProofTactic::Both(both) => Some(PostExecutionTactic::Both(both.clone())),
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
