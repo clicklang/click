@@ -568,22 +568,36 @@ fn region(
             return Err("unstructured shared MIR region outside move/drop slice".into());
         }
         if let Some(loop_) = flow.loops.get(&block) {
-            let T::If { condition, .. } = &mir.blocks[block].terminator else {
+            let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
                 return Err("natural while header is not conditional".into());
             };
             let body = region(cx, mir, nodes, flow, emitted, loop_.body, block)?;
-            let condition = flow::header_condition(mir, block, condition, &flow.scalar_names)?;
+            let condition = flow::header_condition(
+                mir,
+                &loop_.headers,
+                condition,
+                &flow.scalar_names,
+                &flow.metadata_names,
+            )?;
             let condition = if loop_.body_on_true {
                 condition
-            } else if let E::Not { value } = condition {
-                *value
             } else {
-                E::Not {
-                    value: Box::new(condition),
-                }
+                flow::negate_condition(condition)
             };
             let condition = cx.expr(&condition)?;
-            let header = nodes[block].as_ref().ok_or("missing loop header")?;
+            let mut header = nodes[block].as_ref().ok_or("missing loop header")?.clone();
+            for part in loop_.headers.iter().skip(1) {
+                if std::mem::replace(&mut emitted[*part], true) {
+                    return Err("shared MIR while-header continuation".into());
+                }
+                header = c_seq(
+                    header,
+                    nodes[*part]
+                        .as_ref()
+                        .ok_or("missing loop header continuation")?
+                        .clone(),
+                );
+            }
             // The pure condition denotes the value after the header's scalar
             // assignments. Keep those assignments before each taken body and
             // once on the final false test, without an artificial break exit.
@@ -824,6 +838,7 @@ mod tests {
                     joins,
                     loops: BTreeMap::new(),
                     scalar_names: BTreeSet::new(),
+                    metadata_names: BTreeSet::new(),
                 },
                 &mut emitted,
                 0,

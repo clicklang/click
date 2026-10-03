@@ -21,8 +21,8 @@
   },
   {
     "config": "examples/rust-byte-sum/sum.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "MIR loop requires a conditional while header"
+    "outcome": "proof-gap",
+    "diagnostic": "local `i` has no value at this frontier"
   },
   {
     "config": "examples/rust-chunks-exact/chunks.click.import.json",
@@ -51,8 +51,8 @@
   },
   {
     "config": "examples/rust-loops/loops.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "MIR loop requires a conditional while header"
+    "outcome": "proof-gap",
+    "diagnostic": "requires the execution frontier to be at a loop"
   },
   {
     "config": "examples/rust-move-drop/guard.click.import.json",

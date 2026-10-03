@@ -539,8 +539,8 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); twelve import (75%). Four have
-normalization gaps and two have legacy iterator proof-observation gaps. The required `test` gate also requires the existing live
+extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); fourteen import (87.5%). Two have
+normalization gaps and four have proof-observation gaps. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -562,9 +562,17 @@ cells. Heap/union storage and general symbolic pointer expressions remain
 outside the compact path, and genuine by-value array parameters and aggregate
 returns remain separate adapter gaps. Empty, signed, and million-element
 length checks stay bounded and require no byte read authority. External Charon
-locks need an explicit refresh. Next close loop-header normalization against
-`rust-byte-sum` and `rust-loops`, then iterator resolution, return shapes, and
-stable iterator proof observations without generated processed counts.
+locks need an explicit refresh. `split-shared-slice-while-header-v1` now imports
+unchanged `rust-byte-sum` and `rust-loops`, preserving ordered header execution
+on both true and final false tests. Single-entry header chains use pure scalar
+copies, comparisons, and paired shared-slice metadata; calls, memory reads,
+arithmetic, shared entries, and extra exits remain rejected. Header work and
+emitted code have deterministic linear scaling coverage. All three unchanged
+Rust loop bodies verify with loop selectors in a separate proof sidecar, but
+the frozen numeric statement selectors still fail. Next provide stable proof
+observations for these frontiers and legacy iterator state without generated
+processed counts; also close owned iterator resolution and tuple/slice return
+shapes. Proof-adapted sidecars do not count as unchanged fixture parity.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate
