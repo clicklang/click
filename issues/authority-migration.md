@@ -325,6 +325,19 @@ cache repair remains removed. Milestone 2 is the next implementation work.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
+**First kernel checkpoint:** A checked local authority can govern separately
+named unary members with proof fields. The existing resource context retains
+each occurrence identity and field values; the population ledger records only
+births and consumption. Certificate rechecking accepts exactly that checked
+ledger successor. Duplicate identities, altered field values, missing authority,
+repeat consumption, retirement with live members, and authority establishment
+after prior members are rejected. The surface still rejects field-bearing
+population types; connecting that existing syntax is the next narrow checkpoint.
+Validation: the independent named-member regression, all 2,514 kernel tests
+(including scaling tests), and the complete Markdown corpus passed through
+`scripts/check.sh`.
+
+
 1. Define/check population occurrence identity independently of proof fields;
    equal parameters must not merge distinct member states.
 2. Support count observations and real birth/consumption for individually

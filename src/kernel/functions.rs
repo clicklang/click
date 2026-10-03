@@ -22670,6 +22670,8 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     } else {
         Vec::new()
     };
+    next.record_instance_population_exchange(state, instance, !unfold, assumptions)
+        .map_err(ResourceRewriteRefusal::OwnedMessage)?;
     Ok(ResourceInstanceRewriteResult {
         state: next,
         semantic_facts,

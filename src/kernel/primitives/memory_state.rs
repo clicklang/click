@@ -6179,6 +6179,44 @@ impl CState {
         Ok((next, evidence))
     }
 
+    /// Named ownership remains in the resource context; the authority ledger
+    /// records only its birth or consumption. Opening a body is a different
+    /// operation and does not use this lifecycle exchange.
+    pub(in crate::kernel) fn record_instance_population_exchange(
+        &mut self,
+        before: &CState,
+        instance: &super::super::ResourceInstance,
+        produce: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<(), String> {
+        let Some(events) = &before.population_effects.creation else {
+            return Ok(());
+        };
+        let description = super::super::ResourceDescription::from_instance(instance);
+        let history = if events.tracks_population(&description) {
+            let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+            if !before.resources.satisfies_fact(&authority, assumptions) {
+                return Err(format!("Requires owns authority({}(...))", instance.name()));
+            }
+            events
+                .checked_instance_exchange(
+                    &super::super::ResourceReference::from_instance(instance),
+                    produce,
+                )
+                .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+        } else if produce {
+            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            else {
+                return Ok(());
+            };
+            events.member_created(&pointer.pointer().block, description.family())
+        } else {
+            return Ok(());
+        };
+        Arc::make_mut(&mut self.population_effects).creation = Some(history);
+        Ok(())
+    }
+
     pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: PointerBlock) {
         if let Some(events) = &self.population_effects.creation {
             Arc::make_mut(&mut self.population_effects).creation = Some(events.created(block));

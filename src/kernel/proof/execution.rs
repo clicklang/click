@@ -2069,8 +2069,16 @@ impl CheckedResourceRewrite {
                     .iter()
                     .map(|clause| clause.proposition.clone()),
             );
+            if after_state.population_effects.creation != expected.population_effects.creation {
+                return Err(
+                    "instance rewrite changed population custody outside its checked exchange"
+                        .into(),
+                );
+            }
             let mut unchanged = after_state.clone();
             unchanged = unchanged.with_resource_context(before_state.resources.clone());
+            Arc::make_mut(&mut unchanged.population_effects).creation =
+                before_state.population_effects.creation.clone();
             if unchanged != *before_state {
                 // An unfold names the cells it exposes, which materializes
                 // them in the snapshot so the body's facts and a later C read

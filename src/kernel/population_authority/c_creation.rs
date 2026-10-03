@@ -8,6 +8,7 @@ use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
     AlgebraicValue, Bitvector32Term, CCompositeResourceDefinition, CResource, CResourceFact,
     CState, CValue, PointerBlock, PointerOffsetTerm, PureFactContext, ResourceDescription,
+    ResourceReference,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::BTreeMap;
@@ -51,6 +52,14 @@ fn numerical_batch_quantity(
         )) == Some(true))
         .then_some(held)
     })
+}
+
+/// Quantities and named occurrences use the same conservation ledger, but
+/// only a checked named-instance rewrite can manipulate a field-bearing member.
+#[derive(Clone, Copy)]
+enum MemberForm {
+    Quantity { exclusive_body: bool },
+    Instance,
 }
 
 struct Root {
@@ -153,6 +162,7 @@ enum CEvent {
     Created(PointerBlock),
     MemberCreated(PointerBlock, String),
     Retired(PointerBlock),
+    InstanceMember(ResourceReference, bool),
     TransferredAnchor(Holder, Holder, PointerBlock),
 }
 
@@ -1244,7 +1254,7 @@ impl CreationEvents {
         else {
             return None;
         };
-        if !description.schema().is_countable() || !description.resource_arguments().is_empty() {
+        if !description.resource_arguments().is_empty() {
             return None;
         }
         crate::instrumentation::record_deterministic_work(1);
@@ -1585,7 +1595,9 @@ impl CreationEvents {
             produce,
             Some(assumptions),
             1,
-            true,
+            MemberForm::Quantity {
+                exclusive_body: true,
+            },
         )
     }
 
@@ -1625,7 +1637,9 @@ impl CreationEvents {
                 produce,
                 Some(assumptions),
                 1,
-                false,
+                MemberForm::Quantity {
+                    exclusive_body: false,
+                },
             );
         }
         // Concrete batches in opaque unary populations share the numerical
@@ -1684,7 +1698,9 @@ impl CreationEvents {
                 produce,
                 Some(assumptions),
                 amount,
-                false,
+                MemberForm::Quantity {
+                    exclusive_body: false,
+                },
             );
         }
         if !crate::kernel::quantity_condition_holds(
@@ -1883,7 +1899,56 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        self.checked_member_exchange_with_context(block, description, produce, None, 1, false)
+        self.checked_member_exchange_with_context(
+            block,
+            description,
+            produce,
+            None,
+            1,
+            MemberForm::Quantity {
+                exclusive_body: false,
+            },
+        )
+    }
+
+    /// Advance the local ledger for one separately owned occurrence. Its
+    /// reference retains identity and type arguments, never observed fields.
+    /// Resource ownership and the body exchange are checked by the caller.
+    pub(in crate::kernel) fn checked_instance_exchange(
+        &self,
+        reference: &ResourceReference,
+        produce: bool,
+    ) -> Result<Self, CreationRefusal> {
+        let description = reference.description();
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err(CreationRefusal::InvalidMember);
+        };
+        if description.schema().is_countable()
+            || !description.resource_arguments().is_empty()
+            || self.recognizes_imported_population(description)
+        {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        let key = CEvent::InstanceMember(reference.clone(), produce);
+        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+            return Ok(existing.clone());
+        }
+        let (next, _) = self.checked_member_exchange_with_context(
+            &pointer.pointer().block,
+            description,
+            produce,
+            None,
+            1,
+            MemberForm::Instance,
+        )?;
+        Ok(self
+            .0
+            .c_events
+            .lock()
+            .expect("C event cache")
+            .entry(key)
+            .or_insert(next)
+            .clone())
     }
 
     fn checked_member_exchange_with_context(
@@ -1893,9 +1958,17 @@ impl CreationEvents {
         produce: bool,
         assumptions: Option<&PureFactContext>,
         amount: u32,
-        exclusive_body: bool,
+        form: MemberForm,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        if description.population_arity().is_some() {
+        let exclusive_body = matches!(
+            form,
+            MemberForm::Quantity {
+                exclusive_body: true
+            }
+        );
+        if description.population_arity().is_some()
+            || matches!(form, MemberForm::Quantity { .. }) && !description.schema().is_countable()
+        {
             return Err(CreationRefusal::InvalidMember);
         }
         let scope = self
@@ -2889,7 +2962,6 @@ impl CreationEvents {
         };
         if &pointer.pointer().block != block
             || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
-            || !description.schema().is_countable()
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);
