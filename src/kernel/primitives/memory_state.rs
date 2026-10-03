@@ -5858,6 +5858,70 @@ impl CState {
         Ok(next)
     }
 
+    pub(crate) fn import_opaque_population_inputs(
+        &self,
+        authority: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            return Err("population import requires authority".into());
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: description.family().to_owned(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let held = self
+            .resources
+            .exact_resource_facts(member.resource())
+            .into_iter()
+            .filter(|fact| fact.owned_quantity_term().is_some())
+            .collect::<Vec<_>>();
+        if let [held] = held.as_slice() {
+            self.import_opaque_population_quantity(authority, held)
+        } else {
+            self.import_opaque_population(
+                authority,
+                u32::from(self.resources.contains_exact_representation(&member)),
+            )
+        }
+    }
+
+    /// Retain the exact held batch as custody, independent of its arbitrary
+    /// global entry total. No population creation occurs at helper entry.
+    pub(crate) fn import_opaque_population_quantity(
+        &self,
+        authority: &CResourceFact,
+        member: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(description), authority_quantity) =
+            authority
+        else {
+            return Err("batch import requires owned authority".into());
+        };
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member else {
+            return Err("batch import requires an owned declared member quantity".into());
+        };
+        if authority_quantity.as_const() != Some(1)
+            || name != description.family()
+            || arguments.as_ref() != description.arguments()
+            || !self.resources.contains_exact_representation(authority)
+            || !self.resources.contains_exact_representation(member)
+        {
+            return Err(
+                "batch import requires this authority's exact declared owned quantity".into(),
+            );
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("batch import requires authority mode")?
+            .import_observable_contract_population_quantity(description, quantity)
+            .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
     /// Import exactly the authority and identified member declared at a
     /// wildcard helper entry. Neither input is a population creation event.
     pub(crate) fn import_opaque_wildcard_population(

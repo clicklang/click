@@ -5218,6 +5218,37 @@ pub fn prove_owned_resource_count_lower_bound(
     claimed: &Proposition,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
+    let conclusion = checked_owned_resource_count_lower_bound(state, owned, assumptions)?;
+    if claimed != &conclusion {
+        return None;
+    }
+    if let Some(theorem) = theorem_from_exact_context_fact(assumptions, conclusion.clone()) {
+        return Some(theorem);
+    }
+    // The checked authority ledger states its minimum as count >= quantity.
+    // Name the same bound as quantity <= count with one explicit order rule.
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(lower, count), true) =
+        conclusion
+    else {
+        return None;
+    };
+    let reversed = Proposition::ConditionIs(
+        ConditionTerm::signed_greater_equal((*count).clone(), (*lower).clone()),
+        true,
+    );
+    assumptions
+        .proves_exact(&reversed)
+        .then(|| prove_int32_ge_implies_reversed_le(*count, *lower))
+}
+
+/// Reconstruct a count bound checked against this state's immutable ledger and
+/// exact custody. Retained observations must bind the result to this state;
+/// this does not return an unconditional arithmetic theorem.
+pub fn checked_owned_resource_count_lower_bound(
+    state: &CState,
+    owned: &CResourceFact,
+    assumptions: &PureFactContext,
+) -> Option<Proposition> {
     if !state.resources().satisfies_fact(owned, assumptions) {
         return None;
     }
@@ -5235,33 +5266,79 @@ pub fn prove_owned_resource_count_lower_bound(
         | CResource::MutexUse(_)
         | CResource::Iterated(_) => return None,
     };
-    let count = match state.counted_population(name, arguments) {
-        Some(count) => count.clone(),
-        None => {
-            let zero = Bitvector32Term::Constant(0);
-            let quantity_is_zero = quantity == zero
-                || crate::kernel::PureFactContext::settles_exactly(
-                    assumptions,
-                    &Proposition::ConditionIs(
-                        ConditionTerm::Bitvector32Equal(
-                            Box::new(quantity.clone()),
-                            Box::new(zero.clone()),
+    let mut checked_facts = assumptions.clone();
+    let count = if state.uses_population_authority_semantics() {
+        let arguments = arguments
+            .iter()
+            .map(|argument| match argument {
+                AlgebraicValue::C(value) => Some(Some(SpecExpression::Value(value.clone()))),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let expression = SpecExpression::CountedResourceCount {
+            name: name.clone(),
+            arguments,
+        };
+        let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            state,
+            &expression,
+            assumptions,
+            &BTreeMap::new(),
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .ok()?;
+        let [path] = paths.as_slice() else {
+            return None;
+        };
+        if !path.obligations.iter().all(|obligation| {
+            PureFactContext::settles_exactly(assumptions, obligation.proposition())
+        }) {
+            return None;
+        }
+        for fact in &path.facts {
+            checked_facts = checked_facts.assume_proposition(fact.proposition().clone());
+        }
+        let CValue::Int32(value) = &path.value else {
+            return None;
+        };
+        value.clone()
+    } else {
+        match state.counted_population(name, arguments) {
+            Some(count) => count.clone(),
+            None => {
+                let zero = Bitvector32Term::Constant(0);
+                let quantity_is_zero = quantity == zero
+                    || crate::kernel::PureFactContext::settles_exactly(
+                        assumptions,
+                        &Proposition::ConditionIs(
+                            ConditionTerm::Bitvector32Equal(
+                                Box::new(quantity.clone()),
+                                Box::new(zero.clone()),
+                            ),
+                            true,
                         ),
-                        true,
-                    ),
-                );
-            if !quantity_is_zero {
-                return None;
+                    );
+                if !quantity_is_zero {
+                    return None;
+                }
+                zero
             }
-            zero
         }
     };
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(quantity, count), true);
-    if claimed != &conclusion {
-        return None;
+    let conclusion = Proposition::ConditionIs(
+        ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
+        true,
+    );
+    if state.uses_population_authority_semantics() {
+        let reversed =
+            Proposition::ConditionIs(ConditionTerm::signed_greater_equal(count, quantity), true);
+        if !PureFactContext::settles_exactly(&checked_facts, &conclusion)
+            && !checked_facts.proves_exact(&reversed)
+        {
+            return None;
+        }
     }
-    theorem_from_exact_context_fact(assumptions, conclusion)
+    Some(conclusion)
 }
 
 /// Certifies the nonnegativity invariant carried by an owned declared-resource

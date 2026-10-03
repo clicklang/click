@@ -321,6 +321,22 @@ impl CreationEvents {
         description: &ResourceDescription,
         owned_members: u32,
     ) -> Result<Self, CreationRefusal> {
+        self.import_observable_contract_population_quantity(
+            description,
+            &Bitvector32Term::Constant(owned_members),
+        )
+    }
+
+    pub(in crate::kernel) fn import_observable_contract_population_quantity(
+        &self,
+        description: &ResourceDescription,
+        quantity: &Bitvector32Term,
+    ) -> Result<Self, CreationRefusal> {
+        let (owned_members, symbolic_members) = match quantity.as_const() {
+            Some(value) if value <= i32::MAX as u32 => (value, None),
+            Some(_) => return Err(CreationRefusal::InvalidQuantity),
+            None => (0, Some(quantity.clone())),
+        };
         let count = if let Some(import) = self.0.opaque_imports.get(description) {
             import
                 .entry_count
@@ -344,7 +360,7 @@ impl CreationEvents {
             description,
             owned_members,
             Some(count),
-            None,
+            symbolic_members,
             None,
         )
     }

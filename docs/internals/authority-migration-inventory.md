@@ -385,6 +385,17 @@ member identity, and repeated consumption. The other-pool negative rejects
 using unrelated member custody to bound a wildcard total. Verification and all
 nine expansion-audit sites pass.
 
+`resource_count_observe_witness.md` now selects authority semantics and retains
+both original C functions and their one-member/symbolic-quantity lower bounds.
+The checked observation names only count and quantity bounds, preserving the
+immutable ledger, memory, and member custody without projecting private bodies.
+Unary contract imports retain the exact owned batch while leaving the global
+total arbitrary. New regressions cover zero quantity, missing authority, closed
+private memory, and refusal to infer an exact total from symbolic custody.
+Kernel checks reject unrelated facts and resource deltas and measure bounded
+work beside increasing amounts of unrelated state. Both proofs and all four
+original expansion-audit sites pass.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

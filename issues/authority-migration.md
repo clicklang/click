@@ -200,9 +200,10 @@ ordinary resources, and exact member observations. A control can package two
 same-anchor authorities with counter facts; direct and nested checkout preserve
 that control and caller-retained slots. No new parameter syntax is needed.
 
-Named proof-field population identity, the original bounded-pool sidecar,
-remaining sequential groups, mutex/worker migration, and the default switch
-remain unfinished. Earlier checkpoint numbers 0–5 correspond to the completed
+The original bounded-pool sidecar and local/preserving named-member identity
+are complete. Named-member helper lifecycle effects, remaining sequential
+groups, mutex/worker migration, and the default switch remain unfinished.
+Earlier checkpoint numbers 0–5 correspond to the completed
 foundation; unfinished checkpoint 6–12 work is reorganized below. Detailed
 historical evidence belongs in the inventory, not a second competing roadmap.
 
@@ -360,6 +361,16 @@ not implemented. Local lifecycle operations and preserving helpers are supported
 These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
+
+**Count-only observation slice:** `resource_count_observe_witness.md` now uses
+explicit authority with both original C functions and lower-bound claims
+unchanged. Observation checks the exact owned quantity against the immutable
+authority ledger; it does not project private bodies or change memory, member
+custody, or population state. Unary helper entry retains numeric and symbolic
+batch custody independently of the arbitrary global total. Regressions cover
+zero quantity, missing authority, closed private memory, and refusal to equate
+local symbolic custody with the global total. Kernel checks reject forged facts
+and resource deltas, with deterministic work checks beside unrelated state.
 
 **Load-origin fixture slice:** The first-seen-per-function regression uses
 explicit empty slot authorities and checked capacity-batch creation. Pool
