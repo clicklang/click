@@ -1,16 +1,13 @@
-# `rb_next` on the node-keyed model: both walks, up to the ascent's exit
+# `rb_next` on the node-keyed model
 
 This is the unchanged Linux `rb_next` with its complete contract: the returned
 node is the in-order successor of `node` in the entry tree, or null when `node`
-is last. The proof runs the descent to its `return` and the ascent loop through
-its back edge, with a structural measure on each loop, and through all three of
-the ascent's `break` exits and their join. It stops at the first claim after
-that loop, and the fixture pins that frontier rather than routing around it.
-
-A function's contract claims are certified when every path has ended, so the
-descent's claims are not checked here. [`rb_next_descent.md`](rb_next_descent.md)
-is the same contract and the same descent proof on the body cut after the
-descent's `return`, where they are.
+is last. The proof runs the descent to its `return`, the ascent loop through
+its back edge and its three `break` exits, each loop with a structural
+measure, and the section after the ascent that hands back the node the walk
+stopped at. Every claim is certified on every path.
+[`rb_next_rejects_a_dropped_context.md`](rb_next_rejects_a_dropped_context.md)
+is its negative: a contract that drops the entry context is refused.
 
 The C body is Linux `lib/rbtree.c`'s `rb_next` unchanged, with the two macros
 it uses, `rb_parent` and `RB_EMPTY_NODE`, as `include/linux/rbtree.h` writes
@@ -150,30 +147,30 @@ needed two repairs to the exit join, which this change makes:
 and
 [`loop_break_exit_join_sets_aside_unshared_cells.md`](loop_break_exit_join_sets_aside_unshared_cells.md).
 
-## Where it stops
+## After the ascent
 
-After the loop the proof needs what every exit stated, beginning with
-`plug(c.model, t.model) == plug(old(c.model), old(t.model))`. The exits hold
-the frame at different terms, `Top` untouched and `Left(..)` refolded, so the
-join gives the frame's model a fresh name. Each exit stated the claim about
-its own frame, and the join restates every exit's facts about the name that
-replaced it and keeps those all exits restate identically
-([`loop_break_exit_keeps_a_fact_every_exit_restates.md`](loop_break_exit_keeps_a_fact_every_exit_restates.md)),
-so the claim is a fact after the loop and the `have` below it closes.
+The exits hold the frame at different terms, `Top` untouched and `Left(..)`
+refolded, so the join gives the frame's model a fresh name. What every exit
+stated about its own frame is restated about that name and kept
+([`loop_break_exit_keeps_a_fact_every_exit_restates.md`](loop_break_exit_keeps_a_fact_every_exit_restates.md)):
+the link, `ctx_is_right(c.model) == 0`, the plugged tree, and the entry node
+being last in the rebuilt subtree. The proof then matches the frame.
 
-The proof then stops at its last `simp()`, which is the `expect` line below:
-the produced instances are not folded yet, because the post-loop section has
-not been written.
-
-What is left is short, and its lemmas are already here:
-match the frame, fold the produced instances at `parent`, and close. Under
-`Top` the result is null and the tree comes back as `Remainder::Whole`; under
-`Left` the result is the frame's node, with `rb_inorder_adjacent_above` and
-`plug_keeps_adjacent` giving the adjacency. The `Right` arm is impossible
-there, because each exit states `ctx_is_right(c.model) == 0`, and refuting it
-takes a `contradiction` after a bridging `have`, which a function-level `match`
-arm does not accept
-([`function_match_arm_closes_by_contradiction_after_a_have.md`](function_match_arm_closes_by_contradiction_after_a_have.md)).
+- `Context::Top`: the link gives a null `parent`, which is the result. The
+  frame owns nothing; the proof unfolds it, folds an empty `ctx` and `sub` at
+  the null result, and hands the whole tree back in `rest` as
+  `Remainder::Whole(node, t.model)`. `plug(Context::Top, t.model)` is the entry
+  tree and the entry node is last in it.
+- `Context::Left`: the frame's node is `parent`, the result. The proof unfolds
+  the frame, folds `sub` at `parent` over the rebuilt subtree and the frame's
+  sibling, and refolds the frame's `up` as `ctx` at `parent`, which takes a
+  match on `up`'s model. `rb_inorder_adjacent_above` and `plug_keeps_adjacent`
+  give the adjacency: the entry node is last in `parent`'s left subtree, so
+  `parent` follows it.
+- `Context::Right` is impossible: every exit stated `ctx_is_right(c.model) ==
+  0`. The arm restates that at its constructor and refutes itself with a
+  `contradiction` after the bridging `have`s
+  ([`function_match_arm_closes_by_contradiction_after_a_have.md`](function_match_arm_closes_by_contradiction_after_a_have.md)).
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -2460,10 +2457,246 @@ struct rb_node* rb_next(struct rb_node* node) {
                             }
                         }
                     }
-                    have plug(c.model, t.model) == plug(old(c.model),
-                        old(t.model)) by { simp(); }
-                    step();
-                    simp();
+                    match c.model {
+                        Context::Top => {
+                            have ctx_node_is(Context::Top, parent) == 1 by {
+                                rewrite(Context::Top == c.model);
+                                assumption();
+                            }
+                            have parent == 0 by {
+                                apply(ctx_node_is_top(parent)) using {
+                                    ctx_node_is(Context::Top, parent) == 1;
+                                }
+                                assumption();
+                            }
+                            have plug(Context::Top, t.model) == plug(old(c.model),
+                                old(t.model)) by {
+                                rewrite(Context::Top == c.model);
+                                assumption();
+                            }
+                            have plug(Context::Top, t.model) == t.model by {
+                                unfold(plug(Context::Top, t.model));
+                                normalize();
+                            }
+                            have t.model == plug(old(c.model), old(t.model)) by {
+                                rewrite(t.model == plug(Context::Top, t.model));
+                                assumption();
+                            }
+                            have rb_remainder_tree(Remainder::Whole(node, t.model)) == t.model by {
+                                unfold(rb_remainder_tree(Remainder::Whole(node, t.model)));
+                                normalize();
+                            }
+                            have rb_remainder_tree(Remainder::Whole(node, t.model))
+                                == plug(old(c.model), old(t.model)) by {
+                                rewrite(rb_remainder_tree(Remainder::Whole(node, t.model))
+                                    == t.model);
+                                assumption();
+                            }
+                            have rb_list_ends_with(rb_inorder(plug(old(c.model), old(t.model))),
+                                old(node)) == 1 by {
+                                rewrite(plug(old(c.model), old(t.model)) == t.model);
+                                assumption();
+                            }
+                            unfold(c);
+                            let ctx = fold(ctx_at(parent), { model: Context::Top });
+                            let sub = fold(rb_at(parent), { model: RbTree::Empty });
+                            let rest = fold(rb_remainder_at(parent),
+                                { model: Remainder::Whole(node, t.model) }, { whole: t });
+                            step();
+                            simp();
+                        },
+                        Context::Left(frame_identity, frame_parent, frame_color, frame_right,
+                            above) => {
+                            have ctx_node_is(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), parent) == 1 by {
+                                rewrite(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above) == c.model);
+                                assumption();
+                            }
+                            have frame_identity == parent by {
+                                apply(ctx_node_is_left(frame_identity, frame_parent, frame_color,
+                                        frame_right, above, parent)) using {
+                                    ctx_node_is(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), parent) == 1;
+                                }
+                                assumption();
+                            }
+                            have rb_ctx_linked(t.model, Context::Left(frame_identity, frame_parent, frame_color, frame_right, above)) == 1 by {
+                                rewrite(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above) == c.model);
+                                assumption();
+                            }
+                            have rb_parent_is(t.model, frame_identity) == 1 by {
+                                apply(rb_ctx_linked_left_parent(t.model, frame_identity,
+                                        frame_parent, frame_color, frame_right, above)) using {
+                                    rb_ctx_linked(t.model, Context::Left(frame_identity, frame_parent, frame_color, frame_right, above)) == 1;
+                                }
+                                assumption();
+                            }
+                            have rb_parent_is(t.model, parent) == 1 by {
+                                apply(rb_parent_is_same(t.model, frame_identity, parent)) using {
+                                    rb_parent_is(t.model, frame_identity) == 1;
+                                    frame_identity == parent;
+                                }
+                                assumption();
+                            }
+                            have plug(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), t.model) == plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)) by {
+                                unfold(plug(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), t.model));
+                                normalize();
+                            }
+                            have plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)) == plug(old(c.model), old(t.model)) by {
+                                rewrite(plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)) == plug(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above), t.model));
+                                rewrite(Context::Left(frame_identity, frame_parent, frame_color, frame_right, above) == c.model);
+                                assumption();
+                            }
+                            have rb_list_adjacent(rb_inorder(RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)), old(node), parent) == 1 by {
+                                apply(rb_inorder_adjacent_above(frame_identity, frame_parent,
+                                        frame_color, t.model, frame_right, old(node), parent)) using {
+                                    rb_list_ends_with(rb_inorder(t.model), old(node)) == 1;
+                                    parent == frame_identity;
+                                }
+                                assumption();
+                            }
+                            have rb_list_adjacent(rb_inorder(plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right))), old(node), parent) == 1 by {
+                                apply(plug_keeps_adjacent(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right), old(node), parent)) using {
+                                    rb_list_adjacent(rb_inorder(RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)), old(node), parent) == 1;
+                                }
+                                assumption();
+                            }
+                            have rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), old(node),
+                                parent) == 1 by {
+                                rewrite(plug(old(c.model), old(t.model)) == plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, t.model, frame_right)));
+                                assumption();
+                            }
+                            match t.model {
+                                RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
+                                RbTree::Node(top_identity, top_parent, top_color, top_left, top_right) => {
+                                    have plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
+                                        rewrite(RbTree::Node(top_identity, top_parent, top_color, top_left, top_right) == t.model);
+                                        assumption();
+                                    }
+                        have rb_parent_is(RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), parent) == 1 by {
+                            rewrite(RbTree::Node(top_identity, top_parent, top_color, top_left, top_right) == t.model);
+                            assumption();
+                        }
+                                    let { sibling: s, up: u } = unfold(c);
+                                    have rb_ctx_linked(RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), above) == 1 by {
+                                        apply(rb_ctx_linked_node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right),
+                                                frame_right, above));
+                                        rewrite(rb_ctx_linked(RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), above) == ctx_node_is(above, frame_parent));
+                                        assumption();
+                                    }
+                                    match u.model {
+                                        Context::Top => {
+                                            have plug(Context::Top, RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(Context::Top == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), Context::Top) == 1 by {
+                                                rewrite(Context::Top == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            unfold(u);
+                                            let ctx = fold(ctx_at(parent), { model: Context::Top });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
+                                            have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(ctx.model == Context::Top);
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(sub.model, ctx.model) == 1 by {
+                                                rewrite(ctx.model == Context::Top);
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            step();
+                                            simp();
+                                        },
+                                        Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) => {
+                                            have plug(Context::Left(up_identity, up_parent, up_color, up_sibling, up_above), RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), Context::Left(up_identity, up_parent, up_color, up_sibling, up_above)) == 1 by {
+                                                rewrite(Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            let { sibling: up_s, up: up_u } = unfold(u);
+                                            let ctx = fold(ctx_at(parent), { model: Context::Left(up_identity, up_parent, up_color, up_sibling, up_above) },
+                                                { sibling: up_s, up: up_u });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
+                                            have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(ctx.model == Context::Left(up_identity, up_parent, up_color, up_sibling, up_above));
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(sub.model, ctx.model) == 1 by {
+                                                rewrite(ctx.model == Context::Left(up_identity, up_parent, up_color, up_sibling, up_above));
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            step();
+                                            simp();
+                                        },
+                                        Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) => {
+                                            have plug(Context::Right(up_identity, up_parent, up_color, up_sibling, up_above), RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right)) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right), Context::Right(up_identity, up_parent, up_color, up_sibling, up_above)) == 1 by {
+                                                rewrite(Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) == u.model);
+                                                rewrite(u.model == above);
+                                                assumption();
+                                            }
+                                            let { sibling: up_s, up: up_u } = unfold(u);
+                                            let ctx = fold(ctx_at(parent), { model: Context::Right(up_identity, up_parent, up_color, up_sibling, up_above) },
+                                                { sibling: up_s, up: up_u });
+                                            let sub = fold(rb_at(parent), { model: RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right) }, { left: t, right: s });
+                                            let rest = fold(rb_remainder_at(parent), { model: Remainder::More });
+                                            have plug(ctx.model, sub.model) == plug(old(c.model), old(t.model)) by {
+                                                rewrite(ctx.model == Context::Right(up_identity, up_parent, up_color, up_sibling, up_above));
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            have rb_ctx_linked(sub.model, ctx.model) == 1 by {
+                                                rewrite(ctx.model == Context::Right(up_identity, up_parent, up_color, up_sibling, up_above));
+                                                rewrite(sub.model == RbTree::Node(frame_identity, frame_parent, frame_color, RbTree::Node(top_identity, top_parent, top_color, top_left, top_right), frame_right));
+                                                assumption();
+                                            }
+                                            step();
+                                            simp();
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                        Context::Right(frame_identity, frame_parent, frame_color, frame_left,
+                            above) => {
+                            have ctx_is_right(Context::Right(frame_identity, frame_parent,
+                                    frame_color, frame_left, above)) == 0 by {
+                                rewrite(Context::Right(frame_identity, frame_parent,
+                                        frame_color, frame_left, above) == c.model);
+                                assumption();
+                            }
+                            have ctx_is_right(Context::Right(frame_identity, frame_parent,
+                                    frame_color, frame_left, above)) != 1 by {
+                                rewrite(ctx_is_right(Context::Right(frame_identity,
+                                        frame_parent, frame_color, frame_left, above)) == 0);
+                                normalize();
+                            }
+                            have ctx_is_right(Context::Right(frame_identity, frame_parent,
+                                    frame_color, frame_left, above)) == 1 by {
+                                unfold(ctx_is_right(Context::Right(frame_identity,
+                                            frame_parent, frame_color, frame_left, above)));
+                                normalize();
+                            }
+                            contradiction(ctx_is_right(Context::Right(frame_identity,
+                                        frame_parent, frame_color, frame_left, above)) == 1);
+                        },
+                    }
                 },
             }
         },
@@ -2472,5 +2705,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: `rb_next.contract` path 1 left `rb_next.ensures_0` unproved
+pass
 ```
