@@ -148,8 +148,7 @@ public:
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
-        (declaration->getNameAsString() == selected_name_ ||
-         declaration->getQualifiedNameAsString() == selected_name_) &&
+        declaration->getQualifiedNameAsString() == selected_name_ &&
         is_in_logical_source(declaration->getLocation())) {
       matches_.push_back(declaration);
     }
@@ -239,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 29;
+    artifact["schema"] = 30;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -919,7 +918,7 @@ private:
 
   std::optional<Json> lower_call(const clang::CallExpr *call,
                                  const clang::FunctionDecl *caller) {
-    auto lowered = lower_call_operation(call, caller);
+    auto lowered = lower_call_operation(call, caller, true);
     if (!lowered) {
       return std::nullopt;
     }
@@ -1251,7 +1250,7 @@ private:
              "C++ call capture requires matching return and local types");
         return std::nullopt;
       }
-      auto lowered = lower_call_operation(call, function);
+      auto lowered = lower_call_operation(call, function, true);
       if (!lowered) {
         return std::nullopt;
       }

@@ -5,6 +5,7 @@
 //! feed C++ text or generated C through the C parser.
 
 mod import;
+mod interface;
 mod lowering;
 mod schema;
 

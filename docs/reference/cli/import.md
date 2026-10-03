@@ -348,8 +348,26 @@ argument positions, casts, mixed-width branches, memory writes by the inner
 call, normal destruction, and object-free exception propagation. Name allocation
 and argument lowering have deterministic scaling coverage. Artifact validation
 checks every nested callee, capture type, and sibling storage type and rejects
-recursive graphs. Nesting in local initializers, general value expressions,
-converted call results, and returned references or objects remains unsupported.
+recursive graphs. Nested calls in integer-local initializers and discarded calls use the same
+normalization and ordering checks as return calls. Calls in general value
+expressions, converted call results, and returned references or objects remain
+unsupported.
+
+Scalar evaluation is normalized within the C++ frontend into explicit
+statements followed by a typed value. Initializer and return artifact wrappers
+retain source context; they do not select separate evaluation semantics.
+The same stable-sibling policy applies to integer-local initializer, return,
+and discarded call arguments. Constructor arguments remain outside nested-call
+support. Regressions cover scalar widths/signedness, initializer capture before
+cleanup, exception propagation, unsafe siblings in each source position, and
+verification/expansion/reverification/audit agreement.
+
+The frontend also prepares contract-facing signatures, Clang layouts, and
+local-object metadata alongside kernel execution. C++ and Rust feed the same
+prepared execution package to the verifier, using the signature/layout
+vocabulary shared with plain C. The shared verifier does not reinterpret C++
+artifacts or re-traverse C++ bodies; the original source and locked semantic
+identity remain attached to the prepared input.
 
 The synthetic fee fixture preserves `Div(Mul(fee, at_size), divisor, round_down)`
 and verifies concrete positive/negative rounding and exact division with
@@ -433,7 +451,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 29;
+its documented application invariant. The typed artifact schema is now 30;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,

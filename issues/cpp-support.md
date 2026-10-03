@@ -124,6 +124,22 @@ artifact regressions are covered. Object-qualified calls and pointer/reference
 signatures remain rejected. Bitcoin's wide path, `Assume`, and field-reading
 siblings still require further support.
 
+Scalar call evaluation now uses one normalization path: explicit evaluation
+statements followed by a typed value. Return and integer-local initializer
+wrappers retain their source role, but nested calls and their ordering checks
+are shared with discarded calls. Supported nested initializers no longer need
+source rewriting into return calls. Returns still capture before destruction;
+exceptional evaluations use the existing active cleanup edges. Ambiguous sibling
+reads/effects remain rejected in every context.
+
+C++ now prepares execution, contract-facing signatures, explicit layouts, and
+local-object metadata within its frontend. C++ and Rust supply the same
+prepared execution package to the shared verifier. The verifier no longer
+traverses C++ bodies or translates C++ types. Original typed artifacts,
+load source identities, and locked compiler/source identities remain attached
+to the prepared input. The plain C parser already supplies the same signature
+and layout vocabulary; its lazy translation-unit path remains intact.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -139,6 +155,54 @@ in a project header must not force verification of an entire class or standard
 library, but their layouts and other semantically relevant information must
 still be validated. Preserve unchanged upstream source as the integration
 regression for every new slice.
+
+## Next work: finish the design consolidation
+
+Complete these design steps before extending the Bitcoin fee arithmetic slice.
+Each should be a coherent change with unchanged-source regressions, hostile
+artifacts and false claims, verification/expansion/audit agreement, and
+multi-size deterministic work checks for affected hot paths.
+
+1. **Lifetime state and cleanup edges.** Replace checks for particular guard,
+   scope, and return arrangements with a representation of successfully
+   constructed objects and the required cleanup on each control-flow exit.
+   Start with the existing normal and scalar-exception fixtures; preserve
+   reverse destruction and return capture. Then admit additional arrangements
+   through the same model. Partial construction, temporaries, copy/move, and
+   wider exceptions need explicit lifetime events, rather than more special
+   cases. Rust's explicit drop successors are an analogy, not permission to
+   impose Rust reference rules on C++.
+2. **Resolved identity and contract names.** Carry declaration identities
+   through execution and contract binding independently of readable names.
+   Define deterministic, unambiguous names for namespace members, overloads,
+   and concrete template instances. Preserve existing ordinary names where
+   unambiguous. Regression cases must distinguish equal spellings in different
+   scopes and equal-width source types; name collisions must never bind the
+   wrong definition.
+3. **Artifact validity, supported semantics, and budgets.** Separate structural
+   validation from the supported semantic profile and resource limits. Keep
+   independent artifact checks; duplicated exporter/checker validation is
+   intentional at the trust boundary. Replace numerical example-shape limits
+   such as one record, two constants, and fixed scope counts only when the
+   corresponding algorithms support bounded growth. Budget diagnostics should
+   identify the exhausted limit, while unsupported-semantics diagnostics name
+   the missing operation. Acceptance requires multi-size constant/record/scope
+   regressions and explicit rejection of malformed graphs.
+4. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
+   interpretation and conversions across the artifact validator, kernel
+   lowering, and contract-facing interfaces. Specify widths, signedness,
+   promotions, narrowing, Boolean conversions, overflow and division
+   definedness against the pinned target. Reuse shared C/Rust operations where
+   semantics agree and keep language-specific policies explicit. Add
+   `__int128` only after its execution, contract types, and proof obligations
+   fit that design; do not introduce another isolated family of matches.
+
+The expression normalizer and prepared execution boundary are delivered in
+this consolidation. Future expression positions and richer ordering support
+must extend the same normalizer. In particular, calls inside arithmetic,
+conditions, assignments, and constructor arguments remain outside this slice;
+integer local initialization, return calls, and discarded calls share the
+current stable-sibling policy.
 
 ## Next bounded milestone: fee arithmetic
 

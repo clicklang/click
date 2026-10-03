@@ -4,4 +4,14 @@ mod import;
 pub(crate) mod lowering;
 pub mod schema;
 pub use import::{PreparedRustImport, load_import, refresh_import};
-pub(crate) use lowering::lower;
+
+/// Prepare the same contract-facing execution package as the other typed frontend.
+pub(crate) fn prepare_execution(
+    import: &PreparedRustImport,
+) -> Result<std::sync::Arc<crate::languages::PreparedExecution>, String> {
+    let (functions, layouts) = lowering::lower(import.export())?;
+    Ok(std::sync::Arc::new(crate::languages::PreparedExecution {
+        functions,
+        layouts,
+    }))
+}

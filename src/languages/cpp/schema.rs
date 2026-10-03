@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 29;
+pub(crate) const EXPORT_SCHEMA: u32 = 30;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1611,7 +1611,7 @@ impl CppStatement {
                 cleanups,
                 span,
             } => {
-                validate_nested_call(callee, arguments, span, places, records, logical_source)?;
+                validate_call(callee, arguments, span, places, records, logical_source)?;
                 value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "return-call value").is_err() {
                     require_bool(value_type, false, "return-call value")?;
@@ -1771,7 +1771,17 @@ impl CppInitializer {
                     span,
                 },
                 CppType::Record { .. },
-            ) => validate_call(callee, arguments, span, places, records, logical_source),
+            ) => {
+                if arguments
+                    .iter()
+                    .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+                {
+                    return Err(
+                        "nested C++ calls in constructor arguments remain unsupported".into(),
+                    );
+                }
+                validate_call(callee, arguments, span, places, records, logical_source)
+            }
             (Self::Aggregate { .. }, _) => {
                 Err("C++ aggregate initializer requires a supported record local".into())
             }
@@ -1787,23 +1797,6 @@ impl CppInitializer {
 }
 
 fn validate_call(
-    callee: &CppFunctionReference,
-    arguments: &[CppCallArgument],
-    span: &CppSpan,
-    places: &BTreeMap<String, (String, CppType)>,
-    records: &BTreeMap<String, &CppRecord>,
-    logical_source: &str,
-) -> Result<(), String> {
-    if arguments
-        .iter()
-        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
-    {
-        return Err("nested C++ calls are supported only in scalar return-call arguments".into());
-    }
-    validate_nested_call(callee, arguments, span, places, records, logical_source)
-}
-
-fn validate_nested_call(
     callee: &CppFunctionReference,
     arguments: &[CppCallArgument],
     span: &CppSpan,
@@ -1875,7 +1868,7 @@ impl CppCallArgument {
                 if require_scalar_integer(value_type, "nested-call value").is_err() {
                     require_bool(value_type, false, "nested-call value")?;
                 }
-                validate_nested_call(callee, arguments, span, places, records, logical_source)
+                validate_call(callee, arguments, span, places, records, logical_source)
             }
             Self::Value { value } => value.validate(places, records, logical_source),
             Self::Reference { place } => {
@@ -2645,11 +2638,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                         callee, arguments, ..
                     },
                 ..
-            } => calls.push(CollectedCall::Ordinary {
-                callee,
-                arguments,
-                destination: Some(&local.value_type),
-            }),
+            } => collect_scalar_call(callee, arguments, Some(&local.value_type), calls),
             CppStatement::Declare {
                 local,
                 initializer:
@@ -2665,11 +2654,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             CppStatement::Declare { .. } => {}
             CppStatement::Call {
                 callee, arguments, ..
-            } => calls.push(CollectedCall::Ordinary {
-                callee,
-                arguments,
-                destination: None,
-            }),
+            } => collect_scalar_call(callee, arguments, None, calls),
             CppStatement::If {
                 then_branch,
                 else_branch,
@@ -2698,12 +2683,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 cleanups,
                 ..
             } => {
-                calls.push(CollectedCall::Ordinary {
-                    callee,
-                    arguments,
-                    destination: Some(value_type),
-                });
-                collect_nested_calls(arguments, calls);
+                collect_scalar_call(callee, arguments, Some(value_type), calls);
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -2721,6 +2701,20 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::MemberStore { .. } => {}
         }
     }
+}
+
+fn collect_scalar_call<'a>(
+    callee: &'a CppFunctionReference,
+    arguments: &'a [CppCallArgument],
+    destination: Option<&'a CppType>,
+    calls: &mut Vec<CollectedCall<'a>>,
+) {
+    calls.push(CollectedCall::Ordinary {
+        callee,
+        arguments,
+        destination,
+    });
+    collect_nested_calls(arguments, calls);
 }
 
 fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<CollectedCall<'a>>) {
@@ -3837,6 +3831,96 @@ mod tests {
         callee.name = "caller".into();
         changed.body.push(recursive);
         assert!(validate(&changed).unwrap_err().contains("recursive"));
+    }
+
+    #[test]
+    fn nested_call_graph_validation_is_shared_by_initializers_and_discarded_calls() {
+        let reference = |name: &str| CppFunctionReference {
+            declaration_id: name.into(),
+            name: name.into(),
+            span: cleanup_span(),
+        };
+        let arguments = vec![CppCallArgument::Call {
+            callee: reference("inner"),
+            arguments: vec![],
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        }];
+        let local = CppPlace {
+            declaration_id: "captured".into(),
+            name: "captured".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let function = |name: &str, body, parameters| CppFunction {
+            declaration_id: name.into(),
+            name: name.into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters,
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body,
+        };
+        for statement in [
+            CppStatement::Declare {
+                local: local.clone(),
+                initializer: CppInitializer::Call {
+                    callee: reference("outer"),
+                    arguments: arguments.clone(),
+                    span: cleanup_span(),
+                },
+                span: cleanup_span(),
+            },
+            CppStatement::Call {
+                callee: reference("outer"),
+                arguments: arguments.clone(),
+                span: cleanup_span(),
+            },
+        ] {
+            let caller = function("caller", vec![statement], vec![]);
+            let outer = function("outer", vec![], vec![local.clone()]);
+            let mut inner = function("inner", vec![], vec![]);
+            let validate = |inner: &CppFunction| {
+                validate_reachable_calls(
+                    "caller",
+                    &BTreeMap::from([
+                        ("caller".into(), &caller),
+                        ("outer".into(), &outer),
+                        ("inner".into(), inner),
+                    ]),
+                    &mut Vec::new(),
+                    &mut BTreeSet::new(),
+                    "fixture.cpp",
+                )
+            };
+            validate(&inner).unwrap();
+            inner.return_type = signed_integer(64, false);
+            assert!(validate(&inner).unwrap_err().contains("call result"));
+            inner.return_type = signed_integer(32, false);
+            inner.name = "forged".into();
+            assert!(validate(&inner).unwrap_err().contains("is named"));
+        }
+        let constructor = CppInitializer::Constructor {
+            callee: reference("ctor"),
+            arguments,
+            span: cleanup_span(),
+        };
+        assert!(
+            constructor
+                .validate_for_local(
+                    &CppType::Record {
+                        declaration_id: "R".into(),
+                        name: "R".into(),
+                        is_const: false
+                    },
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    "fixture.cpp"
+                )
+                .unwrap_err()
+                .contains("constructor arguments")
+        );
     }
 
     #[test]

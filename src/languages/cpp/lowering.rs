@@ -35,9 +35,21 @@ pub struct LoweredCppFunction {
     source: PreparedCppImport,
     function: CFunction,
     reachable_functions: Vec<CFunction>,
+    execution: std::sync::Arc<crate::languages::PreparedExecution>,
 }
 
 impl LoweredCppFunction {
+    pub(crate) fn prepared_execution(&self) -> std::sync::Arc<crate::languages::PreparedExecution> {
+        self.execution.clone()
+    }
+    pub fn contract_functions(&self) -> &[crate::languages::c::syntax::C0Function] {
+        &self.execution.functions
+    }
+
+    pub fn record_layouts(&self) -> &BTreeMap<String, crate::languages::c::syntax::C0StructLayout> {
+        &self.execution.layouts
+    }
+
     pub fn source(&self) -> &PreparedCppImport {
         &self.source
     }
@@ -55,8 +67,8 @@ impl LoweredCppFunction {
     }
 }
 
-/// Lowers the first pinned C++ import slice directly to the kernel's checked
-/// execution vocabulary.
+/// Normalize the pinned C++ artifact into checked execution and its prepared
+/// contract-facing metadata.
 pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, String> {
     let function = lower_function(import, &import.export().function)?;
     let reachable_functions = import
@@ -65,7 +77,13 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .iter()
         .map(|source| lower_function(import, source))
         .collect::<Result<Vec<_>, _>>()?;
+    let execution = std::sync::Arc::new(super::interface::prepare(
+        import,
+        &function,
+        &reachable_functions,
+    )?);
     Ok(LoweredCppFunction {
+        execution,
         source: import.clone(),
         function,
         reachable_functions,
@@ -207,6 +225,33 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
     }
 }
 
+// An empty evaluation prefix does not introduce a synthetic execution step.
+fn evaluate_then(prefix: CStatement, continuation: CStatement) -> CStatement {
+    if matches!(prefix, CStatement::Skip) {
+        continuation
+    } else {
+        c_seq(prefix, continuation)
+    }
+}
+
+/// A source scalar evaluation, independent of its initializer/return context.
+/// Artifact wrappers retain their source role; every call uses this normalizer.
+enum ScalarInput<'a> {
+    Value(&'a CppExpression),
+    Call {
+        callee: &'a super::CppFunctionReference,
+        arguments: &'a [CppCallArgument],
+        value_type: &'a CppType,
+    },
+}
+
+struct ScalarEvaluation {
+    prefix: CStatement,
+    value: CExpression,
+    value_type: CType,
+    may_throw: bool,
+}
+
 struct LoweringContext<'a> {
     source_unit: &'a str,
     function_name: &'a str,
@@ -273,29 +318,32 @@ impl LoweringContext<'_> {
             CppStatement::Declare {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
-                (CppType::Integer { .. }, CppInitializer::Value { value }) => Ok(c_seq(
-                    c_declare(
-                        local.name.clone(),
-                        cpp_scalar_kernel_type(&local.value_type)?,
-                    ),
-                    c_assign(local.name.clone(), self.lower_expression(value)?),
-                )),
+                (CppType::Integer { .. }, CppInitializer::Value { value }) => {
+                    let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                    Ok(c_seq(
+                        c_declare(local.name.clone(), evaluation.value_type),
+                        evaluate_then(
+                            evaluation.prefix,
+                            c_assign(local.name.clone(), evaluation.value),
+                        ),
+                    ))
+                }
                 (
                     CppType::Integer { .. },
                     CppInitializer::Call {
                         callee, arguments, ..
                     },
-                ) => Ok(c_seq(
-                    c_declare(
-                        local.name.clone(),
-                        cpp_scalar_kernel_type(&local.value_type)?,
-                    ),
-                    c_call_assign(
-                        local.name.clone(),
-                        callee.name.clone(),
-                        self.lower_call_arguments(arguments)?,
-                    ),
-                )),
+                ) => {
+                    let evaluation = self.normalize_scalar_into(
+                        ScalarInput::Call {
+                            callee,
+                            arguments,
+                            value_type: &local.value_type,
+                        },
+                        Some(&local.name),
+                    )?;
+                    Ok(evaluation.prefix)
+                }
                 (
                     CppType::Record {
                         declaration_id,
@@ -407,13 +455,8 @@ impl LoweringContext<'_> {
             CppStatement::Return {
                 value, cleanups, ..
             } => {
-                let value_type = cpp_return_scalar_type(value.value_type())?;
-                let value = self.lower_expression(value)?;
-                if cleanups.is_empty() {
-                    return Ok(c_return(value));
-                }
-                let capture = self.return_capture_name.clone();
-                self.lower_captured_return(c_assign(capture, value), value_type, cleanups, false)
+                let evaluation = self.normalize_scalar(ScalarInput::Value(value))?;
+                self.lower_scalar_return(evaluation, cleanups)
             }
             CppStatement::ReturnCall {
                 callee,
@@ -422,18 +465,12 @@ impl LoweringContext<'_> {
                 cleanups,
                 ..
             } => {
-                let capture = self.return_capture_name.clone();
-                let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
-                let call = c_seq(
-                    prefix,
-                    c_call_assign(capture, callee.name.clone(), arguments),
-                );
-                self.lower_captured_return(
-                    call,
-                    cpp_return_scalar_type(value_type)?,
-                    cleanups,
-                    true,
-                )
+                let evaluation = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                })?;
+                self.lower_scalar_return(evaluation, cleanups)
             }
             CppStatement::Throw { value, .. } => {
                 Ok(CStatement::Throw(self.lower_expression(value)?))
@@ -493,10 +530,13 @@ impl LoweringContext<'_> {
             }
             CppStatement::Call {
                 callee, arguments, ..
-            } => Ok(c_call(
-                callee.name.clone(),
-                self.lower_call_arguments(arguments)?,
-            )),
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                Ok(evaluate_then(
+                    prefix,
+                    c_call(callee.name.clone(), arguments),
+                ))
+            }
         }
     }
 
@@ -579,10 +619,8 @@ impl LoweringContext<'_> {
                 let declaration = self.lower_statement(statement)?;
                 self.lower_throwing_statement(declaration, active)
             }
-            CppStatement::Call {
-                callee, arguments, ..
-            } => {
-                let call = c_call(callee.name.clone(), self.lower_call_arguments(arguments)?);
+            CppStatement::Call { .. } => {
+                let call = self.lower_statement(statement)?;
                 self.lower_throwing_statement(call, active)
             }
             CppStatement::Throw { value, .. } => {
@@ -675,7 +713,53 @@ impl LoweringContext<'_> {
         ))
     }
 
-    fn lower_return_call_arguments(
+    /// Normalize evaluation into explicit statements followed by a pure value.
+    /// The validated C++ ordering policy is shared by every scalar call context.
+    fn normalize_scalar(&mut self, input: ScalarInput<'_>) -> Result<ScalarEvaluation, String> {
+        self.normalize_scalar_into(input, None)
+    }
+
+    /// Use an existing source destination when the caller needs no temporary.
+    fn normalize_scalar_into(
+        &mut self,
+        input: ScalarInput<'_>,
+        destination: Option<&str>,
+    ) -> Result<ScalarEvaluation, String> {
+        match input {
+            ScalarInput::Value(value) => Ok(ScalarEvaluation {
+                prefix: c_skip(),
+                value: self.lower_expression(value)?,
+                value_type: cpp_return_scalar_type(value.value_type())?,
+                may_throw: false,
+            }),
+            ScalarInput::Call {
+                callee,
+                arguments,
+                value_type,
+            } => {
+                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let capture = match destination {
+                    Some(name) => name.to_owned(),
+                    None => self.fresh_call_capture()?,
+                };
+                let value_type = cpp_return_scalar_type(value_type)?;
+                Ok(ScalarEvaluation {
+                    prefix: evaluate_then(
+                        prefix,
+                        c_seq(
+                            c_declare(capture.clone(), value_type),
+                            c_call_assign(capture.clone(), callee.name.clone(), arguments),
+                        ),
+                    ),
+                    value: c_variable(capture),
+                    value_type,
+                    may_throw: true,
+                })
+            }
+        }
+    }
+
+    fn normalize_arguments(
         &mut self,
         arguments: &[CppCallArgument],
     ) -> Result<(CStatement, Vec<CExpression>), String> {
@@ -690,27 +774,37 @@ impl LoweringContext<'_> {
                 ..
             } = argument
             {
-                let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
-                let capture = self.fresh_call_capture()?;
-                evaluation = c_seq(
-                    evaluation,
-                    c_seq(
-                        prefix,
-                        c_seq(
-                            c_declare(capture.clone(), cpp_return_scalar_type(value_type)?),
-                            c_call_assign(capture.clone(), callee.name.clone(), arguments),
-                        ),
-                    ),
-                );
-                lowered.push(c_variable(capture));
+                let inner = self.normalize_scalar(ScalarInput::Call {
+                    callee,
+                    arguments,
+                    value_type,
+                })?;
+                evaluation = evaluate_then(evaluation, inner.prefix);
+                lowered.push(inner.value);
             } else {
-                // Schema validation admits only stable scalar siblings when a
-                // nested call is present. Their value is the same in every
-                // C++ argument order, so this evaluation order is faithful.
+                // When calls are present, validation permits only stable, total
+                // siblings. Evaluating them after the calls preserves every order.
                 lowered.push(self.lower_call_argument(argument)?);
             }
         }
         Ok((evaluation, lowered))
+    }
+
+    fn lower_scalar_return(
+        &mut self,
+        evaluation: ScalarEvaluation,
+        cleanups: &[CppCleanup],
+    ) -> Result<CStatement, String> {
+        if cleanups.is_empty() {
+            return Ok(evaluate_then(evaluation.prefix, c_return(evaluation.value)));
+        }
+        let capture = self.return_capture_name.clone();
+        self.lower_captured_return(
+            evaluate_then(evaluation.prefix, c_assign(capture, evaluation.value)),
+            evaluation.value_type,
+            cleanups,
+            evaluation.may_throw,
+        )
     }
 
     fn fresh_call_capture(&mut self) -> Result<String, String> {
@@ -752,7 +846,7 @@ impl LoweringContext<'_> {
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => self.lower_place(place),
             CppCallArgument::Call { .. } => {
-                Err("nested C++ call outside a supported return call".into())
+                Err("nested C++ call bypassed scalar evaluation normalization".into())
             }
         }
     }
