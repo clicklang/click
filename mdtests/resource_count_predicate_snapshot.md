@@ -15,9 +15,12 @@ struct object* object_retain(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+resource control(obj: struct object*) {
     owns obj->refs;
+    owns authority(object_ref(obj));
+    fact obj->refs == count(object_ref(obj));
 }
 
 predicate valid_refcount(obj: struct object*) {
@@ -29,21 +32,23 @@ verifying "resource_count_predicate_snapshot.c";
 struct object* object_retain(struct object* obj) {
     requires count(object_ref(obj)) < 2147483647;
     requires valid_refcount(obj);
+    owns control(obj);
     owns object_ref(obj);
     produces object_ref(obj);
 
     ensures valid_refcount(obj);
     ensures result == obj;
 } by {
-    open(object_ref(obj)) {
+    open(control(obj)) {
         unfold(valid_refcount);
-        execute();
+        step();
+        fold(object_ref(obj));
         have valid_refcount(obj) by {
             unfold(valid_refcount);
             simp();
         }
     }
-    simp();
+    execute(); simp();
 }
 ```
 

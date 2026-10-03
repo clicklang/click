@@ -253,6 +253,12 @@ decision. Scoped wildcard aggregation remains covered by authority fixtures.
 with separate authorities for its independent families and no bound on their
 unobserved sum.
 
+`resource_count_predicate_snapshot.md` also uses authority semantics: an
+ordinary control owns counter memory and authority, independently of reference
+members. Its unchanged C retain operation restores a fresh predicate after the
+checked member birth; the predicate's entry snapshot cannot substitute for
+that updated relation.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

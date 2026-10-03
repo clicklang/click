@@ -382,6 +382,13 @@ migration. Existing fixed-anchor wildcard fixtures retain scoped aggregation
 coverage. The independent symbolic-entry fixture now owns each exact family's
 authority; it still needs no invented bound on the sum of unrelated counts.
 
+**Predicate-snapshot slice:** `resource_count_predicate_snapshot.md` now uses
+authority semantics. An ordinary control owns the counter and reference-family
+authority; references remain separate members. The unchanged retain operation
+increments the counter, creates one member, establishes the new predicate,
+and restores the control. The proof retains the current predicate and returned
+pointer claims without reusing the entry predicate for the updated state.
+
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
