@@ -411,6 +411,29 @@ resources established by preceding `step()`, `unfold`, `fold`, and other
 ordinary proof tactics. It proves its proposition on every active proof path
 and adds the resulting fact to the following context.
 
+`execute_until(assignment(local, N))` selects the zero-based static occurrence
+of an ordinary local assignment, local compound update, or call-result assignment in the executable
+layout. It pauses before that store. Declarations and stores to other locals
+do not count, so unrelated compiler temporaries do not shift the selection.
+Occurrences follow structural preorder, including branch arms and loop bodies;
+repeated loop iterations reuse the same static occurrence. The selector does
+not execute an unreachable arm or move backward. A frontend may evaluate a
+right-hand side in earlier helper statements: selecting the final local store
+does not move the frontier before those helpers. Use `loop(N)` to stop before
+a loop's header/body work and `mark` to name a reached state. Assignment
+selectors currently serve `execute_until`, not `at(...)` snapshot expressions.
+
+`execute_until(read(N))` stops before the zero-based Nth statement containing
+an explicit scalar memory load, in executable preorder. A statement counts
+once even when its expression contains several loads; repeated iterations
+reuse the same static occurrence. This selects the whole statement, so a
+conditional expression need not read on every path. Taking an address such as
+`&*p` does not count as reading the pointed-to cell; a nested pointer load in
+`&**pp` does count. Implicit aggregate copies and reads inside callees do not
+count. The selector grants no access permission: `step()` checks the actual
+operation using the current resources. Like assignment selectors, read
+selectors serve execution targets rather than snapshot expressions.
+
 `statement(N)` selects the Nth source statement code region in structural
 order for execution targets and snapshots:
 

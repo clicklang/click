@@ -63,6 +63,9 @@ pub(in crate::surface) struct SourceExecutionLayout {
 #[derive(Default)]
 struct SourceExecutionLayoutData {
     statements: BTreeMap<usize, SourceStatementRegion>,
+    /// Static stores to named locals, indexed once in executable preorder.
+    assignments: BTreeMap<String, Vec<usize>>,
+    reads: Vec<usize>,
     automatic_exits: BTreeMap<usize, Vec<String>>,
     automatic_abrupt_exits: BTreeMap<usize, Vec<String>>,
     automatic_break_heads: BTreeMap<usize, usize>,
@@ -116,6 +119,158 @@ pub(in crate::surface) enum SourceStatementKind {
         try_last_statement_index: usize,
         handler_last_statement_index: usize,
     },
+}
+
+// Inspect only expressions owned by this statement, never descendant bodies.
+// Address-of computes an lvalue address without reading its designated cell;
+// nested loads in the pointer/index expressions still count.
+fn expression_reads(expression: &CExpression) -> bool {
+    let mut pending = vec![(expression, true)];
+    while let Some((expression, value)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match expression {
+            CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(..)
+                if value =>
+            {
+                return true;
+            }
+            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+                pending.push((pointer, true))
+            }
+            CExpression::AddressOf(place) => pending.push((place, false)),
+            CExpression::Cast { expression, .. }
+            | CExpression::FloatNegate(expression)
+            | CExpression::FloatClassification { expression, .. }
+            | CExpression::Not(expression)
+            | CExpression::BitwiseNot(expression) => pending.push((expression, true)),
+            CExpression::PointerOffsetBytes { pointer, .. } => pending.push((pointer, true)),
+            CExpression::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => pending.extend([
+                (condition.as_ref(), true),
+                (then_branch.as_ref(), true),
+                (else_branch.as_ref(), true),
+            ]),
+            CExpression::LessThan(a, b)
+            | CExpression::LessEqual(a, b)
+            | CExpression::GreaterThan(a, b)
+            | CExpression::GreaterEqual(a, b)
+            | CExpression::Equal(a, b)
+            | CExpression::NotEqual(a, b)
+            | CExpression::And(a, b)
+            | CExpression::Or(a, b)
+            | CExpression::Add(a, b)
+            | CExpression::Subtract(a, b)
+            | CExpression::Multiply(a, b)
+            | CExpression::Divide(a, b)
+            | CExpression::Remainder(a, b)
+            | CExpression::ShiftLeft(a, b)
+            | CExpression::ShiftRight(a, b)
+            | CExpression::BitwiseAnd(a, b)
+            | CExpression::BitwiseOr(a, b)
+            | CExpression::BitwiseXor(a, b)
+            | CExpression::Index(a, b) => pending.extend([(a.as_ref(), true), (b.as_ref(), true)]),
+            CExpression::Value(_) | CExpression::Variable(_) | CExpression::FunctionAddress(_) => {}
+        }
+    }
+    false
+}
+
+fn kernel_statement_reads(statement: &CStatement) -> bool {
+    match statement {
+        CStatement::Assign { expression, .. }
+        | CStatement::Return(expression)
+        | CStatement::Throw(expression)
+        | CStatement::Assert {
+            condition: expression,
+            ..
+        }
+        | CStatement::If {
+            condition: expression,
+            ..
+        }
+        | CStatement::While {
+            condition: expression,
+            ..
+        }
+        | CStatement::Switch { expression, .. }
+        | CStatement::HeapAllocate {
+            bytes: expression, ..
+        }
+        | CStatement::HeapFree {
+            pointer: expression,
+        } => expression_reads(expression),
+        CStatement::Call { arguments, .. } | CStatement::CallAssign { arguments, .. } => {
+            arguments.iter().any(expression_reads)
+        }
+        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+            expression_reads(pointer) || expression_reads(value)
+        }
+        CStatement::Update {
+            target, operand, ..
+        } => expression_reads(target) || expression_reads(operand),
+        _ => false,
+    }
+}
+
+fn syntax_statement_reads(statement: &syntax::C0Statement) -> bool {
+    use syntax::C0Statement as S;
+    let read =
+        |expression: &syntax::C0Expression| expression_reads(&expression.to_kernel_expression());
+    match statement {
+        S::Assign { expression, .. }
+        | S::Return(expression, _)
+        | S::Assert {
+            condition: expression,
+            ..
+        }
+        | S::If {
+            condition: expression,
+            ..
+        }
+        | S::While {
+            condition: expression,
+            ..
+        }
+        | S::DoWhile {
+            condition: expression,
+            ..
+        }
+        | S::For {
+            condition: expression,
+            ..
+        }
+        | S::Switch { expression, .. }
+        | S::HeapAllocate {
+            bytes: expression, ..
+        }
+        | S::HeapFree {
+            pointer: expression,
+            ..
+        } => read(expression),
+        S::Call { arguments, .. } | S::CallAssign { arguments, .. } => arguments.iter().any(read),
+        S::Store { pointer, value, .. }
+        | S::SequentialStore {
+            target: pointer,
+            value,
+            ..
+        } => read(pointer) || read(value),
+        S::Update {
+            target, operand, ..
+        } => read(target) || read(operand),
+        _ => false,
+    }
+}
+
+fn record_assignment(layout: &mut SourceExecutionLayoutData, local: &str, index: usize) {
+    crate::instrumentation::record_deterministic_work(1);
+    layout
+        .assignments
+        .entry(local.to_owned())
+        .or_default()
+        .push(index);
 }
 
 impl SourceExecutionLayout {
@@ -190,6 +345,9 @@ impl SourceExecutionLayout {
             next_statement_index: &mut usize,
             layout: &mut SourceExecutionLayoutData,
         ) -> Result<usize, ClickError> {
+            if kernel_statement_reads(statement) {
+                layout.reads.push(*next_statement_index);
+            }
             match statement {
                 CStatement::Seq(first, second) => {
                     visit(first, next_statement_index, layout)?;
@@ -286,6 +444,15 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
+                    if let CStatement::Assign { name, .. }
+                    | CStatement::CallAssign { target: name, .. }
+                    | CStatement::Update {
+                        target: CExpression::Variable(name),
+                        ..
+                    } = statement
+                    {
+                        record_assignment(layout, name, statement_index);
+                    }
                     *next_statement_index += 1;
                     layout.statements.insert(
                         statement_index,
@@ -351,6 +518,9 @@ impl SourceExecutionLayout {
             } = statement
             {
                 statement = body;
+            }
+            if syntax_statement_reads(statement) {
+                layout.reads.push(index);
             }
             let site = statement
                 .site()
@@ -511,6 +681,15 @@ impl SourceExecutionLayout {
                 _ => {
                     let statement_index = *next_statement_index;
                     record_site(layout, statement_index, statement, enclosing);
+                    if let syntax::C0Statement::Assign { name, .. }
+                    | syntax::C0Statement::CallAssign { target: name, .. }
+                    | syntax::C0Statement::Update {
+                        target: syntax::C0Expression::Variable(name),
+                        ..
+                    } = statement
+                    {
+                        record_assignment(layout, name, statement_index);
+                    }
                     *next_statement_index += 1;
                     layout.statements.insert(
                         statement_index,
@@ -682,6 +861,31 @@ impl SourceExecutionLayout {
                 .ok_or_else(|| format!("`execute_until` cannot resolve loop({index})")),
             _ => Err("`execute_until` expects a statement or loop region".into()),
         }
+    }
+
+    pub(in crate::surface) fn assignment_entry(
+        &self,
+        local: &str,
+        occurrence: usize,
+    ) -> Result<usize, String> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.data
+            .assignments
+            .get(local)
+            .and_then(|entries| entries.get(occurrence))
+            .copied()
+            .ok_or_else(|| {
+                format!("`execute_until` cannot resolve assignment({local}, {occurrence})")
+            })
+    }
+
+    pub(in crate::surface) fn read_entry(&self, occurrence: usize) -> Result<usize, String> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.data
+            .reads
+            .get(occurrence)
+            .copied()
+            .ok_or_else(|| format!("`execute_until` cannot resolve read({occurrence})"))
     }
 
     pub(in crate::surface) fn loop_body_entry(&self, loop_index: usize) -> Option<usize> {
@@ -934,6 +1138,97 @@ mod source_execution_layout_tests {
     use super::*;
 
     #[test]
+    fn read_frontiers_index_loads_and_ignore_address_computation() {
+        let function = syntax::parse_function(
+            "int32 f(int32* p, int32** pp) {int32 x;int32* q; q=&*p; x=*p; q=&**pp; return *p;}",
+        )
+        .unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            assert_eq!(layout.data.reads.len(), 3);
+            assert!(layout.read_entry(0).unwrap() < layout.read_entry(1).unwrap());
+            assert!(layout.read_entry(3).is_err());
+        }
+        assert!(!expression_reads(&CExpression::AddressOf(Box::new(
+            CExpression::Variable("x".into())
+        ))));
+    }
+
+    #[test]
+    fn read_frontiers_have_linear_expression_work_and_indexed_lookups() {
+        for count in [8, 128, 1024] {
+            let mut source = String::from("int32 f(const int32* p) {int32 x; int32 other;");
+            for _ in 0..count {
+                source.push_str("other=1;x=*p+other;");
+            }
+            source.push_str("return x;}");
+            let function = syntax::parse_function(&source).unwrap();
+            let typed = function
+                .clone()
+                .with_prelowered_kernel_function(function.to_kernel_function());
+            for function in [&function, &typed] {
+                let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    SourceExecutionLayout::for_function(function).unwrap()
+                });
+                assert_eq!(layout.data.reads.len(), count);
+                assert!(work < 16 * count, "{count} reads: {work}");
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for n in 0..count {
+                        layout.read_entry(n).unwrap();
+                    }
+                });
+                assert_eq!(work, count);
+            }
+        }
+    }
+
+    #[test]
+    fn assignment_frontiers_index_static_stores_in_both_layouts() {
+        let function = syntax::parse_function("int32 f(int32 n) { int32 x; x=0; if(n==0) {x=1;} else {x=2;} while(x<3) {x=3;} x+=1; x++; return x; }").unwrap();
+        let kernel = function.to_kernel_function();
+        let typed = function.clone().with_prelowered_kernel_function(kernel);
+        for function in [&function, &typed] {
+            let layout = SourceExecutionLayout::for_function(function).unwrap();
+            let indices: Vec<_> = (0..6)
+                .map(|n| layout.assignment_entry("x", n).unwrap())
+                .collect();
+            assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
+            assert!(layout.assignment_entry("x", 6).is_err());
+            assert!(layout.assignment_entry("absent", 0).is_err());
+        }
+    }
+
+    #[test]
+    fn assignment_frontiers_build_and_resolve_without_scanning_unrelated_stores() {
+        for count in [8, 128, 1024] {
+            let mut source = String::from("int32 f() {int32 marker; int32 unrelated;");
+            for i in 0..count {
+                source.push_str(&format!("unrelated={i};marker={i};"));
+            }
+            source.push_str("return marker;}");
+            let function = syntax::parse_function(&source).unwrap();
+            let kernel = function.to_kernel_function();
+            let typed = function.clone().with_prelowered_kernel_function(kernel);
+            for function in [&function, &typed] {
+                let (layout, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    SourceExecutionLayout::for_function(function).unwrap()
+                });
+                assert!(work <= 8 * count, "{count} stores: {work}");
+                assert_eq!(layout.data.assignments["marker"].len(), count);
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for occurrence in 0..count {
+                        layout.assignment_entry("marker", occurrence).unwrap();
+                    }
+                });
+                assert_eq!(work, count);
+            }
+        }
+    }
+
+    #[test]
     fn clones_share_large_immutable_layouts() {
         let statements = (0..4096)
             .map(|index| {
@@ -949,6 +1244,8 @@ mod source_execution_layout_tests {
         let layout = SourceExecutionLayout {
             data: std::sync::Arc::new(SourceExecutionLayoutData {
                 statements,
+                assignments: BTreeMap::new(),
+                reads: Vec::new(),
                 automatic_exits: BTreeMap::new(),
                 automatic_abrupt_exits: BTreeMap::new(),
                 automatic_break_heads: BTreeMap::new(),

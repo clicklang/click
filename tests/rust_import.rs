@@ -3637,3 +3637,6 @@ mod array_values;
 
 #[path = "rust_import/loop_headers.rs"]
 mod loop_headers;
+
+#[path = "rust_import/slice_into_iteration.rs"]
+mod slice_into_iteration;

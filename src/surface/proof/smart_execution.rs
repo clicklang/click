@@ -16,12 +16,14 @@ impl<'a> Proof<'a> {
         let target = self.resolve_statement_target(region)?;
         let Some(current) = self.current_statement_index()? else {
             return Err(self.step_error(format!(
-                "`execute_until(statement({target}))` cannot run after execution already reached function exit"
+                "`execute_until({})` cannot run after execution already reached function exit",
+                describe_code_region_ref(region)
             )));
         };
         if target < current {
             return Err(self.step_error(format!(
-                "`execute_until(statement({target}))` cannot move backward from statement({current})"
+                "`execute_until({})` cannot move backward from statement({current})",
+                describe_code_region_ref(region)
             )));
         }
         if target == current {

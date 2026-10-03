@@ -546,16 +546,27 @@ must retain their diagnostic; any changed outcome fails the gate so the
 inventory is revised with the implementation. This is fixture-level parity,
 not a percentage of the Rust language.
 
-Current result: **10 of 16 legacy fixtures verify unchanged** (62.5%), two
-reject during normalization, and four import but have proof gaps. Thus 14/16
-fixtures import (87.5%). Owned iterator resolution blocks `rust-iterators`;
-tuple/slice return types block `rust-split-at`. The proof gaps are legacy
-iterator ghost names in `rust-chunks-exact` and `rust-iter-references`, and
-numeric statement frontiers in `rust-loops` and `rust-byte-sum`. Resolve these
+Current result: **10 of 16 legacy fixtures verify unchanged** (62.5%), one
+rejects during normalization, and five import but have proof gaps. Thus 15/16
+fixtures import (93.75%), up from 14/16 (87.5%). The compiler-resolved shared
+slice `IntoIterator` case now imports `rust-iterators`; its unchanged sidecar
+fails on the legacy iterator state name. Tuple/slice return types still block
+`rust-split-at`. The other proof gaps are legacy iterator ghost names in
+`rust-chunks-exact` and `rust-iter-references`, and numeric statement frontiers
+in `rust-loops` and `rust-byte-sum`. Resolve these
 observations in the adapter/proof interface without restoring a generated
 processed count or rewriting Rust bodies. The default switch and legacy
 retirement remain later migration gates; fixture parity is not a Rust-language
 completeness metric.
+
+The optional `migrated_sidecar` field records a separate proof port for an
+unchanged source and contract. `rust-loops` and `rust-byte-sum` now pass with
+these sidecars, so source-and-contract coverage with migrated proofs is
+**12/16 (75%)**. A regression compares their parsed contracts and specification
+functions with the frozen originals, and the live sweep verifies each port
+against freshly extracted original source. It still checks the original
+sidecar and its recorded outcome separately; frozen-sidecar parity remains
+10/16 and is still a default-switch gate.
 
 The gate also runs all existing live compiler/borrow-checker rejection tests.
 Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
@@ -632,3 +643,40 @@ sidecar. The original numeric-selector sidecars remain frozen and counted as
 proof gaps. `split-shared-slice-while-header-v1` versions the interpretation;
 checkpoint locks are refreshed without changing prior ULLBC bytes or compiler
 pins. Deterministic scaling checks cover header work and emitted code size.
+
+The shared proof interface now also accepts
+`execute_until(assignment(local, N))`, selecting a named ordinary store, local compound update, or
+call-result assignment by zero-based static occurrence. The loop checkpoint
+proves source-local initialization through this selector, including live
+re-extraction with an unrelated compiler local. Indexed selection avoids
+counting unrelated helper statements; it preserves checked forward execution.
+Selecting a final store does not move before right-hand-side helpers. This
+adds a stable observation mechanism without changing frozen numeric-selector
+sidecars, Rust interpretation pins, locks, or parity percentages.
+
+`execute_until(read(N))` additionally selects the Nth statement containing an
+explicit scalar load, before the statement executes. The complete unchanged
+byte-sum source and original prefix-sum contract now verify using loop, read,
+and named assignment frontiers. The load, overflow checks, index update,
+invariant preservation, and termination are checked through ordinary steps;
+the proof uses neither compiler temporary names nor generated iterator state.
+Both executable layout paths index read frontiers once with deterministic
+linear scaling checks and constant-work lookups.
+
+## Shared slice IntoIterator
+
+[into-slices](into-slices/README.md) imports the unchanged `rust-iterators`
+source through the compiler-resolved `IntoIterator for &[T]` implementation.
+The named model checks the core trait, implementation path, method linkage,
+signatures, concrete scalar element and shared mutability before constructing
+ordinary typed iterator state. Shared i32/u32 slice parameters and source calls
+carry paired pointer/usize length values; reborrows require metadata from the
+same pointer origin. Actual loads still need checked views and the iterator
+retains its signed-word memory-model extent bound.
+
+`shared-scalar-slice-into-iteration-v1` versions this added interpretation.
+Existing ULLBC bytes and extraction/compiler pins are unchanged; checkpoint
+locks are deliberately updated. The frozen parity sweep records the newly
+importing sum as a proof gap, not a verified fixture. Import coverage increases
+to 15/16 (93.75%); frozen proof parity stays 10/16 (62.5%), and coverage with the
+two previously migrated sidecars stays 12/16 (75%).

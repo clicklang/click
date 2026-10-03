@@ -539,8 +539,8 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); fourteen import (87.5%). Two have
-normalization gaps and four have proof-observation gaps. The required `test` gate also requires the existing live
+extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); fifteen import (93.75%). One has
+a normalization gap and five have proof-observation gaps. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -571,8 +571,44 @@ emitted code have deterministic linear scaling coverage. All three unchanged
 Rust loop bodies verify with loop selectors in a separate proof sidecar, but
 the frozen numeric statement selectors still fail. Next provide stable proof
 observations for these frontiers and legacy iterator state without generated
-processed counts; also close owned iterator resolution and tuple/slice return
+processed counts; also close tuple/slice return
 shapes. Proof-adapted sidecars do not count as unchanged fixture parity.
+The shared proof layout now indexes named ordinary assignments, local compound updates, and call-result
+assignments for `execute_until(assignment(local, N))`. Source-local initialization
+proofs survive unrelated compiler locals without counting helper statements.
+Both syntax and typed-kernel paths retain checked forward execution, static
+occurrence ordering, immutable sharing, and deterministic scaling regressions.
+`loop(N)` still selects loop entry; `mark` names reached states. A final-store
+selector does not precede its earlier right-hand-side helpers, and assignment
+selectors are not snapshot expressions. This mechanism adds no generated ghost
+state and does not close frozen numeric-selector or iterator-observation gaps;
+fixture parity remains 10/16 (62.5%) and imports 15/16 (93.75%).
+The layout also indexes `execute_until(read(N))`: the Nth statement containing
+an explicit scalar memory load, before its checked execution. It excludes
+address-only operations and implicit callee/aggregate reads, introduces no
+permission or ghost state, and has linear construction and indexed-lookup
+regressions in both layout paths. The full unchanged byte-sum source and
+original prefix-sum contract now verify with loop, read, and assignment
+selectors, including overflow, invariant preservation and termination.
+The inventory records migrated proof sidecars separately and the live gate
+verifies them after fresh extraction. AST comparisons preserve the original
+contracts and pure specification definitions. Source-and-contract coverage
+with these proof ports is 12/16 (75%); strict frozen-sidecar parity remains
+10/16 (62.5%) and imports remain 15/16 (93.75%). Remaining proof work is stable
+iterator observations and frozen numeric-selector compatibility; normalization
+still needs tuple/slice returns in the fixed baseline, plus broader owned iterators.
+The compiler-resolved `IntoIterator for &[T]` model now imports the original
+`rust-iterators` body. It verifies trait/implementation identity, method linkage,
+generic instantiation, scalar type and shared mutability; incoming i32/u32
+slice parameters, ordinary source calls and reborrows preserve paired metadata.
+Typed-read proofs cover empty/nonempty slices and forwarded metadata, with
+false-claim, missing-view, forged declaration and metadata rejection coverage.
+No processed count is generated. The frozen checksum proof still fails on its
+legacy iterator observation name, so only import coverage increases this time:
+14/16 to 15/16 (87.5% to 93.75%). Strict proof parity remains 10/16, and original
+source/contract coverage with migrated proofs remains 12/16. `rust-split-at` is
+the sole remaining baseline normalization gap; broader owned iterator support
+and stable iterator proof observations remain later work.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate

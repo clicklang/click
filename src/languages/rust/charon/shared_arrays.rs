@@ -172,8 +172,11 @@ impl BodyAdapter<'_, '_> {
         {
             return Err(unsupported("shared iterator trait/implementation identity"));
         }
+        let receiver = &imp.impl_trait.generics.types[0];
+        let slice_receiver = matches!(receiver.kind(), a::TyKind::Ref(_, p, a::RefKind::Shared)
+            if matches!(p.kind(), a::TyKind::Slice(element, _) if variable(element)));
         let implementation_path = &imp.item_meta.name.name;
-        let expected_prefix: &[&str] = if method == "next" {
+        let expected_prefix: &[&str] = if method == "next" || slice_receiver {
             &["core", "slice", "iter"]
         } else if variable(&imp.impl_trait.generics.types[0]) {
             &["core", "iter", "traits", "collect"]
@@ -184,7 +187,6 @@ impl BodyAdapter<'_, '_> {
             || !implementation_path[..expected_prefix.len()].iter().zip(expected_prefix).all(|(part, expected)| matches!(part, a::PathElem::Ident(actual, d) if actual == expected && *d == a::Disambiguator::ZERO))
             || !matches!(implementation_path.last(), Some(a::PathElem::Impl(a::ImplElem::Trait(id))) if *id == impl_ref.id)
         { return Err(unsupported("shared iterator implementation path")); }
-        let receiver = &imp.impl_trait.generics.types[0];
         match method.as_str() {
             "next" => {
                 if !path(
@@ -241,6 +243,29 @@ impl BodyAdapter<'_, '_> {
                     Ok(Some(S::SharedArrayMove {
                         target: destination,
                         source: self.local(local(operand_place(argument)?)?)?,
+                    }))
+                } else if slice_receiver {
+                    if !matches!(callee.signature.inputs.as_slice(), [input] if input == receiver)
+                        || self
+                            .adapter
+                            .shared_iterator_element(&callee.signature.output, true)
+                            .is_none()
+                        || !callee.generics.const_generics.is_empty()
+                        || !ptr.generics.const_generics.is_empty()
+                        || imp.generics.types.len() != 1
+                        || !imp.generics.const_generics.is_empty()
+                        || self
+                            .adapter
+                            .shared_iterator_element(&call.dest.ty, false)
+                            .is_none_or(|e| self.adapter.ty(e).ok() != Some(element.clone()))
+                        || !matches!(argument.ty().kind(), a::TyKind::Ref(_, p, a::RefKind::Shared)
+                            if matches!(p.kind(), a::TyKind::Slice(e, _) if self.adapter.ty(e).ok() == Some(element.clone())))
+                    {
+                        return Err(unsupported("shared slice into_iter signature/element"));
+                    }
+                    Ok(Some(S::SharedArrayInitialize {
+                        target: destination,
+                        source: self.operand(argument)?,
                     }))
                 } else {
                     if !matches!(receiver.kind(), a::TyKind::Ref(_, p, a::RefKind::Shared) if matches!(p.kind(), a::TyKind::Array(e, n, _) if variable(e) && matches!(n.kind(), a::ConstantExprKind::Var(a::DeBruijnVar::Bound(depth, id)) if depth.index == 0 && id.index() == 0)))

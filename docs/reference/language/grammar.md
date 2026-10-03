@@ -81,7 +81,7 @@ documentation inventory keep the following accepted words synchronized.
 | `reverse` | Selects the reverse equality direction for `eq_to_le`. |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
-| `function`, `loop`, `statement`, `entry`, `exit` | Program-region and program-point selectors. |
+| `function`, `loop`, `statement`, `assignment`, `read`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)` and `read(N)` are execution targets only. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
 listed here isn't necessarily valid in every identifier or expression

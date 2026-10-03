@@ -40,7 +40,12 @@ fn project(name: &str, positive: bool) -> Project {
             ),
             (
                 "borrow.click",
-                include_bytes!("../../design/charon-trial/loop-headers/sum.click"),
+                if positive {
+                    include_bytes!("../../design/charon-trial/loop-headers/sum-proof.click")
+                        .as_slice()
+                } else {
+                    include_bytes!("../../design/charon-trial/loop-headers/sum.click").as_slice()
+                },
             ),
             (
                 "borrow.click.import.json",
@@ -123,7 +128,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
 
 #[test]
 fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
-    for name in ["loops", "headers"] {
+    for name in ["loops", "sum", "headers"] {
         let p = project(name, true);
         let prepared = load_import(&p.config()).unwrap();
         let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
@@ -131,6 +136,10 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
         for (before, after) in [
             ("ensures result == n;", "ensures result == 0;"),
             ("ensures result == bytes_len;", "ensures result == 0u64;"),
+            (
+                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));",
+                "ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len)) + 1;",
+            ),
         ] {
             let invalid = sidecar.replace(before, after);
             if invalid != sidecar {
@@ -147,6 +156,7 @@ fn charon_loop_headers_tools_recheck_expanded_certificates() {
             "loops",
             &["count.contract", "accumulate.contract", "walk.contract"][..],
         ),
+        ("sum", &["sum.contract"][..]),
         (
             "headers",
             &["final_header.contract", "negated.contract"][..],
@@ -176,7 +186,39 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
         fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
         refresh_import(&p.config()).unwrap();
         let prepared = load_import(&p.config()).unwrap();
-        if name != "sum" {
+        C0VerificationSession::new_program_prepared(
+            &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
+            &prepared,
+        )
+        .unwrap();
+        if name == "loops" {
+            let original = fs::read_to_string(p.root.join("loops.rs")).unwrap();
+            // Add an unrelated compiler local without editing the frozen fixture.
+            fs::write(
+                p.root.join("loops.rs"),
+                original.replacen("let mut i = 0;", "let unrelated = n; let mut i = 0;", 1),
+            )
+            .unwrap();
+            refresh_import(&p.config()).unwrap();
+            let prepared = load_import(&p.config()).unwrap();
+            let sidecar = assignment_frontier_sidecar();
+            C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+            fs::write(p.root.join("loops.rs"), original).unwrap();
+            refresh_import(&p.config()).unwrap();
+        }
+        if name == "sum" {
+            let original = fs::read_to_string(p.root.join("sum.rs")).unwrap();
+            fs::write(
+                p.root.join("sum.rs"),
+                original.replacen(
+                    "let mut total = 0i32;",
+                    "let unrelated = bytes.len(); let mut total = 0i32;",
+                    1,
+                ),
+            )
+            .unwrap();
+            refresh_import(&p.config()).unwrap();
+            let prepared = load_import(&p.config()).unwrap();
             C0VerificationSession::new_program_prepared(
                 &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
                 &prepared,
@@ -216,5 +258,34 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
             .unwrap();
             refresh_import(&p.config()).unwrap();
         }
+    }
+}
+
+fn assignment_frontier_sidecar() -> &'static str {
+    include_str!("../../design/charon-trial/loop-headers/loops-assignments.click")
+}
+
+#[test]
+fn charon_assignment_frontiers_select_source_locals_and_recheck_tools() {
+    let p = project("loops", true);
+    let sidecar = assignment_frontier_sidecar();
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for (from, to) in [
+        ("assignment(i, 0)", "assignment(absent, 0)"),
+        ("have i == 0", "have i == 1"),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&sidecar.replace(from, to), &prepared)
+                .is_err()
+        );
+    }
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
     }
 }
