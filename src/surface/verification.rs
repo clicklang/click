@@ -2421,8 +2421,17 @@ fn verify_c0_sources_in_context(
         // own contract hypothesis supports the existing checked-recursion
         // rule. Only rules for proofs completed below escape the transaction.
         for function_block in file.function_blocks() {
+            // A header `static inline` helper's body, and so its contract
+            // interface, is keyed by its executing name. Looking it up by the
+            // sidecar spelling would leave its callers without its contract
+            // until the helper happened to be verified first, so whether a
+            // call applied the contract or ran the body would depend on the
+            // order of the functions in the sidecar.
             let Some(function) = function_environment
-                .get_function(function_block.signature().name())
+                .get_function(&executing_function_name(
+                    &termination_kernel_names,
+                    function_block.signature().name(),
+                ))
                 .cloned()
             else {
                 continue;

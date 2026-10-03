@@ -2,9 +2,10 @@
 
 The header-inline mechanism is landed: supported `static inline` and
 `static __always_inline` definitions reached through headers parse with
-translation-unit-local linkage, execute their checked bodies at call
-sites with no contract boundary, accept sidecar contracts by ordinary C
-spelling, and attribute bundle diagnostics to `header.h:line`
+translation-unit-local linkage, accept sidecar contracts by ordinary C
+spelling, are called through that contract when they have one and execute
+their checked bodies at call sites when they do not, and attribute bundle
+diagnostics to `header.h:line`
 (`docs/reference/language/c0.md`,
 `docs/reference/language/limitations.md`; regressions
 `mdtests/inline_functions_in_headers.md`,

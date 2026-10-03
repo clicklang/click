@@ -3931,9 +3931,6 @@ fn termination_call_graph<'a>(
 ///   member of the cycle owes nothing, and a two-function cycle would be
 ///   certified with no descent anywhere. Such a component is refused by name
 ///   rather than admitted; `decreases <parameter>` still ranks it.
-/// * the function does not have an inline body. An inline body executes at
-///   the call site instead of applying a contract, so no call step reads the
-///   anchor and no obligation is emitted at all.
 /// * every loop the self-call sits inside was certified under this function's
 ///   anchor. A loop is verified once as its own judgment and then applied as
 ///   a summary, so a call the summary swallowed owes nothing at the step that
@@ -3958,14 +3955,6 @@ fn check_expression_measure_recursion(
             "the termination plan ranks `{name}` by the expression measure `{source}`, but the \
              certified `{name}` carries no declared measure, so no recursive call of it owed a \
              descent obligation"
-        )));
-    }
-    if function.has_inline_body() {
-        return Err(error(format!(
-            "`{name}` declares the expression `decreases` measure `{source}` and has an inline \
-             body. An inline body executes at each call site instead of applying `{name}`'s \
-             contract, so a self-call inside it is never ranked. Give `{name}` a Click contract, \
-             or rank it with `decreases <int32 parameter>`"
         )));
     }
     for callee in recursive_callees {
@@ -6441,16 +6430,16 @@ mod local_descent_tests {
         );
     }
 
-    /// An inline body executes at the call site instead of applying a
-    /// contract, so no call step reads the anchor and no descent is ever
-    /// owed.
+    /// A helper with an inline body and a verified rule is called through
+    /// that rule, its own self-call included, so the self-call read the
+    /// anchor exactly as an ordinary function's does.
     #[test]
-    fn an_expression_measure_refuses_an_inline_bodied_helper() {
+    fn an_expression_measure_ranks_an_inline_bodied_helper_with_a_rule() {
         let rules = [recursive_rule("drain", &[], true, true, false)];
         let plan = c_termination_height_plan(&rules, &[]);
-        let error = check(&rules, &[expression_plan("drain")], &plan, &[])
-            .expect_err("an inline self-recursive helper must not check");
-        assert!(error.message.contains("inline body"), "{error:?}");
+        let verdicts = check(&rules, &[expression_plan("drain")], &plan, &[])
+            .expect("a ruled inline helper is ranked like any function");
+        assert_eq!(terminating(&verdicts), BTreeSet::from(["drain"]));
     }
 
     /// The `decreases` component `recursive_rule` declares, which is also the

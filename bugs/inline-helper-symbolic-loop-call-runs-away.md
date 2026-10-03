@@ -8,17 +8,20 @@ first"). Counted work tracks real cost, so the default budget bounds time and
 memory.
 
 Executing a call to a `static inline` helper whose body holds a loop with a
-symbolic guard does neither. The call executes the helper's body at the call
-site (inline helpers have no contract boundary), the body's `while` is
+symbolic guard does neither, when the helper has no Click contract. The call
+executes the helper's body at the call site, the body's `while` is
 unrolled symbolically, and time and memory grow far faster than the counted
 work. Under the default `--work-limit` the run does not stop: it held 15 GB
 after two minutes and was killed.
 
 ## Reproduction
 
-`mdtests/inline_helper_ranked_loop.md` with the caller's constant argument
-replaced by its parameter, `return drain_to_zero(n);`. Its proof stays
-`execute(); simp();`. Measured on a release build, one run at a time, with
+`mdtests/inline_helper_contract_is_the_call_boundary.md` with the helper's
+sidecar contract (and proof) removed, so the call runs the body. With the
+contract, the same call applies it in one step and finishes promptly. The
+caller's proof stays
+`execute(); simp();`. Measured on that equivalent setup before inline helpers
+applied their contracts, on a release build, one run at a time, with
 `--work-limit W`:
 
 | W (units) | wall time | peak memory |
@@ -40,10 +43,9 @@ assumptions from the facts the path accumulated so far
 iteration count, and the unroll limit (`loop_unrolls: 256`) bounds iterations,
 not the work each one does. Which of these dominates has not been measured.
 
-The rbtree insert reaches this. `rb_insert_color` calls the
-`static __always_inline` `__rb_insert`, whose fixup loop's guard is symbolic,
-so a proof of `rb_insert_color` that gets the call past its first read would
-start this unrolling.
+The rbtree insert no longer reaches this: `__rb_insert` has a verified
+contract, so `rb_insert_color`'s call applies it. A contract-less Linux helper
+with a loop would.
 
 ## Intended regression
 

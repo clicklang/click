@@ -2,7 +2,8 @@
 
 The loop of
 [`loop_break_exit_ordinary_join_keeps_post_loop_read.md`](loop_break_exit_ordinary_join_keeps_post_loop_read.md),
-except that one exit calls `repaint`, which declares a local. The exits now
+except that one exit calls `repaint`, which declares a local and, having no
+Click contract, runs its body at the call site. The exits now
 disagree on the record of automatic storage, so the successor's memory takes a
 freshly minted identity with no recorded history
 ([`loop_break_exit_after_a_call_with_a_local_joins.md`](loop_break_exit_after_a_call_with_a_local_joins.md)).
@@ -35,11 +36,6 @@ int32 keep(int32* p, int32* q, int32 flag) {
 
 ```click
 verifying "keep_call.c";
-
-void repaint(int32* p) {
-    owns p[0..1];
-    ensures p[0] == 0;
-} by auto;
 
 int32 keep(int32* p, int32* q, int32 flag) {
     owns p[0..1];

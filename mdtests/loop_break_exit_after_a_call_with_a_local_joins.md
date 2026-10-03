@@ -2,7 +2,8 @@
 
 `paint` leaves its `while (true)` by a `break` on both paths, and both paths
 leave `p->shade` holding 0. One path stores the 0 itself; the other calls
-`repaint`, which declares a local.
+`repaint`, which declares a local. `repaint` has no Click contract, so its body
+runs at the call site, on `paint`'s own memory.
 
 The two exits hold the same cells and own the same resources. They differ in
 what the path recorded about automatic storage: the calling path's memory
@@ -47,11 +48,6 @@ void paint(struct node* p, int32 flag) {
 
 ```click
 verifying "paint_through_helper.c";
-
-void repaint(struct node* p) {
-    owns p->shade;
-    ensures p->shade == 0;
-} by auto;
 
 void paint(struct node* p, int32 flag) {
     owns p->shade;

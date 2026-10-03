@@ -252,11 +252,12 @@ An expression measure currently ranks **direct self-recursion only**. The
 descent is owed at a call to the function that declared the measure, so a
 recursive component with more than one function would leave its other edges
 ranked by nothing; Click refuses such a declaration by name
-(`mdtests/c_decreases_pure_expression_rejects_mutual_recursion.md`). For the
-same reason it refuses a self-recursive `static inline` helper, whose body
-executes at each call site instead of applying a contract.
+(`mdtests/c_decreases_pure_expression_rejects_mutual_recursion.md`).
 `decreases <int32 parameter>`, whose analysis reads the body rather than the
-call steps, still ranks both shapes.
+call steps, still ranks that shape. A self-recursive `static inline` helper
+with a contract is called through its contract, so an expression measure
+ranks it like any function
+(`mdtests/inline_helper_expression_measure_recursion.md`).
 
 A binder the contract already declares names the same measure without
 repeating its arguments:

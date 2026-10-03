@@ -3815,25 +3815,30 @@ pub(super) fn execute_c_function_call_paths(
             budget,
         );
     }
-    // A binder map selects a contract boundary, and an inline body has none:
-    // the body runs on the caller's resources, so the map would bind nothing
-    // and silently mean something other than what the proof wrote.
-    if function.has_inline_body()
+    // A header-provided `static inline` or `static __always_inline` helper
+    // is called like any other function once it has a verified contract:
+    // the contract is the call boundary. Only a helper with no contract runs
+    // its checked C body at the call site, on the caller's own resources,
+    // including while the surrounding function is being contract-certified.
+    let executes_inline_body = function.has_inline_body()
+        && environment
+            .get_verified_function_rule(function.name())
+            .is_none();
+    // A binder map selects a contract boundary, and an inline body run in
+    // place has none: the body runs on the caller's resources, so the map
+    // would bind nothing and silently mean something other than what the
+    // proof wrote.
+    if executes_inline_body
         && environment
             .selected_call_binders
             .as_ref()
             .is_some_and(|transport| transport.names_call_to(function.name()))
     {
         return Ok(vec![resource_call_failure(
-            "a binder map cannot select a `static inline` helper's contract, because its body executes at the call site on the caller's resources and its contract is not a call boundary; step the call with `step()` or `execute()`",
+            "a binder map cannot select a contract for a `static inline` helper that has none: its body executes at the call site on the caller's resources; give the helper a Click contract, or step the call with `step()` or `execute()`",
         )]);
     }
-    // A header-provided `static inline` or `static __always_inline` body has
-    // no Click contract to apply.
-    // Its checked C body is the call-site semantics, including while the
-    // surrounding function is being contract-certified. All other functions
-    // retain the normal verified-rule boundary.
-    if !function.has_inline_body() {
+    if !executes_inline_body {
         match execution_semantics.calls {
             CCallSemantics::ExecuteBodies => {}
             CCallSemantics::ApplyVerifiedRules => {
