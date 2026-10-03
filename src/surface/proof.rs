@@ -1200,6 +1200,15 @@ fn indexed_linear_tactics(
         .cloned()
         .enumerate()
         .map(|(index, tactic)| {
+            if let ProofTactic::Synthetic(inner) = tactic {
+                // A synthetic tactic is no source site: its index lies past
+                // every source position, so no site lookup can match it.
+                return IndexedTactic {
+                    index: index_offset + index,
+                    source_index: SYNTHETIC_SOURCE_INDEX_BASE + index_offset + index,
+                    tactic: *inner,
+                };
+            }
             let indexed = IndexedTactic {
                 index: index_offset + index,
                 source_index,
@@ -1211,12 +1220,16 @@ fn indexed_linear_tactics(
         .collect()
 }
 
+/// Where synthetic tactics are numbered: far past any source script.
+const SYNTHETIC_SOURCE_INDEX_BASE: usize = usize::MAX / 2;
+
 pub(super) fn source_tactic_count(tactics: &[ProofTactic]) -> usize {
     tactics.iter().map(source_tactic_width).sum()
 }
 
 fn source_tactic_width(tactic: &ProofTactic) -> usize {
     match tactic {
+        ProofTactic::Synthetic(_) => 0,
         ProofTactic::Match(proof_match) => {
             1 + proof_match
                 .arms

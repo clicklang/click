@@ -133,6 +133,8 @@ fn write_tactics(output: &mut String, tactics: &[ProofTactic], indent: usize) {
 fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
     let prefix = "    ".repeat(indent);
     match tactic {
+        // A synthetic tactic was never written; it prints as what it wraps.
+        ProofTactic::Synthetic(inner) => write_tactic(output, inner, indent),
         ProofTactic::Mark(name) => line(output, &prefix, &format!("mark {name};")),
         ProofTactic::Sorry => line(output, &prefix, "sorry();"),
         ProofTactic::Step => line(output, &prefix, "step();"),

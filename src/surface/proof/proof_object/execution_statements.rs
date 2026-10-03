@@ -1116,6 +1116,9 @@ impl<'a> Proof<'a> {
             };
             arguments.push(value);
         }
+        let before_state = (*execution.core.state).clone();
+        let context_parameters = context.parsed_function.parameters();
+        let context_arguments = context.arguments;
         let (state, facts) = execution
             .core
             .record_tactic_application(
@@ -1127,12 +1130,28 @@ impl<'a> Proof<'a> {
                 &environment,
             )
             .map_err(|refusal| match refusal {
-                crate::kernel::TacticApplicationRefusal::MissingRequirement(requirement) => self
-                    .step_error(format!(
-                        "tactic `{callee}` requires {}, which is not an available fact here; \
-                         establish it first, for example with `have`",
+                crate::kernel::TacticApplicationRefusal::MissingRequirement(
+                    requirement,
+                    context,
+                ) => {
+                    let spelling = synthesize_surface_proposition(
+                        &requirement,
+                        context_parameters,
+                        context_arguments,
+                        &before_state,
+                    )
+                    .map(|proposition| {
+                        crate::surface::diagnostics::describe_click_proposition(&proposition)
+                    })
+                    .unwrap_or_else(|| {
                         crate::surface::proof_diagnostics::render::render_proposition(&requirement)
-                    )),
+                    });
+                    let owed = context.map_or_else(String::new, |context| format!(" ({context})"));
+                    self.step_error(format!(
+                        "tactic `{callee}` requires `{spelling}`{owed}, which is not an available \
+                         fact here; establish it first, for example with `have`"
+                    ))
+                }
                 crate::kernel::TacticApplicationRefusal::Refused(message) => {
                     self.step_error(message)
                 }

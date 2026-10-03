@@ -1,10 +1,11 @@
 # User-defined tactics (design)
 
-Status: delivery step 1 is implemented: declarations, certification of
-non-recursive tactics, and application in C proofs before function exit (see
-[User-defined tactics](../reference/language/index.md#user-defined-tactics)).
-Recursion and the later steps are still proposals, so the recursive example
-below is in a `text` fence.
+Status: delivery steps 1, 2, and 5 are implemented: declarations,
+certification, application in C proofs before function exit, self-recursion
+ranked by an expression measure (see
+[User-defined tactics](../reference/language/index.md#user-defined-tactics)),
+and the consumer, `refold_to_root` in `examples/rbtree-insert`, which gives
+`__rb_insert` its root-form contract. Steps 3 and 4 remain.
 
 ## Why Click needs them
 
@@ -34,24 +35,28 @@ resource context and fact context, never memory and never C state.
 
 ```text
 tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
-    decreases c;
     consumes c: ctx_at(focus, root);
+    decreases ctx_depth(c.model);
     consumes t: rb_at(focus);
-    requires ctx_holds(c.model, t.model) == 1;
-    produces tree: rb_at(root->rb_node);
-    ensures tree.model == plug(old(c.model), old(t.model));
+    requires rb_tree_parent_consistent(plug(c.model, t.model)) == 1;
+    produces whole: rb_root_at(root);
+    ensures whole.model == plug(old(c.model), old(t.model));
 } by {
     match c.model {
-        Context::Top => { ... the focus is root->rb_node; rename t ... },
+        Context::Top => { ... fold the root cell and t into rb_root_at(root) ... },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
+            ... derive rb_parent_is(t.model, identity) from parent consistency ...
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { ... }, { left: t, right: s });
-            let { tree: whole } = refold_to_root(identity, root) { c: u, t: sub };
+            ... establish the measure's descent ...
+            let { whole: whole } = refold_to_root(identity, root) { c: u, t: sub };
         },
         Context::Right(...) => { ... mirrored ... },
     }
 }
 ```
+
+The full proof is in `examples/rbtree-insert/rbtree_insert.click`.
 
 A C proof applies it with an explicit binder map, like a call step but with no
 C statement:
@@ -71,12 +76,10 @@ let { tree: tr } = refold_to_root(node, root) { c: c, t: t };
   `constructs` do not apply, since no code runs.
 - **Termination is required.** `diverges` is refused. A non-recursive tactic
   terminates by construction, as a straight-line C function does. A recursive
-  one must declare `decreases`: structural on a consumed or owned binder
-  (`decreases c;`), an expression measure, or a lexicographic tuple. A
-  non-terminating recursive tactic would make its own contract an unproved
-  assumption and could prove false. In step 1 recursion cannot be written: a
-  tactic's name becomes applicable only after its declaration, so a body can
-  apply earlier tactics only.
+  one must declare an expression `decreases` measure, written after the
+  binders it reads. A non-terminating recursive tactic would make its own
+  contract an unproved assumption and could prove false. A body may apply
+  itself and earlier tactics only, so tactics are never mutually recursive.
 - **Language neutrality.** Nothing in a declaration names a C construct
   beyond the pointer and scalar types the shared contract language already
   spells. A tactic may live in a theorem-only `.click` file and be imported by
@@ -94,16 +97,16 @@ other tactic that advances C. The proof ends when every produced instance and
 every `ensures` is established; there is no exit statement to step to.
 
 A recursive application inside the body is the induction hypothesis. It owes
-the measure's descent at that application:
+the measure's descent at that application, as ordinary preconditions: the
+measure at the application is nonnegative and strictly smaller than at entry.
+These are emitted by the same recursion anchor that ranks a recursive C
+function's expression measure.
 
-- structural: the instance bound to the measured binder is a strict contained
-  descendant of the tactic's own measured instance, reached through unfolds
-  this path performed (the same evidence rule as structural loop measures);
-- expression: the measure at the application is nonnegative and strictly
-  smaller, as ordinary proof obligations.
-
-Mutual recursion among tactics is ranked by the same rules over their
-component, as for C functions.
+A structural (`decreases x;`) or parameter measure is refused for a tactic.
+Those measures are checked by reading the arguments of recursive calls in a C
+body, and a tactic's recursion is in its proof. Checking structural descent at
+the application, from the unfolds the path performed, as structural loop
+measures do, is future work.
 
 ## Application
 
@@ -138,9 +141,12 @@ application.
   step and one `assumption` per claim, so the script itself must leave each
   produced instance held and each `ensures` available. The IR is the one all
   three frontends lower to, so nothing about this is specific to C.
-- **Termination.** Tactic rules join the termination check as their own call
-  graph, with application edges instead of call edges. A tactic cannot apply a
-  C function, so the graph is tactics only.
+- **Termination.** Each `TacticApplication` event names the tactic it
+  applied. The kernel collects those names from the checked traces into the
+  certified claims and the verified rule (`applied_tactics`), and the
+  termination call graph reads them as the rule's call edges, since its body
+  has none. A recursion carried by such an edge is accepted only under an
+  expression measure, whose descent was owed at the application.
 - **Application event.** `CheckedExecutionEvent::TacticApplication` records a
   tactic application at a frontier. The kernel builds it only through
   `apply_verified_tactic_rule`, which refuses any procedure whose body is not
@@ -164,8 +170,10 @@ One design, delivered in pull requests on it:
 1. Declaration, parsing, validation, certification of a non-recursive tactic,
    and application in C proofs, with the event and no-havoc transfer. The
    tactic expand/audit inventory and every per-variant tactic table join here.
-2. Recursion: self-recursion with structural and expression measures, the
-   tactic call graph, and refusal of unranked recursion and `diverges`.
+2. Recursion: self-recursion ranked by an expression measure, the tactic
+   call edges, and refusal of unranked recursion, structural and parameter
+   measures, and `diverges`. (Structural descent at the application is
+   deferred.)
 3. Cross-backend regressions: one imported tactic applied in a C proof, a C++
    proof, and a Rust proof, with a refusal in each.
 4. Click-typed logical parameters (`Integer`, `Nat`, models), application in

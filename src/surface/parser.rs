@@ -976,6 +976,17 @@ impl Parser {
                 self.peek_ident().unwrap_or_default()
             )));
         }
+        // A tactic's own name is applicable inside its body: a recursive
+        // application is the induction hypothesis, ranked by its `decreases`.
+        // Only earlier tactics and itself are applicable, so tactics cannot
+        // be mutually recursive.
+        let declared_name = self.peek_ident().unwrap_or_default().to_string();
+        if !self.tactic_names.insert(declared_name.clone()) {
+            return Err(self.error_at(
+                start.clone(),
+                format!("tactic `{declared_name}` is declared twice"),
+            ));
+        }
         self.pending_tactic_signature = true;
         let function_block = self.parse_function_block(false);
         self.pending_tactic_signature = false;
@@ -1010,9 +1021,6 @@ impl Parser {
                 self,
                 "an `ensures` of a tactic is proved by the tactic's `by` block, not by its own",
             );
-        }
-        if !self.tactic_names.insert(name.clone()) {
-            return refuse(self, "is declared twice");
         }
         Ok(TacticDefinition::new(function_block))
     }

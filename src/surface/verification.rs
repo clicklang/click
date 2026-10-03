@@ -952,11 +952,12 @@ fn with_tactic_procedures(
                  tactic's proof folds, unfolds, applies, and proves facts at one point"
             )));
         }
-        script.push(ProofTactic::Step);
-        script.extend(std::iter::repeat_n(
-            ProofTactic::Assumption,
+        let mut suffix = vec![ProofTactic::Synthetic(Box::new(ProofTactic::Step))];
+        suffix.extend(std::iter::repeat_n(
+            ProofTactic::Synthetic(Box::new(ProofTactic::Assumption)),
             block.ensures.len(),
         ));
+        append_on_every_path(&mut script, &suffix);
         block.grouped_proof = Some(SourceProof::Script(script));
         let procedure = external_c0_function(&block).with_proof_body(syntax::C0Statement::Return(
             syntax::C0Expression::Void,
@@ -966,6 +967,19 @@ fn with_tactic_procedures(
         file.function_blocks.push(block);
     }
     Ok((file, parsed_sources))
+}
+
+/// Appends `suffix` where every path of `script` ends. A proof `match` must
+/// complete the proof in each arm, so a script ending in one gets the suffix
+/// at the end of each arm instead.
+fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
+    if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
+        for arm in &mut proof_match.arms {
+            append_on_every_path(&mut arm.tactics, suffix);
+        }
+    } else {
+        script.extend(suffix.iter().cloned());
+    }
 }
 
 /// The first tactic in `tactics`, at any depth of proof control, that runs
@@ -2668,6 +2682,11 @@ fn verify_c0_sources_in_context(
         .map(|contract| contract.name().to_string())
         .collect::<BTreeSet<_>>();
 
+    let tactic_names = file
+        .tactic_definitions()
+        .iter()
+        .map(|tactic| tactic.name().to_string())
+        .collect::<BTreeSet<_>>();
     let mut ordered_function_blocks = file.function_blocks;
     if selected_thread_runtime
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -3793,6 +3812,7 @@ fn verify_c0_sources_in_context(
                 &termination_refusals,
                 &declared_diverging,
                 None,
+                &tactic_names,
             ),
             None => "it has no termination evidence".to_string(),
         };
@@ -3823,6 +3843,7 @@ fn verify_c0_sources_in_context(
                 &termination_refusals,
                 &declared_diverging,
                 unsuitable_callbacks.first(),
+                &tactic_names,
             )
         ))
         .at_declaration(name));
@@ -4754,6 +4775,7 @@ fn termination_refusal_report(
     refusals: &BTreeMap<String, CTerminationRefusal>,
     declared_diverging: &BTreeSet<String>,
     unsuitable_callback: Option<&CUnsuitableCallback>,
+    tactics: &BTreeSet<String>,
 ) -> String {
     let spelling = |name: &str| {
         name.split_once('#')
@@ -4771,9 +4793,16 @@ fn termination_refusal_report(
                 let shown = CTerminationRefusal::UnmeasuredRecursion {
                     callee: spelling(callee),
                 };
-                report.push_str(&format!(
-                    "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
-                ));
+                if tactics.contains(&owner) {
+                    report.push_str(&format!(
+                        "{shown}; rank tactic `{owner}` with an expression `decreases` over its \
+                         parameters or its binders' models, since a tactic may not diverge"
+                    ));
+                } else {
+                    report.push_str(&format!(
+                        "{shown}; rank it with function-level `decreases` clauses, or declare `{owner}` `diverges`"
+                    ));
+                }
                 return report;
             }
             CTerminationRefusal::UnrankedLoop { .. } => {

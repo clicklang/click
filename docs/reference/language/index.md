@@ -2259,13 +2259,25 @@ resources and facts the proof holds: no C runs, memory is unchanged, and every
 fact about a cell survives. `click expand` never expands an application, and
 `click audit` audits the smart tactics inside the tactic's own `by` block.
 
+A tactic may apply itself. That is what makes it more than an abbreviation: a
+recursive tactic covers a structure of symbolic size, such as converting a
+linked list of any length one node at a time, which no fixed sequence of
+`fold`s can. The recursive application is the induction hypothesis, so the
+tactic must be ranked by an expression `decreases` measure, written after the
+binders it reads (`decreases links_len(x.model);`). Each recursive application
+owes the measure's descent as available facts: the measure at the
+application is nonnegative and smaller than at the tactic's entry
+(`mdtests/user_tactic_recursion_converts_a_list.md`). A recursion with no
+measure is refused, and so is a structural or parameter measure: those read
+recursive calls in a C body, and a tactic's recursion is in its proof.
+
 Tactic parameters use Click's `name: type` spelling and are C scalars and
 pointers in this release. A tactic may not take the name of a built-in tactic
-or a C function, may not declare `diverges`, `throws`, or `constructs`, and is
-applied after it is declared, in the module that declares it. An application
-runs at an execution frontier before the function exits. See
-[User-defined tactics (design)](../../internals/user-defined-tactics.md) for
-the kernel rule and the planned recursion.
+or a C function, may not declare `diverges`, `throws`, or `constructs`, and
+applies only itself and tactics declared before it, in the module that
+declares it. An application runs at an execution frontier before the function
+exits. See [User-defined tactics (design)](../../internals/user-defined-tactics.md)
+for the kernel rule.
 
 ## Propositions
 

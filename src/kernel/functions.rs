@@ -4092,7 +4092,9 @@ pub(crate) struct TacticRuleTransition {
 /// the proposition, so the surface can name it in the reader's spelling.
 #[derive(Clone, Debug)]
 pub(crate) enum TacticApplicationRefusal {
-    MissingRequirement(Proposition),
+    /// A precondition, with the kernel's own description of why it is owed
+    /// (a recursion measure's descent, for one).
+    MissingRequirement(Proposition, Option<String>),
     Refused(String),
 }
 
@@ -4195,6 +4197,7 @@ pub(crate) fn apply_verified_tactic_rule(
         if !facts.contains(&obligation.proposition) {
             return Err(TacticApplicationRefusal::MissingRequirement(
                 obligation.proposition.clone(),
+                obligation.context.clone(),
             ));
         }
     }
@@ -31677,6 +31680,7 @@ mod verified_call_initialization_tests {
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
+                applied_tactics: Default::default(),
             });
         execute_c_function_call_paths(
             state,
@@ -31975,6 +31979,7 @@ mod stable_view_call_tests {
         CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
             function: function.clone(),
             loop_semantics: CLoopSemantics::Verify,
+            applied_tactics: Default::default(),
         })
     }
 
@@ -32565,6 +32570,7 @@ mod stable_view_call_tests {
             CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
                 function: function.clone(),
                 loop_semantics: CLoopSemantics::Verify,
+                applied_tactics: Default::default(),
             });
         let paths = execute_c_function_call_paths(
             &caller(&pointer),
@@ -33332,6 +33338,7 @@ mod stable_view_call_tests {
             .with_verified_function_rule(CVerifiedFunctionRule {
                 function: inner,
                 loop_semantics: CLoopSemantics::Verify,
+                applied_tactics: Default::default(),
             });
 
         let paths = execute_c_function_paths(
@@ -34425,6 +34432,7 @@ mod stable_view_call_tests {
                 CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
                     function: function.clone(),
                     loop_semantics: CLoopSemantics::Verify,
+                    applied_tactics: Default::default(),
                 });
             let paths = execute_c_function_call_paths(
                 &caller,
