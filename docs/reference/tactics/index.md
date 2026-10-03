@@ -192,11 +192,6 @@ emits when a proof consumes a fact such as `selected == left or
 selected == right`. Click never searches: a branch that needs the other
 case's disjunct fails.
 
-The retired `calculate` tactic is not an alias for simplification; use
-`simp() using` to constrain smart search to named facts. The former
-`double_negation` and `vacuous` leaves are ordinary compositions: use
-`intro(); contradiction(P);`.
-
 Intrinsic tactic class and selectable source-site kind answer different
 questions. `have` is always a control container because it owns a nested goal.
 Its selectable source site is an expandable-automation site for a supported
@@ -263,7 +258,7 @@ aggregate search cost is significant even though each smart tactic is prompt.
 
 `click profile` reports smart and simple work under the same concepts:
 statement transitions are `step`, checked loop transitions are `loop`,
-fact transports are `transport`, frame operations are `frame`, and atomic
+fact transports are `transport`, and atomic
 reasoning uses rules such as `assumption`, `normalize`, `rewrite`, and named
 theorem applications. A slow simple leaf is a Click performance bug. A
 successful slow smart tactic is an expansion candidate. An unsuccessful smart
@@ -275,18 +270,3 @@ the rewritten source. Its purpose is to detect missing or invalid expanded
 proofs, not to promise constant total verification time as a project
 grows.
 
-## Compatibility
-
-Click has one spelling for each operation. Retired names are rejected with a
-focused migration message:
-
-| Retired | Use |
-| --- | --- |
-| `conjunction()` | `split()` |
-| `apply_loop_summary(...)` / `summarize(...)` | frontier-local `loop { ... }` |
-| `execute_rest()` / `symbolic_execute()` | `execute()` |
-| `execute_step()` | `step()` |
-| `execute_then_step()` / `execute_else_step()` | frontier-local `branch` |
-| `bounded_execute()` | `execute()` or `by auto;` |
-| `calculate(...)` | `simp() using { ... }` |
-| `double_negation()` / `vacuous()` | `intro()` followed by `contradiction(...)` |

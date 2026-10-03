@@ -984,47 +984,6 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         || symmetric_equality_equivalent(&left, &right)
 }
 
-/// The outermost memory snapshot a comparison proposition loads from, used
-/// to pick the transport destination for certified-fact matching.
-pub(in crate::surface::proof) fn proposition_outer_load_memory(
-    proposition: &Proposition,
-) -> Option<&CMemory> {
-    fn term_outer(term: &Bitvector32Term) -> Option<&CMemory> {
-        match term {
-            Bitvector32Term::MemoryLoad(memory, _, _) => Some(memory),
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::UnsignedDivide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::UnsignedRemainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
-                term_outer(left).or_else(|| term_outer(right))
-            }
-            _ => None,
-        }
-    }
-    let Proposition::ConditionIs(condition, _) = proposition else {
-        return None;
-    };
-    match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
-        | ConditionTerm::Bitvector32Equal(left, right) => {
-            term_outer(left).or_else(|| term_outer(right))
-        }
-        _ => None,
-    }
-}
-
 /// Like [`certified_fact_transport_reaches`], but first rewrites the source
 /// through the transition facts' certified stores, so a fact written in
 /// pre-store terms can reach a post-store form.

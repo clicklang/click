@@ -2738,8 +2738,7 @@ A function's externally visible write footprint is exactly the memory its
 contract owns. There is no separate effect clause: `owns` permits stores and
 reads, `views` permits reads, and a store outside the owned memory fails at
 the store. The retired `modifies`, `preserves`, `mutable`, and `immutable`
-effect spellings and the `frame` tactic are parse errors whose diagnostics name
-this ownership form.
+effect spellings are parse errors whose diagnostics name this ownership form.
 
 Contract segment expressions are evaluated at function entry, so a shifted
 segment such as `owns (owner->data + owner->len)[0..2]` continues to denote the

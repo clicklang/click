@@ -587,18 +587,6 @@ pub(crate) fn exact_fact_contains_conjunct(fact: &Proposition, required: &Propos
                 || exact_fact_contains_conjunct(right, required))
 }
 
-/// True only when `required` is a proper conjunct of an available conjunction.
-/// This is the exact, structural rule checked by the simple `extract` tactic;
-/// it performs no normalization, snapshot transport, or proposition search.
-pub(crate) fn exact_proper_conjunct_is_available(
-    required: &Proposition,
-    available: &[Proposition],
-) -> bool {
-    available.iter().any(|fact| {
-        matches!(fact, Proposition::And(_, _)) && exact_fact_contains_conjunct(fact, required)
-    })
-}
-
 pub(crate) fn propositions_are_exact_negations(left: &Proposition, right: &Proposition) -> bool {
     match (left, right) {
         (
@@ -774,15 +762,6 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
         }
         _ => false,
     }
-}
-
-pub(crate) fn pure_fact_is_available(required: &Proposition, available: &[Proposition]) -> bool {
-    available.contains(required)
-        || exactly_available_fact(required, available).is_some()
-        || available
-            .iter()
-            .any(|fact| quantified_binder_equivalent(required, fact))
-        || quantified_equivalent_available_fact(required, available).is_some()
 }
 
 pub(crate) fn atomic_conjuncts<'a>(

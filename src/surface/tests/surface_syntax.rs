@@ -2515,25 +2515,6 @@ fn proof_source_printing_preserves_proposition_precedence() {
     parser::parse(&proof_source).expect("printed quantified proof source should parse");
 }
 
-#[test]
-fn empty_atomic_premise_derivation_cannot_hide_an_ambient_premise() {
-    let target = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(Variable(42))),
-            Box::new(Bitvector32Term::Constant(0)),
-        ),
-        true,
-    );
-    let error = check_atomic_premise_derivation_goal(
-        &target,
-        Vec::new(),
-        &target,
-        std::slice::from_ref(&target),
-    )
-    .expect_err("a contextual derivation must retain an explicit premise");
-    assert!(error.contains("at least one explicit premise"), "{error}");
-}
-
 /// A quantifier is a proof step, not a normalization.
 ///
 /// From the kernel-search cleanup: `normalize` no longer closes a

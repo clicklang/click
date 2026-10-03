@@ -315,29 +315,6 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
     resolved
 }
 
-pub fn resolve_load_variables_via(
-    proposition: &Proposition,
-    defining: &[Proposition],
-) -> Proposition {
-    let mut resolved = proposition.clone();
-    for fact in defining {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = fact
-        else {
-            continue;
-        };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
-            (left.as_ref(), right.as_ref())
-        else {
-            continue;
-        };
-        if !crate::kernel::eval::is_load_variable(variable) {
-            continue;
-        }
-        resolved = substitute_bitvector_variable_in_proposition(&resolved, *variable, load);
-    }
-    resolved
-}
-
 pub fn resolve_minted_load_variables(
     proposition: &Proposition,
     facts: &[ExecutionPureFact],

@@ -6,7 +6,6 @@ use crate::surface::validation::describe_click_type;
 use std::fmt::Write;
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
-const DEBUG_VALUE_BYTE_LIMIT: usize = 2 * 1024;
 const TRUNCATION_SUFFIX: &str =
     "\n… <diagnostic truncated; set CLICK_FULL_DIAGNOSTICS=1 for full internal state>";
 
@@ -88,46 +87,6 @@ fn truncate_utf8_with_suffix(message: &str, limit: usize, suffix: &str) -> Strin
     bounded
 }
 
-struct BoundedDebugWriter {
-    output: String,
-    content_limit: usize,
-}
-
-impl Write for BoundedDebugWriter {
-    fn write_str(&mut self, value: &str) -> fmt::Result {
-        let remaining = self.content_limit.saturating_sub(self.output.len());
-        if value.len() <= remaining {
-            self.output.push_str(value);
-            return Ok(());
-        }
-        let mut boundary = remaining.min(value.len());
-        while !value.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        self.output.push_str(&value[..boundary]);
-        Err(fmt::Error)
-    }
-}
-
-pub(super) fn bounded_debug(value: &impl fmt::Debug) -> String {
-    bounded_debug_for_mode(value, std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some())
-}
-
-pub(super) fn bounded_debug_for_mode(value: &impl fmt::Debug, full_internal_state: bool) -> String {
-    if full_internal_state {
-        return format!("{value:?}");
-    }
-    let content_limit = DEBUG_VALUE_BYTE_LIMIT.saturating_sub(TRUNCATION_SUFFIX.len());
-    let mut writer = BoundedDebugWriter {
-        output: String::with_capacity(DEBUG_VALUE_BYTE_LIMIT),
-        content_limit,
-    };
-    if write!(&mut writer, "{value:?}").is_err() {
-        writer.output.push_str(TRUNCATION_SUFFIX);
-    }
-    writer.output
-}
-
 fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String) -> String {
     if items.is_empty() {
         return "[]".to_string();
@@ -202,20 +161,6 @@ pub(super) fn describe_pure_facts(pure_facts: &[Proposition]) -> String {
     }
 
     describe_bounded_list(pure_facts, |fact| describe_pure_fact(fact, &[], &[]))
-}
-
-pub(super) fn describe_unexpressed_pure_facts(
-    facts: &[(Proposition, ClickError)],
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-) -> String {
-    describe_bounded_list(facts, |(fact, error)| {
-        format!(
-            "{}: {}",
-            describe_pure_fact(fact, parameters, arguments),
-            error.raw_summary()
-        )
-    })
 }
 
 /// Describes one fact, and for a refused concrete named-contract formation

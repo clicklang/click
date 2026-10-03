@@ -78,29 +78,6 @@ pub(in crate::surface) fn normalize_proposition(proposition: &Proposition) -> Si
 
 pub(in crate::surface) use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality;
 
-/// Plan a surface proof made only of explicit equality substitutions followed
-/// by an exact assumption or context-free normalization.
-pub(in crate::surface) fn plan_explicit_equality_rewrites(
-    goal: &Proposition,
-    premises: &[(Proposition, ClickProposition)],
-    available: &[Proposition],
-) -> Option<Vec<ProofTactic>> {
-    plan_explicit_equality_rewrites_then(goal, premises, available, &|_| None)
-}
-
-/// Plan exact equality substitutions, allowing a named simple rule to close
-/// the rewritten goal. The closer must itself return explicit tactics; this
-/// composes certificate steps rather than adding another proof search.
-pub(in crate::surface) fn plan_explicit_equality_rewrites_then(
-    goal: &Proposition,
-    premises: &[(Proposition, ClickProposition)],
-    available: &[Proposition],
-    closer: &impl Fn(&Proposition) -> Option<Vec<ProofTactic>>,
-) -> Option<Vec<ProofTactic>> {
-    let exactly_available = |current: &Proposition| available.iter().any(|fact| fact == current);
-    plan_explicit_equality_rewrites_from(goal, premises, available, &exactly_available, closer)
-}
-
 /// The single explicit-certificate search shared by every smart-simplification
 /// construction path. Both the fixed-state proof `simp() using` chain and the
 /// post-execution outcome planner must call through here (directly or via
@@ -273,8 +250,6 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
 /// vocabulary cannot write is a search failure, not a lowering error.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum SimpEvidence {
-    /// The goal is (an exact equivalent of) an available fact.
-    Assumption,
     /// The goal normalizes to true without consulting any context.
     Normalize,
     /// A kernel derivation of the goal from its context premises.
@@ -294,13 +269,13 @@ pub(in crate::surface) fn plan_simp_certificate(
     }
 }
 
-pub(in crate::surface) fn check_simp_certificate(
+#[cfg(test)]
+fn check_simp_certificate(
     proposition: &Proposition,
     assumptions: &PureFactContext,
     certificate: &SimpEvidence,
 ) -> bool {
     match certificate {
-        SimpEvidence::Assumption => assumptions.proves(proposition),
         SimpEvidence::Normalize => {
             matches!(normalize_proposition(proposition), SimpProposition::True)
         }

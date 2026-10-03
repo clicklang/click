@@ -6583,18 +6583,6 @@ pub(super) fn condition_with_canonicalized_loads(
     })
 }
 
-/// Returns a condition fact with its loads in canonical form. Forms that
-/// differ only in redundant cached cells canonicalize identically.
-pub(crate) fn c_condition_fact_with_canonicalized_loads(fact: &Proposition) -> Proposition {
-    let Proposition::ConditionIs(condition, value) = fact else {
-        return fact.clone();
-    };
-    match condition_with_canonicalized_loads(condition) {
-        Some(canonical) => Proposition::ConditionIs(canonical, *value),
-        None => fact.clone(),
-    }
-}
-
 /// Never-inlined endpoint matcher for the effect arms: the direct-unchanged
 /// check participates in transport recursion where added frame bytes
 /// overflow the stack. The fact's snapshot handles may differ from the

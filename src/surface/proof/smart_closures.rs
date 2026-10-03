@@ -4203,7 +4203,6 @@ impl<'a> Proof<'a> {
                 premise_pairs,
                 !matches!(self.context.as_ref(), ProofContext::Execution(_)),
             ),
-            SimpEvidence::Assumption => None,
         }
     }
 

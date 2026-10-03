@@ -469,32 +469,6 @@ fn parses_resource_verb_function_clauses() {
 }
 
 #[test]
-fn rejects_retired_tactic_forms_with_migrations() {
-    for (form, replacement) in [
-        ("conjunction", "split"),
-        ("apply_loop_summary", "frontier-local"),
-        ("summarize", "frontier-local"),
-        ("execute_rest", "execute"),
-        ("symbolic_execute", "execute"),
-        ("execute_step", "step"),
-        ("execute_then_step", "step"),
-        ("execute_else_step", "step"),
-        ("bounded_execute", "execute"),
-        ("calculate", "simp() using"),
-        ("double_negation", "intro"),
-        ("vacuous", "intro"),
-    ] {
-        let source = format!("theorem legacy(x: int32) {{ ensures x == x by {{ {form}(); }} }}");
-        let error = parse(&source).expect_err("retired tactic should be rejected");
-        assert!(
-            error.message().contains(replacement),
-            "{form}: {}",
-            error.message()
-        );
-    }
-}
-
-#[test]
 fn rejects_redundant_exact_premise_forms_with_migrations() {
     let old_derive = r#"
         theorem legacy(x: int32) {

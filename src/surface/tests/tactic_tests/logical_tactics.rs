@@ -573,22 +573,6 @@ fn rejects_named_requirement() {
 }
 
 #[test]
-fn rejects_retired_choose_tactic() {
-    let source = r#"
-        theorem old_elimination() {
-            requires exists (k: Integer) { k == k };
-            ensures exists (x: Integer) { x == x } by {
-                choose(candidate from requirement 0);
-                witness(x = candidate);
-                assumption();
-            }
-        }
-    "#;
-    let error = parse(source).expect_err("choose is no longer surface syntax");
-    assert!(error.message().contains("`choose` was removed"));
-}
-
-#[test]
 fn parses_unnamed_ensure_clause() {
     let source = FILL3_CLICK.replace("ensures returns_second: result == 2", "ensures result == 2");
     let file = parse(&source).expect("sidecar should parse");

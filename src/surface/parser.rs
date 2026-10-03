@@ -5466,28 +5466,6 @@ impl Parser {
     // and leaf syntax at every child-proof level.
     #[inline(never)]
     fn parse_other_proof_tactic(&mut self, name: String) -> Result<ProofTactic, ClickError> {
-        if let Some(replacement) = match name.as_str() {
-            "conjunction" => Some("`conjunction()` was renamed to `split()`"),
-            "apply_loop_summary" | "summarize" => Some(
-                "detached loop summaries were removed; use a frontier-local `loop { ... }` tactic",
-            ),
-            "execute_rest" | "symbolic_execute" => Some("this tactic was renamed to `execute()`"),
-            "execute_step" => Some("`execute_step()` was replaced by smart `step()`"),
-            "execute_then_step" | "execute_else_step" => Some(
-                "branch-specific execution tactics were removed; use smart `step()` or proof-level `if`",
-            ),
-            "bounded_execute" => Some(
-                "`bounded_execute()` was removed; use `execute()` or `by auto;` and configure the tool budget",
-            ),
-            "calculate" => Some("use `simp() using { ... }` to constrain simplification"),
-            "double_negation" => {
-                Some("`double_negation()` was removed; use `intro(); contradiction(P);`")
-            }
-            "vacuous" => Some("`vacuous()` was removed; use `intro(); contradiction(antecedent);`"),
-            _ => None,
-        } {
-            return Err(self.error(replacement));
-        }
         if name == "have" {
             // A `have` fact has no name: a later step cites it by restating
             // its proposition. `name:` is never the start of a proposition,
@@ -5877,11 +5855,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 ProofTactic::ExecuteUntil(region_ref)
             }
-            "frame" => {
-                return Err(self.error(
-                    "`frame` was removed; ownership frames untouched memory with no tactic",
-                ));
-            }
             "unfold" => {
                 self.expect(Token::LParen)?;
                 // Look ahead without parsing: parsing an expression may split
@@ -6018,11 +5991,6 @@ impl Parser {
                 let value = self.parse_contract_expression()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::Witness(ProofWitness { name, value })
-            }
-            "choose" => {
-                return Err(self.error(
-                    "`choose` was removed; write `let (name: Type) satisfy { proposition };` after proving that existential",
-                ));
             }
             "assumption" => {
                 self.expect_empty_tactic_args(&name)?;
@@ -7134,11 +7102,6 @@ impl Parser {
     fn parse_tactic(&mut self) -> Result<SmartTactic, ClickError> {
         let tactic = match self.next() {
             Some(Token::Ident(name)) if name == "auto" => SmartTactic::Auto,
-            Some(Token::Ident(name)) if name == "frame" => {
-                return Err(self.error(
-                    "`frame` was removed; ownership frames untouched memory with no tactic",
-                ));
-            }
             Some(Token::Ident(name)) if name == "simp" => SmartTactic::Simp,
             Some(Token::Ident(name)) => {
                 return Err(self.error(format!("expected tactic, got `{name}`")));
