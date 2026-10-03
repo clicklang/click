@@ -451,7 +451,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 34;
+its documented application invariant. The typed artifact schema is now 35;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -505,6 +505,23 @@ encoded names, as do spellings that are not valid sidecar identifiers
 `contract_name(declaration_id)`.
 Reachable overloads are supported; selecting an overloaded declaration directly
 still fails until a signature selector is available.
+
+A direct statement `__builtin_assume(condition)` creates a checked proof
+obligation at its source location. The condition must be proved from contracts
+or preceding control flow; the importer never inserts it as a trusted fact.
+Lowering uses the common kernel's labeled assertion operation. A missing or
+false condition fails verification even when the function's result claim would
+otherwise hold. Normal returns and destructor cleanup remain unchanged.
+
+Clang identifies the intrinsic by builtin declaration identity. An ordinary
+function named `Assume` has ordinary call semantics. The builtin does not
+evaluate its operand, so this slice accepts only total predicates over by-value
+scalar parameters/locals and locked constants: supported casts, comparisons,
+and logical conjunction. Reference/pointer/field reads, runtime calls, arithmetic,
+and side effects are rejected. Compiler-folded constants retain the existing
+pinned-Clang constant policy. Bitcoin's library `Assume` macro and general
+assertion/abort behavior remain unsupported. Schema 35 requires an explicit
+refresh of earlier locks.
 
 Scalar interpretation is shared by the artifact validator, execution lowering,
 and proof-facing signatures. It distinguishes mutable and const qualification

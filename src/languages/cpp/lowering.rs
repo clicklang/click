@@ -421,6 +421,13 @@ impl LoweringContext<'_> {
                     value_type,
                 ))
             }
+            CppStatement::Assume { condition, span } => Ok(crate::kernel::c_labeled_assert(
+                self.lower_expression(condition)?,
+                format!(
+                    "C++ __builtin_assume at {}:{}:{}",
+                    span.file, span.start_line, span.start_column
+                ),
+            )),
             CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }

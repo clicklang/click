@@ -27,6 +27,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
 #include "clang/Basic/LangStandard.h"
+#include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -244,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 34;
+    artifact["schema"] = 35;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -728,6 +729,20 @@ private:
       return lower_scope(compound, function, false);
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
+      const auto *callee = call->getDirectCallee();
+      if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
+        if (call->getNumArgs() != 1 || !total_assumption_condition(call->getArg(0), function)) {
+          fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
+          return std::nullopt;
+        }
+        auto condition = lower_expression(call->getArg(0), function);
+        if (!condition) return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "assume";
+        result["condition"] = std::move(*condition);
+        result["span"] = span(call->getSourceRange());
+        return Json(std::move(result));
+      }
       return lower_call(call, function);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
@@ -1480,6 +1495,29 @@ private:
                 (variable->hasLocalStorage() && !variable->isStaticLocal()))));
     }
     return false;
+  }
+
+  // The builtin does not evaluate its operand. Only total, side-effect-free
+  // scalar conditions can be checked as an obligation without adding an
+  // evaluation effect or hiding undefined behavior on another argument order.
+  bool total_assumption_condition(const clang::Expr *expression,
+                                  const clang::FunctionDecl *caller) const {
+    expression = expression->IgnoreParens();
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      if (cast->getCastKind() == clang::CK_IntegralToBoolean ||
+          cast->getCastKind() == clang::CK_NoOp)
+        return total_assumption_condition(cast->getSubExpr(), caller);
+    }
+    if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
+      if (binary->getOpcode() == clang::BO_LAnd)
+        return total_assumption_condition(binary->getLHS(), caller) &&
+               total_assumption_condition(binary->getRHS(), caller);
+      if (binary->isComparisonOp())
+        return stable_scalar_argument(binary->getLHS(), caller) &&
+               stable_scalar_argument(binary->getRHS(), caller);
+      return false;
+    }
+    return stable_scalar_argument(expression, caller);
   }
 
   std::optional<LoweredCall>

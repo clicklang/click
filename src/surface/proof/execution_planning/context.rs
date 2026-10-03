@@ -727,6 +727,14 @@ pub(in crate::surface::proof) fn surface_c_condition(condition: &CExpression) ->
         }
     };
     match condition {
+        // Boolean conversion preserves truthiness. Retain the predicate's
+        // ordinary source spelling rather than printing a value-level cast
+        // around a comparison, which has no contract-expression syntax.
+        CExpression::Cast {
+            expression,
+            target_type: CType::Bool,
+            ..
+        } => surface_c_condition(expression),
         CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
         CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
@@ -1562,5 +1570,32 @@ mod tests {
         assert!(
             !source_backed_requirement_should_intercept(&obligation, &different_epoch,).unwrap()
         );
+    }
+}
+
+#[cfg(test)]
+mod boolean_guard_tests {
+    use super::*;
+
+    #[test]
+    fn boolean_cast_guards_retain_the_underlying_source_predicate() {
+        for condition in [
+            crate::kernel::c_greater_than(
+                crate::kernel::c_variable("n"),
+                crate::kernel::c_int32_literal(0),
+            ),
+            crate::kernel::c_variable("n"),
+        ] {
+            let converted = crate::kernel::c_cast(condition.clone(), CType::Bool);
+            assert_eq!(
+                surface_c_condition(&converted),
+                surface_c_condition(&condition)
+            );
+            let nested = crate::kernel::c_cast(converted, CType::Bool);
+            assert_eq!(
+                surface_c_condition(&nested),
+                surface_c_condition(&condition)
+            );
+        }
     }
 }
