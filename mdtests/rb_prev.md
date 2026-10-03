@@ -7,9 +7,10 @@ resources, and every claim is certified on every path.
 [`rb_prev_rejects_a_dropped_context.md`](rb_prev_rejects_a_dropped_context.md)
 is its negative.
 
-The C body is Linux `lib/rbtree.c`'s `rb_prev`, typed from the kernel source
-rather than compared against a pinned copy, with the same `rb_parent` and
-`RB_EMPTY_NODE` macros as `rb_next.md`. As there, the parameter is declared
+The C body is Linux `lib/rbtree.c`'s `rb_prev`, identical to the pinned copy
+in `integrations/linux-rbtree/input-closure.tar.gz` apart from the parameter's
+qualifier, with the same `rb_parent` and `RB_EMPTY_NODE` macros as
+`rb_next.md`. As there, the parameter is declared
 `struct rb_node *node` rather than `const struct rb_node *node`, because C0
 does not yet let the explicit cast in `return (struct rb_node *)node;` drop
 `const` ([`rb_next_const_signature.md`](rb_next_const_signature.md)).

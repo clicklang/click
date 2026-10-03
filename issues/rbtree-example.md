@@ -729,8 +729,48 @@ parameter is declared without `const` for the same reason as chunk 8's.
 Larger than insert; expect the same cadence of verifier gaps, and expect this
 split to be revised once chunk 11 is under way.
 
-**Chunk 10. Erase model theorems.** The splice lemma for the two-child case
-and one step theorem per rebalancing case, D10 shape. Pure; no C.
+**Chunk 10. Erase model theorems: rebalancing half written 2026-10-02.** One
+theorem per `____rb_erase_color` case and side, in the D10 shape of
+`ctx_insert_case*_step`, all stated on the loop state the C holds: the cursor
+subtree `t` (`node`, possibly empty) is red-black with a black root, and the
+context at its parent is valid for a black subtree one level taller,
+`ctx_rb(Context::Left(parent, above, pcolor, sibling, up),
+Nat::Succ(black_height(t)), Color::Black) == 1` (or `Right`), with the parent
+consistency of the whole tree:
+
+- `ctx_erase_case1_{left,right}_step`: red sibling, rotate at the parent. The
+  new context is `Left(parent, sibling, Red, rb_reparent(sl, parent),
+  Left(sibling, above, Black, sr, up))` (mirrored on the right), which carries
+  the same deficit; the new sibling's root is black.
+  `ctx_erase_case1_{left,right}_parent_black` gives the parent's colour.
+- `ctx_erase_case2_{left,right}_red_exit`: black sibling with black children
+  and a red parent; the recoloured subtree makes the whole tree
+  `is_rb_root`.
+- `ctx_erase_case2_{left,right}_black_step`: the same with a black parent;
+  the deficit moves to the parent's subtree in `up`. `ctx_erase_root_exit`
+  closes the walk when `up` is `Top`.
+- `ctx_erase_case3_{left,right}_exit`: near child red (case 3, then case 4).
+- `ctx_erase_case4_{left,right}_exit`: far child red.
+- `ctx_erase_{left,right}_sibling_is_node`: the sibling is not empty, so the C
+  may read its children.
+
+Every exit theorem states in-order preservation, `is_rb_root`, and parent
+consistency on `plug(up, rebuilt subtree)`; every step theorem states them on
+the new context. Helpers: `rb_inorder_node_congruence`, `ctx_rb_black_focus`,
+`node_color_ok_black_children`, `ctx_erase_case2_left_sibling`. The model
+verifies and `click audit` of it passes.
+
+Still open in this chunk: the two-child splice in the form chunk 11 needs.
+`rb_erase_two_child_splice` and its parent-consistency twin state the in-order
+and link facts of replacing the erased node by its successor, but not where
+the black deficit lands when a black successor with no right child is
+removed. That is a position inside the right subtree's left spine, so stating
+it as a rebalancing start (`ctx_rb(..., Nat::Succ(Nat::Zero), Color::Black)`
+at the hole) needs a context for that spine joined to the context above the
+erased node, for example a `ctx_concat(inner, outer)` with
+`plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub))` and the
+matching `ctx_rb` lemma. The spelling should follow the descent loop chunk 11
+writes.
 
 **Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
 and two-child cases, contracted so the in-order sequence loses exactly the
