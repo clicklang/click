@@ -831,7 +831,7 @@ fn advance_checked_linear_continuation<'a>(
                 }
             }
         } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
-            match proof.try_linear_execute()? {
+            match proof.try_execute_to_exit()? {
                 Some(executed) => executed,
                 None => {
                     return Err(proof.step_error(
@@ -2446,8 +2446,12 @@ fn advance_focused_execution_arm<'a>(
             )?
         } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let mut retried_requirements = std::collections::BTreeSet::new();
-            let Some(next) = proof
-                .try_focused_execute_to_exit_with_retries(&mut retried_requirements, &mut 0)?
+            let Some(next) = proof.try_focused_execute_to_exit_within(
+                Vec::new(),
+                &mut retried_requirements,
+                &mut 0,
+                None,
+            )?
             else {
                 return decline();
             };
@@ -3484,7 +3488,7 @@ fn advance_linear_open_scope<'a>(
         }
         if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_linear_execute()? else {
+            let Some(executed) = scope.try_execute_to_exit()? else {
                 return decline();
             };
             scope = executed;
