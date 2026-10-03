@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use click::cli::{
     self, CInput, RunLimits, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_click_project,
+    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_lone_sidecar_project,
     read_mdtest, read_mdtest_project_if_needed, source_refs,
 };
 use click::surface::{
@@ -185,7 +185,7 @@ fn run_bounded(arguments: &Arguments) -> Result<ExpandedArtifact, String> {
         )
     })?;
     let inputs = read_c_inputs(&arguments.click_path, &click_source)?;
-    let project = read_click_project(&arguments.click_path, &click_source)?;
+    let project = read_lone_sidecar_project(&arguments.click_path, &click_source)?;
     let (claim, expanded) = generate_expansion(|| {
         expand_selection(
             Some(&project),
@@ -277,8 +277,8 @@ fn write_context_preserved(
         .map_err(|error| format!("failed to stage `{}`: {error}", staged.display()))?;
     let verification = (|| -> Result<(), String> {
         let verified_inputs = read_c_inputs(&staged, &rebased)?;
-        let verified_project = read_click_project(&staged, &rebased)?;
-        let original_project = read_click_project(&arguments.click_path, &artifact.source)?;
+        let verified_project = read_lone_sidecar_project(&staged, &rebased)?;
+        let original_project = read_lone_sidecar_project(&arguments.click_path, &artifact.source)?;
         if original_project.c_profile() != verified_project.c_profile() {
             return Err("`--output` would change the Click project C configuration; place the output in the same project directory".to_string());
         }
