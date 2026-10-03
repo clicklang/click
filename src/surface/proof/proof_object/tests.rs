@@ -3833,9 +3833,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
             assert!(selected.is_complete());
+            // The instantiation adds the goal, so it closes it with no
+            // separate `assumption`.
             assert!(matches!(
                 selected.certificate().steps(),
-                [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+                [ProofStep::InstantiateUsing { .. }]
             ));
         }
         let retained_root = root.clone();
@@ -3878,7 +3880,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         assert!(selected.is_complete());
         assert!(matches!(
             selected.certificate().steps(),
-            [ProofStep::InstantiateUsing { .. }, ProofStep::Assumption]
+            [ProofStep::InstantiateUsing { .. }]
         ));
 
         let step = ProofStep::InstantiateUsing {
@@ -3909,22 +3911,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             allocations <= allocation_bound,
             "size {size} instantiate allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        assert!(!instantiated.is_complete());
+        // The specialization is the goal, so the step that added it closed it.
+        assert!(instantiated.is_complete());
         assert_eq!(
             instantiated.certificate().steps(),
             std::slice::from_ref(&step)
-        );
-        assert_eq!(
-            instantiated.added_facts(),
-            std::slice::from_ref(&kernel_goal)
-        );
-        let completed = instantiated
-            .apply_step(ProofStep::Assumption)
-            .expect("the specialized exact fact should close by assumption");
-        assert!(completed.is_complete());
-        assert_eq!(
-            completed.certificate().steps(),
-            &[step, ProofStep::Assumption]
         );
         assert!(root.certificate().steps().is_empty());
     }

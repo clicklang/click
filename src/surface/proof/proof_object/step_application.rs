@@ -823,10 +823,16 @@ impl<'a> Proof<'a> {
             _ => None,
         };
         if let Some(successor) = checked_proposition_successor {
+            let successor = successor?;
+            let successor = if matches!(step, ProofStep::InstantiateUsing { .. }) {
+                close_goal_from_added_fact(successor)
+            } else {
+                successor
+            };
             return Ok(Self {
                 site: self.site.clone(),
                 context: self.context.clone(),
-                state: successor?,
+                state: successor,
                 node: Arc::new(ProofNode {
                     path_memo: Default::default(),
                     parent: Some(self.node.clone()),
@@ -908,10 +914,21 @@ impl<'a> Proof<'a> {
             transition.clear_chosen_projection();
         }
 
+        let state = self.publish_checked_transition(transition)?;
+        let state = if matches!(
+            step,
+            ProofStep::ApplyTheoremUsing { .. }
+                | ProofStep::TransportUsing { .. }
+                | ProofStep::LetSatisfy(_)
+        ) {
+            close_goal_from_added_fact(state)
+        } else {
+            state
+        };
         Ok(Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: self.publish_checked_transition(transition)?,
+            state,
             node: Arc::new(ProofNode {
                 path_memo: Default::default(),
                 parent: Some(self.node.clone()),
@@ -3029,4 +3046,10 @@ fn describe_special_arithmetic_check_error(
             node, lower, upper, ..
         } => format!("node {node} puts the exact result in [{lower}, {upper}], outside its width"),
     }
+}
+
+/// A step that adds a fact closes a proposition goal it added, as `extract`
+/// does. A goal that was already available before the step stays open.
+fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
+    state.closed_if_goal_was_added().unwrap_or(state)
 }
