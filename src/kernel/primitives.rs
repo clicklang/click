@@ -538,7 +538,14 @@ pub(crate) struct LoadedPointerView {
 /// the address is being viewed.  `Pointer` remains the untyped address
 /// identity used by memory, aliasing, and provenance; pointer casts retag the
 /// value without changing that identity.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+///
+/// Whether the pointee is `const` is carried beside the value and is not part
+/// of its identity: equality, ordering and hashing ignore it. It is a property
+/// of the access path, which the write-through-`const` and implicit-discard
+/// checks read from the value or from the static type of the lvalue, and two
+/// values that differ only in it designate the same object. A fact about a
+/// pointer therefore matches the pointer however its type is qualified.
+#[derive(Clone, Debug)]
 pub struct CPointerValue {
     pointer: Pointer,
     c_type: CType,
@@ -606,6 +613,40 @@ impl CPointerValue {
     pub(crate) fn is_null(&self) -> bool {
         self.pointer.block == PointerBlock::Concrete("null".to_string())
             && self.pointer.offset == PointerOffsetTerm::Constant(0)
+    }
+}
+
+impl CPointerValue {
+    /// Everything that is the value's identity: the address, the type it is
+    /// viewed through, and whether the pointee is volatile.
+    fn identity(&self) -> (&Pointer, &CType, bool) {
+        (&self.pointer, &self.c_type, self.pointee_volatile)
+    }
+}
+
+impl PartialEq for CPointerValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+
+impl Eq for CPointerValue {}
+
+impl std::hash::Hash for CPointerValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.identity().hash(state);
+    }
+}
+
+impl PartialOrd for CPointerValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CPointerValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
     }
 }
 

@@ -16,7 +16,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expanded proof no longer certifies a `produces` claim](expansion-loses-produced-resource-claim.md)
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
-- [A function-level `match` arm cannot close by `contradiction` after a `have`](function-match-arm-rejects-contradiction-after-have.md)
 - [A refused arm `contradiction` is reported at an unrelated earlier tactic](arm-contradiction-refusal-names-an-unrelated-tactic.md)
 - [The refusal of `old(c.model)` in a loop clause suggests a binding that is rejected](loop-clause-old-field-refusal-suggests-a-rejected-unfold-binding.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)

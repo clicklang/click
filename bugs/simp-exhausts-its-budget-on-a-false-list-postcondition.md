@@ -7,16 +7,16 @@ A smart tactic that cannot close a goal fails promptly, with a bounded and actio
 The final `simp()` of a function whose contract makes a false claim about a list predicate runs to the smart work limit and reports exhaustion:
 
 ```
-verification budget exhausted inside tactic `simp` in `rb_next_descent.contract` exhausted its deterministic smart work budget after 2000001 units (2000000 limit; statement 10, source tactic 73)
+verification budget exhausted inside tactic `simp` in `rb_next.contract` exhausted its deterministic smart work budget after 2000001 units (2000000 limit; statement 3, source tactic 69)
 ```
 
-It takes about five seconds in a release build. A true claim on the same proof closes in well under one second, and other false claims on it (a wrong tree equation, a wrong null test) fail promptly by naming the `ensures` clause. Because of this, a wrong-position negative for `rb_next` could not be pinned as a prompt regression.
+It takes about six seconds in a release build. A true claim on the same proof closes in well under one second, and other false claims on it fail promptly by naming the `ensures` clause (`mdtests/rb_next_rejects_a_dropped_context.md`, under two seconds). Because of this, a wrong-position negative for `rb_next` could not be pinned as a prompt regression.
 
 The root cause has not been investigated. The message also repeats itself ("budget exhausted inside tactic ... exhausted its ... budget").
 
 ## Reproduction
 
-In `mdtests/rb_next_descent.md`, change the contract clause
+In `mdtests/rb_next.md`, change the contract clause
 
 ```
 ensures result != 0 implies

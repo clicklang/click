@@ -186,7 +186,13 @@ The `contradiction` need not be the arm's only tactic. It closes the path it
 stands on wherever it is reached, so an arm may run a `have`, a resource
 unfold, or any other checked operation first to bring the refuting fact into its own
 spelling, and then close. Nothing written after it on that path is executed or
-proved (`mdtests/preserve_arm_contradiction_after_an_unfold.md`).
+proved (`mdtests/preserve_arm_contradiction_after_an_unfold.md`). In a
+`match` at the function's own level, whose arms otherwise each have to reach
+function exit, the bridge may not run C: `have`s, unfolds and theorem
+applications, then the `contradiction`. The arm is then excluded like one whose
+only tactic is the `contradiction`, from the facts its bridge reached
+(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`,
+`mdtests/function_match_arm_closes_by_contradiction_after_an_unfold.md`).
 
 ## Naming a call result
 

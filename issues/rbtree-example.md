@@ -706,23 +706,23 @@ assignment-expression parser/lowering prerequisite is delivered for simple
 scalar variable targets, including the unchanged `rb_next` guard.
 
 **Chunk 8. `rb_next`.** The complete descent and ascent on the node-keyed
-model, on the verbatim body. Not finished (2026-10-02). `mdtests/rb_next.md`
-has the unchanged body with `RB_EMPTY_NODE` and the successor contract, runs
-the descent to its `return` and the ascent loop through its back edge and its
-three `break` exits, with `decreases t;` and `decreases c;`. The exit join
-now keeps a fact every exit restates about the frame's merged model
-(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`), so the first
-claim after the loop holds, and the fixture stops at its last `simp()`,
-before the post-loop section. Next is
-`bugs/function-match-arm-rejects-contradiction-after-have.md`, which that
-section needs; then the section itself (match the frame, fold the produced
-instances at `parent`), whose lemmas are already in the fixture and whose
-proof text has not been checked. The descent's postconditions are
-certified only on a cut body, `mdtests/rb_next_descent.md`, which goes when
-`rb_next.md` passes. The parameter is declared without `const`
-(`mdtests/rb_next_const_signature.md`).
+model, on the verbatim body. Certified (2026-10-02): `mdtests/rb_next.md`
+proves the successor contract on the unchanged body, with `RB_EMPTY_NODE`, the
+descent, the ascent loop (`decreases t;`, `decreases c;`) and the section after
+it; `mdtests/rb_next_rejects_a_dropped_context.md` is the negative. One
+translation remains: the parameter is declared without `const`, because C0
+keeps `const` across the explicit cast in `return (struct rb_node *)node;`
+(`mdtests/rb_next_const_signature.md`). Restoring it waits on the importer's
+const-dropping cast rule. A predecessor claim is refused only by `simp`
+exhausting its budget (`bugs/simp-exhausts-its-budget-on-a-false-list-postcondition.md`),
+so there is no wrong-position negative.
 
-**Chunk 9. `rb_prev`.** The mirror of chunk 8. Depends on 8.
+**Chunk 9. `rb_prev`.** The mirror of chunk 8. Certified (2026-10-02):
+`mdtests/rb_prev.md` proves the predecessor contract on the Linux body, with
+`mdtests/rb_prev_rejects_a_dropped_context.md` as its negative. The model's
+list lemmas are not symmetric, so it adds `ctx_descends_from_left`,
+`ctx_is_left`, `plug_predecessor` and `rb_inorder_first_through_left`. Its
+parameter is declared without `const` for the same reason as chunk 8's.
 
 ### Erase (D3, D4, D10)
 
