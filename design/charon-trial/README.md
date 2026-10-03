@@ -546,11 +546,11 @@ must retain their diagnostic; any changed outcome fails the gate so the
 inventory is revised with the implementation. This is fixture-level parity,
 not a percentage of the Rust language.
 
-Current result: **9 of 16 legacy fixtures verify unchanged**, five reject during
-normalization, and two import but need stable proof observations. By-value array
-signatures block `rust-array-values`; loop headers block
+Current result: **9 of 16 legacy fixtures verify unchanged**, four reject during
+normalization, and three import but have proof gaps. Compact copies from
+arbitrary borrowed array storage block `rust-array-values`; loop headers block
 `rust-byte-sum` and `rust-loops`; owned iterator resolution blocks
-`rust-iterators`; tuple/slice return types block `rust-split-at`. The remaining
+`rust-iterators`; tuple/slice return types block `rust-split-at`. The other
 proof gaps are legacy iterator ghost names in `rust-chunks-exact` and
 `rust-iter-references`. Resolve these observations in the adapter/proof interface
 without restoring a generated processed count or rewriting Rust bodies.
@@ -576,5 +576,24 @@ with its Rust source and Click sidecar unchanged. Rust coerces the shared array
 reference to a slice before its compiler-resolved `SliceLen` call. The adapter
 now accepts matching `i32` and `u32` scalar receivers alongside existing byte
 slices, using paired slice metadata without reading or materializing elements.
-This closes `rust-arrays` parity; `rust-array-values` now reaches its separate
-by-value array signature gap. Compiler pins and extraction flags are unchanged.
+This closes `rust-arrays` parity. Further inspection found that the array-value
+fixture has no by-value array signatures: its rejection came from treating a
+whole-array reference assignment as a scalar operation. It now imports, but
+compact copies from external borrowed storage remain a checked kernel gap. Compiler pins and extraction flags are unchanged.
+
+## Whole-array assignments through local references
+
+The [array-value checkpoint](array-values/README.md) adds the missing ULLBC
+assignment path for `*reference = array_value`. It uses existing checked compact
+region writes, constructor operand capture, and snapshot copies. Local scalar
+arrays support literal/repeat replacement, self-copy, and independent copies
+through mutable references. Deterministic 8-, 1024-, and million-element checks
+retain bounded storage, lowered statement count, and proof work.
+
+`local-scalar-array-reference-assignment-v1` deliberately versions this model
+expansion; checkpoint lock identities are updated with unchanged compiler pins
+and existing artifact bytes. The unchanged `rust-array-values` source and sidecar
+are retained as an explicit proof-gap checkpoint. They normalize successfully,
+but `copy_reference` reaches the kernel's represented-local-source restriction.
+Do not restore the misleading by-value-signature diagnostic, rewrite the source,
+or expand an array into one generated operation per element to claim parity.

@@ -1,0 +1,1 @@
+{"schema":3,"language":"rust","backend":"charon-trial","target":"x86_64-unknown-linux-gnu","source":"bounds.rs","exporter":"../../../target/charon/debug/charon","artifact":"bounds.ullbc"}

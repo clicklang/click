@@ -1,4 +1,6 @@
 use super::schema::{Expression as E, Function, Record, RustExport, Statement as S, Type};
+#[cfg(test)]
+mod array_reference_tests;
 mod arrays;
 mod chunks;
 mod moves;
@@ -30,9 +32,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             },
             _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
         },
-        Type::Array { .. } => {
-            Err("by-value Rust arrays as parameters or returns are not supported".into())
-        }
+        Type::Array { .. } => Err("Rust array values require whole-array lowering".into()),
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
 }
@@ -180,6 +180,9 @@ fn lower_function(
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
     for p in &f.parameters {
+        if matches!(p.value_type, Type::Array { .. }) {
+            return Err("by-value Rust arrays as parameters are not supported".into());
+        }
         if !locals.insert(p.name.clone()) {
             return Err("duplicate Rust parameter".into());
         }
