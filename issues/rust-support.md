@@ -539,8 +539,9 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Nine of 16 fixtures verify unchanged; five have
-normalization gaps and two depend on legacy iterator proof observations. The required `test` gate also requires the existing live
+extraction/proof gaps. Nine of 16 fixtures verify unchanged; four have
+normalization gaps and three have proof gaps (external borrowed array copies
+and legacy iterator proof observations). The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -550,7 +551,16 @@ build script reads it. The initial profile cleanup preserved lock identities. Th
 `shared-scalar-slice-length-v1` expansion deliberately versions interpretation
 and updates checkpoint locks. Shared scalar array `.len()` now verifies the
 unchanged `rust-arrays` fixture through compiler-resolved slice metadata;
-`rust-array-values` reaches a remaining by-value array signature gap. Empty,
+`rust-array-values` now imports after whole-array reference assignments use
+the checked compact region path. Its earlier signature diagnostic was
+misleading: the unchanged fixture has no by-value array signatures. The actual
+remaining boundary is compact copies from arbitrary borrowed storage; the
+current kernel requires represented local storage. Local reference assignments
+verify constructor order, repeated fills, self-copy, independent snapshots,
+and empty arrays, with bounded work at 8/1024/million elements. The profile entry
+`local-scalar-array-reference-assignment-v1` versions this expansion. Close the
+external-storage kernel gap before counting this fixture as verified; genuine
+by-value array parameters and aggregate returns remain unsupported separately. Empty,
 signed, and million-element length checks stay bounded and require no byte
 read authority. External Charon locks need an explicit refresh.
 Before switching the default, close every parity gap and retain stable proof

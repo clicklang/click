@@ -35,5 +35,6 @@ cargo nextest run --lib --test rust_import -E 'test(charon_scalar_) | test(charo
 ```
 
 This closes `rust-arrays` in the unchanged-fixture inventory (9/16).
-`rust-array-values` now reaches a by-value array parameter/return rejection;
-that is a separate migration increment.
+The subsequent array-value increment corrected its misleading signature
+diagnostic: `rust-array-values` now imports, but compact copies from external
+borrowed storage remain a kernel proof gap.
