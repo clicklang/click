@@ -2,21 +2,30 @@
 
 This is the consumer inventory for `issues/authority-migration.md`, not a specification of new syntax. The groups below use the legacy resource/population rules unless marked as authority-mode proofs. Design notes are proposals or historical investigations, not passing fixtures. The C in source-backed fixtures is frozen by the migration issue.
 
-The authority-mode companion in `examples/bounded-pool-authority` references
-unchanged C in the original project. It verifies initialization, checkout,
-return, cleanup, growth, shrink, and transfer, plus the original zero-capacity, two-object, and
-resize pipelines. Shrink consumes a symbolic owned slot quantity under the
-control's authority while preserving the global remainder and checked-out
-members. Growth produces only its requested slot quantity under the existing
-control, preserves both populations' old members, and checks signed capacity
-bounds. The original two-pool transfer also verifies through two ordinary
-controls, preserving private object memory and restoring both invariants. Its
-reduced four-unit exchange is
-covered by `authority_four_effect_exchange.md`: all four authorities and exact
-member effects are checked, neighboring ownership survives, and final cleanup
-is exact. The original transfer pipeline remains the next integration slice.
+The original `examples/bounded-pool` project now uses authority semantics.
+All eleven original C functions and five arithmetic lemmas verify, including
+symbolic growth/shrink, private writes under a closed control, cleanup, and the
+zero, resize, two-object, and transfer pipelines. The C files are unchanged.
+Initialization receives empty authority explicitly; cleanup retires both empty
+populations. Exact member custody remains independent of global count facts.
+The former authority companion has been consolidated into the original project.
+Milestone 1 is complete: the full gate passed all 4,720 unit/integration and
+190 fixture tests, and all 99 pool expansion-audit sites passed.
 
 ## Discovery boundary
+
+The `authority_named_field_*` fixtures add local field-bearing families with
+exact and wildcard authority. Occurrences with equal arguments retain distinct
+identities and proof fields; aggregate/exact counts track local birth and
+consumption. Disjoint private bodies can be updated through preserving ordinary
+helper contracts while the caller's authority control remains closed.
+Negatives cover overlapping memory, duplicate helper inputs, missing authority
+for counts or lifecycle changes, late establishment, and premature retirement.
+Named-member helper creation/consumption with explicit authority, heterogeneous
+symbolic instance batches, and algebraic/list field descriptions remain outside
+the implemented boundary. Legacy field-count rejection fixtures remain controls. Milestone 2 is complete
+for this boundary: the full gate passed 4,723 unit/integration tests and 190
+fixture tests; all 48 new named-member expansion-audit sites passed.
 
 The `authority_wildcard_*` fixture group adds concrete, field-free
 `R(anchor, _, ...)` population scopes and aggregate count observations.
@@ -136,12 +145,9 @@ An aliased second birth is rejected by a source regression. Constant ownership
 quantities are now observed from an indexed tally without merging or duplicating
 retained occurrences; views contribute no units and arithmetic never wraps.
 
-The original bounded-pool sidecar still selects legacy semantics. Its migration
-needs symbolic batch
-forwarding, and the remaining resize/transfer/cleanup pipeline checks. The
-roadmap in `issues/authority-migration.md` records these as
-remaining dependencies; the new fixtures are partial progress, not evidence
-that the original pipeline has migrated.
+The original bounded-pool sidecar has completed its authority migration;
+the milestone-one status at the start of this inventory supersedes the earlier
+partial checkpoints above.
 
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
@@ -225,12 +231,23 @@ including all 2,569 mdtests and the frozen shared-heap example checks.
 | --- | --- | --- |
 | Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. All six related positive count-contract fixtures also use authority. |
 | Shared parent; authority | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md`, `design/shared-heap-probes/click.project.json` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The frozen main C verifies eight functions and audits 48 smart sites; the related boundary fixtures pass the full repository gate. |
-| Bounded pool; legacy | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
+| Bounded pool; authority | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md`, `examples/bounded-pool/click.project.json` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
 | Earlier authority design; non-executable | `design/concurrency-probes/shared-count-authority.md`, `design/concurrency-probes/explicit-authority.md`, `design/concurrency-probes/README.md` | Preserve the motivating hostile cases and protocol questions; these documents do not define the approved source interface. The migration issue supersedes the whole-population mutex-custody plan. |
 
 `examples/jsonc-refcount/README.md` and the `mdtests/jsonc_refcount_{getter,increment,setter}.md` fixtures describe a separate JSON-C resource/model-field example; inspect them during the final source/doc audit, but their `count` search hits include ordinary C/API naming and should not be assumed to be Click population observations.
 
 ## Sequential mdtest dependency groups
+
+The milestone-three constant-quantity slice migrates
+`let_bound_constant_quantity.md` and `fold_rejects_a_negative_quantity.md` to
+authority semantics. The former retains the let-bound contract quantity and
+an ordinary authority-bearing control; the latter retains both zero acceptance
+and rejection of a negative coefficient with its missing nonnegative fact.
+`fold_negative_quantity_legacy_control.md` retains the original signed-quantity
+regression until the final legacy-removal milestone; its authority replacement
+is `fold_rejects_a_negative_quantity.md`.
+The unresolved symbolic-plus-unit and global-pattern count boundaries are
+recorded in the migration issue; their original fixtures remain unchanged.
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,

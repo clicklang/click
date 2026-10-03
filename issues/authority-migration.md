@@ -235,7 +235,7 @@ historical evidence belongs in the inventory, not a second competing roadmap.
 - Discuss any additional surface syntax before implementing it. Do not invent
   implicit sequential authority, revive `<>`, or introduce sum-specific built-ins.
 
-### Milestone 1: Complete bounded pool (7–9 chunks)
+### Milestone 1: Complete bounded pool — complete (7–9 planned chunks)
 
 **North star:** [bounded pool](../examples/bounded-pool/README.md), with its
 original C and claims. Missing capabilities get small regressions before the
@@ -280,200 +280,111 @@ focused positives/negatives and the full gate pass. Private memory access remain
 ordinary member ownership. Any capability not actually required by these claims
 stays a separate future task rather than expanding this milestone.
 
-#### Current milestone 1 checkpoint
+#### Milestone 1 completion checkpoint
 
-Return through a two-authority control now has direct and nested regressions:
-`mdtests/authority_pool_control_return_full.md`. They consume the exact member,
-return its private object and a slot, preserve both invariants and the ordinary
-`valid_pool(pool)` predicate, and retain a caller-owned neighboring slot. Import validation rejects absent custody,
-duplicate inputs, and a member from the wrong pool. Signed sum checks preserve
-all required operand domains, including reversed summands.
+The original bounded-pool project now uses authority semantics, with the former
+companion consolidated into `examples/bounded-pool/bounded_pool.click`. All
+original C is unchanged. Its 16 claims cover all eleven original C functions
+and five arithmetic lemmas. The full `scripts/check.sh` gate passed: 4,720 unit/integration tests and 190
+fixture tests. The complete expansion audit passed all 99 smart sites across
+all 16 claims. Milestone 1 is complete.
 
-`mdtests/authority_pool_control_init_nested.md` verifies standalone initialization
-with an arbitrary nonnegative capacity and a nested initialization at capacity
-two. Numerical batches now compose with unit exchanges in imported unary
-populations; zero has no member rights. Symbolic batches created by initialization still need transport through
-another opaque helper. These tests do not complete the
-original bounded-pool migration.
+- Initialization explicitly receives storage and both empty authorities; it
+  cannot mint authority for an external pointer. Cleanup consumes the complete
+  entry-capacity slot batch, proves both populations empty, retires both
+  authorities, and returns ordinary memory. Zero quantities use the same rules.
+- Checkout and return exchange a concrete member's private memory and one slot
+  under the control's authority. Helpers preserve neighbors, exact identity,
+  values, conservation, and arithmetic bounds. Private writes need only the
+  owned member; the pool control stays closed.
+- Symbolic growth/shrink preserve existing populations, handle zero, and check
+  signed arithmetic. A helper returns its exact freshly born symbolic batch;
+  caller ownership remains distinct from global population counts.
+- Transfer checks all four unit effects under the two controls and restores
+  both invariants. The original transfer pipeline composes initialization,
+  checkout, and transfer, preserving the object's value and returning both
+  controls plus the destination member and source slot.
 
-The two-object checkout/write/return sequence now has a reduced regression in
-`mdtests/authority_pool_control_two_members.md`, including private writes with
-control closed, two exact custodies, opposite-order returns, and a final slot
-quantity of two. Positive fixed exclusive memory footprints justify exact
-member uniqueness; this follows ownership and does not use proof-field presence
-to determine countedness. Wrong-member and double-spend tests preserve the
-separate count and custody checks. Symbolic batches and the original
-resize/transfer/cleanup paths remain to migrate.
+The reduced capability checkpoints remain covered by
+`authority_pool_control_return_full.md`, `authority_pool_control_init_nested.md`,
+`authority_pool_control_cleanup_helper.md`, `authority_pool_cleanup_field_quantity.md`,
+`authority_symbolic_batch_helper.md`, `authority_symbolic_batch_cleanup_helper.md`,
+`authority_pool_grow_helper.md`, `authority_four_effect_exchange.md`,
+`authority_two_control_init_call.md`, and `authority_two_control_birth_helpers.md`,
+with their negative companions and independent kernel/scaling checks. These
+cover missing authority/custody, wrong identities or quantities, duplicate
+transfer, missing consumption, extra birth, overflow, and nonempty retirement.
+The two-control call boundary projects callee returns and untouched caller
+controls under their respective ledgers. Ordinary resource openings establish
+memory framing; no C workaround or new syntax is used.
 
-The original C is unchanged. Do not replace these pipelines with locally
-allocated synthetic pools or weaken their final claims to avoid the gaps.
+A stack-object transfer bridge was unnecessary for these external-pointer C
+pipelines and remains outside the milestone. Additional symbolic subset or
+batch-splitting machinery stays driven by real consumers. The speculative
+cache repair remains removed. Milestones 1 and 2 are complete; milestone 3 is next.
 
-The checkout definedness reduction is now checked without an authority or
-counter-cache change. `authority_count_defined_through_control.md` opens a
-control with an arbitrary entry count, a nonnegative counter, and equality
-between the counter and the wildcard population count. An explicit arithmetic
-step supplies `counter >= 0`; rewriting the count to the equal counter then
-transports `defined(counter + 1)` to `defined(count(...) + 1)`. Its two smart
-sites expand and reverify. `authority_count_defined_at_max_rejected.md` checks
-that the same control cannot justify an increment at `2147483647`.
+### Milestone 2: Finish member identity and proof fields — complete (four slices)
 
-`authority_pool_checkout_original_bound.md` now verifies the original
-`pool_checkout.c` verbatim under authority semantics. It derives increment
-safety from one available slot, the nonnegative counter, and the defined
-capacity invariant; no extra counter-bound requirement is added. The proof
-preserves `valid_pool` and checks the counter, capacity, and both population
-count changes. All seven smart sites expand and reverify. Its companion
-`authority_pool_checkout_without_slot_rejected.md` rejects the unavailable-slot
-case with `Requires 1 <= count(pool_slot(pool))`.
+1. **Occurrence identity:** The existing resource context retains each named
+   instance's identity and proof fields. Population bookkeeping counts births
+   and consumption independently of field values, with checked certificate
+   successors. Equal arguments do not merge member states.
+2. **Local lifecycle and counts:** Existing `authority(...)`, `count(...)`,
+   `fold`, and `unfold` support local field-bearing exact and wildcard families.
+   Both aggregate and exact counts include independently owned occurrences.
+   Local creation and consumption require the governing authority.
+3. **Preserving helper transport:** Ordinary named `owns` inputs and explicit
+   field postconditions retain members across calls. A helper can unfold,
+   update, and restore private memory while the caller keeps its authority
+   control closed and retains another member. The same occurrence remains
+   reserved across the preserving call; this does not authorize counting.
+4. **Replacement negatives:** Checks reject overlapping private memory,
+   duplicate helper inputs, count observations without authority, unauthorized
+   lifecycle changes, late establishment, and retirement with live members.
+   Anonymous quantities cannot manufacture missing instance fields. Legacy
+   field-count rejection fixtures remain controls.
 
-The original-bound checkout regression now also proves direct and nested
-ordinary helper calls. Their contracts retain the same control, slot/object
-consumption, member production, count deltas, and `valid_pool` claim, without
-`checked_out < 2147483647`. Each call's proof opens the control, proves count
-increment definedness from the available slot, and closes it before the C call.
-No verifier or authority change was needed. The missing-slot helper regression
-pins rejection at call transfer; its current diagnostic is
-`population call transfer refused: MissingMembers`.
-
-The symbolic-quantity entry prerequisite now retains the nonnegative guard
-implicit in `owns n of slot(pool)` in the checked proof context. Previously,
-setup used that guard and then dropped it before checking the entry boundary,
-which could trigger an assertion. `authority_symbolic_quantity_entry.md`
-proves the direct authority contract without a redundant `requires 0 <= n`;
-its negative-call companion checks that the shared quantity guard still rejects
-a negative caller quantity using legacy call semantics. Checked entry failures
-now return a bounded diagnostic instead of asserting. This does not add
-symbolic batch transfer support.
-
-Field-valued quantities now read through explicitly required folded controls.
-`authority_control_quantity_read.md` checks `owns pool->capacity of slot(pool)`
-in both clause orders and proves the implicit nonnegative entry guard. Its
-negative companions reject authority without memory and a different pool's
-control. The projection grants read views only; a zero owned quantity cannot
-expose the body. It does not open authority or import mutable body custody.
-The same quantity setup is used by source entry, certified entry, and derived
-loop-frame setup. Deterministic regressions cover many quantity clauses and
-unrelated resource definitions; definition lookup is indexed.
-
-Direct cleanup now has an authority regression in
-`authority_pool_control_cleanup.md`, using `pool_destroy.c` verbatim. It
-consumes the arbitrary entry-capacity slot batch, restores capacity zero,
-checks the private-object population is empty, retires both authorities, and
-returns ordinary pool storage. Zero-capacity cleanup uses the same proof.
-Imported retirement now checks exhausted member custody and a proven current
-global zero instead of requiring a unit final release. Negative companions
-reject both an unspent batch and a nonzero global population with no locally
-owned members; writing capacity zero does not satisfy either obligation.
-
-Unchanged symbolic batches now round-trip through direct and nested ordinary
-helpers in `authority_symbolic_batch_helper.md`, using the folded control and
-`owns pool->capacity of slot(pool)`. The call ledger tracks batch custody
-independently of authority custody, rejects a different quantity and duplicate
-transfer, and refuses call completion with an unreturned batch. A zero-quantity
-companion checks that no member rights move; the missing-member companion
-rejects using a global count in place of owned fragments. Deterministic scaling
-coverage checks selected transfers with many unrelated populations. No new
-syntax or population transition is introduced by borrowing the batch.
-
-Single-population cleanup now applies its consumed symbolic-batch effect
-through ordinary direct and nested helper calls in
-`authority_symbolic_batch_cleanup_helper.md`, including zero-sized callers.
-The call uses the checked entry quantity, and retired consumption accounting
-survives return for certificate checking without conveying live rights. A
-negative companion rejects missing batch custody.
-
-`authority_pool_control_cleanup_helper.md` now applies cleanup through direct,
-nested, and zero-capacity helper calls with both pool authorities. It preserves
-`pool_destroy.c` verbatim. The caller exposes and restores the control to prove
-its slot conservation and private-object emptiness before the call. Call
-application selects all authorities from the checked entry control body and
-retires each only with global zero and exhausted custody. Proof exit checks
-require retirement evidence for every authority in the consumed control. A
-kernel regression rejects leaving the second authority outstanding or retiring
-it with a nonzero global count and no locally owned members.
-
-The first project-level companion now lives in
-`examples/bounded-pool-authority/pool_lifecycle.click`. It references the original
-bounded-pool C directly and proves arbitrary nonnegative initialization,
-cleanup, and the complete zero-capacity pipeline through ordinary contracts.
-Initialization explicitly receives storage and empty authorities; it cannot
-mint them for an external pointer. Cleanup returns ordinary memory after
-retiring both populations. The example gate includes this companion.
-
-The companion now also verifies the original checkout and return helpers.
-Checkout converts one slot plus private object memory into a concrete member;
-return restores that memory unchanged and produces a slot. Both preserve the
-folded control's invariant, deriving arithmetic safety from conservation.
-These reuse the focused proofs without changing C or the authority model.
-
-The companion now verifies the original two-object pipeline through cleanup:
-initialization, two checkouts, private writes under closed pool control, reverse
-returns, and retirement of both populations. It returns ordinary memory,
-preserves the written values, and proves both counts zero. No C changes or
-surface additions were needed. `authority_pool_cleanup_field_quantity.md`
-reduces the final call: the caller owns two slots, while cleanup consumes an
-entry field equal to two. The ledger accepts a recorded equality to the
-sender's complete numerical batch, then checks ordinary custody and authority.
-Kernel regressions reject absent/mismatched custody, repeated spending, and
-consumption without authority; deterministic work stays bounded over growing
-batch sizes and unrelated fact sets.
-
-The companion also verifies the original `pool_shrink` with arbitrary amount
-and entry totals, including zero reduction, and the original resize pipeline
-through ordinary helper calls and cleanup. Shrink consumes only its supplied
-batch and preserves checked-out members and the global remainder. Ordinary
-source arithmetic lemmas restore the capacity invariant; the general prelude
-bridge `int32_equal_of_to_integer` identifies machine values from equal signed
-mathematical observations. No population or authority rule changed.
-
-The original symbolic `pool_grow` also verifies. It uses existing population
-birth operations and ordinary source arithmetic certificates, preserving
-checked-out members and all old slots without a new authority rule. Zero
-amounts are admitted; focused regressions reject missing authority and C
-capacity overflow. A helper can return its exact freshly born symbolic batch;
-the checked transfer preserves the count delta and outstanding population.
-Independent kernel tests reject wrong quantities and double transfer, and
-multi-size work checks cover both entry and freshly born batches.
-
-The reduced four-effect exchange also verifies: one object changes pools,
-its destination slot is spent, and a source slot is returned. Ordinary
-`owns`/`consumes`/`produces` borrow all four authorities. Caller-retained members
-and slots survive, and all populations can be cleaned up afterward. Independent
-admission checks reject missing scopes, lost authorities, nonunit quantities,
-wrong member/anchor identities, and extra effects. Standalone contract checking
-checks both consumptions; focused source refusals cover an omitted second
-consumption and an extra birth without explicit count postconditions.
-
-The original two-counter transfer now verifies through two ordinary controls.
-The source member and destination slot supply its counter bounds; the proof
-preserves the object's value and restores both pool invariants. No C, syntax,
-or further checker change is required. The next slice integrates its original
-caller pipeline. Keep additional
-batch splitting support driven by those actual consumers.
-The original bounded-pool project still uses legacy counting and is not
-migrated as a whole. The speculative cache repair remains removed.
-Missing facts inside `open(...)` report `Requires f`.
-
-### Milestone 2: Finish member identity and proof fields (3–4 chunks)
-
-1. Define/check population occurrence identity independently of proof fields;
-   equal parameters must not merge distinct member states.
-2. Support count observations and real birth/consumption for individually
-   identified field-bearing members, including exact/wildcard boundaries.
-3. Support ordinary helper transport and member-only private updates. Prove an
-   identified-slot example while its authority-bearing control stays closed.
-4. If needed, finish replacement negatives for legacy field-based countability;
-   distinguish unsupported symbolic quantity syntax from family countability.
-
-**Exit gate:** Two disjoint field-bearing members preserve their identities and
+**Exit gate passed:** Two disjoint field-bearing members preserve identity and
 private state; exclusive-memory conflicts and unauthorized transitions fail.
-No new-model decision uses field presence to select countability. Do not require
-symbolic quantities of heterogeneous instances or general sums over fields.
+Field presence does not select authority-mode family countability. No new
+surface syntax or changes to existing C were needed. The full `scripts/check.sh`
+gate passed 4,723 unit/integration tests and 190 fixture tests; all 48 new
+named-member expansion-audit sites passed.
+
+**Explicit remaining boundaries:** Named-member creation/consumption through
+helpers with explicit authority still needs checked lifecycle effects. Calls
+cannot silently remove or add a tracked member without updating the ledger;
+unsupported transitions are rejected. Symbolic quantities of heterogeneous
+instances, algebraic/list field descriptions, and general sums over fields are
+not implemented. Local lifecycle operations and preserving helpers are supported.
+These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
+**First small slice:** The constant-quantity fixtures now use authority semantics.
+`let_bound_constant_quantity.md` packages allocation, counter memory, and
+authority in an ordinary control; its contract still consumes the quantity
+selected by `let k = 2`. `fold_rejects_a_negative_quantity.md` preserves the
+zero/negative boundary with a separate reference family and owned counter
+memory. Negative coefficients report the required nonnegative fact rather
+than `InvalidQuantity`. C source is unchanged.
+
+**Next boundaries found:** A symbolic helper birth followed by a unit birth is
+currently rejected because numeric and symbolic ledger effects cannot mix.
+The reduced reproduction is the original pair of
+`population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
+authority and defined-addition contracts. Separately, the unanchored global
+counts in `resource_count_patterns.md` and
+`counted_distinct_populations_symbolic_sum.md` need a scope decision: current
+authority requires a fixed pointer anchor and does not authorize summing all
+independently anchored populations. Do not silently weaken these fixtures or
+present them as migrated.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
+   Before migrating named-member lifecycle helpers, extend their checked
+   authority effects for explicit helper birth/consumption; milestone two
+   supports preserving transport and local lifecycle operations only.
 2. Migrate predicates, loops, current/old snapshots, and contract observation
    boundaries without permitting count facts to manufacture authority.
 3. Migrate sequential exact-two accounting and dependent helper groups.

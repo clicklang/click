@@ -1,46 +1,48 @@
 # Bounded Pool
 
-This project verifies a fixed-capacity checkout protocol. The C pool stores
-only its capacity and current checkout count; object storage remains ordinary
-caller-owned memory.
+This project verifies the original pool C with explicit population authorities.
+The C stores capacity and checkout count; individual objects retain their own
+private memory. No C source was changed for the authority migration.
 
-`pool_object(pool, object)` is the transferable ownership resource for one
-checked-out object. Its body owns that object's memory.
-`pool_slot(pool)` represents one unoccupied place in the bounded pool. Equal
-resource units use Click's quantity model, while
-`count(pool_object(pool, _))` sums all distinct checked-out objects belonging
-to one pool.
+`pool_storage(pool)` packages ordinary pool memory and the empty authorities
+for `pool_slot(pool)` and `pool_object(pool, _)`. The caller establishes those
+authorities at the pool's allocation lifetime and passes them explicitly;
+initialization of an external pointer cannot create them. `pool_init` consumes
+storage and produces `pool_control(pool)` plus the requested nonnegative slot
+quantity.
 
-`valid_pool(pool)` is a copyable predicate rather than a resource. It relates
-the C counter to the current object population and states that capacity is the
-sum of checked-out objects and available slots. Initialization produces
-`capacity of pool_slot(pool)` algebraically. Growing the pool produces a
-runtime quantity of slots, while shrinking consumes exactly the requested
-quantity and therefore cannot remove capacity occupied by checked-out objects.
-Checkout consumes one slot and packages ordinary object memory into an object
-resource. Transfer returns a slot to the source, consumes a destination slot,
-and moves the object resource while updating both counters. Return consumes the
-object resource, gives its memory back, and produces a slot.
-Because declared resources may have multiple equal units, that final return
-explicitly requires `count(pool_object(pool, object)) == 1`; only the last
-unit may unwrap the population-wide body into raw object ownership.
+The control owns pool memory and both authorities. Its facts say that checkout
+count equals the object population and capacity equals checked-out objects plus
+available slots. `valid_pool(pool)` states the same pure invariant. Global
+counts are observed under the corresponding authority, including checked
+observations through a folded control. Count facts alone grant no member rights.
 
-The pipeline checks out two objects, mutates both through scoped `open` blocks,
-and returns them in the opposite order before destroying the empty pool. The C
-implementation contains only the runtime operations; all ownership adaptation
-stays in the Click sidecar. A second focused pipeline checks out one object
-from a source pool and transfers it to a distinct destination pool. It ends at
-that API boundary so its postcondition exposes the moved resource directly:
-the source population is empty and the destination population contains the
-object. A zero-capacity pipeline initializes and destroys an empty pool,
-checking that `0 of pool_slot(pool)` is the resource identity rather than a
-hidden unit. The resize pipeline starts with one slot, consumes that entire
-positive population through `pool_shrink`, explicitly observes the resulting
-zero population, and then destroys the pool. This checks that reaching zero
-removes ownership without making a later zero-resource operation fail.
+Checkout consumes a slot and ordinary object memory, producing the concrete
+`pool_object(pool, object)` member while preserving the object's value. A member
+owns its own private object memory: its contents can be opened and written while
+the pool control stays closed. Return consumes that exact member under the
+control's authority, restores ordinary memory, and produces a slot. Transfer
+borrows both controls, consumes the source member and destination slot, then
+produces the destination member and source slot. All four effects have separate
+authority, identity, quantity, and custody checks.
 
-The authority migration's first project-level checkpoint is the
-[authority lifecycle companion](../bounded-pool-authority/README.md). It uses
-these C files directly and proves initialization, cleanup, and the existing
-zero-capacity pipeline with explicit population authorities. This sidecar
-continues to cover the remaining pipelines while they migrate.
+Growth produces a symbolic nonnegative slot quantity and requires the original
+C addition to be defined. Shrink consumes its supplied slot quantity, including
+zero, and preserves other slots and checked-out members. Their arithmetic proofs
+establish signed bounds and restore conservation without treating a global
+count as ownership. Cleanup consumes the complete available-slot batch, proves
+both populations empty, retires both authorities, and returns ordinary pool
+memory. Authority retirement does not free the C allocation.
+
+The original two-object pipeline checks out both objects, writes values 11/22
+through their private members, returns them in reverse order, and cleans up.
+The zero-capacity and resize pipelines check empty quantities and retirement.
+The transfer pipeline initializes two pools, checks out an object, and moves it
+between them through ordinary helper contracts. It returns both controls, the
+destination member, and the source slot, preserving the object's value. Storage
+and control openings establish the memory separation needed across calls.
+
+Run `click verify examples/bounded-pool` from the repository root. The sidecar
+contains 16 checked claims: five arithmetic lemmas and all eleven original C
+functions. The former migration companion has been consolidated into this
+project so there is one authoritative pool proof.

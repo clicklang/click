@@ -8015,3 +8015,151 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
         "evaluating a first-pass section grew with the frame's composites: {samples:?}"
     );
 }
+
+#[test]
+fn named_population_members_keep_identity_and_fields_independent_of_count() {
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let block = PointerBlock::Heap(940_501);
+    let pointer = Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+    let description =
+        crate::kernel::ResourceDescription::new("ticket".into(), arguments.clone(), schema.clone());
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let mut created = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(
+            CMemory::new()
+                .with_heap_allocation_claim(pointer, 4)
+                .unwrap(),
+        );
+    created.record_population_storage_creation(block.clone());
+    let assumptions = PureFactContext::new();
+    let (empty, _) = created
+        .checked_population_authority_exchange(&authority, true, &assumptions)
+        .unwrap();
+    let definition = CCompositeResourceDefinition::new(
+        "ticket",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![],
+        vec![],
+    )
+    .with_instance_schema(Some(schema.clone()));
+    let member = |serial| {
+        ResourceInstance::new(
+            Variable::allocate_fresh().unwrap(),
+            "ticket".into(),
+            arguments.clone(),
+            schema.clone(),
+            vec![int32(serial).into()].into(),
+        )
+        .unwrap()
+    };
+    let first = member(1);
+    let second = member(2);
+    let rewrite = |state: &CState, instance: &ResourceInstance, unfold| {
+        rewrite_resource_instance(state, instance, &definition, &assumptions, unfold)
+            .map(|(next, _)| next)
+    };
+    let count = |state: &CState| {
+        state
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .observe(&block, "ticket")
+            .unwrap()
+    };
+    for quantity in [
+        Bitvector32Term::Constant(1),
+        Bitvector32Term::Constant(2),
+        Bitvector32Term::Variable(Variable::allocate_fresh().unwrap()),
+    ] {
+        assert!(
+            empty
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &quantity,
+                    &assumptions
+                )
+                .is_err(),
+            "an anonymous quantity cannot replace named occurrences and their fields"
+        );
+    }
+    let one = rewrite(&empty, &first, false).unwrap();
+    assert_eq!(count(&one), 1);
+    assert_eq!(
+        rewrite(&empty, &first, false)
+            .unwrap()
+            .population_effects
+            .creation,
+        one.population_effects.creation,
+        "rechecking preserves the ledger successor"
+    );
+    let two = rewrite(&one, &second, false).unwrap();
+    assert_eq!(count(&two), 2);
+    assert_eq!(
+        two.resources().owned_instance(first.identity()),
+        Some(&first)
+    );
+    assert_eq!(
+        two.resources().owned_instance(second.identity()),
+        Some(&second)
+    );
+    assert!(
+        rewrite(&two, &second, false).is_err(),
+        "identity cannot be duplicated"
+    );
+    let mut forged = second.clone();
+    forged.fields = vec![int32(99).into()].into();
+    assert!(
+        rewrite(&two, &forged, true).is_err(),
+        "count does not authorize different fields"
+    );
+    assert!(
+        two.checked_population_authority_exchange(&authority, false, &assumptions)
+            .is_err(),
+        "live members block retirement"
+    );
+    let without_authority = two.clone().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(first.clone()))),
+    );
+    assert!(
+        rewrite(&without_authority, &first, true).is_err(),
+        "member ownership does not grant authority"
+    );
+    let remaining = rewrite(&two, &first, true).unwrap();
+    assert_eq!(count(&remaining), 1);
+    assert_eq!(
+        remaining.resources().owned_instance(second.identity()),
+        Some(&second)
+    );
+    assert!(
+        rewrite(&remaining, &first, true).is_err(),
+        "consumption is single spend"
+    );
+    let zero = rewrite(&remaining, &second, true).unwrap();
+    assert_eq!(count(&zero), 0);
+    zero.checked_population_authority_exchange(&authority, false, &assumptions)
+        .unwrap();
+    let before_authority = rewrite(&created, &first, false).unwrap();
+    assert!(
+        before_authority
+            .checked_population_authority_exchange(&authority, true, &assumptions)
+            .is_err(),
+        "prior members prohibit a fresh empty authority"
+    );
+}

@@ -193,10 +193,9 @@ impl ResourceDescription {
                 self.arguments()[0],
                 AlgebraicValue::C(super::CValue::Pointer(_))
             )
-            || !self.schema().is_countable()
             || !self.resource_arguments().is_empty()
         {
-            return Err("population authority supports field-free R(anchor, _, ...) scopes");
+            return Err("population authority supports R(anchor, _, ...) scopes");
         }
         Ok(Self(Arc::new(ResourceDescriptionData {
             family: self.0.family.clone(),

@@ -6,6 +6,7 @@ fn authority_test_scope(
     has_fields: bool,
 ) -> DeclaredResourceScope {
     DeclaredResourceScope {
+        authority_mode: false,
         definitions: BTreeMap::from([(
             "reference".to_string(),
             DeclaredResourceInfo {
@@ -82,10 +83,6 @@ fn authority_type_argument_requires_exact_unary_pointer_family() {
     for (scope, argument) in [
         (
             authority_test_scope(ResourceKind::Composite, C0Type::Int32, false),
-            pointer.clone(),
-        ),
-        (
-            authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true),
             pointer.clone(),
         ),
         (
@@ -264,4 +261,33 @@ fn certification_checks_only_the_cited_library_theorem() {
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
     assert_eq!(proved, ["int32_subtract_equal_sum_right_cancels"]);
+}
+
+#[test]
+fn authority_field_schema_and_count_admission_are_independent_of_instance_fields() {
+    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
+    let mut scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
+    scope.definitions.get_mut("reference").unwrap().fields =
+        std::sync::Arc::new(BTreeMap::from([(
+            "serial".into(),
+            (0, ClickType::C(C0Type::Int32)),
+        )]));
+    let accepted = expand_resource_type_arguments(
+        "authority",
+        vec![authority_test_protected(pointer.clone())],
+        &scope,
+    )
+    .unwrap();
+    assert!(
+        matches!(&accepted[0], ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1)
+    );
+    let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
+    assert!(
+        expand_declared_resource_expression(count.clone(), &scope).is_err(),
+        "legacy mode keeps its migration boundary"
+    );
+    scope.authority_mode = true;
+    assert!(
+        matches!(expand_declared_resource_expression(count, &scope).unwrap(), ContractExpression::ResourceCount(resource) if matches!(resource.as_ref(), ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1))
+    );
 }

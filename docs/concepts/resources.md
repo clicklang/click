@@ -1711,3 +1711,13 @@ For the planned relationship between population counts, access authority,
 and mutexes, see the internal
 [resource invariant design](../internals/resource-invariants.md). That record
 separates implemented sequential checks from future concurrency rules.
+
+A helper can also compose two independent unit births while consuming and
+returning their ordinary authority-bearing controls. Each returned control
+must preserve its input's anchor and authority scopes; each new member needs
+its corresponding input authority. The checked ledger still verifies both
+births and exact returned custody. This bounded composition adds no creation
+right for an external pointer. `authority_two_control_birth_helpers.md` checks
+two initializer calls, and its extra-member companion rejects closing a
+control whose capacity no longer equals its population. Grouped symbolic
+quantities and arbitrary collections of effects remain outside this checkpoint.
