@@ -217,6 +217,37 @@ impl<'a> Proof<'a> {
         guard: &Proposition,
         consequent: &Proposition,
     ) -> Option<(ClickProposition, ClickProposition)> {
+        let (surface_guard, surface_consequent) = self.with_guarded_term_speller(|speller| {
+            Some((speller.guard(guard)?, speller.comparison(consequent)?))
+        })?;
+        (self.surface_lowers_to(&surface_guard, guard)
+            && self.surface_lowers_to(&surface_consequent, consequent))
+        .then_some((surface_guard, surface_consequent))
+    }
+
+    /// Spell one order or equality comparison from the current state's
+    /// names, accepted only when the spelling lowers back to `kernel`. Simp
+    /// uses it for a selected bound that has no recorded spelling of its
+    /// own: a conjunct of a written fact, or a branch condition's negation.
+    pub(super) fn spelled_comparison_surface(
+        &self,
+        kernel: &Proposition,
+    ) -> Option<ClickProposition> {
+        let surface = self.with_guarded_term_speller(|speller| speller.comparison(kernel))?;
+        self.surface_lowers_to(&surface, kernel).then_some(surface)
+    }
+
+    fn surface_lowers_to(&self, surface: &ClickProposition, kernel: &Proposition) -> bool {
+        self.lower_surface_proposition(surface, "guarded simp premise")
+            .is_ok_and(|lowered| {
+                lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
+            })
+    }
+
+    fn with_guarded_term_speller<R>(
+        &self,
+        spell: impl FnOnce(&GuardedTermSpeller) -> Option<R>,
+    ) -> Option<R> {
         let view = self
             .outcome_fixed_state_view()
             .or_else(|| self.execution_fixed_state_view())?;
@@ -238,22 +269,12 @@ impl<'a> Proof<'a> {
                     .collect::<BTreeMap<_, _>>()
             })
             .unwrap_or_default();
-        let speller = GuardedTermSpeller {
+        spell(&GuardedTermSpeller {
             view: &view,
             accesses: &accesses,
             snapshots: view.recorded_snapshots.recent(MAX_SPELLING_SNAPSHOTS),
             bound,
-        };
-        let surface_guard = speller.guard(guard)?;
-        let surface_consequent = speller.comparison(consequent)?;
-        let lowers_to = |surface: &ClickProposition, kernel: &Proposition| {
-            self.lower_surface_proposition(surface, "guarded simp premise")
-                .is_ok_and(|lowered| {
-                    lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
-                })
-        };
-        (lowers_to(&surface_guard, guard) && lowers_to(&surface_consequent, consequent))
-            .then_some((surface_guard, surface_consequent))
+        })
     }
 }
 
