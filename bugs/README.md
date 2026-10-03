@@ -25,4 +25,3 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Connected-fact selection indexes the context once per context, not incrementally](connected-fact-selection-indexes-the-context-per-derivation.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
-- [A fact about a `const` pointer parameter is lost after a C step](const-pointer-parameter-fact-is-lost-after-a-step.md)

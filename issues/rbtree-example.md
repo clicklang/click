@@ -713,8 +713,7 @@ it; `mdtests/rb_next_rejects_a_dropped_context.md` is the negative. One
 translation remains: the parameter is declared without `const`, because C0
 keeps `const` across the explicit cast in `return (struct rb_node *)node;`
 (`mdtests/rb_next_const_signature.md`). Restoring it waits on the importer's
-const-dropping cast rule and on `bugs/const-pointer-parameter-fact-is-lost-after-a-step.md`,
-which breaks the proof once the signature parses. A predecessor claim is refused only by `simp`
+const-dropping cast rule. A predecessor claim is refused only by `simp`
 exhausting its budget (`bugs/simp-exhausts-its-budget-on-a-false-list-postcondition.md`),
 so there is no wrong-position negative.
 
