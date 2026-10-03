@@ -329,22 +329,279 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant))
         .with_loan_view_bindings(bindings);
-    let theorem = prove_c_statement_execution(
-        state,
-        c_initialize_scalar_array(
+    for fresh in [true, false] {
+        let statement = if fresh {
+            c_initialize_scalar_array(
+                c_pointer_value(target.clone()),
+                c_uint32_literal(7),
+                CType::UInt32,
+                4,
+                false,
+            )
+        } else {
+            c_write_scalar_array_region(
+                c_pointer_value(target.clone()),
+                c_uint32_literal(7),
+                CType::UInt32,
+                4,
+                false,
+            )
+        };
+        let theorem = prove_c_statement_execution(state.clone(), statement).unwrap();
+        assert!(matches!(
+            theorem.proposition(),
+            Proposition::CStatementExecutes {
+                outcome: CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_)),
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
+    let mut samples = Vec::new();
+    for count in [4, 1024, 1_000_000] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let bytes = count * 4;
+        let source = pointer("local:region-source", 4);
+        let target = pointer("local:region-target", 4);
+        let context = PureFactContext::new();
+        let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let memory = CMemory::new()
+                .with_block(source.block.clone(), bytes + 8)
+                .with_block(target.block.clone(), bytes + 8)
+                .store(
+                    pointer("local:region-target", 0),
+                    CValue::UInt32(11u32.into()),
+                )
+                .store(
+                    pointer("local:region-target", i64::from(bytes) + 4),
+                    CValue::UInt32(17u32.into()),
+                )
+                .write_scalar_array_region(
+                    &source,
+                    CType::UInt32,
+                    count,
+                    CValue::UInt32(7u32.into()),
+                    false,
+                    false,
+                    &context,
+                )
+                .unwrap()
+                .write_scalar_array_region(
+                    &target,
+                    CType::UInt32,
+                    count,
+                    CValue::UInt32(99u32.into()),
+                    false,
+                    false,
+                    &context,
+                )
+                .unwrap();
+            memory
+                .write_scalar_array_region(
+                    &target,
+                    CType::UInt32,
+                    count,
+                    CValue::pointer(source.clone()),
+                    true,
+                    false,
+                    &context,
+                )
+                .unwrap()
+        });
+        for (offset, value) in [
+            (0, 11),
+            (4, 7),
+            (i64::from(bytes), 7),
+            (i64::from(bytes) + 4, 17),
+        ] {
+            assert_eq!(
+                memory.load(&pointer("local:region-target", offset)),
+                CExpressionOutcome::Value(CValue::UInt32(value.into()))
+            );
+        }
+        assert_eq!(memory.cells.concrete().len(), 2);
+        assert_eq!(memory.cells.runs_in_block(&target.block).count(), 1);
+        assert!(memory.has_initialized_bytes_at(&target, bytes));
+        let mutated = memory.store(source, CValue::UInt32(101u32.into()));
+        assert_eq!(
+            mutated.load(&target),
+            CExpressionOutcome::Value(CValue::UInt32(7u32.into()))
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn compact_array_regions_check_source_type_extent_alignment_and_initialization() {
+    let context = PureFactContext::new();
+    let source = pointer("local:source", 4);
+    let target = pointer("local:target", 4);
+    let memory = CMemory::new()
+        .with_block(source.block.clone(), 24)
+        .with_block(target.block.clone(), 24)
+        .write_scalar_array_region(
+            &source,
+            CType::UInt32,
+            4,
+            CValue::UInt32(7u32.into()),
+            false,
+            false,
+            &context,
+        )
+        .unwrap();
+    for (at, element, count) in [
+        (target.clone(), CType::Int32, 4),
+        (pointer("local:target", 5), CType::UInt32, 4),
+        (target.clone(), CType::UInt32, 6),
+    ] {
+        assert!(
+            memory
+                .clone()
+                .write_scalar_array_region(
+                    &at,
+                    element,
+                    count,
+                    CValue::pointer(source.clone()),
+                    true,
+                    false,
+                    &context
+                )
+                .is_err()
+        );
+    }
+    let changed = memory
+        .clone()
+        .store(source.clone(), CValue::UInt32(9u32.into()));
+    assert!(
+        changed
+            .write_scalar_array_region(
+                &target,
+                CType::UInt32,
+                4,
+                CValue::pointer(source.clone()),
+                true,
+                false,
+                &context
+            )
+            .is_err()
+    );
+    let fresh = CMemory::new()
+        .with_block(source.block.clone(), 24)
+        .with_block(target.block.clone(), 24);
+    assert!(
+        fresh
+            .write_scalar_array_region(
+                &target,
+                CType::UInt32,
+                4,
+                CValue::pointer(source.clone()),
+                true,
+                false,
+                &context
+            )
+            .is_err()
+    );
+    // Reading the old uniform value first makes overlapping/self copies snapshots.
+    let copied = memory
+        .write_scalar_array_region(
+            &pointer("local:source", 8),
+            CType::UInt32,
+            3,
+            CValue::pointer(source),
+            true,
+            false,
+            &context,
+        )
+        .unwrap();
+    assert_eq!(
+        copied.load(&pointer("local:source", 16)),
+        CExpressionOutcome::Value(CValue::UInt32(7u32.into()))
+    );
+}
+
+#[test]
+fn compact_array_region_execution_requires_full_authority_and_mutable_storage() {
+    for (writable, complete, readonly) in [
+        (true, true, false),
+        (true, false, false),
+        (false, true, false),
+        (true, true, true),
+    ] {
+        let target = pointer("local:region", 4);
+        let resource = if writable {
+            own_memory_fact(target.clone(), 0, if complete { 4 } else { 3 })
+        } else {
+            view_memory_fact(target.clone(), 0, 4)
+        };
+        let state = CState::new()
+            .with_memory(CMemory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
+            .with_resource_context(ResourceContext::new().unchecked_with_facts(vec![resource]));
+        let statement = c_write_scalar_array_region(
             c_pointer_value(target),
             c_uint32_literal(7),
             CType::UInt32,
             4,
             false,
+        );
+        let theorem = prove_c_statement_execution(state, statement).unwrap();
+        let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+            panic!()
+        };
+        assert_eq!(
+            matches!(outcome, CStatementOutcome::Normal(_)),
+            writable && complete && !readonly
+        );
+    }
+}
+
+#[test]
+fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
+    let declaration = prove_c_statement_execution(
+        CState::new(),
+        c_seq(
+            c_declare("value", CType::UInt32),
+            c_assign("value", c_uint32_literal(42)),
         ),
     )
     .unwrap();
-    assert!(matches!(
-        theorem.proposition(),
-        Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_)),
-            ..
-        }
-    ));
+    let Proposition::CStatementExecutes {
+        outcome: CStatementOutcome::Normal(state),
+        ..
+    } = declaration.proposition()
+    else {
+        panic!("scalar declaration must execute");
+    };
+    let target = state.locals().slot("value").unwrap().clone();
+    let state = state.clone().with_resource_context(
+        ResourceContext::new().unchecked_with_facts([own_memory_fact(target, 0, 1)]),
+    );
+    let theorem = prove_c_statement_execution(
+        state,
+        c_write_scalar_array_region(
+            c_addr_of("value"),
+            c_uint32_literal(7),
+            CType::UInt32,
+            1,
+            false,
+        ),
+    )
+    .unwrap();
+    let Proposition::CStatementExecutes {
+        outcome: CStatementOutcome::Normal(state),
+        ..
+    } = theorem.proposition()
+    else {
+        panic!("authorized region write must execute");
+    };
+    assert_eq!(
+        state.locals().get("value"),
+        Some(&CValue::UInt32(7u32.into()))
+    );
 }

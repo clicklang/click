@@ -1139,6 +1139,7 @@ impl Context<'_> {
                 .ok_or("unknown array source".into()),
             E::Deref { reference, .. } => self.array_source_is_constant(reference),
             E::Field { base, .. } => match base.as_ref() {
+                E::Local { name } if self.owned_locals.contains(name) => Ok(false),
                 E::Deref { reference, .. } => match reference.as_ref() {
                     E::Local { name } => self
                         .references
