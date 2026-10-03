@@ -31,3 +31,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A postcondition about a parameter named `result` cannot be certified](result-parameter-postconditions-cannot-be-certified.md)
 - [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [Expanding a `loop` renders a match arm's pointer binder as `…`](loop-expansion-renders-arm-pointer-binders-unspellably.md)
+- [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
