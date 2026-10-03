@@ -66,6 +66,175 @@ fn charon_project() -> Project {
     .unwrap();
     p
 }
+const CHARON_OWNED_ARRAY_SOURCE: &str =
+    include_str!("../design/charon-trial/owned-array-fields/owned.rs");
+const CHARON_OWNED_ARRAY_SIDECAR: &str =
+    include_str!("../design/charon-trial/owned-array-fields/owned.click");
+fn charon_owned_array_project() -> Project {
+    let p = Project::new(CHARON_OWNED_ARRAY_SOURCE);
+    for (name, bytes) in [
+        ("owned.rs", CHARON_OWNED_ARRAY_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_OWNED_ARRAY_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/owned-array-fields/owned.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "owned.ullbc",
+            include_bytes!("../design/charon-trial/owned-array-fields/owned.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../design/charon-trial/owned-array-fields/owned.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_owned_array_fields_check_moves_snapshots_boundaries_and_frames() {
+    let p = charon_owned_array_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_OWNED_ARRAY_SIDECAR, &prepared).unwrap();
+    for invalid in [
+        CHARON_OWNED_ARRAY_SIDECAR
+            .replace("requires index < 4u64;", "requires index == 4294967296u64;"),
+        CHARON_OWNED_ARRAY_SIDECAR
+            .replace("ensures result == replacement;", "ensures result == value;"),
+        CHARON_OWNED_ARRAY_SIDECAR.replace("ensures result == 28u32;", "ensures result == 29u32;"),
+        CHARON_OWNED_ARRAY_SIDECAR.replace("ensures result == value;", "ensures result != value;"),
+    ] {
+        assert_ne!(invalid, CHARON_OWNED_ARRAY_SIDECAR);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_owned_array_fields_cli_tools_recheck_expanded_certificates() {
+    let p = charon_owned_array_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "moved.contract",
+        "reassigned.contract",
+        "snapshot.contract",
+        "empty_move.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_owned_array_fields_live_refresh_and_compiler_rejections() {
+    let p = charon_owned_array_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_OWNED_ARRAY_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn nonuniform()->u32 { let packet=Packet { words:[1,2,3,4] }; let next=packet; next.words[0] }").unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; uint32 nonuniform() { ensures result == 1u32; } by { execute(); simp(); }", &load_import(&p.config()).unwrap()).unwrap();
+    fs::write(p.root.join("owned.rs"), "pub struct Packet { pub words: [u32;4] } pub fn invalid()->u32 { let packet=Packet { words:[1;4] }; let next=packet; packet.words[0] + next.words[0] }").unwrap();
+    fs::remove_file(p.root.join("owned.ullbc")).unwrap();
+    let error = refresh_import(&p.config()).unwrap_err();
+    assert!(!error.contains("panicked"), "{error}");
+    assert!(!p.root.join("owned.ullbc").exists());
+}
+
+const CHARON_SNAPSHOT_SOURCE: &str =
+    include_str!("../design/charon-trial/array-snapshots/snapshots.rs");
+const CHARON_SNAPSHOT_SIDECAR: &str =
+    include_str!("../design/charon-trial/array-snapshots/snapshots.click");
+fn charon_snapshot_project() -> Project {
+    let p = Project::new(CHARON_SNAPSHOT_SOURCE);
+    for (name, bytes) in [
+        ("snapshots.rs", CHARON_SNAPSHOT_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_SNAPSHOT_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/array-snapshots/snapshots.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "snapshots.ullbc",
+            include_bytes!("../design/charon-trial/array-snapshots/snapshots.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../design/charon-trial/array-snapshots/snapshots.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_array_snapshots_check_computed_lanes_and_copy_independence() {
+    let p = charon_snapshot_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_SNAPSHOT_SIDECAR, &prepared).unwrap();
+    for (before, after) in [
+        ("ensures result == a;", "ensures result == 99u32;"),
+        ("ensures result == b;", "ensures result != b;"),
+        ("ensures result == 28u32;", "ensures result == 29u32;"),
+        ("ensures result == b ^ 1u32;", "ensures result == b;"),
+    ] {
+        let invalid = CHARON_SNAPSHOT_SIDECAR.replace(before, after);
+        assert_ne!(invalid, CHARON_SNAPSHOT_SIDECAR);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_array_snapshots_cli_tools_recheck_expanded_certificates() {
+    let p = charon_snapshot_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "computed_move.contract",
+        "source_write.contract",
+        "target_write.contract",
+        "sparse.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_array_snapshots_live_refresh() {
+    let p = charon_snapshot_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_SNAPSHOT_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+}
+
 const CHARON_FIELDS_SOURCE: &str = include_str!("../design/charon-trial/array-fields/fields.rs");
 const CHARON_FIELDS_SIDECAR: &str =
     include_str!("../design/charon-trial/array-fields/fields.click");
@@ -134,7 +303,7 @@ fn charon_array_fields_cli_tools_recheck_borrowed_field_certificates() {
 }
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
-fn charon_array_fields_live_refresh_and_rejected_owned_operations() {
+fn charon_array_fields_live_refresh_and_compiler_rejections() {
     let p = charon_fields_project();
     let mut config: serde_json::Value =
         serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
@@ -149,9 +318,6 @@ fn charon_array_fields_live_refresh_and_rejected_owned_operations() {
     )
     .unwrap();
     for source in [
-        "pub struct A { pub values:[u32;4] } pub fn bad()->u32 { let x=A{values:[0;4]}; x.values[0] }",
-        "pub struct A { pub values:[u32;4] } pub fn bad(x:&A)->u32 { let values=x.values; values[0] }",
-        "pub struct A { pub values:[u32;4] } pub fn bad(x:&mut A) { x.values=[0;4]; }",
         "pub struct A { pub values:[u16;4] } pub fn bad(x:&A)->u16 { x.values[0] }",
         "#[repr(C,packed)] pub struct A { pub values:[u32;4] } pub fn bad(x:&A)->u32 { x.values[0] }",
         "pub struct A { pub values:[u32;4] } pub fn bad(x:&A) { x.values[0]=1; }",

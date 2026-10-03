@@ -31,16 +31,6 @@ pub(super) fn lower(
             Type::Unit => c_skip(),
             Type::Reference { pointee, .. } if **pointee == Type::ChunkIterator => c_skip(),
             Type::Record { name } => {
-                if cx
-                    .records
-                    .get(name.as_str())
-                    .ok_or("missing owned record")?
-                    .fields
-                    .iter()
-                    .any(|f| matches!(f.value_type, Type::Array { .. }))
-                {
-                    return Err("owned records with array fields require compact region construction and moves".into());
-                }
                 cx.owned_locals.insert(local.name.clone());
                 let flag = format!("__rust_owned_live_{index}");
                 if !cx.locals.insert(flag.clone()) {
@@ -228,9 +218,6 @@ pub(super) fn lower(
                     target: E::Local { name },
                     value,
                 } if cx.local_arrays.contains(name) => {
-                    if matches!(value, E::Field { .. }) {
-                        return Err("owned array field copies require compact region copies".into());
-                    }
                     let (length, element, _) = cx.arrays[name];
                     let pointer = cx.array_pointer(name)?;
                     match value {
@@ -259,7 +246,13 @@ pub(super) fn lower(
                             if count != c_uint64_literal(length) || source_element != element {
                                 return Err("array copy type disagrees with destination".into());
                             }
-                            c_initialize_scalar_array(pointer, source, element, length as u32, true)
+                            c_write_scalar_array_region(
+                                pointer,
+                                source,
+                                element,
+                                length as u32,
+                                true,
+                            )
                         }
                     }
                 }
@@ -269,32 +262,32 @@ pub(super) fn lower(
                 } if !records.contains_key(name.as_str()) => cx.assign(name, value)?,
                 S::Assign { target, value } => {
                     if let E::Field { record, field, .. } = target
-                        && cx
+                        && let Some((element, length)) = cx
                             .fields
                             .get(&(record.as_str(), field.as_str()))
-                            .is_some_and(|(_, ty)| array_field_parts(*ty).is_some())
+                            .and_then(|(_, ty)| array_field_parts(*ty))
                     {
-                        return Err(
-                            "whole-array field assignment requires compact region updates".into(),
-                        );
+                        let address = cx.address(target)?;
+                        cx.assign_array_region(address, element, u64::from(length), value)?
+                    } else {
+                        let (mut checks, mut value) = cx.prepared_expr(value)?;
+                        if matches!(target, E::Index { .. }) {
+                            let value_type = match cx.place_type(target)? {
+                                CType::UInt8 => Type::U8,
+                                CType::UInt32 => Type::U32,
+                                CType::Int32 => Type::I32,
+                                _ => return Err("unsupported Rust indexed assignment type".into()),
+                            };
+                            let (capture, name) = cx.capture_operand(value, &value_type)?;
+                            checks = c_seq(checks, capture);
+                            value = c_variable(name);
+                        }
+                        let (target_checks, address) = cx.prepared_address(target)?;
+                        c_seq(
+                            c_seq(checks, target_checks),
+                            c_typed_store(address, value, cx.place_type(target)?),
+                        )
                     }
-                    let (mut checks, mut value) = cx.prepared_expr(value)?;
-                    if matches!(target, E::Index { .. }) {
-                        let value_type = match cx.place_type(target)? {
-                            CType::UInt8 => Type::U8,
-                            CType::UInt32 => Type::U32,
-                            CType::Int32 => Type::I32,
-                            _ => return Err("unsupported Rust indexed assignment type".into()),
-                        };
-                        let (capture, name) = cx.capture_operand(value, &value_type)?;
-                        checks = c_seq(checks, capture);
-                        value = c_variable(name);
-                    }
-                    let (target_checks, address) = cx.prepared_address(target)?;
-                    c_seq(
-                        c_seq(checks, target_checks),
-                        c_typed_store(address, value, cx.place_type(target)?),
-                    )
                 }
                 S::Initialize {
                     target,
@@ -310,15 +303,28 @@ pub(super) fn lower(
                         return Err("partial record initialization".into());
                     }
                     let mut initialize = assertion(flag, false);
-                    for (value, field) in fields.iter().zip(&r.fields) {
-                        initialize = c_seq(
-                            initialize,
-                            c_typed_store(
-                                c_pointer_offset_bytes(c_variable(target), field.offset),
-                                cx.expr(value)?,
-                                scalar_type(&field.value_type)?.to_kernel_type(),
-                            ),
-                        );
+                    let record_fields = r.fields.clone();
+                    for (value, field) in fields.iter().zip(&record_fields) {
+                        let address = c_pointer_offset_bytes(c_variable(target), field.offset);
+                        let write = if let Type::Array { element, length } = &field.value_type {
+                            cx.assign_array_region(
+                                address,
+                                scalar_type(element)?.to_kernel_type(),
+                                *length,
+                                value,
+                            )?
+                        } else {
+                            let (prefix, value) = cx.prepared_expr(value)?;
+                            c_seq(
+                                prefix,
+                                c_typed_store(
+                                    address,
+                                    value,
+                                    scalar_type(&field.value_type)?.to_kernel_type(),
+                                ),
+                            )
+                        };
+                        initialize = c_seq(initialize, write);
                     }
                     c_seq(initialize, c_assign(flag, c_int32_literal(1)))
                 }
@@ -334,27 +340,43 @@ pub(super) fn lower(
                     let target_flag = check(target, record)?;
                     let mut copy =
                         c_seq(assertion(source_flag, true), assertion(target_flag, false));
-                    for field in &cx
+                    let record_fields = cx
                         .records
                         .get(record.as_str())
                         .ok_or("missing moved record")?
                         .fields
-                    {
-                        let read = E::Field {
-                            base: Box::new(E::Local {
-                                name: source.clone(),
-                            }),
-                            record: record.clone(),
-                            field: field.name.clone(),
-                        };
-                        copy = c_seq(
-                            copy,
+                        .clone();
+                    for field in &record_fields {
+                        let source_address =
+                            c_pointer_offset_bytes(c_variable(source), field.offset);
+                        let target_address =
+                            c_pointer_offset_bytes(c_variable(target), field.offset);
+                        let write = if let Type::Array { element, length } = &field.value_type {
+                            c_write_scalar_array_region(
+                                target_address,
+                                source_address,
+                                scalar_type(element)?.to_kernel_type(),
+                                arrays::array_length(
+                                    scalar_type(element)?.to_kernel_type(),
+                                    *length,
+                                )?,
+                                true,
+                            )
+                        } else {
+                            let read = E::Field {
+                                base: Box::new(E::Local {
+                                    name: source.clone(),
+                                }),
+                                record: record.clone(),
+                                field: field.name.clone(),
+                            };
                             c_typed_store(
-                                c_pointer_offset_bytes(c_variable(target), field.offset),
+                                target_address,
                                 cx.expr(&read)?,
                                 scalar_type(&field.value_type)?.to_kernel_type(),
-                            ),
-                        );
+                            )
+                        };
+                        copy = c_seq(copy, write);
                     }
                     c_seq(
                         copy,

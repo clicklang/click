@@ -134,7 +134,8 @@ zero generated aggregate fields, and bounded deterministic verification work.
 The source fixture and negative claims also run through verification, profiling,
 auditing, expansion, and expanded-certificate rechecking.
 
-General snapshot copies, copies after an element override, whole-array
+The snapshot checkpoint below adds general represented lane copies and copies
+after concrete element overrides. Whole-array
 reassignment, by-value array parameters/returns, array fields and nested arrays
 remain outside the compact-array increment. Unsupported
 bulk source/storage shapes produce a bounded checked execution failure; they are
@@ -282,11 +283,69 @@ indices, missing write authority, false results, invalid layouts and forged
 mutable borrows. Verification, profiling, auditing and expanded-certificate
 rechecking agree on the trial.
 
-Owned records containing arrays, whole-field copies and whole-field assignments
-remain rejected. They need compact region initialization and copying that preserve
-neighboring fields; the existing fresh whole-local array operation does not
-provide those semantics. Add that checkpoint and shared array iteration before
-claiming support for adler2's owned `U32X4` computation.
+The following checkpoint adds owned local records and uniform region copies.
+Shared array iteration remains a requirement for
+adler2's owned `U32X4` computation.
+
+## Owned uniform array-field checkpoint
+
+[`owned-array-fields/owned.rs`](owned-array-fields/owned.rs) and its
+[sidecar](owned-array-fields/owned.click) prove nine contracts for repeated-array
+construction, whole-record moves, whole-field replacement, field extraction,
+snapshot independence, tuple fields, byte fields and empty fields. Replacement
+preserves both neighboring scalar fields. Copies retain the value read before
+any destination overwrite or later source mutation.
+
+`compact-uniform-array-regions-v1` binds these operations into the import lock.
+The existing fresh-array operation keeps its complete empty-local requirement.
+The region operation separately checks local storage, constant aligned offsets,
+full extents, element types, source initialization, mutable destination storage,
+read/write authority and active loans. It writes one typed run, forgetting only
+possibly overlapping cached values through the existing checked memory model.
+It grants no new memory authority. Array fields have no scalar placeholder;
+the actual constructor establishes their initialization before the record's
+checked live flag permits access. Moves consume that flag exactly once.
+
+Layout, lowered statement count and ordinary verification work remain bounded
+at lengths 4, 1024 and 1,000,000. Kernel regressions check adjacent bytes,
+overlapping copies, type/extent/alignment failures, incomplete authority,
+readonly storage, active view loans and addressed scalar-local bindings.
+Verification, profiling, auditing, expansion and expanded-certificate rechecking
+agree on the unchanged trial source.
+
+The following snapshot checkpoint extends these copies to independently computed
+scalar lanes. Borrowed symbolic or heap regions, union views and local-array
+reassignment remain outside the region operation.
+
+## Nonuniform array snapshot checkpoint
+
+[`array-snapshots/snapshots.rs`](array-snapshots/snapshots.rs) and its
+[sidecar](array-snapshots/snapshots.click) prove eight contracts for computed
+lanes, owned record moves, field replacement, neighboring fields, signed and
+byte arrays, and source/destination mutation after copying. A sparse repeated
+array contains a separately computed lane and retains it after source mutation.
+The import lock names `compact-scalar-array-snapshots-v1`.
+
+Copies capture the selected source region before any destination write. They
+retain constant spans as typed runs and explicit lanes as immutable scalar
+values. Coverage includes run holes filled by explicit stores; incomplete or
+incompatible typed coverage is rejected. Destination updates use the existing
+checked overlap invalidation and establish initialization without granting
+read/write authority. No copy points back to mutable source storage.
+
+Work follows represented spans and cells, rather than array extent. Kernel
+and ordinary imported verification regressions cover lengths 4/8, 1024 and
+1,000,000, with fixed sparse edits. Overlapping copies preserve their original
+source values; adjacent fields, permissions, initialization, qualifiers and
+move flags remain checked. Ordinary verification, profile, audit, expansion and
+expanded-certificate verification agree. The pinned compiler refreshes the
+actual ULLBC artifact and all other checkpoint locks.
+
+This supports concrete aligned local regions containing represented `i32`,
+`u8` and `u32` values. Opaque load runs and symbolic-address cached writes are
+rejected. Symbolic/heap region writes, local-array reassignment, shared-element
+array iteration and resolved custom operators remain migration work before
+claiming parity for the unchanged checksum implementation.
 
 ## Checksum arithmetic checkpoint
 
@@ -381,7 +440,7 @@ scaling evidence. Extend the single ULLBC adapter rather than adding a fallback
 to the legacy exporter per function. The borrowed-loop checkpoint now composes
 a live restoring guard with checked
 iteration and termination. The conversions/arrays checkpoint composes resolved
-unsigned conversion, repeated initialization, uniform copy, indexing, and owned
+unsigned conversion, repeated initialization, nonuniform snapshot copy, indexing, and owned
 cleanup. The byte-slice checkpoint carries full-width metadata, dynamic bounds,
 reborrows and local calls through that same boundary. Stored exact-chunk state,
 owned moves, typed Option dispatch and remainder now pass through it as well.
