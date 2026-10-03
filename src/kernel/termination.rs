@@ -3607,7 +3607,9 @@ fn diverging_contract_objects(
                 collect(left, diverging_contracts, found);
                 collect(right, diverging_contracts, found);
             }
-            SpecProposition::Predicate { name, arguments } => {
+            SpecProposition::Predicate {
+                name, arguments, ..
+            } => {
                 let Some(contract) = CFunctionContract::surface_name_from_predicate(name) else {
                     return;
                 };
@@ -6017,6 +6019,7 @@ mod local_descent_tests {
             .contract_interface
             .contract_requires
             .push(SpecProposition::Predicate {
+                resource_state_dependent: true,
                 name: CFunctionContract::predicate_name_for("Spinner"),
                 arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
                     CExpression::Variable("callback".to_string()),

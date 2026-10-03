@@ -2565,6 +2565,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
 #[test]
 fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
     let predicate = SpecProposition::Predicate {
+        resource_state_dependent: true,
         name: "positive".to_string(),
         arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
             c_variable("result"),

@@ -444,6 +444,17 @@ restore the current predicate and the private count equation. A companion
 rejects a declared consumption that the proof omits; a C update alone cannot
 restore that equation. The original C and ensured claim are preserved.
 
+**Predicate precondition repair:** Count-bearing predicates capture the
+authority ledger rather than a legacy empty model. Nested predicates retain
+the same count-only read witness; it neither supplies execution resources nor
+permits authority, anonymous-member, or named-member lifecycle changes.
+Definition dependencies select the resource snapshot while count-independent
+predicates retain their identity. Positive and false-zero regressions check
+the unchanged C counter, and kernel tests check captured counts, forbidden
+transfers, dependency registration, and deterministic scanning work.
+An explicit subtraction lemma restores the existing consumption predicate
+under the correct model and returns its sum's definedness for invariant close.
+
 **Single-spend negative slice:** The missing-contract, repeated-consumption,
 and nested-overconsumption fixtures now separate member custody from an
 ordinary counter/authority control. Each retains its unchanged C and reaches

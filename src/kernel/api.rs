@@ -7520,6 +7520,9 @@ pub(crate) fn prove_executed_contract_refinement(
             return None;
         }
         let source_requirement = SpecProposition::Predicate {
+            // A function-contract predicate denotes its closed interface,
+            // independently of the caller's current population model.
+            resource_state_dependent: false,
             name: source.predicate_name(),
             arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
                 CExpression::Variable(callback.name().to_string()),

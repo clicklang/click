@@ -3,6 +3,8 @@ use super::{ResourceDescription, ResourceFieldSchema};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+pub(in crate::kernel) mod predicate_dependencies;
+
 type EvaluatedSpecResource = (CResource, Vec<ExecutionPureFact>, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
 
@@ -1564,17 +1566,20 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             })
             .collect())
         }
-        SpecProposition::Predicate { name, arguments } => {
-            lower_spec_predicate_proposition_at_state_in(
-                state,
-                name,
-                arguments,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )
-        }
+        SpecProposition::Predicate {
+            name,
+            arguments,
+            resource_state_dependent,
+        } => lower_spec_predicate_proposition_at_state_in(
+            state,
+            name,
+            arguments,
+            *resource_state_dependent,
+            loop_entry_state,
+            assumptions,
+            algebraic_bindings,
+            budget,
+        ),
         SpecProposition::ResourceSeparate { left, right } => {
             lower_spec_resource_relation_at_state_in(
                 state,
@@ -5457,6 +5462,7 @@ fn lower_spec_predicate_proposition_at_state_in(
     state: &CState,
     name: &str,
     arguments: &[SpecPredicateArgument],
+    resource_state_dependent: bool,
     loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
@@ -5529,7 +5535,9 @@ fn lower_spec_predicate_proposition_at_state_in(
     // it is independent of the caller's current resource-population snapshot.
     // Keeping the uniform predicate state argument canonical lets a closed
     // pure theorem establish the same fact at every later application site.
-    let predicate_state = if CFunctionContract::surface_name_from_predicate(name).is_some() {
+    let predicate_state = if !resource_state_dependent
+        || CFunctionContract::surface_name_from_predicate(name).is_some()
+    {
         CState::new()
     } else {
         state.resource_state_snapshot()
@@ -5990,6 +5998,21 @@ fn evaluate_resource_count_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    // A predicate records immutable observations, not execution custody. Restore
+    // its captured read witness only inside this evaluator; no resource step
+    // sees this context, and the numeric model remains the captured ledger.
+    let predicate_state = state
+        .population_effects
+        .predicate_count_permissions
+        .as_ref()
+        .map(|permissions| {
+            let mut observed = state.clone();
+            observed.resources = permissions.0.as_ref().clone();
+            std::sync::Arc::make_mut(&mut observed.population_effects)
+                .predicate_count_permissions = None;
+            observed
+        });
+    let state = predicate_state.as_ref().unwrap_or(state);
     let authority_mode = state.uses_population_authority_semantics();
     let observed_state = (!authority_mode).then(|| state.count_observation_state(assumptions));
     let state = observed_state

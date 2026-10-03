@@ -5682,7 +5682,14 @@ impl CState {
             (Some(left), Some(right)) => same_or_empty_map(left, right),
             _ => false,
         };
-        same_bindings
+        self.population_effects
+            .predicate_count_permissions
+            .is_some()
+            == other
+                .population_effects
+                .predicate_count_permissions
+                .is_some()
+            && same_bindings
             && same_or_empty_map(&self.locals.bindings, &other.locals.bindings)
             && same_or_empty_map(&self.locals.slots, &other.locals.slots)
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
@@ -6414,6 +6421,13 @@ impl CState {
         establish: bool,
         assumptions: &PureFactContext,
     ) -> Result<(CState, CheckedPopulationAuthorityExchange), String> {
+        if self
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change authority".into());
+        }
         let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected
         else {
             return Err("Requires owns authority(R(p))".into());
@@ -6492,6 +6506,13 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
+        if self
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change membership".into());
+        }
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
         else {
             return Err("Requires owns R(p)".into());
@@ -6726,6 +6747,13 @@ impl CState {
         produce: bool,
         assumptions: &PureFactContext,
     ) -> Result<(), String> {
+        if before
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change named membership".into());
+        }
         let Some(events) = &before.population_effects.creation else {
             return Ok(());
         };
@@ -7369,6 +7397,26 @@ impl CState {
     /// an unrelated C step from changing the identity of a predicate merely
     /// because the predicate language can also observe resource counts.
     pub fn resource_state_snapshot(&self) -> Self {
+        if self.uses_population_authority_semantics() {
+            return Self {
+                population_effects: Arc::new(PopulationEffects {
+                    // Nested predicates recapture the same logical model.
+                    // Their execution resource context is intentionally empty;
+                    // keep the original count-only witness instead of using it.
+                    predicate_count_permissions: Some(
+                        self.population_effects
+                            .predicate_count_permissions
+                            .clone()
+                            .unwrap_or_else(|| {
+                                PredicateCountPermissions(Arc::new(self.resources.clone()))
+                            }),
+                    ),
+                    creation: self.population_effects.creation.clone(),
+                    ..PopulationEffects::default()
+                }),
+                ..Self::new()
+            };
+        }
         let observed_families = self
             .counted_populations
             .iter()

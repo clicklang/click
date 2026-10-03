@@ -3338,6 +3338,7 @@ impl AnnotationLowerer<'_> {
                         ));
                     };
                     return Ok(SpecProposition::Predicate {
+                        resource_state_dependent: true,
                         name: crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
                         arguments: vec![SpecPredicateArgument::Value(
                             self.lower_contract_expression_to_spec(mutex, environment)?,
@@ -3352,6 +3353,7 @@ impl AnnotationLowerer<'_> {
                         ));
                     };
                     return Ok(SpecProposition::Predicate {
+                        resource_state_dependent: false,
                         name: crate::kernel::SAME_OBJECT_PREDICATE_NAME.to_string(),
                         arguments: vec![
                             SpecPredicateArgument::Value(
@@ -3379,6 +3381,7 @@ impl AnnotationLowerer<'_> {
                         None => self.lower_contract_expression_to_spec(function, environment)?,
                     };
                     return Ok(SpecProposition::Predicate {
+                        resource_state_dependent: false,
                         name: CFunctionContract::predicate_name_for(name),
                         arguments: vec![SpecPredicateArgument::Value(function)],
                     });
@@ -3477,6 +3480,10 @@ impl AnnotationLowerer<'_> {
                     }
                 }
                 Ok(SpecProposition::Predicate {
+                    resource_state_dependent: self
+                        .predicate_environment
+                        .resource_state_dependent
+                        .contains(name),
                     name: definition.name().to_string(),
                     arguments: lowered_arguments,
                 })

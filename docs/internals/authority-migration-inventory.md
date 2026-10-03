@@ -310,6 +310,19 @@ C subtraction restore the current `valid_capacity` predicate. The companion
 capacity without performing the declared consumption, because the control
 cannot be closed with its count equation restored.
 
+The `authority_predicate_precondition_*` regressions preserve authenticated
+authority counts when an entry predicate, including a nested predicate,
+captures the resource model. The positive proves that a positive population
+implies a positive unchanged counter; the negative refuses a false zero
+counter. A snapshot keeps the immutable count ledger and count read witness,
+without exposing execution custody or permitting population changes.
+Count-independent predicates retain their identity across unrelated births.
+Definition registration checks count dependencies, and a deterministic
+multi-size regression checks linear work over the definition body.
+The consumed-predicate proof uses an explicit, checked subtraction lemma that
+returns both the post-state equality and the recomposed sum's definedness;
+its original C and contract conditions remain unchanged.
+
 `population_consumption_missing_contract.md`,
 `population_consumption_nested_overconsume.md`, and
 `population_consumption_repeated.md` now select authority semantics. Their
