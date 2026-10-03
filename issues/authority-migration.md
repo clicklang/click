@@ -465,6 +465,13 @@ reject duplicating a suspended control. An unrelated call cannot assume the
 caller-open control invariant after a contradictory store. Opening does not
 create or consume members; body facts must be restored before closing.
 
+**Cached-call slice:** The paired cached-body fixtures now borrow an ordinary
+counter/authority control and explicitly create the retained member before
+return. The unchanged caller preserves its cached pre-call value and proves
+it equals the post-call count minus one, while the arbitrary-result negative
+still fails. An unrelated call preserves the caller-framed saved cell without
+assuming a temporarily broken control invariant.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

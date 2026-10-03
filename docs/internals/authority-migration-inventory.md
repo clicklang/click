@@ -335,6 +335,14 @@ restore the required custody. The unchanged-C companions
 `population_rejects_nested_open.md`, and `population_rejects_nested_alias_open.md`
 reject false invariant certification or duplicating a suspended control.
 
+`population_call_drops_the_cached_body_cell.md` and
+`population_call_keeps_what_it_may_and_drops_the_body_cell.md` now select authority
+semantics. The unchanged retaining helper explicitly births one member while
+its ordinary counter/authority control is open. The caller proves its cached
+pre-call value equals the new count minus one; the arbitrary-result companion
+is rejected. The unrelated-call control also verifies restoration from saved
+caller memory without the callee assuming its suspended invariant.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
