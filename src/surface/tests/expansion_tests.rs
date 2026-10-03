@@ -890,6 +890,26 @@ fn targeted_termination_assumes_unselected_callees() {
     }
 }
 
+/// A `simp()` after `execute(); intro(); intro();` closes a claim proof the
+/// `intro`s opened, and expands to only the steps it adds there. It used to
+/// expand to the whole claim's certificate, `have <claim> by { ... };
+/// assumption();`, and a deferred `normalize()` or `assumption()` ignored
+/// the opened proof, so neither form re-verified.
+#[test]
+fn post_execution_closer_continues_the_proof_intros_opened() {
+    let anchor = "intro();\n        simp();";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/post_execution_intro_quantified_ensure.md",
+        anchor,
+        "intro();\n        ".len(),
+    );
+    assert!(
+        expanded.contains("intro();\n        intro();\n        normalize();"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("have forall"), "{expanded}");
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

@@ -9,7 +9,6 @@ the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
 - [A retained verification session cannot re-verify a caller it already verified](retained-session-cannot-reverify-a-verified-caller.md)
-- [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
 - [Expansion refuses a witness that has no surface spelling](expansion-needs-unspellable-resource-witness.md)
 - [`loop` expansion emits an empty `by` block](loop-expansion-emits-empty-by-block.md)
 - [Expansion is unavailable where a call has an exceptional path](expansion-unavailable-for-exceptional-call-paths.md)
@@ -26,3 +25,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Connected-fact selection indexes the context once per context, not incrementally](connected-fact-selection-indexes-the-context-per-derivation.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
+- [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
