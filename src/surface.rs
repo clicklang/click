@@ -2744,6 +2744,12 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     snapshot_state: Option<CState>,
+    /// The contract result is bound in this state under the name `result`,
+    /// as it is at function exit. The kernel's exit state stores the return
+    /// value as a local of that name, replacing any C parameter or local
+    /// spelled `result`, so `c(result)` cannot name that C binding here and
+    /// is refused rather than read as the return value.
+    contract_result_in_scope: bool,
 }
 
 impl Default for SpecElaborationContext {
@@ -2759,6 +2765,7 @@ impl Default for SpecElaborationContext {
             at_function_entry: false,
             function_contract: false,
             snapshot_state: None,
+            contract_result_in_scope: false,
         }
     }
 }
@@ -2802,6 +2809,7 @@ impl SpecElaborationContext {
                 function_contract: true,
                 at_function_entry: true,
                 snapshot_state: None,
+                contract_result_in_scope: false,
             });
         }
         let mut values = entry_values
@@ -2831,6 +2839,7 @@ impl SpecElaborationContext {
             function_contract: false,
             at_function_entry: true,
             snapshot_state: None,
+            contract_result_in_scope: false,
         })
     }
 }

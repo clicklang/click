@@ -1301,6 +1301,7 @@ fn fixed_state_elaboration<'a>(
         context
             .values
             .insert("result".to_string(), SpecExpression::Value(result.clone()));
+        context.contract_result_in_scope = true;
     }
     (lowerer, context)
 }
@@ -1780,6 +1781,10 @@ pub(in crate::surface) fn function_contract_summary(
         .map(|parameter| parameter.name().to_string())
         .collect();
     let mut ensures = Vec::new();
+    // A postcondition is read in the exit state, where `result` is the
+    // contract result.
+    let mut ensures_context = context.clone();
+    ensures_context.contract_result_in_scope = true;
     for proposition in function_block
         .ensures()
         .iter()
@@ -1793,7 +1798,7 @@ pub(in crate::surface) fn function_contract_summary(
             ClickProposition::PredicateCall { name, .. }
                 if predicate_environment.get(name).is_some()
         )
-        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &context))
+        .then(|| lowerer.click_proposition_to_spec_proposition(proposition, &ensures_context))
         .transpose();
         let Ok(proposition) = unfold_contract_predicates(proposition) else {
             opaque_contract_supported = false;
@@ -1803,7 +1808,7 @@ pub(in crate::surface) fn function_contract_summary(
             opaque_contract_supported = false;
             continue;
         }
-        match lowerer.click_proposition_to_spec_proposition(&proposition, &context) {
+        match lowerer.click_proposition_to_spec_proposition(&proposition, &ensures_context) {
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
@@ -4564,6 +4569,12 @@ impl AnnotationLowerer<'_> {
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
             ContractExpression::CBinding(name) => {
+                if name == "result" && environment.contract_result_in_scope {
+                    return Err(
+                        "`c(result)` cannot name a C binding where the contract `result` is in scope; read it through a snapshot such as `old(c(result))` or `at(statement(N).entry, c(result))`"
+                            .to_string(),
+                    );
+                }
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
             ContractExpression::ResourceCount(resource) => {
@@ -5679,6 +5690,7 @@ impl AnnotationLowerer<'_> {
             function_contract: false,
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
+            contract_result_in_scope: false,
         })
     }
 

@@ -28,4 +28,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A struct retyping cast diagnostic omits the struct tags](struct-retyping-cast-diagnostic-omits-struct-tags.md)
 - [Rust symbolic multiplication does not match its explicit safety precondition](rust-symbolic-multiplication-precondition-not-matched.md)
 - [Successive calls on local Rust array fields lose symbolic values](rust-successive-array-field-calls-lose-symbolic-values.md)
-- [`c(result)` on a parameter named `result` reads the return value](c-result-parameter-reads-the-return-value.md)
+- [A postcondition about a parameter named `result` cannot be certified](result-parameter-postconditions-cannot-be-certified.md)
