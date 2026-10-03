@@ -546,15 +546,16 @@ must retain their diagnostic; any changed outcome fails the gate so the
 inventory is revised with the implementation. This is fixture-level parity,
 not a percentage of the Rust language.
 
-Current result: **10 of 16 legacy fixtures verify unchanged** (62.5%), four
-reject during normalization, and two import but have proof gaps. Thus 12/16
-fixtures import (75%). Loop headers block `rust-byte-sum` and `rust-loops`;
-owned iterator resolution blocks `rust-iterators`; tuple/slice return types
-block `rust-split-at`. The two proof gaps are legacy iterator ghost names in
-`rust-chunks-exact` and `rust-iter-references`. Resolve these observations in
-the adapter/proof interface without restoring a generated processed count or
-rewriting Rust bodies. The default switch and legacy retirement remain later
-migration gates; fixture parity is not a Rust-language completeness metric.
+Current result: **10 of 16 legacy fixtures verify unchanged** (62.5%), two
+reject during normalization, and four import but have proof gaps. Thus 14/16
+fixtures import (87.5%). Owned iterator resolution blocks `rust-iterators`;
+tuple/slice return types block `rust-split-at`. The proof gaps are legacy
+iterator ghost names in `rust-chunks-exact` and `rust-iter-references`, and
+numeric statement frontiers in `rust-loops` and `rust-byte-sum`. Resolve these
+observations in the adapter/proof interface without restoring a generated
+processed count or rewriting Rust bodies. The default switch and legacy
+retirement remain later migration gates; fixture parity is not a Rust-language
+completeness metric.
 
 The gate also runs all existing live compiler/borrow-checker rejection tests.
 Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
@@ -616,3 +617,18 @@ processed count is introduced.
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly
 rather than traversing the logical array extent.
+
+## Split loop headers
+
+The [loop-header checkpoint](loop-headers/README.md) imports unchanged
+`rust-loops` and `rust-byte-sum` through single-entry linear ULLBC header chains.
+Guard reconstruction follows pure scalar copies, comparisons, and paired
+shared-slice metadata in order across blocks. Header statements execute on
+every test, including the final false test. Calls, memory reads, arithmetic,
+shared entries, and extra exits remain outside this guard model.
+
+The unchanged three Rust loop bodies verify with loop selectors in a separate
+sidecar. The original numeric-selector sidecars remain frozen and counted as
+proof gaps. `split-shared-slice-while-header-v1` versions the interpretation;
+checkpoint locks are refreshed without changing prior ULLBC bytes or compiler
+pins. Deterministic scaling checks cover header work and emitted code size.
