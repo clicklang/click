@@ -25271,19 +25271,26 @@ pub(crate) fn instantiate_composite_resource_facts(
 pub(crate) fn instantiate_private_member_body_facts(
     composite: &CResourceFact,
     definition: &CCompositeResourceDefinition,
-    memory: &CMemory,
+    state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
+    let memory = state.memory();
     let definitions = std::slice::from_ref(definition);
     let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
     let body =
         expand_composite_resource_fact(&singleton, composite, definitions, memory, assumptions)?;
-    instantiate_composite_resource_facts(
+    // Keep the current verification model and population state, but bind only
+    // this definition's parameters. Mutating a cloned caller-local map would
+    // copy the whole frame for every member fact instantiation.
+    let mut fact_state = state.clone();
+    fact_state.locals = CLocalEnvironment::new();
+    instantiate_composite_resource_facts_with_state(
         composite,
         definitions,
         memory,
         &body,
         &assumptions.clone().require_owned_expression_loads(),
+        Some(&fact_state),
     )
 }
 
