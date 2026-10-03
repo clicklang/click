@@ -1509,9 +1509,24 @@ int32 contains(uint8 p[], int32 n) {
     )
     .expect("uint8 proposition should expand");
 
-    assert!(expanded.contains("bytes_contains(p, 0, n, 120u8)"));
+    // The `simp` closes the proof the `witness` opened, so it expands to
+    // that one step rather than restating the claim.
+    assert!(
+        expanded.contains("witness(k = found);\n        assumption();"),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &[("contains.c", c_source)])
-        .expect("printed uint8 literal should parse and re-verify");
+        .expect("the expansion should re-verify");
+    // A uint8 fact still prints as a parseable typed literal.
+    let file = parse_source_with_c_layouts(click_source, &[("contains.c", c_source)])
+        .expect("the sidecar parses");
+    let Ensure::Proposition(claim) = file.function_blocks()[0].ensures()[0].ensure() else {
+        panic!("the claim is a proposition");
+    };
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(claim),
+        "bytes_contains(p, 0, n, 120u8)"
+    );
 }
 
 #[test]
