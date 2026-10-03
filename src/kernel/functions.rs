@@ -2453,10 +2453,201 @@ fn authority_mode_exchange_effects(
     )
 }
 
+/// Two independent unit births can return their two authority controls.
+/// This is a bounded composition of existing initialization contracts, not a
+/// rule for arbitrary population deltas or implicit authority creation.
+fn authority_mode_two_control_births(
+    interface: &CFunctionContractInterface,
+) -> Option<Vec<(bool, &CResourceSpec)>> {
+    if !interface.resource_constructors().is_empty() {
+        return None;
+    }
+    let families = authority_mode_protected_families(interface);
+    let is_member = |spec: &CResourceSpec| {
+        matches!(spec.term(), CResourceTerm::Composite { name, .. }
+            if families.contains(name.as_str()))
+    };
+    if interface
+        .resource_requires()
+        .iter()
+        .any(|spec| is_member(spec) && spec.role() == CResourceTransferRole::Consume)
+    {
+        return None;
+    }
+    let members = interface
+        .resource_ensures()
+        .iter()
+        .filter(|spec| is_member(spec) && spec.role() == CResourceTransferRole::Produce)
+        .collect::<Vec<_>>();
+    if members.len() != 2
+        || members.iter().any(|member| {
+            member.quantity() != &CResourceQuantity::One
+                || member.instance_identity().is_some()
+                || !authority_mode_member_quantity_admitted(interface, member)
+        })
+    {
+        return None;
+    }
+    // Normalize only the declared authorities of a unary control. The
+    // resource planner and checked body authenticate its actual memory.
+    let control = |spec: &CResourceSpec| {
+        let CResourceTerm::Composite {
+            name, arguments, ..
+        } = spec.term()
+        else {
+            return None;
+        };
+        if spec.access() != CResourceAccessMode::Own
+            || spec.quantity() != &CResourceQuantity::One
+            || spec.guard().is_some()
+            || !spec.resource_arguments().is_empty()
+            || spec.instance_identity().is_some()
+            || arguments.len() != 1
+        {
+            return None;
+        }
+        let definition = interface.composite_resource_definition(name)?;
+        let [parameter] = definition.parameters() else {
+            return None;
+        };
+        let mut scopes = Vec::new();
+        for child in definition.contains() {
+            let CResourceTerm::PopulationAuthority {
+                protected,
+                population_arity,
+                ..
+            } = child.term()
+            else {
+                continue;
+            };
+            let CResourceTerm::Composite {
+                name,
+                arguments: anchor,
+                ..
+            } = protected.resource.term()
+            else {
+                return None;
+            };
+            if child.access() != CResourceAccessMode::Own
+                || child.quantity() != &CResourceQuantity::One
+                || child.guard().is_some()
+                || !child.resource_arguments().is_empty()
+                || anchor.len() != 1
+                || anchor[0] != c_variable(parameter.name())
+            {
+                return None;
+            }
+            scopes.push((name.clone(), *population_arity));
+        }
+        if scopes.is_empty() {
+            return None;
+        }
+        scopes.sort();
+        Some((arguments[0].clone(), scopes))
+    };
+    let inputs = interface
+        .resource_requires()
+        .iter()
+        .filter_map(|spec| {
+            (spec.role() == CResourceTransferRole::Consume)
+                .then(|| control(spec))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let outputs = interface
+        .resource_ensures()
+        .iter()
+        .filter_map(|spec| {
+            (spec.role() == CResourceTransferRole::Produce)
+                .then(|| control(spec))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    if inputs.len() != 2 || outputs.len() != 2 || inputs[0].0 == inputs[1].0 {
+        return None;
+    }
+    for member in &members {
+        let CResourceTerm::Composite {
+            name, arguments, ..
+        } = member.term()
+        else {
+            return None;
+        };
+        let anchor = arguments.first()?;
+        let scopes = &inputs.iter().find(|input| &input.0 == anchor)?.1;
+        if !scopes.iter().any(|(family, arity)| {
+            family == name && arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
+        }) {
+            return None;
+        }
+    }
+    let CResourceTerm::Composite {
+        arguments: left, ..
+    } = members[0].term()
+    else {
+        return None;
+    };
+    let CResourceTerm::Composite {
+        arguments: right, ..
+    } = members[1].term()
+    else {
+        return None;
+    };
+    if left.first() == right.first() || !inputs.iter().all(|input| outputs.contains(input)) {
+        return None;
+    }
+    // All other tracked clauses must be ordinary conserved owned borrows.
+    let mut borrowed_inputs = Vec::new();
+    let mut borrowed_outputs = Vec::new();
+    for (incoming, clauses) in [
+        (true, interface.resource_requires()),
+        (false, interface.resource_ensures()),
+    ] {
+        for spec in clauses {
+            if members.iter().any(|member| std::ptr::eq(spec, *member))
+                || control(spec).is_some()
+                    && spec.role()
+                        == if incoming {
+                            CResourceTransferRole::Consume
+                        } else {
+                            CResourceTransferRole::Produce
+                        }
+                || !matches!(
+                    spec.family(),
+                    ResourceFamily::Composite | ResourceFamily::PopulationAuthority
+                )
+            {
+                continue;
+            }
+            if spec.role() != CResourceTransferRole::Borrow
+                || spec.access() != CResourceAccessMode::Own
+                || spec.quantity() != &CResourceQuantity::One
+                || spec.guard().is_some()
+                || !spec.resource_arguments().is_empty()
+            {
+                return None;
+            }
+            if incoming {
+                borrowed_inputs.push(spec.term());
+            } else {
+                borrowed_outputs.push(spec.term());
+            }
+        }
+    }
+    borrowed_inputs.sort();
+    borrowed_outputs.sort();
+    if borrowed_inputs != borrowed_outputs {
+        return None;
+    }
+    Some(members.into_iter().map(|member| (true, member)).collect())
+}
+
 fn authority_mode_checked_member_effects(
     interface: &CFunctionContractInterface,
 ) -> Vec<(bool, &CResourceSpec)> {
-    if let Some(effects) = authority_mode_exchange_effects(interface) {
+    if let Some(effects) = authority_mode_exchange_effects(interface)
+        .or_else(|| authority_mode_two_control_births(interface))
+    {
         effects
     } else {
         authority_mode_member_effect(interface)
@@ -2791,8 +2982,9 @@ pub(super) fn check_wildcard_consumption_at_return(
 }
 
 fn authority_mode_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
-    authority_mode_member_effect(interface).is_some_and(|(produce, _)| produce)
-        && authority_mode_member_companions_admitted(interface)
+    (authority_mode_member_effect(interface).is_some_and(|(produce, _)| produce)
+        && authority_mode_member_companions_admitted(interface))
+        || authority_mode_two_control_births(interface).is_some()
 }
 
 fn authority_mode_final_release_contract(interface: &CFunctionContractInterface) -> bool {
@@ -3396,6 +3588,98 @@ mod authority_helper_admission_tests {
         wrong_anchor.resource_ensures[5] =
             member("slot", "other", false).with_role(CResourceTransferRole::Produce);
         assert!(!authority_mode_supports_resource_contract(&wrong_anchor));
+    }
+
+    #[test]
+    fn two_control_births_require_each_scope_return_and_unit_effect() {
+        let composite = |name: &str, anchor: &str| {
+            CResourceSpec::composite(
+                CResourceAccessMode::Own,
+                name.into(),
+                vec![c_variable(anchor)],
+                vec![CType::Int32Pointer],
+            )
+        };
+        let authority = CResourceSpec::new(
+            CResourceTerm::PopulationAuthority {
+                population_arity: None,
+                protected: Box::new(CResourceTypeSpec {
+                    resource: Box::new(composite("slot", "p")),
+                    schema: ResourceFieldSchema::new(vec![]).unwrap(),
+                }),
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceAccessMode::Own,
+            CResourceQuantity::One,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        let definition = |name: &str| {
+            CCompositeResourceDefinition::new(
+                name,
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![authority.clone()],
+                vec![],
+            )
+        };
+        let input = |anchor| composite("storage", anchor).with_role(CResourceTransferRole::Consume);
+        let output =
+            |anchor| composite("control", anchor).with_role(CResourceTransferRole::Produce);
+        let birth = |anchor| composite("slot", anchor).with_role(CResourceTransferRole::Produce);
+        let interface = c_function(CType::Void, "pair", vec![], CStatement::Skip)
+            .with_resource_summary(
+                vec![input("first"), input("second")],
+                vec![
+                    output("first"),
+                    output("second"),
+                    birth("first"),
+                    birth("second"),
+                ],
+            )
+            .with_composite_resource_definitions(vec![definition("storage"), definition("control")])
+            .contract_interface()
+            .clone();
+        assert!(authority_mode_supports_resource_contract(&interface));
+        assert_eq!(authority_mode_checked_member_effects(&interface).len(), 2);
+        for index in 0..2 {
+            let mut missing = interface.clone();
+            missing.resource_requires.remove(index);
+            assert!(authority_mode_two_control_births(&missing).is_none());
+            let mut lost = interface.clone();
+            lost.resource_ensures.remove(index);
+            assert!(authority_mode_two_control_births(&lost).is_none());
+        }
+        for index in 2..4 {
+            let mut missing = interface.clone();
+            missing.resource_ensures.remove(index);
+            assert!(authority_mode_two_control_births(&missing).is_none());
+            let mut wrong = interface.clone();
+            wrong.resource_ensures[index] = birth("other");
+            assert!(authority_mode_two_control_births(&wrong).is_none());
+            let mut nonunit = interface.clone();
+            let old = &nonunit.resource_ensures[index];
+            nonunit.resource_ensures[index] = CResourceSpec::new(
+                old.term().clone(),
+                old.access(),
+                CResourceQuantity::Count(c_int32_literal(2)),
+                old.role(),
+                old.snapshot(),
+            )
+            .unwrap();
+            assert!(authority_mode_two_control_births(&nonunit).is_none());
+        }
+        let mut duplicate = interface.clone();
+        duplicate.resource_ensures[3] = birth("first");
+        assert!(authority_mode_two_control_births(&duplicate).is_none());
+        let mut changed_control = interface.clone();
+        changed_control.resource_ensures[1] = output("other");
+        assert!(authority_mode_two_control_births(&changed_control).is_none());
+        let mut extra = interface;
+        extra.resource_ensures.push(birth("third"));
+        assert!(authority_mode_two_control_births(&extra).is_none());
     }
 
     #[test]

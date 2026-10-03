@@ -452,7 +452,13 @@ caller pipeline. Its first initialization exposed an allocation projection
 bug: returned resources and untouched caller controls were inspected under
 one callee ledger. A reduced initialization fixture now checks those ownership
 boundaries independently; ordinary custody checks are unchanged. Two successive
-initializations' memory framing remains separate from that repair. Keep additional
+initializations can use ordinary `open` to establish memory framing. A separate
+bounded admission rule now composes two independent unit births and returns
+both controls with unchanged anchors and authority scopes. The reduced pair
+initializer verifies; independent admission cases reject missing controls,
+wrong anchors, nonunit or duplicate births, and lost returned authority. The
+extra-member source regression rejects closing an invalid control. Integrating
+the original transfer pipeline remains the next slice. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.

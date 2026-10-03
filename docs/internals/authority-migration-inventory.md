@@ -18,8 +18,12 @@ is exact. The original transfer pipeline remains the next integration slice. The
 reduced `authority_two_control_init_call.md` checks initialization with an
 independent caller-held control. Allocation reconciliation projects each
 control using its actual owner's ledger, preserving caller authority and
-population counts. Two successive calls' memory framing is a separate proof
-boundary to check before integrating the full pipeline.
+population counts. `authority_two_control_birth_helpers.md` now checks two initializer calls
+returning two controls and two independent unit slots. Each control preserves
+its anchor and authority scopes; ordinary `open` supplies the memory-framing
+facts for the intervening call. An extra-member regression rejects restoring
+an invalid control invariant. The original transfer pipeline remains a
+separate integration checkpoint.
 
 ## Discovery boundary
 
