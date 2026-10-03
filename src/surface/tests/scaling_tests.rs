@@ -1964,6 +1964,126 @@ fn ranked_loop_bundle_scales_near_linearly_with_unrelated_inequalities() {
     assert_near_linear_scaling("ranked loop bundle with unrelated inequalities", &samples);
 }
 
+/// Loops ranked by a function of a binder's model, one back edge per loop.
+/// Each back edge owes the measure's two members over the head and rebound
+/// models; reading which binders a measure names and checking its members
+/// must cost the same per loop however many other model-ranked loops the
+/// project holds.
+fn model_ranked_loops(loop_count: usize) -> (String, String) {
+    let mut c_source = String::new();
+    let mut click_source = String::from(
+        "verifying \"model_ranked.c\";\n\
+         \n\
+         spec enum Chain { Nil, Link(Chain) }\n\
+         \n\
+         function chain_len(m: Chain) -> Integer\n\
+         \x20   decreases m\n\
+         {\n\
+         \x20   match m {\n\
+         \x20       Chain::Nil => 0,\n\
+         \x20       Chain::Link(rest) => chain_len(rest) + 1,\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         theorem chain_len_is_nonnegative(m: Chain) {\n\
+         \x20   ensures 0 <= chain_len(m) by {\n\
+         \x20       induct(m) as ih {\n\
+         \x20           Chain::Nil => {\n\
+         \x20               unfold(chain_len(Chain::Nil));\n\
+         \x20               normalize();\n\
+         \x20           }\n\
+         \x20           Chain::Link(rest) => {\n\
+         \x20               apply(ih(rest));\n\
+         \x20               unfold(chain_len(Chain::Link(rest)));\n\
+         \x20               arithmetic() using { 0 <= chain_len(rest); }\n\
+         \x20           }\n\
+         \x20       }\n\
+         \x20   }\n\
+         }\n\
+         \n\
+         resource chain(k: int32) {\n\
+         \x20   field model: Chain;\n\
+         \x20   match model {\n\
+         \x20       Chain::Nil => { fact k == 0; },\n\
+         \x20       Chain::Link(rest_model) => {\n\
+         \x20           owns rest: chain(k - 1);\n\
+         \x20           fact k > 0;\n\
+         \x20           fact k - 1 >= 0;\n\
+         \x20           fact rest.model == rest_model;\n\
+         \x20       },\n\
+         \x20   }\n\
+         }\n",
+    );
+    for index in 0..loop_count {
+        c_source.push_str(&format!(
+            "void countdown{index}(int32 n) {{\n    while (n > 0) {{\n        n = n - 1;\n    }}\n}}\n\n"
+        ));
+        click_source.push_str(&format!(
+            "\n\
+             void countdown{index}(int32 n) {{\n\
+             \x20   requires n >= 0;\n\
+             \x20   consumes c: chain(n);\n\
+             \x20   ensures 1 == 1;\n\
+             }} by {{\n\
+             \x20   loop {{\n\
+             \x20       owns c: chain(n);\n\
+             \x20       decreases chain_len(c.model);\n\
+             \x20       invariant n >= 0;\n\
+             \x20       initialize by simp;\n\
+             \x20       preserve by {{\n\
+             \x20           match c.model {{\n\
+             \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
+             \x20               Chain::Link(rest_model) => {{\n\
+             \x20                   have chain_len(c.model) == chain_len(rest_model) + 1 by {{\n\
+             \x20                       rewrite(c.model == Chain::Link(rest_model));\n\
+             \x20                       unfold(chain_len(Chain::Link(rest_model)));\n\
+             \x20                       normalize();\n\
+             \x20                   }}\n\
+             \x20                   apply(chain_len_is_nonnegative(rest_model));\n\
+             \x20                   have chain_len(rest_model) < chain_len(c.model) by {{\n\
+             \x20                       arithmetic() using {{\n\
+             \x20                           chain_len(c.model) == chain_len(rest_model) + 1;\n\
+             \x20                       }}\n\
+             \x20                   }}\n\
+             \x20                   let {{ rest: r }} = unfold(c);\n\
+             \x20                   step();\n\
+             \x20                   close_invariants();\n\
+             \x20               }},\n\
+             \x20           }}\n\
+             \x20       }}\n\
+             \x20   }}\n\
+             \x20   have n == 0 by {{ simp(); }}\n\
+             \x20   unfold(c);\n\
+             \x20   step();\n\
+             \x20   simp();\n\
+             }}\n"
+        ));
+    }
+    (c_source, click_source)
+}
+
+#[test]
+fn model_ranked_loops_scale_near_linearly_with_their_back_edges() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = model_ranked_loops(size);
+            let sources = [("model_ranked.c", c_source.as_str())];
+            let (verified, sample) =
+                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} model-ranked loop scaling fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("model-ranked loops by back edge count", &samples);
+}
+
 /// The same ranked loop closed by the smart `close_invariants()` planner.
 /// The planner's candidate premises are the loop head's clauses and the
 /// contract's own requirements, so growing the function's unrelated

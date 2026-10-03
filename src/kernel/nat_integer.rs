@@ -37,6 +37,12 @@ fn observed_nat(term: &IntegerTerm) -> Option<&AlgebraicTerm> {
     .then_some(value)
 }
 
+/// Whether `term` is the Integer image `to_integer(n)` of a structural Nat,
+/// which the kernel's `nat_integer_nonnegative` law makes nonnegative.
+pub(crate) fn is_nat_integer_image(term: &IntegerTerm) -> bool {
+    observed_nat(term).is_some()
+}
+
 fn converted_integer(term: &AlgebraicTerm) -> Option<&IntegerTerm> {
     let AlgebraicTermNode::PureFunctionApplication { name, arguments } = &term.node else {
         return None;
