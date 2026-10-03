@@ -356,11 +356,20 @@ named-member expansion-audit sites passed.
 helpers with explicit authority still needs checked lifecycle effects. Calls
 cannot silently remove or add a tracked member without updating the ledger;
 unsupported transitions are rejected. Symbolic quantities of heterogeneous
-instances, algebraic/list field descriptions, and general sums over fields are
-not implemented. Local lifecycle operations and preserving helpers are supported.
+instances and general sums over fields are not implemented. List-valued field
+descriptions are supported by the Milestone 3 slice. Local lifecycle operations and preserving helpers are supported.
 These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
+
+**List-valued named fields:** Protected resource types and named member lowering
+now share checked algebraic field schemas. A private-memory preserving helper
+proof retains two distinct List values while authority is closed, and observes
+counts after reopening it. Negatives reject anonymous field-bearing quantities,
+missing count authority, and incorrect model types. The original field-count
+contract refusals remain legacy controls: named member plus authority body
+imports still fail before execution. This slice does not add named helper
+lifecycle effects or sums over model fields.
 
 **Count-only observation slice:** `resource_count_observe_witness.md` now uses
 explicit authority with both original C functions and lower-bound claims

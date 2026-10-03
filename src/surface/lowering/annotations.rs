@@ -160,6 +160,37 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
 #[cfg(test)]
 mod tests;
 
+pub(in crate::surface) fn resolve_resource_field_schema(
+    definition: &ResourceDefinition,
+    environment: &ClickFunctionEnvironment,
+) -> Result<crate::kernel::ResourceFieldSchema, ClickError> {
+    let fields = definition
+        .fields()
+        .iter()
+        .map(|field| {
+            let ty = match field.click_type() {
+                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::Algebraic(application) => crate::kernel::ResourceFieldType::Algebraic(
+                    algebraic_kernel_type(environment, application).map_err(ClickError::new)?,
+                ),
+                ClickType::Parameter(name) => {
+                    return Err(ClickError::new(format!(
+                        "unresolved resource field type `{name}`"
+                    )));
+                }
+                ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
+            };
+            Ok((field.name().to_string(), ty))
+        })
+        .collect::<Result<Vec<_>, ClickError>>()?;
+    crate::kernel::ResourceFieldSchema::new(fields).ok_or_else(|| {
+        ClickError::new(format!(
+            "invalid field schema for resource `{}`",
+            definition.name()
+        ))
+    })
+}
+
 pub(in crate::surface) fn check_resource_field_schemas(
     file: &mut ClickFile,
 ) -> Result<(), ClickError> {
@@ -178,36 +209,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
         if definition.is_countable() {
             continue;
         }
-        let fields = definition
-            .fields()
-            .iter()
-            .map(|field| {
-                let ty = match field.click_type() {
-                    ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
-                    ClickType::Algebraic(application) => {
-                        crate::kernel::ResourceFieldType::Algebraic(
-                            algebraic_kernel_type(&environment, application)
-                                .map_err(ClickError::new)?,
-                        )
-                    }
-                    ClickType::Parameter(name) => {
-                        return Err(ClickError::new(format!(
-                            "unresolved resource field type `{name}`"
-                        )));
-                    }
-                    ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
-                };
-                Ok((field.name().to_string(), ty))
-            })
-            .collect::<Result<Vec<_>, ClickError>>()?;
-        definition.field_schema = Some(
-            crate::kernel::ResourceFieldSchema::new(fields).ok_or_else(|| {
-                ClickError::new(format!(
-                    "invalid field schema for resource `{}`",
-                    definition.name()
-                ))
-            })?,
-        );
+        definition.field_schema = Some(resolve_resource_field_schema(definition, &environment)?);
     }
     let schemas = file
         .resource_definitions
