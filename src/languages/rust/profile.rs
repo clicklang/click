@@ -41,11 +41,11 @@ mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
     #[test]
-    fn charon_profile_preserves_locks_and_matches_dependency_pin() {
+    fn charon_profile_pins_semantic_identity_and_matches_dependency_pin() {
         let p = get();
         assert_eq!(
             format!("{:x}", Sha256::digest(p.semantic_identity().as_bytes())),
-            "c2c1b32c167f2768860d5b62d9e7f14c6edb31c639d3841937787a7227bc5645"
+            "864467d45ff4599d4aa9e42072d505995c606c28558e4845f0616a6123ba47c5"
         );
         assert!(
             include_str!("../../../Cargo.toml")

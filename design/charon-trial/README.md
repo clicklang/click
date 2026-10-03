@@ -546,9 +546,9 @@ must retain their diagnostic; any changed outcome fails the gate so the
 inventory is revised with the implementation. This is fixture-level parity,
 not a percentage of the Rust language.
 
-Current result: **8 of 16 legacy fixtures verify unchanged**, six reject during
-normalization, and two import but need stable proof observations. Array length
-calls block `rust-arrays` and `rust-array-values`; loop headers block
+Current result: **9 of 16 legacy fixtures verify unchanged**, five reject during
+normalization, and two import but need stable proof observations. By-value array
+signatures block `rust-array-values`; loop headers block
 `rust-byte-sum` and `rust-loops`; owned iterator resolution blocks
 `rust-iterators`; tuple/slice return types block `rust-split-at`. The remaining
 proof gaps are legacy iterator ghost names in `rust-chunks-exact` and
@@ -563,7 +563,18 @@ the ordinary partitions.
 
 [charon-profile.json](../../src/languages/rust/charon-profile.json) centralizes
 compiler/extractor pins, extraction flags, and named semantic versions. It is
-compiled into the adapter and read by the compiler build script. The existing
-identity byte sequence, including its historical combined array entry, remains
-stable; existing locks need no refresh. Future interpretation changes must
-version their named entry and deliberately refresh affected locks.
+compiled into the adapter and read by the compiler build script. The historical identity byte ordering, including its combined array entry, is
+preserved. `shared-scalar-slice-length-v1` extends interpretation and deliberately
+changes the semantic identity; checked-in locks have been updated. External
+Charon locks require `click import lock` again. Future interpretation changes
+must version their named entry and deliberately refresh affected locks.
+
+## Shared scalar array lengths
+
+The [array-length checkpoint](array-lengths/README.md) imports `rust-arrays`
+with its Rust source and Click sidecar unchanged. Rust coerces the shared array
+reference to a slice before its compiler-resolved `SliceLen` call. The adapter
+now accepts matching `i32` and `u32` scalar receivers alongside existing byte
+slices, using paired slice metadata without reading or materializing elements.
+This closes `rust-arrays` parity; `rust-array-values` now reaches its separate
+by-value array signature gap. Compiler pins and extraction flags are unchanged.
