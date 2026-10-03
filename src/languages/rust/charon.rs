@@ -6,6 +6,8 @@ mod assignment_operators;
 mod chunks;
 mod protocol;
 mod shared_arrays;
+#[cfg(test)]
+mod slice_into_iteration_tests;
 
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
@@ -449,15 +451,20 @@ impl BodyAdapter<'_, '_> {
                 name: self.local(*id)?,
             },
             a::PlaceKind::Projection(base, a::ProjectionElem::PtrMetadata)
-                if matches!(self.adapter.ty(&base.ty)?, Type::ByteSlice { .. })
-                    && self.adapter.ty(&p.ty)? == Type::Usize =>
+                if matches!(
+                    self.adapter.ty(&base.ty)?,
+                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                ) && self.adapter.ty(&p.ty)? == Type::Usize =>
             {
                 E::SliceLength {
                     slice: Box::new(self.place(base)?),
                 }
             }
             a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
-                if matches!(self.adapter.ty(&base.ty)?, Type::ByteSlice { .. }) =>
+                if matches!(
+                    self.adapter.ty(&base.ty)?,
+                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                ) =>
             {
                 self.place(base)?
             }
@@ -539,9 +546,14 @@ impl BodyAdapter<'_, '_> {
     fn rvalue(&self, v: &a::Rvalue, ty: &a::Ty) -> Result<E, String> {
         Ok(match v {
             a::Rvalue::Use(op, _) => self.operand(op)?,
-            a::Rvalue::Len(place, _, _) if byte_slice(&place.ty) => E::SliceLength {
-                slice: Box::new(self.place(place)?),
-            },
+            a::Rvalue::Len(place, _, _)
+                if matches!(place.ty.kind(), a::TyKind::Slice(..))
+                    && self.adapter.ty(ty)? == Type::Usize =>
+            {
+                E::SliceLength {
+                    slice: Box::new(self.place(place)?),
+                }
+            }
             a::Rvalue::Repeat(value, _, length, _) => E::Repeat {
                 value: Box::new(self.operand(value)?),
                 length: length
@@ -559,18 +571,33 @@ impl BodyAdapter<'_, '_> {
                 place,
                 kind,
                 ptr_metadata,
-            } if byte_slice(&place.ty) => {
+            } if matches!(place.ty.kind(), a::TyKind::Slice(..)) => {
                 let a::PlaceKind::Projection(base, a::ProjectionElem::Deref) = &place.kind else {
                     return Err(unsupported("slice reborrow place"));
                 };
                 let source = self.adapter.ty(&base.ty)?;
                 let destination = self.adapter.ty(ty)?;
                 let mutable = matches!(kind, a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut);
+                let compatible = match (&source, &destination) {
+                    (
+                        Type::ByteSlice { mutable: source },
+                        Type::ByteSlice {
+                            mutable: destination,
+                        },
+                    ) => *destination == mutable && (!mutable || *source),
+                    (
+                        Type::SharedScalarSlice { element: source },
+                        Type::SharedScalarSlice {
+                            element: destination,
+                        },
+                    ) => !mutable && source == destination,
+                    _ => false,
+                };
                 if !matches!(
                     kind,
                     a::BorrowKind::Shared | a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut
-                ) || destination != (Type::ByteSlice { mutable })
-                    || !matches!(source, Type::ByteSlice { mutable: source } if !mutable || source)
+                ) || !compatible
+                    || !matches!(base.ty.kind(), a::TyKind::Ref(_, pointee, _) if pointee == &place.ty)
                     || !matches!(ptr_metadata, a::Operand::Copy(p) | a::Operand::Move(p)
                         if matches!(&p.kind, a::PlaceKind::Projection(metadata_base, a::ProjectionElem::PtrMetadata) if metadata_base == base)
                             && self.adapter.ty(&p.ty)? == Type::Usize)

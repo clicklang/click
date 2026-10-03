@@ -47,8 +47,8 @@
   },
   {
     "config": "examples/rust-iterators/sum.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "Charon trial does not support shared iterator implementation path"
+    "outcome": "proof-gap",
+    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`"
   },
   {
     "config": "examples/rust-loops/loops.click.import.json",

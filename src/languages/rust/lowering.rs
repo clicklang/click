@@ -164,9 +164,19 @@ fn lower_function(
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
     let mut slices = BTreeMap::new();
+    let mut shared_scalar_slices = BTreeMap::new();
     let mut arrays = BTreeMap::new();
     let mut references = BTreeMap::new();
+    let parameter_names: BTreeSet<_> = f
+        .parameters
+        .iter()
+        .map(|p| {
+            crate::instrumentation::record_deterministic_work(1);
+            p.name.as_str()
+        })
+        .collect();
     for p in &f.parameters {
+        crate::instrumentation::record_deterministic_work(1);
         if matches!(p.value_type, Type::Array { .. }) {
             return Err("by-value Rust arrays as parameters are not supported".into());
         }
@@ -175,9 +185,7 @@ fn lower_function(
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
             let length = format!("{}_len", p.name);
-            if f.parameters.iter().any(|other| other.name == length)
-                || !locals.insert(length.clone())
-            {
+            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
                 return Err(format!(
                     "Rust slice length parameter `{length}` collides with a parameter"
                 ));
@@ -190,6 +198,32 @@ fn lower_function(
             parameters.push(C0Parameter::new(C0Type::UInt64, length.clone(), None));
             kernel_parameters
                 .push(c_parameter(&p.name, CType::UInt8Pointer).with_pointee_constant(!mutable));
+            kernel_parameters.push(c_parameter(length, CType::UInt64));
+            continue;
+        }
+        if let Type::SharedScalarSlice { element } = &p.value_type {
+            if !matches!(element.as_ref(), Type::I32 | Type::U32) {
+                return Err("shared scalar slice parameters require i32 or u32".into());
+            }
+            let length = format!("{}_len", p.name);
+            if parameter_names.contains(length.as_str()) || !locals.insert(length.clone()) {
+                return Err(format!(
+                    "Rust slice length parameter `{length}` collides with a parameter"
+                ));
+            }
+            let pointer = scalar_type(&Type::Reference {
+                mutable: false,
+                pointee: element.clone(),
+            })?;
+            shared_scalar_slices.insert(
+                p.name.clone(),
+                (length.clone(), scalar_type(element)?.to_kernel_type()),
+            );
+            parameters
+                .push(C0Parameter::new(pointer, p.name.clone(), None).with_pointee_constant(true));
+            parameters.push(C0Parameter::new(C0Type::UInt64, length.clone(), None));
+            kernel_parameters
+                .push(c_parameter(&p.name, pointer.to_kernel_type()).with_pointee_constant(true));
             kernel_parameters.push(c_parameter(length, CType::UInt64));
             continue;
         }
@@ -227,7 +261,7 @@ fn lower_function(
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),
-        shared_scalar_slices: BTreeMap::new(),
+        shared_scalar_slices,
         chunk_iterators: BTreeSet::new(),
         mir_chunk_iterators: BTreeSet::new(),
         chunk_options: BTreeSet::new(),
@@ -855,6 +889,23 @@ impl Context<'_> {
                     &Type::Reference {
                         mutable,
                         pointee: Box::new(Type::U8),
+                    },
+                )?;
+                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                checks = c_seq(checks, c_seq(capture_pointer, capture_length));
+                values.extend([c_variable(pointer_name), c_variable(length_name)]);
+                continue;
+            }
+            if let Type::SharedScalarSlice { element } = &value_type {
+                let (pointer, length, actual) = self.indexed_parts(argument)?;
+                if actual != scalar_type(element)?.to_kernel_type() {
+                    return Err("Rust scalar slice call element mismatch".into());
+                }
+                let (capture_pointer, pointer_name) = self.capture_operand(
+                    pointer,
+                    &Type::Reference {
+                        mutable: false,
+                        pointee: element.clone(),
                     },
                 )?;
                 let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
