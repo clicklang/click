@@ -293,10 +293,13 @@ operand failed splits on that disjunction with `cases`:
 <!-- verified-example: mdtests/loop_conjunctive_guard_exit_join.md -->
 ```click
 have p[0] == 0 by {
-    cases(a == 0 or p[0] == 0) {
-        contradiction(a == 0);
-    } {
-        assumption();
+    cases {
+        a == 0 => {
+            contradiction(a == 0);
+        }
+        p[0] == 0 => {
+            assumption();
+        }
     }
 }
 ```
@@ -321,10 +324,13 @@ that disjunction reads the same way on all of them:
 <!-- verified-example: mdtests/loop_disjunctive_guard_entry_join.md -->
 ```click
 have 0 < a + b by {
-    cases(a > 0 or b > 0) {
-        arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }
-    } {
-        arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; }
+    cases {
+        a > 0 => {
+            arithmetic() using { a > 0; b >= 0; a <= 1; b <= 1; }
+        }
+        b > 0 => {
+            arithmetic() using { b > 0; a >= 0; a <= 1; b <= 1; }
+        }
     }
 }
 ```
@@ -490,10 +496,13 @@ is read off the exported disjunction with `cases`:
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->
 ```click
 have c.color == Color::Red or c.color == Color::Black by {
-    cases((flag == 0 and c.color == Color::Red and p->shade == 0) or (c.color == Color::Black and p->shade == 1)) {
-        simp();
-    } {
-        simp();
+    cases {
+        (flag == 0 and c.color == Color::Red and p->shade == 0) => {
+            simp();
+        }
+        (c.color == Color::Black and p->shade == 1) => {
+            simp();
+        }
     }
 }
 ```
@@ -985,14 +994,10 @@ chooses which link to write — and refuses when they cannot, because an arm
 <!-- verified-example: mdtests/loop_preserve_branch_tactic.md -->
 ```click
 preserve by {
-    branch {
-        ensuring {
-            fact t >= 0;
-            fact t <= 100;
-        }
-        then { step(); }
-        else { step(); }
-    }
+    branch ensuring {
+        fact t >= 0;
+        fact t <= 100;
+    } then { step(); } else { step(); }
     step();
     close_invariants();
 }

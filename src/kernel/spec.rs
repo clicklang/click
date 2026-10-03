@@ -1,7 +1,5 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 
 type EvaluatedSpecResource = (CResource, Vec<ExecutionPureFact>, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
@@ -2253,6 +2251,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
             Bitvector32Term::Constant(_)
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
         );
     };
     if !crate::kernel::is_load_variable(load) {
@@ -2272,7 +2271,8 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
             Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_) => false,
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_) => false,
             _ => true,
         })
     {
@@ -2311,6 +2311,8 @@ fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => integer_carrier_in_bitvector(term, variable),
     }
@@ -7238,6 +7240,8 @@ pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<Bitvec
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(term.clone()),
         CValue::Void | CValue::Pointer(_) => None,
@@ -7248,78 +7252,15 @@ fn integer_constant_to_machine(
     value: &IntegerTerm,
     destination: MachineIntegerType,
 ) -> Option<CValue> {
-    let value = value.as_const()?;
-    match destination {
-        MachineIntegerType::Int8 => {
-            let value = i8::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int8(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::Int16 => {
-            let value = i16::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int16(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::Int32 => {
-            let value = i32::try_from(value.to_i64()?).ok()?;
-            Some(CValue::Int32(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt8 => {
-            let value = u8::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt8(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt16 => {
-            let value = u16::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt16(Bitvector32Term::Constant(value as u32)))
-        }
-        MachineIntegerType::UInt32 => {
-            let value = u32::try_from(value.to_u64()?).ok()?;
-            Some(CValue::UInt32(Bitvector32Term::Constant(value)))
-        }
-        MachineIntegerType::Int64 => Some(CValue::Int64(Bitvector32Term::Int64Constant(
-            value.to_i64()?,
-        ))),
-        MachineIntegerType::UInt64 => Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
-            value.to_u64()?,
-        ))),
-    }
+    let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
+    destination.constant_value(value)
 }
 
 pub(super) fn integer_machine_bounds(
     destination: MachineIntegerType,
 ) -> (IntegerTerm, IntegerTerm) {
-    match destination {
-        MachineIntegerType::Int8 => (
-            IntegerTerm::constant_i64(i8::MIN as i64),
-            IntegerTerm::constant_i64(i8::MAX as i64),
-        ),
-        MachineIntegerType::Int16 => (
-            IntegerTerm::constant_i64(i16::MIN as i64),
-            IntegerTerm::constant_i64(i16::MAX as i64),
-        ),
-        MachineIntegerType::Int32 => (
-            IntegerTerm::constant_i64(i32::MIN as i64),
-            IntegerTerm::constant_i64(i32::MAX as i64),
-        ),
-        MachineIntegerType::UInt8 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant_i64(u8::MAX as i64),
-        ),
-        MachineIntegerType::UInt16 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant_i64(u16::MAX as i64),
-        ),
-        MachineIntegerType::UInt32 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant(BigInt::from(u32::MAX)),
-        ),
-        MachineIntegerType::Int64 => (
-            IntegerTerm::constant(BigInt::from(i64::MIN)),
-            IntegerTerm::constant(BigInt::from(i64::MAX)),
-        ),
-        MachineIntegerType::UInt64 => (
-            IntegerTerm::constant_i64(0),
-            IntegerTerm::constant(BigInt::from(u64::MAX)),
-        ),
-    }
+    let (lower, upper) = destination.format().bounds();
+    (IntegerTerm::constant(lower), IntegerTerm::constant(upper))
 }
 
 fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<CValue> {
@@ -7332,6 +7273,8 @@ fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<C
         CType::UInt32 => CValue::UInt32(term),
         CType::Int64 => CValue::Int64(term),
         CType::UInt64 => CValue::UInt64(term),
+        CType::Int128 => CValue::Int128(term),
+        CType::UInt128 => CValue::UInt128(term),
         CType::Float32 => CValue::Float32(term),
         CType::Float64 => CValue::Float64(term),
         _ => return None,
@@ -8264,7 +8207,9 @@ fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::UInt8(value)
         | CValue::UInt16(value)
         | CValue::UInt32(value) => Some(value.clone()),
-        CValue::Void
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
         | CValue::Int64(_)
         | CValue::UInt64(_)
         | CValue::Pointer(_)
@@ -8283,7 +8228,9 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::UInt8(value)
         | CValue::UInt16(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
         CValue::UInt32(value) => Some(Bitvector32Term::int64_from_uint32(value.clone())),
-        CValue::Void
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
         | CValue::UInt64(_)
         | CValue::Pointer(_)
         | CValue::Float32(_)
@@ -8302,7 +8249,12 @@ fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
         | CValue::UInt8(value)
         | CValue::UInt16(value) => Some(Bitvector32Term::uint64_from_int32(value.clone())),
         CValue::UInt32(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -9869,5 +9821,49 @@ mod integer_capture_condition_tests {
         };
         assert_eq!(subterm, SpecCaptureSubterm::FoldInitializer);
         assert_eq!(proposition, subtraction_is_defined());
+    }
+}
+
+#[cfg(test)]
+mod wide_scalar_conversion_tests {
+    use super::*;
+    #[test]
+    fn wide_scalar_integer_conversion_checks_bounds_and_keeps_symbolic_obligations() {
+        for destination in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+            let convert = |integer: IntegerTerm| {
+                evaluate_spec_expression_paths_with_loop_entry_in(
+                    &CState::new(),
+                    &SpecExpression::IntegerToMachine {
+                        value: Box::new(SpecIntegerExpression::Term(integer)),
+                        destination,
+                    },
+                    None,
+                    &PureFactContext::new(),
+                    &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
+                )
+            };
+            let (min, max) = destination.format().bounds();
+            for integer in [min.clone(), max.clone()] {
+                let paths = convert(IntegerTerm::constant(integer.clone())).unwrap();
+                assert_eq!(paths.len(), 1);
+                let value = destination.constant_from_value(&paths[0].value).unwrap();
+                assert_eq!(value.to_integer(), integer);
+                assert!(paths[0].obligations.is_empty());
+            }
+            assert!(convert(IntegerTerm::constant(min - 1)).is_err());
+            assert!(convert(IntegerTerm::constant(max + 1)).is_err());
+            let paths = convert(IntegerTerm::Variable(Variable(148_005))).unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].value.c_type(), destination.c_type());
+            assert_eq!(paths[0].obligations.len(), 2);
+            assert!(paths[0].obligations.iter().any(|obligation| matches!(
+                obligation.proposition(),
+                Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(_, _), true)
+            )));
+            assert!(paths[0].obligations.iter().any(|obligation| matches!(
+                obligation.proposition(),
+                Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true)
+            )));
+        }
     }
 }

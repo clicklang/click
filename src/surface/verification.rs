@@ -416,8 +416,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
                 collect_applied_theorems(&both.right_tactics, names);
             }
             ProofTactic::Cases(proof_cases) => {
-                collect_applied_theorems(&proof_cases.left_tactics, names);
-                collect_applied_theorems(&proof_cases.right_tactics, names);
+                for arm in proof_cases.arms() {
+                    collect_applied_theorems(arm.tactics(), names);
+                }
             }
             ProofTactic::StructuralInduct {
                 hypothesis, arms, ..
@@ -996,8 +997,10 @@ fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
         ProofTactic::Open(open) => first_executing_tactic(&open.tactics),
         ProofTactic::If(proof_if) => first_executing_tactic(&proof_if.then_tactics)
             .or_else(|| first_executing_tactic(&proof_if.else_tactics)),
-        ProofTactic::Cases(cases) => first_executing_tactic(&cases.left_tactics)
-            .or_else(|| first_executing_tactic(&cases.right_tactics)),
+        ProofTactic::Cases(cases) => cases
+            .arms()
+            .iter()
+            .find_map(|arm| first_executing_tactic(arm.tactics())),
         ProofTactic::Both(both) => first_executing_tactic(&both.left_tactics)
             .or_else(|| first_executing_tactic(&both.right_tactics)),
         ProofTactic::Match(proof_match) => proof_match
@@ -8255,8 +8258,9 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
                 validate_loop_initialization_tactics(&proof_if.else_tactics)?;
             }
             ProofTactic::Cases(proof_cases) => {
-                validate_loop_initialization_tactics(&proof_cases.left_tactics)?;
-                validate_loop_initialization_tactics(&proof_cases.right_tactics)?;
+                for arm in proof_cases.arms() {
+                    validate_loop_initialization_tactics(arm.tactics())?;
+                }
             }
             tactic => {
                 return Err(ClickError::new(format!(
@@ -8420,7 +8424,7 @@ mod modeled_pthread_binding_tests {
     #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { then { step(); simp(); } else {} } step(); step(); simp(); }\n";
+        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch then { step(); simp(); } else {} step(); step(); simp(); }\n";
         verify_c0_sources(click, &[("fork_join.c", c)])
             .expect("a saved status should choose the checked create outcome");
         let expanded =

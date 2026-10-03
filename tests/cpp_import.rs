@@ -1084,12 +1084,12 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     )
     .expect("expand the handler proof");
     let returned_proof = expanded
-        .split_once("returned {")
-        .and_then(|(_, rest)| rest.split_once("threw {"))
+        .split_once("returned => {")
+        .and_then(|(_, rest)| rest.split_once("threw => {"))
         .map(|(returned, _)| returned)
         .expect("the expansion must keep a returned certificate");
     let threw_proof = expanded
-        .split_once("threw {")
+        .split_once("threw => {")
         .map(|(_, threw)| threw)
         .expect("the expansion must keep a threw certificate");
     assert!(
@@ -1196,17 +1196,14 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
             ensures result == old(value[0]);
             ensures value[0] == old(value[0]);
         } by {
-            branch {
-                then {
-                    step();
-                    step();
-                    outcomes {
-                        returned { step(); step(); }
-                        threw { step(); execute(); simp(); }
-                    }
+            branch then {
+                step();
+                step();
+                outcomes {
+                    returned => { step(); step(); }
+                    threw => { step(); execute(); simp(); }
                 }
-                else { }
-            }
+            } else { }
             step();
             simp();
         }
@@ -1576,8 +1573,8 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         (
             "unconstructed_second_guard",
             sidecar_source.replacen(
-                "        threw {\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
-                "        threw {\n            step();\n            step();\n            have second_cell[0] == 9 by { simp(); }",
+                "        threw => {\n            step();\n            have second_cell[0] == old(second_cell[0]) by { simp(); }",
+                "        threw => {\n            step();\n            step();\n            have second_cell[0] == 9 by { simp(); }",
                 1,
             ),
             "the exceptional path cannot destroy the skipped second guard",
@@ -4061,11 +4058,11 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
         .rsplit_once("} by {")
         .unwrap();
     let proof = r#"step(); step();
-    branch { then { execute(); simp(); } else { } }
+    branch then { execute(); simp(); } else { }
     step(); step();
     have value[0] == old(value[0]) by { simp(); }
     step(); step();
-    branch { then { execute(); simp(); } else { } }
+    branch then { execute(); simp(); } else { }
     step(); step();
     have value[0] == old(value[0]) by { simp(); }
     step(); step(); step(); step();
@@ -6505,6 +6502,7 @@ int64 choose(bool first, int32 value) { requires value == 7; ensures result == 7
 
 #[test]
 fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
+    let mut previous = None;
     for size in [2usize, 4, 8, 16] {
         let locals = (0..size)
             .map(|index| format!("int __click_cpp_nested_value_{index} = 0;"))
@@ -6519,10 +6517,20 @@ fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
         let (lowered, work) =
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
+        // The shared constant layer charges decimal parsing at both artifact
+        // validation and lowering. Each one-character initializer adds six
+        // units; name probing must still grow linearly across all sizes.
         assert!(
-            work >= 2 * size && work <= 5 * size + 32,
+            work >= 2 * size && work <= 11 * size + 32,
             "{size} calls and collisions: {work} work"
         );
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 2,
+                "doubling calls must not exceed twice the work"
+            );
+        }
+        previous = Some(work);
     }
 }
 
@@ -6651,6 +6659,7 @@ int32 relay(bool fail, int32 left) throws int32 { ensures result == 5 by { execu
 
 #[test]
 fn nested_argument_lowering_scales_with_arity() {
+    let mut previous = None;
     for size in [2usize, 8, 32, 128] {
         let parameters = (0..size)
             .map(|i| format!("int a{i}"))
@@ -6669,10 +6678,19 @@ fn nested_argument_lowering_scales_with_arity() {
         let (lowered, work) =
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
+        // One-character literals now pay six units for shared checked parsing
+        // at the two import boundaries. Retain the multi-size growth check.
         assert!(
-            work >= size && work <= 3 * size + 32,
+            work >= size && work <= 9 * size + 32,
             "{size} arguments: {work} work"
         );
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 4,
+                "quadrupling arity must not exceed four times the work"
+            );
+        }
+        previous = Some(work);
     }
 }
 

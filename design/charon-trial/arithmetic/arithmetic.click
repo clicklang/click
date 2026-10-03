@@ -87,4 +87,4 @@ uint32 conditional_divide(uint32 value, uint32 divisor, bool skip) {
     requires skip != 0 or divisor != 0u32;
     ensures skip != 0 implies result == 0u32;
     ensures skip == 0 implies result == value / divisor;
-} by { if skip != 0 { execute(); simp(); } else { have divisor != 0u32 by { cases(skip != 0 or divisor != 0u32) { contradiction(skip != 0); } { assumption(); } } execute(); simp(); } }
+} by { if skip != 0 { execute(); simp(); } else { have divisor != 0u32 by { cases { skip != 0 => { contradiction(skip != 0); } divisor != 0u32 => { assumption(); } } } execute(); simp(); } }

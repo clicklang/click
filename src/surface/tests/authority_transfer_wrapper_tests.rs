@@ -97,10 +97,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(held(p));
@@ -128,10 +125,7 @@ fn authority_member_wrapper_requires_population_cleanup_before_free() {
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));
@@ -162,10 +156,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(member(p)));
             fold(member(p));
             fold(authority(held(p)));

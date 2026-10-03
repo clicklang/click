@@ -1017,10 +1017,10 @@ fn expand_declared_resource_tactic_with_expressions(
                 .collect::<Result<_, _>>()?;
             Ok(ProofTactic::ApplyTheorem(application))
         }
-        ProofTactic::Witness(mut witness) => {
-            witness.value =
-                expand_declared_resource_expression(witness.value, resource_definitions)?;
-            Ok(ProofTactic::Witness(witness))
+        ProofTactic::Witness(witness) => {
+            Ok(ProofTactic::Witness(witness.try_map_values(|value| {
+                expand_declared_resource_expression(value.clone(), resource_definitions)
+            })?))
         }
         ProofTactic::ApplyInduction {
             hypothesis,
@@ -1235,22 +1235,18 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
-        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-            disjunction: expand_declared_resource_proposition(
-                proof_cases.disjunction,
-                resource_definitions,
-            )?,
-            left_tactics: proof_cases
-                .left_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-            right_tactics: proof_cases
-                .right_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
+        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(proof_cases.try_map(
+            |assumption| {
+                expand_declared_resource_proposition(assumption.clone(), resource_definitions)
+            },
+            |tactics| {
+                tactics
+                    .iter()
+                    .cloned()
+                    .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                    .collect::<Result<Vec<_>, _>>()
+            },
+        )?)),
         ProofTactic::StructuralInduct {
             parameter,
             hypothesis,

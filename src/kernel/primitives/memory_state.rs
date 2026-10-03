@@ -209,6 +209,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
+                    Bitvector32Term::MachineIntegerConstant(value) => {
+                        let _ = write!(identity, "twc{:?}:{:032x};", value.format(), value.bits());
+                    }
+
                     Bitvector32Term::Constant(value) => {
                         let _ = write!(identity, "tc{value};");
                     }

@@ -295,6 +295,8 @@ pub enum MachineIntegerType {
     UInt32,
     Int64,
     UInt64,
+    Int128,
+    UInt128,
 }
 
 impl MachineIntegerType {
@@ -308,6 +310,8 @@ impl MachineIntegerType {
             CType::UInt32 => Self::UInt32,
             CType::Int64 => Self::Int64,
             CType::UInt64 => Self::UInt64,
+            CType::Int128 => Self::Int128,
+            CType::UInt128 => Self::UInt128,
             _ => return None,
         })
     }
@@ -322,6 +326,8 @@ impl MachineIntegerType {
             Self::UInt32 => CType::UInt32,
             Self::Int64 => CType::Int64,
             Self::UInt64 => CType::UInt64,
+            Self::Int128 => CType::Int128,
+            Self::UInt128 => CType::UInt128,
         }
     }
 }
@@ -708,45 +714,21 @@ impl IntegerTerm {
         variables.into_iter().next_back()
     }
     pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
-        let constant = match (&ty, &value) {
-            (MachineIntegerType::Int8, Bitvector32Term::Constant(v)) => {
-                i8::try_from(*v as i32).ok().map(BigInt::from)
-            }
-            (MachineIntegerType::Int16, Bitvector32Term::Constant(v)) => {
-                i16::try_from(*v as i32).ok().map(BigInt::from)
-            }
-            (MachineIntegerType::Int32, Bitvector32Term::Constant(v)) => {
-                Some(BigInt::from(*v as i32))
-            }
-            (MachineIntegerType::Int64, Bitvector32Term::Int64Constant(v)) => {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt32, Bitvector32Term::Constant(v)) => Some(BigInt::from(*v)),
-            (MachineIntegerType::UInt64, Bitvector32Term::UInt64Constant(v)) => {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt8, Bitvector32Term::Constant(v))
-                if *v <= u32::from(u8::MAX) =>
-            {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt16, Bitvector32Term::Constant(v))
-                if *v <= u32::from(u16::MAX) =>
-            {
-                Some(BigInt::from(*v))
-            }
-            _ if matches!(
-                value,
-                Bitvector32Term::Constant(_)
-                    | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_)
-            ) =>
-            {
-                return None;
-            }
-            _ => return Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value))),
-        };
-        constant.map(Self::constant)
+        if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
+            return None;
+        }
+        if matches!(
+            value,
+            Bitvector32Term::Constant(_)
+                | Bitvector32Term::Int64Constant(_)
+                | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
+        ) {
+            ty.constant_from_term(&value)
+                .map(|value| Self::constant(value.to_integer()))
+        } else {
+            Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value)))
+        }
     }
 
     fn shallow_key(&self) -> IntegerShallowKey {

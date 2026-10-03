@@ -499,6 +499,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             CValue::UInt32(term) => CValue::UInt32(rewrite_term(term)),
             CValue::Int64(term) => CValue::Int64(rewrite_term(term)),
             CValue::UInt64(term) => CValue::UInt64(rewrite_term(term)),
+            CValue::Int128(term) => CValue::Int128(rewrite_term(term)),
+            CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
             CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
             CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
             CValue::Pointer(pointer) => {
@@ -879,7 +881,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Bitvector32Term::IntegerToMachine { .. }
                 | Bitvector32Term::Constant(_)
                 | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_) => term.clone(),
+                | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
             }
         }
         fn rewrite_resource_offset(
@@ -1578,7 +1581,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_) => term.clone(),
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
         }
     }
 

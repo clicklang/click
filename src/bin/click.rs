@@ -533,7 +533,7 @@ mod tests {
             (
                 "cases_arm",
                 identity(
-                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases (x > 0 or not (x > 0)) {\n            simp();\n        } {\n            assumption();\n        }\n",
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases { x > 0 => {\n            simp();\n        } not (x > 0) => {\n            assumption();\n        } }\n",
                 ),
                 16,
             ),
@@ -627,7 +627,7 @@ mod tests {
         let sidecar = directory.join("f.click");
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        let (x: int32) satisfy {\n            x == 0\n        };\n    }\n    simp();\n}\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        obtain (x: int32) {\n            x == 0\n        };\n    }\n    simp();\n}\n",
         )
         .unwrap();
         let traced = entry([
@@ -648,11 +648,11 @@ mod tests {
         );
         assert!(!traced.contains("\ngoal:"), "{traced}");
         assert!(
-            traced.contains("tactic@5:\n  let (x: int32) satisfy {\n      x == 0\n  };"),
+            traced.contains("tactic@5:\n  obtain (x: int32) {\n      x == 0\n  };"),
             "{traced}"
         );
         assert!(!traced.contains("\nstep: "), "{traced}");
-        assert!(traced.contains("let (x: int32) satisfy {\n"), "{traced}");
+        assert!(traced.contains("obtain (x: int32) {\n"), "{traced}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -791,7 +791,7 @@ int32 child(int32 *a, int32 *visited, int32 x) {
     requires separate(memory(a[0..2]), memory(visited[0..1]));
     ensures result == 1 by { execute(); simp(); }
     ensures result != 0 implies exists (z: int32) { z == x } by {
-        execute(); intro(); witness(z = x); normalize();
+        execute(); intro(); witness { z: x }; normalize();
     }
 }
 int32 parent(int32 *a, int32 *visited, int32 cur) {

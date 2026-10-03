@@ -330,10 +330,37 @@ large constants, deterministic scaling, expansion/reverification, profiling,
 and retained audit have coverage. This is shared proof arithmetic available to
 C, Rust, and C++; it does not yet execute native `__int128`.
 
-Next add native wide scalars through the shared typed machine model: signed
-and unsigned width, storage/layout, literal range, conversions, checked
-multiplication, and definedness must retain the source's resolved machine
-semantics. Then cover wide truncating division/remainder and checked narrowing
+The shared fixed-width constant and conversion layer is delivered. Formats
+record signedness and 8–128-bit width; private checked payloads preserve the
+full signed and unsigned 128-bit ranges. Checked numeric conversion and explicit
+modulo conversion have distinct APIs, with exhaustive small-value and exact
+wide-endpoint oracle tests. Existing machine bounds, Integer observations and
+reverse conversions, rewrite normalization, and C++ literals/constant casts
+use this layer. Runtime bridges require an exact format match. General
+source-level `__int128` execution remains unsupported; the bounded kernel
+wide scalar profile below does not claim arithmetic or frontend admission.
+
+The shared runtime now has an explicit modulo cast boundary for existing
+8–64-bit integer values. C++20 and Rust select the same symbolic conversion
+policy; constant conversions use the shared checked payloads. Width,
+signedness, and operand definedness remain explicit. Narrow signed carriers
+are sign-extended, and cast construction stays local to the operand root.
+Ordinary C narrowing and checked Integer conversions retain their separate
+rules. This removes frontend mask/cast sequences before extending widths.
+
+The bounded shared wide scalar runtime is delivered: typed 128-bit literals
+and variables, scalar locals and function parameters/results, substitution,
+16-byte scalar size/alignment under the pinned profile, and exact Integer
+observations. Reverse Integer conversions retain both wide range obligations;
+truthiness observes all bits. Legacy arithmetic carriers, native arithmetic,
+wide signedness/width-changing casts, and address-based wide access are refused.
+C0 identities carry the kernel types without adding source parser admission.
+
+Next add symbolic widening and narrowing for wide values, then checked
+multiplication and its definedness rules. Wide addressable storage/loads and
+frontend source admission must retain the source's resolved machine semantics. Use the shared formats
+and conversion policies rather than inventing a C++-specific numeric carrier.
+Then cover wide truncating division/remainder and checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before

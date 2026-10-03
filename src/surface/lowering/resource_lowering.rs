@@ -103,6 +103,12 @@ pub(in crate::surface) fn initial_call_state(
             continue;
         }
         match parameter.c_type() {
+            C0Type::Int128 | C0Type::UInt128 => {
+                return Err(ClickError::new(
+                    "wide source parameters are not yet supported".to_string(),
+                ));
+            }
+
             C0Type::Void => {
                 return Err(ClickError::new(format!(
                     "parameter `{}` cannot have type void",

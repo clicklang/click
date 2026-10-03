@@ -53,7 +53,7 @@ Click already offers three relevant interfaces:
 | --- | --- |
 | `step()` | Execute a recognized create or join at the C frontier. |
 | `let r = step(callee(...), { });` | Name the scalar result of a call, including one inside a C condition. |
-| `branch { then { ... } else { ... } }` | Prove both feasible C arms and check their continuation interface. |
+| `branch then { ... } else { ... }` | Prove both feasible C arms and check their continuation interface. |
 
 Named callback contracts and `step(Contract)` currently select a contract for
 the function being called through a pointer. At `pthread_create`, the called
@@ -127,16 +127,13 @@ its proposed proof fragment is:
 
 ```click
 let rc = step(pthread_create(&first, NULL, fill_range, &first_job), { });
-branch {
-    then {
-        // The C condition is rc != 0: creation failed.
-        step(); // return 0; all four cells still belong to the parent.
-        simp();
-    }
-    else {
-        // rc == 0: first is bound to the live completion right.
-        // The parent has output[2..4], but cannot access output[0..2].
-    }
+branch then {
+    // The C condition is rc != 0: creation failed.
+    step(); // return 0; all four cells still belong to the parent.
+    simp();
+} else {
+    // rc == 0: first is bound to the live completion right.
+    // The parent has output[2..4], but cannot access output[0..2].
 }
 ```
 

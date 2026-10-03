@@ -160,7 +160,7 @@ control flow.
   into this form.
 - `have proposition by { ... }`: run a scoped fixed-state proof and add its proposition
   to the current pure facts. The nested proof accepts
-  `unfold`, `apply`, `let ... satisfy`, `witness`, `simp`, nested `have`, and proof-level
+  `unfold`, `apply`, `obtain`, `witness`, `simp`, nested `have`, and proof-level
   `if` case analysis; it cannot execute C or transform resources. Both `if`
   branches prove the local proposition, after which the surrounding proof
   continues. After execution reaches function exit, Click proves the `have`
@@ -173,11 +173,11 @@ control flow.
 - `observe(resource);`: project one view step from a held composite resource
   fact. This exposes immediate pure facts and viewed immediate contained
   resource facts without exposing owned contained resource facts.
-- `let (k: int32) satisfy { P(k) };`: open the exact available existential
+- `obtain (k: int32) { P(k) };`: open the exact available existential
   `exists (k: int32) { P(k) }`, introducing `k` and its body as proof facts.
   Multiple typed bindings are allowed. The existential must already be
   established; use `have` first when it is not.
-- `witness(k = expression);`: prove the current existential goal by substituting
+- `witness { k: expression };`: prove the current existential goal by substituting
   the given int32 expression for binder `k`.
 - `assumption();`: close a goal already present as the same semantic fact; it
   does not normalize, extract, or transport a new fact.
@@ -217,13 +217,10 @@ When the execution frontier is a C `if`, use `branch`:
 
 <!-- verified-example: mdtests/grouped_function_proof.md -->
 ```click
-branch {
-    then {
-        step(); // Execute the first statement in the C then arm.
-    }
-    else {
-        step(); // Execute the first statement in the C else arm.
-    }
+branch then {
+    step(); // Execute the first statement in the C then arm.
+} else {
+    step(); // Execute the first statement in the C else arm.
 }
 ```
 
@@ -242,18 +239,14 @@ before the rest of the function proof:
 
 <!-- verified-example: mdtests/grouped_function_proof.md -->
 ```click
-branch {
-    ensuring {
-        fact y >= 0;
-        owns buffer(data, len);
-        views metadata(data, len);
-    }
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch ensuring {
+    fact y >= 0;
+    owns buffer(data, len);
+    views metadata(data, len);
+} then {
+    step();
+} else {
+    step();
 }
 step();
 ```
@@ -355,12 +348,12 @@ typical existential-introduction proof names a witness:
 ```click
 ensures found: (0..n).any(|k| { k == result }) by {
     execute();
-    witness(k = 0);
+    witness { k: 0 };
     simp();
 }
 ```
 
-`let ... satisfy` eliminates an already available existential. It names the
+`obtain` eliminates an already available existential. It names the
 bound values and states the body of the existential; it does not select a
 contract clause by name or position, and it does not prove the existential.
 
@@ -368,9 +361,9 @@ contract clause by name or position, and it does not prove the existential.
 ```click
 requires exists (x: Integer, y: Integer) { x == y };
 ensures exists (a: Integer, b: Integer) { a == b } by {
-    let (left: Integer, right: Integer) satisfy { left == right };
-    witness(a = left);
-    witness(b = right);
+    obtain (left: Integer, right: Integer) { left == right };
+    witness { a: left };
+    witness { b: right };
     assumption();
 }
 ```
@@ -384,10 +377,10 @@ requires bytes_contains(p, 0, n, 'x');
 ensures opened_contains: bytes_contains(p, 0, n, 'x') by {
     execute();
     unfold(bytes_contains);
-    let (found: int32) satisfy {
+    obtain (found: int32) {
         0 <= found and found < n and p[found] == 'x'
     };
-    witness(k = found);
+    witness { k: found };
     simp();
 }
 ```

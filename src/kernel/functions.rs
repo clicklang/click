@@ -7971,6 +7971,8 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
         CType::UInt32 => "uint32",
         CType::Int64 => "int64",
         CType::UInt64 => "uint64",
+        CType::Int128 => "int128",
+        CType::UInt128 => "uint128",
         CType::Float32 => "float32",
         CType::Float64 => "float64",
         CType::Int8Pointer => "int8*",
@@ -13191,7 +13193,12 @@ fn spec_expression_constant(expression: &SpecExpression) -> Option<u32> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term) => term.as_const(),
-        CValue::Void | CValue::Float32(_) | CValue::Float64(_) | CValue::Pointer(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Float32(_)
+        | CValue::Float64(_)
+        | CValue::Pointer(_) => None,
         CValue::Bool(term) => term.as_const(),
     }
 }
@@ -15241,6 +15248,8 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         CType::UInt32 => CValue::UInt32(Bitvector32Term::Variable(variable)),
         CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
         CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
+        CType::Int128 => CValue::Int128(Bitvector32Term::Variable(variable)),
+        CType::UInt128 => CValue::UInt128(Bitvector32Term::Variable(variable)),
         CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
         CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
         CType::Int8Pointer | CType::Int8PointerPointer => {
@@ -17180,6 +17189,21 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
                 CType::UInt32 => uint32(0),
                 CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
                 CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                CType::Int128 => MachineIntegerType::Int128
+                    .constant_value(
+                        MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                CType::UInt128 => MachineIntegerType::UInt128
+                    .constant_value(
+                        MachineIntegerConstant::from_unsigned(
+                            MachineIntegerType::UInt128.format(),
+                            0,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap(),
                 CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
                 CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
                 CType::Int32Pointer

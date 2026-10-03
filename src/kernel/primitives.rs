@@ -29,6 +29,8 @@ pub(crate) use contracts::{
     stated_separation_extent_guards,
 };
 mod integer;
+mod machine_integer;
+pub use machine_integer::{MachineIntegerConstant, MachineIntegerFormat, MachineIntegerWidth};
 mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
@@ -280,6 +282,7 @@ impl LoadKind {
             CValue::UInt16(_) => Self::UInt16,
             CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
             CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
+            CValue::Int128(_) | CValue::UInt128(_) => return None,
             CValue::Float32(_) => Self::Float32,
             CValue::Float64(_) => Self::Float64,
             CValue::Pointer(_) => Self::Bits32,
@@ -314,6 +317,8 @@ pub enum Bitvector32Term {
     /// Unsigned 64-bit constants retain all 64 bits; interpreting these as a
     /// signed value would lose the distinction above `i64::MAX`.
     UInt64Constant(u64),
+    /// Checked wide payload; never truncated into the legacy 32/64-bit carriers.
+    MachineIntegerConstant(MachineIntegerConstant),
     Variable(Variable),
     Add(Box<Bitvector32Term>, Box<Bitvector32Term>),
     Subtract(Box<Bitvector32Term>, Box<Bitvector32Term>),
@@ -943,6 +948,8 @@ pub enum CValue {
     UInt32(Bitvector32Term),
     Int64(Bitvector32Term),
     UInt64(Bitvector32Term),
+    Int128(Bitvector32Term),
+    UInt128(Bitvector32Term),
     /// IEEE-754 binary32 payload represented in the shared checked term arena.
     Float32(Bitvector32Term),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
@@ -969,6 +976,8 @@ pub enum CType {
     UInt32,
     Int64,
     UInt64,
+    Int128,
+    UInt128,
     Float32,
     Float64,
     Int8Pointer,
@@ -1153,7 +1162,10 @@ pub(super) enum CLValueStorage {
 pub enum CIntegerCastMode {
     #[default]
     Standard,
-    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    /// Preserve the numeric value modulo the destination width. Used by
+    /// Rust integer casts and C++20 integer conversions; never implicit in C.
+    Modulo,
+    /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
 }
 
@@ -1893,6 +1905,8 @@ impl AlgebraicTerm {
                     | CValue::UInt32(v)
                     | CValue::Int64(v)
                     | CValue::UInt64(v)
+                    | CValue::Int128(v)
+                    | CValue::UInt128(v)
                     | CValue::Float32(v)
                     | CValue::Float64(v) => visit(v),
                 },

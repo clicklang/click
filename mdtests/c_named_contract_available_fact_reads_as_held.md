@@ -31,16 +31,12 @@ int32 pick(void (*callback)(int32*), int32 x) {
     requires SetsZero(callback);
     ensures result == result by {
         step();
-        branch {
-            ensuring {
-                fact y == x;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y == x;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         simp();

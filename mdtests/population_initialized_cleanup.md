@@ -103,7 +103,7 @@ int32 cleanup(int32 payload) {
 } by {
     step();
     step();
-    branch { then { step(); simp(); } else {} }
+    branch then { step(); simp(); } else {}
     fold(authority(child_ref(kid)));
     fold(child_storage(kid));
     step();
@@ -111,7 +111,7 @@ int32 cleanup(int32 payload) {
     fold(child_control(kid));
     step();
     step();
-    branch { then { step(); step(); simp(); } else {} }
+    branch then { step(); step(); simp(); } else {}
     step();
     step();
     step();

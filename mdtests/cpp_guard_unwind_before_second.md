@@ -82,7 +82,7 @@ int32 guarded_before_second(
     step();
     step();
     outcomes {
-        returned {
+        returned => {
             step();
             step();
             step();
@@ -91,7 +91,7 @@ int32 guarded_before_second(
             execute();
             simp();
         }
-        threw {
+        threw => {
             step();
             have second_cell[0] == old(second_cell[0]) by { simp(); }
             execute();

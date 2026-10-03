@@ -330,7 +330,7 @@ pub(super) fn evaluate_witness_tactic_value(
         post_state,
         result,
         assumptions,
-        &witness.value,
+        witness.value(),
         predicate_environment,
         click_function_environment,
         recorded_snapshots,
@@ -339,7 +339,7 @@ pub(super) fn evaluate_witness_tactic_value(
     .map_err(|message| {
         ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: could not evaluate witness value for `{}`: {message}",
-            witness.name
+            witness.name()
         ))
     })?;
     Ok(value)
@@ -364,10 +364,10 @@ pub(super) fn apply_witness_tactic(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal is not an existential proposition"
         )));
     };
-    if name != witness.name {
+    if name != witness.name() {
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal binds `{name}`, but proof provided witness `{}`",
-            witness.name
+            witness.name()
         )));
     }
 
@@ -383,19 +383,19 @@ pub(super) fn apply_witness_tactic(
         (Sort::CPointer(_), CValue::Pointer(_)) => {
             return Err(ClickError::new(format!(
                 "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong pointer kind",
-                witness.name
+                witness.name()
             )));
         }
         (Sort::CInt32, _) => {
             return Err(ClickError::new(format!(
                 "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` did not evaluate to int32",
-                witness.name
+                witness.name()
             )));
         }
         _ => {
             return Err(ClickError::new(format!(
                 "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: unsupported existential witness sort for `{}`",
-                witness.name
+                witness.name()
             )));
         }
     };

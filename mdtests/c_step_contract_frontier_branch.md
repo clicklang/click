@@ -16,10 +16,7 @@ void invoke(void (*callback)(int32*), int32* cell, int32 active) {
     requires Buffered(callback);
     owns Cell(cell);
 } by {
-    branch {
-        then { step(Buffered); }
-        else { step(Buffered); }
-    }
+    branch then { step(Buffered); } else { step(Buffered); }
     execute();
     simp();
 }

@@ -1825,7 +1825,7 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
     );
     for tactic in [
         "apply(law(count(cell(p))));",
-        "witness(x = count(cell(p)));",
+        "witness { x: count(cell(p)) };",
     ]
     .into_iter()
     {

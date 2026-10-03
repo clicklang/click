@@ -824,6 +824,14 @@ pub(in crate::surface::proof) enum LinearScriptDecline {
 /// A branch continuation is checked in each selected arm. Borrow terminal
 /// arms unchanged; copied source is proportional to the explicit branch proof
 /// being checked and serialized, rather than to ambient semantic state.
+/// One `cases` arm as the driver runs it: its assumption, its tactics
+/// followed by the rest of the script, and the source sites of those tactics.
+struct CaseArmScript<'s> {
+    assumption: &'s ClickProposition,
+    tactics: std::borrow::Cow<'s, [ProofTactic]>,
+    sites: Vec<ProofStepSite>,
+}
+
 fn script_arm_with_continuation<'a>(
     arm: &'a [ProofTactic],
     continuation: &[ProofTactic],
@@ -3033,10 +3041,7 @@ impl<'a> Proof<'a> {
         )));
         for value in candidates {
             check_verification_deadline()?;
-            let witness = ProofWitness {
-                name: name.to_string(),
-                value,
-            };
+            let witness = ProofWitness::single(name.to_string(), value);
             let Some(introduced) =
                 attempt::candidate_outcome(self.apply_step(ProofStep::Witness(witness)))?
             else {
@@ -6439,6 +6444,54 @@ impl<'a> Proof<'a> {
         self.run_addressed_linear_script(tactics, &sites, &mut None, Some(unfinished))
     }
 
+    /// Runs the arms of one `cases` to completion. The kernel splits a
+    /// disjunction in two, so more than two arms split the leading arms'
+    /// disjunction against the last arm and recurse into the leading branch;
+    /// each arm still runs at the sites of its own source block.
+    fn run_case_arms(
+        &self,
+        arms: &[CaseArmScript<'_>],
+        mut unfinished: Option<&mut Option<Self>>,
+    ) -> Result<Option<Self>, ClickError> {
+        let (last, leading) = arms.split_last().expect("`cases` has arms");
+        let disjunction = leading.iter().skip(1).fold(
+            leading
+                .first()
+                .expect("`cases` has at least two arms")
+                .assumption
+                .clone(),
+            |disjunction, arm| {
+                ClickProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
+            },
+        );
+        let disjunction =
+            ClickProposition::Or(Box::new(disjunction), Box::new(last.assumption.clone()));
+        let (split_proof, split, ids) = self.split_focused_cases(disjunction.clone())?;
+        let marker = split_proof.checkpoint();
+        let leading_branch = split_proof.focus_branch(ids[0])?;
+        let leading_done = match leading {
+            [only] => leading_branch.run_addressed_linear_script(
+                &only.tactics,
+                &only.sites,
+                &mut None,
+                unfinished.as_deref_mut(),
+            )?,
+            _ => leading_branch.run_case_arms(leading, unfinished.as_deref_mut())?,
+        };
+        let Some(leading_done) = leading_done else {
+            return Ok(None);
+        };
+        let Some(all_done) = leading_done
+            .focus_branch(ids[1])?
+            .run_addressed_linear_script(&last.tactics, &last.sites, &mut None, unfinished)?
+        else {
+            return Ok(None);
+        };
+        all_done
+            .join_focused_cases(&marker, split, ids, disjunction)
+            .map(Some)
+    }
+
     fn run_addressed_linear_script(
         &self,
         tactics: &[ProofTactic],
@@ -6672,46 +6725,36 @@ impl<'a> Proof<'a> {
                         .at_site(&sites[index]);
                 }
                 ProofTactic::Cases(proof_cases) => {
-                    let left_tactics = script_arm_with_continuation(
-                        &proof_cases.left_tactics,
-                        &tactics[index + 1..],
-                    );
-                    let right_tactics = script_arm_with_continuation(
-                        &proof_cases.right_tactics,
-                        &tactics[index + 1..],
-                    );
-                    let left_sites = arm_sites(index, 0, "left", proof_cases.left_tactics.len());
-                    let right_sites = arm_sites(index, 1, "right", proof_cases.right_tactics.len());
-                    let (split_proof, split, ids) =
-                        proof.split_focused_cases(proof_cases.disjunction.clone())?;
-                    let marker = split_proof.checkpoint();
-                    let Some(left_done) = split_proof
-                        .focus_branch(ids[0])?
-                        .run_addressed_linear_script(
-                            &left_tactics,
-                            &left_sites,
-                            &mut None,
-                            unfinished.as_deref_mut(),
-                        )?
-                    else {
+                    // Each arm runs its own tactics and then the rest of the
+                    // script, at the source sites of its own block.
+                    let arm_names = if proof_cases.arms().len() == 2 {
+                        ["left", "right"].as_slice()
+                    } else {
+                        ["case"].as_slice()
+                    };
+                    let arms = proof_cases
+                        .arms()
+                        .iter()
+                        .enumerate()
+                        .map(|(arm_index, arm)| CaseArmScript {
+                            assumption: arm.assumption(),
+                            tactics: script_arm_with_continuation(
+                                arm.tactics(),
+                                &tactics[index + 1..],
+                            ),
+                            sites: arm_sites(
+                                index,
+                                arm_index,
+                                arm_names[arm_index.min(arm_names.len() - 1)],
+                                arm.tactics().len(),
+                            ),
+                        })
+                        .collect::<Vec<_>>();
+                    let Some(done) = proof.run_case_arms(&arms, unfinished.as_deref_mut())? else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
-                    let Some(both_done) = left_done
-                        .focus_branch(ids[1])?
-                        .run_addressed_linear_script(
-                            &right_tactics,
-                            &right_sites,
-                            &mut None,
-                            unfinished.as_deref_mut(),
-                        )?
-                    else {
-                        *declined = Some(LinearScriptDecline::Step(index));
-                        return Ok(None);
-                    };
-                    proof = both_done
-                        .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
-                        .at_site(&sites[index]);
+                    proof = done.at_site(&sites[index]);
                     proof
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
@@ -6990,12 +7033,12 @@ impl<'a> Proof<'a> {
                             } = &surface
                             {
                                 let witnessed = attempt::candidate_outcome(have.apply_step(
-                                    ProofStep::Witness(ProofWitness {
-                                        name: written_name.as_ref().unwrap_or(name).clone(),
-                                        value: ContractExpression::CFragment(CExpression::Value(
+                                    ProofStep::Witness(ProofWitness::single(
+                                        written_name.as_ref().unwrap_or(name).clone(),
+                                        ContractExpression::CFragment(CExpression::Value(
                                             CValue::Int32(Bitvector32Term::Constant(0)),
                                         )),
-                                    }),
+                                    )),
                                 ))?;
                                 match witnessed {
                                     Some(witnessed) => {
@@ -7165,11 +7208,12 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let witness_name = written_name.as_ref().unwrap_or(name).clone();
-        let Some(witnessed) =
-            attempt::candidate_outcome(chosen.apply_step(ProofStep::Witness(ProofWitness {
-                name: witness_name,
-                value: ContractExpression::CFragment(CExpression::Variable(choice_name)),
-            })))?
+        let Some(witnessed) = attempt::candidate_outcome(chosen.apply_step(ProofStep::Witness(
+            ProofWitness::single(
+                witness_name,
+                ContractExpression::CFragment(CExpression::Variable(choice_name)),
+            ),
+        )))?
         else {
             return Ok(None);
         };

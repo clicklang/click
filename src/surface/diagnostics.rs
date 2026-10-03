@@ -644,8 +644,8 @@ pub(super) fn describe_multiple_statement_successors_guidance(
     r#"
 `step()` cannot choose between the two successors of this call. Use `outcomes` at this point:
 outcomes {
-    returned { step(); }
-    threw { step(); }
+    returned => { step(); }
+    threw => { step(); }
 }
 The `step()` in each arm advances the selected path; add the remaining
 `step()`, `execute()`, and `simp()` tactics inside that arm until all
@@ -3662,6 +3662,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         return width;
     }
     match parameter.c_type() {
+        C0Type::Int128 | C0Type::UInt128 => 16,
         C0Type::Void => 0,
         C0Type::Bool => 1,
         C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
@@ -3817,6 +3818,14 @@ pub(super) fn describe_c_value(
 ) -> String {
     match value {
         CValue::Void => "void".to_string(),
+        CValue::Int128(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i128",
+        ),
+        CValue::UInt128(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u128",
+        ),
         CValue::Bool(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameters, arguments),
             "bool",
@@ -4005,6 +4014,8 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             ..
         } => {
             let name = match value_type {
+                CType::Int128 => "load_int128",
+                CType::UInt128 => "load_uint128",
                 CType::Void => "load_void",
                 CType::Bool => "load_bool",
                 CType::VoidPointer => "load_void_pointer",
@@ -4924,6 +4935,11 @@ pub(super) fn describe_bitvector_with_context(
         Bitvector32Term::Constant(value) => format!("{}", *value as i32),
         Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
         Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),
+        Bitvector32Term::MachineIntegerConstant(value) => format!(
+            "{}{}128",
+            value.to_integer(),
+            if value.format().is_signed() { "i" } else { "u" }
+        ),
         // A diagnostic prints the load represented by a load variable,
         // never the kernel variable's id.
         Bitvector32Term::Variable(variable)

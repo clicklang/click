@@ -231,10 +231,13 @@ uint64 cover(const uint8* bytes, uint64 bytes_len) {
         }
     }
     have chunks_remaining < 4 by {
-        cases(not (0 < chunks_remaining) or not (4 <= chunks_remaining)) {
-            have chunks_remaining <= 0 by { simp(); }
-            arithmetic() using { chunks_remaining <= 0; }
-        } { simp(); }
+        cases {
+            not (0 < chunks_remaining) => {
+                have chunks_remaining <= 0 by { simp(); }
+                arithmetic() using { chunks_remaining <= 0; }
+            }
+            not (4 <= chunks_remaining) => { simp(); }
+        }
     }
     have chunks_remaining % 4 == chunks_remaining by { normalize() using { 0 <= chunks_remaining; chunks_remaining < 4; } }
     have chunks_remaining == 0 by { simp(); }

@@ -747,10 +747,7 @@ int32 flag(int32 x) {
     requires x <= 0;
     ensures result == 0;
 } by {
-    branch {
-        then { step(); simp(); }
-        else {}
-    }
+    branch then { step(); simp(); } else {}
     step();
     simp();
 }
@@ -764,7 +761,7 @@ int32 flag(int32 x) {
     let sites = inventory_sites(std::slice::from_ref(&click_path)).unwrap();
     let site = sites
         .iter()
-        .find(|site| site.position.line == 7)
+        .find(|site| site.position.line == 6)
         .expect("the dropped arm's simp should be an auditable site");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("a smart tactic on a dropped C path should expand");

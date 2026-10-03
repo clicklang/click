@@ -304,16 +304,9 @@ fn collect_structural_induction_arguments(
                 collect_structural_induction_arguments(&both.right_tactics, hypothesis, collected);
             }
             ProofTactic::Cases(proof_cases) => {
-                collect_structural_induction_arguments(
-                    &proof_cases.left_tactics,
-                    hypothesis,
-                    collected,
-                );
-                collect_structural_induction_arguments(
-                    &proof_cases.right_tactics,
-                    hypothesis,
-                    collected,
-                );
+                for arm in proof_cases.arms() {
+                    collect_structural_induction_arguments(arm.tactics(), hypothesis, collected);
+                }
             }
             _ => {}
         }
@@ -485,11 +478,9 @@ fn prepare_pure_induction_tactics(
                     left_tactics: transform(&both.left_tactics, hypothesis)?,
                     right_tactics: transform(&both.right_tactics, hypothesis)?,
                 })),
-                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                    disjunction: proof_cases.disjunction.clone(),
-                    left_tactics: transform(&proof_cases.left_tactics, hypothesis)?,
-                    right_tactics: transform(&proof_cases.right_tactics, hypothesis)?,
-                })),
+                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
+                    proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
+                )),
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",
@@ -531,6 +522,8 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt32 => C0Type::UInt32,
             CType::Int64 => C0Type::Int64,
             CType::UInt64 => C0Type::UInt64,
+            CType::Int128 => C0Type::Int128,
+            CType::UInt128 => C0Type::UInt128,
             CType::Float32 => C0Type::Float32,
             CType::Float64 => C0Type::Float64,
             CType::Int8Pointer => C0Type::Int8Pointer,
@@ -643,19 +636,11 @@ fn prepare_structural_induction_arm_tactics(
                     bindings,
                 )?,
             })),
-            ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                disjunction: proof_cases.disjunction.clone(),
-                left_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.left_tactics,
-                    setup,
-                    bindings,
-                )?,
-                right_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.right_tactics,
-                    setup,
-                    bindings,
-                )?,
-            })),
+            ProofTactic::Cases(proof_cases) => {
+                Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
+                    |tactics| prepare_structural_induction_arm_tactics(tactics, setup, bindings),
+                )?))
+            }
             ProofTactic::StructuralInduct { .. } | ProofTactic::Induct { .. } => Err(
                 ClickError::new("nested induction is not supported in a structural induction arm"),
             ),
@@ -1305,6 +1290,10 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
         .filter_map(|(index, parameter)| {
             let c_type = parameter.click_type().c_type()?;
             let value = match c_type {
+                C0Type::Int128 => CValue::Int128(Bitvector32Term::Variable(Variable(index as u64))),
+                C0Type::UInt128 => {
+                    CValue::UInt128(Bitvector32Term::Variable(Variable(index as u64)))
+                }
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 C0Type::Bool => {
                     crate::kernel::bool_value(Bitvector32Term::Variable(Variable(index as u64)))
@@ -3477,8 +3466,12 @@ mod tests {
             }
         "#;
         let cases = source
-            .replace("if x == 0", "cases (x == 0 or x != 0)")
-            .replace("} else {", "} {");
+            .replace("if x == 0 {", "cases {\n x == 0 => {")
+            .replace("} else {", "}\n x != 0 => {")
+            .replace(
+                "using {}\n                    }\n                    assumption();",
+                "using {}\n                    }\n }\n                    assumption();",
+            );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
             assert!(verified.kernel_authority.is_some());

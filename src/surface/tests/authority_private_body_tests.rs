@@ -98,13 +98,10 @@ fn authority_member_private_heap_body_round_trip() {
         } by {
             step();
             step();
-            branch {
-                then {
-                    execute();
-                    simp();
-                }
-                else {}
-            }
+            branch then {
+                execute();
+                simp();
+            } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             open(reference(p)) {
@@ -153,10 +150,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             step();
@@ -225,10 +219,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(reference(p)));
             step();
             step();
@@ -334,10 +325,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
         } by {
             step();
             step();
-            branch {
-                then { execute(); simp(); }
-                else {}
-            }
+            branch then { execute(); simp(); } else {}
             fold(authority(reference(p)));
             fold(reference(p));
             fold(reference(p));
@@ -394,7 +382,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -439,7 +427,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -478,7 +466,7 @@ fn authority_control_wrapper_requires_its_contained_authority() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(control(p));
         }
@@ -511,7 +499,7 @@ fn authority_control_wrapper_requires_its_counter_memory() {
         verifying "private_body.c";
         int32 value() { ensures result == -1 or result == 1; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(authority(reference(p)));
             step();
@@ -576,7 +564,7 @@ fn authority_control_survives_balanced_helper_calls() {
         }
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(authority(reference(p)));
             fold(control(p));
@@ -643,7 +631,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
 
         int32 value() { ensures result == -1 or result == 0; } by {
             step(); step();
-            branch { then { execute(); simp(); } else {} }
+            branch then { execute(); simp(); } else {}
             step();
             fold(authority(reference(obj)));
             fold(reference(obj));

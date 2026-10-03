@@ -509,7 +509,7 @@ sequence:
 - `mdtests/byte_slice_stdlib.md`: stdlib byte-slice helpers over `uint8[]`,
   including byte counts, slice equality, range equality, and all-equal facts.
 - `mdtests/byte_slice_range_predicates.md`: byte contains/all-not-equal
-  predicates and `let (...) satisfy` after explicit predicate unfolding.
+  predicates and `obtain (...)` after explicit predicate unfolding.
 - `mdtests/cstr_stdlib.md`: first C-string predicates over `uint8[]`, including
   exact spec length, bounded terminator, and plain existential string facts.
 - `mdtests/cstr_dynamic_viewability.md`: a dynamically viewable C-string

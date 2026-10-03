@@ -1020,6 +1020,8 @@ fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Vari
         | CValue::UInt32(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => collect_bitvector_bound_variables(bits, variables),
         CValue::Pointer(pointer) => collect_pointer_bound_variables(pointer, variables),
@@ -1621,7 +1623,9 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         Bitvector32Term::IntegerToMachine { value, .. } => {
             collect_integer_bound_variables(value, variables);
         }
-        Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_) => {}
+        Bitvector32Term::Int64Constant(_)
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Int64From32(value)
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
@@ -4691,6 +4695,10 @@ pub(crate) fn substitute_bitvector_variable(
     to: &Bitvector32Term,
 ) -> Bitvector32Term {
     match term {
+        Bitvector32Term::MachineIntegerConstant(value) => {
+            Bitvector32Term::MachineIntegerConstant(*value)
+        }
+
         Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
         Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
         Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
@@ -5479,6 +5487,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
         CValue::UInt32(bits) => uint32(substitute_bitvector_variable(bits, from, to)),
         CValue::Int64(bits) => CValue::Int64(substitute_bitvector_variable(bits, from, to)),
         CValue::UInt64(bits) => CValue::UInt64(substitute_bitvector_variable(bits, from, to)),
+        CValue::Int128(bits) => CValue::Int128(substitute_bitvector_variable(bits, from, to)),
+        CValue::UInt128(bits) => CValue::UInt128(substitute_bitvector_variable(bits, from, to)),
         CValue::Float32(bits) => CValue::Float32(substitute_bitvector_variable(bits, from, to)),
         CValue::Float64(bits) => CValue::Float64(substitute_bitvector_variable(bits, from, to)),
         CValue::Pointer(pointer) => CValue::typed_pointer(

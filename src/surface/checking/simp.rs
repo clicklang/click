@@ -624,6 +624,7 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
         Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Int64From32(_)
         | Bitvector32Term::UInt64From32(_)
         | Bitvector32Term::UInt32From64(_)
@@ -746,6 +747,7 @@ pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32T
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::IntegerToMachine { .. } => term.clone(),
         Bitvector32Term::Int64From32(value) => {

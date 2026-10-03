@@ -42,13 +42,10 @@ int32 scratch(int32 a[], int32 n) {
     }
     step();
     step();
-    branch {
-        then {
-            execute();
-            simp();
-        }
-        else {
-        }
+    branch then {
+        execute();
+        simp();
+    } else {
     }
     have icount(a, 0, 0) == 0 by { simp(); }
     execute();

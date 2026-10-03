@@ -28,33 +28,25 @@ int32 nested_branch_steps(int32 x) {
 
     ensures result >= 0 by {
         step();
-        branch {
-            ensuring {
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+            branch ensuring {
                 fact y >= 0;
-            }
-            then {
+            } then {
                 step();
-                branch {
-                    ensuring {
-                        fact y >= 0;
-                    }
-                    then {
-                        step();
-                        have y >= 0 by {
-                            apply(int32_increment_greater_equal_lower_bound(at(statement(1).entry, x), at(statement(1).entry, 0), at(function.entry, 2147483647))) using {
-                                at(statement(1).entry, x) >= at(statement(1).entry, 0);
-                                at(function.entry, x < 2147483647);
-                            }
-                        }
-                    }
-                    else {
-                        step();
+                have y >= 0 by {
+                    apply(int32_increment_greater_equal_lower_bound(at(statement(1).entry, x), at(statement(1).entry, 0), at(function.entry, 2147483647))) using {
+                        at(statement(1).entry, x) >= at(statement(1).entry, 0);
+                        at(function.entry, x < 2147483647);
                     }
                 }
-            }
-            else {
+            } else {
                 step();
             }
+        } else {
+            step();
         }
         step();
         have result >= 0 by {

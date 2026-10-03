@@ -149,7 +149,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     )
     .expect("the source-identity retry should expand into source");
     assert!(
-        expanded_source.contains("let (len: int32) satisfy { at(function.entry,"),
+        expanded_source.contains("obtain (len: int32) { at(function.entry,"),
         "the expansion should state the established entry existential: {expanded_source}"
     );
     assert!(
@@ -399,7 +399,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("cases (result == 18 or result == -1)"),
+        expanded.contains("result == 18 => {") && expanded.contains("result == -1 => {"),
         "{expanded}"
     );
     let caller = &expanded[expanded.find("int use_pick").expect("caller proof")..];
@@ -693,7 +693,7 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
         "initialize by ".len(),
     );
     assert!(!expanded.contains("initialize by simp;"), "{expanded}");
-    assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
+    assert_eq!(expanded.matches("branch ").count(), 1, "{expanded}");
 }
 
 /// A ranked loop with no invariant has nothing to initialize. Its expansion
@@ -916,11 +916,11 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 /// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
 #[test]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness(len = found_len);\n        simp();";
+    let anchor = "witness { len: found_len };\n        simp();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
-        "witness(len = found_len);\n        ".len(),
+        "witness { len: found_len };\n        ".len(),
     );
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
@@ -1051,7 +1051,7 @@ theorem integer_forall_simp() {
 }
 theorem integer_exists_simp(x: Integer) {
     ensures witnessed: exists (z: Integer) { z == x } by {
-        witness(z = x);
+        witness { z: x };
         simp();
     }
 }
@@ -1061,8 +1061,8 @@ theorem integer_forall_logical_simp() {
 theorem integer_exists_choose() {
     requires exists (z: Integer) { z == z };
     ensures chosen: exists (k: Integer) { k == k } by {
-        let (candidate: Integer) satisfy { candidate == candidate };
-        witness(k = candidate);
+        obtain (candidate: Integer) { candidate == candidate };
+        witness { k: candidate };
         assumption();
     }
 }
@@ -1089,11 +1089,11 @@ theorem integer_exists_choose() {
             assert!(expanded.contains("both {"), "{label}: {expanded}");
         } else {
             assert!(
-                expanded.contains("let (candidate: Integer) satisfy { candidate == candidate };"),
+                expanded.contains("obtain (candidate: Integer) { candidate == candidate }"),
                 "{label}: {expanded}"
             );
             assert!(
-                expanded.contains("witness(k = candidate);"),
+                expanded.contains("witness { k: candidate }"),
                 "{label}: {expanded}"
             );
         }
@@ -1114,10 +1114,10 @@ theorem guarded_integer_exists(value: int32) {
     ensures branched: exists (k: Integer) {
         k == to_integer(if value > 0 { value } else { value + 1 })
     } by {
-        let (candidate: Integer) satisfy {
+        obtain (candidate: Integer) {
             candidate == to_integer(if value > 0 { value } else { value + 1 })
         };
-        witness(k = candidate);
+        witness { k: candidate };
         assumption();
     }
 }
@@ -1133,7 +1133,7 @@ theorem fixed_integer_witness(value: int32) {
     ensures witness_fixed: exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         both {
             both {
                 assumption();
@@ -1163,7 +1163,7 @@ theorem missing_integer_definedness(value: int32) {
     ensures exists (z: Integer) {
         z == 0 and to_integer(value + 1) == to_integer(value + 1)
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         simp();
     }
 }
@@ -1254,7 +1254,7 @@ theorem indexed_integer_exists(values: int32[]) {
     ensures exists (z: Integer) {
         z == to_integer(values[to_int32(z)])
     } by {
-        witness(z = 0);
+        witness { z: 0 };
         both {
             both { simp(); } and { simp(); }
         } and {
@@ -3029,7 +3029,8 @@ fn post_execution_simp_builds_disjunction_cases_on_proof() {
     .expect("the checked case split should expand");
     assert!(!expanded.contains("simp();"), "{expanded}");
     assert!(
-        expanded.contains("cases (at(function.entry, x == 0 or x == 1))"),
+        expanded.contains("at(function.entry, x == 0) => {")
+            && expanded.contains("at(function.entry, x == 1) => {"),
         "{expanded}"
     );
     assert_eq!(expanded.matches("rewrite(").count(), 2, "{expanded}");
@@ -3279,7 +3280,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
         int32 identity(int32 x) {
             ensures exists (j: int32) { j == result } by {
                 execute();
-                witness(j = result);
+                witness { j: result };
                 simp();
             }
         }
@@ -3302,7 +3303,7 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
         position.column,
     )
     .expect("the checked existential obligation should expand");
-    assert!(expanded.contains("witness(j = result);"), "{expanded}");
+    assert!(expanded.contains("witness { j: result };"), "{expanded}");
     assert!(expanded.contains("normalize();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the retained witness/normalize scope should verify independently");
@@ -3318,8 +3319,8 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
             requires exists (k: int32) { k == x };
             ensures exists (j: int32) { j == result } by {
                 execute();
-                let (k: int32) satisfy { k == x };
-                witness(j = k);
+                obtain (k: int32) { k == x };
+                witness { j: k };
                 simp();
             }
         }
@@ -3341,20 +3342,20 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     )
     .expect("the retained choose/witness Proof should serialize");
     assert!(
-        expanded.contains("let (k: int32) satisfy { k == x };"),
+        expanded.contains("obtain (k: int32) { k == x };"),
         "{expanded}"
     );
-    assert!(expanded.contains("witness(j = k);"), "{expanded}");
+    assert!(expanded.contains("witness { j: k };"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the serialized choose/witness proof should independently verify");
 
     let witness_offset = expanded
-        .rfind("witness(j = k);")
+        .rfind("witness { j: k };")
         .expect("the extracted nested proof should retain its witness");
     let mut corrupted = expanded.clone();
     corrupted.replace_range(
-        witness_offset..witness_offset + "witness(j = k);".len(),
-        "witness(j = k + 1);",
+        witness_offset..witness_offset + "witness { j: k };".len(),
+        "witness { j: k + 1 };",
     );
     assert_ne!(
         corrupted, expanded,
@@ -3378,7 +3379,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
             requires 0 < n;
             ensures found_zero: (0..n).any(|k| { k == result }) by {
                 execute();
-                witness(k = 0);
+                witness { k: 0 };
                 simp();
             }
         }
@@ -3395,7 +3396,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
         CProofClaim::Ensure(0),
     )
     .expect("the retained bounded witness should expand");
-    assert!(expanded.contains("witness(k = 0);"), "{expanded}");
+    assert!(expanded.contains("witness { k: 0 }"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the retained bounded witness should check independently");
 }
@@ -4201,10 +4202,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
                 requires x <= 0;
                 ensures result == 0;
             } by {
-                branch {
-                    then { step(); simp(); }
-                    else {}
-                }
+                branch then { step(); simp(); } else {}
                 step();
                 simp();
             }
@@ -4451,22 +4449,19 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
         } by {\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   branch {\n\
-        \x20       then {\n\
-        \x20           have c != 0 by {\n\
-        \x20               have c == c by simp;\n\
-        \x20               simp();\n\
-        \x20           }\n\
-        \x20           step();\n\
+        \x20   branch then {\n\
+        \x20       have c != 0 by {\n\
+        \x20           have c == c by simp;\n\
         \x20           simp();\n\
         \x20       }\n\
-        \x20       else {}\n\
-        \x20   }\n\
+        \x20       step();\n\
+        \x20       simp();\n\
+        \x20   } else {}\n\
         \x20   step();\n\
         \x20   step();\n\
         \x20   simp();\n\
         }\n";
-    assert_mixed_have_body_simp_expands(click_source, &[("early_exit.c", c_source)], 11, 17);
+    assert_mixed_have_body_simp_expands(click_source, &[("early_exit.c", c_source)], 10, 13);
 }
 
 /// A mixed `have` in a frontier-local loop's `preserve` phase is checked by
@@ -4613,17 +4608,20 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20               right();\n\
         \x20           }\n\
         \x20       }\n\
-        \x20       cases (x > 0 or not (x > 0)) {\n\
-        \x20           have x > 0 by simp;\n\
-        \x20           simp();\n\
-        \x20       } {\n\
-        \x20           simp();\n\
+        \x20       cases {\n\
+        \x20           x > 0 => {\n\
+        \x20               have x > 0 by simp;\n\
+        \x20               simp();\n\
+        \x20           }\n\
+        \x20           not (x > 0) => {\n\
+        \x20               simp();\n\
+        \x20           }\n\
         \x20       }\n\
         \x20   }\n\
         \x20   execute();\n\
         \x20   simp();\n\
         }\n";
-    for (line, column) in [(15, 13), (17, 13)] {
+    for (line, column) in [(16, 17), (19, 17)] {
         assert_mixed_have_body_simp_expands(cases_source, &sources, line, column);
     }
 }
@@ -8406,26 +8404,22 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
             ensures result == old(p[0]) or result == 0;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact value == old(p[0]) or value == 0;
-                    owns cell(p);
-                }
-                then {
-                    open(cell(p)) {
-                        step();
-                        have value == old(p[0]) or value == 0 by {
-                            have value == old(p[0]) by { normalize(); }
-                            left();
-                        }
-                    }
-                }
-                else {
+            branch ensuring {
+                fact value == old(p[0]) or value == 0;
+                owns cell(p);
+            } then {
+                open(cell(p)) {
                     step();
                     have value == old(p[0]) or value == 0 by {
-                        have value == 0 by { normalize(); }
-                        right();
+                        have value == old(p[0]) by { normalize(); }
+                        left();
                     }
+                }
+            } else {
+                step();
+                have value == old(p[0]) or value == 0 by {
+                    have value == 0 by { normalize(); }
+                    right();
                 }
             }
             step();
@@ -8510,26 +8504,22 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
             open(wrapped_cell(p, flag)) {
                 open(cell(p)) {
                     step();
-                    branch {
-                        ensuring {
-                            fact value == old(p[0]) or value == 0;
-                            views p[0..1];
-                        }
-                        then {
-                            open(marker(flag)) {
-                                step();
-                                have value == old(p[0]) or value == 0 by {
-                                    have value == old(p[0]) by { normalize(); }
-                                    left();
-                                }
-                            }
-                        }
-                        else {
+                    branch ensuring {
+                        fact value == old(p[0]) or value == 0;
+                        views p[0..1];
+                    } then {
+                        open(marker(flag)) {
                             step();
                             have value == old(p[0]) or value == 0 by {
-                                have value == 0 by { normalize(); }
-                                right();
+                                have value == old(p[0]) by { normalize(); }
+                                left();
                             }
+                        }
+                    } else {
+                        step();
+                        have value == old(p[0]) or value == 0 by {
+                            have value == 0 by { normalize(); }
+                            right();
                         }
                     }
                 }
@@ -8607,20 +8597,17 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
         int32 choose_x_or_zero(int32 x, int32 flag) {
             ensures result == x or result == 0;
         } by {
-            branch {
-                then {
-                    if x >= 0 {
-                        execute();
-                        simp();
-                    } else {
-                        execute();
-                        simp();
-                    }
-                }
-                else {
+            branch then {
+                if x >= 0 {
+                    execute();
+                    simp();
+                } else {
                     execute();
                     simp();
                 }
+            } else {
+                execute();
+                simp();
             }
         }
     "#;
@@ -8719,13 +8706,9 @@ fn branch_interface_retains_its_checked_abstract_join() {
         int32 nonnegative(int32 x) {
             ensures result >= 0;
         } by {
-            branch {
-                ensuring {
-                    fact x >= 0;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact x >= 0;
+            } then { step(); } else { step(); }
             step();
             simp();
         }
@@ -8797,14 +8780,10 @@ fn branch_interface_retains_exact_unchanged_ownership() {
             ensures result == x;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact y >= 0;
-                    owns marker(x);
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact y >= 0;
+                owns marker(x);
+            } then { step(); } else { step(); }
             step();
             simp();
         }
@@ -8867,14 +8846,10 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
             ensures result == x;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact y >= 0;
-                    owns marker(x);
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact y >= 0;
+                owns marker(x);
+            } then { step(); } else { step(); }
             step();
             simp();
         }
@@ -8946,18 +8921,14 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             ensures lower <= upper;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact lower <= upper;
-                }
-                then {
-                    step();
-                    apply(int32_lt_implies_le(lower, upper));
-                }
-                else {
-                    step();
-                    apply(int32_lt_implies_le(lower, upper));
-                }
+            branch ensuring {
+                fact lower <= upper;
+            } then {
+                step();
+                apply(int32_lt_implies_le(lower, upper));
+            } else {
+                step();
+                apply(int32_lt_implies_le(lower, upper));
             }
             step();
             simp();
@@ -9017,13 +8988,9 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             ensures lower <= upper;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact lower < upper;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact lower < upper;
+            } then { step(); } else { step(); }
             apply(int32_lt_implies_le(lower, upper));
             step();
             simp();
@@ -9091,13 +9058,9 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             ensures lower < upper;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact old(lower) < old(upper);
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact old(lower) < old(upper);
+            } then { step(); } else { step(); }
             transport(old(lower) < old(upper), lower < upper);
             step();
             simp();
@@ -9163,14 +9126,10 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             ensures result >= 0;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact selected > 0;
-                    fact selected < 2147483647;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact selected > 0;
+                fact selected < 2147483647;
+            } then { step(); } else { step(); }
             have selected >= 0 by {
                 apply(int32_strictly_positive_is_nonnegative(selected));
             }
@@ -9254,14 +9213,10 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             ensures result == result;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact selected > 0;
-                    fact selected < 2147483647;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact selected > 0;
+                fact selected < 2147483647;
+            } then { step(); } else { step(); }
             execute();
             simp();
         }
@@ -9331,14 +9286,10 @@ fn incremented_strict_lower_bound_retains_its_theorem_path() {
             ensures result > 0;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact selected > 0;
-                    fact selected < 2147483647;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact selected > 0;
+                fact selected < 2147483647;
+            } then { step(); } else { step(); }
             execute();
             simp();
         }
@@ -9390,14 +9341,10 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
             ensures result > 0;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact selected > 0;
-                    fact selected < 2147483647;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact selected > 0;
+                fact selected < 2147483647;
+            } then { step(); } else { step(); }
             execute();
             have result > 0 by simp;
             simp();
@@ -9463,19 +9410,15 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             ensures result == 7;
         } by {
             unfold(first_is_seven);
-            branch {
-                ensuring {
-                    fact p[0] == 7;
-                    owns p[0..2];
-                }
-                then {
-                    step();
-                    transport(old(p[0]) == 7, p[0] == 7);
-                }
-                else {
-                    step();
-                    transport(old(p[0]) == 7, p[0] == 7);
-                }
+            branch ensuring {
+                fact p[0] == 7;
+                owns p[0..2];
+            } then {
+                step();
+                transport(old(p[0]) == 7, p[0] == 7);
+            } else {
+                step();
+                transport(old(p[0]) == 7, p[0] == 7);
             }
             step();
             simp();
@@ -9540,21 +9483,17 @@ fn branch_arms_retain_nested_have_proofs() {
             ensures result >= 0;
         } by {
             step();
-            branch {
-                ensuring {
-                    fact selected >= 0;
+            branch ensuring {
+                fact selected >= 0;
+            } then {
+                step();
+                have selected == selected by {
+                    apply(int32_reflexive(selected));
                 }
-                then {
-                    step();
-                    have selected == selected by {
-                        apply(int32_reflexive(selected));
-                    }
-                }
-                else {
-                    step();
-                    have selected == selected by {
-                        apply(int32_reflexive(selected));
-                    }
+            } else {
+                step();
+                have selected == selected by {
+                    apply(int32_reflexive(selected));
                 }
             }
             step();
@@ -9619,13 +9558,10 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
         int32 choose_one_or_two(int32 flag) {
             ensures result == 1 or result == 2;
         } by {
-            branch {
-                then {
-                    execute();
-                }
-                else {
-                    execute();
-                }
+            branch then {
+                execute();
+            } else {
+                execute();
             }
             simp();
         }
@@ -10014,13 +9950,9 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
             requires x < 0;
             ensures result == 1;
         } by {
-            branch {
-                ensuring {
-                    fact x == 1;
-                }
-                then { step(); }
-                else { step(); }
-            }
+            branch ensuring {
+                fact x == 1;
+            } then { step(); } else { step(); }
             step();
             simp();
         }
@@ -10076,13 +10008,9 @@ fn open_scope_retains_its_checked_branch_interface() {
             ensures result >= 0;
         } by {
             open(marker(x)) {
-                branch {
-                    ensuring {
-                        fact x >= 0;
-                    }
-                    then { step(); }
-                    else { step(); }
-                }
+                branch ensuring {
+                    fact x >= 0;
+                } then { step(); } else { step(); }
                 step();
             }
             simp();
@@ -10147,11 +10075,8 @@ fn open_scope_retains_its_checked_execution_branch() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                branch {
-                    then {
-                    }
-                    else {
-                    }
+                branch then {
+                } else {
                 }
                 step();
             }
@@ -10217,10 +10142,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             ensures result == 1;
         } by {
             open(marker(x)) {
-                branch {
-                    then { step(); }
-                    else { step(); }
-                }
+                branch then { step(); } else { step(); }
                 step();
             }
             simp();
@@ -13454,7 +13376,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures machine_atom: forall (z: Integer) { z + to_integer(x) == to_integer(x) + z } by { simp(); }
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { simp(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
-        witness(z = to_integer(x));
+        witness { z: to_integer(x) };
         normalize();
     }
 }
@@ -13469,7 +13391,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     }
     for invalid in [
         "function f(z: Integer) -> Integer { z } theorem bad() { ensures forall(z: Integer) { f(z) == 0 } by { simp(); } }",
-        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness(z = to_integer(x + 1)); simp(); } }",
+        "theorem bad(x: int32) { ensures exists(z: Integer) { z == to_integer(x + 1) } by { witness { z: to_integer(x + 1) }; simp(); } }",
         "theorem bad(x: int32) { ensures forall(z: Integer) { to_integer(x + 1) == to_integer(x + 1) } by { simp(); } }",
     ] {
         assert!(
@@ -14241,7 +14163,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         expand_c0_claim_source_by_label(click_source, &sources, "count_zero_run.contract")
             .expect("the claim should expand");
     assert!(
-        !expanded.contains("branch {"),
+        !expanded.contains("branch "),
         "the decided branch should be printed as its checked split: {expanded}"
     );
     assert!(

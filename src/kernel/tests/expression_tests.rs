@@ -3576,3 +3576,73 @@ fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
         None
     );
 }
+
+#[test]
+fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness() {
+    let outcome = |expression| {
+        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+            panic!("expected evaluation");
+        };
+        outcome.clone()
+    };
+    for target in [
+        CType::Int8,
+        CType::Int16,
+        CType::Int32,
+        CType::Int64,
+        CType::UInt8,
+        CType::UInt16,
+        CType::UInt32,
+        CType::UInt64,
+    ] {
+        for flag in [false, true] {
+            let actual = outcome(c_integer_cast_modulo(
+                CExpression::Value(CValue::Bool(Bitvector32Term::Constant(u32::from(flag)))),
+                target,
+            ));
+            let ty = MachineIntegerType::from_c_type(target).unwrap();
+            let expected = ty
+                .constant_value(
+                    MachineIntegerConstant::from_unsigned(ty.format(), u128::from(flag)).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(actual, CExpressionOutcome::Value(expected));
+        }
+    }
+    for expression in [
+        c_integer_cast_modulo(c_int32_literal(1), CType::Bool),
+        c_integer_cast_modulo(c_int32_literal(1), CType::Float64),
+        c_integer_cast_modulo(c_int32_literal(1), CType::Int32Pointer),
+        c_integer_cast_modulo(
+            CExpression::Value(CValue::Float32(Bitvector32Term::Constant(0))),
+            CType::Int32,
+        ),
+        c_integer_cast_modulo(
+            CExpression::Value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
+            CType::UInt64,
+        ),
+    ] {
+        assert_eq!(
+            outcome(expression),
+            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        );
+    }
+    let overflow = c_add(c_int32_literal(i32::MAX as u32), c_int32_literal(1));
+    assert!(matches!(
+        outcome(c_integer_cast_modulo(overflow, CType::UInt8)),
+        CExpressionOutcome::UndefinedBehavior(_)
+    ));
+    // The explicit rule wraps; an ordinary C narrowing still requires bounds.
+    assert_eq!(
+        outcome(c_integer_cast_modulo(
+            c_int64_literal(i64::MAX),
+            CType::Int32
+        )),
+        CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(u32::MAX)))
+    );
+    assert!(!matches!(
+        outcome(c_cast(c_int64_literal(i64::MAX), CType::Int32)),
+        CExpressionOutcome::Value(_)
+    ));
+}

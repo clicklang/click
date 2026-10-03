@@ -37,24 +37,20 @@ int32 service_step(struct service* owner) {
     ensures owner->cell[0] == owner->phase;
 } by {
     unfold(service(owner));
-    branch {
-        ensuring {
-            fact 0 <= owner->phase;
-            fact owner->phase <= 1;
-            fact owner->cell == old(owner->cell);
-            fact separate(memory(object(owner)), memory(owner->cell[0..1]));
-            owns owner->phase;
-            owns &owner->cell;
-            owns owner->cell[0..1];
-        }
-        then {
-            step();
-            have owner->cell == old(owner->cell) by { normalize(); }
-        }
-        else {
-            step();
-            have owner->cell == old(owner->cell) by { normalize(); }
-        }
+    branch ensuring {
+        fact 0 <= owner->phase;
+        fact owner->phase <= 1;
+        fact owner->cell == old(owner->cell);
+        fact separate(memory(object(owner)), memory(owner->cell[0..1]));
+        owns owner->phase;
+        owns &owner->cell;
+        owns owner->cell[0..1];
+    } then {
+        step();
+        have owner->cell == old(owner->cell) by { normalize(); }
+    } else {
+        step();
+        have owner->cell == old(owner->cell) by { normalize(); }
     }
     step();
     fold(service(owner));

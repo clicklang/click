@@ -1826,6 +1826,10 @@ impl PureFactContext {
             return Bitvector32Term::Constant(value);
         }
         match term {
+            Bitvector32Term::MachineIntegerConstant(value) => {
+                Bitvector32Term::MachineIntegerConstant(*value)
+            }
+
             Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
             Bitvector32Term::Add(left, right) => Bitvector32Term::add(

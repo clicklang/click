@@ -80,10 +80,7 @@ void both(struct node* p) {
         },
         Tree::Node(identity, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch {
-                then { step(); simp(); }
-                else {}
-            }
+            branch then { step(); simp(); } else {}
             step(touch(p->left), { t: l });
             step(touch(p->right), { t: r });
             let t = fold(tree_at(p), { model: old(t.model) }, { left: l, right: r });

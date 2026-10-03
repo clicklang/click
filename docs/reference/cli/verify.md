@@ -133,7 +133,7 @@ location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `open`), and the ordinary error omits the internal premise dump.
 An `assumption()` failure on an existential goal suggests the
-`witness(name = value)` tactic. A trace reports facts introduced into the
+`witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory

@@ -44,10 +44,10 @@ scripts/check.sh --charon-live
 cargo nextest run --lib --test rust_import -E 'test(external_array_) | test(charon_array_) | test(charon_external_array_)'
 ```
 
-Fixture parity is now 10/16 (62.5%) fully verified, 12/16 (75%) importing:
-four normalization gaps and two legacy iterator proof-observation gaps remain.
-Next address the loop-header normalization gaps against the unchanged sources;
-complete parity before switching the default and retiring legacy extraction.
+Current fixture parity is 10/16 (62.5%) fully verified, 14/16 (87.5%) importing:
+two normalization gaps and four proof-observation gaps remain. The
+[loop-header checkpoint](../loop-headers/README.md) closes the next two import
+gaps. Complete parity before switching the default and retiring legacy extraction.
 
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly

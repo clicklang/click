@@ -91,26 +91,23 @@ int32 restricted(struct box* b) {
     step();
     mark m;
     step(pick(b), { st: st });
-    branch {
-        then {
-            have got == 0 by {
-                simp();
-            }
-            have at(m, st.live) == 1 by {
-                simp();
-            }
-            have st.live == 1 by {
-                simp() using {
-                    defined(1 + got) implies st.live == at(m, st.live) + got;
-                    got == 0;
-                    at(m, st.live) == 1;
-                }
-            }
-            step();
+    branch then {
+        have got == 0 by {
             simp();
         }
-        else {}
-    }
+        have at(m, st.live) == 1 by {
+            simp();
+        }
+        have st.live == 1 by {
+            simp() using {
+                defined(1 + got) implies st.live == at(m, st.live) + got;
+                got == 0;
+                at(m, st.live) == 1;
+            }
+        }
+        step();
+        simp();
+    } else {}
     step();
     simp();
 }

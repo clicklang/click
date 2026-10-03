@@ -29,7 +29,7 @@ void make(int32* pool, int32* p) {
 } by { let member = fold(ticket(pool, p), { serial: 1 }); execute(); simp(); }
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let second = fold(ticket(&pool, p + 1), { serial: 2 });

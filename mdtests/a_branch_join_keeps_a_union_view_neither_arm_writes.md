@@ -43,15 +43,11 @@ int32 branch_writes_nothing(int32 c) {
     step();
     step();
     step();
-    branch {
-        ensuring {
-            fact 1 == 1;
-        }
-        then {
-            step();
-        }
-        else {
-        }
+    branch ensuring {
+        fact 1 == 1;
+    } then {
+        step();
+    } else {
     }
     execute();
     simp();

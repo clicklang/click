@@ -462,7 +462,7 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
-    /// Names introduced by `let (...) satisfy` in this proof block only.
+    /// Names introduced by `obtain (...)` in this proof block only.
     /// Nested `have` and branch blocks start a new lexical binder scope;
     /// semantic freshness is checked again by the proof object.
     current_proof_let_names: BTreeSet<String>,
@@ -1807,7 +1807,7 @@ impl Parser {
                             binding.name
                         )));
                     }
-                    if witnesses.iter().any(|witness| witness.name == binding.name) {
+                    if witnesses.iter().any(|witness| witness.name() == binding.name) {
                         return Err(
                             self.error(format!("duplicate resource witness `{}`", binding.name))
                         );
@@ -5109,6 +5109,15 @@ impl Parser {
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
+        // A `;` after a closing brace ends nothing; accept it after a block
+        // proof as everywhere else, though it is never required.
+        if result.is_ok()
+            && self.position > 0
+            && self.tokens.get(self.position - 1) == Some(&Token::RBrace)
+            && self.peek() == Some(&Token::Semicolon)
+        {
+            self.position += 1;
+        }
         result
     }
 
@@ -5302,9 +5311,6 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        if self.peek() == Some(&Token::LParen) {
-            return self.parse_let_satisfy();
-        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
         if self.peek_ident() == Some("step") {
@@ -5436,7 +5442,9 @@ impl Parser {
         }))
     }
 
-    fn parse_let_satisfy(&mut self) -> Result<ProofTactic, ClickError> {
+    /// `obtain (name: Type, ...) { P }` opens an available
+    /// `exists (name: Type, ...) { P }`, binding its typed names.
+    fn parse_obtain(&mut self) -> Result<ProofTactic, ClickError> {
         self.expect(Token::LParen)?;
         let mut bindings = Vec::new();
         loop {
@@ -5467,7 +5475,6 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RParen)?;
-        self.expect_ident_spelling("satisfy")?;
         self.expect(Token::LBrace)?;
         let previous_integer_context = self.integer_literal_context;
         for (name, click_type) in &bindings {
@@ -5492,7 +5499,9 @@ impl Parser {
         }
         let body = self.parse_proposition()?;
         self.expect(Token::RBrace)?;
-        self.expect(Token::Semicolon)?;
+        if self.peek() == Some(&Token::Semicolon) {
+            self.position += 1;
+        }
         self.integer_literal_context = previous_integer_context;
         self.current_proof_let_names
             .extend(bindings.iter().map(|(name, _)| name.clone()));
@@ -5640,21 +5649,28 @@ impl Parser {
             }));
         }
         if name == "cases" {
-            self.expect(Token::LParen)?;
-            let disjunction = self.parse_proposition()?;
-            self.expect(Token::RParen)?;
-            // Each branch proves the goal under exactly its assumed disjunct.
-            // Both branches are always spelled; there is no implicit side.
-            let left_tactics = self.parse_possibly_empty_tactic_block()?;
-            let right_tactics = self.parse_possibly_empty_tactic_block()?;
+            // One arm per disjunct, each naming the disjunct it assumes:
+            // `cases { A => { ... } B => { ... } }`. The arms' disjunction,
+            // grouped left to right, must be an available fact.
+            self.expect(Token::LBrace)?;
+            let mut arms = Vec::new();
+            while self.peek() != Some(&Token::RBrace) {
+                let assumption = self.parse_proposition()?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                arms.push(ProofCaseArm::new(assumption, tactics));
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RBrace)?;
+            if arms.len() < 2 {
+                return Err(self.error("`cases` needs one arm for each disjunct, at least two"));
+            }
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
-            return Ok(ProofTactic::Cases(ProofCases {
-                disjunction,
-                left_tactics,
-                right_tactics,
-            }));
+            return Ok(ProofTactic::Cases(ProofCases::new(arms)));
         }
         if name == "match" {
             let scrutinee = self.parse_contract_expression()?;
@@ -5720,7 +5736,6 @@ impl Parser {
             return Ok(ProofTactic::Match(Box::new(ProofMatch { scrutinee, arms })));
         }
         if name == "branch" {
-            self.expect(Token::LBrace)?;
             let ensuring = if self.peek_ident() == Some("ensuring") {
                 self.position += 1;
                 self.expect(Token::LBrace)?;
@@ -5756,7 +5771,6 @@ impl Parser {
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect(Token::RBrace)?;
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
@@ -5767,12 +5781,36 @@ impl Parser {
             }));
         }
         if name == "outcomes" {
+            // `outcomes { returned => { ... } threw => { ... } }`: one arm per
+            // way the call can end, in either order, as `match` arms are.
             self.expect(Token::LBrace)?;
-            self.expect_ident_spelling("returned")?;
-            let returned_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect_ident_spelling("threw")?;
-            let threw_tactics = self.parse_possibly_empty_tactic_block()?;
+            let mut returned_tactics = None;
+            let mut threw_tactics = None;
+            while self.peek() != Some(&Token::RBrace) {
+                let arm = self.expect_ident("`returned` or `threw`")?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                let slot = match arm.as_str() {
+                    "returned" => &mut returned_tactics,
+                    "threw" => &mut threw_tactics,
+                    _ => {
+                        return Err(self.error(format!(
+                            "`outcomes` arms are `returned` and `threw`, got `{arm}`"
+                        )));
+                    }
+                };
+                if slot.replace(tactics).is_some() {
+                    return Err(self.error(format!("duplicate `outcomes` arm `{arm}`")));
+                }
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
             self.expect(Token::RBrace)?;
+            let (Some(returned_tactics), Some(threw_tactics)) = (returned_tactics, threw_tactics)
+            else {
+                return Err(self.error("`outcomes` needs both a `returned` and a `threw` arm"));
+            };
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
@@ -6115,13 +6153,33 @@ impl Parser {
                 ProofTactic::ObserveResource(resource)
             }
             "witness" => {
-                self.expect(Token::LParen)?;
-                let name = self.expect_ident("witness variable name")?;
-                self.expect(Token::Equal)?;
-                let value = self.parse_contract_expression()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Witness(ProofWitness { name, value })
+                // `witness { k: value, ... }`: a value for each named binder
+                // of the existential goal, in order.
+                self.expect(Token::LBrace)?;
+                let mut bindings: Vec<(String, ContractExpression)> = Vec::new();
+                while self.peek() != Some(&Token::RBrace) {
+                    let name = self.expect_ident("witness binder name")?;
+                    if bindings.iter().any(|(bound, _)| bound == &name) {
+                        return Err(self.error(format!("duplicate witness for `{name}`")));
+                    }
+                    self.expect(Token::Colon)?;
+                    let value = self.parse_contract_expression()?;
+                    bindings.push((name, value));
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+                self.expect(Token::RBrace)?;
+                if bindings.is_empty() {
+                    return Err(self.error("`witness` needs at least one `binder: value`"));
+                }
+                if self.peek() == Some(&Token::Semicolon) {
+                    self.position += 1;
+                }
+                return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
+            "obtain" => return self.parse_obtain(),
             "assumption" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Assumption

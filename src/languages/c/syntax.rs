@@ -2151,6 +2151,9 @@ pub enum C0Type {
     UInt32,
     Int64,
     UInt64,
+    /// Kernel wide scalars; source parsing/admission remains unsupported.
+    Int128,
+    UInt128,
     Float32,
     Float64,
     Int8Pointer,
@@ -2200,6 +2203,8 @@ impl CAbi {
 
     fn size_and_alignment(self, c_type: C0Type) -> (u32, u32) {
         match (self, c_type) {
+            (Self::Lp64, C0Type::Int128 | C0Type::UInt128) => (16, 16),
+
             (Self::Lp64, C0Type::Void) => (0, 1),
             (Self::Lp64, C0Type::Bool) => (1, 1),
             (Self::Lp64, C0Type::VoidPointer | C0Type::VoidPointerPointer) => (8, 8),
@@ -4176,6 +4181,7 @@ impl C0Type {
 
     pub fn pointee_type(self) -> Option<Self> {
         match self {
+            Self::Int128 | Self::UInt128 => None,
             Self::CharPointer | Self::CharArray(_) => Some(Self::Char),
             Self::Int8Pointer | Self::Int8Array(_) => Some(Self::Int8),
             Self::Int16Pointer | Self::Int16Array(_) => Some(Self::Int16),
@@ -4220,6 +4226,7 @@ impl C0Type {
 
     pub(crate) fn pointer_type(self) -> Option<Self> {
         Some(match self {
+            Self::Int128 | Self::UInt128 => return None,
             Self::Int8 => Self::Int8Pointer,
             Self::Int16 => Self::Int16Pointer,
             Self::Int32 => Self::Int32Pointer,
@@ -4288,6 +4295,8 @@ impl C0Type {
             Self::UInt32 => crate::kernel::CType::UInt32,
             Self::Int64 => crate::kernel::CType::Int64,
             Self::UInt64 => crate::kernel::CType::UInt64,
+            Self::Int128 => crate::kernel::CType::Int128,
+            Self::UInt128 => crate::kernel::CType::UInt128,
             Self::Float32 => crate::kernel::CType::Float32,
             Self::Float64 => crate::kernel::CType::Float64,
             Self::Int32Pointer => crate::kernel::CType::Int32Pointer,
@@ -11187,6 +11196,10 @@ impl Parser {
             self.position += 1;
             volatile_levels <<= 1;
             c_type = match c_type {
+                C0Type::Int128 | C0Type::UInt128 => {
+                    return Err(self.error_at_previous("wide scalar pointers are not supported"));
+                }
+
                 C0Type::Bool => {
                     return Err(self.error_at_previous(
                         "pointers to `_Bool` are not supported in the current C0 pointer model",

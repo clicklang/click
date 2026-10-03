@@ -40,9 +40,9 @@ int32 run(int32 value) {
     ensures result == -1 or result == value;
 } by {
     step(); step();
-    branch { then { step(); simp(); } else {} }
+    branch then { step(); simp(); } else {}
     step(); step();
-    branch { then { step(); step(); simp(); } else {} }
+    branch then { step(); step(); simp(); } else {}
     step(); step(); step();
     have h->target->payload == value by { rewrite(h->target == p); simp(); }
     execute(); simp();

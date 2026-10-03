@@ -2046,7 +2046,8 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         Bitvector32Term::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::IntegerToMachine { .. } => {}
     }
 }

@@ -1055,18 +1055,11 @@ fn collect_smart_script_sites(
                 );
             }
             ProofTactic::Cases(proof_cases) => {
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_cases.left_tactics,
-                    source_index + 1,
-                    sites,
-                );
-                collect_smart_script_sites(
-                    claim_label,
-                    &proof_cases.right_tactics,
-                    source_index + 1 + source_tactic_count(&proof_cases.left_tactics),
-                    sites,
-                );
+                let mut arm_index = source_index + 1;
+                for arm in proof_cases.arms() {
+                    collect_smart_script_sites(claim_label, arm.tactics(), arm_index, sites);
+                    arm_index += source_tactic_count(arm.tactics());
+                }
             }
             ProofTactic::CallOutcomes(outcomes) => {
                 collect_smart_script_sites(
@@ -3351,9 +3344,11 @@ fn block_tactic_entries(
             smart_container_alias_entries(tokens, token_range.clone(), tactic, &entry, entries);
             continue;
         }
-        let arms: Option<[&[ProofTactic]; 2]> = match tactic {
-            ProofTactic::If(proof_if) => Some([&proof_if.then_tactics, &proof_if.else_tactics]),
-            ProofTactic::Cases(cases) => Some([&cases.left_tactics, &cases.right_tactics]),
+        let arms: Option<Vec<&[ProofTactic]>> = match tactic {
+            ProofTactic::If(proof_if) => Some(vec![&proof_if.then_tactics, &proof_if.else_tactics]),
+            ProofTactic::Cases(cases) => {
+                Some(cases.arms().iter().map(|arm| arm.tactics()).collect())
+            }
             _ => None,
         };
         match (tactic, arms) {
@@ -3532,7 +3527,7 @@ fn tactic_contains_smart_tactic(tactic: &ProofTactic) -> bool {
         ProofTactic::Open(open) => any(&open.tactics),
         ProofTactic::If(proof_if) => any(&proof_if.then_tactics) || any(&proof_if.else_tactics),
         ProofTactic::Match(proof_match) => proof_match.arms.iter().any(|arm| any(&arm.tactics)),
-        ProofTactic::Cases(cases) => any(&cases.left_tactics) || any(&cases.right_tactics),
+        ProofTactic::Cases(cases) => cases.arms().iter().any(|arm| any(arm.tactics())),
         ProofTactic::Both(both) => any(&both.left_tactics) || any(&both.right_tactics),
         ProofTactic::Branch(branch) => any(&branch.then_tactics) || any(&branch.else_tactics),
         ProofTactic::CallOutcomes(outcomes) => {
@@ -4126,13 +4121,13 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
     Ok(line_start + byte_in_line)
 }
 
-/// The two written arm blocks, as `(open, close)` token pairs, of a proof
-/// `if`, `cases`, or `both` tactic starting at token `start`; `None` for any
-/// other tactic.
+/// The written arm blocks, as `(open, close)` token pairs, of a proof `if`,
+/// `cases`, or `both` tactic starting at token `start`; `None` for any other
+/// tactic.
 fn structured_tactic_arm_blocks(
     tokens: &[SourceToken],
     start: usize,
-) -> Result<Option<[(usize, usize); 2]>, ClickError> {
+) -> Result<Option<Vec<(usize, usize)>>, ClickError> {
     let kind = tokens[start].text.as_str();
     if !matches!(kind, "if" | "cases" | "both") {
         return Ok(None);
@@ -4141,7 +4136,7 @@ fn structured_tactic_arm_blocks(
     let range = start..end + 1;
     let (first_open, first_close, second_open, second_close) = match kind {
         "if" => find_if_branch_blocks(tokens, &range)?,
-        "cases" => find_cases_arm_blocks(tokens, &range)?,
+        "cases" => return find_cases_arm_blocks(tokens, &range).map(Some),
         _ => {
             let left_open = (start + 1..range.end)
                 .find(|&index| tokens[index].text == "{")
@@ -4157,7 +4152,7 @@ fn structured_tactic_arm_blocks(
             (left_open, left_close, right_open, right_close)
         }
     };
-    Ok(Some([
+    Ok(Some(vec![
         (first_open, first_close),
         (second_open, second_close),
     ]))
@@ -4282,10 +4277,13 @@ pub fn tactic_arm_containing_position(
         .ok_or_else(|| ClickError::new("could not locate trace branch tactic"))?;
     let end = tactic_end_token(&tokens, start, tokens.len())?;
     let range = start..end + 1;
+    let pair = |(first_open, first_close, second_open, second_close)| {
+        vec![(first_open, first_close), (second_open, second_close)]
+    };
     let blocks = match tokens[start].text.as_str() {
-        "branch" => find_branch_blocks(&tokens, &range)?,
-        "if" => find_if_branch_blocks(&tokens, &range)?,
-        "outcomes" => find_named_arm_blocks(&tokens, &range, "returned", "threw", "outcomes")?,
+        "branch" => pair(find_branch_blocks(&tokens, &range)?),
+        "if" => pair(find_if_branch_blocks(&tokens, &range)?),
+        "outcomes" => pair(find_outcomes_arm_blocks(&tokens, &range)?),
         "cases" => find_cases_arm_blocks(&tokens, &range)?,
         "both" => {
             let left_open = start + 1;
@@ -4299,19 +4297,16 @@ pub fn tactic_arm_containing_position(
             {
                 return Ok(None);
             }
-            (
+            pair((
                 left_open,
                 left_close,
                 right_open,
                 matching_delimiter(&tokens, right_open, "{", "}")?,
-            )
+            ))
         }
         _ => return Ok(None),
     };
-    for (index, (open, close)) in [(blocks.0, blocks.1), (blocks.2, blocks.3)]
-        .into_iter()
-        .enumerate()
-    {
+    for (index, (open, close)) in blocks.into_iter().enumerate() {
         if tokens[open].span.start < target_offset && target_offset < tokens[close].span.end {
             return Ok(Some(index));
         }
@@ -4439,10 +4434,8 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
                     }
                 }
                 "cases" => {
-                    if let Ok((left_open, _, right_open, _)) =
-                        find_cases_arm_blocks(&tokens, &range)
-                    {
-                        arm_blocks.extend([left_open, right_open]);
+                    if let Ok(arms) = find_cases_arm_blocks(&tokens, &range) {
+                        arm_blocks.extend(arms.into_iter().map(|(open, _)| open));
                     }
                 }
                 _ => {}
@@ -4604,26 +4597,19 @@ fn collect_tactic_block_spans<'t>(
                 )?;
             }
             ProofTactic::Cases(proof_cases) => {
-                let (left_open, left_close, right_open, right_close) =
-                    find_cases_arm_blocks(tokens, &token_range)?;
-                collect_tactic_block_spans(
-                    tokens,
-                    left_open,
-                    left_close,
-                    &proof_cases.left_tactics,
-                    spans,
-                )?;
-                collect_tactic_block_spans(
-                    tokens,
-                    right_open,
-                    right_close,
-                    &proof_cases.right_tactics,
-                    spans,
-                )?;
+                let blocks = find_cases_arm_blocks(tokens, &token_range)?;
+                if blocks.len() != proof_cases.arms().len() {
+                    return Err(ClickError::new(
+                        "source `cases` arms do not match the parsed proof",
+                    ));
+                }
+                for ((open, close), arm) in blocks.into_iter().zip(proof_cases.arms()) {
+                    collect_tactic_block_spans(tokens, open, close, arm.tactics(), spans)?;
+                }
             }
             ProofTactic::CallOutcomes(outcomes) => {
                 let (returned_open, returned_close, threw_open, threw_close) =
-                    find_named_arm_blocks(tokens, &token_range, "returned", "threw", "outcomes")?;
+                    find_outcomes_arm_blocks(tokens, &token_range)?;
                 collect_tactic_block_spans(
                     tokens,
                     returned_open,
@@ -4799,9 +4785,6 @@ fn tactic_end_token(
     // Quantifiers in a `have` proposition own braces too. Only the block
     // after its top-level `by` can terminate the tactic.
     let mut have_body_started = tokens[start].text != "have";
-    // `cases (p or q) { ... } { ... }` spells its two arms as adjacent
-    // blocks, so the first arm's `}` is followed by `{` and does not end it.
-    let mut cases_arms_closed = 0_usize;
     loop {
         if cursor >= close {
             return Err(ClickError::new(
@@ -4823,16 +4806,12 @@ fn tactic_end_token(
                     // but its `}` is followed by `=` rather than ending
                     // the tactic: `let { slot: child } = unfold(parent)`
                     // and `let { binder: instance } = step(...)`.
-                    let cases_first_arm = tokens[start].text == "cases"
-                        && continuation == Some("{")
-                        && cases_arms_closed == 0;
-                    if tokens[start].text == "cases" {
-                        cases_arms_closed += 1;
-                    }
+                    // `branch ensuring { ... } then { ... } else { ... }`
+                    // continues past its interface block.
                     if !(matches!(continuation, Some("else" | "by" | "="))
                         || (tokens[start].text == "both" && continuation == Some("and"))
                         || (tokens[start].text == "match" && continuation == Some("{"))
-                        || cases_first_arm)
+                        || (tokens[start].text == "branch" && continuation == Some("then")))
                     {
                         let terminator = if continuation == Some(";") {
                             cursor + 1
@@ -4901,33 +4880,37 @@ fn find_if_branch_blocks(
     Ok((then_open, then_close, else_open, else_close))
 }
 
-/// The two adjacent arm blocks of `cases (p or q) { ... } { ... }`.
+/// The arm blocks of `cases { A => { ... } B => { ... } ... }`, in order.
+/// An arm's assumption may hold braces of its own (a quantifier); only a
+/// block after `=>` is an arm.
 fn find_cases_arm_blocks(
     tokens: &[SourceToken],
     tactic: &Range<usize>,
-) -> Result<(usize, usize, usize, usize), ClickError> {
-    let disjunction_open = tactic.start + 1;
-    if tokens
-        .get(disjunction_open)
-        .map(|token| token.text.as_str())
-        != Some("(")
-    {
+) -> Result<Vec<(usize, usize)>, ClickError> {
+    let outer_open = tactic.start + 1;
+    if tokens.get(outer_open).map(|token| token.text.as_str()) != Some("{") {
+        return Err(ClickError::new("source `cases` tactic has no arms"));
+    }
+    let outer_close = matching_delimiter(tokens, outer_open, "{", "}")?;
+    let mut arms = Vec::new();
+    let mut cursor = outer_open + 1;
+    while cursor < outer_close {
+        if tokens[cursor].text == "{" {
+            let close = matching_delimiter(tokens, cursor, "{", "}")?;
+            if cursor >= 2 && tokens[cursor - 2].text == "=" && tokens[cursor - 1].text == ">" {
+                arms.push((cursor, close));
+            }
+            cursor = close + 1;
+        } else {
+            cursor += 1;
+        }
+    }
+    if arms.len() < 2 {
         return Err(ClickError::new(
-            "source `cases` tactic has no parenthesized disjunction",
+            "could not locate the arms of a source `cases`",
         ));
     }
-    let disjunction_close = matching_delimiter(tokens, disjunction_open, "(", ")")?;
-    let block = |open: usize, arm: &str| -> Result<(usize, usize), ClickError> {
-        if open >= tactic.end || tokens[open].text != "{" {
-            return Err(ClickError::new(format!(
-                "could not locate proof `cases` {arm} arm"
-            )));
-        }
-        Ok((open, matching_delimiter(tokens, open, "{", "}")?))
-    };
-    let (left_open, left_close) = block(disjunction_close + 1, "left")?;
-    let (right_open, right_close) = block(left_close + 1, "right")?;
-    Ok((left_open, left_close, right_open, right_close))
+    Ok(arms)
 }
 
 fn find_branch_blocks(
@@ -4937,6 +4920,46 @@ fn find_branch_blocks(
     find_named_arm_blocks(tokens, tactic, "then", "else", "branch")
 }
 
+/// The `returned` and `threw` arm blocks of
+/// `outcomes { returned => { ... } threw => { ... } }`, in that order
+/// whichever order they are written in.
+fn find_outcomes_arm_blocks(
+    tokens: &[SourceToken],
+    tactic: &Range<usize>,
+) -> Result<(usize, usize, usize, usize), ClickError> {
+    let outer_open = tactic.start + 1;
+    if tokens.get(outer_open).map(|token| token.text.as_str()) != Some("{") {
+        return Err(ClickError::new("source `outcomes` tactic has no arms"));
+    }
+    let outer_close = matching_delimiter(tokens, outer_open, "{", "}")?;
+    let mut returned = None;
+    let mut threw = None;
+    let mut cursor = outer_open + 1;
+    while cursor < outer_close {
+        if tokens[cursor].text == "{" {
+            let close = matching_delimiter(tokens, cursor, "{", "}")?;
+            if cursor >= 3 && tokens[cursor - 2].text == "=" && tokens[cursor - 1].text == ">" {
+                match tokens[cursor - 3].text.as_str() {
+                    "returned" => returned = Some((cursor, close)),
+                    "threw" => threw = Some((cursor, close)),
+                    _ => {}
+                }
+            }
+            cursor = close + 1;
+        } else {
+            cursor += 1;
+        }
+    }
+    match (returned, threw) {
+        (Some((returned_open, returned_close)), Some((threw_open, threw_close))) => {
+            Ok((returned_open, returned_close, threw_open, threw_close))
+        }
+        _ => Err(ClickError::new(
+            "could not locate the arms of a source `outcomes`",
+        )),
+    }
+}
+
 fn find_named_arm_blocks(
     tokens: &[SourceToken],
     tactic: &Range<usize>,
@@ -4944,13 +4967,12 @@ fn find_named_arm_blocks(
     second: &str,
     kind: &str,
 ) -> Result<(usize, usize, usize, usize), ClickError> {
-    let outer_open = (tactic.start + 1..tactic.end)
-        .find(|index| tokens[*index].text == "{")
-        .ok_or_else(|| ClickError::new(format!("source `{kind}` tactic has no body")))?;
-    let outer_close = matching_delimiter(tokens, outer_open, "{", "}")?;
+    // The arms follow the tactic's keyword at its own top level:
+    // `branch [ensuring { ... }] then { ... } else { ... }` and
+    // `outcomes returned { ... } threw { ... }`.
     let find_named_block = |name: &str| -> Result<(usize, usize), ClickError> {
         let mut depth = 0_usize;
-        for keyword in outer_open + 1..outer_close {
+        for keyword in tactic.start + 1..tactic.end {
             match tokens[keyword].text.as_str() {
                 "{" => depth += 1,
                 "}" => depth = depth.saturating_sub(1),

@@ -868,6 +868,8 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
@@ -2468,7 +2470,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
-        ProofStep::LetSatisfy(_) => "let satisfy",
+        ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
         ProofStep::UnfoldPredicate(_)
         | ProofStep::UnfoldFunction(_)

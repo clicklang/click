@@ -62,10 +62,10 @@ int32 plain_cstr(uint8 p[]) {
     } by {
         execute();
         unfold(cstr);
-        let (found_len: int32) satisfy {
+        obtain (found_len: int32) {
             at(function.entry, cstr_len(p, found_len))
         };
-        witness(len = found_len);
+        witness { len: found_len };
         simp();
     }
 }

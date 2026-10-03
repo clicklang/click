@@ -2060,11 +2060,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "{preserve}",
         r#"preserve by {
                         step();
-                        branch {
-                            ensuring { fact parity >= 0 and parity <= 1; }
-                            then { step(); }
-                            else { step(); }
-                        }
+                        branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
                         close_invariants();
                     }"#,
     );
@@ -2086,11 +2082,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "{preserve}",
         r#"preserve by {
                         step();
-                        branch {
-                            ensuring { fact parity >= 0 and parity <= 1; }
-                            then { step(); }
-                            else { step(); }
-                        }
+                        branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
                         close_invariants();
                     }"#,
     );
@@ -2182,10 +2174,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
             }
             match marker() {
                 Marker::Active => {
-                    branch {
-                        then { step(); }
-                        else { step(); }
-                    }
+                    branch then { step(); } else { step(); }
                     loop {
                         decreases 2 - x;
                         invariant x >= 1;

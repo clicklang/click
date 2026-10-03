@@ -45,13 +45,10 @@ int32 f(int32* p, int32 x) {
 } by {
     match c.m {
         T::A(v) => {
-            branch {
-                then {
-                    step();
-                    simp();
-                }
-                else {}
-            }
+            branch then {
+                step();
+                simp();
+            } else {}
             match c.m {
                 T::A(w) => {
                     execute();

@@ -3634,3 +3634,6 @@ mod parity;
 mod array_lengths;
 #[path = "rust_import/array_values.rs"]
 mod array_values;
+
+#[path = "rust_import/loop_headers.rs"]
+mod loop_headers;

@@ -26,16 +26,12 @@ int32 frontier_local_statement_facts(int32 flag) {
         and at(statement(4).exit, y) == 2
         and at(statement(5).entry, y) == 2 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            step();
+        } else {
+            step();
         }
         have y >= 0 by {
             simp();

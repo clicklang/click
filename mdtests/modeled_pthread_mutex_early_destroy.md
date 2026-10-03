@@ -58,16 +58,13 @@ uint32 run(struct counter* counter) {
     step();
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
     step();
-    branch {
-        then {
-            step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
-            let { value: observed } = unfold(initial);
-            step();
-            let initial = fold(counter_state(counter), { value: observed });
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
+        let { value: observed } = unfold(initial);
+        step();
+        let initial = fold(counter_state(counter), { value: observed });
+        simp();
+    } else {}
     step(pthread_mutex_destroy(&counter->mu), { lifetime: lifetime });
     let { value: final_observed } = unfold(initial);
     step();

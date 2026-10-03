@@ -816,6 +816,7 @@ enum AlphaBitvectorKey {
     Constant(u32),
     Int64Constant(i64),
     UInt64Constant(u64),
+    MachineIntegerConstant(crate::kernel::MachineIntegerConstant),
     Variable(AlphaVariableKey),
     Binary(AlphaBitvectorBinaryOp, Box<Self>, Box<Self>),
     BitwiseNot(Box<Self>),
@@ -1846,6 +1847,9 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
         },
         other => {
             let (ty, term) = match other {
+                CValue::Int128(term) => (CType::Int128, term),
+                CValue::UInt128(term) => (CType::UInt128, term),
+
                 CValue::Bool(term) => (CType::Bool, term),
                 CValue::Int8(term) => (CType::Int8, term),
                 CValue::Int16(term) => (CType::Int16, term),
@@ -1980,6 +1984,10 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             ))
         };
     Some(match term {
+        Bitvector32Term::MachineIntegerConstant(value) => {
+            AlphaBitvectorKey::MachineIntegerConstant(*value)
+        }
+
         Bitvector32Term::Constant(value) => AlphaBitvectorKey::Constant(*value),
         Bitvector32Term::Int64Constant(value) => AlphaBitvectorKey::Int64Constant(*value),
         Bitvector32Term::UInt64Constant(value) => AlphaBitvectorKey::UInt64Constant(*value),

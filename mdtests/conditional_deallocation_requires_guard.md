@@ -34,17 +34,13 @@ int32 conditional_deallocation_requires_guard(int32* p, int32 error) {
 } by {
     unfold(allocated(p));
     step();
-    branch {
-        ensuring {
-            owns permit();
-        }
-        then {
-            step();
-            step();
-        }
-        else {
-            step();
-        }
+    branch ensuring {
+        owns permit();
+    } then {
+        step();
+        step();
+    } else {
+        step();
     }
     step();
     simp();

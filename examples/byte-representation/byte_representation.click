@@ -32,10 +32,13 @@ int use_copy() {
         simp();
     } else {
         have copied == -1 by {
-            cases (copied == 18 or copied == -1) {
-                contradiction(copied == 18);
-            } {
-                assumption();
+            cases {
+                copied == 18 => {
+                    contradiction(copied == 18);
+                }
+                copied == -1 => {
+                    assumption();
+                }
             }
         }
         execute();

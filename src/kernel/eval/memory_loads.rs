@@ -2679,7 +2679,8 @@ fn substitute_load_variables(
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_) => term_results.push(term.clone()),
+                    | Bitvector32Term::UInt64Constant(_)
+                    | Bitvector32Term::MachineIntegerConstant(_) => term_results.push(term.clone()),
                     Bitvector32Term::MemoryLoad(_, _, _) => match load_variable_for_term(term) {
                         Some((variable, load)) => {
                             if let Some(facts) = facts.as_deref_mut() {
@@ -3306,7 +3307,8 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => false,
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => false,
         Bitvector32Term::MemoryLoad(_, _, _) => true,
         Bitvector32Term::PointerAddress(pointer) => pointer
             .offset
@@ -3843,6 +3845,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     value_type: CType,
 ) -> Option<CValue> {
     match value_type {
+        CType::Int128 | CType::UInt128 => None,
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
             let load = Bitvector32Term::MemoryLoad(
@@ -3977,6 +3980,8 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         CValue::UInt32(bits) => CValue::UInt32(canonical_term(&bits)),
         CValue::Int64(bits) => CValue::Int64(canonical_term(&bits)),
         CValue::UInt64(bits) => CValue::UInt64(canonical_term(&bits)),
+        CValue::Int128(bits) => CValue::Int128(canonical_term(&bits)),
+        CValue::UInt128(bits) => CValue::UInt128(canonical_term(&bits)),
         other => other,
     })
 }
