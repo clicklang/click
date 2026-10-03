@@ -451,7 +451,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 33;
+its documented application invariant. The typed artifact schema is now 34;
 previous artifacts require an explicit lock refresh.
 
 Artifact resource limits are independent of the supported C++ semantic profile:
@@ -462,6 +462,8 @@ Artifact resource limits are independent of the supported C++ semantic profile:
 | Constant declarations | 1,024 |
 | Function declarations, including the selected root | 1,024 |
 | Call graph depth, including the selected root | 64 |
+| Local declarations per function, including catch bindings | 1,024 |
+| Cleanup scopes per function | 256 |
 | Serialized JSON object/array nesting | 96 |
 | Serialized JSON objects and arrays | 65,536 |
 | Preprocessor files | 4,096 |
@@ -474,8 +476,9 @@ semantics. Acyclic constant forests may have multiple leaves and longer chains;
 each initializer retains the supported literal-leaf or literal-times-prior-constant
 form, and the checker independently recomputes every evaluated value. Multiple
 record layouts reuse the existing field-type, explicit ABI, and ownership rules.
-The fixed local and scope count limits described below remain until the
-lifetime-budget cleanup.
+Local and scope budgets count both branch arms; parameters do not count as
+local declarations. The exporter and checker enforce these counts independently.
+Lifetime combination restrictions described below remain semantic-profile rules.
 
 C++ graph validation indexes each function's parameter, local, and catch-binding
 identities once. Reference arguments and destructor edges use borrowed type
@@ -647,8 +650,9 @@ The `examples/basic-cpp/` project also selects a modular caller starting with
 41: either captured result is retained while the referenced cell is 41 after
 the call.
 
-The `reverse-destructor-order` fixture permits exactly two such top-level
-objects when both use the supported constructor and destructor. Both objects
+Multiple top-level objects are supported when all require destruction and use
+the supported constructor and destructor, within the local declaration budget.
+The `reverse-destructor-order` fixture demonstrates two objects. Both objects
 are activated individually after successful initialization. A return after both
 constructions records the second object's
 destructor before the first object's destructor, and lowering checks those
@@ -656,19 +660,21 @@ calls in that order. The fixture makes the ordering observable: the second
 guard restores 7 before the first guard restores the caller's entry value.
 
 The `nested-scope-destructor` fixture alternatively permits one explicit block
-directly in a free-function body, with exactly one directly constructed
-destructible object and no other block local. A return from the block captures
+directly in a free-function body. Such a block may contain multiple directly
+constructed destructible objects, within the declaration budget, and no other
+block locals. The fixture demonstrates one object. A return from the block captures
 its value before running the destructor, while normal fallthrough runs the
 same checked cleanup before the next outer statement. The artifact retains
 that lexical boundary as a `scope` statement; the outer return consequently
 has no cleanup for the already-destroyed object.
 
-The `sibling-scope-destructors` fixture composes up to two such blocks when
-their object lifetimes do not overlap. Each sibling carries its own return and
+Sibling blocks are supported within the cleanup-scope and declaration budgets
+when their object lifetimes do not overlap. The `sibling-scope-destructors`
+fixture demonstrates two such blocks. Each sibling carries its own return and
 fallthrough cleanup, and the next block begins only after the preceding
 destructor. The fixture deliberately reuses the source name `guard`; distinct
 Clang declaration identities and the kernel's sequential local-lifetime rule
-keep the two objects separate.
+keep those objects separate.
 
 The `overlapping-scope-destructors` fixture instead composes exactly one outer
 destructible object with exactly one inner cleanup scope. A return from the
@@ -690,8 +696,8 @@ destructor synthesized on the path where no object exists. Objects in both
 arms, combination with another aggregate or cleanup scope, and deeper
 conditional construction remain rejected.
 
-Copies and moves, default or partial aggregate initialization, multiple or
-more than two top-level destructible local objects, broader nested lifetimes,
+Copies and moves, default or partial aggregate initialization, multiple
+non-destructible aggregate locals, broader nested lifetime combinations,
 virtual dispatch, inheritance, private fields, bit-fields, nested record values,
 and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,

@@ -55,7 +55,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 33;
+pub(crate) const EXPORT_SCHEMA: u32 = 34;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -913,6 +913,7 @@ impl CppFunction {
         exceptions_enabled: bool,
         exception_behavior: CppExceptionBehavior,
     ) -> Result<(), String> {
+        super::budget::check_function(self)?;
         if self.name.is_empty() || self.declaration_id.is_empty() {
             return Err("C++ function is missing declaration identity".into());
         }
@@ -1186,7 +1187,7 @@ impl CppFunction {
             }
         }
         let mut aggregate_locals = 0;
-        let mut destructible_locals = Vec::new();
+        let mut destructible_locals = 0usize;
         let mut nested_scopes = 0;
         let mut nested_scope_outer_cleanup_counts = Vec::new();
         let mut has_conditional_cleanup_scope = false;
@@ -1220,12 +1221,6 @@ impl CppFunction {
                         }
                         let record = validate_record_reference(records, declaration_id, name)?;
                         aggregate_locals += 1;
-                        if aggregate_locals > 2 {
-                            return Err(format!(
-                                "C++ function `{}` declares more than two aggregate locals",
-                                self.name
-                            ));
-                        }
                         if record.destructor.is_some() {
                             if !matches!(initializer, CppInitializer::Constructor { .. }) {
                                 return Err(format!(
@@ -1233,7 +1228,7 @@ impl CppFunction {
                                     local.name
                                 ));
                             }
-                            destructible_locals.push(local.clone());
+                            destructible_locals += 1;
                         }
                     }
                     _ => {
@@ -1279,7 +1274,7 @@ impl CppFunction {
                         self.function_kind,
                         CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
                     )
-                    || !destructible_locals.is_empty()
+                    || destructible_locals != 0
                 {
                     return Err(
                         "int32 try/catch requires the scalar exception profile without outer destructible locals".into(),
@@ -1368,13 +1363,7 @@ impl CppFunction {
                     ));
                 }
                 nested_scopes += 1;
-                if nested_scopes > 2 {
-                    return Err(format!(
-                        "C++ function `{}` contains more than two sibling cleanup scopes",
-                        self.name
-                    ));
-                }
-                nested_scope_outer_cleanup_counts.push(destructible_locals.len());
+                nested_scope_outer_cleanup_counts.push(destructible_locals);
                 validate_nested_scope(
                     body,
                     cleanups,
@@ -1423,7 +1412,7 @@ impl CppFunction {
                     || has_conditional_cleanup_scope
                     || has_exception_cleanup_scope
                     || aggregate_locals != 0
-                    || !destructible_locals.is_empty()
+                    || destructible_locals != 0
                     || !matches!(
                         handler.as_slice(),
                         [CppStatement::Return { .. } | CppStatement::ReturnCall { .. }]
@@ -1499,7 +1488,7 @@ impl CppFunction {
                         self.name
                     ));
                 }
-                if aggregate_locals != 0 || !destructible_locals.is_empty() {
+                if aggregate_locals != 0 || destructible_locals != 0 {
                     return Err(format!(
                         "C++ function `{}` cannot combine conditional construction with an outer aggregate object",
                         self.name
@@ -1558,7 +1547,7 @@ impl CppFunction {
         if nested_scopes != 0
             && aggregate_locals != 0
             && (aggregate_locals != 1
-                || destructible_locals.len() != 1
+                || destructible_locals != 1
                 || nested_scope_outer_cleanup_counts.as_slice() != [1])
         {
             return Err(format!(
@@ -1572,13 +1561,13 @@ impl CppFunction {
                 self.name
             ));
         }
-        if aggregate_locals > 1 && destructible_locals.len() != aggregate_locals {
+        if aggregate_locals > 1 && destructible_locals != aggregate_locals {
             return Err(format!(
-                "C++ function `{}` may declare two aggregate locals only when both require destruction",
+                "C++ function `{}` may declare multiple aggregate locals only when all require destruction",
                 self.name
             ));
         }
-        if !destructible_locals.is_empty() {
+        if destructible_locals != 0 {
             let Some(CppStatement::Return { .. } | CppStatement::ReturnCall { .. }) =
                 self.body.last()
             else {
@@ -2372,7 +2361,7 @@ fn validate_nested_scope(
 ) -> Result<(), String> {
     span.validate(logical_source)?;
     let mut places = outer_places.child();
-    let mut locals = Vec::new();
+    let mut local_count = 0;
     for statement in body {
         if let CppStatement::Declare {
             local: candidate,
@@ -2380,11 +2369,6 @@ fn validate_nested_scope(
             span,
         } = statement
         {
-            if locals.len() >= 2 {
-                return Err(format!(
-                    "nested scope in `{function_name}` declares more than two automatic locals"
-                ));
-            }
             span.validate(logical_source)?;
             candidate.span.validate(logical_source)?;
             if candidate.declaration_id.is_empty() || candidate.name.is_empty() {
@@ -2396,9 +2380,7 @@ fn validate_nested_scope(
                 ..
             } = &candidate.value_type
             else {
-                return Err(
-                    "the nested-scope slice requires exactly one destructible record object".into(),
-                );
+                return Err("the nested-scope slice requires destructible record objects".into());
             };
             let record = validate_record_reference(records, declaration_id, name)?;
             if record.destructor.is_none()
@@ -2433,12 +2415,12 @@ fn validate_nested_scope(
                     candidate.name
                 ));
             }
-            locals.push(candidate.clone());
+            local_count += 1;
         } else {
             statement.validate(&places, records, logical_source)?;
         }
     }
-    if locals.is_empty() {
+    if local_count == 0 {
         return Err(format!(
             "nested scope in `{function_name}` must declare at least one destructible object"
         ));

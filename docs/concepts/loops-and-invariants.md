@@ -742,6 +742,51 @@ progress is strict descent in the finite model, not a change of resource
 identity. `mdtests/loop_decreases_rejects_rebuilt_layer.md` reaches this refusal
 after successfully rebuilding the layer.
 
+### Measures over a binder's model
+
+Some loops re-fold their resource at every step instead of walking into a
+child. The new instance is not contained in the old one, so no structural
+descent exists, yet a number computed from the model still drops. Such a loop
+ranks by a function of the model:
+
+<!-- verified-example: mdtests/loop_measure_reads_a_model_function.md -->
+```click
+loop {
+    owns c: chain(n);
+    decreases chain_len(c.model);
+    invariant n >= 0;
+}
+```
+
+The component is an ordinary `Integer` ranking expression. It is
+built from the loop binders' models and fields, constants, and pure Click
+functions of them. Here `chain_len` is a recursive function with its own
+`decreases`. Its two members join the back-edge invariant bundle like any
+numeric component's: the value at the next head is at least zero, and it is
+strictly less than the value at this head. Both are ordinary goals. The kernel
+does not unfold the function or search for a proof. The usual route is to match
+on the model so that its parts have names. State each side with `have`, by
+`unfold` and `rewrite`. Apply a lemma for nonnegativity, typically one proved
+once by structural `induct`. Then let `arithmetic` close the comparison before
+`close_invariants()`.
+
+A `Nat`-valued function of the model ranks by its Integer image `to_integer`,
+whose nonnegativity is the checked law `nat_integer_nonnegative`. Such a
+measure owes only the decrease
+(`mdtests/loop_measure_reads_a_nat_model_function.md`).
+
+A model measure reads only models. One that also names a C local is refused
+where it is declared, naming the local
+(`mdtests/loop_decreases_model_function_rejects_a_c_local.md`), because the
+local moves independently of the binders it would be ranked with. A model value
+itself, such as `decreases c.model;` for a spec enum, has no order and is
+refused with a pointer to the two spellings that do rank by structure
+(`mdtests/loop_decreases_rejects_an_unordered_model.md`). A back edge that
+leaves the measure unchanged, or one that can drive an `Integer` measure below
+zero, leaves its member open
+(`mdtests/loop_decreases_model_function_must_decrease.md` and
+`mdtests/loop_decreases_model_function_must_stay_nonnegative.md`).
+
 ### Opening a binder's model inside the body
 
 Arm selection publishes the selected arm's cells, but `unfold(c)` needs the

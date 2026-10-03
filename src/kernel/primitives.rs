@@ -3297,6 +3297,21 @@ pub struct CCallBinderTransport {
     pub(crate) bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
 }
 
+impl CCallBinderTransport {
+    /// Whether a call statement's target is the callee the step named. A
+    /// sidecar names a header-provided `static inline` helper by its source
+    /// spelling, while the call carries the helper's translation-unit-local
+    /// execution name `name#inline:unit`, so that suffix is not part of the
+    /// comparison. The call at the frontier is one call to one body either
+    /// way; this only decides whether the step named it.
+    pub(crate) fn names_call_to(&self, function_name: &str) -> bool {
+        let source_spelling = function_name
+            .split_once("#inline:")
+            .map_or(function_name, |(source, _)| source);
+        source_spelling == self.function.as_ref()
+    }
+}
+
 /// The order in which a target lays out the bytes of a multi-byte integer
 /// object. The kernel owns what a byte view of an integer cell means, so the
 /// order is a kernel value that the surface installs from the selected C

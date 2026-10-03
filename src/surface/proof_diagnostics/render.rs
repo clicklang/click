@@ -325,6 +325,33 @@ pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
     renderer.output
 }
 
+/// Render `left operator right` under one set of labels, so two distinct
+/// unnamed values on the two sides are told apart and one value read on both
+/// sides keeps one name. Rendering each side on its own restarts the labels
+/// and spells a model at the loop head and the rebound model alike.
+pub(crate) fn render_integer_comparison(
+    left: &IntegerTerm,
+    operator: &str,
+    right: &IntegerTerm,
+) -> String {
+    let mut labels = SnapshotLabels::ambient();
+    let mut renderer = Renderer {
+        output: String::with_capacity(128),
+        nodes: 0,
+        depth: 0,
+        truncated: false,
+        labels: &mut labels,
+        bound_names: Vec::new(),
+    };
+    renderer.integer(left);
+    renderer.push(&format!(" {operator} "));
+    renderer.integer(right);
+    if renderer.truncated {
+        renderer.output.push('…');
+    }
+    renderer.output
+}
+
 /// Compact binder sort spelling shared by traces and ordinary diagnostics.
 /// The kernel's `Debug` for an algebraic sort embeds its entire constructor
 /// schema, which obscures the proposition that follows the binder.

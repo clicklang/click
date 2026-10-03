@@ -64,7 +64,7 @@ pub(crate) mod model_fields;
 mod mutexes;
 mod named_authority;
 mod nat_integer;
-pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type};
+pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod primitives;
 pub(crate) mod proof;
 mod pure_functions;

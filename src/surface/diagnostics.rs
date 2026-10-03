@@ -5298,11 +5298,7 @@ fn describe_integer_comparison(
     operator: &str,
     right: &crate::kernel::SharedIntegerTerm,
 ) -> String {
-    format!(
-        "{} {operator} {}",
-        describe_integer_term(left),
-        describe_integer_term(right)
-    )
+    crate::surface::proof_diagnostics::render::render_integer_comparison(left, operator, right)
 }
 
 fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
