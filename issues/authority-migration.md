@@ -420,6 +420,23 @@ The produced-population predicate fixture and its ordinary caller also select
 authority semantics. They require an empty entry family explicitly and retain
 the original C and ensured predicate through positive and zero quantities.
 
+**Owned-count certification slice:** Independent contract certification now
+retains the count evaluator's authenticated member bounds under authority
+semantics. A helper with one owned member and matching authority can certify
+`1 <= count(...)` without assuming the global total is exactly one. Consumption
+uses the updated count, and neither an untracked resource fact nor a member
+without authority supplies the bound. The `authority_owned_count_*` regressions
+cover helper calls, nonnegative remaining counts, and exact/stale/unauthorized
+count refusals. This does not enable general `observe` in authority mode.
+
+**Private predicate facts slice:** Private member fact instantiation retains
+the current verification model and population state instead of starting a
+legacy state. Definition-local parameters and the member's own body remain
+the only local bindings and read permissions. The count-independent memory
+predicate fixture now uses explicit empty-family authority and keeps its
+original C and predicate claim through a checked birth. Foreign-memory facts
+remain rejected, and checking work stays bounded beside unrelated caller locals.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked

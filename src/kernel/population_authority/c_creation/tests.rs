@@ -4214,3 +4214,116 @@ fn local_numeric_batch_work_does_not_grow_with_quantity() {
     assert!(work[0].0 > 0 && work[0].1 > 0, "{work:?}");
     assert!(work.iter().all(|n| *n == work[0]), "{work:?}");
 }
+
+#[test]
+fn authority_contract_entry_retains_only_authenticated_member_bounds() {
+    let block = PointerBlock::ExternalArgument;
+    let description = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::typed_pointer(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CType::Int32Pointer,
+            )
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let member = CResourceFact::own(CResource::Composite {
+        name: description.family().into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let member_spec = CResourceSpec::composite(
+        CResourceAccessMode::Own,
+        "reference".into(),
+        vec![c_variable("p")],
+        vec![CType::Int32Pointer],
+    );
+    let authority_spec = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: None,
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(member_spec.clone()),
+                schema: description.schema().clone(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Borrow,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    let function = c_function(
+        CType::Void,
+        "inspect",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        c_return(c_void_value()),
+    )
+    .with_resource_summary(vec![authority_spec, member_spec.clone()], vec![])
+    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        "reference",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![],
+        vec![],
+    )]);
+    let AlgebraicValue::C(pointer) = &description.arguments()[0] else {
+        unreachable!();
+    };
+    let member_only_function = function
+        .clone()
+        .with_resource_summary(vec![member_spec], vec![]);
+    for tracked_quantity in [0, 1] {
+        let state = CState::new()
+            .with_population_creation_tracking()
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_facts([authority.clone(), member.clone()]),
+            )
+            .import_opaque_population(&authority, tracked_quantity)
+            .unwrap();
+        let count = state
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .observe_symbolic(&description)
+            .unwrap()
+            .entry_count;
+        let entry =
+            c_function_contract_entry(&state, &function, &[CExpression::Value(pointer.clone())])
+                .unwrap();
+        let lower_bound = Proposition::ConditionIs(
+            // `states` is an exact lookup. Match the count evaluator's
+            // canonical orientation, rather than asking it to prove `1 <= n`.
+            ConditionTerm::signed_greater_equal(count.clone(), Bitvector32Term::Constant(1)),
+            true,
+        );
+        assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
+        assert!(
+            !entry.states(&Proposition::ConditionIs(
+                ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(1)),
+                true
+            )),
+            "one locally owned member does not imply an exact global count"
+        );
+        let without_authority =
+            state.with_resource_context(ResourceContext::new().unchecked_with_fact(member.clone()));
+        let entry_without_authority = c_function_contract_entry(
+            &without_authority,
+            &member_only_function,
+            &[CExpression::Value(pointer.clone())],
+        )
+        .unwrap();
+        assert!(
+            !entry_without_authority.states(&lower_bound),
+            "ledger membership without owned authority does not authorize a count fact"
+        );
+    }
+}
