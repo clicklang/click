@@ -343,6 +343,15 @@ pre-call value equals the new count minus one; the arbitrary-result companion
 is rejected. The unrelated-call control also verifies restoration from saved
 caller memory without the callee assuming its suspended invariant.
 
+`return_population_rejects_missing_increment.md`,
+`return_population_rejects_missing_ownership.md`,
+`return_population_rejects_unupdated_sibling.md`, and
+`return_population_rejects_wrong_release.md` now select authority semantics.
+Three refuse restoring the exact counter/count equation after an explicit
+checked lifecycle change; the missing-write case has count authority and a
+read view, but is refused the unchanged C store. No post-count promise grants
+write ownership or another control invariant. All four C programs are unchanged.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

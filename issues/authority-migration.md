@@ -472,6 +472,12 @@ it equals the post-call count minus one, while the arbitrary-result negative
 still fails. An unrelated call preserves the caller-framed saved cell without
 assuming a temporarily broken control invariant.
 
+**Return-refusal slice:** All four return-population negatives now select
+authority semantics. Explicit births/consumption cannot restore a missing
+increment, an untouched sibling counter, or a nonfinal counter cleared to zero.
+The missing-write case owns count authority but only views C memory, and fails
+on the store itself. Every original C program and refusal obligation is retained.
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
    Before migrating named-member lifecycle helpers, extend their checked
