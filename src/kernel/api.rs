@@ -4837,6 +4837,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
         CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::PopulationMemberRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::IteratedStep(step) => Some(step.before_state()),
+        CheckedExecutionEvent::TacticApplication(application) => Some(application.before_state()),
         CheckedExecutionEvent::Statement(theorem) | CheckedExecutionEvent::Condition(theorem) => {
             match proof_evidence_conclusion(theorem) {
                 Proposition::CStatementVerifies { state, .. }
@@ -4897,7 +4898,8 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::ResourceRewrite(_)
                 | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
                 | CheckedExecutionEvent::PopulationMemberRewrite(_)
-                | CheckedExecutionEvent::IteratedStep(_) => {}
+                | CheckedExecutionEvent::IteratedStep(_)
+                | CheckedExecutionEvent::TacticApplication(_) => {}
             }
         }
         true

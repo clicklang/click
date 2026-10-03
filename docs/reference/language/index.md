@@ -2218,6 +2218,55 @@ declared before the proof that calls it. A named contract takes its instances
 positionally instead, as `step(Exact(k))`, because it declares a parameter
 list.
 
+## User-defined tactics
+
+A `tactic` declaration names a reusable proof step with a contract. Its
+clauses are a function contract's: `consumes`, `produces`, `owns`, `views`,
+`requires`, and `ensures`. Its `by` block proves that contract once, at one
+point of execution: it may unfold, fold, apply theorems and earlier tactics,
+and prove facts, but it runs no C, so `step`, `execute`, `loop`, `branch`, and
+`outcomes` are refused in it. The block ends where its last step leaves the
+proof: every produced instance must be held and every `ensures` an available
+fact.
+
+<!-- verified-example: mdtests/user_tactic_reshapes_owned_resources.md -->
+```click
+tactic divide(p: struct pr*) {
+    consumes x: both(p);
+    produces y: first(p);
+    produces z: second(p);
+    ensures y.tag == 7;
+} by {
+    unfold(x);
+    let y = fold(first(p), { tag: 7 });
+    let z = fold(second(p), { tag: 0 });
+    have y.tag == 7 by { simp(); }
+}
+```
+
+A proof applies it like any tactic, by name, with the binder map a call step
+uses:
+
+<!-- verified-example: mdtests/user_tactic_reshapes_owned_resources.md -->
+```click
+let { y: y, z: z } = divide(p) { x: x };
+```
+
+An application is one simple step. It checks each `requires` as an available
+fact, consumes the mapped instances, produces the declared ones under the
+names the `let` pattern gives, and adds the `ensures`. It changes only the
+resources and facts the proof holds: no C runs, memory is unchanged, and every
+fact about a cell survives. `click expand` never expands an application, and
+`click audit` audits the smart tactics inside the tactic's own `by` block.
+
+Tactic parameters use Click's `name: type` spelling and are C scalars and
+pointers in this release. A tactic may not take the name of a built-in tactic
+or a C function, may not declare `diverges`, `throws`, or `constructs`, and is
+applied after it is declared, in the module that declares it. An application
+runs at an execution frontier before the function exits. See
+[User-defined tactics (design)](../../internals/user-defined-tactics.md) for
+the kernel rule and the planned recursion.
+
 ## Propositions
 
 Click proposition connectives are words:

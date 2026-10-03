@@ -103,7 +103,7 @@ fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String)
     format!("[{}]", entries.join(", "))
 }
 
-fn diagnostic_item_limit() -> usize {
+pub(super) fn diagnostic_item_limit() -> usize {
     if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
         usize::MAX
     } else {
@@ -802,6 +802,28 @@ pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefus
     format!("missing loop-head prerequisite{context}: `{fact}`")
 }
 
+/// One contract claim clause as its source wrote it: the proposition of an
+/// `ensures`, or the `owns`/`produces` resource clause, with its guard.
+pub(super) fn describe_ensure_clause(clause: &EnsureClause) -> String {
+    match clause.ensure() {
+        Ensure::Proposition(proposition) => describe_click_proposition(proposition),
+        Ensure::Resource(resource) => {
+            let verb = if clause.borrowed() {
+                "owns"
+            } else {
+                "produces"
+            };
+            let spelling = format!(
+                "{verb} {}",
+                crate::surface::validation::describe_resource_clause(resource)
+            );
+            clause.condition().map_or(spelling.clone(), |guard| {
+                format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
+            })
+        }
+    }
+}
+
 /// The contract claims certification did not establish, each named by its
 /// claim label and spelled as the source clause wrote it, bounded by the
 /// diagnostic item limit.
@@ -812,24 +834,7 @@ pub(super) fn describe_unverified_contract_claims(
     use crate::kernel::CFunctionContractClaimKey;
     let function_name = function_block.signature().name();
     let describe_clause = |label: String, clause: &EnsureClause| {
-        let spelling = match clause.ensure() {
-            Ensure::Proposition(proposition) => describe_click_proposition(proposition),
-            Ensure::Resource(resource) => {
-                let verb = if clause.borrowed() {
-                    "owns"
-                } else {
-                    "produces"
-                };
-                let spelling = format!(
-                    "{verb} {}",
-                    crate::surface::validation::describe_resource_clause(resource)
-                );
-                clause.condition().map_or(spelling.clone(), |guard| {
-                    format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
-                })
-            }
-        };
-        format!("{label} `{spelling}`")
+        format!("{label} `{}`", describe_ensure_clause(clause))
     };
     let item_limit = diagnostic_item_limit();
     let mut described = keys

@@ -329,6 +329,12 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
     for function in &mut file.function_blocks {
         expand_declared_resources_in_function_block(function, &resource_definitions)?;
     }
+    for tactic in &mut file.tactic_definitions {
+        expand_declared_resources_in_function_block(
+            tactic.function_block_mut(),
+            &resource_definitions,
+        )?;
+    }
 
     for theorem in &mut file.theorem_definitions {
         crate::surface::enter_ambient_declaration(theorem.name());

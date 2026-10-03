@@ -2450,6 +2450,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Right => "right()",
         ProofStep::Enumerate => "enumerate()",
         ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => "step",
+        ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",
         ProofStep::Induct { .. } => "induct",

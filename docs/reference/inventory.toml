@@ -910,6 +910,10 @@ id = "language.word.theorem"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
+id = "language.word.tactic"
+path = "reference/language/grammar.md#word-index"
+
+[[item]]
 id = "language.word.executes"
 path = "reference/language/grammar.md#word-index"
 
@@ -1013,6 +1017,10 @@ path = "reference/language/index.md#file-shape"
 [[item]]
 id = "language.theorem"
 path = "reference/language/index.md#file-shape"
+
+[[item]]
+id = "language.tactic"
+path = "reference/language/index.md#user-defined-tactics"
 
 [[item]]
 id = "language.decreases"
@@ -1241,6 +1249,10 @@ id = "tactic.mark"
 path = "reference/tactics/index.md#execution"
 
 [[item]]
+id = "tactic.tactic"
+path = "reference/tactics/index.md#resources-and-snapshots"
+
+[[item]]
 id = "tactic.step"
 path = "reference/tactics/index.md#execution"
 
@@ -1416,6 +1428,10 @@ path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.step-call"
 path = "reference/tactics/index.md#execution"
+
+[[item]]
+id = "tactic-form.user-tactic"
+path = "reference/tactics/index.md#resources-and-snapshots"
 [[item]]
 id = "tactic-form.execute"
 path = "reference/tactics/index.md#execution"

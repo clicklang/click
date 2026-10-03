@@ -1103,7 +1103,11 @@ pub(super) fn validate_algebraic_type_uses(
             }
         }
     }
-    for function in file.function_blocks() {
+    for function in file.function_blocks().iter().chain(
+        file.tactic_definitions()
+            .iter()
+            .map(|tactic| tactic.function_block()),
+    ) {
         let requires_variables = function_signature_type_environment(function.signature(), false);
         let ensures_variables = function_signature_type_environment(function.signature(), true);
         for requirement in function

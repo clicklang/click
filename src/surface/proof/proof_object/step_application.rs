@@ -788,6 +788,9 @@ impl<'a> Proof<'a> {
         ) {
             return self.apply_execution_statement_step(step);
         }
+        if matches!(&step, ProofStep::UserTactic(_)) {
+            return self.apply_execution_user_tactic(step);
+        }
 
         let mut provenance_step = step.clone();
         let checked_proposition_successor = match &step {

@@ -1026,6 +1026,138 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// `name(args) { binder: instance }`: one application of a user-defined
+    /// tactic at the execution frontier.
+    ///
+    /// The tactic's verified rule is applied by the kernel with no C
+    /// statement; the binder map is the whole binding, exactly as for a call
+    /// step, and every argument is lowered at the frontier as a fold field
+    /// is. Every precondition must already be an available fact.
+    pub(in crate::surface::proof) fn apply_execution_user_tactic(
+        &self,
+        step: ProofStep,
+    ) -> Result<Self, ClickError> {
+        let ProofStep::UserTactic(application) = &step else {
+            unreachable!("only a tactic application reaches this step")
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error(
+                "a tactic is applied in a C function or tactic proof in this release",
+            ));
+        };
+        self.require_execution_frontier("a tactic application")?;
+        let callee = application.callee();
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
+        let parameters = context
+            .function_environment
+            .get_function(callee)
+            .ok_or_else(|| self.step_error(format!("unknown tactic `{callee}`")))?
+            .parameters()
+            .to_vec();
+        if parameters.len() != application.arguments().len() {
+            return Err(self.step_error(format!(
+                "tactic `{callee}` expects {} argument(s), got {}",
+                parameters.len(),
+                application.arguments().len()
+            )));
+        }
+        let mut bindings = BTreeMap::new();
+        for binding in application.binders().iter().chain(application.produced()) {
+            crate::instrumentation::record_deterministic_work(1);
+            if bindings
+                .insert(binding.binder_identity(), binding.identity())
+                .is_some()
+            {
+                return Err(self.step_error(format!(
+                    "duplicate binder `{}` in the tactic's map",
+                    binding.binder()
+                )));
+            }
+        }
+        let environment = context
+            .function_environment
+            .clone()
+            .with_selected_call_binders(callee, parameters.len(), bindings);
+        let before = &*execution.core.state;
+        let pre_state = context.old_reference_state(&execution.core.frontier, before);
+        let values = parameter_values(context.parsed_function.parameters(), context.arguments)?;
+        let array_refs = array_refs_for_parameters(
+            context.parsed_function.parameters(),
+            &values,
+            before.memory(),
+        );
+        let (values, array_refs) = contract_environment_at_state(&values, &array_refs, before);
+        let mut arguments = Vec::with_capacity(parameters.len());
+        for (parameter, argument) in parameters.iter().zip(application.arguments()) {
+            let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+            let value = capture_resource_field_initializer(
+                &argument,
+                &crate::kernel::ResourceFieldType::C(parameter.c_type()),
+                self.facts().assumptions(),
+                &values,
+                &array_refs,
+                pre_state,
+                before,
+                &execution.presentation.recorded_snapshots,
+                context.predicate_environment,
+                context.click_function_environment,
+            )
+            .map_err(|message| {
+                self.step_error(format!(
+                    "tactic `{callee}` argument `{}`: {message}",
+                    parameter.name()
+                ))
+            })?;
+            let crate::kernel::AlgebraicValue::C(value) = value else {
+                unreachable!("a C parameter captures a C value")
+            };
+            arguments.push(value);
+        }
+        let (state, facts) = execution
+            .core
+            .record_tactic_application(
+                context.function,
+                context.arguments,
+                self.facts(),
+                callee,
+                &arguments,
+                &environment,
+            )
+            .map_err(|refusal| match refusal {
+                crate::kernel::TacticApplicationRefusal::MissingRequirement(requirement) => self
+                    .step_error(format!(
+                        "tactic `{callee}` requires {}, which is not an available fact here; \
+                         establish it first, for example with `have`",
+                        crate::surface::proof_diagnostics::render::render_proposition(&requirement)
+                    )),
+                crate::kernel::TacticApplicationRefusal::Refused(message) => {
+                    self.step_error(message)
+                }
+            })?;
+        execution.core.state = state.into();
+        let added_facts = facts.introduced_since(self.facts()).unwrap_or_default();
+        let state = self
+            .state
+            .publish_checked_frontier_transition(facts, execution, added_facts.clone(), added_facts)
+            .map_err(|error| self.execution_update_error("a tactic application", error))?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: Arc::new(ProofNode {
+                path_memo: Default::default(),
+                parent: Some(self.node.clone()),
+                step: Some(Arc::new(step)),
+                focused_branch: self.focused_branch_id(),
+                depth: self.node.depth + 1,
+                split_branches: Vec::new(),
+            }),
+        })
+    }
+
     pub(super) fn apply_execution_mark(&self, name: &str) -> Result<KernelProofHandle, ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("`mark` requires an execution-frontier proof"));
