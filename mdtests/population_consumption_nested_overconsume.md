@@ -12,20 +12,22 @@ unsigned int overconsume(struct counter *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 verifying "overconsume.c";
-resource remaining(p: struct counter*) {
+resource remaining(p: struct counter*) {}
+resource control(p: struct counter*) {
+    owns authority(remaining(p));
     owns p->value;
     fact count(remaining(p)) <= 3;
     fact p->value == 3 - count(remaining(p));
 }
 uint32 contribute_early(struct counter* p) {
-    owns remaining(p);
+    owns control(p);
     consumes remaining(p);
     requires count(remaining(p)) > 1;
 } by {
-    open(remaining(p)) { have count(remaining(p)) <= 3 by { simp(); } }
-    open(remaining(p)) {
+    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
                 count(remaining(p)) > 1;
@@ -41,19 +43,21 @@ uint32 contribute_early(struct counter* p) {
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
+        unfold(remaining(p));
         step();
     }
-    open(remaining(p)) { step(); }
+    open(control(p)) { step(); }
     simp();
 }
 uint32 overconsume(struct counter* p) {
+    owns control(p);
     owns 2 of remaining(p);
     consumes remaining(p);
     requires count(remaining(p)) > 2;
 } by {
     have count(remaining(p)) > 1 by { arithmetic() using { count(remaining(p)) > 2; } }
-    open(remaining(p)) { have count(remaining(p)) <= 3 by { simp(); } }
-    open(remaining(p)) {
+    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
                 count(remaining(p)) > 1;
@@ -70,6 +74,7 @@ uint32 overconsume(struct counter* p) {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
         have count(remaining(p)) - 1 > 1 by { arithmetic() using { count(remaining(p)) > 2; count(remaining(p)) <= 3; } }
+        unfold(remaining(p));
         step();
     }
     step();

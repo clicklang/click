@@ -403,7 +403,10 @@ explicit member consumption inside an ordinary control scope. Reopening does
 not spend again; nested calls and both reporting branches retain the one
 checked effect. The caller proves two contributions and fully retires authority.
 The wrong-increment negative uses the same protocol and fails on the concrete
-counter/count invariant. All five proofs and ten audit sites pass.
+counter/count invariant. All five proofs and ten audit sites pass. The missing-contract, repeated-consumption,
+and nested-overconsumption regressions now use authority controls too; each
+fails on the promised member ownership missing at return, after the concrete
+counter invariant has been restored.
 
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution

@@ -271,6 +271,9 @@ zero/one/two-value pipelines preserve their original C and result guarantees.
 controls. Explicit member consumption precedes invariant restoration; reopening
 does not consume again. Nested calls and both reporting branches verify, while
 the unchanged two-unit increment is rejected for failing the counter/count fact.
+The missing-contract, repeated-consumption, and nested-overconsumption fixtures
+also select authority semantics. They reject missing returned member ownership,
+without relying on an intermediate arithmetic failure.
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
