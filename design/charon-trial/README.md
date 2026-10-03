@@ -134,7 +134,8 @@ zero generated aggregate fields, and bounded deterministic verification work.
 The source fixture and negative claims also run through verification, profiling,
 auditing, expansion, and expanded-certificate rechecking.
 
-General snapshot copies, copies after an element override, whole-array
+The snapshot checkpoint below adds general represented lane copies and copies
+after concrete element overrides. Whole-array
 reassignment, by-value array parameters/returns, array fields and nested arrays
 remain outside the compact-array increment. Unsupported
 bulk source/storage shapes produce a bounded checked execution failure; they are
@@ -283,7 +284,7 @@ mutable borrows. Verification, profiling, auditing and expanded-certificate
 rechecking agree on the trial.
 
 The following checkpoint adds owned local records and uniform region copies.
-General nonuniform snapshots and shared array iteration remain requirements for
+Shared array iteration remains a requirement for
 adler2's owned `U32X4` computation.
 
 ## Owned uniform array-field checkpoint
@@ -312,12 +313,39 @@ readonly storage, active view loans and addressed scalar-local bindings.
 Verification, profiling, auditing, expansion and expanded-certificate rechecking
 agree on the unchanged trial source.
 
-Compact copies still require a uniform initialized local source region. General
-nonuniform snapshot copies, borrowed symbolic or heap regions, union views and
-local-array reassignment remain outside this checkpoint. Explicit array literals
-use ordinary stores proportional to their source elements; copying such a
-nonuniform array fails closed. Add general snapshots before claiming parity for
-adler2's four independently computed lanes.
+The following snapshot checkpoint extends these copies to independently computed
+scalar lanes. Borrowed symbolic or heap regions, union views and local-array
+reassignment remain outside the region operation.
+
+## Nonuniform array snapshot checkpoint
+
+[`array-snapshots/snapshots.rs`](array-snapshots/snapshots.rs) and its
+[sidecar](array-snapshots/snapshots.click) prove eight contracts for computed
+lanes, owned record moves, field replacement, neighboring fields, signed and
+byte arrays, and source/destination mutation after copying. A sparse repeated
+array contains a separately computed lane and retains it after source mutation.
+The import lock names `compact-scalar-array-snapshots-v1`.
+
+Copies capture the selected source region before any destination write. They
+retain constant spans as typed runs and explicit lanes as immutable scalar
+values. Coverage includes run holes filled by explicit stores; incomplete or
+incompatible typed coverage is rejected. Destination updates use the existing
+checked overlap invalidation and establish initialization without granting
+read/write authority. No copy points back to mutable source storage.
+
+Work follows represented spans and cells, rather than array extent. Kernel
+and ordinary imported verification regressions cover lengths 4/8, 1024 and
+1,000,000, with fixed sparse edits. Overlapping copies preserve their original
+source values; adjacent fields, permissions, initialization, qualifiers and
+move flags remain checked. Ordinary verification, profile, audit, expansion and
+expanded-certificate verification agree. The pinned compiler refreshes the
+actual ULLBC artifact and all other checkpoint locks.
+
+This supports concrete aligned local regions containing represented `i32`,
+`u8` and `u32` values. Opaque load runs and symbolic-address cached writes are
+rejected. Symbolic/heap region writes, local-array reassignment, shared-element
+array iteration and resolved custom operators remain migration work before
+claiming parity for the unchanged checksum implementation.
 
 ## Checksum arithmetic checkpoint
 
@@ -412,7 +440,7 @@ scaling evidence. Extend the single ULLBC adapter rather than adding a fallback
 to the legacy exporter per function. The borrowed-loop checkpoint now composes
 a live restoring guard with checked
 iteration and termination. The conversions/arrays checkpoint composes resolved
-unsigned conversion, repeated initialization, uniform copy, indexing, and owned
+unsigned conversion, repeated initialization, nonuniform snapshot copy, indexing, and owned
 cleanup. The byte-slice checkpoint carries full-width metadata, dynamic bounds,
 reborrows and local calls through that same boundary. Stored exact-chunk state,
 owned moves, typed Option dispatch and remainder now pass through it as well.

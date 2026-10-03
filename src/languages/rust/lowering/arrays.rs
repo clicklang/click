@@ -48,6 +48,17 @@ impl Context<'_> {
         value: &E,
     ) -> Result<CStatement, String> {
         array_length(element, length)?;
+        // Record field addresses retain the record pointer's pointee type.
+        // Element addressing must instead use the array's scalar stride.
+        let target = c_cast(
+            target,
+            match element {
+                CType::UInt8 => CType::UInt8Pointer,
+                CType::UInt32 => CType::UInt32Pointer,
+                CType::Int32 => CType::Int32Pointer,
+                _ => unreachable!(),
+            },
+        );
         let source_type = match element {
             CType::UInt8 => Type::U8,
             CType::UInt32 => Type::U32,

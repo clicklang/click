@@ -1312,6 +1312,74 @@ mod tests {
         );
     }
     #[test]
+    fn charon_nonuniform_sparse_snapshots_have_bounded_work_at_large_extents() {
+        let mut samples = Vec::new();
+        for length in [4u32, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut export = decode(
+                include_bytes!("../../../design/charon-trial/array-snapshots/snapshots.ullbc"),
+                "snapshots.rs",
+                include_bytes!("../../../design/charon-trial/array-snapshots/snapshots.rs"),
+            )
+            .unwrap();
+            export.functions.retain(|f| f.name == "sparse");
+            let mir = export.functions[0].mir.as_mut().unwrap();
+            for local in &mut mir.locals {
+                match &mut local.value_type {
+                    Type::Array { length: n, .. } => *n = u64::from(length),
+                    Type::Reference { pointee, .. } => {
+                        if let Type::Array { length: n, .. } = pointee.as_mut() {
+                            *n = u64::from(length);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for statement in mir.blocks.iter_mut().flat_map(|b| &mut b.statements) {
+                if let S::Assign {
+                    value: E::Repeat { length: n, .. },
+                    ..
+                } = statement
+                {
+                    *n = u64::from(length);
+                }
+                if let S::Assign {
+                    value:
+                        E::Borrow {
+                            value_type: Type::Reference { pointee, .. },
+                            ..
+                        },
+                    ..
+                } = statement
+                    && let Type::Array { length: n, .. } = pointee.as_mut()
+                {
+                    *n = u64::from(length);
+                }
+            }
+            let (functions, _) = super::super::lowering::lower(&export).unwrap();
+            fn nodes(statement: &crate::kernel::CStatement) -> usize {
+                match statement {
+                    crate::kernel::CStatement::Seq(a, b) => 1 + nodes(a) + nodes(b),
+                    _ => 1,
+                }
+            }
+            let shape = nodes(functions[0].to_kernel_function().body());
+            let prepared = super::super::import::prepared_for_test(export).unwrap();
+            let claim = "verifying \"snapshots.rs\"; uint32 sparse(uint32 a, uint32 b) { ensures result == b; } by { execute(); simp(); }";
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                C0VerificationSession::new_program_prepared(claim, &prepared)
+            });
+            result.unwrap();
+            samples.push((shape, work));
+        }
+        assert!(
+            samples
+                .iter()
+                .all(|sample| sample.0 == samples[0].0 && sample.1 <= samples[0].1 + 128),
+            "{samples:?}"
+        );
+    }
+    #[test]
     fn charon_owned_array_move_cannot_reuse_consumed_record() {
         let mut export = decode(OWNED_ARRAY_ARTIFACT, "owned.rs", OWNED_ARRAY_SOURCE).unwrap();
         export.functions.retain(|f| f.name == "moved");

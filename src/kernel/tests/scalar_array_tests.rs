@@ -78,25 +78,20 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
 }
 
 #[test]
-fn compact_scalar_arrays_reject_nonuniform_uninitialized_and_partial_storage() {
+fn compact_scalar_arrays_reject_uninitialized_and_partial_storage() {
     let source = pointer("local:array-source", 0);
     let target = pointer("local:array-target", 0);
-    for memory in [
-        fresh(4),
-        seeded(4).store(source.clone(), CValue::UInt32(9u32.into())),
-    ] {
-        assert!(
-            memory
-                .initialize_scalar_array(
-                    &target,
-                    CType::UInt32,
-                    4,
-                    CValue::pointer(source.clone()),
-                    true
-                )
-                .is_err()
-        );
-    }
+    assert!(
+        fresh(4)
+            .initialize_scalar_array(
+                &target,
+                CType::UInt32,
+                4,
+                CValue::pointer(source.clone()),
+                true,
+            )
+            .is_err()
+    );
     assert!(
         seeded(4)
             .initialize_scalar_array(
@@ -459,6 +454,7 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
     for (at, element, count) in [
         (target.clone(), CType::Int32, 4),
         (pointer("local:target", 5), CType::UInt32, 4),
+        (pointer("local:target", i64::MAX - 3), CType::UInt32, 4),
         (target.clone(), CType::UInt32, 6),
     ] {
         assert!(
@@ -479,18 +475,20 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
     let changed = memory
         .clone()
         .store(source.clone(), CValue::UInt32(9u32.into()));
-    assert!(
-        changed
-            .write_scalar_array_region(
-                &target,
-                CType::UInt32,
-                4,
-                CValue::pointer(source.clone()),
-                true,
-                false,
-                &context
-            )
-            .is_err()
+    let copied = changed
+        .write_scalar_array_region(
+            &target,
+            CType::UInt32,
+            4,
+            CValue::pointer(source.clone()),
+            true,
+            false,
+            &context,
+        )
+        .unwrap();
+    assert_eq!(
+        copied.load(&target),
+        CExpressionOutcome::Value(CValue::UInt32(9u32.into()))
     );
     let fresh = CMemory::new()
         .with_block(source.block.clone(), 24)
@@ -603,5 +601,175 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
     assert_eq!(
         state.locals().get("value"),
         Some(&CValue::UInt32(7u32.into()))
+    );
+}
+
+#[test]
+fn scalar_array_snapshots_preserve_sparse_lanes_without_extent_work() {
+    let mut samples = Vec::new();
+    for count in [8, 1024, 1_000_000] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = pointer("local:array-source", 0);
+        let target = pointer("local:array-target", 0);
+        let lane = CValue::UInt32(Bitvector32Term::Variable(Variable(912_346)));
+        let memory = seeded(count).store(source.clone(), lane.clone()).store(
+            pointer("local:array-source", i64::from(count - 1) * 4),
+            CValue::UInt32(17u32.into()),
+        );
+        let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory
+                .initialize_scalar_array(
+                    &target,
+                    CType::UInt32,
+                    count,
+                    CValue::pointer(source.clone()),
+                    true,
+                )
+                .unwrap()
+        });
+        assert_eq!(copied.cells.concrete().len(), 4);
+        assert_eq!(copied.cells.runs_in_block(&target.block).count(), 1);
+        assert_eq!(
+            copied.load(&target),
+            CExpressionOutcome::Value(lane.clone())
+        );
+        assert_eq!(
+            copied.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
+            CExpressionOutcome::Value(CValue::UInt32(17u32.into()))
+        );
+        let changed = copied
+            .store(source.clone(), CValue::UInt32(99u32.into()))
+            .store(
+                pointer("local:array-target", 4),
+                CValue::UInt32(18u32.into()),
+            );
+        assert_eq!(changed.load(&target), CExpressionOutcome::Value(lane));
+        assert_eq!(
+            changed.load(&pointer("local:array-source", 4)),
+            CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(912_345))))
+        );
+        samples.push((count, work));
+    }
+    eprintln!("sparse snapshot copy (length, work): {samples:?}");
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn scalar_array_snapshots_check_explicit_coverage_types_and_overlap() {
+    let source = pointer("local:array-source", 0);
+    let target = pointer("local:array-target", 0);
+    let mut memory = fresh(4);
+    for index in 0..4 {
+        memory = memory.store(
+            pointer("local:array-source", index * 4),
+            CValue::UInt32((index as u32 + 1).into()),
+        );
+    }
+    let copied = memory
+        .clone()
+        .initialize_scalar_array(
+            &target,
+            CType::UInt32,
+            4,
+            CValue::pointer(source.clone()),
+            true,
+        )
+        .unwrap();
+    for index in 0..4 {
+        assert_eq!(
+            copied.load(&pointer("local:array-target", index * 4)),
+            CExpressionOutcome::Value(CValue::UInt32((index as u32 + 1).into()))
+        );
+    }
+    let overlap = memory
+        .clone()
+        .write_scalar_array_region(
+            &pointer("local:array-source", 4),
+            CType::UInt32,
+            3,
+            CValue::pointer(source.clone()),
+            true,
+            false,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    for index in 1..4 {
+        assert_eq!(
+            overlap.load(&pointer("local:array-source", index * 4)),
+            CExpressionOutcome::Value(CValue::UInt32((index as u32).into()))
+        );
+    }
+    let wrong_type = memory
+        .clone()
+        .store(pointer("local:array-source", 4), CValue::Int32(2.into()));
+    let missing = fresh(4).store(source.clone(), CValue::UInt32(1u32.into()));
+    let misaligned = memory.store(pointer("local:array-source", 1), CValue::UInt8(3u32.into()));
+    for invalid in [wrong_type, missing, misaligned] {
+        assert!(
+            invalid
+                .initialize_scalar_array(
+                    &target,
+                    CType::UInt32,
+                    4,
+                    CValue::pointer(source.clone()),
+                    true
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn scalar_array_snapshot_region_does_not_scan_unrelated_sibling_cells() {
+    let mut samples = Vec::new();
+    for siblings in [1, 64, 2048] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = pointer("local:siblings", 4);
+        let target = pointer("local:target", 0);
+        let mut memory = CMemory::new()
+            .with_block(source.block.clone(), (siblings + 5) * 4)
+            .with_block(target.block.clone(), 16)
+            .write_scalar_array_region(
+                &source,
+                CType::UInt32,
+                4,
+                CValue::UInt32(7u32.into()),
+                false,
+                false,
+                &PureFactContext::new(),
+            )
+            .unwrap()
+            .store(source.clone(), CValue::UInt32(9u32.into()));
+        for index in 0..siblings {
+            memory = memory.store(
+                pointer("local:siblings", i64::from(index + 5) * 4),
+                CValue::UInt32(11u32.into()),
+            );
+        }
+        let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory
+                .write_scalar_array_region(
+                    &target,
+                    CType::UInt32,
+                    4,
+                    CValue::pointer(source),
+                    true,
+                    false,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+        });
+        assert_eq!(
+            copied.load(&target),
+            CExpressionOutcome::Value(CValue::UInt32(9u32.into()))
+        );
+        samples.push((siblings, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 128),
+        "{samples:?}"
     );
 }

@@ -3949,7 +3949,7 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             describe_c_expression(target),
             count,
             if *copy {
-                " by uniform copy"
+                " by snapshot copy"
             } else {
                 " by repetition"
             }

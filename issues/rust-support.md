@@ -248,9 +248,9 @@ The conversions/arrays checkpoint now composes a resolved `u32::from` call,
 repeated initialization, uniform whole-array copy, and restoring `Drop` guard.
 Its shared compact initialization operation checks authority and initialization;
 8-, 1024-, and million-element arrays retain bounded node count, storage, and
-deterministic proof work. Empty initializer calls execute once. General snapshot
-copies, copies after element overrides, and whole-array reassignment remain
-migration work. The byte-slice checkpoint now carries shared/mutable parameters,
+deterministic proof work. Empty initializer calls execute once. The snapshot
+checkpoint below now adds copies after concrete element overrides and copies of
+independently computed lanes; whole-array reassignment remains migration work. The byte-slice checkpoint now carries shared/mutable parameters,
 full-width length metadata, dynamic read/write bounds, reborrows and local calls
 through ULLBC, including restoring guard cleanup. `byte-slice-metadata-v1` checks
 compiler-resolved length calls and paired pointer/length origins; typed indices
@@ -295,8 +295,13 @@ whole-field replacement, extraction and snapshot independence with neighboring
 fields preserved. `compact-uniform-array-regions-v1` keeps complete byte authority,
 source initialization, types, extents, qualifiers and active loans checked.
 Lowered nodes and verification work remain bounded at 4/1024/1,000,000 elements;
-consumed record flags reject duplicate moves. General nonuniform snapshot copies
-and symbolic/heap region writes remain unsupported. Next add general snapshots,
+consumed record flags reject duplicate moves. The
+`compact-scalar-array-snapshots-v1` checkpoint now copies independently
+computed lanes and sparse repeated storage, preserving values across source and
+destination mutation, record moves and field replacement. Complete typed
+coverage, snapshot-before-write ordering, ordinary proof-tool agreement and
+bounded work at 4/1024/1,000,000 elements are tested. Symbolic/heap region writes,
+opaque load runs and symbolic-address cached writes remain unsupported. Next add
 array/shared-element iteration and resolved custom operators for the unchanged checksum path, broaden iterator composition
 proofs, and cover borrowed loops. Stable observations and broader iterator parity remain gates.
 Establish stable source/proof observations and equivalent coverage before
