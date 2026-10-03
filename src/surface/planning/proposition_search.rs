@@ -479,11 +479,75 @@ impl PropositionSearch for PureFactContext {
             }
             _ => false,
         };
-        let candidates = self
-            .proposition_facts()
-            .filter(|fact| candidate_family(fact) && (!exclude_exact_goal || *fact != proposition))
-            .cloned()
-            .collect::<Vec<_>>();
+        // A loadability or store goal is decided from the loadability facts
+        // of its own block and from nothing else in that family: that is
+        // the only bucket the kernel's loadable prover reads. Selecting
+        // from the same index keeps every answer while leaving facts about
+        // other objects unvisited.
+        let goal_base = match proposition {
+            Proposition::CMemoryLoadable { base, .. } => Some(base),
+            Proposition::CMemoryCanStore { pointer, .. } => Some(pointer),
+            _ => None,
+        };
+        let usable = |fact: &&Proposition| !exclude_exact_goal || *fact != proposition;
+        // A read-defined goal is first asked of the evidence stated at its
+        // own address and of its block's loadability facts; a separation of
+        // two memory ranges of the facts its block pair and the non-memory
+        // residue hold. Those are the buckets the kernel's provers consult
+        // directly.
+        let indexed = match proposition {
+            _ if goal_base.is_some() => goal_base.map(|base| {
+                self.memory_loadable_candidates_for_base(base)
+                    .inspect(|_| record_candidate_visit())
+                    .filter(usable)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            }),
+            Proposition::CMemoryReadDefined {
+                pointer,
+                value_type,
+                ..
+            } => Some(
+                self.memory_read_defined_candidates(pointer, *value_type)
+                    .into_iter()
+                    .chain(self.memory_loadable_candidates_for_base(pointer))
+                    .inspect(|_| record_candidate_visit())
+                    .filter(usable)
+                    .cloned()
+                    .collect(),
+            ),
+            Proposition::CResourceSeparate { left, right } => self
+                .resource_separation_candidates(left, right)
+                .map(|facts| {
+                    facts
+                        .into_iter()
+                        .inspect(|_| record_candidate_visit())
+                        .filter(usable)
+                        .cloned()
+                        .collect()
+                }),
+            _ => None,
+        };
+        // The rest of the family is a fallback, reached only when no indexed
+        // source justified the goal: a read whose address is itself computed
+        // from another read, or a separation entailed through containment in
+        // a differently placed fact, can still be proved from one of them.
+        // Loadability needs none: its prover reads the block bucket alone.
+        let family_fallback = |tried: &[Proposition]| {
+            if !matches!(
+                proposition,
+                Proposition::CMemoryReadDefined { .. } | Proposition::CResourceSeparate { .. }
+            ) {
+                return Vec::new();
+            }
+            let tried = tried.iter().collect::<BTreeSet<_>>();
+            self.proposition_facts()
+                .inspect(|_| record_candidate_visit())
+                .filter(|fact| candidate_family(fact) && usable(fact) && !tried.contains(fact))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let candidates = indexed.unwrap_or_default();
         if let Proposition::CMemoryLoadable {
             memory,
             base,
@@ -499,35 +563,55 @@ impl PropositionSearch for PureFactContext {
                 return Some((candidate, premises_id, evidence));
             }
         }
-        if candidates.len() > 1 {
-            for selected in &candidates {
+        let try_each = |candidates: &[Proposition]| {
+            for selected in candidates {
                 if simp_reasoning_interrupted() {
-                    return None;
+                    return Err(());
                 }
                 let candidate = self.with_only_proposition_facts(std::slice::from_ref(selected));
+                let (evidence, premises_id) =
+                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                if let Some(evidence) = evidence {
+                    return Ok(Some((candidate, premises_id, evidence)));
+                }
+            }
+            Ok(None)
+        };
+        match try_each(&candidates) {
+            Err(()) => return None,
+            Ok(Some(found)) => return Some(found),
+            Ok(None) => {}
+        }
+        // Two loadable ranges justify a goal only by concatenation, and the
+        // kernel names the pair that concatenates. The first lookup above
+        // may have named the goal's own statement; without it, ask again of
+        // the other sources alone instead of trying every pair.
+        if exclude_exact_goal
+            && let Proposition::CMemoryLoadable {
+                memory,
+                base,
+                bytes,
+            } = proposition
+            && candidates.len() > 1
+        {
+            let sources = self.with_only_proposition_facts(&candidates);
+            if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes) {
+                let candidate = self.with_only_proposition_facts(&premises);
                 let (evidence, premises_id) =
                     candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
                 if let Some(evidence) = evidence {
                     return Some((candidate, premises_id, evidence));
                 }
             }
-            if matches!(proposition, Proposition::CMemoryLoadable { .. }) {
-                for first in 0..candidates.len() {
-                    for second in first + 1..candidates.len() {
-                        if simp_reasoning_interrupted() {
-                            return None;
-                        }
-                        let candidate = self.with_only_proposition_facts(&[
-                            candidates[first].clone(),
-                            candidates[second].clone(),
-                        ]);
-                        let (evidence, premises_id) =
-                            candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
-                        if let Some(evidence) = evidence {
-                            return Some((candidate, premises_id, evidence));
-                        }
-                    }
-                }
+        }
+        let fallback = family_fallback(&candidates);
+        // A lone fallback fact is the whole family: the full context below
+        // decides the goal from it just as well.
+        if fallback.len() + candidates.len() > 1 {
+            match try_each(&fallback) {
+                Err(()) => return None,
+                Ok(Some(found)) => return Some(found),
+                Ok(None) => {}
             }
         }
         if exclude_exact_goal {
@@ -1530,4 +1614,29 @@ mod condition_premise_tests {
             1
         );
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static CANDIDATE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts one proposition fact examined as a possible source for an atomic
+/// memory or resource goal, apart from the kernel's checking work.
+fn record_candidate_visit() {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "proposition candidate selection");
+    crate::instrumentation::record_deterministic_work(1);
+    #[cfg(test)]
+    CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
+}
+
+#[cfg(test)]
+pub(crate) fn candidate_visits() -> usize {
+    CANDIDATE_VISITS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_candidate_visits() {
+    CANDIDATE_VISITS.with(|visits| visits.set(0));
 }

@@ -686,3 +686,34 @@ questions:
 See [Testing Click](testing.md) for commands, budgets, and profiling.
 The open implementation work is ordered in
 [`issues/README.md`](https://github.com/clicklang/click/blob/master/issues/README.md).
+
+Atomic memory and resource source selection uses the kernel's candidate
+indexes. Viewability and store goals read their block's viewability bucket;
+read-defined goals first read the address's typed evidence, exact aliases and
+equality spellings, plus that block's viewability facts. Memory separation
+reads the unordered block-pair bucket and the non-memory residue, whose
+resource containment can entail a memory separation. Candidates are still
+checked by the kernel. Viewability pairs are selected by the kernel's
+concatenation lookup rather than exhaustive pair trials. Candidate visits are
+charged to `proposition candidate selection`.
+
+Read-defined and resource goals retain a family fallback when no indexed
+source succeeds: a computed address may need another read, and containment
+may entail separation from a differently placed resource. Non-memory
+separation queries also use this fallback. It visits the remaining family
+once and tries individual sources; it never enumerates pairs. Viewability
+and store source selection need no family fallback because their checker
+consults only the goal block's viewability bucket. The existing cold
+viewability shape index and trial-context construction can still cost ambient
+work; the latter is tracked separately in
+`bugs/atomic-evidence-retains-ambient-context.md`.
+
+`loadable_candidate_selection_ignores_facts_about_other_objects` and
+`read_defined_and_separation_selection_try_indexed_sources_first` measure
+candidate visits and complete derivation work beside 16, 32, 64 and 128
+same-family facts. They check covering ranges, adjacent ranges, aliases,
+contained separations and a gap that must remain unproved. Same-block negative
+ranges exercise the wider bucket without exhaustive pair trials. Certificates
+are checked independently and rejected when a required source is withdrawn.
+`indexed_memory_sources_expand_and_recheck_at_multiple_sizes` checks one-source
+and adjacent-source smart proofs, expansion and re-verification at four sizes.
