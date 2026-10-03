@@ -80,7 +80,7 @@ use crate::kernel::{
     substitute_int32_variable_in_proposition,
 };
 use crate::languages::c::syntax::{self, C0Expression, C0Type};
-use crate::persistent::{PersistentMap, PersistentSet};
+use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
     match expression {
@@ -237,22 +237,18 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "and",
     "any",
     "apply",
-    "apply_loop_summary",
     "as",
     "assumption",
     "at",
     "auto",
     "both",
-    "bounded_execute",
     "branch",
     "outcomes",
     "by",
     "byte_offset",
     "c",
-    "calculate",
     "cases",
     "close_invariants",
-    "conjunction",
     "construct",
     "constructs",
     "consumes",
@@ -265,7 +261,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "decreases",
     "defined",
     "diverges",
-    "double_negation",
     "else",
     "ensures",
     "ensuring",
@@ -276,10 +271,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "enum",
     "enumerate",
     "execute",
-    "execute_else_step",
-    "execute_rest",
-    "execute_step",
-    "execute_then_step",
     "execute_until",
     "exists",
     "exit",
@@ -348,8 +339,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "statement",
     "step",
     "struct",
-    "summarize",
-    "symbolic_execute",
     "take",
     "target",
     "trivial",
@@ -359,7 +348,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "uint8",
     "unfold",
     "using",
-    "vacuous",
     "verifying",
     "viewable",
     "views",

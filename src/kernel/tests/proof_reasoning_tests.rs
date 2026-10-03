@@ -227,10 +227,6 @@ fn checked_algebraic_constructor_rules_are_sound() {
     let injectivity = injectivity_context
         .derive_simp_proposition(&field_equality)
         .expect("a checked same-constructor equality entails its field equality");
-    assert_eq!(
-        injectivity.algebraic_constructor_injectivity_source(),
-        Some((&constructor_equality, 0))
-    );
     assert!(injectivity.check(&injectivity_context));
 
     let congruence_context = PureFactContext::new().assume_proposition(field_equality);

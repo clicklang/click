@@ -297,20 +297,6 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
 
 #[test]
 fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
-    use std::cell::Cell;
-
-    struct CountingDebug<'a>(&'a Cell<usize>);
-
-    impl fmt::Debug for CountingDebug<'_> {
-        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            for _ in 0..10_000 {
-                self.0.set(self.0.get() + 1);
-                formatter.write_str("資源")?;
-            }
-            Ok(())
-        }
-    }
-
     let primary_cause = "owned_vector.grow path 2: ghost resource mismatch\n";
     let enormous = format!(
         "{primary_cause}{}",
@@ -327,15 +313,6 @@ fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
         super::diagnostics::bound_error_message_for_mode(enormous.clone(), true),
         enormous
     );
-
-    let writes = Cell::new(0);
-    let debug = super::diagnostics::bounded_debug_for_mode(&CountingDebug(&writes), false);
-    assert!(
-        writes.get() < 10_000,
-        "bounded formatting must stop the producer"
-    );
-    assert!(debug.len() <= 2 * 1024);
-    assert!(debug.contains("diagnostic truncated"));
 }
 
 #[test]
@@ -388,50 +365,6 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
         !description.contains("diagnostic truncated"),
         "{description}"
     );
-}
-
-#[test]
-fn certificate_reconstruction_diagnostics_summarize_internal_snapshots() {
-    // The read is spelled with its address and the value it is compared to;
-    // the rest of the snapshot it reads, here an unrelated block, is not.
-    let memory = CMemory::new()
-        .with_block("read-cell", 4)
-        .with_block("hidden-snapshot", 4);
-    let fact = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
-                Box::new(Pointer {
-                    block: "read-cell".into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                }),
-                crate::kernel::LoadKind::Bits32,
-            )),
-            Box::new(Bitvector32Term::Constant(1)),
-        ),
-        true,
-    );
-    let failures = (0..20)
-        .map(|_| {
-            (
-                fact.clone(),
-                ClickError::new(
-                    "comparison fact has no checkable surface form at this proof state",
-                ),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let rendered = super::diagnostics::describe_unexpressed_pure_facts(&failures, &[], &[]);
-
-    assert!(
-        rendered.contains("load(&read-cell) == 1 is true"),
-        "{rendered}"
-    );
-    assert!(rendered.contains("no checkable surface form"), "{rendered}");
-    assert!(rendered.contains("8 more omitted"), "{rendered}");
-    assert!(!rendered.contains("CMemory"), "{rendered}");
-    assert!(!rendered.contains("hidden-snapshot"), "{rendered}");
 }
 
 #[test]

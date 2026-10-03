@@ -10,10 +10,9 @@ use conversion_conditions::{
 };
 
 pub(super) use fact_transport::{
-    certified_fact_transport_reaches, certified_fact_transport_reaches_through,
-    check_fixed_state_fact_transport_using_facts, fact_transport_candidates_at_outcome,
-    fact_transport_planning_failure, memory_erased_comparison, path_condition_equivalent,
-    plan_explicit_fact_transport, proposition_outer_load_memory,
+    certified_fact_transport_reaches, check_fixed_state_fact_transport_using_facts,
+    fact_transport_candidates_at_outcome, fact_transport_planning_failure,
+    path_condition_equivalent, plan_explicit_fact_transport,
 };
 pub(super) use have_proofs::{
     FixedStateLowering, capture_fixed_state_algebraic_expression,
@@ -25,8 +24,8 @@ pub(super) use have_proofs::{
     lower_fixed_state_proposition_with_algebraic_values,
     lower_fixed_state_proposition_with_assumptions,
     lower_fixed_state_proposition_with_assumptions_recording_introductions,
-    lower_fixed_state_proposition_with_integer_values, plan_smart_have_in_current_state,
-    reverse_kernel_equality, reverse_surface_equality,
+    lower_fixed_state_proposition_with_integer_values, reverse_kernel_equality,
+    reverse_surface_equality,
 };
 pub(in crate::surface) use have_proofs::{
     evaluate_c_fragment_through_kernel, evaluate_fixed_state_array_ref_through_kernel,

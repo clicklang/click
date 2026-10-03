@@ -373,12 +373,52 @@ than `InvalidQuantity`. C source is unchanged.
 currently rejected because numeric and symbolic ledger effects cannot mix.
 The reduced reproduction is the original pair of
 `population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
-authority and defined-addition contracts. Separately, the unanchored global
-counts in `resource_count_patterns.md` and
-`counted_distinct_populations_symbolic_sum.md` need a scope decision: current
-authority requires a fixed pointer anchor and does not authorize summing all
-independently anchored populations. Do not silently weaken these fixtures or
-present them as migrated.
+authority and defined-addition contracts.
+
+**Global-count decision resolved:** Remove the two obsolete fixtures that
+counted across all independently anchored populations or used integer-only
+population identities. No arena abstraction or new syntax is required for this
+migration. Existing fixed-anchor wildcard fixtures retain scoped aggregation
+coverage. The independent symbolic-entry fixture now owns each exact family's
+authority; it still needs no invented bound on the sum of unrelated counts.
+
+**Predicate-snapshot slice:** `resource_count_predicate_snapshot.md` now uses
+authority semantics. An ordinary control owns the counter and reference-family
+authority; references remain separate members. The unchanged retain operation
+increments the counter, creates one member, establishes the new predicate,
+and restores the control. The proof retains the current predicate and returned
+pointer claims without reusing the entry predicate for the updated state.
+
+**Exact-two slice:** `counted_resource_contribution_counter.md` now uses
+authority semantics for all seven original C functions. Empty contribution
+members are separate from an ordinary counter/authority control. Initialization
+takes storage with empty authority; each increment explicitly consumes one
+member and states its count and memory effects. Both caller pipelines prove two
+contributions, and final cleanup consumes the remaining member before retiring
+authority and returning memory. Whole symbolic cleanup and the zero/one-value
+cleanup cases retain their original results. C source is unchanged.
+
+**Early-consumption slice:** `population_consumption_at_close.md` now uses
+explicit member consumption inside an ordinary control scope. Reopening does
+not spend again; nested calls and both reporting branches retain the one
+checked effect. The caller proves two contributions and fully retires authority.
+The wrong-increment negative uses the same protocol and fails on the concrete
+counter/count invariant. All five proofs and ten audit sites pass.
+
+
+**Local concrete-batch slice:** Locally established numerical batches now share
+the unit custody ledger, so a batch of three can be consumed as one and two.
+Zero changes still require authority. The focused fixture and kernel tests
+cover splitting, overconsumption, overflow, live-member retirement, and exact
+wildcard member counts. Deterministic quantity scaling checks constant work;
+true symbolic-batch/unit mixing remains a separate boundary.
+
+**Contract-transition slice:** The count-transition positive and negative now
+use explicit authority and a checked member birth. The positive states the
+entry-to-post count relation; the negative rejects its fixed post-count claim.
+The produced-population predicate fixture and its ordinary caller also select
+authority semantics. They require an empty entry family explicitly and retain
+the original C and ensured predicate through positive and zero quantities.
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.

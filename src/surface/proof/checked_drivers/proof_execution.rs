@@ -1682,22 +1682,19 @@ pub(super) fn solve_nested_have<'a>(
     Ok(selected.filter(ProofScope::is_complete))
 }
 
-/// One smart statement step on a preservation-region descendant: the exact
-/// Proof selection first, the planner construction second, with the checked
-/// certificate delta pushed into the path's surface record. Shared by the
-/// preservation driver and the automatic-preservation search.
+/// One smart statement step on a preservation-region descendant, with the
+/// checked certificate delta pushed into the path's surface record. Shared
+/// by the preservation driver and the automatic-preservation search. A
+/// frontier the step declines (an undecided C `if`, a loop, a call's
+/// outcomes) is refused with the bare step's own diagnostic.
 pub(in crate::surface::proof) fn preservation_smart_step<'a>(
     proof: Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
     let mut retried_requirements = std::collections::BTreeSet::new();
-    let advanced = if let Some(stepped) =
-        proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?
-    {
-        stepped
-    } else {
-        proof.apply_planned_smart_step(0)?
-    };
-    Ok(advanced)
+    match proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)? {
+        Some(stepped) => Ok(stepped),
+        None => proof.apply_step(ProofStep::Step),
+    }
 }
 
 /// Drives one preservation program region on the typed boundary `Proof`.

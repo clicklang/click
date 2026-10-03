@@ -4428,7 +4428,7 @@ fn proof_span(tokens: &[SourceToken], by: usize) -> Result<Range<usize>, ClickEr
     let body = by + 1;
     let end_token = match tokens.get(body).map(|token| token.text.as_str()) {
         Some("{") => matching_delimiter(tokens, body, "{", "}")?,
-        Some("auto" | "frame" | "simp") => body,
+        Some("auto" | "simp") => body,
         _ => return Err(ClickError::new("unsupported source proof clause")),
     };
     let semicolon = end_token + 1;

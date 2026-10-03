@@ -558,7 +558,6 @@ fn split_execution_proof_branch_contexts(
             condition,
             "execution proof traversal",
             StatementPrerequisitePolicy::Contextual,
-            true,
             None,
         )? {
             let next = PlanningExecutionContext {

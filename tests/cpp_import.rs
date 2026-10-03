@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 32);
+    assert_eq!(prepared.export().schema, 33);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1242,6 +1242,48 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 }
 
 #[test]
+fn catch_binding_names_do_not_escape_the_handler_scope() {
+    let cpp = "int helper(bool fail) { if (fail) { throw 7; } return 7; }
+        int caller(bool fail) { try { helper(fail); } catch (int caught) { return caught; }
+        int caught = 7; return caught; }";
+    let project = Project::with_fixture("caller.cpp", "caller", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("caller", "caller.cpp", true, "scalar_int32");
+    refresh_import(&project.config())
+        .expect("a later local may reuse a finished catch binding name");
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let source = r#"verifying "caller.cpp";
+int32 helper(bool fail) throws int32 { ensures result == 7; exceptional ensures exception == 7; }
+int32 caller(bool fail) { ensures result == 7; }
+"#;
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+    let expanded =
+        expand_program_prepared_project_claim_source_by_label(&parsed, &import, "caller.ensures_0")
+            .unwrap();
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    verify_program_prepared_project(&rewritten, &import).unwrap();
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let position =
+        program_prepared_project_tactic_source_position(&rewritten, &import, "caller.ensures_0", 0)
+            .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .unwrap();
+    let hostile = source.replace(
+        "int32 caller(bool fail) { ensures result == 7; }",
+        "int32 caller(bool fail) { ensures result == 8; }",
+    );
+    let hostile = read_click_project(&sidecar, &hostile).unwrap();
+    verify_program_prepared_project(&hostile, &import)
+        .expect_err("neither the local nor the caught payload is eight");
+}
+
+#[test]
 fn scalar_int32_profile_rejects_unsupported_handler_shapes() {
     let cases = [
         (
@@ -1652,7 +1694,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1809,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1920,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1981,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +2027,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2065,7 +2107,7 @@ fn built_in_cpp_logical_and_accepts_checked_integer_to_bool_conversion() {
 }
 
 #[test]
-fn constexpr_max_money_rejects_broader_constant_graphs_and_accepts_runtime_multiplication() {
+fn constexpr_max_money_accepts_deeper_constant_graphs_and_rejects_new_initializer_semantics() {
     let addition = Project::constexpr_max_money();
     fs::write(
         addition.source(),
@@ -2086,8 +2128,10 @@ fn constexpr_max_money_rejects_broader_constant_graphs_and_accepts_runtime_multi
         )
         .replace("value >= MAX_MONEY", "value >= TOO_MUCH");
     fs::write(third.source(), source).unwrap();
-    let error = refresh_import(&third.config()).unwrap_err();
-    assert!(error.contains("at most two reachable constants"), "{error}");
+    refresh_import(&third.config()).unwrap();
+    let import = load_import(&third.config()).unwrap();
+    assert_eq!(import.export().constants.len(), 3);
+    lower_import(&import).unwrap();
 
     let runtime_multiply = Project::constexpr_max_money();
     fs::write(
@@ -2611,7 +2655,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2733,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2851,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2989,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3091,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3191,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3330,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3480,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3666,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3763,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 32);
+    assert_eq!(import.export().schema, 33);
     let destructor = import
         .export()
         .reachable_functions
@@ -4410,7 +4454,7 @@ fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
 }
 
 #[test]
-fn cpp_record_slice_rejects_unresolved_methods_bitfields_inheritance_and_multiple_types() {
+fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
     let project = Project::struct_member();
 
     fs::write(
@@ -4450,10 +4494,19 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_inheritance_and_multipl
         "struct First { int value; };\nstruct Second { int value; };\n\nint stage_restore(First& first, Second& second) noexcept {\n    first.value = second.value;\n    return first.value;\n}\n",
     )
     .unwrap();
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("stage_restore.cpp:2"), "{error}");
-    assert!(error.contains("exactly one record type"), "{error}");
-    assert!(!project.artifact().exists());
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 2);
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "stage_restore.cpp";
+int32 stage_restore(struct First* first, struct Second* second) {
+ owns first->value; owns second->value;
+ ensures result == old(second->value); ensures first->value == old(second->value);
+} by { execute(); simp(); }
+"#,
+    );
 }
 
 #[test]
@@ -7231,4 +7284,197 @@ fn anonymous_namespace_helper_has_a_valid_identity_based_contract_name() {
         "verifying \"anonymous.cpp\"; int32 {name}(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }} int32 relay(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}"
     );
     check_return_call_sidecar(&project, &import, &sidecar);
+}
+
+#[test]
+fn bounded_constant_forests_scale_without_expanding_dependency_chains() {
+    for size in [4usize, 16, 64, 256] {
+        let mut cpp =
+            String::from("static constexpr long long C0 = 1; static constexpr long long C1 = 3;\n");
+        for index in 2..size {
+            cpp.push_str(&format!(
+                "static constexpr long long C{index} = 1 * C{};\n",
+                index - 2
+            ));
+        }
+        cpp.push_str(&format!(
+            "long long total() noexcept {{ return C{} + C{}; }}\n",
+            size - 2,
+            size - 1
+        ));
+        let project = Project::with_fixture("forest.cpp", "total", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let (import, validation_work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert_eq!(import.export().constants.len(), size);
+        let artifact_bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        assert!(
+            validation_work >= artifact_bytes && validation_work <= artifact_bytes + 8 * size + 100,
+            "{size} constants: {validation_work} work for {artifact_bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(
+            work >= size && work <= 3 * size + 32,
+            "{size} constants: {work} lowering work"
+        );
+        check_return_call_sidecar(
+            &project,
+            &import,
+            "verifying \"forest.cpp\"; int64 total() { ensures result == 4i64; } by { execute(); simp(); }",
+        );
+    }
+}
+
+#[test]
+fn record_inventories_and_function_lowering_share_indexes_across_sizes() {
+    for size in [2usize, 8, 32, 128] {
+        let mut cpp = String::new();
+        let mut sidecar = String::from("verifying \"records.cpp\";\n");
+        for index in 0..size {
+            cpp.push_str(&format!("struct R{index} {{ int value; }}; int read{index}(int x) noexcept {{ R{index} local{{x}}; return local.value; }}\n"));
+            sidecar.push_str(&format!("int32 read{index}(int32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}\n"));
+        }
+        cpp.push_str("int relay(int x) noexcept {\n");
+        for index in 0..size {
+            cpp.push_str(&format!("int y{index} = read{index}(x);\n"));
+        }
+        cpp.push_str(&format!("return y{}; }}\n", size - 1));
+        sidecar
+            .push_str("int32 relay(int32 x) { ensures result == x; } by { execute(); simp(); }\n");
+        let project = Project::with_fixture("records.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().records.len(), size);
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        let lowered = lowered.unwrap();
+        assert_eq!(lowered.record_layouts().len(), size);
+        assert!(
+            work >= size && work <= 24 * size + 32,
+            "{size} records/functions: {work} work"
+        );
+        // Small graphs exercise certificates and audit; larger graphs measure the
+        // frontend inventory representation without duplicating every proof run.
+        if size <= 8 {
+            check_return_call_sidecar(&project, &import, &sidecar);
+            if size == 2 {
+                let false_claim = sidecar.replace(
+                    "int32 relay(int32 x) { ensures result == x; }",
+                    "int32 relay(int32 x) { requires x == 7; ensures result == 8; }",
+                );
+                let path = project.directory.join("wrong.click");
+                fs::write(&path, &false_claim).unwrap();
+                let parsed = read_click_project(&path, &false_claim).unwrap();
+                assert!(verify_program_prepared_project(&parsed, &import).is_err());
+            }
+        }
+    }
+}
+
+#[test]
+fn exporter_reports_named_inventory_budgets_and_keeps_outputs_atomic() {
+    let declarations = (0..1025usize)
+        .map(|index| {
+            if index == 0 {
+                "static constexpr long long C0 = 1;\n".to_owned()
+            } else {
+                format!(
+                    "static constexpr long long C{index} = 1 * C{};\n",
+                    index - 1
+                )
+            }
+        })
+        .collect::<String>();
+    let project = Project::with_fixture(
+        "budget.cpp",
+        "total",
+        &format!("{declarations}long long total() noexcept {{ return C1024; }}"),
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("artifact budget exhausted: constant declarations"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}
+
+#[test]
+fn exporter_bounds_record_and_function_discovery_independently() {
+    for (size, records, expected) in [
+        (257usize, true, "record declarations"),
+        (1024, false, "function declarations"),
+    ] {
+        let mut cpp = String::new();
+        for index in 0..size {
+            if records {
+                cpp.push_str(&format!("struct R{index} {{ int value; }}; int f{index}(int x) noexcept {{ R{index} local{{x}}; return local.value; }}\n"));
+            } else {
+                cpp.push_str(&format!("int f{index}(int x) noexcept {{ return x; }}\n"));
+            }
+        }
+        cpp.push_str("int relay(int x) noexcept {\n");
+        for index in 0..size {
+            cpp.push_str(&format!("f{index}(x);\n"));
+        }
+        cpp.push_str("return x; }");
+        let project = Project::with_fixture("budget.cpp", "relay", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains(&format!("artifact budget exhausted: {expected}")),
+            "{error}"
+        );
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn distinct_record_layouts_keep_field_widths_offsets_and_ownership() {
+    let project = Project::with_fixture(
+        "layouts.cpp",
+        "choose",
+        "struct First { int value; }; struct Second { int padding; long long value; }; long long choose(First& first, Second& second) noexcept { first.value = 7; return second.value; }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().records.len(), 2);
+    let first = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "First")
+        .unwrap();
+    let second = import
+        .export()
+        .records
+        .iter()
+        .find(|record| record.name == "Second")
+        .unwrap();
+    assert_eq!(
+        (
+            first.size_bytes,
+            first.fields[0].offset_bytes,
+            first.fields[0].size_bytes
+        ),
+        (4, 0, 4)
+    );
+    assert_eq!(
+        (
+            second.size_bytes,
+            second.fields[1].offset_bytes,
+            second.fields[1].size_bytes
+        ),
+        (16, 8, 8)
+    );
+    let sidecar = "verifying \"layouts.cpp\"; int64 choose(struct First* first, struct Second* second) { owns first->value; owns second->value; ensures first->value == 7; ensures result == old(second->value); ensures second->value == old(second->value); } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, sidecar);
+    let missing_authority = sidecar.replace("owns second->value;", "");
+    let path = project.directory.join("wrong.click");
+    fs::write(&path, &missing_authority).unwrap();
+    let parsed = read_click_project(&path, &missing_authority).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
 }

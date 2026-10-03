@@ -3560,6 +3560,66 @@ mod wildcard_scope_tests {
     }
 
     #[test]
+    fn local_numeric_batch_preserves_exact_wildcard_counts() {
+        let pool = PointerBlock::Heap(991_202);
+        let scope = scope(&pool, 2);
+        let selected = description(&pool, &[1]);
+        let other = description(&pool, &[2]);
+        let empty = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap()
+            .0;
+        let facts = PureFactContext::new();
+        let issued = empty
+            .checked_member_exchange_quantity(
+                &pool,
+                &selected,
+                true,
+                &Bitvector32Term::Constant(3),
+                &facts,
+            )
+            .unwrap()
+            .0;
+        let spent = issued
+            .checked_member_exchange_quantity(
+                &pool,
+                &selected,
+                false,
+                &Bitvector32Term::Constant(2),
+                &facts,
+            )
+            .unwrap()
+            .0;
+        assert_eq!(spent.observe(&pool, scope.family()), Ok(1));
+        assert_eq!(
+            spent
+                .observe_exact_member(&selected, &facts)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        assert_eq!(
+            spent
+                .observe_exact_member(&other, &facts)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        assert!(
+            spent
+                .checked_member_exchange_quantity(
+                    &pool,
+                    &other,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &facts,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
     fn exact_counts_preserve_multiplicity_and_require_current_authority() {
         let pool = PointerBlock::Heap(950_001);
         let scope = scope(&pool, 3);
@@ -3714,14 +3774,21 @@ mod wildcard_scope_tests {
             .checked_establish(&pool, &scope)
             .unwrap();
         let member = description(&pool, &[7]);
-        let (batch, _) = empty
-            .checked_member_exchange_quantity(
-                &pool,
-                &member,
+        let quantity = Bitvector32Term::Variable(Variable::allocate_fresh().unwrap());
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
                 true,
-                &Bitvector32Term::Constant(2),
-                &PureFactContext::new(),
             )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(
+                    quantity.clone(),
+                    Bitvector32Term::Constant(i32::MAX as u32),
+                ),
+                true,
+            );
+        let (batch, _) = empty
+            .checked_member_exchange_quantity(&pool, &member, true, &quantity, &facts)
             .unwrap();
         assert_eq!(
             batch
@@ -4066,4 +4133,84 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
         .unwrap();
     assert_eq!(exact(&zero, &first), 0);
     zero.checked_retire(&block, &scope).unwrap();
+}
+
+#[test]
+fn local_numeric_batch_splits_and_requires_owned_authority() {
+    let block = PointerBlock::Heap(991_200);
+    let description = member_description(block.clone());
+    let created = CreationEvents::new().created(block.clone());
+    let exchange = |state: &CreationEvents, produce: bool, amount: u32| {
+        state.checked_member_exchange_quantity(
+            &block,
+            &description,
+            produce,
+            &Bitvector32Term::Constant(amount),
+            &PureFactContext::new(),
+        )
+    };
+    assert!(exchange(&created, true, 0).is_err());
+    let empty = created.checked_establish(&block, &description).unwrap().0;
+    let three = exchange(&empty, true, 3).unwrap().0;
+    assert_eq!(three.observe(&block, description.family()), Ok(3));
+    assert!(three.checked_retire(&block, &description).is_err());
+    let (two, certificate) = exchange(&three, false, 1).unwrap();
+    assert!(certificate.matches(&three, &two, &description, false));
+    assert!(!certificate.matches(&empty, &two, &description, false));
+    assert_eq!(two.observe(&block, description.family()), Ok(2));
+    assert!(exchange(&two, false, 3).is_err());
+    let zero = exchange(&two, false, 2).unwrap().0;
+    assert_eq!(zero.observe(&block, description.family()), Ok(0));
+    assert!(exchange(&zero, false, 1).is_err());
+    for produce in [false, true] {
+        let unchanged = exchange(&zero, produce, 0).unwrap().0;
+        assert_eq!(unchanged.observe(&block, description.family()), Ok(0));
+    }
+    let retired = zero.checked_retire(&block, &description).unwrap().0;
+    assert!(exchange(&retired, true, 0).is_err());
+    let maximum = exchange(&empty, true, i32::MAX as u32).unwrap().0;
+    assert!(exchange(&maximum, true, 1).is_err());
+    assert!(exchange(&empty, true, u32::MAX).is_err());
+}
+
+#[test]
+fn local_numeric_batch_work_does_not_grow_with_quantity() {
+    let block = PointerBlock::Heap(991_201);
+    let description = member_description(block.clone());
+    let empty = CreationEvents::new()
+        .created(block.clone())
+        .checked_establish(&block, &description)
+        .unwrap()
+        .0;
+    let work = [2, 64, 65536, i32::MAX as u32].map(|amount| {
+        let (issued, measured) = crate::persistent::measure_persistent_work(|| {
+            empty
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(amount),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(issued.observe(&block, description.family()), Ok(amount));
+        let (spent, consume_work) = crate::persistent::measure_persistent_work(|| {
+            issued
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(amount),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(spent.observe(&block, description.family()), Ok(0));
+        (measured, consume_work)
+    });
+    assert!(work[0].0 > 0 && work[0].1 > 0, "{work:?}");
+    assert!(work.iter().all(|n| *n == work[0]), "{work:?}");
 }

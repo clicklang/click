@@ -237,7 +237,7 @@ C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
 currently by-value `bool` or signed/unsigned 32/64-bit integers, `int&`, `const int&`,
 mutable `int*`, one `const` signed-64 reference, and mutable or const references
-to the one supported simple record type. Selected functions return `int`,
+to supported simple record types with distinct proof-facing names. Selected functions return `int`,
 signed/unsigned 64-bit integers, `unsigned int`, `bool`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
@@ -451,8 +451,31 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 32;
+its documented application invariant. The typed artifact schema is now 33;
 previous artifacts require an explicit lock refresh.
+
+Artifact resource limits are independent of the supported C++ semantic profile:
+
+| Budget | Limit |
+| --- | ---: |
+| Record declarations | 256 |
+| Constant declarations | 1,024 |
+| Function declarations, including the selected root | 1,024 |
+| Call graph depth, including the selected root | 64 |
+| Serialized JSON object/array nesting | 96 |
+| Serialized JSON objects and arrays | 65,536 |
+| Preprocessor files | 4,096 |
+
+Exhaustion names the budget. Serialized bounds are checked before decoding;
+the pinned exporter also bounds declaration discovery. Structural checks still
+reject duplicate IDs, missing or mismatched references, invalid layouts, and
+declarations outside the selected graph. Recursive calls remain unsupported
+semantics. Acyclic constant forests may have multiple leaves and longer chains;
+each initializer retains the supported literal-leaf or literal-times-prior-constant
+form, and the checker independently recomputes every evaluated value. Multiple
+record layouts reuse the existing field-type, explicit ABI, and ownership rules.
+Lifetime shape limits described below remain semantic restrictions pending the
+scope-environment cleanup.
 
 C++ calls and contracts bind through Clang declaration IDs. Unique readable
 names are preserved; free namespace names replace `::` with `_`. If reachable
@@ -662,8 +685,8 @@ conditional construction remain rejected.
 
 Copies and moves, default or partial aggregate initialization, multiple or
 more than two top-level destructible local objects, broader nested lifetimes,
-virtual dispatch, inheritance, private fields, bit-fields, nested record values, and
-multiple record types remain explicit errors.
+virtual dispatch, inheritance, private fields, bit-fields, nested record values,
+and same-named record layouts remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
 pointer call, pointer locals, pointer arithmetic, null pointers, multiple

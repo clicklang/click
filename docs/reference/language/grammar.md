@@ -83,7 +83,6 @@ documentation inventory keep the following accepted words synchronized.
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `statement`, `entry`, `exit` | Program-region and program-point selectors. |
-| `apply_loop_summary`, `bounded_execute`, `calculate`, `conjunction`, `double_negation`, `execute_else_step`, `execute_rest`, `execute_step`, `execute_then_step`, `summarize`, `symbolic_execute`, `vacuous` | Compatibility-only tactic spellings that produce focused migration diagnostics. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
 listed here isn't necessarily valid in every identifier or expression

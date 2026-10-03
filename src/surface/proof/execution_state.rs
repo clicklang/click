@@ -54,91 +54,9 @@ pub(super) struct CaseAssumption {
 pub(super) struct ProofCertificateBuilder {
     pub(super) steps: Vec<ProofStep>,
     pub(super) blocker: Option<String>,
-    pub(super) last_step_entry: Option<ProgramPointRef>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
-    /// Prevents the planner-metadata wrapper for a statement transition from
-    /// re-entering itself while it emits the ordinary surface step.
-    pub(super) lowering_planned_transition: bool,
 }
 
-/// Deterministically ordered proof facts with an exact-membership index.
-///
-/// Certificate emission and diagnostics retain insertion order, while a
-/// named premise never scans unrelated earlier facts. All mutation stays
-/// behind this type so the two views cannot diverge.
-#[derive(Clone, Default)]
-pub(super) struct ProofFactStore {
-    ordered: PersistentSequence<Proposition>,
-    exact: PersistentSet<Proposition>,
-    /// The context of a prefix of `ordered`, which only grows at its end, so
-    /// a construction step's context extends the last one's.
-    built: crate::surface::pure_fact_list::BuiltContext,
-}
-
-impl ProofFactStore {
-    pub(super) fn from_ordered(facts: Vec<Proposition>) -> Self {
-        let mut store = Self::default();
-        for fact in facts {
-            store.insert(fact);
-        }
-        store
-    }
-
-    pub(super) fn insert(&mut self, fact: Proposition) -> bool {
-        if self.exact.contains(&fact) {
-            return false;
-        }
-        self.exact = self.exact.with_value(fact.clone());
-        self.ordered.push(fact);
-        true
-    }
-
-    pub(super) fn retain(&mut self, mut keep: impl FnMut(&Proposition) -> bool) {
-        let Some(first_removed) = self.ordered.iter().position(|fact| !keep(fact)) else {
-            // Nothing removed: the store, and the context it built, stand.
-            return;
-        };
-        let mut retained = Self::default();
-        for (index, fact) in self.ordered.iter().enumerate() {
-            if index != first_removed && (index < first_removed || keep(fact)) {
-                retained.insert(fact.clone());
-            }
-        }
-        *self = retained;
-    }
-
-    pub(super) fn contains(&self, fact: &Proposition) -> bool {
-        self.exact.contains(fact)
-    }
-
-    pub(super) fn iter(&self) -> PersistentSequenceIter<'_, Proposition> {
-        self.ordered.iter()
-    }
-
-    pub(super) fn to_vec(&self) -> Vec<Proposition> {
-        self.iter().cloned().collect()
-    }
-
-    /// The facts in order, carrying the context this store built for them.
-    pub(super) fn to_list(&self) -> PureFactList {
-        PureFactList::with_built_context(self.to_vec(), self.built.clone())
-    }
-
-    /// Keeps the context `list` built, when `list` holds this store's facts
-    /// ([`Self::to_list`]) and built more of it than the store has.
-    pub(super) fn adopt_context_of(&mut self, list: &PureFactList) {
-        self.built.adopt_longer(list.built_context());
-    }
-
-    #[cfg(test)]
-    fn shares_persistent_storage_with(&self, other: &Self) -> bool {
-        self.ordered.shares_tail_with(&other.ordered) && self.exact.shares_root_with(&other.exact)
-    }
-}
-
-/// Environments a planning executor needs to construct the [`ProofStep`]
-/// for each committed search move at the moment the move is made. Passing
-/// `None` runs the executor without surface-certificate construction.
 /// The path's surface record: what the constructed certificate's own check
 /// knows in the current state. Planning sinks seed from it and write the anchor
 /// back; a proof-level case split records its choice here.
@@ -149,39 +67,11 @@ pub(super) struct SurfaceRecord {
     pub(super) last_step_entry: Option<ProgramPointRef>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
     pub(super) blocker: Option<String>,
-    /// The facts the constructed certificate's own check will have at the
-    /// current state. Planning executes with automatically transported facts,
-    /// but certificate validation carries only path facts, statement-local
-    /// rewrites, and explicit surface transports across each step. Generated
-    /// evidence is written against this certificate-visible set.
-    pub(super) certificate_facts: ProofFactStore,
     /// Exact facts established by ordinary checked `have` nodes on this
     /// execution path. This separate persistent index lets a strict statement
     /// retry recognize an explicitly retained prerequisite leaf without
     /// scanning the ambient proof context.
     pub(super) retained_have_facts: ProofFacts,
-}
-
-/// One planning call's construction gate: the environments the constructed
-/// steps lower against and the sink they are recorded into.
-pub(super) struct Construction<'a> {
-    pub(super) environments: ConstructionEnvironments<'a>,
-    pub(super) sink: &'a mut ProofCertificateBuilder,
-}
-
-impl Construction<'_> {
-    pub(super) fn reborrow(&mut self) -> Construction<'_> {
-        Construction {
-            environments: self.environments,
-            sink: self.sink,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(super) struct ConstructionEnvironments<'a> {
-    pub(super) predicate_environment: &'a PredicateEnvironment,
-    pub(super) click_function_environment: &'a ClickFunctionEnvironment,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -685,49 +575,6 @@ pub(super) enum SurfacePathSelector {
 }
 
 impl ProofCertificateBuilder {
-    pub(super) fn push_step(&mut self, step: ProofStep) {
-        if self.blocker.is_none() {
-            append_surface_step_to_leaves(&mut self.steps, step);
-        }
-    }
-
-    pub(super) fn push_source_tactic(&mut self, tactic: ProofTactic) {
-        if self.blocker.is_some() {
-            return;
-        }
-        match ProofCertificate::from_proof_tactics(std::slice::from_ref(&tactic)) {
-            Ok(proof) => {
-                let [step] = proof.steps() else {
-                    unreachable!("one surface tactic must produce one proof step")
-                };
-                self.push_step(step.clone());
-            }
-            Err(error) => self.block(format!(
-                "attempted to record a non-simple surface proof step at {:?}: {:?}",
-                error.path(),
-                error.tactic_class()
-            )),
-        }
-    }
-
-    pub(super) fn push_have(&mut self, proposition: ClickProposition, proof: SourceProof) {
-        let SourceProof::Script(tactics) = proof else {
-            self.block("generated `have` proof was not an explicit simple script");
-            return;
-        };
-        match ProofCertificate::from_proof_tactics(&tactics) {
-            Ok(proof) => self.push_step(ProofStep::Have {
-                proposition,
-                proof: Box::new(proof),
-            }),
-            Err(error) => self.block(format!(
-                "generated `have` body was not a simple proof at {:?}: {:?}",
-                error.path(),
-                error.tactic_class()
-            )),
-        }
-    }
-
     pub(super) fn block(&mut self, message: impl Into<String>) {
         if self.blocker.is_none() {
             self.blocker = Some(message.into());
@@ -1447,49 +1294,6 @@ mod proof_fact_store_tests {
         assert_eq!(threw_proof.steps(), &[ProofStep::Assumption]);
     }
 
-    fn fact(value: bool) -> Proposition {
-        Proposition::ConditionIs(ConditionTerm::Constant(value), true)
-    }
-
-    #[test]
-    fn proof_fact_store_preserves_order_and_indexes_exact_membership() {
-        let first = fact(true);
-        let second = fact(false);
-        let mut facts = ProofFactStore::default();
-
-        assert!(facts.insert(first.clone()));
-        assert!(facts.insert(second.clone()));
-        assert!(!facts.insert(first.clone()));
-        assert_eq!(facts.to_vec(), &[first.clone(), second.clone()]);
-        assert!(facts.exact.contains(&first));
-
-        facts.retain(|candidate| candidate != &first);
-        assert_eq!(facts.to_vec(), std::slice::from_ref(&second));
-        assert!(!facts.exact.contains(&first));
-        assert!(facts.exact.contains(&second));
-    }
-
-    #[test]
-    fn proof_fact_store_forks_share_certificate_history() {
-        let mut facts = ProofFactStore::default();
-        for index in 0..4096 {
-            facts.insert(Proposition::ConditionIs(
-                ConditionTerm::Variable(Variable(index)),
-                true,
-            ));
-        }
-        let ancestor = facts.clone();
-        assert!(facts.shares_persistent_storage_with(&ancestor));
-
-        let added = Proposition::ConditionIs(ConditionTerm::Variable(Variable(4096)), true);
-        facts.insert(added.clone());
-
-        assert!(!ancestor.contains(&added));
-        assert!(facts.contains(&added));
-        assert_eq!(ancestor.iter().count(), 4096);
-        assert_eq!(facts.iter().count(), 4097);
-    }
-
     #[test]
     fn persistent_sequence_forks_share_history_and_preserve_order() {
         let mut sequence = PersistentSequence::default();
@@ -1764,14 +1568,5 @@ impl<'a> ExecutionView<'a> {
             function_entry_state,
             proof_bindings: None,
         }
-    }
-
-    #[cfg(test)]
-    pub(super) fn with_proof_bindings(
-        mut self,
-        bindings: &'a PersistentMap<String, ContractExpression>,
-    ) -> Self {
-        self.proof_bindings = Some(bindings);
-        self
     }
 }

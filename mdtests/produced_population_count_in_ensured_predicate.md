@@ -1,8 +1,10 @@
 # produced populations are visible to ensured predicates
 
-A function may create the first units of a declared-resource population. A
-predicate in a later postcondition observes that post-state population count,
-even when no entry requirement mentioned the resource family.
+A function supplied with authority for an empty resource family can create its
+first members. A predicate in its postcondition observes the count after that
+checked birth. An ordinary helper call transfers the same authority and
+requires the same empty-family fact; neither operation assumes an arbitrary
+entry population is empty.
 
 ```c filename=produce_population.c
 struct owner {
@@ -24,7 +26,7 @@ void produce_population_pipeline(struct owner* owner, int32 amount) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 resource slot(owner: struct owner*) {
 }
 
@@ -37,26 +39,30 @@ verifying "produce_population_pipeline.c";
 
 void produce_population(struct owner* owner, int32 amount) {
     requires 0 <= amount;
+    owns authority(slot(owner));
+    requires count(slot(owner)) == 0;
     produces amount of slot(owner);
     owns owner->capacity;
 
     ensures valid_capacity(owner);
 } by {
-    execute();
+    step();
     if 0 < amount {
         fold(amount of slot(owner));
-        simp();
+        execute(); simp();
     } else {
         apply(int32_ge_and_not_gt_implies_eq(amount, 0)) using {
             0 <= amount;
             not (0 < amount);
         }
-        simp();
+        execute(); simp();
     }
 }
 
 void produce_population_pipeline(struct owner* owner, int32 amount) {
     requires 0 <= amount;
+    owns authority(slot(owner));
+    requires count(slot(owner)) == 0;
     owns object(owner);
     produces amount of slot(owner);
 

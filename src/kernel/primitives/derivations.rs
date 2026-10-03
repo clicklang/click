@@ -30,16 +30,6 @@ impl PropositionDerivation {
         &self.conclusion
     }
 
-    pub(crate) fn is_widened_unsigned_sum_bound(&self) -> bool {
-        matches!(
-            &self.rule,
-            PropositionDerivationRule::ContextualAtomic {
-                evidence: AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound,
-                ..
-            }
-        )
-    }
-
     /// Whether an atomic leaf retained a concrete theory rule rather than
     /// the compatibility-era opaque success marker.
     pub fn has_typed_atomic_evidence(&self) -> bool {
@@ -573,19 +563,6 @@ impl PropositionDerivation {
         let mut premises = BTreeSet::new();
         self.collect_context_premises(&mut premises);
         premises.into_iter().collect()
-    }
-
-    /// The exact constructor equality cited by a checked injectivity step.
-    /// Certificate lowering uses this only to select the existing `extract`
-    /// syntax; proof checking recomputes the field equality independently.
-    pub(crate) fn algebraic_constructor_injectivity_source(&self) -> Option<(&Proposition, usize)> {
-        match &self.rule {
-            PropositionDerivationRule::AlgebraicConstructorInjectivity {
-                source,
-                field_index,
-            } => Some((source, *field_index)),
-            _ => None,
-        }
     }
 
     fn collect_context_premises(&self, premises: &mut BTreeSet<Proposition>) {

@@ -390,6 +390,7 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
 }
 
 fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
+    super::budget::check_serialized(bytes)?;
     let export: CppExport = serde_json::from_slice(bytes)
         .map_err(|error| format!("parse C++ semantic artifact: {error}"))?;
     export.validate(
@@ -613,8 +614,9 @@ fn read_dependencies(
 fn read_preprocessor_files(
     files: &[CppPreprocessorFile],
 ) -> Result<BTreeMap<String, LockedPreprocessorFile>, String> {
-    if files.is_empty() || files.len() > MAX_PREPROCESSOR_FILES {
-        return Err("C++ preprocessor file inventory exceeds its bound".into());
+    super::budget::limit("preprocessor files", files.len(), MAX_PREPROCESSOR_FILES)?;
+    if files.is_empty() {
+        return Err("C++ preprocessor file inventory must not be empty".into());
     }
     let mut total_bytes = 0usize;
     let mut result = BTreeMap::new();
@@ -639,10 +641,12 @@ fn read_preprocessor_files(
         )?;
         total_bytes = total_bytes
             .checked_add(bytes.len())
-            .ok_or("C++ preprocessor file inventory exceeds its byte bound")?;
-        if total_bytes > MAX_PREPROCESSOR_TOTAL_BYTES {
-            return Err("C++ preprocessor file inventory exceeds its byte bound".into());
-        }
+            .ok_or("C++ artifact budget exhausted: preprocessor bytes (counter overflow)")?;
+        super::budget::limit(
+            "preprocessor bytes",
+            total_bytes,
+            MAX_PREPROCESSOR_TOTAL_BYTES,
+        )?;
         if accessed.canonicalize().ok().as_deref() != Some(canonical.as_path()) {
             return Err(format!(
                 "C++ preprocessor input `{}` changed its resolved target while being read",

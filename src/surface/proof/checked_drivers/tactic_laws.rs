@@ -285,7 +285,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         StatementPrerequisitePolicy::Exact,
         StatementFactTransportPolicy::Automatic,
         LoopStepPolicy::ApplyVerifiedRule,
-        None,
     )?;
     let state: &mut CState = &mut execution.core.state;
     if let Some(exit_condition) = loop_exit_condition.filter(|_| {

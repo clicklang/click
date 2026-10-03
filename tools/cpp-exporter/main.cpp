@@ -43,6 +43,10 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace {
+// Resource policy; the independent artifact checker enforces the same bounds.
+constexpr std::size_t kMaxRecordDeclarations = 256;
+constexpr std::size_t kMaxConstantDeclarations = 1024;
+constexpr std::size_t kMaxFunctionDeclarations = 1024;
 
 constexpr const char *kClangVersion = "19.1.7";
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
@@ -238,7 +242,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 32;
+    artifact["schema"] = 33;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1141,8 +1145,8 @@ private:
           return std::nullopt;
         }
         cleanup_locals_[canonical].push_back(local);
-        if (known_functions_.insert(definition->getCanonicalDecl()).second) {
-          reachable_definitions_.push_back(definition);
+        if (!remember_function(definition)) {
+          return std::nullopt;
         }
       }
     }
@@ -1229,9 +1233,8 @@ private:
         }
         arguments.push_back(std::move(*argument));
       }
-      const clang::FunctionDecl *canonical = definition->getCanonicalDecl();
-      if (known_functions_.insert(canonical).second) {
-        reachable_definitions_.push_back(definition);
+      if (!remember_function(definition)) {
+        return std::nullopt;
       }
       llvm::json::Object reference;
       reference["declaration_id"] = declaration_id(definition);
@@ -1601,9 +1604,8 @@ private:
       arguments.push_back(std::move(*argument));
     }
 
-    const clang::FunctionDecl *canonical = definition->getCanonicalDecl();
-    if (known_functions_.insert(canonical).second) {
-      reachable_definitions_.push_back(definition);
+    if (!remember_function(definition)) {
+      return std::nullopt;
     }
 
     llvm::json::Object reference;
@@ -1717,6 +1719,19 @@ private:
     return result;
   }
 
+  bool remember_function(const clang::FunctionDecl *definition) {
+    if (known_functions_.insert(definition->getCanonicalDecl()).second) {
+      if (reachable_definitions_.size() + 1 >= kMaxFunctionDeclarations) {
+        fail(definition->getLocation(),
+             "C++ artifact budget exhausted: function declarations (limit " +
+                 std::to_string(kMaxFunctionDeclarations) + ")");
+        return false;
+      }
+      reachable_definitions_.push_back(definition);
+    }
+    return true;
+  }
+
   bool remember_constant(const clang::VarDecl *constant) {
     const clang::VarDecl *definition =
         constant == nullptr ? nullptr : constant->getDefinition();
@@ -1750,9 +1765,10 @@ private:
       return false;
     }
     if (known_constants_.insert(definition).second) {
-      if (constant_definitions_.size() >= 2) {
+      if (constant_definitions_.size() >= kMaxConstantDeclarations) {
         fail(definition->getLocation(),
-             "the supported C++ constant slice permits at most two reachable constants");
+             "C++ artifact budget exhausted: constant declarations (limit " +
+                 std::to_string(kMaxConstantDeclarations) + ")");
         return false;
       }
       constant_definitions_.push_back(definition);
@@ -2180,12 +2196,12 @@ private:
       return false;
     }
     const clang::CXXRecordDecl *canonical = definition->getCanonicalDecl();
-    if (!known_records_.empty() && known_records_.count(canonical) == 0) {
-      fail(definition->getLocation(),
-           "the first C++ object slice supports exactly one record type");
-      return false;
-    }
     if (known_records_.insert(canonical).second) {
+      if (record_definitions_.size() >= kMaxRecordDeclarations) {
+        fail(definition->getLocation(), "C++ artifact budget exhausted: record declarations (limit " +
+                 std::to_string(kMaxRecordDeclarations) + ")");
+        return false;
+      }
       if (!validate_record(definition)) {
         return false;
       }
@@ -2900,7 +2916,8 @@ public:
       state_.error = "error: preprocessor input `" +
                      accessed.generic_string() + "` changed its target";
     } else if (state_.preprocessor_files.size() > kMaxPreprocessorFiles) {
-      state_.error = "error: C++ preprocessor file inventory exceeds its bound";
+      state_.error = "error: C++ artifact budget exhausted: preprocessor files (limit " +
+                     std::to_string(kMaxPreprocessorFiles) + ")";
     }
   }
 

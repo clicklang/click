@@ -3,7 +3,59 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 32;
+// Validation follows lexical scopes. A child owns only its declarations and
+// borrows its parent; entering a scope never copies or scans outer places.
+#[derive(Default)]
+struct ValidationPlaces<'a> {
+    parent: Option<&'a ValidationPlaces<'a>>,
+    declarations: BTreeMap<String, (String, CppType)>,
+    names: BTreeSet<String>,
+}
+
+impl<'a> ValidationPlaces<'a> {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn child(&self) -> ValidationPlaces<'_> {
+        ValidationPlaces {
+            parent: Some(self),
+            ..ValidationPlaces::default()
+        }
+    }
+
+    fn get(&self, id: &str) -> Option<&(String, CppType)> {
+        self.declarations
+            .get(id)
+            .or_else(|| self.parent.and_then(|parent| parent.get(id)))
+    }
+
+    fn contains_key(&self, id: &str) -> bool {
+        self.get(id).is_some()
+    }
+
+    fn contains_name(&self, name: &str) -> bool {
+        self.names.contains(name) || self.parent.is_some_and(|parent| parent.contains_name(name))
+    }
+
+    fn insert_name(&mut self, name: String) -> bool {
+        if self.contains_name(&name) {
+            return false;
+        }
+        self.names.insert(name)
+    }
+
+    fn insert(&mut self, id: String, place: (String, CppType)) -> Result<(), ()> {
+        // Duplicate identities are errors; do not hide an outer declaration.
+        if self.contains_key(&id) {
+            return Err(());
+        }
+        self.declarations.insert(id, place);
+        Ok(())
+    }
+}
+
+pub(crate) const EXPORT_SCHEMA: u32 = 33;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -421,6 +473,7 @@ impl CppExport {
         expected_rtti: bool,
         expected_dependencies: &[String],
     ) -> Result<(), String> {
+        super::budget::check_inventories(self)?;
         if self.schema != EXPORT_SCHEMA {
             return Err(format!(
                 "unsupported C++ exporter schema {}; expected {EXPORT_SCHEMA}",
@@ -483,9 +536,12 @@ impl CppExport {
                 self.dependencies, expected_dependencies
             ));
         }
-        if self.preprocessor_files.is_empty()
-            || self.preprocessor_files.len() > MAX_PREPROCESSOR_FILES
-        {
+        super::budget::limit(
+            "preprocessor files",
+            self.preprocessor_files.len(),
+            MAX_PREPROCESSOR_FILES,
+        )?;
+        if self.preprocessor_files.is_empty() {
             return Err("C++ export has an invalid preprocessor file inventory size".into());
         }
         let mut previous_file: Option<&str> = None;
@@ -548,9 +604,6 @@ impl CppExport {
             return Err("the selected C++ declaration must be a free function".into());
         }
 
-        if self.records.len() > 1 {
-            return Err("the first C++ object slice supports exactly one record type".into());
-        }
         if (self.profile.rtti
             || (self.profile.exceptions
                 && matches!(self.exception_behavior, CppExceptionBehavior::NormalOnly)))
@@ -564,56 +617,12 @@ impl CppExport {
                     .into(),
             );
         }
-        let mut records = BTreeMap::new();
-        for record in &self.records {
-            record.validate(logical_source)?;
-            for field in &record.fields {
-                field.value_type.validate_aliases_in(&alias_sources)?;
-            }
-            if records
-                .insert(record.declaration_id.clone(), record)
-                .is_some()
-            {
-                return Err(format!(
-                    "duplicate C++ record declaration identity `{}`",
-                    record.declaration_id
-                ));
-            }
-        }
+        let records = validate_record_inventory(&self.records, logical_source, &alias_sources)?;
 
-        if self.constants.len() > 2 {
-            return Err(
-                "the supported C++ constant slice permits at most two reachable constants".into(),
-            );
-        }
-        let mut constants = BTreeMap::new();
-        let mut constant_dependencies = BTreeMap::new();
-        for constant in &self.constants {
-            let dependency = constant.validate(logical_source, &alias_sources, &constants)?;
-            if constants
-                .insert(constant.declaration_id.clone(), constant)
-                .is_some()
-            {
-                return Err(format!(
-                    "duplicate C++ constant declaration identity `{}`",
-                    constant.declaration_id
-                ));
-            }
-            constant_dependencies.insert(constant.declaration_id.clone(), dependency);
-        }
-        if self.constants.len() == 2 {
-            let [leaf, dependent] = self.constants.as_slice() else {
-                unreachable!()
-            };
-            if constant_dependencies[&leaf.declaration_id].is_some()
-                || constant_dependencies[&dependent.declaration_id].as_deref()
-                    != Some(leaf.declaration_id.as_str())
-            {
-                return Err(
-                    "two C++ constants must be one leaf followed by its direct dependent".into(),
-                );
-            }
-        }
+        let CheckedConstants {
+            declarations: constants,
+            dependencies: constant_dependencies,
+        } = validate_constant_inventory(&self.constants, logical_source, &alias_sources)?;
 
         let mut functions = BTreeMap::new();
         let mut referenced_constants = BTreeSet::new();
@@ -687,7 +696,7 @@ impl CppExport {
         }
 
         let mut visiting = Vec::new();
-        let mut visited = std::collections::BTreeSet::new();
+        let mut visited = BTreeMap::new();
         validate_reachable_calls(
             &self.function.declaration_id,
             &functions,
@@ -695,6 +704,7 @@ impl CppExport {
             &mut visited,
             logical_source,
         )?;
+        validate_reachable_records(&functions, &records)?;
         if visited.len() != functions.len() {
             return Err(
                 "C++ export contains a function outside the selected function's reachable graph"
@@ -703,6 +713,117 @@ impl CppExport {
         }
         Ok(())
     }
+}
+
+fn validate_record_inventory<'a>(
+    inventory: &'a [CppRecord],
+    logical_source: &str,
+    alias_sources: &BTreeSet<String>,
+) -> Result<BTreeMap<String, &'a CppRecord>, String> {
+    let mut records = BTreeMap::new();
+    let mut record_names = BTreeSet::new();
+    let mut field_identities = BTreeSet::new();
+    for record in inventory {
+        crate::instrumentation::record_deterministic_work(1);
+        if !record_names.insert(record.name.as_str()) {
+            return Err("C++ record profile does not support same-named record layouts".into());
+        }
+        record.validate(logical_source)?;
+        for field in &record.fields {
+            crate::instrumentation::record_deterministic_work(1);
+            if !field_identities.insert(field.declaration_id.as_str()) {
+                return Err(format!(
+                    "duplicate C++ field declaration identity `{}`",
+                    field.declaration_id
+                ));
+            }
+            field.value_type.validate_aliases_in(alias_sources)?;
+        }
+        if records
+            .insert(record.declaration_id.clone(), record)
+            .is_some()
+        {
+            return Err(format!(
+                "duplicate C++ record declaration identity `{}`",
+                record.declaration_id
+            ));
+        }
+    }
+    Ok(records)
+}
+
+// Every layout must belong to a typed declaration in the selected graph.
+// This structural check is separate from the supported field-type policy.
+fn validate_reachable_records(
+    functions: &BTreeMap<String, &CppFunction>,
+    records: &BTreeMap<String, &CppRecord>,
+) -> Result<(), String> {
+    let mut referenced = BTreeSet::new();
+    fn reference<'a>(value_type: &'a CppType, referenced: &mut BTreeSet<&'a str>) {
+        match value_type {
+            CppType::Record { declaration_id, .. } => {
+                referenced.insert(declaration_id);
+            }
+            CppType::LvalueReference { pointee } | CppType::Pointer { pointee } => {
+                reference(pointee, referenced)
+            }
+            _ => {}
+        }
+    }
+    for function in functions.values() {
+        for parameter in &function.parameters {
+            crate::instrumentation::record_deterministic_work(1);
+            reference(&parameter.value_type, &mut referenced);
+        }
+        match &function.function_kind {
+            CppFunctionKind::Method {
+                record_declaration_id,
+                ..
+            }
+            | CppFunctionKind::Constructor {
+                record_declaration_id,
+                ..
+            }
+            | CppFunctionKind::Destructor {
+                record_declaration_id,
+                ..
+            } => {
+                referenced.insert(record_declaration_id.as_str());
+            }
+            _ => {}
+        }
+        let mut pending = vec![function.body.as_slice()];
+        while let Some(body) = pending.pop() {
+            for statement in body {
+                crate::instrumentation::record_deterministic_work(1);
+                match statement {
+                    CppStatement::Declare { local, .. } => {
+                        reference(&local.value_type, &mut referenced)
+                    }
+                    CppStatement::Scope { body, .. } => pending.push(body),
+                    CppStatement::If {
+                        then_branch,
+                        else_branch,
+                        ..
+                    } => {
+                        pending.push(then_branch);
+                        pending.push(else_branch);
+                    }
+                    CppStatement::TryCatchInt32 {
+                        try_body, handler, ..
+                    } => {
+                        pending.push(try_body);
+                        pending.push(handler);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    if referenced != records.keys().map(String::as_str).collect() {
+        return Err("C++ export contains a record outside the selected function graph".into());
+    }
+    Ok(())
 }
 
 impl CppRecord {
@@ -890,8 +1011,7 @@ impl CppFunction {
             ));
         }
         self.span.validate(logical_source)?;
-        let mut places = BTreeMap::new();
-        let mut names = std::collections::BTreeSet::new();
+        let mut places = ValidationPlaces::new();
         for parameter in &self.parameters {
             parameter.span.validate(logical_source)?;
             if parameter.declaration_id.is_empty() || parameter.name.is_empty() {
@@ -933,14 +1053,14 @@ impl CppFunction {
                     parameter.declaration_id.clone(),
                     (parameter.name.clone(), parameter.value_type.clone()),
                 )
-                .is_some()
+                .is_err()
             {
                 return Err(format!(
                     "duplicate C++ parameter declaration identity `{}`",
                     parameter.declaration_id
                 ));
             }
-            if !names.insert(parameter.name.clone()) {
+            if !places.insert_name(parameter.name.clone()) {
                 return Err(format!("duplicate C++ parameter name `{}`", parameter.name));
             }
             parameter.value_type.validate_aliases_in(alias_sources)?;
@@ -1144,14 +1264,14 @@ impl CppFunction {
                         local.declaration_id.clone(),
                         (local.name.clone(), local.value_type.clone()),
                     )
-                    .is_some()
+                    .is_err()
                 {
                     return Err(format!(
                         "duplicate C++ local declaration identity `{}`",
                         local.declaration_id
                     ));
                 }
-                if !names.insert(local.name.clone()) {
+                if !places.insert_name(local.name.clone()) {
                     return Err(format!(
                         "C++ local `{}` shadows another supported place",
                         local.name
@@ -1183,7 +1303,7 @@ impl CppFunction {
                 require_int32(&binding.value_type, false, "catch binding")?;
                 binding.value_type.validate_aliases_in(alias_sources)?;
                 if places.contains_key(&binding.declaration_id)
-                    || !names.insert(binding.name.clone())
+                    || places.contains_name(&binding.name)
                 {
                     return Err(format!(
                         "C++ catch binding `{}` shadows another supported place",
@@ -1229,11 +1349,14 @@ impl CppFunction {
                         member.validate(&places, records, logical_source)?;
                     }
                 }
-                let mut handler_places = places.clone();
-                handler_places.insert(
+                let mut handler_places = places.child();
+                debug_assert!(!handler_places.contains_name(&binding.name));
+                handler_places.insert_name(binding.name.clone());
+                let inserted = handler_places.insert(
                     binding.declaration_id.clone(),
                     (binding.name.clone(), binding.value_type.clone()),
                 );
+                debug_assert!(inserted.is_ok());
                 for member in handler {
                     member.validate(&handler_places, records, logical_source)?;
                 }
@@ -1333,7 +1456,7 @@ impl CppFunction {
                 require_int32(&binding.value_type, false, "catch binding")?;
                 binding.value_type.validate_aliases_in(alias_sources)?;
                 if places.contains_key(&binding.declaration_id)
-                    || !names.insert(binding.name.clone())
+                    || places.contains_name(&binding.name)
                 {
                     return Err(format!(
                         "C++ catch binding `{}` shadows another supported place",
@@ -1349,11 +1472,14 @@ impl CppFunction {
                     logical_source,
                     &self.name,
                 )?;
-                let mut handler_places = places.clone();
-                handler_places.insert(
+                let mut handler_places = places.child();
+                debug_assert!(!handler_places.contains_name(&binding.name));
+                handler_places.insert_name(binding.name.clone());
+                let inserted = handler_places.insert(
                     binding.declaration_id.clone(),
                     (binding.name.clone(), binding.value_type.clone()),
                 );
+                debug_assert!(inserted.is_ok());
                 for member in handler {
                     member.validate(&handler_places, records, logical_source)?;
                 }
@@ -1501,7 +1627,7 @@ impl CppFunction {
 impl CppStatement {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1646,7 +1772,7 @@ impl CppStatement {
 impl CppCleanup {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1691,7 +1817,7 @@ impl CppInitializer {
     fn validate_for_local(
         &self,
         local_type: &CppType,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1787,7 +1913,7 @@ fn validate_call(
     callee: &CppFunctionReference,
     arguments: &[CppCallArgument],
     span: &CppSpan,
-    places: &BTreeMap<String, (String, CppType)>,
+    places: &ValidationPlaces<'_>,
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<(), String> {
@@ -1820,10 +1946,7 @@ fn validate_call(
 // locals and by-value parameters cannot have their address taken in this
 // profile. References, pointers, field reads and checked arithmetic do not
 // meet this condition, even when their expression syntax has no side effects.
-fn stable_scalar_argument(
-    expression: &CppExpression,
-    places: &BTreeMap<String, (String, CppType)>,
-) -> bool {
+fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<'_>) -> bool {
     match expression {
         CppExpression::IntegerLiteral { .. }
         | CppExpression::CompilerConstant { .. }
@@ -1840,7 +1963,7 @@ fn stable_scalar_argument(
 impl CppCallArgument {
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -1942,7 +2065,7 @@ impl CppExpression {
 
     fn validate(
         &self,
-        places: &BTreeMap<String, (String, CppType)>,
+        places: &ValidationPlaces<'_>,
         records: &BTreeMap<String, &CppRecord>,
         logical_source: &str,
     ) -> Result<(), String> {
@@ -2225,17 +2348,13 @@ fn validate_nested_scope(
     body: &[CppStatement],
     cleanups: &[CppCleanup],
     span: &CppSpan,
-    outer_places: &BTreeMap<String, (String, CppType)>,
+    outer_places: &ValidationPlaces<'_>,
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
     function_name: &str,
 ) -> Result<(), String> {
     span.validate(logical_source)?;
-    let mut places = outer_places.clone();
-    let mut names = places
-        .values()
-        .map(|(name, _)| name.clone())
-        .collect::<std::collections::BTreeSet<_>>();
+    let mut places = outer_places.child();
     let mut locals = Vec::new();
     for statement in body {
         if let CppStatement::Declare {
@@ -2284,14 +2403,14 @@ fn validate_nested_scope(
                     candidate.declaration_id.clone(),
                     (candidate.name.clone(), candidate.value_type.clone()),
                 )
-                .is_some()
+                .is_err()
             {
                 return Err(format!(
                     "duplicate C++ local declaration identity `{}`",
                     candidate.declaration_id
                 ));
             }
-            if !names.insert(candidate.name.clone()) {
+            if !places.insert_name(candidate.name.clone()) {
                 return Err(format!(
                     "C++ local `{}` shadows another supported place",
                     candidate.name
@@ -2382,11 +2501,12 @@ fn validate_reachable_calls(
     declaration_id: &str,
     functions: &BTreeMap<String, &CppFunction>,
     visiting: &mut Vec<String>,
-    visited: &mut std::collections::BTreeSet<String>,
+    visited: &mut BTreeMap<String, usize>,
     logical_source: &str,
-) -> Result<(), String> {
-    if visited.contains(declaration_id) {
-        return Ok(());
+) -> Result<usize, String> {
+    crate::instrumentation::record_deterministic_work(1);
+    if let Some(depth) = visited.get(declaration_id) {
+        return Ok(*depth);
     }
     if let Some(start) = visiting.iter().position(|active| active == declaration_id) {
         let mut cycle = visiting[start..]
@@ -2407,13 +2527,20 @@ fn validate_reachable_calls(
             cycle.join(" -> ")
         ));
     }
+    super::budget::limit(
+        "call graph depth",
+        visiting.len() + 1,
+        super::budget::MAX_CALL_DEPTH,
+    )?;
     let function = functions.get(declaration_id).ok_or_else(|| {
         format!("C++ reachable graph refers to missing declaration `{declaration_id}`")
     })?;
     visiting.push(declaration_id.to_string());
     let mut calls = Vec::new();
     collect_calls(&function.body, &mut calls);
+    let mut depth = 1usize;
     for call in calls {
+        crate::instrumentation::record_deterministic_work(1);
         let (callee, arguments) = match &call {
             CollectedCall::Ordinary {
                 callee, arguments, ..
@@ -2522,17 +2649,20 @@ fn validate_reachable_calls(
                 }
             }
         }
-        validate_reachable_calls(
+        let child_depth = validate_reachable_calls(
             &callee.declaration_id,
             functions,
             visiting,
             visited,
             logical_source,
         )?;
+        // Cached subgraphs still contribute their full depth to this path.
+        depth = depth.max(child_depth + 1);
+        super::budget::limit("call graph depth", depth, super::budget::MAX_CALL_DEPTH)?;
     }
     visiting.pop();
-    visited.insert(declaration_id.to_string());
-    Ok(())
+    visited.insert(declaration_id.to_string(), depth);
+    Ok(depth)
 }
 
 enum CollectedCall<'a> {
@@ -2762,6 +2892,42 @@ fn validate_call_arguments(
         }
     }
     Ok(())
+}
+
+struct CheckedConstants<'a> {
+    declarations: BTreeMap<String, &'a CppConstant>,
+    dependencies: BTreeMap<String, Option<String>>,
+}
+
+// Structural dependency order and compiler evaluation agreement are checked
+// independently of the inventory budget. Each initializer uses checked prior
+// values, rather than recursively expanding the dependency chain.
+fn validate_constant_inventory<'a>(
+    inventory: &'a [CppConstant],
+    logical_source: &str,
+    alias_sources: &BTreeSet<String>,
+) -> Result<CheckedConstants<'a>, String> {
+    let mut constants = BTreeMap::new();
+    let mut dependencies = BTreeMap::new();
+    for constant in inventory {
+        crate::instrumentation::record_deterministic_work(1);
+        let dependency = constant.validate(logical_source, alias_sources, &constants)?;
+        if constants
+            .insert(constant.declaration_id.clone(), constant)
+            .is_some()
+        {
+            return Err(format!(
+                "duplicate C++ constant declaration identity `{}`",
+                constant.declaration_id
+            ));
+        }
+        dependencies.insert(constant.declaration_id.clone(), dependency);
+    }
+
+    Ok(CheckedConstants {
+        declarations: constants,
+        dependencies,
+    })
 }
 
 impl CppConstant {
@@ -3174,7 +3340,7 @@ fn valid_relative_source_path(value: &str) -> bool {
 
 fn validate_place_reference<'a>(
     reference: &CppPlaceReference,
-    places: &'a BTreeMap<String, (String, CppType)>,
+    places: &'a ValidationPlaces<'_>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
     reference.span.validate(logical_source)?;
@@ -3213,7 +3379,7 @@ fn validate_record_reference<'a>(
 fn validate_member_reference<'a>(
     object: &CppPlaceReference,
     field: &CppFieldReference,
-    places: &'a BTreeMap<String, (String, CppType)>,
+    places: &'a ValidationPlaces<'_>,
     records: &'a BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<&'a CppType, String> {
@@ -3489,6 +3655,98 @@ mod tests {
     }
 
     #[test]
+    fn lexical_place_environments_borrow_outer_storage_and_own_only_scope_deltas() {
+        for (outer_count, sibling_count) in [(4, 4), (32, 16), (256, 64), (2048, 256)] {
+            let mut outer = ValidationPlaces::new();
+            for index in 0..outer_count {
+                let id = format!("outer-{index}");
+                assert!(outer.insert_name(id.clone()));
+                assert!(
+                    outer
+                        .insert(id.clone(), (id, signed_integer(32, false)))
+                        .is_ok()
+                );
+            }
+            let outer_place = outer.get("outer-0").unwrap();
+            let mut owned_entries = 0;
+            for _ in 0..sibling_count {
+                let mut scope = outer.child();
+                assert!(scope.declarations.is_empty());
+                assert!(scope.names.is_empty());
+                assert!(std::ptr::eq(scope.parent.unwrap(), &outer));
+                // A lookup returns the original tuple and type, even after
+                // adding local declarations. Nothing copies an outer type.
+                for index in 0..2 {
+                    let id = format!("local-{index}");
+                    assert!(scope.insert_name(id.clone()));
+                    assert!(
+                        scope
+                            .insert(id.clone(), (id, signed_integer(32, false)))
+                            .is_ok()
+                    );
+                }
+                assert!(std::ptr::eq(scope.get("outer-0").unwrap(), outer_place));
+                assert!(scope.contains_name("outer-0"));
+                assert!(!scope.insert_name("outer-0".into()));
+                assert!(
+                    scope
+                        .insert(
+                            "outer-0".into(),
+                            ("wrong".into(), signed_integer(64, false))
+                        )
+                        .is_err()
+                );
+                assert!(std::ptr::eq(scope.get("outer-0").unwrap(), outer_place));
+                owned_entries += scope.declarations.len();
+                assert_eq!(scope.names.len(), 2);
+                // Deeper lexical lookup and shadow checking use the same
+                // parent chain, without copying either enclosing scope.
+                let nested = scope.child();
+                assert!(std::ptr::eq(nested.get("outer-0").unwrap(), outer_place));
+                assert!(nested.contains_name("local-0"));
+                assert!(nested.declarations.is_empty());
+            }
+            assert_eq!(owned_entries, sibling_count * 2);
+            assert_eq!(outer.declarations.len(), outer_count);
+            assert_eq!(outer.names.len(), outer_count);
+            assert!(outer.get("local-0").is_none());
+            assert!(!outer.contains_name("local-0"));
+            let sibling = outer.child();
+            let reference = CppPlaceReference {
+                declaration_id: "local-0".into(),
+                name: "local-0".into(),
+                span: cleanup_span(),
+            };
+            assert!(
+                validate_place_reference(&reference, &sibling, "fixture.cpp")
+                    .unwrap_err()
+                    .contains("unknown declaration")
+            );
+            let forged_name = CppPlaceReference {
+                declaration_id: "outer-0".into(),
+                name: "forged".into(),
+                span: cleanup_span(),
+            };
+            assert!(
+                validate_place_reference(&forged_name, &sibling, "fixture.cpp")
+                    .unwrap_err()
+                    .contains("is named")
+            );
+        }
+    }
+
+    fn validation_places<const N: usize>(
+        entries: [(String, (String, CppType)); N],
+    ) -> ValidationPlaces<'static> {
+        let mut places = ValidationPlaces::new();
+        for (id, (name, value_type)) in entries {
+            assert!(places.insert_name(name.clone()));
+            assert!(places.insert(id, (name, value_type)).is_ok());
+        }
+        places
+    }
+
+    #[test]
     fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
         let mut function = CppFunction {
             declaration_id: "static_function".into(),
@@ -3557,7 +3815,7 @@ mod tests {
 
     #[test]
     fn nested_call_sibling_artifacts_require_stable_scalar_storage_and_total_expressions() {
-        let places = BTreeMap::from([
+        let places = validation_places([
             (
                 "scalar".into(),
                 ("scalar".into(), signed_integer(32, false)),
@@ -3651,7 +3909,7 @@ mod tests {
         };
         arguments.push(nested.clone());
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_ok()
         );
         let mut invalid = call.clone();
@@ -3661,7 +3919,7 @@ mod tests {
         arguments.push(nested.clone());
         assert!(
             invalid
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("evaluation order")
         );
@@ -3672,7 +3930,7 @@ mod tests {
         *value_type = CppType::Void;
         assert!(
             invalid
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_err()
         );
         let function = |name: &str, body, parameters| CppFunction {
@@ -3706,7 +3964,7 @@ mod tests {
                     ("inner".into(), inner),
                 ]),
                 &mut Vec::new(),
-                &mut BTreeSet::new(),
+                &mut BTreeMap::new(),
                 "fixture.cpp",
             )
         };
@@ -3785,7 +4043,7 @@ mod tests {
                         ("inner".into(), inner),
                     ]),
                     &mut Vec::new(),
-                    &mut BTreeSet::new(),
+                    &mut BTreeMap::new(),
                     "fixture.cpp",
                 )
             };
@@ -3809,7 +4067,7 @@ mod tests {
                         name: "R".into(),
                         is_const: false
                     },
-                    &BTreeMap::new(),
+                    &ValidationPlaces::new(),
                     &BTreeMap::new(),
                     "fixture.cpp"
                 )
@@ -3822,7 +4080,7 @@ mod tests {
     fn return_call_artifacts_require_scalar_types_and_matching_returns() {
         let mut call = return_call();
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_ok()
         );
         assert!(call.always_returns());
@@ -3838,7 +4096,7 @@ mod tests {
         cleanups.clear();
         *value_type = CppType::Void;
         assert!(
-            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            call.validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .is_err()
         );
     }
@@ -3862,7 +4120,7 @@ mod tests {
                 "caller",
                 &BTreeMap::from([("caller".into(), caller), ("callee".into(), callee)]),
                 &mut Vec::new(),
-                &mut BTreeSet::new(),
+                &mut BTreeMap::new(),
                 "fixture.cpp",
             )
         };
@@ -4083,7 +4341,7 @@ mod tests {
             };
             assert_eq!(
                 constant
-                    .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                    .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                     .is_ok(),
                 valid
             );
@@ -4120,7 +4378,7 @@ mod tests {
                 *slot = operator;
             }
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap();
         }
         if let CppExpression::Binary { right, .. } = &mut expression {
@@ -4128,7 +4386,7 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );
@@ -4145,7 +4403,7 @@ mod tests {
         }
         assert!(
             expression
-                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                 .unwrap_err()
                 .contains("matching widths and signedness")
         );
@@ -4201,6 +4459,241 @@ mod tests {
             evaluated_value: evaluated_value.into(),
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn constant_inventory_checks_long_chains_and_rejects_malformed_dependencies() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128, 512] {
+            let mut constants = vec![coin_constant()];
+            for index in 1..size {
+                let mut dependent = max_money_constant("100000000");
+                dependent.declaration_id = format!("constant_{index}");
+                dependent.name = format!("C{index}");
+                let CppExpression::Binary { left, right, .. } = &mut dependent.initializer else {
+                    unreachable!()
+                };
+                let CppExpression::IntegralCast { value, .. } = left.as_mut() else {
+                    unreachable!()
+                };
+                let CppExpression::IntegerLiteral { value, .. } = value.as_mut() else {
+                    unreachable!()
+                };
+                *value = "1".into();
+                let CppExpression::ConstantReference { constant, .. } = right.as_mut() else {
+                    unreachable!()
+                };
+                constant.declaration_id = constants[index - 1].declaration_id.clone();
+                constant.name = constants[index - 1].name.clone();
+                constants.push(dependent);
+            }
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_constant_inventory(&constants, "fixture.cpp", &sources)
+            });
+            assert_eq!(checked.unwrap().declarations.len(), size);
+            assert!(
+                work >= size && work <= 3 * size,
+                "{size} constants: {work} work"
+            );
+            let mut wrong_value = constants.clone();
+            wrong_value[size - 1].evaluated_value = "1".into();
+            assert!(
+                validate_constant_inventory(&wrong_value, "fixture.cpp", &sources)
+                    .err()
+                    .unwrap()
+                    .contains("disagrees")
+            );
+            let mut duplicate = constants.clone();
+            duplicate.push(coin_constant());
+            assert!(
+                validate_constant_inventory(&duplicate, "fixture.cpp", &sources)
+                    .err()
+                    .unwrap()
+                    .contains("duplicate")
+            );
+            let mut cyclic = constants.clone();
+            let CppExpression::Binary { right, .. } = &mut cyclic[1].initializer else {
+                unreachable!()
+            };
+            let CppExpression::ConstantReference { constant, .. } = right.as_mut() else {
+                unreachable!()
+            };
+            constant.declaration_id = constants[size - 1].declaration_id.clone();
+            constant.name = constants[size - 1].name.clone();
+            assert!(
+                validate_constant_inventory(&cyclic, "fixture.cpp", &sources)
+                    .err()
+                    .unwrap()
+                    .contains("unknown or later")
+            );
+        }
+        let leaves = [coin_constant(), {
+            let mut leaf = coin_constant();
+            leaf.declaration_id = "other".into();
+            leaf.name = "OTHER".into();
+            leaf
+        }];
+        validate_constant_inventory(&leaves, "fixture.cpp", &sources).unwrap();
+    }
+
+    #[test]
+    fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
+        for size in [8usize, 32, 63, 64] {
+            let reference = |index| CppFunctionReference {
+                declaration_id: format!("f{index}"),
+                name: format!("f{index}"),
+                span: cleanup_span(),
+            };
+            let mut functions = (0..size)
+                .map(|index| CppFunction {
+                    declaration_id: format!("f{index}"),
+                    name: format!("f{index}"),
+                    function_kind: CppFunctionKind::Free,
+                    return_type: signed_integer(32, false),
+                    parameters: vec![],
+                    declared_noexcept: true,
+                    span: cleanup_span(),
+                    body: if index == 0 {
+                        vec![]
+                    } else {
+                        vec![CppStatement::ReturnCall {
+                            callee: reference(index - 1),
+                            arguments: vec![],
+                            value_type: signed_integer(32, false),
+                            cleanups: vec![],
+                            span: cleanup_span(),
+                        }]
+                    },
+                })
+                .collect::<Vec<_>>();
+            let mut root = functions[0].clone();
+            root.name = "root".into();
+            root.declaration_id = "root".into();
+            // Check short subgraphs first, so every following link uses a cache hit.
+            root.body = (0..size)
+                .map(|index| CppStatement::Call {
+                    callee: reference(index),
+                    arguments: vec![],
+                    span: cleanup_span(),
+                })
+                .collect();
+            functions.push(root);
+            let index = functions
+                .iter()
+                .map(|function| (function.declaration_id.clone(), function))
+                .collect();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_reachable_calls(
+                    "root",
+                    &index,
+                    &mut Vec::new(),
+                    &mut BTreeMap::new(),
+                    "fixture.cpp",
+                )
+            });
+            if size < super::super::budget::MAX_CALL_DEPTH {
+                assert_eq!(result.unwrap(), size + 1);
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .contains("artifact budget exhausted: call graph depth")
+                );
+            }
+            assert!(
+                work >= size && work <= 8 * size + 16,
+                "{size} graph nodes: {work} work"
+            );
+        }
+    }
+
+    #[test]
+    fn record_inventory_reachability_rejects_unused_layouts() {
+        let record = CppRecord {
+            declaration_id: "record".into(),
+            name: "R".into(),
+            size_bytes: 4,
+            alignment_bytes: 4,
+            destructor: None,
+            span: cleanup_span(),
+            fields: vec![CppField {
+                declaration_id: "field".into(),
+                name: "value".into(),
+                value_type: signed_integer(32, false),
+                offset_bytes: 0,
+                size_bytes: 4,
+                span: cleanup_span(),
+            }],
+        };
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        for size in [8, 32, 128, 256] {
+            let inventory = (0..size)
+                .map(|index| {
+                    let mut copy = record.clone();
+                    copy.declaration_id = format!("record_{index}");
+                    copy.name = format!("R{index}");
+                    copy.fields[0].declaration_id = format!("field_{index}");
+                    copy
+                })
+                .collect::<Vec<_>>();
+            let (indexed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                validate_record_inventory(&inventory, "fixture.cpp", &sources)
+            });
+            assert_eq!(indexed.unwrap().len(), size);
+            assert!(
+                work >= size && work <= 4 * size,
+                "{size} layouts: {work} work"
+            );
+        }
+        let mut duplicate_field = record.clone();
+        duplicate_field.declaration_id = "second".into();
+        duplicate_field.name = "Second".into();
+        assert!(
+            validate_record_inventory(
+                &[record.clone(), duplicate_field.clone()],
+                "fixture.cpp",
+                &sources
+            )
+            .unwrap_err()
+            .contains("duplicate C++ field")
+        );
+        duplicate_field.fields[0].declaration_id = "other_field".into();
+        duplicate_field.name = "R".into();
+        assert!(
+            validate_record_inventory(&[record.clone(), duplicate_field], "fixture.cpp", &sources)
+                .unwrap_err()
+                .contains("same-named record layouts")
+        );
+        record.validate("fixture.cpp").unwrap();
+        let records = BTreeMap::from([("record".into(), &record)]);
+        assert!(
+            validate_reachable_records(&BTreeMap::new(), &records)
+                .unwrap_err()
+                .contains("outside the selected")
+        );
+        let function = CppFunction {
+            declaration_id: "function".into(),
+            name: "read".into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body: vec![],
+            parameters: vec![CppPlace {
+                declaration_id: "parameter".into(),
+                name: "r".into(),
+                span: cleanup_span(),
+                value_type: CppType::LvalueReference {
+                    pointee: Box::new(CppType::Record {
+                        declaration_id: "record".into(),
+                        name: "R".into(),
+                        is_const: false,
+                    }),
+                },
+            }],
+        };
+        validate_reachable_records(&BTreeMap::from([("function".into(), &function)]), &records)
+            .unwrap();
     }
 
     #[test]

@@ -905,15 +905,8 @@ fn tactic_inventory_matches_canonical_surface_names() {
             names.insert(name.to_string());
         }
     }
-    // A retired spelling can remain in the internal proof-object enum while
-    // the public parser and inventory no longer expose it.
-    names.retain(|name| !RETIRED_TACTICS.contains(&name.as_str()));
-    let documented = inventory_ids("tactic.");
-    let active = documented
-        .into_iter()
-        .filter(|name| !RETIRED_TACTICS.contains(&name.as_str()))
-        .collect::<BTreeSet<_>>();
-    assert_eq!(names, active);
+    names.retain(|name| !INTERNAL_TACTICS.contains(&name.as_str()));
+    assert_eq!(names, inventory_ids("tactic."));
 }
 
 #[test]
@@ -1076,7 +1069,7 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
             let mut in_click = false;
             let mut checked_click = String::new();
             for line in fixture.lines() {
-                if line.trim() == "```click" {
+                if line.split_whitespace().next() == Some("```click") {
                     in_click = true;
                     continue;
                 }
@@ -1103,21 +1096,8 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
     }
 }
 
-const RETIRED_TACTICS: &[&str] = &[
-    "choose",
-    "conjunction",
-    "apply_loop_summary",
-    "summarize",
-    "execute_rest",
-    "symbolic_execute",
-    "execute_step",
-    "execute_then_step",
-    "execute_else_step",
-    "bounded_execute",
-    "calculate",
-    "double_negation",
-    "vacuous",
-];
+/// Proof-object operations with a canonical name but no surface spelling.
+const INTERNAL_TACTICS: &[&str] = &["choose"];
 
 #[test]
 fn cli_inventory_matches_argument_parsers() {

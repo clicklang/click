@@ -405,7 +405,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
     requested_branch: Option<bool>,
     prerequisite_policy: StatementPrerequisitePolicy,
     complete_empty_branch: bool,
-    mut construction: Option<Construction<'_>>,
     context: Option<&PureFactContext>,
 ) -> Result<bool, ClickError> {
     let function_block = proof_context.function_block;
@@ -466,14 +465,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         )));
     };
 
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &[CodeRegion::Statement(statement_index)],
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -481,7 +472,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
     let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let condition_transitions = certified_condition_transitions(
@@ -490,7 +480,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         &condition,
         &transition_label,
         prerequisite_policy,
-        true,
         context,
     )?;
     if condition_transitions.len() != 1 {
@@ -545,24 +534,6 @@ pub(super) fn execute_branch_step_from_frontier_position(
         )));
     }
 
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        append_condition_transition_certificate(
-            execution,
-            proof_context,
-            &condition_transition,
-            &current_state,
-            available_pure_facts,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
     execution
         .core
         .record_condition_transition(
@@ -704,7 +675,6 @@ fn execute_concrete_loop_head_step(
     loop_statement: CStatement,
     remaining: Option<CStatement>,
     context: Option<&PureFactContext>,
-    mut construction: Option<Construction<'_>>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -730,17 +700,6 @@ fn execute_concrete_loop_head_step(
         unreachable!("concrete loop stepping requires a while statement");
     };
 
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &[
-                CodeRegion::Statement(statement_index),
-                CodeRegion::Loop(loop_index),
-            ],
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -755,7 +714,6 @@ fn execute_concrete_loop_head_step(
         ProgramPointKind::Entry,
         current_state.clone(),
     );
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
 
     let loop_head = CStatement::While {
         condition: condition.clone(),
@@ -779,24 +737,6 @@ fn execute_concrete_loop_head_step(
     // continuation is an ordinary while head: after the first body, every
     // iteration checks the condition before re-entering the body.
     if do_while {
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-            && let Some(construction) = construction.as_mut()
-        {
-            let environments = construction.environments;
-            construct_proof_step_for_planned_operation(
-                execution,
-                proof_context,
-                construction.sink,
-                &current_state,
-                function_block,
-                parameters,
-                arguments,
-                environments,
-                &ConstructionEvidence::CertifiedStatementStep {
-                    planned_transition: None,
-                },
-            );
-        }
         // Entering the body records no evidence of its own. When the loop is
         // the first thing this trace executes, the proof object would start
         // matching evidence from the frontier position set below, which
@@ -888,7 +828,6 @@ fn execute_concrete_loop_head_step(
         &condition,
         &transition_label,
         prerequisite_policy,
-        true,
         // A step decides the loop condition from the same whole proof
         // context it runs every other statement in.
         context,
@@ -911,24 +850,6 @@ fn execute_concrete_loop_head_step(
         .into_iter()
         .next()
         .expect("one condition transition was required");
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        append_condition_transition_certificate(
-            execution,
-            proof_context,
-            &condition_transition,
-            &current_state,
-            available_pure_facts,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
     execution
         .core
         .record_condition_transition(
@@ -1143,82 +1064,6 @@ pub(super) fn record_loop_program_snapshot_state(
         kind,
         state,
     );
-}
-
-/// Swaps the listed program points to their pre-recording values (or removes
-/// points the recording introduced) so a surface step can be written against
-/// the view its own check will have; returns what must be put back.
-fn construction_snapshot_overrides(
-    recorded_snapshots: &RecordedSnapshots,
-    function_block: &FunctionBlock,
-    regions: &[CodeRegion],
-    kind: ProgramPointKind,
-) -> Vec<(ProgramPointRef, Option<CState>)> {
-    let mut points = BTreeSet::new();
-    for region in regions {
-        let point_region = match region {
-            CodeRegion::Function => CodeRegionRef::Function,
-            CodeRegion::Loop(index) => CodeRegionRef::Loop(*index),
-            CodeRegion::Statement(index) => CodeRegionRef::Statement(*index),
-        };
-        points.insert(ProgramPointRef {
-            region: point_region,
-            kind,
-        });
-        for label in function_block
-            .structural_clauses()
-            .iter()
-            .filter(|clause| clause.region() == region)
-            .filter_map(StructuralClause::label)
-        {
-            points.insert(ProgramPointRef {
-                region: CodeRegionRef::Label(label.to_string()),
-                kind,
-            });
-        }
-    }
-    points
-        .into_iter()
-        .map(|point| {
-            let prior = recorded_snapshots.get(&point).cloned();
-            (point, prior)
-        })
-        .collect()
-}
-
-fn apply_construction_snapshot_view(
-    recorded_snapshots: &mut RecordedSnapshots,
-    overrides: &[(ProgramPointRef, Option<CState>)],
-) -> Vec<(ProgramPointRef, Option<CState>)> {
-    let mut restore = Vec::with_capacity(overrides.len());
-    for (point, prior) in overrides {
-        restore.push((point.clone(), recorded_snapshots.get(point).cloned()));
-        match prior {
-            Some(state) => {
-                recorded_snapshots.insert(point.clone(), state.clone());
-            }
-            None => {
-                recorded_snapshots.remove(point);
-            }
-        }
-    }
-    restore
-}
-
-fn restore_construction_snapshot_view(
-    recorded_snapshots: &mut RecordedSnapshots,
-    restore: Vec<(ProgramPointRef, Option<CState>)>,
-) {
-    for (point, value) in restore {
-        match value {
-            Some(state) => {
-                recorded_snapshots.insert(point, state);
-            }
-            None => {
-                recorded_snapshots.remove(&point);
-            }
-        }
-    }
 }
 
 pub(super) fn record_statement_program_snapshot_state(
@@ -1458,20 +1303,6 @@ fn annotate_surface_at_snapshot(
     Ok(completed.pop().expect("visited snapshot root"))
 }
 
-pub(super) fn predicate_call_snapshot_selector(
-    surface: &ClickProposition,
-) -> Option<SnapshotSelector> {
-    let ClickProposition::PredicateCall { arguments, .. } = surface else {
-        return None;
-    };
-    arguments.iter().find_map(|argument| {
-        let ContractExpression::At { selector, .. } = argument else {
-            return None;
-        };
-        Some(selector.clone())
-    })
-}
-
 /// Returns a snapshot selector explicitly carried by a proposition produced
 /// by [`surface_at_snapshot`]. Callers must still
 /// re-lower any newly anchored form and check that it denotes the exact
@@ -1540,7 +1371,6 @@ pub(super) fn route_throw_to_handler(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
-    mut construction: Option<Construction<'_>>,
     throw_value: &CValue,
     thrown_state: &CState,
     throw_facts: &[Proposition],
@@ -1623,35 +1453,6 @@ pub(super) fn route_throw_to_handler(
             &mut execution.core.effect_facts,
             &transition.execution_facts,
         );
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-            // The bundled binding transitions correspond to no user
-            // statement, so there are no snapshot points to preserve.
-            let overrides = construction_snapshot_overrides(
-                &execution.presentation.recorded_snapshots,
-                function_block,
-                &[],
-                ProgramPointKind::Entry,
-            );
-            let restore = apply_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                &overrides,
-            );
-            append_statement_transition_certificate(
-                execution,
-                proof_context,
-                &transition,
-                LoopStepPolicy::EnterBody,
-                &state,
-                function_block,
-                parameters,
-                arguments,
-                construction.as_mut().map(Construction::reborrow),
-            );
-            restore_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                restore,
-            );
-        }
         facts = transition.pure_facts.clone();
         introduced_facts.extend(transition.introduced_facts.iter().cloned());
         state = next_state;
@@ -1722,7 +1523,6 @@ pub(super) fn execute_step_from_frontier_position(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
-    mut construction: Option<Construction<'_>>,
 ) -> Result<Vec<Proposition>, ClickError> {
     execute_step_from_frontier_position_selecting_path(
         execution,
@@ -1732,7 +1532,6 @@ pub(super) fn execute_step_from_frontier_position(
         prerequisite_policy,
         fact_transport_policy,
         loop_step_policy,
-        construction.as_mut().map(Construction::reborrow),
         None,
         None,
         None,
@@ -2034,7 +1833,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
             StatementPrerequisitePolicy::Retained,
             StatementFactTransportPolicy::None,
             None,
-            None,
             value,
             state,
             &transition.pure_facts,
@@ -2105,7 +1903,6 @@ pub(super) fn execute_step_successor_from_frontier_position(
         fact_transport_policy,
         loop_step_policy,
         None,
-        None,
         context,
         None,
     )?;
@@ -2125,7 +1922,6 @@ fn execute_step_from_frontier_position_selecting_path(
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
     loop_step_policy: LoopStepPolicy,
-    mut construction: Option<Construction<'_>>,
     selected_path_fact: Option<&Proposition>,
     context: Option<&PureFactContext>,
     path_cases: Option<&mut Vec<CertifiedStatementTransition>>,
@@ -2143,16 +1939,6 @@ fn execute_step_from_frontier_position_selecting_path(
 
     let state: &mut CState = &mut execution.core.state;
 
-    #[cfg(test)]
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        PLANNING_STATEMENT_TRANSITIONS.with(|transitions| {
-            transitions.borrow_mut().push((
-                claim_label.to_owned(),
-                tactic_index,
-                tactic_name.to_owned(),
-            ));
-        });
-    }
     let mut statement_index = execution.core.frontier.next_statement_index;
     let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
         &proof_context.constants.source_layout,
@@ -2187,7 +1973,6 @@ fn execute_step_from_frontier_position_selecting_path(
             None,
             prerequisite_policy,
             false,
-            construction.as_mut().map(Construction::reborrow),
             context,
         )?;
         debug_assert!(entered);
@@ -2312,7 +2097,6 @@ fn execute_step_from_frontier_position_selecting_path(
             source_statement,
             remaining,
             context,
-            construction.as_mut().map(Construction::reborrow),
         )?;
         return Ok(Vec::new());
     }
@@ -2370,14 +2154,6 @@ fn execute_step_from_frontier_position_selecting_path(
     if let Some(loop_index) = loop_index {
         construction_regions.push(CodeRegion::Loop(loop_index));
     }
-    let construction_snapshot_overrides = construction.is_some().then(|| {
-        construction_snapshot_overrides(
-            &execution.presentation.recorded_snapshots,
-            function_block,
-            &construction_regions,
-            ProgramPointKind::Entry,
-        )
-    });
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
         function_block,
@@ -2394,7 +2170,6 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state.clone(),
         );
     }
-    let construction_snapshot_overrides = construction_snapshot_overrides.unwrap_or_default();
     let current_resources = current_state.resources().facts().to_vec();
     let transition_label = format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
     let next_opaque_call_before_step = execution.core.next_opaque_call;
@@ -2554,32 +2329,6 @@ fn execute_step_from_frontier_position_selecting_path(
         // One checked source operation can have several completed outcomes,
         // including a terminal direct call followed by a return.
         // Preserve every theorem and its own outcome for final certification.
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-            && let Some(construction) = construction.as_mut()
-        {
-            let environments = construction.environments;
-            let restore = apply_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                &construction_snapshot_overrides,
-            );
-            construct_proof_step_for_planned_operation(
-                execution,
-                proof_context,
-                construction.sink,
-                &current_state,
-                function_block,
-                parameters,
-                arguments,
-                environments,
-                &ConstructionEvidence::CertifiedStatementStep {
-                    planned_transition: None,
-                },
-            );
-            restore_construction_snapshot_view(
-                &mut execution.presentation.recorded_snapshots,
-                restore,
-            );
-        }
 
         let mut common_pure_facts = transitions[0].pure_facts.clone();
         common_pure_facts.retain(|fact| {
@@ -2924,29 +2673,7 @@ fn execute_step_from_frontier_position_selecting_path(
             loop_index,
         )?;
     }
-    let mut deferred_transport_operations = Vec::new();
-    if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-        let restore = apply_construction_snapshot_view(
-            &mut execution.presentation.recorded_snapshots,
-            &construction_snapshot_overrides,
-        );
-        deferred_transport_operations = append_statement_transition_certificate(
-            execution,
-            proof_context,
-            &transition,
-            if loop_index.is_some() {
-                loop_step_policy
-            } else {
-                LoopStepPolicy::EnterBody
-            },
-            &current_state,
-            function_block,
-            parameters,
-            arguments,
-            construction.as_mut().map(Construction::reborrow),
-        );
-        restore_construction_snapshot_view(&mut execution.presentation.recorded_snapshots, restore);
-    }
+
     if let Some((split, root_facts, throw_transition)) = pending_exceptional_call {
         let parent = execution.core.clone();
         let branches = split
@@ -3291,7 +3018,6 @@ fn execute_step_from_frontier_position_selecting_path(
                     prerequisite_policy,
                     fact_transport_policy,
                     context,
-                    construction.as_mut().map(Construction::reborrow),
                     value,
                     state,
                     &successor_pure_facts,
@@ -3525,43 +3251,6 @@ fn execute_step_from_frontier_position_selecting_path(
     // certificate facts, and finishing the transports retires the stale
     // pre-statement sources, mirroring what the certificate's own check
     // carries across this statement.
-    if construction.is_some() {
-        // Construction reads the post-statement state while it records into
-        // the execution; the transports do not change the state.
-        let exit_state = (*execution.core.state).clone();
-        for operation in &deferred_transport_operations {
-            if let Some(construction) = construction.as_mut() {
-                let environments = construction.environments;
-                construct_proof_step_for_planned_operation(
-                    execution,
-                    proof_context,
-                    construction.sink,
-                    &exit_state,
-                    function_block,
-                    parameters,
-                    arguments,
-                    environments,
-                    operation,
-                );
-            }
-            let certificate_facts = &mut execution.presentation.surface_record.certificate_facts;
-            match operation {
-                ConstructionEvidence::CertifiedFactTransport { target, .. } => {
-                    certificate_facts.insert(target.clone());
-                }
-                ConstructionEvidence::FinishCertifiedFactTransports(sources) => {
-                    certificate_facts.retain(|fact| {
-                        !sources.iter().any(|source| {
-                            source == fact
-                                || exactly_available_fact(source, std::slice::from_ref(fact))
-                                    .is_some()
-                        })
-                    });
-                }
-                _ => {}
-            }
-        }
-    }
     Ok(introduced_facts)
 }
 

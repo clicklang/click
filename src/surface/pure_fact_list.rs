@@ -94,22 +94,6 @@ impl BuiltContext {
         }
     }
 
-    /// Keeps whichever of this prefix and `other`'s is longer. Both must
-    /// have been built from prefixes of one sequence.
-    pub(crate) fn adopt_longer(&mut self, other: &Self) {
-        let other = other.lock().clone();
-        let built = self
-            .0
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if other
-            .as_ref()
-            .is_some_and(|(length, _)| built.as_ref().is_none_or(|(built, _)| length > built))
-        {
-            *built = other;
-        }
-    }
-
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<(usize, PureFactContext)>> {
         self.0
             .lock()
@@ -193,10 +177,6 @@ impl PureFactList {
     /// the facts appended since.
     pub(crate) fn context(&self) -> PureFactContext {
         self.built.context_of(&self.facts)
-    }
-
-    pub(crate) fn built_context(&self) -> &BuiltContext {
-        &self.built
     }
 
     /// The context of the facts' direct-transport premises, in order,

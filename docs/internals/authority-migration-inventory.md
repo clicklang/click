@@ -246,8 +246,45 @@ and rejection of a negative coefficient with its missing nonnegative fact.
 `fold_negative_quantity_legacy_control.md` retains the original signed-quantity
 regression until the final legacy-removal milestone; its authority replacement
 is `fold_rejects_a_negative_quantity.md`.
-The unresolved symbolic-plus-unit and global-pattern count boundaries are
-recorded in the migration issue; their original fixtures remain unchanged.
+The symbolic-plus-unit boundary remains recorded in the migration issue.
+The obsolete global unanchored count fixtures were removed by explicit design
+decision. Scoped wildcard aggregation remains covered by authority fixtures.
+`counted_distinct_populations_symbolic_entry.md` now uses authority semantics,
+with separate authorities for its independent families and no bound on their
+unobserved sum.
+
+`resource_count_predicate_snapshot.md` also uses authority semantics: an
+ordinary control owns counter memory and authority, independently of reference
+members. Its unchanged C retain operation restores a fresh predicate after the
+checked member birth; the predicate's entry snapshot cannot substitute for
+that updated relation.
+
+`counted_resource_contribution_counter.md` selects authority semantics for all
+seven functions. It separates empty contribution members from an ordinary
+counter/authority control and supplies empty authority through storage. One
+member is consumed per increment; exact-two callers consume their final member
+and retire authority before returning memory. Whole symbolic cleanup and direct
+zero/one/two-value pipelines preserve their original C and result guarantees.
+
+`population_consumption_at_close.md` and
+`population_consumption_wrong_increment.md` now use ordinary authority-bearing
+controls. Explicit member consumption precedes invariant restoration; reopening
+does not consume again. Nested calls and both reporting branches verify, while
+the unchanged two-unit increment is rejected for failing the counter/count fact.
+
+`authority_local_numeric_batch.md` covers a locally created concrete batch,
+including zero changes and partial consumption. Concrete quantities use the
+same custody ledger as units; kernel tests also preserve exact wildcard member
+counts and check quantity-independent work. True symbolic-batch/unit mixing
+is still a separate migration capability.
+
+`population_count_states_its_transition.md` and
+`population_count_across_a_produces_transition.md` now select authority semantics
+and explicitly create the produced member. The real count transition verifies;
+a fixed post-count of one remains rejected. The initializer and ordinary caller
+in `produced_population_count_in_ensured_predicate.md` now receive explicit
+authority for an empty entry family. Their ensured predicate observes checked
+births, including the zero-quantity branch, with unchanged C.
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
@@ -265,6 +302,11 @@ paths in each row are relative to `mdtests/`. The pass/fail ledger below comes
 from each fixture's checked-in `expect` block; names alone do not determine
 the expected result.
 
+The loop/pure-expression row is a search-hit inventory, not a population
+migration group: those fixtures use C functions named `count` or the standard
+library's array-count function. None observes a declared-resource population.
+Keep their existing proof coverage without introducing artificial authorities.
+
 All 18 fixtures in the shared-parent lifecycle row select authority semantics.
 Their contracts and intended refusals pass the full repository gate; see the
 verification and audit evidence above.
@@ -272,7 +314,7 @@ verification and audit evidence above.
 | Group | Files and preserved behavior |
 | --- | --- |
 | Refcount and exact population basics | `counted_resource_refcount_transitions.md`, `counted_resource_population_body.md`, `counted_resource_population_lifetime.md`, `counted_resource_independent_populations.md`, `counted_release_preserves_nonfinal_allocation.md`, `population_initialized_cleanup.md`, `population_unit_needs_its_body.md`, `population_simple_exit_rejects_final_leak.md`: exact count/body relation, independent populations, nonfinal allocation preservation, initialization/finalization, and refusal to leak or produce a unit without its body. `counted_resource_rejects_minting.md`, `counted_resource_rejects_double_spend.md`, `counted_resource_transfer.md` pin ordinary ownership transfer and spend, even where they do not spell `count`. |
-| Quantity, arithmetic, patterns, snapshots | `counted_distinct_populations_symbolic_entry.md`, `counted_distinct_populations_symbolic_sum.md`, `population_symbolic_increment_bounded.md`, `population_symbolic_increment_overflow.md`, `population_cleanup_rejects_partial_quantity.md`, `fold_rejects_a_negative_quantity.md`, `let_bound_constant_quantity.md`, `resource_count_patterns.md`, `resource_pattern_counts_cross_contracts.md`, `resource_count_observe_witness.md`, `resource_count_predicate_snapshot.md`, `population_count_states_its_transition.md`, `population_count_across_a_produces_transition.md`, `c_contract_executes_resource_count.md`, `c_step_contract_resource_count_is_model_local.md`, `produced_population_count_in_ensured_predicate.md`, `consumed_population_count_in_ensured_predicate.md`, `predicate_without_count_ignores_resource_population.md`, `a_population_count_is_not_a_wrapped_total.md`: exact versus wildcard totals, bounded `int32` sums, nonnegative coefficients, contracts and predicates, historical snapshots, witnesses, and an unrelated predicate that must remain usable. |
+| Quantity, arithmetic, patterns, snapshots | `counted_distinct_populations_symbolic_entry.md`, `population_symbolic_increment_bounded.md`, `population_symbolic_increment_overflow.md`, `population_cleanup_rejects_partial_quantity.md`, `fold_rejects_a_negative_quantity.md`, `let_bound_constant_quantity.md`, `resource_pattern_counts_cross_contracts.md`, `resource_count_observe_witness.md`, `resource_count_predicate_snapshot.md`, `population_count_states_its_transition.md`, `population_count_across_a_produces_transition.md`, `c_contract_executes_resource_count.md`, `c_step_contract_resource_count_is_model_local.md`, `produced_population_count_in_ensured_predicate.md`, `consumed_population_count_in_ensured_predicate.md`, `predicate_without_count_ignores_resource_population.md`, `a_population_count_is_not_a_wrapped_total.md`: exact versus wildcard totals, bounded `int32` sums, nonnegative coefficients, contracts and predicates, historical snapshots, witnesses, and an unrelated predicate that must remain usable. |
 | Open body, call, and return boundaries | `resource_population_open.md`, `population_open_calls_explicit_piece.md`, `call_inside_open_population_does_not_assume_its_body.md`, `population_call_with_restored_body.md`, `population_call_requires_closed_body.md`, `population_call_drops_the_cached_body_cell.md`, `population_call_keeps_what_it_may_and_drops_the_body_cell.md`, `population_call_rejects_open_alias.md`, `population_call_rejects_reentrant_restored_body.md`, `population_rejects_nested_open.md`, `population_rejects_nested_alias_open.md`, `load_origin_first_seen_per_function.md`, `return_population_rejects_missing_increment.md`, `return_population_rejects_missing_ownership.md`, `return_population_rejects_unupdated_sibling.md`, `return_population_rejects_wrong_release.md`: scoped restoration, no duplicated body access, call invalidation, and return checking. Some old positive body-open permissions must be replaced by ordinary ownership plus authority, while their memory and count claims remain. |
 | Consumption at close and contribution | `counted_resource_contribution_counter.md`, `population_consumption_at_close.md`, `population_consumption_missing_contract.md`, `population_consumption_nested_overconsume.md`, `population_consumption_repeated.md`, `population_consumption_wrong_increment.md`: exact two, one spend across scope close/return, and refusal of missing, repeated, or incorrect consumption. |
 | Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `shared_heap_produced_ensure_transport.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
@@ -286,7 +328,7 @@ The following **fail** fixtures are the negative side of the sequential groups a
 
 | Group | Expected-failure files |
 | --- | --- |
-| Arithmetic, quantity, patterns, and proof-expression boundaries | `a_population_count_is_not_a_wrapped_total.md`, `counted_distinct_populations_symbolic_sum.md`, `fold_rejects_a_negative_quantity.md`, `population_cleanup_rejects_partial_quantity.md`, `population_symbolic_increment_overflow.md`, `population_count_across_a_produces_transition.md`, `c_step_contract_resource_count_is_model_local.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`. |
+| Arithmetic, quantity, patterns, and proof-expression boundaries | `a_population_count_is_not_a_wrapped_total.md`, `fold_rejects_a_negative_quantity.md`, `population_cleanup_rejects_partial_quantity.md`, `population_symbolic_increment_overflow.md`, `population_count_across_a_produces_transition.md`, `c_step_contract_resource_count_is_model_local.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`. |
 | Body and call boundaries | `call_inside_open_population_does_not_assume_its_body.md`, `population_call_drops_the_cached_body_cell.md`, `population_call_rejects_open_alias.md`, `population_call_rejects_reentrant_restored_body.md`, `population_call_requires_closed_body.md`, `population_rejects_nested_alias_open.md`, `population_rejects_nested_open.md`, `population_unit_needs_its_body.md`. |
 | Population updates and return | `counted_resource_rejects_double_spend.md`, `counted_resource_rejects_minting.md`, `population_simple_exit_rejects_final_leak.md`, `population_consumption_missing_contract.md`, `population_consumption_nested_overconsume.md`, `population_consumption_repeated.md`, `population_consumption_wrong_increment.md`, `return_population_rejects_missing_increment.md`, `return_population_rejects_missing_ownership.md`, `return_population_rejects_unupdated_sibling.md`, `return_population_rejects_wrong_release.md`. |
 | Parent identity and lifetime | `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_detach_leak_diagnostic.md`, `resource_field_child_equation_rejects_other_start.md`. The unsuffixed two-parent branch fixture is a negative control; its `..._positive.md` counterpart is the passing claim. |

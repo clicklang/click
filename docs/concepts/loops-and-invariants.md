@@ -1002,8 +1002,8 @@ member's quantified index as the expanded proof writes it.
 
 Successful initialization and preservation proofs certify and apply a
 verified loop rule. The enclosing proof is already at the loop exit when the
-`loop` tactic returns; there is no later `summarize(loop(N))` step and no need
-to reconstruct a path from function entry.
+`loop` tactic returns; there is no later step and no need to reconstruct a path
+from function entry.
 
 Explicit phase tactics keep their own source locations for profiling and
 expansion. Omitted phase automation is attributed to the `loop` keyword.

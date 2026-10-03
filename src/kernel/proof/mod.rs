@@ -56,6 +56,4 @@ pub(crate) use obligations::{
     FunctionOutcomeObligation, LiveAllocationObligation, OutcomeIdentity, OutcomeProofCore,
     OutcomeProofState, ProofObligation, PropositionObligation,
 };
-pub(crate) use storage::{
-    PersistentOrderedSet, PersistentSequence, PersistentSequenceIter, SharedValue, SharedVec,
-};
+pub(crate) use storage::{PersistentOrderedSet, PersistentSequence, SharedValue, SharedVec};

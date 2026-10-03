@@ -194,9 +194,11 @@ both fail. A local-aggregate fixture brace-initializes one object with every
 field, lowers its exact layout to checked stack memory, and reads its fields
 after initialization. It also verifies offline and after expansion; missing
 input authority and a false saved-field result fail. Focused frontend checks
-reject methods, bit-fields, inheritance, multiple record types, partial or
-default initialization, copies, unsupported nested object forms, and a second
-local object.
+reject unresolved methods, bit-fields, inheritance, partial or default
+initialization, copies, unsupported nested object forms, and unsupported local
+lifetime combinations. Inventory regressions cover multiple distinct record
+layouts and constant forests, shared lowering indexes, named resource budgets,
+and malformed declaration graphs.
 Destructor coverage additionally checks cleanup on every return, reverse order
 for two top-level objects, and one direct nested block whose object is destroyed
 both on early return and before an outer continuation. A sibling-block fixture

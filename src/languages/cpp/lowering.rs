@@ -83,12 +83,37 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             .chain(&import.export().reachable_functions)
             .map(|function| (function.declaration_id.as_str(), function.name.as_str())),
     )?;
-    let function = lower_function(import, &import.export().function, &names)?;
+    // Build immutable inventories once; every function borrows the same indexes.
+    let records = import
+        .export()
+        .records
+        .iter()
+        .map(|record| {
+            crate::instrumentation::record_deterministic_work(1);
+            (record.declaration_id.as_str(), record)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let constants = import
+        .export()
+        .constants
+        .iter()
+        .map(|constant| {
+            crate::instrumentation::record_deterministic_work(1);
+            (constant.declaration_id.as_str(), constant)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let function = lower_function(
+        import,
+        &import.export().function,
+        &names,
+        &records,
+        &constants,
+    )?;
     let reachable_functions = import
         .export()
         .reachable_functions
         .iter()
-        .map(|source| lower_function(import, source, &names))
+        .map(|source| lower_function(import, source, &names, &records, &constants))
         .collect::<Result<Vec<_>, _>>()?;
     let execution = std::sync::Arc::new(super::interface::prepare(
         import,
@@ -108,6 +133,8 @@ fn lower_function(
     import: &PreparedCppImport,
     source: &CppFunction,
     names: &ResolvedNames,
+    records: &BTreeMap<&str, &CppRecord>,
+    constants: &BTreeMap<&str, &CppConstant>,
 ) -> Result<CFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
@@ -129,18 +156,8 @@ fn lower_function(
         source_names: places.values().map(|place| place.name.as_str()).collect(),
         next_call_capture: 0,
         places,
-        records: import
-            .export()
-            .records
-            .iter()
-            .map(|record| (record.declaration_id.as_str(), record))
-            .collect(),
-        constants: import
-            .export()
-            .constants
-            .iter()
-            .map(|constant| (constant.declaration_id.as_str(), constant))
-            .collect(),
+        records,
+        constants,
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
         nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
@@ -282,8 +299,8 @@ struct LoweringContext<'a> {
     function_name: &'a str,
     names: &'a ResolvedNames,
     places: BTreeMap<&'a str, &'a CppPlace>,
-    records: BTreeMap<&'a str, &'a CppRecord>,
-    constants: BTreeMap<&'a str, &'a CppConstant>,
+    records: &'a BTreeMap<&'a str, &'a CppRecord>,
+    constants: &'a BTreeMap<&'a str, &'a CppConstant>,
     next_load_occurrence: u32,
     return_capture_name: String,
     nested_capture_name: String,
