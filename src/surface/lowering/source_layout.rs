@@ -75,6 +75,12 @@ struct SourceExecutionLayoutData {
     /// statement ends. Statically derived, so branch-region exits need no
     /// runtime continuation bookkeeping.
     exited_branch_regions: BTreeMap<usize, Vec<usize>>,
+    /// The inverse of `exited_branch_regions`, kept while the layout is
+    /// built: for each `if`, the statements whose completion completes its
+    /// region. Redirecting an arm that ends in an `if` needs exactly these,
+    /// and finding them by scanning every statement's list made the build
+    /// quadratic in the statements of a nested branch tree.
+    arm_lasts_by_exited_region: BTreeMap<usize, Vec<usize>>,
     /// Where each C statement was written, by statement index: diagnostics
     /// only, read by a refusal to name the line it refused. Statements a
     /// frontend generated with no source statement of their own are absent.
@@ -149,17 +155,25 @@ impl SourceExecutionLayout {
                 .entry(last_statement_index)
                 .or_default()
                 .push(exited_if_index);
+            layout
+                .arm_lasts_by_exited_region
+                .entry(exited_if_index)
+                .or_default()
+                .push(last_statement_index);
             if let Some(lasts) = try_lasts {
                 for last in lasts {
                     redirect_control_successor(layout, last, exited_if_index, continuation_node);
                 }
             } else if let SourceStatementKind::If { .. } = region.kind {
-                let arm_lasts: Vec<usize> = layout
-                    .exited_branch_regions
-                    .iter()
-                    .filter(|(_, exited)| exited.contains(&last_statement_index))
-                    .map(|(index, _)| *index)
-                    .collect();
+                // In statement order, each statement once: what the scan of
+                // every statement's list returned.
+                let mut arm_lasts: Vec<usize> = layout
+                    .arm_lasts_by_exited_region
+                    .get(&last_statement_index)
+                    .cloned()
+                    .unwrap_or_default();
+                arm_lasts.sort_unstable();
+                arm_lasts.dedup();
                 for arm_last in arm_lasts {
                     redirect_control_successor(
                         layout,
@@ -529,13 +543,21 @@ impl SourceExecutionLayout {
                 .entry(last_statement_index)
                 .or_default()
                 .push(exited_if_index);
+            layout
+                .arm_lasts_by_exited_region
+                .entry(exited_if_index)
+                .or_default()
+                .push(last_statement_index);
             if let SourceStatementKind::If { .. } = region.kind {
-                let arm_lasts: Vec<usize> = layout
-                    .exited_branch_regions
-                    .iter()
-                    .filter(|(_, exited)| exited.contains(&last_statement_index))
-                    .map(|(index, _)| *index)
-                    .collect();
+                // In statement order, each statement once: what the scan of
+                // every statement's list returned.
+                let mut arm_lasts: Vec<usize> = layout
+                    .arm_lasts_by_exited_region
+                    .get(&last_statement_index)
+                    .cloned()
+                    .unwrap_or_default();
+                arm_lasts.sort_unstable();
+                arm_lasts.dedup();
                 for arm_last in arm_lasts {
                     redirect_control_successor(
                         layout,
@@ -935,6 +957,7 @@ mod source_execution_layout_tests {
                 natural_exit_targets: BTreeMap::new(),
                 natural_exit_statement_indices: BTreeMap::new(),
                 exited_branch_regions: BTreeMap::new(),
+                arm_lasts_by_exited_region: BTreeMap::new(),
                 sites: BTreeMap::new(),
             }),
         };

@@ -481,6 +481,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -572,6 +573,7 @@ impl<'a> Proof<'a> {
             // The marker records the split instance in provenance; its
             // identity is what the join verifies (identity rule 3).
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -629,6 +631,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -800,6 +803,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -869,6 +873,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -1032,6 +1037,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(parent.clone()),
                 step: Some(Arc::new(step(
                     ProofCertificate::from_steps(left_steps)?,
@@ -1349,6 +1355,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state: KernelProofObject::root(self.state().locals().clone(), body_goal),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -1448,6 +1455,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: self.focused_branch_id(),

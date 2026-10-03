@@ -1082,6 +1082,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut certificate_paths = Vec::new();
     let mut final_exit_candidates = Vec::new();
     let mut break_exits = Vec::new();
+    // Each exit is recorded once. The lists are compared by a hash of the
+    // exit's state and facts first, so a new exit is checked for equality only against
+    // exits in its own bucket rather than against every exit recorded so far.
+    let mut seen_final_exits = SeenLoopExits::default();
+    let mut seen_break_exits = SeenLoopExits::default();
     let mut nested_loop_rules = Vec::new();
     for (execution, path_certificate) in refuted_match_paths {
         let case_path = execution
@@ -1293,7 +1298,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts().to_vec(),
             )
             .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if !final_exit_candidates.contains(&exit) {
+            if seen_final_exits.is_new(
+                exit.state(),
+                exit.pure_facts(),
+                &final_exit_candidates,
+                &exit,
+            ) {
                 final_exit_candidates.push(exit);
             }
         } else if is_return_exit {
@@ -1312,7 +1322,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 checked.facts().to_vec(),
             )
             .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-            if !break_exits.contains(&exit) {
+            if seen_break_exits.is_new(exit.state(), exit.pure_facts(), &break_exits, &exit) {
                 break_exits.push(exit);
             }
         } else {
@@ -1357,7 +1367,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     checked.facts().to_vec(),
                 )
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
-                if !final_exit_candidates.contains(&candidate) {
+                if seen_final_exits.is_new(
+                    candidate.state(),
+                    candidate.pure_facts(),
+                    &final_exit_candidates,
+                    &candidate,
+                ) {
                     final_exit_candidates.push(candidate);
                 }
             }
@@ -1433,4 +1448,44 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         break_exits,
         nested_loop_rules,
     })
+}
+
+/// The exits already recorded in one list, by the hash of each exit's state
+/// and facts.
+///
+/// `Vec::contains` compared a new exit with every earlier one, and two exits
+/// of one loop body usually agree on most of their state, so each comparison
+/// read most of a state before finding the difference. The answer here is the
+/// same: an exit is new exactly when no recorded exit equals it. Only the
+/// candidates for that equality are narrowed.
+#[derive(Default)]
+struct SeenLoopExits {
+    by_hash: std::collections::HashMap<u64, Vec<usize>>,
+}
+
+impl SeenLoopExits {
+    /// Whether `exit` equals none of `recorded`, and files it at the position
+    /// the caller is about to push it to when it is new.
+    fn is_new<T: PartialEq>(
+        &mut self,
+        state: &CState,
+        facts: &[Proposition],
+        recorded: &[T],
+        exit: &T,
+    ) -> bool {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        state.hash(&mut hasher);
+        facts.hash(&mut hasher);
+        crate::instrumentation::record_deterministic_work(1 + facts.len());
+        let bucket = self.by_hash.entry(hasher.finish()).or_default();
+        if bucket.iter().any(|index| {
+            crate::instrumentation::record_deterministic_work(1);
+            &recorded[*index] == exit
+        }) {
+            return false;
+        }
+        bucket.push(recorded.len());
+        true
+    }
 }

@@ -5048,3 +5048,139 @@ void fill(int32* p, int32 n) {{
         );
     }
 }
+
+/// One loop with `exits` ways out, all holding the same binder: a balanced
+/// tree of case splits over `k`, each leaf writing the binder's cell,
+/// refolding it, and leaving through a `break`. With `c_branches` the tree is
+/// the C's own nested `if`s, so the exits are C paths; without it the C is
+/// one store and one `break`, and the exits are the proof's case splits, as
+/// in the rbtree insert fixup.
+fn loop_with_break_exits(exits: usize, c_branches: bool) -> (String, String) {
+    fn c_tree(low: usize, high: usize, indent: usize) -> String {
+        let pad = " ".repeat(indent);
+        if high - low == 1 {
+            return format!("{pad}p->shade = {};\n{pad}break;\n", low % 2);
+        }
+        let middle = (low + high) / 2;
+        format!(
+            "{pad}if (k < {middle}) {{\n{}{pad}}} else {{\n{}{pad}}}\n",
+            c_tree(low, middle, indent + 4),
+            c_tree(middle, high, indent + 4)
+        )
+    }
+    fn proof_tree(low: usize, high: usize, c_branches: bool) -> String {
+        if high - low == 1 {
+            let color = if !c_branches || low.is_multiple_of(2) {
+                "Red"
+            } else {
+                "Black"
+            };
+            return format!(
+                "step();\nlet c = fold(painted(p), {{ color: Color::{color} }});\nstep();\n"
+            );
+        }
+        let middle = (low + high) / 2;
+        let enter = if c_branches { "step();\n" } else { "" };
+        format!(
+            "if k < {middle} {{\n{enter}{}}} else {{\n{enter}{}}}\n",
+            proof_tree(low, middle, c_branches),
+            proof_tree(middle, high, c_branches)
+        )
+    }
+    let body = if c_branches {
+        c_tree(0, exits, 8)
+    } else {
+        "        p->shade = 0;\n        break;\n".to_string()
+    };
+    let c_source = format!(
+        "struct node {{ int32 shade; }};\n\nvoid paint(struct node* p, int32 k) {{\n    while (true) {{\n{body}    }}\n}}\n"
+    );
+    let click_source = format!(
+        "verifying \"paint.c\";
+
+spec enum Color {{ Red, Black }}
+
+resource painted(p: struct node*) {{
+    field color: Color;
+    match color {{
+        Color::Red => {{ owns p->shade; fact p->shade == 0; }},
+        Color::Black => {{ owns p->shade; fact p->shade == 1; }},
+    }}
+}}
+
+void paint(struct node* p, int32 k) {{
+    owns c: painted(p);
+    requires c.color == Color::Black;
+}} by {{
+    loop {{
+        decreases 0;
+        owns c: painted(p);
+        invariant c.color == Color::Black;
+
+        preserve by {{
+            unfold(c);
+{}        }}
+    }}
+    step();
+    simp();
+}}
+",
+        proof_tree(0, exits, c_branches)
+    );
+    (c_source, click_source)
+}
+
+fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
+    let (c_source, click_source) = loop_with_break_exits(exits, c_branches);
+    let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+        verify_c0_sources(&click_source, &[("paint.c", &c_source)])
+    });
+    result.unwrap_or_else(|error| {
+        panic!(
+            "the loop with {exits} exits should verify: {}",
+            error.message()
+        )
+    });
+    work
+}
+
+/// Joining a loop's `break` exits costs work proportional to the exits and
+/// what each states, not to their pairs. Two steps used to compare every exit
+/// with every other and were not charged at all: the exit join's disjunction
+/// asked each fact of each exit against every fact of every earlier exit, and
+/// the proof layer recorded each exit after comparing it with every exit
+/// recorded before it. Each is now a keyed lookup that charges what it reads,
+/// so counted work follows the real cost and quadruples, no more, when the
+/// exits do.
+///
+/// Every proof-level case split in the body also read its path's certificate,
+/// which walked the proof's whole history back to the root, sibling arms
+/// included. Each node now remembers the lineage that ends at it, so a split
+/// reads only the nodes added since the last walk that passed, and the walk
+/// is charged.
+///
+/// The bound is on each fourfold step rather than on the whole range, because
+/// at these sizes a pairwise term is still a small part of the total: with the
+/// exits recorded pairwise again the last step is 4.75 times, and with the
+/// history walked in full again it is 9.5 times, against 3.97.
+#[test]
+fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
+    let samples =
+        [32usize, 128, 512].map(|exits| (exits, loop_with_break_exits_work(exits, false)));
+    for pair in samples.windows(2) {
+        let ((_, smaller), (_, larger)) = (pair[0], pair[1]);
+        assert!(
+            larger * 100 <= smaller * 430,
+            "loop exit work must be near linear in the exits: (exits, work) {samples:?}"
+        );
+    }
+    // The same exits as paths of the C's own nested branches. Their counted
+    // work is the tactics' and is proportional already; what was quadratic
+    // there was the uncharged source layout of the branch tree, which this
+    // only exercises.
+    let branches = [16usize, 64].map(|exits| (exits, loop_with_break_exits_work(exits, true)));
+    assert!(
+        branches[1].1 * 100 <= branches[0].1 * 430,
+        "loop exit work over C branches must be near linear in the exits: {branches:?}"
+    );
+}

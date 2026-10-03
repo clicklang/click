@@ -344,6 +344,7 @@ impl<'a> Proof<'a> {
                     .unwrap_or_else(|| OpenBranch::proposition_in(context, goal))
             }),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -629,6 +630,7 @@ impl<'a> Proof<'a> {
             })),
             state: KernelProofObject::root(ProofLocals::default(), goal),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,

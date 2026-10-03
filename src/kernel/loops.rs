@@ -2763,20 +2763,11 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     )
 }
 
-/// Whether one exact condition fact is the negation of another.
-fn condition_fact_refutes(fact: &Proposition, other: &Proposition) -> bool {
-    match (fact, other) {
-        (Proposition::ConditionIs(left, left_value), Proposition::ConditionIs(right, value)) => {
-            left == right && left_value != value
-        }
-        _ => false,
-    }
-}
-
 /// The disjunction of what each short-circuit guard path states on its own.
 ///
 /// One entry per path, holding only the facts that path added. A conjunct an
-/// earlier disjunct contradicts is dropped, which only weakens that disjunct
+/// earlier disjunct contradicts (an earlier path states the same exact
+/// condition with the other truth value) is dropped, which only weakens that disjunct
 /// and so keeps the disjunction true, turning `!a | (a & !b)` into the
 /// `!a | !b` a proof can name. A path that states nothing of its own makes the
 /// whole disjunction vacuous, so there is nothing to export.
@@ -2797,17 +2788,28 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
     let mut ordered = own_facts.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|own| own.len());
     let mut disjuncts = Vec::new();
-    for (index, own) in ordered.iter().enumerate() {
+    // What the earlier paths state, keyed so that "some earlier path states
+    // the negation of this fact" is one lookup. Asking every earlier fact of
+    // every earlier path instead compared each pair of paths, fact by fact:
+    // a hundred exits of a long loop body spent most of the join here.
+    let mut earlier: std::collections::HashSet<(&ConditionTerm, bool)> =
+        std::collections::HashSet::new();
+    for own in &ordered {
+        crate::instrumentation::record_deterministic_work(own.len());
         let narrowed = own
             .iter()
-            .filter(|fact| {
-                !ordered[..index].iter().any(|facts| {
-                    facts
-                        .iter()
-                        .any(|earlier| condition_fact_refutes(earlier, fact))
-                })
+            .filter(|fact| match fact {
+                Proposition::ConditionIs(condition, value) => {
+                    !earlier.contains(&(condition, !*value))
+                }
+                _ => true,
             })
             .collect::<Vec<_>>();
+        for fact in own.iter() {
+            if let Proposition::ConditionIs(condition, value) = fact {
+                earlier.insert((condition, *value));
+            }
+        }
         let mut own = if narrowed.is_empty() {
             own.iter().collect::<Vec<_>>().into_iter()
         } else {

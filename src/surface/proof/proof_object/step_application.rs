@@ -828,6 +828,7 @@ impl<'a> Proof<'a> {
                 context: self.context.clone(),
                 state: successor?,
                 node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
                     parent: Some(self.node.clone()),
                     step: Some(Arc::new(provenance_step)),
                     focused_branch: self.focused_branch_id(),
@@ -912,6 +913,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state: self.publish_checked_transition(transition)?,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(step)),
                 focused_branch: self.focused_branch_id(),

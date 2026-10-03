@@ -768,6 +768,7 @@ impl<'a> Proof<'a> {
             // step vocabulary for consuming outcome goals arrives with the
             // drain migration.
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
