@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 27);
+    assert_eq!(prepared.export().schema, 28);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 27);
+    assert_eq!(import.export().schema, 28);
     let destructor = import
         .export()
         .reachable_functions
@@ -6313,7 +6313,7 @@ int32 collision(int32 __click_cpp_nested_value_0, int32 __click_cpp_nested_value
 fn nested_return_calls_reject_unspecified_order_conversions_and_cycles() {
     for (cpp, diagnostic) in [
         (
-            "int echo(int x) noexcept { return x; } int pair(int x, int y) noexcept { return x; } int relay(int x) noexcept { return pair(echo(x), x); }",
+            "int echo(int x) noexcept { return x; } int pair(int x, int y) noexcept { return x; } int relay(int x) noexcept { return pair(echo(x), echo(x)); }",
             "preserve evaluation order",
         ),
         (
@@ -6399,8 +6399,265 @@ fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
         assert!(
-            work >= 2 * size && work <= 2 * size + 32,
+            work >= 2 * size && work <= 3 * size + 32,
             "{size} calls and collisions: {work} work"
         );
+    }
+}
+
+const MULTIPLE_ARGUMENTS_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/return-call/multiple-arguments.cpp");
+
+#[test]
+fn nested_calls_with_stable_siblings_preserve_each_argument_position_and_casts() {
+    for (selected, outer, slot) in [
+        ("nested_first", "first", "a"),
+        ("literal_siblings", "first", "a"),
+        ("nested_second", "second", "b"),
+        ("nested_third", "third", "c"),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arguments.cpp\"; int32 echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }} int32 {outer}(int32 a, int32 b, int32 c) {{ ensures result == {slot}; }} by {{ execute(); simp(); }} int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let [CppStatement::ReturnCall { arguments, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain return call");
+        };
+        assert_eq!(arguments.len(), 3);
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|arg| matches!(arg, CppCallArgument::Call { .. }))
+                .count(),
+            1
+        );
+    }
+    for (selected, outer, inner, value_type) in [
+        (
+            "nested_unsigned",
+            "pick_unsigned",
+            "echo_unsigned",
+            "uint32",
+        ),
+        ("nested_bool", "pick_bool", "echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"arguments.cpp\"; {value_type} {inner}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }} {value_type} {outer}({value_type} left, {value_type} right) {{ ensures result == right; }} by {{ execute(); simp(); }} {value_type} {selected}({value_type} value, int32 other) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
+    for (fee, round_down, expected) in [
+        (7, true, 4),
+        (7, false, 5),
+        (-7, true, -5),
+        (-7, false, -4),
+        (10, true, 6),
+        (10, false, 6),
+    ] {
+        let project =
+            Project::with_fixture("arguments.cpp", "EvaluateFee", MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let product = fee * 3;
+        let down = i32::from(round_down);
+        let source = format!(
+            r#"verifying "arguments.cpp";
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 EvaluateFee(int64 fee, int32 at_size, int32 divisor, bool round_down) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let mut hostile = source.clone();
+        let claim = format!("result == {expected}i64");
+        let start = hostile.rfind(&claim).unwrap();
+        hostile.replace_range(
+            start..start + claim.len(),
+            &format!("result == {}i64", expected + 1),
+        );
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn nested_calls_reject_sibling_memory_reads_effects_arithmetic_and_other_calls() {
+    for cpp in [
+        "int mutate(int& x) noexcept { x = 7; return x; } int pair(int a, int b) noexcept { return a; } int relay(int& x) noexcept { return pair(mutate(x), x); }",
+        "int mutate(int* x) noexcept { *x = 7; return *x; } int pair(int a, int b) noexcept { return a; } int relay(int* x) noexcept { return pair(mutate(x), *x); }",
+        "struct Box { int value; }; int mutate(Box& box) noexcept { box.value = 7; return box.value; } int pair(int a, int b) noexcept { return a; } int relay(Box& box) noexcept { return pair(mutate(box), box.value); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), echo(x)); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), x + 1); }",
+        "int echo(int x) noexcept { return x; } int pair(int a, int b) noexcept { return a; } int relay(int x) noexcept { return pair(echo(x), ++x); }",
+    ] {
+        let project = Project::with_fixture("arguments.cpp", "relay", cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains("preserve evaluation order"), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn nested_calls_with_stable_siblings_propagate_inner_exceptions() {
+    let cpp = "int inner(bool fail) { if (fail) { throw 7; } return 5; } int outer(int left, int value, bool flag) { return value; } int relay(bool fail, int left) { return outer(left, inner(fail), fail); }";
+    let project = Project::with_fixture("arguments.cpp", "relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("relay", "arguments.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 outer(int32 left, int32 value, bool flag) { ensures result == value; } by { execute(); simp(); }
+int32 relay(bool fail, int32 left) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#,
+    );
+}
+
+#[test]
+fn nested_argument_lowering_scales_with_arity() {
+    for size in [2usize, 8, 32, 128] {
+        let parameters = (0..size)
+            .map(|i| format!("int a{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = std::iter::once("inner()".to_string())
+            .chain((1..size).map(|_| "7".to_string()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let cpp = format!(
+            "int inner() noexcept {{ return 7; }} int outer({parameters}) noexcept {{ return a0; }} int relay() noexcept {{ return outer({arguments}); }}"
+        );
+        let project = Project::with_fixture("arguments.cpp", "relay", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(
+            work >= size && work <= size + 32,
+            "{size} arguments: {work} work"
+        );
+    }
+}
+
+#[test]
+fn stable_siblings_remain_valid_when_the_nested_call_writes_memory() {
+    let project = Project::with_fixture(
+        "arguments.cpp",
+        "effectful_inner",
+        MULTIPLE_ARGUMENTS_SOURCE,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 write_seven(int32* slot) {
+ owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
+} by { execute(); simp(); }
+int32 second(int32 a, int32 b, int32 c) { ensures result == b; } by { execute(); simp(); }
+int32 effectful_inner(int32* slot, int32 snapshot) {
+ owns slot[0..1]; ensures slot[0] == 7; ensures result == 7;
+} by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn fee_pattern_contracts_reject_zero_divisors_and_unproved_product_bounds() {
+    for (selected, source) in [
+        (
+            "Div",
+            "verifying \"arguments.cpp\"; int64 Div(int64 n, int32 d, bool round_down) { requires n == 21i64; requires d == 0; ensures result == result; } by { execute(); simp(); }",
+        ),
+        (
+            "Mul",
+            "verifying \"arguments.cpp\"; int64 Mul(int64 fee, int32 at_size) { requires fee == 9223372036854775807i64; requires at_size == 3; ensures result == result; } by { execute(); simp(); }",
+        ),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        fs::write(project.directory.join("bad.click"), source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn stable_constant_siblings_reject_external_linkage_and_mutable_globals() {
+    for declaration in ["inline constexpr long value = 7;", "long value = 7;"] {
+        let cpp = format!(
+            "{declaration} int inner() noexcept {{ return 5; }} long outer(int first, long second) noexcept {{ return second; }} long relay() noexcept {{ return outer(inner(), value); }}"
+        );
+        let project = Project::with_fixture("arguments.cpp", "relay", &cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(!project.artifact().exists());
+        assert!(
+            error.contains("constexpr") || error.contains("preserve evaluation order"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn scalar_local_siblings_survive_nested_memory_effects() {
+    let project =
+        Project::with_fixture("arguments.cpp", "local_sibling", MULTIPLE_ARGUMENTS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "arguments.cpp";
+int32 write_seven(int32* slot) { owns slot[0..1]; ensures slot[0] == 7; ensures result == 7; } by { execute(); simp(); }
+int32 first(int32 a, int32 b, int32 c) { ensures result == a; } by { execute(); simp(); }
+int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0] == 7; ensures result == value; } by { execute(); simp(); }
+"#,
+    );
+}
+
+#[test]
+fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers() {
+    for (selected, down, fee, expected) in [
+        ("fee_down", 1, 7, 4),
+        ("fee_up", 0, 7, 5),
+        ("fee_down", 1, -7, -5),
+        ("fee_up", 0, -7, -4),
+    ] {
+        let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("retain template return call");
+        };
+        let instance = &callee.name;
+        let product = fee * 3;
+        let source = format!(
+            r#"verifying "arguments.cpp";
+int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
     }
 }
