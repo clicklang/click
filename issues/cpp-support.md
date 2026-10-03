@@ -176,15 +176,16 @@ Each should be a coherent change with unchanged-source regressions, hostile
 artifacts and false claims, verification/expansion/audit agreement, and
 multi-size deterministic work checks for affected hot paths.
 
-1. **Artifact validity, supported semantics, and budgets.** Separate structural
-   validation from the supported semantic profile and resource limits. Keep
-   independent artifact checks; duplicated exporter/checker validation is
-   intentional at the trust boundary. Replace numerical example-shape limits
-   such as one record, two constants, and fixed scope counts only when the
-   corresponding algorithms support bounded growth. Budget diagnostics should
-   identify the exhausted limit, while unsupported-semantics diagnostics name
-   the missing operation. Acceptance requires multi-size constant/record/scope
-   regressions and explicit rejection of malformed graphs.
+1. **Finish artifact validity, supported semantics, and scope budgets.** The
+   inventory slice below is delivered. Continue separating structural validity
+   from semantic-profile rules at the recursive statement/type boundary. Replace
+   the remaining fixed local/scope counts only after scope validation borrows or
+   overlays its environment rather than cloning all outer places. Preserve the
+   independent exporter/checker trust boundary. Budget diagnostics must name the
+   exhausted limit; semantic diagnostics must identify the missing operation.
+   Acceptance requires multi-size sibling/local/scope regressions, malformed
+   graphs, and verification/expansion/audit agreement for the existing lifetime
+   profiles before broader lifetime combinations are admitted.
 2. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
    interpretation and conversions across the artifact validator, kernel
    lowering, and contract-facing interfaces. Specify widths, signedness,
@@ -193,6 +194,20 @@ multi-size deterministic work checks for affected hot paths.
    semantics agree and keep language-specific policies explicit. Add
    `__int128` only after its execution, contract types, and proof obligations
    fit that design; do not introduce another isolated family of matches.
+
+The inventory validity/profile/budget slice is delivered. The single-record and
+leaf-plus-dependent constant shape caps are replaced by named declaration
+budgets (256 records, 1,024 constants, and 1,024 functions). Constant forests
+retain the existing initializer semantics and checked evaluation agreement.
+Record layouts retain the existing field/ABI semantics and require distinct
+proof-facing names. Unused layouts now fail structural graph validation.
+Lowering builds record and constant indexes once and shares them across all
+functions. Serialized nesting/containers are bounded before deserialization,
+and call depth uses cached full subgraph depths so traversal order cannot hide
+an exhausted limit. Multi-size constant/record/function regressions cover the
+new inventories; malformed dependencies, duplicates, bad evaluated values,
+orphan layouts, and budget boundaries remain rejected. Scope-environment copying
+and the existing local/lifetime shape restrictions are the next bounded cleanup.
 
 Resolved function identities and contract names are delivered. One immutable
 ID-to-name index drives kernel definitions, every call (including construction
@@ -206,7 +221,7 @@ artifact IDs remain independently available, and `contract_name(id)` exposes
 the binding on the lowered import. Regressions cover reachable overloads with
 `long`/`long long` parameters of equal width, namespace/global spelling collisions,
 and same-named static helpers in different namespaces. Selected overloads still
-require a future signature selector; namespaced method selection and multiple
+require a future signature selector; namespaced method selection and same-named
 record layouts remain outside this slice. Existing template instance names remain
 readable when unique. Hostile reference-name/ID mismatches still fail validation.
 
