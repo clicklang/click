@@ -1,0 +1,82 @@
+[
+  {
+    "config": "examples/basic-rust/borrow.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-array-slices/arrays.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-array-values/arrays.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "Charon trial does not support slice len declaration/type mismatch"
+  },
+  {
+    "config": "examples/rust-arrays/arrays.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "Charon trial does not support slice len declaration/type mismatch"
+  },
+  {
+    "config": "examples/rust-byte-sum/sum.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "MIR loop requires a conditional while header"
+  },
+  {
+    "config": "examples/rust-chunks-exact/chunks.click.import.json",
+    "outcome": "proof-gap",
+    "diagnostic": "local `chunks_remaining` has no value at this frontier"
+  },
+  {
+    "config": "examples/rust-field-borrow/guard.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-integer-conversions/accumulator.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-iter-references/sum.click.import.json",
+    "outcome": "proof-gap",
+    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`"
+  },
+  {
+    "config": "examples/rust-iterators/sum.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "Charon trial does not support shared iterator implementation path"
+  },
+  {
+    "config": "examples/rust-loops/loops.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "MIR loop requires a conditional while header"
+  },
+  {
+    "config": "examples/rust-move-drop/guard.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-slices/bytes.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-split-at/split.click.import.json",
+    "outcome": "rejected",
+    "diagnostic": "Charon trial does not support type (raw pointers and general generics remain later work)"
+  },
+  {
+    "config": "examples/rust-unsigned/arithmetic.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  },
+  {
+    "config": "examples/rust-usize/arithmetic.click.import.json",
+    "outcome": "verified",
+    "diagnostic": ""
+  }
+]

@@ -1888,7 +1888,9 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let Some(comparison) = synthesize_unsigned_comparison(condition, state) {
+    if let Some(comparison) =
+        synthesize_unsigned_comparison(condition, parameters, arguments, state, bound_variables)
+    {
         return Some(if *value {
             comparison
         } else {
@@ -1951,13 +1953,16 @@ fn synthesize_surface_atomic_proposition(
 /// both operands with their sign bit flipped
 /// (`ConditionTerm::unsigned_less_than`), a constant operand arriving already
 /// flipped; spelled operand by operand that reads `(-2147483648 ^ x) <
-/// -2147483644`. Every operand must be a constant or the value of a `uint32`
-/// local, so the written comparison is unsigned in C's own terms and lowers
-/// back to the flipped form. Any other operand keeps the literal spelling,
-/// which also lowers back exactly.
+/// -2147483644`. Constants and uint32 locals retain their direct spellings;
+/// computed operands and signed locals receive an explicit uint32 cast. The
+/// reconstructed comparison must lower back to this same flipped form.
+/// Snapshot-relative operands retain the literal sign-bit spelling.
 fn synthesize_unsigned_comparison(
     condition: &ConditionTerm,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
     state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
     const SIGN_BIT: u32 = 0x8000_0000;
     let (left, operator, right) = match condition {
@@ -2009,8 +2014,26 @@ fn synthesize_unsigned_comparison(
             .find(|(name, value)| {
                 *name != "result" && matches!(value, CValue::UInt32(value) if value == term)
             })
-            .map(|(name, _)| {
-                ContractExpression::CFragment(CExpression::Variable(name.to_string()))
+            .map(|(name, _)| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+            .or_else(|| {
+                let expression = synthesize_surface_bitvector(
+                    term,
+                    parameters,
+                    arguments,
+                    state,
+                    bound_variables,
+                )?;
+                // Keep the literal sign-bit order when an operand is snapshot
+                // relative, preserving loop-ranking observations and refusal
+                // diagnostics. Division/remainder still cast within their own
+                // snapshot when reconstructing those operations.
+                if matches!(
+                    expression,
+                    ContractExpression::At { .. } | ContractExpression::Old(_)
+                ) {
+                    return None;
+                }
+                synthesize_uint32_operand(expression)
             }),
     };
     Some(ClickProposition::Comparison {
@@ -2405,6 +2428,33 @@ fn registered_load_in_state(variable: &Variable, state: &CState) -> Option<Bitve
     (named == *variable).then(|| Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind))
 }
 
+// Unsigned division and remainder use the usual C conversion of both
+// operands when either operand is uint32. Keep an explicit snapshot outside
+// the cast so reconstruction never silently changes which memory is read.
+fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractExpression> {
+    match expression {
+        ContractExpression::At {
+            selector,
+            expression,
+        } => Some(ContractExpression::At {
+            selector,
+            expression: Box::new(synthesize_uint32_operand(*expression)?),
+        }),
+        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
+            synthesize_uint32_operand(*expression)?,
+        ))),
+        expression => Some(ContractExpression::CFragment(CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(&expression)?),
+            target_type: CType::UInt32,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        })),
+    }
+}
+
 fn synthesize_surface_bitvector(
     term: &Bitvector32Term,
     parameters: &[syntax::C0Parameter],
@@ -2527,7 +2577,10 @@ fn synthesize_surface_bitvector(
         }
         Bitvector32Term::UnsignedDivide(left, right) => {
             let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Divide(left, right))
+            Some(ContractExpression::Divide(
+                left,
+                Box::new(synthesize_uint32_operand(*right)?),
+            ))
         }
         Bitvector32Term::Remainder(left, right) => {
             let (left, right) = binary(left, right)?;
@@ -2535,7 +2588,10 @@ fn synthesize_surface_bitvector(
         }
         Bitvector32Term::UnsignedRemainder(left, right) => {
             let (left, right) = binary(left, right)?;
-            Some(ContractExpression::Remainder(left, right))
+            Some(ContractExpression::Remainder(
+                left,
+                Box::new(synthesize_uint32_operand(*right)?),
+            ))
         }
         Bitvector32Term::ShiftLeft(left, right) => {
             let (left, right) = binary(left, right)?;
@@ -2643,6 +2699,10 @@ fn synthesize_surface_bitvector(
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")
                 && kernel_pointer.offset == PointerOffsetTerm::Constant(0)
+                && state
+                    .locals()
+                    .scalar_object_type(name)
+                    .is_some_and(|ty| ty.pointee_type().is_none())
             {
                 // A memory-resident scalar local reads as its own name.
                 Some(ContractExpression::CFragment(CExpression::Variable(
@@ -3344,9 +3404,6 @@ fn synthesize_local_indexed_int32_load(
         }
         let element_width = base.c_type().pointee_type()?.byte_width();
         let index = pointer.element_index_from_base_with_width(base, element_width)?;
-        if index == Bitvector32Term::Constant(0) {
-            return None;
-        }
         // This candidate is for ordinary `local[index]` forms. If the
         // derived index itself reads memory, trying to synthesize that load
         // can rediscover another local-relative form with a still larger

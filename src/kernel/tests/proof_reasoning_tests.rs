@@ -5,6 +5,45 @@ use super::*;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
+fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
+    let cases = [71_000, 71_001, 71_002].map(|id| {
+        Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(id)),
+                Bitvector32Term::Constant(0),
+            ),
+            true,
+        )
+    });
+    let disjunction = Proposition::Or(
+        Box::new(cases[0].clone()),
+        Box::new(Proposition::Or(
+            Box::new(cases[1].clone()),
+            Box::new(cases[2].clone()),
+        )),
+    );
+    let mut context = PureFactContext::new().assume_proposition(disjunction.clone());
+    for case in &cases {
+        context = context.assume_proposition(Proposition::Not(Box::new(case.clone())));
+    }
+    // Inserting an opposite condition ordinarily replaces its polarity.
+    // This witness checks the contradiction without rebuilding case contexts.
+    let goal = Proposition::Equal(Term::CValue(int32(0)), Term::CValue(int32(1)));
+    let derivation = context
+        .derive_proposition(&goal)
+        .expect("all arms are refuted");
+    assert!(derivation.check(&context));
+    assert_eq!(derivation.context_premises().len(), 4);
+    assert!(!derivation.check(&context.without_exact_fact(&disjunction)));
+    for case in &cases {
+        let without = context.without_exact_fact(&Proposition::Not(Box::new(case.clone())));
+        assert!(!derivation.check(&without));
+        assert!(without.derive_proposition(&goal).is_none());
+    }
+    assert!(!derivation.check(&PureFactContext::new()));
+}
+
+#[test]
 fn nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack() {
     std::thread::Builder::new()
         .name("nested-simp-small-stack".into())

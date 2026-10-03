@@ -284,10 +284,11 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
         ("owns self->_0[0..4];", "views self->_0[0..4];"),
         ("views other->_0[0..4];", "views other->_0[1..4];"),
         (
-            "requires self->_0[0] <= 1000u32;",
-            "requires self->_0[0] == 4294967295u32;",
+            "requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;",
+            "requires rhs == 2u32; requires self->_0[0] == 4294967295u32;",
         ),
         ("(b * 2u32 % 7u32)", "(b * 2u32 % 3u32)"),
+        ("(a * 2u32 % 7u32)", "(a * 2u32)"),
     ] {
         let invalid = CHARON_OPERATOR_SIDECAR.replace(before, after);
         assert_ne!(invalid, CHARON_OPERATOR_SIDECAR);
@@ -296,6 +297,79 @@ fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
             "{before}"
         );
     }
+}
+
+const CHARON_MULTIPLY_SOURCE: &str =
+    include_str!("../design/charon-trial/symbolic-multiply/probe.rs");
+const CHARON_MULTIPLY_SIDECAR: &str =
+    include_str!("../design/charon-trial/symbolic-multiply/probe.click");
+fn charon_multiply_project() -> Project {
+    let p = Project::new(CHARON_MULTIPLY_SOURCE);
+    for (name, bytes) in [
+        ("probe.rs", CHARON_MULTIPLY_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_MULTIPLY_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/symbolic-multiply/probe.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "probe.ullbc",
+            include_bytes!("../design/charon-trial/symbolic-multiply/probe.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/symbolic-multiply/probe.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_symbolic_multiply_checks_general_safety_and_full_width_boundaries() {
+    let p = charon_multiply_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_MULTIPLY_SIDECAR, &prepared).unwrap();
+    let premise = "requires rhs == 0u32 or x <= 4294967295u32 / rhs;";
+    for requirements in [
+        "requires rhs == 0u32; requires x == 4294967295u32;",
+        "requires rhs == 1u32; requires x == 4294967295u32;",
+        "requires rhs == 2u32; requires x <= 2147483647u32;",
+        "requires rhs == 4294967295u32; requires x == 1u32;",
+    ] {
+        let valid = CHARON_MULTIPLY_SIDECAR.replace(premise, requirements);
+        C0VerificationSession::new_program_prepared(&valid, &prepared).unwrap();
+    }
+    for requirements in [
+        "",
+        "requires rhs == 2u32; requires x == 4294967295u32;",
+        "requires rhs == 0u32; requires x <= 4294967295u32 / rhs;",
+    ] {
+        let invalid = CHARON_MULTIPLY_SIDECAR.replace(premise, requirements);
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "{requirements}"
+        );
+    }
+    let invalid =
+        CHARON_MULTIPLY_SIDECAR.replace("ensures result == x * rhs;", "ensures result == x + rhs;");
+    assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+}
+
+#[test]
+fn charon_symbolic_multiply_tools_recheck_the_unreachable_path_certificate() {
+    let p = charon_multiply_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    assert_cli(
+        &p,
+        &["expand", "--claim", "multiply.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
 }
 #[test]
 fn charon_assignment_operators_cli_tools_recheck_expanded_certificates() {
@@ -1067,7 +1141,7 @@ fn charon_slices_live_refresh_and_borrow_checking() {
         ),
         (
             "pub fn bad(x:&[u16])->usize { x.len() }",
-            "slice elements other than u8",
+            "slice elements outside shared scalar array iteration",
         ),
     ] {
         fs::remove_file(p.root.join("slices.ullbc")).unwrap();
@@ -3552,3 +3626,6 @@ fn rust_u16_accumulator_fields_and_references_preserve_authority() {
     assert_cli(&p, &["expand", "--claim", "bump_a.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
+
+#[path = "rust_import/parity.rs"]
+mod parity;

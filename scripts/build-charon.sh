@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
-# Optional compiler dependency for the end-to-end adapter trial.
+# Pinned compiler dependency for the required live Charon gate.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-revision=5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb
-toolchain=nightly-2026-09-17
-compiler=923c95cdf5ba65cea505aa2ea829f578e1506ed8
+readarray -t pins < <(python3 - <<'PYPROFILE'
+import json
+with open("src/languages/rust/charon-profile.json") as f:
+    profile = json.load(f)
+for key in ("extractor_revision", "toolchain", "compiler_commit"):
+    print(profile[key])
+PYPROFILE
+)
+revision="${pins[0]}"
+toolchain="${pins[1]}"
+compiler="${pins[2]}"
+if [[ "${1:-}" == "--install-toolchain" ]]; then
+    rustup toolchain install "$toolchain" --profile minimal --component rustc-dev --component rust-src
+elif [[ -n "${1:-}" ]]; then
+    echo "usage: scripts/build-charon.sh [--install-toolchain]" >&2
+    exit 2
+fi
 if [[ "$(rustc +"$toolchain" -vV | sed -n 's/^commit-hash: //p')" != "$compiler" ]]; then
     echo "error: install $toolchain with rustc-dev and rust-src for the Charon trial" >&2
     exit 1

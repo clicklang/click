@@ -5,6 +5,7 @@ mod chunks;
 mod protocol;
 mod shared_arrays;
 
+use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 use charon_lib::ast::from_rustc::LangItem;
@@ -12,18 +13,6 @@ use charon_lib::{ast as a, ullbc_ast as u};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Duration;
-
-pub(super) const COMMIT: &str = "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb";
-pub(super) const COMPILER: &str = "923c95cdf5ba65cea505aa2ea829f578e1506ed8";
-pub(super) const TOOLCHAIN: &str = "nightly-2026-09-17";
-const FLAGS: &[&str] = &[
-    "--edition=2024",
-    "--target=x86_64-unknown-linux-gnu",
-    "-Cpanic=abort",
-    "-Coverflow-checks=on",
-    "-Zmir-opt-level=0",
-];
-const PROFILE: &str = "click-charon-optimized-abort-checked-v1";
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,7 +47,13 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
         max_stderr_bytes: 64 << 10,
     };
     let version = run_compiler(executable, &["version".into()], root, &environment, limits)?;
-    if String::from_utf8_lossy(&version.stdout).trim() != format!("0.1.279 ({COMMIT})") {
+    if String::from_utf8_lossy(&version.stdout).trim()
+        != format!(
+            "{} ({})",
+            profile::get().extractor_version,
+            profile::get().extractor_revision
+        )
+    {
         return Err("Charon trial requires its pinned extractor revision".into());
     }
     let rustup = std::env::split_paths(environment.get("PATH").ok_or("Charon runtime needs PATH")?)
@@ -67,14 +62,19 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
         .ok_or("Charon runtime needs rustup")?;
     let compiler = run_compiler(
         &rustup,
-        &["run".into(), TOOLCHAIN.into(), "rustc".into(), "-vV".into()],
+        &[
+            "run".into(),
+            profile::get().toolchain.clone(),
+            "rustc".into(),
+            "-vV".into(),
+        ],
         root,
         &environment,
         limits,
     )?;
     if !String::from_utf8_lossy(&compiler.stdout)
         .lines()
-        .any(|line| line == format!("commit-hash: {COMPILER}"))
+        .any(|line| line == format!("commit-hash: {}", profile::get().compiler_commit))
     {
         return Err("Charon trial requires its pinned compiler commit".into());
     }
@@ -102,7 +102,12 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
     .map(str::to_string)
     .collect();
     args.push(artifact.to_string_lossy().into_owned());
-    args.extend(FLAGS.iter().map(|flag| format!("--rustc-arg={flag}")));
+    args.extend(
+        profile::get()
+            .flags
+            .iter()
+            .map(|flag| format!("--rustc-arg={flag}")),
+    );
     args.extend([
         "--".into(),
         source.to_string_lossy().into_owned(),
@@ -119,10 +124,10 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
     let data = serde_json::from_slice(&bytes).map_err(|e| format!("Charon output: {e}"))?;
     serde_json::to_vec(&TrialArtifact {
-        extractor_revision: COMMIT.into(),
-        compiler_commit: COMPILER.into(),
-        profile: PROFILE.into(),
-        flags: FLAGS.iter().map(|s| (*s).into()).collect(),
+        extractor_revision: profile::get().extractor_revision.clone(),
+        compiler_commit: profile::get().compiler_commit.clone(),
+        profile: profile::get().extraction.clone(),
+        flags: profile::get().flags.clone(),
         data,
     })
     .map_err(|e| e.to_string())
@@ -913,10 +918,10 @@ pub(super) fn decode(
 ) -> Result<out::RustExport, String> {
     let artifact: TrialArtifact =
         serde_json::from_slice(bytes).map_err(|e| format!("Charon artifact: {e}"))?;
-    if artifact.extractor_revision != COMMIT
-        || artifact.compiler_commit != COMPILER
-        || artifact.profile != PROFILE
-        || artifact.flags != FLAGS
+    if artifact.extractor_revision != profile::get().extractor_revision
+        || artifact.compiler_commit != profile::get().compiler_commit
+        || artifact.profile != profile::get().extraction
+        || artifact.flags != profile::get().flags
     {
         return Err("Charon artifact differs from the locked compiler profile".into());
     }
@@ -1177,7 +1182,7 @@ pub(super) fn decode(
     }
     Ok(out::RustExport {
         schema: out::SCHEMA,
-        compiler_commit: COMPILER.into(),
+        compiler_commit: profile::get().compiler_commit.clone(),
         target: out::TARGET.into(),
         edition: "2024".into(),
         overflow_checks: true,

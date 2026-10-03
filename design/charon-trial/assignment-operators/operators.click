@@ -1,11 +1,10 @@
 verifying "operators.rs";
 
 void U32X4_mul_assign_u32(struct U32X4* self, uint32 rhs) {
-    requires rhs == 2u32;
-    requires self->_0[0] <= 1000u32;
-    requires self->_0[1] <= 1000u32;
-    requires self->_0[2] <= 1000u32;
-    requires self->_0[3] <= 1000u32;
+    requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;
+    requires rhs == 0u32 or self->_0[1] <= 4294967295u32 / rhs;
+    requires rhs == 0u32 or self->_0[2] <= 4294967295u32 / rhs;
+    requires rhs == 0u32 or self->_0[3] <= 4294967295u32 / rhs;
     owns self->_0[0..4];
     ensures self->_0[0] == old(self->_0[0]) * rhs;
     ensures self->_0[1] == old(self->_0[1]) * rhs;
@@ -14,11 +13,10 @@ void U32X4_mul_assign_u32(struct U32X4* self, uint32 rhs) {
 } by { execute(); simp(); }
 
 void scaled(struct U32X4* words, uint32 factor) {
-    requires factor == 2u32;
-    requires words->_0[0] <= 1000u32;
-    requires words->_0[1] <= 1000u32;
-    requires words->_0[2] <= 1000u32;
-    requires words->_0[3] <= 1000u32;
+    requires factor == 0u32 or words->_0[0] <= 4294967295u32 / factor;
+    requires factor == 0u32 or words->_0[1] <= 4294967295u32 / factor;
+    requires factor == 0u32 or words->_0[2] <= 4294967295u32 / factor;
+    requires factor == 0u32 or words->_0[3] <= 4294967295u32 / factor;
     owns words->_0[0..4];
     ensures words->_0[0] == old(words->_0[0]) * factor;
     ensures words->_0[1] == old(words->_0[1]) * factor;
@@ -88,4 +86,4 @@ void added(struct U32X4* words, const struct U32X4* other) {
     ensures other->_0[3] == old(other->_0[3]);
 } by { execute(); simp(); }
 
-uint32 local(uint32 a, uint32 b) { requires a == 6u32; requires b == 2u32; ensures result == ((a * 2u32 % 7u32) ^ (b * 2u32 % 7u32)); } by { execute(); simp(); }
+uint32 local(uint32 a, uint32 b) { requires a <= 1000u32; requires b <= 1000u32; ensures result == ((a * 2u32 % 7u32) ^ (b * 2u32 % 7u32)); } by { execute(); simp(); }
