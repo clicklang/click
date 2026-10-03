@@ -868,6 +868,8 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),

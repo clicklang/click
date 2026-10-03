@@ -1057,6 +1057,7 @@ fn collect_memory_load_work<'a>(
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
+                    | Bitvector32Term::MachineIntegerConstant(_)
                     | Bitvector32Term::Variable(_) => {}
                     // These forms can hide load-bearing children behind a
                     // separate semantic object. Until checked read evidence

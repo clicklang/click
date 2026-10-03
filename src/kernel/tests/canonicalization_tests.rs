@@ -31,6 +31,8 @@ fn collect_offset_load_variables_from_value(
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => {
             collect_offset_load_variables_from_term(term, load_variables);
@@ -96,6 +98,7 @@ fn collect_offset_load_variables_from_term(
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _) | Bitvector32Term::PointerAddress(pointer) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
@@ -202,7 +205,8 @@ fn assert_scaled_index_free_of_raw_loads(
     match term {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => {}
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Variable(variable) => {
             if crate::kernel::is_load_variable(variable) {
                 load_variables.insert(*variable);

@@ -1,0 +1,311 @@
+use super::*;
+use num_bigint::BigInt;
+
+fn evaluated(expression: CExpression) -> CExpressionOutcome {
+    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+    let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+        panic!("expected expression evaluation");
+    };
+    outcome.clone()
+}
+
+#[test]
+fn wide_scalar_literals_preserve_full_payload_and_exact_integer_observations() {
+    for (ty, integer) in [
+        (MachineIntegerType::Int128, BigInt::from(i128::MIN)),
+        (MachineIntegerType::Int128, BigInt::from(i128::MAX)),
+        (MachineIntegerType::Int128, BigInt::from(-1)),
+        (MachineIntegerType::UInt128, BigInt::from(u128::MAX)),
+        (MachineIntegerType::UInt128, BigInt::from(1u128 << 64)),
+        (MachineIntegerType::UInt128, BigInt::from(0)),
+    ] {
+        let constant = MachineIntegerConstant::from_integer(ty.format(), &integer).unwrap();
+        let value = ty.constant_value(constant).unwrap();
+        assert_eq!(value.c_type(), ty.c_type());
+        assert_eq!(value.byte_width(), 16);
+        assert_eq!(ty.c_type().byte_width(), 16);
+        assert_eq!(ty.c_type().abi_alignment(), 16);
+        assert_eq!(ty.constant_from_value(&value), Some(constant));
+        let term = ty.constant_term(constant).unwrap();
+        assert_eq!(term.as_const(), None);
+        assert_eq!(term.int64_as_const(), None);
+        assert_eq!(term.uint64_as_const(), None);
+        assert_eq!(
+            IntegerTerm::from_machine(ty, term).unwrap().as_const(),
+            Some(&integer)
+        );
+        assert_eq!(
+            evaluated(CExpression::Value(value.clone())),
+            CExpressionOutcome::Value(value)
+        );
+    }
+    assert_eq!(
+        evaluated(c_int128_literal(i128::MIN)),
+        evaluated(CExpression::Value(
+            MachineIntegerType::Int128
+                .constant_value(
+                    MachineIntegerConstant::from_signed(
+                        MachineIntegerType::Int128.format(),
+                        i128::MIN
+                    )
+                    .unwrap()
+                )
+                .unwrap()
+        ))
+    );
+    assert_eq!(
+        evaluated(c_uint128_literal(u128::MAX)),
+        evaluated(CExpression::Value(
+            MachineIntegerType::UInt128
+                .constant_value(
+                    MachineIntegerConstant::from_unsigned(
+                        MachineIntegerType::UInt128.format(),
+                        u128::MAX
+                    )
+                    .unwrap()
+                )
+                .unwrap()
+        ))
+    );
+}
+
+#[test]
+fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
+    for (ty, literal) in [
+        (CType::Int128, c_int128_literal(i128::MIN)),
+        (CType::UInt128, c_uint128_literal(u128::MAX)),
+    ] {
+        let CExpressionOutcome::Value(expected) = evaluated(literal.clone()) else {
+            unreachable!()
+        };
+        let statement = c_seq(
+            c_declare("wide", ty),
+            c_seq(c_assign("wide", literal), c_return(c_variable("wide"))),
+        );
+        let theorem = prove_c_statement_execution(CState::new(), statement).unwrap();
+        let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
+            unreachable!()
+        };
+        let CStatementOutcome::Return { value, state } = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(value, &expected);
+        assert_eq!(state.locals.get("wide"), Some(&expected));
+    }
+}
+
+#[test]
+fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
+    for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+        let variable = Variable(148_001);
+        let value = symbolic_call_result(ty.c_type(), variable);
+        let state = CState::new().with_local("wide", value.clone());
+        let theorem = prove_c_expression_evaluation(state, c_variable("wide")).unwrap();
+        let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
+            unreachable!()
+        };
+        assert_eq!(outcome, &CExpressionOutcome::Value(value.clone()));
+        let term = Bitvector32Term::Variable(variable);
+        let observation = IntegerTerm::from_machine(ty, term).unwrap();
+        let IntegerTerm::Machine(observed) = observation else {
+            unreachable!()
+        };
+        assert_eq!(observed.ty(), ty);
+        let (min, max) = ty.format().bounds();
+        for integer in [min, max] {
+            let constant = MachineIntegerConstant::from_integer(ty.format(), &integer).unwrap();
+            let substituted = substitute_bitvector_variable_in_c_value(
+                &value,
+                variable,
+                &ty.constant_term(constant).unwrap(),
+            );
+            assert_eq!(ty.constant_from_value(&substituted), Some(constant));
+            assert_eq!(substituted.c_type(), ty.c_type());
+        }
+    }
+}
+
+#[test]
+fn wide_scalar_rejects_legacy_carriers_arithmetic_casts_and_address_access() {
+    let assert_mismatch = |expression| {
+        assert_eq!(
+            evaluated(expression),
+            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        )
+    };
+    for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+        let other = if ty == MachineIntegerType::Int128 {
+            MachineIntegerType::UInt128
+        } else {
+            MachineIntegerType::Int128
+        };
+        let wrong = other
+            .constant_term(MachineIntegerConstant::from_unsigned(other.format(), 1).unwrap())
+            .unwrap();
+        for term in [
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Int64Constant(1),
+            Bitvector32Term::UInt64Constant(1),
+            wrong,
+            Bitvector32Term::Add(
+                Box::new(Bitvector32Term::Variable(Variable(148_002))),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+        ] {
+            assert!(IntegerTerm::from_machine(ty, term.clone()).is_none());
+            let value = if ty == MachineIntegerType::Int128 {
+                CValue::Int128(term)
+            } else {
+                CValue::UInt128(term)
+            };
+            assert_mismatch(CExpression::Value(value));
+        }
+    }
+    for expression in [
+        c_add(c_int128_literal(1), c_int128_literal(2)),
+        c_multiply(c_int128_literal(1), c_int128_literal(2)),
+        c_less_than(c_uint128_literal(1), c_uint128_literal(2)),
+        c_cast(c_uint128_literal(1), CType::UInt64),
+        c_cast(c_uint64_literal(1), CType::UInt128),
+        c_integer_cast_modulo(c_uint128_literal(1), CType::UInt64),
+        c_integer_cast_modulo(c_uint64_literal(1), CType::UInt128),
+    ] {
+        assert_mismatch(expression);
+    }
+    let statement = c_seq(
+        c_declare("wide", CType::UInt128),
+        c_return(c_addr_of("wide")),
+    );
+    let theorem = prove_c_statement_execution(CState::new(), statement).unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::CStatementExecutes {
+            outcome: CStatementOutcome::RuntimeError { .. },
+            ..
+        }
+    ));
+    let value = symbolic_call_result(CType::UInt128, Variable(148_003));
+    assert_eq!(LoadKind::of_value(&value), None);
+    assert_eq!(LoadKind::of_type(CType::UInt128), None);
+    assert_eq!(CType::UInt128.pointer_to(), None);
+}
+
+#[test]
+fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
+    for (expression, expected) in [
+        (c_uint128_literal(0), 1),
+        (c_uint128_literal(1u128 << 64), 0),
+        (c_uint128_literal(u128::MAX), 0),
+        (c_int128_literal(i128::MIN), 0),
+        (c_int128_literal(0), 1),
+    ] {
+        assert_eq!(
+            evaluated(c_not(expression)),
+            CExpressionOutcome::Value(int32(expected))
+        );
+    }
+    let state = CState::new().with_local(
+        "wide",
+        symbolic_call_result(CType::UInt128, Variable(148_004)),
+    );
+    let expression = c_not(c_variable("wide"));
+    let paths = evaluate_c_expression_paths(
+        &state,
+        &expression,
+        &PureFactContext::new(),
+        &mut ExecutionBudget::for_c_expression(&expression),
+    )
+    .unwrap();
+    assert_eq!(paths.len(), 2);
+    for path in paths {
+        assert!(matches!(
+            path.outcome,
+            CExpressionOutcome::Value(CValue::Int32(_))
+        ));
+        assert!(path.facts.iter().any(|fact| matches!(
+            fact.proposition(),
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), _)
+        )));
+    }
+}
+
+#[test]
+fn wide_scalar_observation_work_scales_with_explicit_values() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let (observations, work) = crate::instrumentation::measure_deterministic_work(|| {
+            (0..size)
+                .map(|index| {
+                    IntegerTerm::from_machine(
+                        MachineIntegerType::UInt128,
+                        Bitvector32Term::Variable(Variable(149_000 + index)),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(observations.len(), size as usize);
+        assert!(
+            work >= size as usize && work <= 32 * size as usize,
+            "{size}: {work}"
+        );
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 32, "{samples:?}");
+    }
+}
+
+#[test]
+fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
+    for (ty, argument) in [
+        (CType::Int128, c_int128_literal(i128::MIN)),
+        (CType::UInt128, c_uint128_literal(u128::MAX)),
+    ] {
+        let function = c_function(
+            ty,
+            "wide_identity",
+            vec![c_parameter("input", ty)],
+            c_return(c_variable("input")),
+        );
+        let state = CState::new().with_local("caller", int32(99));
+        let expected = evaluated(argument.clone());
+        let theorem = prove_symbolic_c_function_execution(
+            state.clone(),
+            function,
+            vec![argument],
+            PureFactContext::new(),
+        )
+        .unwrap();
+        let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
+            unreachable!()
+        };
+        let CFunctionOutcome::Return {
+            value,
+            state: returned,
+        } = outcome
+        else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(CExpressionOutcome::Value(value.clone()), expected);
+        assert_eq!(returned, &state);
+    }
+}
+
+#[test]
+fn wide_scalar_root_validation_does_not_scan_legacy_operand_trees() {
+    for size in [16, 64, 256, 1024] {
+        let mut term = Bitvector32Term::Variable(Variable(148_006));
+        for _ in 0..size {
+            term = Bitvector32Term::UInt64Add(
+                Box::new(term),
+                Box::new(Bitvector32Term::UInt64Constant(1)),
+            );
+        }
+        let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            MachineIntegerType::UInt128.accepts_wide_term(&term)
+        });
+        assert!(!accepted);
+        assert_eq!(work, 1);
+    }
+}

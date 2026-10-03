@@ -527,6 +527,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Int64From32(_)
             | Bitvector32Term::Int64FromUInt32(_)
             | Bitvector32Term::UInt64From32(_)

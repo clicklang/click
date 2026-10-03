@@ -43,7 +43,9 @@ fn integer_cell_width(value: &CValue) -> Option<u32> {
         CValue::Int16(_) | CValue::UInt16(_) => Some(2),
         CValue::Int32(_) | CValue::UInt32(_) => Some(4),
         CValue::Int64(_) | CValue::UInt64(_) => Some(8),
-        CValue::Void
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
         | CValue::Bool(_)
         | CValue::Pointer(_)
         | CValue::Float32(_)

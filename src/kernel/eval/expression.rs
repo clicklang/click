@@ -162,7 +162,12 @@ fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
             Some((value < 0, u128::from(value.unsigned_abs())))
         }
         CValue::UInt64(bits) => Some((false, u128::from(bits.uint64_as_const()?))),
-        CValue::Void | CValue::Float32(_) | CValue::Float64(_) | CValue::Pointer(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Float32(_)
+        | CValue::Float64(_)
+        | CValue::Pointer(_) => None,
     }
 }
 
@@ -283,7 +288,12 @@ fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
         CValue::UInt32(term) => ("uint32", term),
         CValue::Int64(term) => ("int64", term),
         CValue::UInt64(term) => ("uint64", term),
-        CValue::Void | CValue::Float32(_) | CValue::Float64(_) | CValue::Pointer(_) => return None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Float32(_)
+        | CValue::Float64(_)
+        | CValue::Pointer(_) => return None,
     };
     let target_name = match target_type {
         CType::Float32 => "float32",
@@ -558,6 +568,8 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 
 pub(in crate::kernel) fn promote_c_int32_path_value(value: CValue) -> Option<Bitvector32Term> {
     match value {
+        CValue::Int128(_) | CValue::UInt128(_) => None,
+
         CValue::Void => None,
         CValue::Bool(value) => Some(value),
         CValue::Int32(value) => Some(value),
@@ -577,7 +589,9 @@ pub(in crate::kernel) fn promote_c_uint32_path_value(value: CValue) -> Option<Bi
         CValue::Int16(value) => Some(value),
         CValue::UInt8(value) => Some(value),
         CValue::UInt16(value) => Some(value),
-        CValue::Void
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
         | CValue::Int64(_)
         | CValue::UInt64(_)
         | CValue::Pointer(_)
@@ -596,7 +610,9 @@ pub(in crate::kernel) fn promote_c_int64_path_value(value: CValue) -> Option<Bit
         | CValue::UInt8(value)
         | CValue::UInt16(value) => Some(Bitvector32Term::int64_from_32(value)),
         CValue::UInt32(value) => Some(Bitvector32Term::int64_from_uint32(value)),
-        CValue::Void
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
         | CValue::UInt64(_)
         | CValue::Pointer(_)
         | CValue::Float32(_)
@@ -616,7 +632,12 @@ pub(in crate::kernel) fn promote_c_uint64_path_value(value: CValue) -> Option<Bi
             Some(Bitvector32Term::uint64_from_int32(value))
         }
         CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value)),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -653,6 +674,16 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
     }
 
     match (target_type, value) {
+        (CType::Int128, CValue::Int128(value))
+            if MachineIntegerType::Int128.accepts_wide_term(&value) =>
+        {
+            Some(CValue::Int128(value))
+        }
+        (CType::UInt128, CValue::UInt128(value))
+            if MachineIntegerType::UInt128.accepts_wide_term(&value) =>
+        {
+            Some(CValue::UInt128(value))
+        }
         (CType::Bool, CValue::Bool(value)) => Some(CValue::Bool(value)),
         (
             CType::Bool,
@@ -1200,7 +1231,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
     budget.consume_expression_step()?;
-    let paths = match expression {
+    let mut paths = match expression {
         CExpression::Value(CValue::Void) => vec![CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
             facts: Vec::new(),
@@ -1541,6 +1572,16 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             read_c_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
     };
+    // A wide wrapper cannot reinterpret a legacy word or arithmetic node.
+    // Inspect the root only, including values read from locals or call results.
+    for path in &mut paths {
+        if let CExpressionOutcome::Value(value @ (CValue::Int128(_) | CValue::UInt128(_))) =
+            &path.outcome
+            && !value.c_type().accepts(value)
+        {
+            path.outcome = CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+        }
+    }
     budget.check_path_width(paths.len())?;
     Ok(paths)
 }
@@ -2634,6 +2675,42 @@ pub(in crate::kernel) fn c_truthiness_paths(
         }
         CValue::UInt64(bits) => {
             let is_zero = ConditionTerm::uint64_equal(bits, Bitvector32Term::UInt64Constant(0));
+            match decide_with_facts(assumptions, &facts, &is_zero) {
+                Some(is_zero) => vec![CTruthinessPath {
+                    is_true: !is_zero,
+                    facts,
+                    obligations,
+                }],
+                None => {
+                    let mut true_facts = facts.clone();
+                    add_condition_path_fact(&mut true_facts, assumptions, is_zero.clone(), false)
+                        .expect("unknown truthiness fact should be consistent");
+                    let mut false_facts = facts;
+                    add_condition_path_fact(&mut false_facts, assumptions, is_zero, true)
+                        .expect("unknown truthiness fact should be consistent");
+                    vec![
+                        CTruthinessPath {
+                            is_true: true,
+                            facts: true_facts,
+                            obligations: obligations.clone(),
+                        },
+                        CTruthinessPath {
+                            is_true: false,
+                            facts: false_facts,
+                            obligations,
+                        },
+                    ]
+                }
+            }
+        }
+        value @ (CValue::Int128(_) | CValue::UInt128(_)) => {
+            let ty = MachineIntegerType::from_c_type(value.c_type()).expect("wide integer");
+            let bits = match value {
+                CValue::Int128(bits) | CValue::UInt128(bits) => bits,
+                _ => unreachable!(),
+            };
+            let integer = IntegerTerm::from_machine(ty, bits).expect("typed wide integer");
+            let is_zero = ConditionTerm::integer_equal(integer, IntegerTerm::constant(0.into()));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(is_zero) => vec![CTruthinessPath {
                     is_true: !is_zero,

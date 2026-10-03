@@ -202,6 +202,8 @@ impl Bitvector32Term {
 
     pub(crate) fn as_const(&self) -> Option<u32> {
         match self {
+            Self::MachineIntegerConstant(_) => None,
+
             Self::Constant(value) => Some(*value),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
@@ -2737,7 +2739,10 @@ impl CType {
                     CType::UInt64Pointer => 16,
                     CType::Float32 => 17,
                     CType::Float64 => 18,
-                    CType::Int8PointerPointer | CType::Int8Array(_) => {
+                    CType::Int128
+                    | CType::UInt128
+                    | CType::Int8PointerPointer
+                    | CType::Int8Array(_) => {
                         return None;
                     }
                     CType::Int16PointerPointer
@@ -2808,7 +2813,7 @@ impl CType {
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
         match self {
-            Self::Bool => None,
+            Self::Int128 | Self::UInt128 | Self::Bool => None,
             Self::Int8 => Some(Self::Int8Pointer),
             Self::Int16 => Some(Self::Int16Pointer),
             Self::Int32 => Some(Self::Int32Pointer),
@@ -2858,6 +2863,12 @@ impl CType {
 
     pub(crate) fn accepts(self, value: &CValue) -> bool {
         match (self, value) {
+            (Self::Int128, CValue::Int128(term)) => {
+                MachineIntegerType::Int128.accepts_wide_term(term)
+            }
+            (Self::UInt128, CValue::UInt128(term)) => {
+                MachineIntegerType::UInt128.accepts_wide_term(term)
+            }
             (Self::Int8, CValue::Int8(_)) => true,
             (Self::Void, CValue::Void)
             | (Self::Bool, CValue::Bool(_))
@@ -2893,6 +2904,7 @@ impl CType {
             Self::Int16Array(_) | Self::UInt16Array(_) => 2,
             Self::Int64Array(_) | Self::UInt64Array(_) | Self::Float64Array(_) => 8,
             Self::PointerArray(_, _) => 8,
+            Self::Int128 | Self::UInt128 => 16,
             scalar => scalar.byte_width().min(C_POINTER_BYTE_WIDTH),
         }
     }
@@ -2911,6 +2923,7 @@ impl CType {
             Self::UInt32 => 4,
             Self::Int64 => 8,
             Self::UInt64 => 8,
+            Self::Int128 | Self::UInt128 => 16,
             Self::Float32 => 4,
             Self::Float64 => 8,
             Self::Int8Pointer => C_POINTER_BYTE_WIDTH,
@@ -3041,6 +3054,8 @@ impl CValue {
             Self::UInt32(_) => CType::UInt32,
             Self::Int64(_) => CType::Int64,
             Self::UInt64(_) => CType::UInt64,
+            Self::Int128(_) => CType::Int128,
+            Self::UInt128(_) => CType::UInt128,
             Self::Float32(_) => CType::Float32,
             Self::Float64(_) => CType::Float64,
             Self::Pointer(pointer) => pointer.c_type(),
@@ -3059,6 +3074,7 @@ impl CValue {
             Self::UInt32(_) => 4,
             Self::Int64(_) => 8,
             Self::UInt64(_) => 8,
+            Self::Int128(_) | Self::UInt128(_) => 16,
             Self::Float32(_) => 4,
             Self::Float64(_) => 8,
             Self::Pointer(_) => C_POINTER_BYTE_WIDTH,

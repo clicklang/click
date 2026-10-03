@@ -726,6 +726,8 @@ impl<'a> Proof<'a> {
             _ => return Err(self.step_error("unsupported existential choice sort")),
         };
         let chosen_fact = match &chosen {
+            CValue::Int128(_) | CValue::UInt128(_) => unreachable!("unsupported choice sort above"),
+
             CValue::Int32(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }

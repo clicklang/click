@@ -1257,7 +1257,12 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
                 unsigned: false,
             })
         }),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -4110,6 +4115,7 @@ pub(in crate::kernel) fn declare_local(
     // and file-scope blocks, rather than a path fact at each address-of.
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
+        CType::Int128 | CType::UInt128 => 16,
         CType::Void => unreachable!("void local objects are not supported"),
         CType::Bool => 1,
         CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
