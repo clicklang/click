@@ -238,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 30;
+    artifact["schema"] = 31;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1417,37 +1417,7 @@ private:
            "the return-cleanup slice requires one final return after object construction");
       return false;
     }
-    bool constructed = false;
-    for (auto iterator = body->body_begin(); iterator != body->body_end();
-         ++iterator) {
-      const clang::Stmt *statement = *iterator;
-      if (const auto *declarations =
-              llvm::dyn_cast<clang::DeclStmt>(statement)) {
-        for (const clang::Decl *declaration : declarations->decls()) {
-          if (declaration == local) {
-            constructed = true;
-          }
-        }
-      }
-      if (!constructed && statement_contains_return(statement)) {
-        fail(statement->getBeginLoc(),
-             "returns before automatic object construction are outside the return-cleanup slice");
-        return false;
-      }
-    }
     return true;
-  }
-
-  bool statement_contains_return(const clang::Stmt *statement) const {
-    if (llvm::isa<clang::ReturnStmt>(statement)) {
-      return true;
-    }
-    for (const clang::Stmt *child : statement->children()) {
-      if (child != nullptr && statement_contains_return(child)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   bool stable_scalar_argument(const clang::Expr *expression,

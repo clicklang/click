@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 30;
+pub(crate) const EXPORT_SCHEMA: u32 = 31;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1227,7 +1227,6 @@ impl CppFunction {
                         cleanups,
                         span,
                         &places,
-                        &[],
                         records,
                         logical_source,
                         &self.name,
@@ -1276,7 +1275,6 @@ impl CppFunction {
                     cleanups,
                     span,
                     &places,
-                    &destructible_locals,
                     records,
                     logical_source,
                     &self.name,
@@ -1355,7 +1353,6 @@ impl CppFunction {
                     cleanups,
                     scope_span,
                     &places,
-                    &[],
                     records,
                     logical_source,
                     &self.name,
@@ -1442,7 +1439,6 @@ impl CppFunction {
                     scope_cleanups,
                     scope_span,
                     &places,
-                    &[],
                     records,
                     logical_source,
                     &self.name,
@@ -1483,10 +1479,9 @@ impl CppFunction {
                     self.name
                 ));
             };
-            validate_return_cleanups(&self.body, &self.name, &destructible_locals)?;
-        } else {
-            validate_return_cleanups(&self.body, &self.name, &[])?;
         }
+        super::lifetime::LifetimePlan::new(&self.body, |id| records.get(id).copied())?
+            .validate(&self.body, &self.name)?;
         match &self.function_kind {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }
@@ -2239,7 +2234,6 @@ fn validate_nested_scope(
     cleanups: &[CppCleanup],
     span: &CppSpan,
     outer_places: &BTreeMap<String, (String, CppType)>,
-    outer_cleanup_locals: &[CppPlace],
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
     function_name: &str,
@@ -2321,16 +2315,8 @@ fn validate_nested_scope(
             "nested scope in `{function_name}` must declare at least one destructible object"
         ));
     }
-    let mut return_cleanup_locals = outer_cleanup_locals.to_vec();
-    return_cleanup_locals.extend(locals.iter().cloned());
-    validate_return_cleanups(body, function_name, &return_cleanup_locals)?;
     for cleanup in cleanups {
         cleanup.validate(&places, records, logical_source)?;
-    }
-    if !return_cleanups_match(cleanups, &locals) {
-        return Err(format!(
-            "nested scope in `{function_name}` must destroy every local exactly once in reverse construction order on fallthrough"
-        ));
     }
     Ok(())
 }
@@ -2369,60 +2355,6 @@ fn sequence_contains_throw(statements: &[CppStatement]) -> bool {
         } => sequence_contains_throw(try_body) || sequence_contains_throw(handler),
         _ => false,
     })
-}
-
-fn validate_return_cleanups(
-    statements: &[CppStatement],
-    function_name: &str,
-    locals: &[CppPlace],
-) -> Result<(), String> {
-    for statement in statements {
-        match statement {
-            CppStatement::Return { cleanups, .. } | CppStatement::ReturnCall { cleanups, .. } => {
-                if !return_cleanups_match(cleanups, locals) {
-                    return Err(format!(
-                        "C++ return from `{function_name}` must destroy every constructed local exactly once in reverse construction order"
-                    ));
-                }
-            }
-            CppStatement::If {
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                validate_return_cleanups(then_branch, function_name, locals)?;
-                validate_return_cleanups(else_branch, function_name, locals)?;
-            }
-            CppStatement::Scope { .. } | CppStatement::Throw { .. } => {}
-            CppStatement::TryCatchInt32 {
-                try_body, handler, ..
-            } => {
-                validate_return_cleanups(try_body, function_name, locals)?;
-                validate_return_cleanups(handler, function_name, locals)?;
-            }
-            CppStatement::Declare { .. }
-            | CppStatement::Assign { .. }
-            | CppStatement::Store { .. }
-            | CppStatement::MemberStore { .. }
-            | CppStatement::Call { .. } => {}
-        }
-    }
-    Ok(())
-}
-
-fn return_cleanups_match(cleanups: &[CppCleanup], locals: &[CppPlace]) -> bool {
-    cleanups.len() == locals.len()
-        && cleanups
-            .iter()
-            .zip(locals.iter().rev())
-            .all(|(cleanup, local)| {
-                matches!(
-                    cleanup,
-                    CppCleanup::Destructor { object, .. }
-                        if object.declaration_id == local.declaration_id
-                            && object.name == local.name
-                )
-            })
 }
 
 impl CppStatement {
@@ -3531,35 +3463,6 @@ fn require_bool(value: &CppType, allow_const: bool, label: &str) -> Result<(), S
 mod tests {
     use super::*;
 
-    fn cleanup_place(declaration_id: &str, name: &str) -> CppPlace {
-        CppPlace {
-            declaration_id: declaration_id.into(),
-            name: name.into(),
-            value_type: CppType::Record {
-                declaration_id: "record".into(),
-                name: "Guard".into(),
-                is_const: false,
-            },
-            span: cleanup_span(),
-        }
-    }
-
-    fn cleanup_for(local: &CppPlace) -> CppCleanup {
-        CppCleanup::Destructor {
-            object: CppPlaceReference {
-                declaration_id: local.declaration_id.clone(),
-                name: local.name.clone(),
-                span: cleanup_span(),
-            },
-            callee: CppFunctionReference {
-                declaration_id: "destructor".into(),
-                name: "Guard_destructor".into(),
-                span: cleanup_span(),
-            },
-            span: cleanup_span(),
-        }
-    }
-
     fn cleanup_span() -> CppSpan {
         CppSpan {
             file: "fixture.cpp".into(),
@@ -3924,7 +3827,7 @@ mod tests {
     }
 
     #[test]
-    fn return_call_artifacts_require_scalar_types_return_matching_and_complete_cleanups() {
+    fn return_call_artifacts_require_scalar_types_and_matching_returns() {
         let mut call = return_call();
         assert!(
             call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
@@ -3932,21 +3835,6 @@ mod tests {
         );
         assert!(call.always_returns());
         assert!(validate_return_types(&[call.clone()], &signed_integer(64, false)).is_err());
-        let locals = vec![
-            cleanup_place("first", "first"),
-            cleanup_place("second", "second"),
-        ];
-        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_err());
-        let CppStatement::ReturnCall { cleanups, .. } = &mut call else {
-            unreachable!()
-        };
-        *cleanups = locals.iter().rev().map(cleanup_for).collect();
-        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_ok());
-        let CppStatement::ReturnCall { cleanups, .. } = &mut call else {
-            unreachable!()
-        };
-        cleanups.swap(0, 1);
-        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_err());
         let CppStatement::ReturnCall {
             value_type,
             cleanups,
@@ -4328,25 +4216,6 @@ mod tests {
         let input = br#"{"schema":1,"surprise":1}"#;
         let error = serde_json::from_slice::<CppExport>(input).unwrap_err();
         assert!(error.to_string().contains("unknown field"));
-    }
-
-    #[test]
-    fn return_cleanup_list_requires_each_local_once_in_reverse_order() {
-        let first = cleanup_place("first", "first");
-        let second = cleanup_place("second", "second");
-        let locals = [first.clone(), second.clone()];
-        let reversed = [cleanup_for(&second), cleanup_for(&first)];
-        assert!(return_cleanups_match(&reversed, &locals));
-
-        assert!(!return_cleanups_match(&reversed[..1], &locals));
-        assert!(!return_cleanups_match(
-            &[cleanup_for(&second), cleanup_for(&second)],
-            &locals
-        ));
-        assert!(!return_cleanups_match(
-            &[cleanup_for(&first), cleanup_for(&second)],
-            &locals
-        ));
     }
 
     #[test]

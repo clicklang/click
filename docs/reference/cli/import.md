@@ -451,7 +451,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 30;
+its documented application invariant. The typed artifact schema is now 31;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
@@ -584,20 +584,32 @@ checked destructor, then returns the captured value. The fixture proves that
 the destructor restores caller memory while the result retains the value seen
 before cleanup; missing and false destructor contracts are rejected.
 
+Lifetime planning derives each destructor from the typed local and record
+identity, independently of the artifact's cleanup lists. A scoped construction
+stack supplies cleanup for returns, lexical fallthrough, and exceptional exits;
+validation checks that exported lists match the live objects in reverse order.
+An initializer's exceptional continuation never activates its destination.
+Catch boundaries delimit unwinding, while returning captures the result before
+destruction. This replaces arrangement-specific lowering and final-return-based
+destructor discovery. Constructors remain nonthrowing in this profile; partial
+construction, temporaries, copy/move, and wider exceptions remain unsupported.
+
 The `early-return-destructor` fixture permits structured `if` statements after
 one destructible object has been constructed directly in the function body.
 Every return edge captures its result and then invokes that same checked
 destructor. It verifies the original two-path `Restore` example: the early path
 returns 7, the final path returns 9, and both restore the referenced integer to
-its entry value. A return before construction is rejected rather than assigned
-a cleanup for an object that is not alive.
+its entry value. Returns before construction carry no cleanup for the future
+object. The `construction_prefix` fixture also returns between two constructions;
+each return destroys only its successfully constructed prefix.
 The `examples/basic-cpp/` project also selects a modular caller starting with
 41: either captured result is retained while the referenced cell is 41 after
 the call.
 
 The `reverse-destructor-order` fixture permits exactly two such top-level
 objects when both use the supported constructor and destructor. Both objects
-must be constructed before any return. Each return records the second object's
+are activated individually after successful initialization. A return after both
+constructions records the second object's
 destructor before the first object's destructor, and lowering checks those
 calls in that order. The fixture makes the ordering observable: the second
 guard restores 7 before the first guard restores the caller's entry value.

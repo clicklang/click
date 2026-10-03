@@ -6,6 +6,7 @@
 
 mod import;
 mod interface;
+mod lifetime;
 mod lowering;
 mod schema;
 

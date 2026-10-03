@@ -140,6 +140,19 @@ load source identities, and locked compiler/source identities remain attached
 to the prepared input. The plain C parser already supplies the same signature
 and layout vocabulary; its lazy translation-unit path remains intact.
 
+Lifetime cleanup is now derived from typed declaration/record identities and
+one scoped construction stack, independently of the artifact's exit lists.
+Validation and lowering use the same lifetime events: successful construction,
+lexical exit, return, and unwinding to a catch boundary. Returns before any
+construction and between two constructions have unchanged-source regressions;
+normal return capture, reverse destruction, conditional/sibling scopes, and
+scalar exception fixtures retain their behavior. No per-branch live-environment
+clone or scan of a final return's cleanup list is needed. Deterministic tests
+cover growing event and cleanup-edge counts. Existing semantic-profile limits
+remain for the validity/profile/budget cleanup below. Partial construction,
+temporaries, copy/move, broader scope arrangements, and wider exceptions are
+future lifetime events/admissions, rather than additional lowering paths.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -163,23 +176,14 @@ Each should be a coherent change with unchanged-source regressions, hostile
 artifacts and false claims, verification/expansion/audit agreement, and
 multi-size deterministic work checks for affected hot paths.
 
-1. **Lifetime state and cleanup edges.** Replace checks for particular guard,
-   scope, and return arrangements with a representation of successfully
-   constructed objects and the required cleanup on each control-flow exit.
-   Start with the existing normal and scalar-exception fixtures; preserve
-   reverse destruction and return capture. Then admit additional arrangements
-   through the same model. Partial construction, temporaries, copy/move, and
-   wider exceptions need explicit lifetime events, rather than more special
-   cases. Rust's explicit drop successors are an analogy, not permission to
-   impose Rust reference rules on C++.
-2. **Resolved identity and contract names.** Carry declaration identities
+1. **Resolved identity and contract names.** Carry declaration identities
    through execution and contract binding independently of readable names.
    Define deterministic, unambiguous names for namespace members, overloads,
    and concrete template instances. Preserve existing ordinary names where
    unambiguous. Regression cases must distinguish equal spellings in different
    scopes and equal-width source types; name collisions must never bind the
    wrong definition.
-3. **Artifact validity, supported semantics, and budgets.** Separate structural
+2. **Artifact validity, supported semantics, and budgets.** Separate structural
    validation from the supported semantic profile and resource limits. Keep
    independent artifact checks; duplicated exporter/checker validation is
    intentional at the trust boundary. Replace numerical example-shape limits
@@ -188,7 +192,7 @@ multi-size deterministic work checks for affected hot paths.
    identify the exhausted limit, while unsupported-semantics diagnostics name
    the missing operation. Acceptance requires multi-size constant/record/scope
    regressions and explicit rejection of malformed graphs.
-4. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
+3. **Scalar interpretation before wide arithmetic.** Consolidate scalar type
    interpretation and conversions across the artifact validator, kernel
    lowering, and contract-facing interfaces. Specify widths, signedness,
    promotions, narrowing, Boolean conversions, overflow and division

@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 30);
+    assert_eq!(prepared.export().schema, 31);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 30);
+    assert_eq!(import.export().schema, 31);
     let destructor = import
         .export()
         .reachable_functions
@@ -4310,13 +4310,6 @@ fn terminal_destructor_rejects_throwing_virtual_empty_and_nonterminal_cleanup() 
                 "~RestoreState() noexcept {}",
             ),
             "nonempty destructor body",
-        ),
-        (
-            TERMINAL_DESTRUCTOR_SOURCE.replace(
-                "RestoreState state(&value);\n    return value;",
-                "return value;\n    RestoreState state(&value);\n    return value;",
-            ),
-            "returns before automatic object construction",
         ),
         (
             TERMINAL_DESTRUCTOR_SOURCE.replace(
@@ -6395,7 +6388,7 @@ fn nested_capture_name_probes_scale_with_calls_and_source_collisions() {
             click::instrumentation::measure_deterministic_work(|| lower_import(&import));
         lowered.unwrap();
         assert!(
-            work >= 2 * size && work <= 4 * size + 32,
+            work >= 2 * size && work <= 5 * size + 32,
             "{size} calls and collisions: {work} work"
         );
     }
@@ -7030,8 +7023,89 @@ fn normalized_initializer_and_return_work_scales_with_argument_arity() {
             measured.push(work);
         }
         assert_eq!(
-            measured[0], measured[1],
-            "the extra source declaration replaces a temporary capture at arity {size}"
+            measured[0] + 1,
+            measured[1],
+            "the initializer adds one lifetime-planning source event at arity {size}"
         );
     }
+}
+
+#[test]
+fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
+    let cpp =
+        include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
+    let project = Project::with_fixture("restore_twice.cpp", "construction_prefix", cpp);
+    refresh_import(&project.config()).expect("export an early return before a later construction");
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::Declare { .. },
+        CppStatement::If { then_branch, .. },
+        CppStatement::Declare { .. },
+        CppStatement::Assign { .. },
+        CppStatement::Return {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().function.body.as_slice()
+    else {
+        panic!("construction events must retain their source order");
+    };
+    let [
+        CppStatement::Return {
+            cleanups: early_cleanups,
+            ..
+        },
+    ] = then_branch.as_slice()
+    else {
+        panic!("early return cleanup edge");
+    };
+    assert_eq!(early_cleanups.len(), 1);
+    assert_eq!(final_cleanups.len(), 2);
+    let source = REVERSE_DESTRUCTOR_SIDECAR.replace("restore_twice(", "construction_prefix(");
+    check_return_call_sidecar(&project, &import, &source);
+    let false_claim = source.replace(
+        "early != 0 implies result == 7",
+        "early != 0 implies result == 9",
+    );
+    let sidecar = project.directory.join("demo.click");
+    fs::write(&sidecar, &false_claim).unwrap();
+    let false_project = read_click_project(&sidecar, &false_claim).unwrap();
+    verify_program_prepared_project(&false_project, &import)
+        .expect_err("a future object cannot change the early return result");
+}
+
+#[test]
+fn lifetime_return_before_any_construction_has_no_cleanup() {
+    let cpp =
+        include_str!("fixtures/cpp-verification/reverse-destructor-order/construction_prefix.cpp");
+    let project = Project::with_fixture("restore_twice.cpp", "before_construction", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [
+        CppStatement::If { then_branch, .. },
+        CppStatement::Declare { .. },
+        CppStatement::Return {
+            cleanups: final_cleanups,
+            ..
+        },
+    ] = import.export().function.body.as_slice()
+    else {
+        panic!("source construction order");
+    };
+    let [CppStatement::Return { cleanups, .. }] = then_branch.as_slice() else {
+        panic!("early return");
+    };
+    assert!(cleanups.is_empty());
+    assert_eq!(final_cleanups.len(), 1);
+    let source = REVERSE_DESTRUCTOR_SIDECAR
+        .replace("restore_twice(", "before_construction(")
+        .replace(
+            "early != 0 implies result == 7",
+            "early != 0 implies result == old(value[0])",
+        )
+        .replace(
+            "early == 0 implies result == 9",
+            "early == 0 implies result == 7",
+        );
+    check_return_call_sidecar(&project, &import, &source);
 }
