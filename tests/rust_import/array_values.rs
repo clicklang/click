@@ -63,7 +63,7 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
 }
 
 #[test]
-fn charon_array_values_unchanged_fixture_imports_and_exposes_external_storage_gap() {
+fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
     let p = Project::new("");
     let source = include_str!("../../design/charon-trial/array-values/arrays.rs");
     let sidecar = include_str!("../../design/charon-trial/array-values/arrays.click");
@@ -96,15 +96,33 @@ fn charon_array_values_unchanged_fixture_imports_and_exposes_external_storage_ga
         fs::write(p.root.join(name), bytes).unwrap();
     }
     let prepared = load_import(&p.config()).unwrap();
-    let error = C0VerificationSession::new_program_prepared(sidecar, &prepared)
-        .err()
-        .expect("external compact source must remain an explicit proof gap");
-    assert!(
-        error
-            .message()
-            .contains("valid aligned initialized local source region"),
-        "{error:?}"
-    );
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for (before, after) in [
+        ("ensures result == words[0];", "ensures result == words[1];"),
+        (
+            "ensures target[1] == old(source[1]);",
+            "ensures target[1] == old(source[0]);",
+        ),
+        ("ensures *value == 5u32;", "ensures *value == 4u32;"),
+    ] {
+        let invalid = sidecar.replace(before, after);
+        assert_ne!(invalid, sidecar);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "copy_reference.contract",
+        "copy_into.contract",
+        "repeat_call.contract",
+        "zero_repeat_call.contract",
+        "argument_order.contract",
+        "assignment_order.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
 }
 
 #[test]
@@ -143,4 +161,84 @@ fn charon_array_reference_assignments_live_refresh_and_borrow_rejections() {
         fs::write(p.root.join("bounds.rs"), SOURCE).unwrap();
         refresh_import(&p.config()).unwrap();
     }
+}
+
+fn external_project() -> Project {
+    let p = Project::new("");
+    for (name, bytes) in [
+        (
+            "external.rs",
+            include_bytes!("../../design/charon-trial/array-values/external.rs").as_slice(),
+        ),
+        (
+            "borrow.click",
+            include_bytes!("../../design/charon-trial/array-values/external.click").as_slice(),
+        ),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/array-values/external.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "external.ullbc",
+            include_bytes!("../../design/charon-trial/array-values/external.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../../design/charon-trial/array-values/external.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+#[test]
+fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
+    let p = external_project();
+    let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for (before, after) in [
+        ("old(source[0])", "old(source[1])"),
+        ("target[999999] == value", "target[999999] == value + 1u32"),
+        ("result == old(source[0])", "result == source[0]"),
+    ] {
+        let invalid = sidecar.replace(before, after);
+        assert_ne!(invalid, sidecar);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "copy_million.contract",
+        "fill_million.contract",
+        "independent.contract",
+        "empty.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+#[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
+fn charon_external_array_copies_live_refresh() {
+    let p = external_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        &fs::read_to_string(p.root.join("borrow.click")).unwrap(),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
 }

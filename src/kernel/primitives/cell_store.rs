@@ -87,6 +87,11 @@ impl IndexIntervals {
         self.interval_of(index).is_some()
     }
 
+    /// Whether one merged interval covers all of `[low, high)`.
+    pub(crate) fn covers_range(&self, low: u32, high: u32) -> bool {
+        low >= high || self.interval_of(low).is_some_and(|(_, end)| end >= high)
+    }
+
     /// The indexes in these intervals and not in `other`'s, linear in the
     /// two interval counts.
     pub(crate) fn difference(&self, other: &Self) -> Self {
@@ -256,6 +261,9 @@ pub(crate) enum RunValueMode {
     /// so two constant runs over the same slots are one run exactly when
     /// they hold one value.
     Constant(CValue),
+    /// An immutable snapshot copy. Slot i reads source_base + i * stride,
+    /// rather than its destination address. Used only for scalar elements.
+    Copy { source_base: Pointer },
 }
 
 /// `count` seeded cells at `base`, `base + width`, …: the cell at element `i`
@@ -523,6 +531,15 @@ impl CellRun {
             )
             .expect("a symbolic storage run holds only element types with a value"),
             RunValueMode::Constant(value) => value.clone(),
+            RunValueMode::Copy { source_base } => {
+                let source_pointer = source_base.offset_by_bytes(index * self.element_width);
+                let load = crate::kernel::canonical_form_of_load(
+                    self.source.clone(),
+                    source_pointer.clone(),
+                    LoadKind::of_type(self.element_type).expect("scalar snapshot element"),
+                );
+                cell_run_value(&source_pointer, self.element_type, load)
+            }
         }
     }
 
@@ -1030,6 +1047,44 @@ struct SlotAt<'a> {
 }
 
 impl CellStore {
+    /// Concrete cells whose canonical address lies on the region's line.
+    /// Include the bounded prefix that an eight-byte cell could overlap.
+    /// As for run slot candidates, use address ranges rather than scanning
+    /// other parameter bases that share the external-argument block.
+    pub(crate) fn concrete_region_candidates<'a>(
+        &'a self,
+        base: &Pointer,
+        bytes: u32,
+    ) -> Vec<(&'a Pointer, &'a CValue)> {
+        let (stem, start) = offset_stem_and_constant(&base.offset);
+        let low = start.saturating_sub(7);
+        let high = start.saturating_add(i64::from(bytes));
+        let at = |offset| Pointer {
+            block: base.block.clone(),
+            offset,
+        };
+        match stem {
+            None => self
+                .concrete
+                .range(at(PointerOffsetTerm::Constant(low))..at(PointerOffsetTerm::Constant(high)))
+                .collect(),
+            Some(stem) => {
+                let shifted = |shift| {
+                    at(PointerOffsetTerm::Add(
+                        Box::new(stem.clone()),
+                        Box::new(PointerOffsetTerm::Constant(shift)),
+                    ))
+                };
+                let mut result: Vec<_> = self.concrete.range(shifted(low)..shifted(high)).collect();
+                if low <= 0 && 0 < high {
+                    let key = at(stem.clone());
+                    result.extend(self.concrete.range(key.clone()..=key));
+                }
+                result
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()

@@ -34,7 +34,7 @@ scripts/check.sh --charon-live
 cargo nextest run --lib --test rust_import -E 'test(charon_scalar_) | test(charon_array_lengths)'
 ```
 
-This closes `rust-arrays` in the unchanged-fixture inventory (9/16).
-The subsequent array-value increment corrected its misleading signature
-diagnostic: `rust-array-values` now imports, but compact copies from external
-borrowed storage remain a kernel proof gap.
+This closes `rust-arrays` in the unchanged-fixture inventory. The subsequent
+array-value increments corrected its misleading signature diagnostic and added
+compact borrowed snapshots; `rust-array-values` now verifies unchanged too.
+Current fixture parity is 10/16 (62.5%), with 12/16 (75%) importing.

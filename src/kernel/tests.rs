@@ -238,6 +238,7 @@ fn arc_pointer(offset: i64) -> Pointer {
     }
 }
 
+mod external_array_tests;
 mod iterated_ownership_tests;
 mod memory_dag_tests;
 mod memory_scaling_tests;

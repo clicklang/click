@@ -5047,6 +5047,11 @@ fn run_representative_variables(
         crate::kernel::primitives::RunValueMode::Constant(value) => {
             return Some(constant_run_variables(run, value));
         }
+        crate::kernel::primitives::RunValueMode::Copy { source_base } => {
+            let mut shared = symbolic_storage_run_shared_variables(run);
+            collect_pointer_bitvector_variables(source_base, &mut shared);
+            return Some(shared);
+        }
         crate::kernel::primitives::RunValueMode::Load => {}
     }
     let representatives =

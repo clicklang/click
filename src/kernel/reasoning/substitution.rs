@@ -5243,6 +5243,17 @@ fn run_slot_named_by_load_variable(
     run: &crate::kernel::primitives::CellRun,
     from: Variable,
 ) -> Option<u32> {
+    if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
+        let source_run = crate::kernel::primitives::CellRun::new(
+            source_base.clone(),
+            run.element_width(),
+            run.element_type(),
+            run.count(),
+            run.source().clone(),
+            run.holes().clone(),
+        );
+        return run_slot_named_by_load_variable(&source_run, from);
+    }
     if !crate::kernel::is_load_variable(&from) {
         return None;
     }

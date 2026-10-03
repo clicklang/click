@@ -2787,6 +2787,53 @@ pub(in crate::kernel) fn canonical_memory_for_pointer_load(
 pub(in crate::kernel) fn run_shape_representatives(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<Vec<u32>> {
+    if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
+        let source_run = crate::kernel::primitives::CellRun::new(
+            source_base.clone(),
+            run.element_width(),
+            run.element_type(),
+            run.count(),
+            run.source().clone(),
+            run.holes().clone(),
+        );
+        if copied_source_has_observable_slots(&source_run) {
+            return None;
+        }
+        let source_stem = run_stem_slot(&source_run);
+        let destination_stem = run_stem_slot(run);
+        let mut representatives = Vec::new();
+        for index in [Some(0), source_stem, destination_stem]
+            .into_iter()
+            .flatten()
+        {
+            if index < run.count()
+                && !run.holes().contains(index)
+                && !representatives.contains(&index)
+            {
+                representatives.push(index);
+            }
+        }
+        if let Some(index) = run.live_indexes().find(|index| {
+            *index != 0 && Some(*index) != source_stem && Some(*index) != destination_stem
+        }) {
+            representatives.push(index);
+        }
+        if let Some(first) = run.live_indexes().next()
+            && !representatives.contains(&first)
+        {
+            representatives.push(first);
+        }
+        for index in &representatives {
+            let pointer = source_run.slot_pointer(*index);
+            let value = source_run.value(*index);
+            if materialized_cell_source(&pointer, &value)
+                .is_some_and(|source| source.derivation().is_some())
+            {
+                return None;
+            }
+        }
+        return Some(representatives);
+    }
     let first = run.live_indexes().next()?;
     if source_holds_cells_observable_by(run.source(), &run.base().block) {
         return None;
@@ -2811,6 +2858,64 @@ pub(in crate::kernel) fn run_shape_representatives(
         }
     }
     Some(representatives)
+}
+
+// A copied run can skip represented source lanes: those were captured as
+// independent cells/runs and are holes here. Only a live slot that could fold
+// to a stored value invalidates the uniform spelling argument. Walk source
+// representations, never the logical array length.
+fn copied_source_has_observable_slots(run: &crate::kernel::primitives::CellRun) -> bool {
+    if !source_holds_cells_observable_by(run.source(), &run.base().block) {
+        return false;
+    }
+    let source = run.source().memory();
+    let candidates = AliasCandidates::of_block(&run.base().block);
+    let width = i64::from(run.element_width());
+    let intersects = |shift: i64, bytes: u64| {
+        let low = shift.div_euclid(width).max(0).min(i64::from(run.count())) as u32;
+        let Some(end) = shift.checked_add(i64::try_from(bytes).unwrap_or(i64::MAX)) else {
+            return true;
+        };
+        let high = (end.saturating_add(width - 1).div_euclid(width))
+            .max(0)
+            .min(i64::from(run.count())) as u32;
+        !run.holes().covers_range(low, high)
+    };
+    for (pointer, value) in candidates.entries(source.cells.concrete()) {
+        crate::instrumentation::record_deterministic_work(1);
+        if !pointer.block.observable_by_load(&run.base().block) {
+            continue;
+        }
+        let RunAccess::Shift(shift) = run_access(run, pointer) else {
+            return true;
+        };
+        if intersects(shift, u64::from(value.byte_width())) {
+            return true;
+        }
+    }
+    if candidates.any_entry(&source.union_cells, |(pointer, _), _| {
+        pointer.block.observable_by_load(&run.base().block)
+    }) {
+        return true;
+    }
+    for held in source.cells.candidate_runs(&candidates) {
+        crate::instrumentation::record_deterministic_work(1);
+        if !held.base().block.observable_by_load(&run.base().block) {
+            continue;
+        }
+        let RunAccess::Shift(shift) = run_access(run, held.base()) else {
+            return true;
+        };
+        for (low, high) in held.live_intervals().intervals() {
+            if intersects(
+                shift.saturating_add(i64::from(low) * i64::from(held.element_width())),
+                u64::from(high - low) * u64::from(held.element_width()),
+            ) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// The later element of `run` spelled as its base's bare stem: the one whose

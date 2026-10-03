@@ -3853,6 +3853,22 @@ impl CMemory {
             .checked_mul(element_type.byte_width())
             .filter(|bytes| *bytes <= i32::MAX as u32)
             .ok_or(CRuntimeError::TypeMismatch)?;
+        let snapshot_copy = copy
+            && matches!(&value, CValue::Pointer(source) if
+            !source.pointer().block.starts_with("local:")
+            || self.cells.runs_in_block(&source.pointer().block)
+                .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
+        if !base.block.starts_with("local:") || snapshot_copy {
+            return self.write_scalar_array_snapshot(
+                base,
+                element_type,
+                count,
+                value,
+                copy,
+                fresh,
+                assumptions,
+            );
+        }
         let valid_region = |pointer: &Pointer| {
             pointer.block.starts_with("local:")
                 && pointer.offset.as_const().is_some_and(|offset| {
@@ -4050,6 +4066,246 @@ impl CMemory {
         }
         for (index, value) in cells {
             self = self.store_with_context(target_at(index), value, assumptions);
+        }
+        Ok(self.with_initialized_object(base, bytes))
+    }
+
+    // Authority is checked by the statement executor. External argument
+    // storage follows ordinary typed-load semantics: unknown initialized
+    // bytes remain symbolic. Known automatic storage must be initialized.
+    #[allow(clippy::too_many_arguments)]
+    fn write_scalar_array_snapshot(
+        mut self,
+        base: &Pointer,
+        element: CType,
+        count: u32,
+        value: CValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CRuntimeError> {
+        let bytes = count
+            .checked_mul(element.byte_width())
+            .filter(|bytes| *bytes <= i32::MAX as u32)
+            .ok_or(CRuntimeError::TypeMismatch)?;
+        if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32) {
+            return Err(CRuntimeError::TypeMismatch);
+        }
+        if count == 0 {
+            if (copy && !matches!(value, CValue::Pointer(_)))
+                || (!copy && value.c_type() != element)
+            {
+                return Err(CRuntimeError::TypeMismatch);
+            }
+            return Ok(self);
+        }
+        let valid = |pointer: &Pointer| {
+            let (stem, constant) = offset_stem_and_constant(&pointer.offset);
+            let width = i64::from(element.byte_width());
+            let aligned = constant % width == 0
+                && match stem {
+                    None => true,
+                    Some(PointerOffsetTerm::Int32Scaled { byte_width, .. }) => {
+                        byte_width % width == 0
+                    }
+                    _ => false,
+                };
+            pointer != &Pointer::null()
+                && constant.checked_add(i64::from(bytes)).is_some()
+                && aligned
+                && self.run_can_stand_for_cells_at(pointer)
+                && if self.has_block(&pointer.block) {
+                    self.access_in_bounds(pointer, bytes)
+                } else {
+                    matches!(
+                        pointer.block,
+                        PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+                    )
+                }
+        };
+        if !valid(base)
+            || (fresh
+                && (!base.block.starts_with("local:")
+                    || base.offset != PointerOffsetTerm::Constant(0)
+                    || self
+                        .block_size(&base.block)
+                        .and_then(Bitvector32Term::as_const)
+                        != Some(bytes)
+                    || self.cells.runs_in_block(&base.block).next().is_some()
+                    || AliasCandidates::only_block(&base.block)
+                        .entries(self.cells.concrete())
+                        .next()
+                        .is_some()))
+        {
+            return Err(CRuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
+        }
+        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let mut captured_runs = Vec::new();
+        let mut captured_cells = Vec::new();
+        if copy {
+            let CValue::Pointer(pointer) = value else {
+                return Err(CRuntimeError::TypeMismatch);
+            };
+            let pointer = pointer.pointer();
+            if !valid(pointer)
+                || (pointer.block.starts_with("local:")
+                    && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
+            {
+                return Err(CRuntimeError::FunctionContract(
+                    "scalar-array snapshot requires a valid initialized source region".into(),
+                ));
+            }
+            let (stem, start) = offset_stem_and_constant(&pointer.offset);
+            let width = i64::from(element.byte_width());
+            let mut represented = IndexIntervals::default();
+            for run in self.cells.runs_in_block(&pointer.block) {
+                crate::instrumentation::record_deterministic_work(1);
+                let (run_stem, run_start) = offset_stem_and_constant(&run.base().offset);
+                if run_stem != stem {
+                    continue;
+                }
+                let delta = run_start
+                    .checked_sub(start)
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                let end = delta
+                    .checked_add(i64::from(run.count()) * i64::from(run.element_width()))
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                if end <= 0 || delta >= i64::from(bytes) {
+                    continue;
+                }
+                if run.element_type() != element
+                    || run.element_width() != element.byte_width()
+                    || delta % width != 0
+                {
+                    return Err(CRuntimeError::TypeMismatch);
+                }
+                for (low, high) in run.live_intervals().intervals() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let low = (delta + i64::from(low) * width).max(0);
+                    let high = (delta + i64::from(high) * width).min(i64::from(bytes));
+                    if low >= high {
+                        continue;
+                    }
+                    let first = (low / width) as u32;
+                    let length = ((high - low) / width) as u32;
+                    let source_index = ((low - delta) / width) as u32;
+                    represented.insert_range(first, first + length);
+                    let mode = match run.value_mode() {
+                        RunValueMode::Constant(value) => RunValueMode::Constant(value.clone()),
+                        RunValueMode::Copy { source_base } => RunValueMode::Copy {
+                            source_base: source_base
+                                .offset_by_bytes(source_index * element.byte_width()),
+                        },
+                        RunValueMode::Load | RunValueMode::SymbolicStorage => RunValueMode::Copy {
+                            source_base: run.slot_pointer(source_index),
+                        },
+                    };
+                    captured_runs.push(CellRun::new_with_mode(
+                        base.offset_by_bytes(first * element.byte_width()),
+                        element.byte_width(),
+                        element,
+                        length,
+                        run.source().clone(),
+                        mode,
+                        IndexIntervals::default(),
+                    ));
+                }
+            }
+            for (at, value) in self.cells.concrete_region_candidates(pointer, bytes) {
+                crate::instrumentation::record_deterministic_work(1);
+                let (cell_stem, cell_start) = offset_stem_and_constant(&at.offset);
+                if cell_stem != stem {
+                    continue;
+                }
+                let delta = cell_start
+                    .checked_sub(start)
+                    .ok_or(CRuntimeError::TypeMismatch)?;
+                if delta + i64::from(value.byte_width()) <= 0 || delta >= i64::from(bytes) {
+                    continue;
+                }
+                if delta < 0
+                    || delta + width > i64::from(bytes)
+                    || delta % width != 0
+                    || value.c_type() != element
+                {
+                    return Err(CRuntimeError::TypeMismatch);
+                }
+                let index = (delta / width) as u32;
+                represented.insert(index);
+                captured_cells.push((
+                    base.offset_by_bytes(index * element.byte_width()),
+                    value.clone(),
+                ));
+            }
+            if represented != IndexIntervals::full(count) {
+                captured_runs.push(CellRun::new_with_mode(
+                    base.clone(),
+                    element.byte_width(),
+                    element,
+                    count,
+                    snapshot,
+                    RunValueMode::Copy {
+                        source_base: pointer.clone(),
+                    },
+                    represented,
+                ));
+            }
+        } else {
+            if value.c_type() != element {
+                return Err(CRuntimeError::TypeMismatch);
+            }
+            captured_runs.push(CellRun::new_with_mode(
+                base.clone(),
+                element.byte_width(),
+                element,
+                count,
+                crate::kernel::intern_c_memory(CMemory::new()),
+                RunValueMode::Constant(value),
+                IndexIntervals::default(),
+            ));
+        }
+        if !fresh {
+            // Compact writes must not fall back to visiting every logical
+            // slot of a possibly aliasing run. Require a whole-footprint
+            // decision (including ownership separation), or refuse promptly.
+            for run in self
+                .cells
+                .candidate_runs(&AliasCandidates::of_block(&base.block))
+            {
+                crate::instrumentation::record_deterministic_work(1);
+                let (kept, _) =
+                    crate::kernel::reasoning::memory_resolution::run_slots_kept_by_store(
+                        run,
+                        base,
+                        bytes,
+                        assumptions,
+                    );
+                if matches!(
+                    kept,
+                    crate::kernel::primitives::SlotSet::PerSlot
+                        | crate::kernel::primitives::SlotSet::AskWithin(_, _)
+                ) {
+                    return Err(CRuntimeError::FunctionContract(
+                        "scalar-array snapshot requires a compact decision for possibly aliasing storage".into()));
+                }
+            }
+        }
+        if !fresh {
+            self = self.without_possible_aliasing_cells(base, bytes, assumptions);
+        }
+        for run in captured_runs {
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        for (at, value) in captured_cells {
+            self = self.store_with_context(at, value, assumptions);
         }
         Ok(self.with_initialized_object(base, bytes))
     }

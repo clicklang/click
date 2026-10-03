@@ -26,7 +26,8 @@
     "shared-scalar-array-iteration-v1",
     "resolved-source-assignment-operators-v1",
     "shared-scalar-slice-length-v1",
-    "local-scalar-array-reference-assignment-v1"
+    "local-scalar-array-reference-assignment-v1",
+    "external-scalar-array-snapshot-v1"
   ],
   "extractor_version": "0.1.279"
 }

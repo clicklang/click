@@ -61,3 +61,65 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
         );
     }
 }
+
+#[test]
+fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
+    let export = super::super::charon::decode(
+        include_bytes!("../../../../design/charon-trial/array-values/external.ullbc"),
+        "external.rs",
+        include_bytes!("../../../../design/charon-trial/array-values/external.rs"),
+    )
+    .unwrap();
+    let (functions, _) = lower(&export).unwrap();
+    let prepared = super::super::import::prepared_for_test(export).unwrap();
+    fn statements(statement: &CStatement) -> usize {
+        match statement {
+            CStatement::Seq(a, b) => 1 + statements(a) + statements(b),
+            _ => 1,
+        }
+    }
+    for family in ["copy", "fill"] {
+        let mut samples = Vec::new();
+        for (tag, count) in [("small", 8), ("medium", 1024), ("million", 1_000_000)] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let name = format!("{family}_{tag}");
+            let function = functions
+                .iter()
+                .find(|f| f.name() == name)
+                .unwrap()
+                .to_kernel_function();
+            let (parameters, contract) = if family == "copy" {
+                (
+                    "uint32* target, const uint32* source".to_owned(),
+                    format!(
+                        "views source[0..{count}]; ensures target[0] == old(source[0]); ensures target[{}] == old(source[{}]);",
+                        count - 1,
+                        count - 1
+                    ),
+                )
+            } else {
+                (
+                    "uint32* target, uint32 value".to_owned(),
+                    format!(
+                        "ensures target[0] == value; ensures target[{}] == value;",
+                        count - 1
+                    ),
+                )
+            };
+            let sidecar = format!(
+                "verifying \"external.rs\"; void {name}({parameters}) {{ owns target[0..{count}]; {contract} }} by {{ execute(); simp(); }}"
+            );
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            });
+            verified.unwrap();
+            samples.push((statements(function.body()), work));
+        }
+        assert!(
+            samples
+                .iter()
+                .all(|(shape, work)| *shape == samples[0].0 && *work <= samples[0].1 + 128),
+            "{family}: {samples:?}"
+        );
+    }
+}
