@@ -3451,6 +3451,7 @@ fn abstract_loop_exit_states(
     }
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
+    let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
     abstract_loop_exit_binders(
         &mut successor,
         &rebound,
@@ -3490,11 +3491,19 @@ fn abstract_loop_exit_states(
         variables,
         budget,
     )?;
+    let bookkeeping =
+        join_loop_exit_storage_bookkeeping(&mut successor, &rebound, variables, budget)?;
     // Everything the rule knows how to describe has now been made common. A
     // state that still differs differs in something this rule does not model,
     // so it is refused under its own name rather than abstracted blindly.
+    let abstracted = LoopExitAbstraction {
+        locals: &locals,
+        uninitialized: &uninitialized,
+        cells: &cells,
+        bookkeeping,
+    };
     if let Some(mismatch) = rebound.iter().find_map(|state| {
-        loop_exit_residual_difference(&successor, state, &locals, &cells, binders, assumptions)
+        loop_exit_residual_difference(&successor, state, &abstracted, binders, assumptions)
     }) {
         return Err(mismatch);
     }
@@ -3815,6 +3824,125 @@ fn resource_value_term(value: &AlgebraicValue) -> Term {
     }
 }
 
+/// What the join replaced in the successor, for the residual comparison to
+/// put back at each exit.
+struct LoopExitAbstraction<'a> {
+    locals: &'a [(String, CType)],
+    uninitialized: &'a [String],
+    cells: &'a BTreeSet<Pointer>,
+    bookkeeping: bool,
+}
+
+/// Leaves uninitialized every scalar local some exit has initialized and
+/// another has not, and reports their names.
+///
+/// A path that leaves the loop before its first assignment to a local holds
+/// it uninitialized; one that leaves after holds a value. The successor
+/// claims neither: the local keeps its slot, type and qualifiers and has no
+/// value, so a read of it after the loop is refused rather than given a value
+/// one path never produced. What this gives up is exactly such a read.
+///
+/// One pass over the successor's names, looking each up in every exit.
+fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -> Vec<String> {
+    let names = successor
+        .locals
+        .bindings
+        .iter()
+        .filter(|(_, binding)| {
+            matches!(
+                binding,
+                CLocalBinding::Object { .. } | CLocalBinding::UninitializedObject { .. }
+            )
+        })
+        .map(|(name, _)| name.clone())
+        .collect::<Vec<_>>();
+    crate::instrumentation::record_deterministic_work(names.len().saturating_mul(exits.len()));
+    let mut uninitialized = Vec::new();
+    for name in names {
+        let mut initialized = false;
+        let mut not_initialized = false;
+        for state in exits {
+            match state.locals.binding(&name) {
+                Some(CLocalBinding::Object { .. }) => initialized = true,
+                Some(CLocalBinding::UninitializedObject { .. }) => not_initialized = true,
+                // Any other shape is a difference the residual comparison
+                // names; this step only reconciles initialization.
+                _ => {}
+            }
+        }
+        if initialized && not_initialized {
+            successor.locals.forget_initialization(&name);
+            uninitialized.push(name);
+        }
+    }
+    uninitialized
+}
+
+/// Joins what the exits recorded about automatic storage, when they differ.
+///
+/// A path that called a function with a local holds a tombstone for that
+/// local's ended block, a forget mark from retiring its cell, and a larger
+/// lifetime counter than a path that did not. None of these is a value the
+/// C can observe after the loop, and each has a conservative join:
+///
+/// - **Tombstones: the union.** A tombstone for a block a path never created
+///   forbids accesses that path could not make, and only disables the
+///   inference that a loaded pointer predates the block. The interface join
+///   takes the same union.
+/// - **Lifetime counter: the maximum,** so the next re-entered declaration
+///   gets an identity no exit has used. The branch join takes the same
+///   maximum. A smaller counter would reissue an ended block's identity.
+/// - **Snapshot identity: fresh.** A forget mark says a memory is not known
+///   to be the memory it forgot from. When the exits' marks differ, the
+///   successor's memory keeps only what every exit agrees on (the cells the
+///   join has already made common) and is marked as forgetting from a
+///   snapshot minted here, which no exit's memory and no earlier snapshot
+///   is, with no derivation recorded. A load after the loop of a cell the
+///   successor does not hold is therefore related to no load before or
+///   inside the loop. That relation is what this gives up.
+///
+/// Applied only when an exit differs from the successor in one of these, so
+/// a loop whose exits agree keeps its memory's identity and every read
+/// equality through it. Returns whether it applied.
+fn join_loop_exit_storage_bookkeeping(
+    successor: &mut CState,
+    exits: &[CState],
+    variables: &mut KernelVariableGenerator,
+    budget: &mut ExecutionBudget,
+) -> Result<bool, String> {
+    crate::instrumentation::record_deterministic_work(exits.len());
+    let forgotten_differ = exits
+        .iter()
+        .any(|state| state.memory.forgotten != successor.memory.forgotten);
+    let counter = exits
+        .iter()
+        .map(|state| state.next_local_lifetime)
+        .max()
+        .unwrap_or(successor.next_local_lifetime);
+    let counters_differ = exits
+        .iter()
+        .any(|state| state.next_local_lifetime != successor.next_local_lifetime);
+    if !forgotten_differ && !counters_differ {
+        return Ok(false);
+    }
+    successor.next_local_lifetime = counter;
+    if forgotten_differ {
+        let mut memory = successor.memory.clone();
+        let ended = exits
+            .iter()
+            .flat_map(|state| state.memory.forgotten.ended_local_blocks.iter().cloned())
+            .collect::<crate::kernel::SnapshotSet<_>>();
+        std::sync::Arc::make_mut(&mut memory.forgotten).ended_local_blocks = ended;
+        let marker = variables.next_in(budget).map_err(exhausted_identities)?;
+        let minted = crate::kernel::intern_c_memory(
+            CMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
+        );
+        memory.mark_forgotten_from(&minted);
+        *successor = successor.clone().with_memory(memory);
+    }
+    Ok(true)
+}
+
 /// Havocs the locals the exits disagree on, keeping the rest, and reports
 /// which ones it abstracted.
 fn abstract_loop_exit_locals(
@@ -4067,11 +4195,16 @@ fn fresh_loop_local_value(
 fn loop_exit_residual_difference(
     successor: &CState,
     exit: &CState,
-    locals: &[(String, CType)],
-    cells: &BTreeSet<Pointer>,
+    abstracted: &LoopExitAbstraction<'_>,
     binders: &[CLoopBinder],
     assumptions: &PureFactContext,
 ) -> Option<String> {
+    let LoopExitAbstraction {
+        locals,
+        uninitialized,
+        cells,
+        bookkeeping,
+    } = *abstracted;
     let mut witness = successor.clone();
     // Where a path last folded a binder is not a component of its state: a
     // resource context is a multiset, and the witness below re-seats each
@@ -4102,6 +4235,17 @@ fn loop_exit_residual_difference(
         };
         witness = witness.with_resource_context(resources.unchecked_with_fact(held_fact.clone()));
         seated = seated.with_resource_context(exit_resources.unchecked_with_fact(held_fact));
+    }
+    for name in uninitialized {
+        // This exit's own binding, initialized or not, is what the successor
+        // left without a value.
+        if let Some(binding) = seated.locals.binding(name).cloned() {
+            witness.locals.restore_binding(name, binding);
+        }
+    }
+    if bookkeeping {
+        witness.next_local_lifetime = seated.next_local_lifetime;
+        witness.memory.forgotten = seated.memory.forgotten.clone();
     }
     for (name, c_type) in locals {
         let value = seated.locals().get(name)?.clone();

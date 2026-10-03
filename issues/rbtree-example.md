@@ -679,9 +679,12 @@ frontier report is gone, and the loop rule itself is refused:
 resource ownership`, which `tests/examples.rs` now pins. The exits hold the
 same binders and bytes in different representations (the two binders in
 different fold orders, cells cached as concrete cells at some exits and as
-run slots at others), and the exit join compares them structurally; see
-`bugs/loop-exits-equal-up-to-representation-do-not-join.md`, which has three
-small reductions. Chunk 7 cannot start until that is fixed. Verify time of the
+run slots at others), and the exit join compared them structurally. That is
+fixed: the join now compares cells and merged resources, and joins the record
+of automatic storage the rotation exits' helper call leaves
+(`mdtests/loop_break_exit_after_a_call_with_a_local_joins.md`). The loop rule
+certifies, and `tests/examples.rs` pins the post-loop frontier, so chunk 7 can
+start. Verify time of the
 frontier, release build, user seconds, back to back at load average 8 to 10:
 15.0 with 67 `break`s, 18.3 with the first sixteen leaves here, 27.4 with all
 of them and the join. Counted work is 4.63, 5.86, and 6.94 million units, so

@@ -5186,24 +5186,25 @@ fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
 }
 
 /// A `while (true)` left first by a `break` that never opens the binder and
-/// then by `exit_count` `break`s that each write the binder's cell and fold
-/// it back at the same constructor. The join builds its successor from the
-/// first exit, which holds its view of the cell once; every writing exit
-/// holds that view twice, so each of them reaches the join's normalized
-/// comparison rather than the structural one.
+/// then by `exit_count` `break`s that each write the binder's cell through a
+/// helper with a local and fold it back at the same constructor. The join
+/// builds its successor from the first exit, which holds its view of the
+/// cell once and has called nothing; every writing exit holds that view
+/// twice and has ended the helper's local, so each of them reaches the
+/// join's normalized resource comparison and its storage-bookkeeping join.
 fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
     let mut c_source = String::from(
-        "struct node { int32 shade; };\n\nvoid paint(struct node* p, int32 flag) {\n    while (true) {\n        if (flag == 0) {\n            break;\n        }\n",
+        "struct node { int32 shade; };\n\nstatic void repaint(struct node* p) {\n    int32 next = 1;\n    p->shade = next;\n}\n\nvoid paint(struct node* p, int32 flag) {\n    while (true) {\n        if (flag == 0) {\n            break;\n        }\n",
     );
     for exit in 1..exit_count {
         c_source.push_str(&format!(
-            "        if (flag == {exit}) {{\n            p->shade = 1;\n            break;\n        }}\n"
+            "        if (flag == {exit}) {{\n            repaint(p);\n            break;\n        }}\n"
         ));
     }
-    c_source.push_str("        p->shade = 1;\n        break;\n    }\n}\n");
+    c_source.push_str("        repaint(p);\n        break;\n    }\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        preserve by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
+        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid repaint(struct node* p) {\n    owns p->shade;\n    ensures p->shade == 1;\n} by auto;\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        preserve by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
     );
     let writing_exit = |click_source: &mut String, skipped: usize| {
         click_source.push_str("unfold(c);\n");
