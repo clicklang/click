@@ -115,7 +115,9 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     };
     let body = context.lower_function_body(&source.body)?;
     let return_type = match &source.function_kind {
-        CppFunctionKind::Free | CppFunctionKind::Method { .. }
+        CppFunctionKind::Free
+        | CppFunctionKind::StaticMethod { .. }
+        | CppFunctionKind::Method { .. }
             if matches!(
                 source.return_type,
                 CppType::Integer {
@@ -127,7 +129,9 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
         {
             cpp_scalar_kernel_type(&source.return_type)?
         }
-        CppFunctionKind::Free | CppFunctionKind::Method { .. }
+        CppFunctionKind::Free
+        | CppFunctionKind::StaticMethod { .. }
+        | CppFunctionKind::Method { .. }
             if matches!(
                 source.return_type,
                 CppType::Boolean {
@@ -138,12 +142,16 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
         {
             CType::Bool
         }
-        CppFunctionKind::Free | CppFunctionKind::Method { .. }
+        CppFunctionKind::Free
+        | CppFunctionKind::StaticMethod { .. }
+        | CppFunctionKind::Method { .. }
             if source.return_type == CppType::Void =>
         {
             CType::Void
         }
-        CppFunctionKind::Free | CppFunctionKind::Method { .. } => {
+        CppFunctionKind::Free
+        | CppFunctionKind::StaticMethod { .. }
+        | CppFunctionKind::Method { .. } => {
             return Err(format!(
                 "C++ function `{}` has a return type outside direct lowering",
                 source.name

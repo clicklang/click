@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 28);
+    assert_eq!(prepared.export().schema, 29);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 28);
+    assert_eq!(import.export().schema, 29);
     let destructor = import
         .export()
         .reachable_functions
@@ -6659,5 +6659,196 @@ int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fe
 "#
         );
         check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+const STATIC_HELPERS_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/return-call/static-helpers.cpp");
+
+#[test]
+fn static_helpers_preserve_scalar_types_class_identity_and_no_receiver() {
+    for (member, value_type) in [
+        ("echo", "int32"),
+        ("echo64", "int64"),
+        ("echo_u32", "uint32"),
+        ("echo_u64", "uint64"),
+        ("echo_bool", "bool"),
+    ] {
+        let project = Project::with_fixture(
+            "static.cpp",
+            &format!("Scalar::{member}"),
+            STATIC_HELPERS_SOURCE,
+        );
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert!(matches!(&import.export().function.function_kind,
+            CppFunctionKind::StaticMethod { record_name, record_declaration_id }
+            if record_name == "Scalar" && !record_declaration_id.is_empty()));
+        assert_eq!(import.export().function.parameters.len(), 1);
+        assert!(import.export().records.is_empty());
+        let source = format!(
+            "verifying \"static.cpp\"; {value_type} Scalar_{member}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_return_call_sidecar(&project, &import, &source);
+        let hostile = source.replace("result == value", "result != value");
+        fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn static_helpers_support_modular_nested_and_initializer_calls() {
+    for selected in ["static_chain", "static_local"] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "static.cpp";
+int32 Scalar_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int32 Other_echo(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+int32 {selected}(int32 value) {{ ensures result == value; }} by {{ execute(); simp(); }}
+"#
+        );
+        // The local caller reaches only Scalar_echo.
+        let source = if selected == "static_local" {
+            source.replace("int32 Other_echo(int32 value) { ensures result == value; } by { execute(); simp(); }\n", "")
+        } else {
+            source
+        };
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn static_helpers_preserve_nested_fee_rounding_template_shape() {
+    for (selected, down, fee, expected) in [
+        ("static_fee_down", 1, 7, 4),
+        ("static_fee_up", 0, 7, 5),
+        ("static_fee_down", 1, -7, -5),
+        ("static_fee_up", 0, -7, -4),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [CppStatement::ReturnCall { callee, .. }] = import.export().function.body.as_slice()
+        else {
+            panic!("static template call");
+        };
+        let product = fee * 3;
+        let instance = &callee.name;
+        let source = format!(
+            r#"verifying "static.cpp";
+int64 FeeMath_Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }} by {{ execute(); simp(); }}
+int64 FeeMath_Div(int64 n, int32 d, bool round_down) {{ requires n == {product}i64; requires d == 5; requires round_down == {down}; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {instance}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+int64 {selected}(int64 fee, int32 at_size, int32 divisor) {{ requires fee == {fee}i64; requires at_size == 3; requires divisor == 5; ensures result == {expected}i64; }} by {{ execute(); simp(); }}
+"#
+        );
+        check_return_call_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn static_helpers_reject_object_dispatch_reference_parameters_and_recursion() {
+    for (cpp, selected, diagnostic) in [
+        (
+            "struct H { int storage; static int echo(int x) noexcept { return x; } }; int relay(H& h, int x) noexcept { return h.echo(x); }",
+            "relay",
+            "class-qualified or unqualified",
+        ),
+        (
+            "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return H{}.echo(x); }",
+            "relay",
+            "unsupported expression",
+        ),
+        (
+            "struct H { static int echo(int x) noexcept { return x; } }; int relay(int x) noexcept { return ((void)++x, H{}).echo(x); }",
+            "relay",
+            "unsupported expression",
+        ),
+        (
+            "struct H { static int read(const int& x) noexcept { return x; } };",
+            "H::read",
+            "by-value scalar",
+        ),
+        (
+            "struct H { static int read(int* x) noexcept { return *x; } };",
+            "H::read",
+            "by-value scalar",
+        ),
+        (
+            "struct H { static int recurse(int x) noexcept { return recurse(x); } };",
+            "H::recurse",
+            "recursive C++ calls",
+        ),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, cpp);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn static_helpers_propagate_scalar_exceptions_through_nested_calls() {
+    let cpp = "struct H { static int inner(bool fail) { if (fail) { throw 7; } return 5; } static int outer(int value) { return value; } static int relay(bool fail) { return outer(inner(fail)); } };";
+    let project = Project::with_fixture("static.cpp", "H::relay", cpp);
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("H::relay", "static.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_return_call_sidecar(
+        &project,
+        &import,
+        r#"verifying "static.cpp";
+int32 H_inner(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+int32 H_outer(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 H_relay(bool fail) throws int32 { ensures result == 5 by { execute(); simp(); } exceptional ensures exception == 7 by { execute(); simp(); } }
+"#,
+    );
+}
+
+#[test]
+fn static_helpers_called_from_value_methods_preserve_field_authority() {
+    let project = Project::with_fixture("static.cpp", "FeeValue::Evaluate", STATIC_HELPERS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "static.cpp";
+int64 FeeMath_Mul(int64 fee, int32 at_size) { requires fee == 7i64; requires at_size == 3; ensures result == 21i64; } by { execute(); simp(); }
+int64 FeeValue_Evaluate(const struct FeeValue* self, int32 at_size) {
+ owns self->fee;
+ requires self->fee == 7i64;
+ requires at_size == 3;
+ ensures result == 21i64;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    let hostile = source.replace(" owns self->fee;\n", "");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn static_helpers_cannot_skip_arithmetic_definedness_with_trivial_postconditions() {
+    for (selected, contract) in [
+        (
+            "FeeMath::Mul",
+            "int64 FeeMath_Mul(int64 fee, int32 at_size) { ensures result == result; } by { execute(); simp(); }",
+        ),
+        (
+            "FeeMath::Div",
+            "int64 FeeMath_Div(int64 n, int32 d, bool round_down) { ensures result == result; } by { execute(); simp(); }",
+        ),
+    ] {
+        let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!("verifying \"static.cpp\"; {contract}");
+        fs::write(project.directory.join("bad.click"), &source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &source).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
     }
 }

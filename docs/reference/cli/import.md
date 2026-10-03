@@ -355,7 +355,7 @@ The synthetic fee fixture preserves `Div(Mul(fee, at_size), divisor, round_down)
 and verifies concrete positive/negative rounding and exact division with
 64-bit helpers. It rejects hostile rounding claims, zero divisors, and unproved
 product bounds. This does not import upstream Bitcoin fee evaluation: its
-`__int128` and static helpers, `Assume` annotations, and field-reading sibling
+`__int128`, `Assume` annotations, and field-reading sibling
 arguments still need support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
@@ -385,6 +385,26 @@ The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
 
+Static scalar methods use a distinct `static_method` artifact kind with their
+class and declaration identities, without an implicit receiver or object-layout
+requirement. Select an ordinary declaration with `Class::helper`; reachable
+concrete function-template instances retain their existing distinct names.
+Class-qualified and unqualified calls support the existing scalar initializer
+and return-call positions, including one nested call with stable scalar siblings.
+Parameters and results must be supported by-value integer or Boolean scalars.
+Object-qualified static calls are rejected, including calls whose receiver has
+side effects. Virtual dispatch and reference/pointer helper signatures remain
+outside this slice. An unrelated unsupported field does not block a static
+helper that never accesses object storage.
+
+The synthetic `static-helpers.cpp` fixture preserves static `Mul`, `Div`, and
+Boolean template forwarding, with positive and negative rounding proofs.
+Selected-caller verification, expansion/reverification, and retained audit
+agree. Regressions cover every scalar type, distinct classes, initializer calls,
+scalar exception propagation, false claims, and malformed artifact identities
+and signatures. This removes the static-helper prerequisite; Bitcoin's wide
+arithmetic, checked `Assume`, and field-reading sibling arguments remain open.
+
 The `value-methods` fixtures add non-static, non-virtual ordinary methods on
 that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
 `"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
@@ -413,7 +433,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 28;
+its documented application invariant. The typed artifact schema is now 29;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,

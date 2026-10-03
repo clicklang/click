@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 28;
+pub(crate) const EXPORT_SCHEMA: u32 = 29;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -104,6 +104,10 @@ pub struct CppFunction {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppFunctionKind {
     Free,
+    StaticMethod {
+        record_declaration_id: String,
+        record_name: String,
+    },
     Constructor {
         record_declaration_id: String,
         record_name: String,
@@ -510,7 +514,8 @@ impl CppExport {
             alias_sources.insert(dependency.clone());
         }
         let expected_name = match &self.function.function_kind {
-            CppFunctionKind::Method { record_name, .. } => {
+            CppFunctionKind::Method { record_name, .. }
+            | CppFunctionKind::StaticMethod { record_name, .. } => {
                 let prefix = format!("{record_name}::");
                 let member = function.strip_prefix(&prefix).ok_or_else(|| {
                     "selected C++ method requires a qualified Class::method selector".to_string()
@@ -536,7 +541,9 @@ impl CppExport {
         }
         if !matches!(
             self.function.function_kind,
-            CppFunctionKind::Free | CppFunctionKind::Method { .. }
+            CppFunctionKind::Free
+                | CppFunctionKind::StaticMethod { .. }
+                | CppFunctionKind::Method { .. }
         ) {
             return Err("the selected C++ declaration must be a free function".into());
         }
@@ -807,7 +814,9 @@ impl CppFunction {
             return Err("C++ function is missing declaration identity".into());
         }
         match &self.function_kind {
-            CppFunctionKind::Free | CppFunctionKind::Method { .. } => {
+            CppFunctionKind::Free
+            | CppFunctionKind::StaticMethod { .. }
+            | CppFunctionKind::Method { .. } => {
                 if self.return_type != CppType::Void
                     && require_scalar_integer(&self.return_type, "function return type").is_err()
                 {
@@ -839,6 +848,28 @@ impl CppFunction {
         {
             validate_record_reference(records, record_declaration_id, record_name)?;
         }
+        if let CppFunctionKind::StaticMethod {
+            record_declaration_id,
+            record_name,
+        } = &self.function_kind
+        {
+            // A static declaration has class identity, but no object layout or receiver.
+            if record_declaration_id.is_empty()
+                || record_name.is_empty()
+                || !self.name.starts_with(&format!("{record_name}_"))
+            {
+                return Err("C++ static helper has a mismatched class identity".into());
+            }
+            if require_scalar_integer(&self.return_type, "static helper return type").is_err() {
+                require_bool(&self.return_type, false, "static helper return type")?;
+            }
+            for parameter in &self.parameters {
+                if require_scalar_integer(&parameter.value_type, "static helper parameter").is_err()
+                {
+                    require_bool(&parameter.value_type, false, "static helper parameter")?;
+                }
+            }
+        }
         self.return_type.validate_aliases_in(alias_sources)?;
         if !self.declared_noexcept
             && (!exceptions_enabled
@@ -856,7 +887,9 @@ impl CppFunction {
             && self.declared_noexcept
             && matches!(
                 self.function_kind,
-                CppFunctionKind::Free | CppFunctionKind::Method { .. }
+                CppFunctionKind::Free
+                    | CppFunctionKind::StaticMethod { .. }
+                    | CppFunctionKind::Method { .. }
             )
         {
             return Err(format!(
@@ -1036,7 +1069,10 @@ impl CppFunction {
             return Err("throw expressions are outside the normal-only C++ profile".into());
         }
         if matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
-            && !matches!(self.function_kind, CppFunctionKind::Free)
+            && !matches!(
+                self.function_kind,
+                CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
+            )
         {
             let mut calls = Vec::new();
             collect_calls(&self.body, &mut calls);
@@ -1137,7 +1173,10 @@ impl CppFunction {
             } = statement
             {
                 if !matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
-                    || !matches!(self.function_kind, CppFunctionKind::Free)
+                    || !matches!(
+                        self.function_kind,
+                        CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
+                    )
                     || !destructible_locals.is_empty()
                 {
                     return Err(
@@ -1272,7 +1311,10 @@ impl CppFunction {
                     return Err("conditional guarded try requires one cleanup scope".into());
                 };
                 if !matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
-                    || !matches!(self.function_kind, CppFunctionKind::Free)
+                    || !matches!(
+                        self.function_kind,
+                        CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
+                    )
                     || !else_branch.is_empty()
                     || nested_scopes != 0
                     || has_conditional_cleanup_scope
@@ -1446,7 +1488,9 @@ impl CppFunction {
             validate_return_cleanups(&self.body, &self.name, &[])?;
         }
         match &self.function_kind {
-            CppFunctionKind::Free | CppFunctionKind::Method { .. }
+            CppFunctionKind::Free
+            | CppFunctionKind::StaticMethod { .. }
+            | CppFunctionKind::Method { .. }
                 if self.return_type != CppType::Void && !sequence_always_returns(&self.body) =>
             {
                 return Err(
@@ -2482,7 +2526,9 @@ fn validate_reachable_calls(
                 }
                 if !matches!(
                     target.function_kind,
-                    CppFunctionKind::Free | CppFunctionKind::Method { .. }
+                    CppFunctionKind::Free
+                        | CppFunctionKind::StaticMethod { .. }
+                        | CppFunctionKind::Method { .. }
                 ) {
                     return Err(format!(
                         "ordinary C++ call from `{}` cannot invoke object operation `{}`",
@@ -3551,6 +3597,73 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
+        let mut function = CppFunction {
+            declaration_id: "static_function".into(),
+            name: "Math_echo".into(),
+            function_kind: CppFunctionKind::StaticMethod {
+                record_declaration_id: "Math_class".into(),
+                record_name: "Math".into(),
+            },
+            return_type: signed_integer(32, false),
+            parameters: vec![CppPlace {
+                declaration_id: "value".into(),
+                name: "value".into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            }],
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body: vec![CppStatement::Return {
+                value: CppExpression::IntegerLiteral {
+                    value: "7".into(),
+                    value_type: signed_integer(32, false),
+                    span: cleanup_span(),
+                },
+                cleanups: vec![],
+                span: cleanup_span(),
+            }],
+        };
+        let validate = |function: &CppFunction| {
+            function.validate(
+                "fixture.cpp",
+                &BTreeSet::from(["fixture.cpp".into()]),
+                &BTreeMap::new(),
+                false,
+                CppExceptionBehavior::NormalOnly,
+            )
+        };
+        validate(&function).unwrap();
+        function.name = "Other_echo".into();
+        assert!(validate(&function).unwrap_err().contains("class identity"));
+        function.name = "Math_echo".into();
+        function.parameters[0].value_type = CppType::LvalueReference {
+            pointee: Box::new(signed_integer(32, false)),
+        };
+        assert!(
+            validate(&function)
+                .unwrap_err()
+                .contains("static helper parameter")
+        );
+        function.parameters[0].value_type = signed_integer(32, false);
+        function.return_type = CppType::Void;
+        assert!(
+            validate(&function)
+                .unwrap_err()
+                .contains("static helper return type")
+        );
+        function.return_type = signed_integer(32, false);
+        if let CppFunctionKind::StaticMethod {
+            record_declaration_id,
+            ..
+        } = &mut function.function_kind
+        {
+            record_declaration_id.clear();
+        }
+        assert!(validate(&function).unwrap_err().contains("class identity"));
     }
 
     #[test]
