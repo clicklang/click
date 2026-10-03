@@ -1,10 +1,10 @@
 # Linux `lib/rbtree.c` input closure
 
 This directory pins the inputs of one real compilation: `lib/rbtree.c` from
-Linux v6.8.12, `x86_64_defconfig`, GCC 13.3.0. It is a **negative discovery
-fixture**. Click does not import this translation unit yet, and nothing here
-is a verification claim. The gate pins where the import stops today so that
-progress shows up as a changed expectation.
+Linux v6.8.12, `x86_64_defconfig`, GCC 13.3.0, and the compiler-import lock
+for it. The lock and artifact load offline. No proof runs against the imported
+bodies yet, so nothing here is a verification claim; the gate pins the
+frontier so that progress shows up as a changed expectation.
 
 It is sized for this one translation unit. It is not a strategy for importing
 a whole kernel tree.
@@ -23,8 +23,22 @@ a whole kernel tree.
   [`rbtree.click.import.json`](rbtree.click.import.json): the sidecar and the
   compiler-import configuration for the recorded invocation. The sidecar has
   no contracts yet.
+- [`rbtree.click.import.lock.json`](rbtree.click.import.lock.json) and
+  [`rbtree.i`](rbtree.i): the lock and the preprocessed artifact that
+  `click import lock` produced. The artifact is the recorded 637,604 bytes.
 - [`make-closure.py`](make-closure.py): rebuilds the archive from a configured
   tree.
+
+The configuration's working directory is `inputs/`, which is not checked in.
+To load or refresh the import, extract the closure there first:
+
+```sh
+mkdir -p integrations/linux-rbtree/inputs
+tar -xzf integrations/linux-rbtree/input-closure.tar.gz -C integrations/linux-rbtree/inputs
+click import lock integrations/linux-rbtree/rbtree.click
+```
+
+Refreshing needs the recorded compiler; loading does not.
 
 `design/kernel-import-stage0.json` is the original capture record. Its
 dependency list has 222 files: it came from Kbuild's dependency file, from
@@ -33,37 +47,42 @@ which Kbuild removes `include/generated/autoconf.h`, and it does not list
 
 ## What the gate checks
 
-`scripts/check.sh` runs two library tests in
-`src/languages/c/linux_rbtree_tests.rs`. Neither uses the network or a kernel
+`scripts/check.sh` runs these library tests in
+`src/languages/c/linux_rbtree_tests.rs`. None uses the network or a kernel
 build.
 
 `linux_rbtree_closure_matches_its_provenance` runs everywhere. It checks the
 archive hash, every member's size and hash, that no recorded file is missing
 and no unrecorded file is present, and that the import configuration carries
-the recorded arguments.
+every recorded argument except `-E` and the source operand, which the
+importer supplies. The configuration selects the `linux-6.8-x86_64-kbuild`
+option profile, which accepts every recorded option; the classification and
+reasons are in [`docs/reference/cli/import.md`](../../docs/reference/cli/import.md).
+The options are not removed to make the import fit.
 
-`linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier` needs
+`linux_rbtree_locked_import_loads_offline` runs everywhere. It extracts the
+closure into `inputs/` beside the committed configuration, lock, and
+artifact, loads them without the compiler, and parses the projected unit with
+the optimizer-promise attributes refused. It pins the 26 functions the
+dependency-closure projection defines, and checks that a changed header
+cannot reuse the lock.
+
+`linux_rbtree_locked_artifact_frontier` runs everywhere. On the committed
+artifact, Click's C frontend rejects the whole unit first at
+`././include/linux/compiler_types.h:172`, an anonymous union member in the
+artifact's first declaration, and the projection keeps 32 file-scope
+declarations of 2,575.
+
+`linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier` needs
 the recorded compiler, identified by the SHA-256 of the driver and of `cc1`.
-With it, the test checks four things:
-
-1. `click import lock` refuses the configuration at `-O2`, argument 50. The
-   configuration carries every recorded argument except `-E` and the source
-   operand, which the importer supplies, and selects the `linux-6.8-x86_64-kbuild` option
-   profile. That profile accepts every other recorded option and keeps
-   `-O2` refused; the classification and reasons are in
-   [`docs/reference/cli/import.md`](../../docs/reference/cli/import.md).
-   The options are not removed to make the import fit.
-2. The recorded preprocessing, run directly in the extracted closure, yields
-   exactly the recorded 637,604 bytes.
-3. Click's C frontend rejects that artifact first at
-   `././include/linux/compiler_types.h:172`, an anonymous union member in
-   the artifact's first declaration.
-4. The dependency-closure projection that `rbtree.click.import.json`
-   selects keeps 32 file-scope declarations of 2,575, and the kept unit
-   parses and lowers as a whole. The test pins the 26 functions it defines.
+With it, `click import lock` locks the configuration in a fresh copy; the
+artifact is the recorded output and the lock agrees with the committed one in
+everything but the paths of the preparing checkout. The recorded
+preprocessing, run directly in the extracted closure, also yields exactly the
+recorded 637,604 bytes.
 
 The recorded compiler is Ubuntu 24.04's `gcc-13` package, which is what the
-CI runners have. On a host with a different compiler the second test checks
+CI runners have. On a host with a different compiler that test checks
 the closure, prints `linux-rbtree: NOT CHECKED` with the reason, and passes:
 a different GCC is not a defect in the tree under test. Set
 `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` to make that case fail instead.

@@ -5168,6 +5168,7 @@ fn parse_c_source_unit(
             import.source(),
             import.logical_source(),
             import.source_map(),
+            import.promise_attributes(),
         )
         .map_err(|error| {
             ClickError::new(format!(

@@ -1,9 +1,10 @@
 //! The pinned Linux `lib/rbtree.c` input closure in
 //! `integrations/linux-rbtree/`.
 //!
-//! This is a negative discovery gate. Click does not import this
-//! translation unit yet; the tests pin where it stops, so that progress and
-//! regressions both show up as a changed expectation.
+//! The committed import lock and artifact load offline, and with the
+//! recorded GCC the lock is reproduced. No proof runs against the imported
+//! bodies yet; the tests pin the frontier so that progress and regressions
+//! both show up as a changed expectation.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -14,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use sha2::{Digest, Sha256};
 
-use super::compiler_import::create_lock;
+use super::compiler_import::{create_lock, load_imports};
 use super::{provenance::CSourceMap, syntax};
 use crate::source::SourcePosition;
 
@@ -58,11 +59,6 @@ const PROJECTED_FUNCTIONS: &[&str] = &[
 
 /// File-scope items the projection keeps and omits.
 const PROJECTED_ITEMS: (usize, usize) = (32, 2543);
-
-/// The configured option profile classifies every recorded argument and
-/// still refuses `-O2`, the 50th, before it runs the compiler. See the
-/// classification in `docs/reference/cli/import.md`.
-const IMPORT_REJECTION: &str = "source `lib/rbtree.c`: unsupported compiler argument 50 `-O2`: option profile `linux-6.8-x86_64-kbuild` refuses it";
 
 /// Set to a non-empty value to fail, instead of reporting, when the host
 /// toolchain is not the recorded one.
@@ -190,6 +186,31 @@ fn extract_archive(
     closure
 }
 
+/// A project laid out as the committed import expects: the checked closure
+/// extracted into `inputs/`, beside the named fixture files.
+fn import_layout(provenance: &serde_json::Value, files: &[&str]) -> Closure {
+    let extracted = extract_closure(provenance);
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let root = fs::canonicalize(std::env::temp_dir())
+        .unwrap()
+        .join(format!(
+            "click-linux-rbtree-import-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+    fs::create_dir(&root).expect("create isolated import directory");
+    let layout = Closure(root);
+    fs::rename(&extracted.0, layout.0.join("inputs")).expect("move the closure into inputs/");
+    for name in files {
+        fs::copy(fixture().join(name), layout.0.join(name)).unwrap();
+    }
+    layout
+}
+
+fn read_lock(path: &Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+}
+
 /// Whether the host compiler driver and `cc1` are the recorded binaries.
 fn recorded_toolchain(provenance: &serde_json::Value) -> Result<(), String> {
     for tool in ["gcc", "cc1"] {
@@ -213,7 +234,7 @@ fn toolchain_gate(
         Ok(()) => Ok(None),
         Err(reason) if required => Err(format!("{REQUIRE_TOOLCHAIN} is set, but {reason}")),
         Err(reason) => Ok(Some(format!(
-            "linux-rbtree: NOT CHECKED: preprocessing and the frontier pin need the recorded GCC ({reason}); only the closure was checked"
+            "linux-rbtree: NOT CHECKED: locking and preprocessing need the recorded GCC ({reason}); only the closure was checked"
         ))),
     }
 }
@@ -376,9 +397,9 @@ fn linux_rbtree_closure_matches_its_provenance() {
 }
 
 #[test]
-fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
+fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     let provenance = provenance();
-    let closure = extract_closure(&provenance);
+    let closure = import_layout(&provenance, &["rbtree.click", "rbtree.click.import.json"]);
     let required = std::env::var_os(REQUIRE_TOOLCHAIN).is_some_and(|value| !value.is_empty());
     if let Some(notice) =
         toolchain_gate(&provenance, required).unwrap_or_else(|error| panic!("{error}"))
@@ -387,31 +408,54 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
         return;
     }
 
-    // The import route: the option profile refuses `-O2`, so no lock and no
-    // artifact are produced.
-    for name in ["rbtree.click", "rbtree.click.import.json"] {
-        fs::copy(fixture().join(name), closure.0.join(name)).unwrap();
-    }
+    // The import route: `click import lock` runs the configured vector
+    // under the option profile and reproduces the committed lock.
     let config_path = closure.0.join("rbtree.click.import.json");
-    let config = fs::read_to_string(&config_path).unwrap();
-    assert!(config.contains("\"working_directory\": \"inputs\""));
-    fs::write(
-        &config_path,
-        config.replace(
-            "\"working_directory\": \"inputs\"",
-            "\"working_directory\": \".\"",
-        ),
-    )
-    .unwrap();
-    let error = create_lock(&config_path).expect_err("the option profile does not accept -O2");
-    assert!(error.contains(IMPORT_REJECTION), "{error}");
-    assert!(!closure.0.join("rbtree.click.import.lock.json").exists());
-    assert!(!closure.0.join("rbtree.i").exists());
+    create_lock(&config_path).expect("lock the recorded configuration");
+    let artifact = fs::read(closure.0.join("rbtree.i")).unwrap();
+    assert_eq!(
+        sha256(&artifact),
+        text(&provenance, &["preprocess", "output", "sha256"]),
+        "the importer's artifact differs from the recorded preprocessed output"
+    );
+    let produced = read_lock(&closure.0.join("rbtree.click.import.lock.json"));
+    let committed = read_lock(&fixture().join("rbtree.click.import.lock.json"));
+    for field in [
+        "schema",
+        "config_sha256",
+        "target",
+        "compiler_path",
+        "option_profile",
+        "toolchain",
+    ] {
+        assert_eq!(
+            produced[field], committed[field],
+            "lock field `{field}` differs"
+        );
+    }
+    for field in [
+        "args",
+        "artifact_sha256",
+        "artifact_bytes",
+        "source_sha256",
+        "local_dependencies",
+    ] {
+        assert_eq!(
+            produced["sources"][0][field], committed["sources"][0][field],
+            "locked source field `{field}` differs"
+        );
+    }
+    let imports = load_imports(&config_path).expect("load the fresh lock");
+    assert_eq!(
+        imports[0].promise_attributes(),
+        syntax::PromiseAttributes::Refuse
+    );
+    let inputs = closure.0.join("inputs");
 
     // The recorded preprocessing, run directly, reproduces the recorded
     // artifact from the closure alone.
     let mut command = Command::new(text(&provenance, &["preprocess", "program"]));
-    command.current_dir(&closure.0).env_clear();
+    command.current_dir(&inputs).env_clear();
     for argument in provenance["preprocess"]["argv"].as_array().unwrap() {
         command.arg(argument.as_str().unwrap());
     }
@@ -435,12 +479,94 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
         text(&provenance, &["preprocess", "output", "sha256"]),
         "the preprocessed translation unit differs from the recorded artifact"
     );
+}
 
-    let artifact = String::from_utf8(output.stdout).expect("preprocessed C is UTF-8");
+/// The committed lock and artifact load offline, without the recorded
+/// compiler: the closure in `inputs/` is checked against the lock, the
+/// dependency-closure projection is applied, and the projected unit parses
+/// with the optimizer-promise attributes refused.
+#[test]
+fn linux_rbtree_locked_import_loads_offline() {
+    let provenance = provenance();
+    let layout = import_layout(
+        &provenance,
+        &[
+            "rbtree.click",
+            "rbtree.click.import.json",
+            "rbtree.click.import.lock.json",
+            "rbtree.i",
+        ],
+    );
+    let config_path = layout.0.join("rbtree.click.import.json");
+    let imports = load_imports(&config_path).expect("load the committed lock offline");
+    assert_eq!(imports.len(), 1);
+    let import = imports[0].clone();
+    assert_eq!(import.logical_source(), "lib/rbtree.c");
+    assert_eq!(
+        import.promise_attributes(),
+        syntax::PromiseAttributes::Refuse
+    );
+    let functions = std::thread::Builder::new()
+        .stack_size(256 << 20)
+        .spawn(move || {
+            syntax::parse_translation_unit_for_import(
+                import.source(),
+                import.logical_source(),
+                import.source_map(),
+                import.promise_attributes(),
+            )
+            .map(|unit| {
+                unit.functions
+                    .iter()
+                    .map(|function| function.name().to_string())
+                    .collect::<BTreeSet<_>>()
+            })
+            .map_err(|error| error.to_string())
+        })
+        .expect("spawn the locked parse")
+        .join()
+        .expect("the locked parse finishes")
+        .unwrap_or_else(|error| panic!("the locked projected unit no longer parses: {error}"));
+    assert_eq!(
+        functions,
+        PROJECTED_FUNCTIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<BTreeSet<_>>()
+    );
+
+    // A changed input header cannot reuse the lock.
+    let header = layout.0.join("inputs/include/linux/rbtree.h");
+    let original = fs::read(&header).unwrap();
+    let mut changed = original.clone();
+    changed[0] ^= 1;
+    fs::write(&header, changed).unwrap();
+    let error = load_imports(&config_path).expect_err("a changed header must be refused");
+    assert!(error.contains("differs from its import lock"), "{error}");
+    fs::write(&header, original).unwrap();
+    load_imports(&config_path).unwrap();
+}
+
+/// The locked artifact's frontier: the whole unit stops at its first
+/// unsupported declaration, and the projection keeps what the rbtree
+/// functions need.
+#[test]
+fn linux_rbtree_locked_artifact_frontier() {
+    assert_eq!(
+        sha256(&fs::read(fixture().join("rbtree.i")).unwrap()),
+        text(&provenance(), &["preprocess", "output", "sha256"]),
+        "the committed artifact is the recorded preprocessed output"
+    );
+    let artifact = fs::read_to_string(fixture().join("rbtree.i")).expect("the locked artifact");
     let (source, map) = CSourceMap::decode(&artifact).expect("decode line markers");
-    let error = match syntax::parse_translation_unit_for_import(&source, "lib/rbtree.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "lib/rbtree.c",
+        &map,
+        syntax::PromiseAttributes::Refuse,
+    ) {
         Ok(_) => panic!(
-            "the pinned translation unit now parses; replace this negative gate with the import regression"
+            "the whole pinned translation unit now parses; drop the projection or update FIRST_REJECTION"
         ),
         Err(error) => error.to_string(),
     };
@@ -458,14 +584,19 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
     let unit = std::thread::Builder::new()
         .stack_size(256 << 20)
         .spawn(move || {
-            syntax::parse_translation_unit_for_import(&projected, "lib/rbtree.c", &projected_map)
-                .map(|unit| {
-                    unit.functions
-                        .iter()
-                        .map(|function| function.name().to_string())
-                        .collect::<BTreeSet<_>>()
-                })
-                .map_err(|error| error.to_string())
+            syntax::parse_translation_unit_for_import(
+                &projected,
+                "lib/rbtree.c",
+                &projected_map,
+                syntax::PromiseAttributes::Refuse,
+            )
+            .map(|unit| {
+                unit.functions
+                    .iter()
+                    .map(|function| function.name().to_string())
+                    .collect::<BTreeSet<_>>()
+            })
+            .map_err(|error| error.to_string())
         })
         .expect("spawn the projected parse")
         .join()
@@ -575,18 +706,22 @@ fn rejection_inventory(source: &str, map: &CSourceMap) -> String {
         let origin = map.lookup(SourcePosition::new(line, 1));
         let base = accepted.len();
         accepted.push_str(item);
-        let verdict =
-            match syntax::parse_translation_unit_for_import(&accepted, "lib/rbtree.c", map) {
-                Ok(_) => "accepted".to_string(),
-                Err(error) => {
-                    accepted.truncate(base);
-                    accepted.extend(
-                        item.chars()
-                            .map(|character| if character == '\n' { '\n' } else { ' ' }),
-                    );
-                    error.to_string().replace(['\n', '\t'], " ")
-                }
-            };
+        let verdict = match syntax::parse_translation_unit_for_import(
+            &accepted,
+            "lib/rbtree.c",
+            map,
+            syntax::PromiseAttributes::Refuse,
+        ) {
+            Ok(_) => "accepted".to_string(),
+            Err(error) => {
+                accepted.truncate(base);
+                accepted.extend(
+                    item.chars()
+                        .map(|character| if character == '\n' { '\n' } else { ' ' }),
+                );
+                error.to_string().replace(['\n', '\t'], " ")
+            }
+        };
         let excerpt = item
             .split_whitespace()
             .collect::<Vec<_>>()

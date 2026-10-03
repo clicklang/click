@@ -693,14 +693,17 @@ only code generation, or it makes the compiler's semantics stricter than
 Click's or no weaker. The list is closed and keyed to exact spellings. A
 different value, an unlisted sibling, or an unknown option is refused with its
 source and argument position, for example
-``source `lib/rbtree.c`: unsupported compiler argument 50 `-O2`: ...``.
+``source `lib/rbtree.c`: unsupported compiler argument 50 `-O3`; ...``. Some
+options are accepted only beside others that make them safe; without them the
+option is refused with the missing one named.
 
 Besides `-E` and the source operand, which the importer supplies itself, the
 recorded vector has 102 options: 15 base preprocessing options, 4 that the
-target fixes, and 83 others with 79 distinct spellings. Of those 79, 78 are
-accepted, two of them only beside `-mno-80387`, and one, `-O2`, is
-rejected. Because `-O2` stays rejected, the recorded configuration does not
-lock yet.
+target fixes, and 83 others with 79 distinct spellings. All 79 are accepted:
+`-mno-sse` and `-mno-sse2` only beside `-mno-80387`, and `-O2` only beside
+`-fno-strict-aliasing`, `-fno-strict-overflow`, and
+`-fno-delete-null-pointer-checks`, with the optimizer promises below refused
+in the imported source.
 
 | Recorded option | Verdict | Reason |
 | --- | --- | --- |
@@ -789,21 +792,63 @@ lock yet.
 | `-mpreferred-stack-boundary=3` | Accepted | Stack alignment only; GCC realigns frames that need more. |
 | `-mskip-rax-setup` | Accepted | Variadic-call register setup only. |
 | `-mtune=generic` | Accepted | Instruction scheduling only. |
-| `-O2` | Rejected | See below. |
+| `-O2` | Accepted with `-fno-strict-aliasing`, `-fno-strict-overflow`, `-fno-delete-null-pointer-checks` | Optimization preserves the meaning of a program without undefined behavior, which is what Click proves; GCC's remaining unchecked assumptions are refused in the source (see "Optimizer promises"), and `__builtin_constant_p` is an unknown 0 or 1. |
 
-`-O2` stays rejected because the frontend accepts the `nonnull`, `const`, and
-`noreturn` function attributes without modeling them, and GCC relies on all
-three from `-O1` up. With GCC 13 at `-O2`, a definition whose parameter is
-declared `nonnull` loses its own null check, even with
-`-fno-delete-null-pointer-checks`; two calls to a `const` function on either
-side of a store are merged into one; and no code follows a `noreturn` call. At
-`-O0` GCC does none of these, and Click's model agrees with that build. Before
-`-O2` can be accepted, Click would have to treat a `nonnull` parameter as a
-caller obligation, check or refuse `const` on definitions and model a `const`
-call as a function of its arguments, and treat a `noreturn` call as one that
-does not return, or else refuse these attributes under an optimizing profile.
-The `leaf` attribute, which Click also accepts, needs the same review, since
-GCC assumes a `leaf` call leaves the unit's unescaped static data unchanged.
+### Optimizer promises
+
+Under an option profile that accepts optimization, the frontend refuses, with
+the attribute's location and the reason, every attribute and qualifier that
+GCC's optimizer trusts as a promise from the programmer, because Click does not
+check those promises. Without such a profile, GCC 13 does not act on them and
+they are accepted and ignored as before.
+
+| Construct | Under `linux-6.8-x86_64-kbuild` | Reason |
+| --- | --- | --- |
+| `nonnull` | Refused | GCC deletes the parameter's null checks, even with `-fno-delete-null-pointer-checks`. |
+| `const` | Refused | GCC merges calls and assumes the function touches no memory. |
+| `leaf` | Refused | GCC assumes the call leaves the unit's unescaped static data unchanged. |
+| `access` | Refused | A promise about how the pointed-to object is accessed; not observed exploited by GCC 13, but unchecked. |
+| `noreturn` | Refused, except on `compiletime_assert`'s block-scope `error` declaration | GCC emits nothing after the call. Every call to an `error` declaration lowers to a check that fails on any path reaching it, so Click proves it unreachable. |
+| `returns_twice` | Refused | A second return needs a control-flow model Click does not have. |
+| `restrict` | Refused | GCC assumes restrict pointers do not alias. |
+| `pure`, `returns_nonnull`, `malloc`, `alloc_size`, `alloc_align`, `assume_aligned` | Refused in every mode | Unchecked promises the frontend never accepted. |
+| `__builtin_unreachable`, `__builtin_assume`, `assume` statement attribute | Refused in every mode | Unchecked promises the frontend never accepted. |
+| `cold`, `hot`, `noinline`, `warn_unused_result`, `nonstring` | Refused in every mode | Harmless to the optimizer's semantics (layout, inlining, and diagnostics only), but not supported by the frontend. |
+| `always_inline`, `gnu_inline`, `nothrow`, `weak`, `deprecated`, `unused`, `no_instrument_function` | Accepted | Inlining choice, linkage, or diagnostics; C has no exceptions for `nothrow` to promise about. |
+| `__builtin_expect` | Accepted | A branch-probability hint; its value is its first operand. |
+
+The list comes from GCC 13's attribute documentation and from these
+measurements with the recorded `x86_64-linux-gnu-gcc-13`. Each lying
+declaration is in a separate object file, so GCC cannot see the body, and each
+program prints the same values at `-O0` and differs at `-O2` with the three
+safety options:
+
+- `nonnull(1)` on a definition with `if (!p) return -1;`: `-O0` returns -1
+  for a null argument, `-O2` dereferences it and crashes.
+- `const`, and `pure` on a function that increments a counter: two calls
+  differ by 1 at `-O0`, and by 0 at `-O2`.
+- `leaf` on a function that calls back into the unit and changes a static
+  variable: `-O0` sees the change, `-O2` does not.
+- `noreturn` on a function that returns: `-O0` continues after the call,
+  `-O2` runs off the end of the caller and crashes.
+- `restrict` parameters passed the same address: `-O0` reads the second
+  store, `-O2` the first.
+- `malloc` on a function returning an existing object's address: `-O2`
+  misses the store through the result.
+- `assume_aligned(16)` on a misaligned pointer: `-O2` folds the low bits to 0.
+- `__builtin_unreachable` and `assume` statement attributes: `-O2` folds
+  the condition they assert.
+- `returns_nonnull` returning null: the check is deleted at `-O2` without
+  `-fno-delete-null-pointer-checks` and kept with it.
+- `access(read_only, 1)` on a function that writes, and `__builtin_expect`:
+  no difference.
+
+GCC does not assume that loops terminate when compiling C (`-ffinite-loops`
+is off), and `-O2` otherwise exploits only undefined behavior, such as
+signed overflow, null or out-of-bounds access, and reads of uninitialized
+storage, which Click refuses to prove. The three safety options turn off the
+remaining assumptions Click does not make: type-based aliasing, overflow, and
+null-check deletion.
 
 ## Dependency-closure projection
 
@@ -853,14 +898,13 @@ Reproducing its invocation is not a formal proof that its preprocessing is
 correct. It supplies neither executable C semantics nor proof authority to
 Click: those remain in Click's frontend and independent kernel checker.
 
-The captured Linux 6.8.12 rbtree translation unit does not lock yet. Its
-configuration selects the `linux-6.8-x86_64-kbuild` option profile, which
-classifies every recorded option and still rejects `-O2`. Its full header
-graph also includes unsupported C forms, effectful assembly, and
-storage-producing exports, which the dependency-closure projection leaves out.
-The pinned input closure in `integrations/linux-rbtree/` is a negative gate
-fixture: it reproduces the preprocessed artifact and pins the first rejection
-on each route. It is not a passing verification fixture.
+The captured Linux 6.8.12 rbtree translation unit is locked in
+`integrations/linux-rbtree/`. Its configuration selects the
+`linux-6.8-x86_64-kbuild` option profile and the dependency-closure
+projection. Its full header graph includes unsupported C forms, effectful
+assembly, and storage-producing exports, which the projection leaves out. The
+lock and artifact load offline once the checked input closure is extracted;
+no proof runs against the imported bodies yet.
 
 ## Options and exit status
 

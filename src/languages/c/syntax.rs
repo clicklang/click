@@ -4931,9 +4931,56 @@ pub(crate) fn parse_translation_unit_for_import(
     source: &str,
     source_identity: &str,
     map: &CSourceMap,
+    promises: PromiseAttributes,
 ) -> Result<C0TranslationUnit, C0SyntaxError> {
-    Parser::new_with_source_identity_and_map(source, CAbi::SUPPORTED, Some(source_identity), map)?
-        .parse_translation_unit()
+    let mut parser = Parser::new_with_source_identity_and_map(
+        source,
+        CAbi::SUPPORTED,
+        Some(source_identity),
+        map,
+    )?;
+    parser.refuse_promises = promises == PromiseAttributes::Refuse;
+    parser.parse_translation_unit()
+}
+
+/// Whether a compiler import accepts the function attributes and qualifiers
+/// that GCC's optimizer trusts as programmer promises. Click checks none of
+/// those promises. Without optimization GCC does not act on them, so they
+/// are accepted and ignored; under an option profile that accepts `-O2` they
+/// are refused. The GCC 13 measurements behind the list are in
+/// `docs/reference/cli/import.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromiseAttributes {
+    Accept,
+    Refuse,
+}
+
+/// Why an otherwise accepted function attribute is refused when GCC
+/// optimizes. Attributes the frontend refuses in every mode (`pure`,
+/// `malloc`, `returns_nonnull`, `alloc_size`, `assume_aligned`, ...) are not
+/// listed.
+fn optimizer_promise(attribute: &str) -> Option<&'static str> {
+    Some(match attribute {
+        "nonnull" | "__nonnull__" => {
+            "GCC at -O2 deletes the parameter's null checks even with -fno-delete-null-pointer-checks, and Click does not check the promise"
+        }
+        "const" | "__const__" => {
+            "GCC at -O2 merges calls and assumes the function touches no memory, and Click does not check the promise"
+        }
+        "leaf" | "__leaf__" => {
+            "GCC at -O2 assumes the call leaves this unit's unescaped static data unchanged, and Click does not check the promise"
+        }
+        "access" | "__access__" => {
+            "it promises how the function accesses the pointed-to object, and Click does not check the promise"
+        }
+        "noreturn" | "__noreturn__" => {
+            "GCC emits nothing after a call to it, and Click proves calls unreachable only for `compiletime_assert`'s error declarations"
+        }
+        "returns_twice" | "__returns_twice__" => {
+            "a second return from a call needs a control-flow model that Click does not have"
+        }
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -6895,6 +6942,15 @@ struct Parser {
     /// Set while parsing a block-scope function declaration, the only place
     /// the GNU `error` attribute is accepted; records whether it was seen.
     error_attribute: Option<bool>,
+    /// Set for a compiler import whose option profile accepts optimization:
+    /// the attributes and qualifiers GCC's optimizer trusts as unchecked
+    /// programmer promises are refused. See `PromiseAttributes`.
+    refuse_promises: bool,
+    /// Under `refuse_promises`, the refusal of a `noreturn` seen in a
+    /// block-scope declaration, kept until the declaration shows whether it
+    /// is a `compiletime_assert` error declaration, the one place it is
+    /// allowed.
+    pending_noreturn: Option<C0SyntaxError>,
     /// Function names declared in a block, with the scope depth they leave
     /// with.
     block_function_declarations: Vec<(usize, String)>,
@@ -7189,6 +7245,8 @@ impl Parser {
             static_inline_attribute: "always-inline",
             unnamed_parameters: 0,
             error_attribute: None,
+            refuse_promises: false,
+            pending_noreturn: None,
             block_function_declarations: Vec::new(),
             statement_call: false,
             function_declaration_lines: BTreeMap::new(),
@@ -8624,6 +8682,22 @@ impl Parser {
             self.expect(Token::LParen)?;
             loop {
                 let attribute = self.expect_ident("GNU function attribute")?;
+                if self.refuse_promises
+                    && let Some(reason) = optimizer_promise(&attribute)
+                {
+                    let refusal = self.error_at_previous(format!(
+                        "GNU function attribute `{attribute}` is refused under an optimizing compiler-option profile: {reason}"
+                    ));
+                    // `compiletime_assert`'s block-scope declaration is
+                    // decided once its `error` attribute has been seen.
+                    if matches!(attribute.as_str(), "noreturn" | "__noreturn__")
+                        && self.error_attribute.is_some()
+                    {
+                        self.pending_noreturn = Some(refusal);
+                    } else {
+                        return Err(refusal);
+                    }
+                }
                 match attribute.as_str() {
                     "always_inline" | "__always_inline__" => {
                         always_inline = true;
@@ -11199,7 +11273,14 @@ impl Parser {
                     Some("const") => object_constant = true,
                     Some("volatile") => volatile_levels |= 1,
                     // Restrict constrains aliases used by a valid C program.
-                    // Click never infers ownership or separation from it.
+                    // Click never infers ownership or separation from it,
+                    // and it does not check it either, so it is refused
+                    // where GCC's optimizer relies on it.
+                    Some("restrict" | "__restrict" | "__restrict__") if self.refuse_promises => {
+                        return Err(self.error_here(
+                            "`restrict` is refused under an optimizing compiler-option profile: GCC at -O2 assumes restrict pointers do not alias, and Click does not check it",
+                        ));
+                    }
                     Some("restrict" | "__restrict" | "__restrict__") => {}
                     _ => break,
                 }
@@ -11947,9 +12028,19 @@ impl Parser {
     /// executes nothing.
     fn parse_block_scope_function_declaration(&mut self) -> Result<C0Statement, C0SyntaxError> {
         self.error_attribute = Some(false);
+        self.pending_noreturn = None;
         let declaration = self.parse_block_scope_function_header();
         let compile_time_error = self.error_attribute.take() == Some(true);
+        let noreturn_refusal = self.pending_noreturn.take();
         let mut header = declaration?;
+        // Every call to a `compiletime_assert` error declaration lowers to a
+        // check that fails on any path reaching it, so Click proves each call
+        // unreachable and GCC's `noreturn` promise holds vacuously.
+        if let Some(refusal) = noreturn_refusal
+            && !compile_time_error
+        {
+            return Err(refusal);
+        }
         header.compile_time_error = compile_time_error;
         if self.function_declarations.contains_key(&header.source_name) {
             return Err(self.error_here(format!(
@@ -12263,6 +12354,13 @@ impl Parser {
                             return Err(
                                 self.error_here("the allocation result may not be discarded")
                             );
+                        }
+                        // As in an expression: a GNU builtin such as
+                        // `__builtin_unreachable` is not an ordinary call.
+                        if source_name.starts_with("__builtin_") {
+                            return Err(self.error_at_previous(format!(
+                                "unsupported GNU builtin `{source_name}`"
+                            )));
                         }
                         let compile_time_error = self
                             .function_declarations

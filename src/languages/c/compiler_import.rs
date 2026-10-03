@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 
 use super::option_profile::OptionProfile;
 use super::provenance::CSourceMap;
+use super::syntax::PromiseAttributes;
 use super::target::CTarget;
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
@@ -46,6 +47,7 @@ struct PreparedInner {
     source_map: CSourceMap,
     locked_pthread_headers: BTreeSet<String>,
     identity: String,
+    promises: PromiseAttributes,
 }
 
 impl PreparedCImport {
@@ -76,9 +78,23 @@ impl PreparedCImport {
     pub fn identity(&self) -> &str {
         &self.inner.identity
     }
+    /// Whether the frontend accepts GCC's optimizer-promise attributes in
+    /// this import: refused when its option profile accepts optimization.
+    pub fn promise_attributes(&self) -> PromiseAttributes {
+        self.inner.promises
+    }
 
     #[cfg(test)]
     pub(crate) fn for_test(logical_source: &str, source: &str) -> Self {
+        Self::for_test_with(logical_source, source, PromiseAttributes::Accept)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test_with(
+        logical_source: &str,
+        source: &str,
+        promises: PromiseAttributes,
+    ) -> Self {
         let (source, source_map) = CSourceMap::decode(source).expect("test source map");
         Self {
             inner: Arc::new(PreparedInner {
@@ -88,6 +104,7 @@ impl PreparedCImport {
                 source_map,
                 locked_pthread_headers: BTreeSet::new(),
                 identity: format!("test-{logical_source}"),
+                promises,
             }),
         }
     }
@@ -327,6 +344,11 @@ fn load_imports_inner(config_path: &Path) -> Result<Vec<PreparedCImport>, String
                     .cloned()
                     .collect(),
                 identity: locked.identity.clone(),
+                promises: if config.profile().is_some_and(OptionProfile::optimizes) {
+                    PromiseAttributes::Refuse
+                } else {
+                    PromiseAttributes::Accept
+                },
             }),
         });
     }
@@ -895,15 +917,6 @@ fn validate_args(
         if profile_args.contains(arg) || profile.is_some_and(|profile| profile.accepts(arg)) {
             i += 1;
             continue;
-        }
-        if let Some(profile) = profile
-            && let Some(reason) = profile.rejection(arg)
-        {
-            return Err(format!(
-                "unsupported compiler argument {} `{arg}`: option profile `{}` refuses it because {reason}",
-                i + 1,
-                profile.name
-            ));
         }
         let separate = matches!(arg.as_str(), "-D" | "-U" | "-I" | "-isystem" | "-include");
         let prefix = arg.starts_with("-D")
@@ -2259,11 +2272,9 @@ mod tests {
         )
         .unwrap();
         for spelling in profile.accepted() {
-            // `-mno-sse` and `-mno-sse2` need `-mno-80387` beside them.
+            // `-mno-sse`, `-mno-sse2`, and `-O2` need their safety options.
             let mut vector = args(&[spelling]);
-            if spelling.starts_with("-mno-sse") {
-                vector.push("-mno-80387".into());
-            }
+            vector.extend(args(&profile.requirements(spelling)));
             validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild())
                 .unwrap_or_else(|error| panic!("{spelling}: {error}"));
             let error = validate_args(&vector, CTarget::X86_64LinuxKernel, None)
@@ -2354,19 +2365,28 @@ mod tests {
     }
 
     #[test]
-    fn kbuild_profile_keeps_its_rejected_options_refused_with_the_reason() {
-        let error = validate_args(
-            &args(&["-Wall", "-O2"]),
-            CTarget::X86_64LinuxKernel,
-            kbuild(),
-        )
-        .unwrap_err();
-        assert!(
-            error.contains("argument 2 `-O2`")
-                && error.contains("linux-6.8-x86_64-kbuild")
-                && error.contains("`nonnull`"),
-            "{error}"
-        );
+    fn kbuild_profile_optimizes_only_beside_its_safety_options() {
+        let safety = [
+            "-fno-strict-aliasing",
+            "-fno-strict-overflow",
+            "-fno-delete-null-pointer-checks",
+        ];
+        assert!(kbuild().unwrap().optimizes());
+        let mut complete = args(&["-O2"]);
+        complete.extend(args(&safety));
+        validate_args(&complete, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
+        for missing in safety {
+            let vector = complete
+                .iter()
+                .filter(|argument| argument.as_str() != missing)
+                .cloned()
+                .collect::<Vec<_>>();
+            let error = validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap_err();
+            assert!(
+                error.contains(&format!("argument 1 `-O2` needs `{missing}`")),
+                "{error}"
+            );
+        }
     }
 
     #[test]
@@ -2412,8 +2432,8 @@ mod tests {
         );
     }
 
-    /// Every recorded rbtree option is classified: under the profile the
-    /// configured vector stops only at the options the profile rejects.
+    /// Every recorded rbtree option is classified and accepted under the
+    /// profile.
     #[test]
     fn linux_rbtree_vector_is_classified_by_the_kbuild_profile() {
         let config: serde_json::Value = serde_json::from_slice(
@@ -2431,24 +2451,11 @@ mod tests {
             .iter()
             .map(|argument| argument.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
-        let error = validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap_err();
-        assert!(error.contains("`-O2`: option profile"), "{error}");
-        let rejected = kbuild()
-            .unwrap()
-            .rejected()
-            .iter()
-            .map(|(spelling, _)| *spelling)
-            .collect::<Vec<_>>();
-        let accepted_part = vector
-            .iter()
-            .filter(|argument| !rejected.contains(&argument.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        validate_args(&accepted_part, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
+        validate_args(&vector, CTarget::X86_64LinuxKernel, kbuild()).unwrap();
     }
 
     /// The classification table in the `click import` reference lists exactly
-    /// the profile's accepted and rejected spellings.
+    /// the profile's accepted spellings, and for each the options it needs.
     #[test]
     fn kbuild_profile_matches_its_documented_classification() {
         let docs = fs::read_to_string(
@@ -2460,9 +2467,9 @@ mod tests {
             .split_once(heading)
             .unwrap_or_else(|| panic!("missing `{heading}`"))
             .1;
-        let section = section.split("\n## ").next().unwrap();
+        let section = section.split("\n#").next().unwrap();
+        let profile = kbuild().unwrap();
         let mut accepted = BTreeSet::new();
-        let mut rejected = BTreeSet::new();
         for row in section.lines().filter(|line| line.starts_with("| `")) {
             let cells = row.split(" | ").collect::<Vec<_>>();
             let spelling = cells[0]
@@ -2472,24 +2479,22 @@ mod tests {
                 .unwrap()
                 .to_string();
             match cells[1] {
-                verdict if verdict.starts_with("Accepted") => assert!(accepted.insert(spelling)),
-                "Rejected" => assert!(rejected.insert(spelling)),
-                "Base" | "Fixed" => {}
+                "Accepted" => assert!(profile.requirements(&spelling).is_empty(), "{row}"),
+                verdict if verdict.starts_with("Accepted with ") => {
+                    let documented = verdict["Accepted with ".len()..]
+                        .split(", ")
+                        .map(|required| required.trim_matches('`'))
+                        .collect::<Vec<_>>();
+                    assert_eq!(documented, profile.requirements(&spelling), "{row}");
+                }
+                "Base" | "Fixed" => continue,
                 verdict => panic!("unknown verdict `{verdict}` in {row}"),
             }
+            assert!(accepted.insert(spelling), "{row}");
         }
-        let profile = kbuild().unwrap();
         assert_eq!(
             accepted,
             profile.accepted().iter().map(|s| s.to_string()).collect()
-        );
-        assert_eq!(
-            rejected,
-            profile
-                .rejected()
-                .iter()
-                .map(|(s, _)| s.to_string())
-                .collect()
         );
     }
 

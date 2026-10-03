@@ -7,7 +7,8 @@
 //! accept a program the compiler treats differently. Each spelling's reason is
 //! in the classification table of `docs/reference/cli/import.md`, which a test
 //! keeps in step with these lists. There are no prefix or pattern matches: an
-//! unknown option, or a known option with another value, is refused.
+//! unknown option, or a known option with another value, is refused. Some
+//! options are accepted only beside others that make them safe.
 
 use super::target::CTarget;
 
@@ -18,9 +19,6 @@ pub(crate) struct OptionProfile {
     target: CTarget,
     /// Exact spellings accepted under this profile.
     accepted: &'static [&'static str],
-    /// Recorded spellings classified as unsound to ignore, with the reason
-    /// the refusal reports.
-    rejected: &'static [(&'static str, &'static str)],
     /// `(option, required, reason)`: `option` is accepted only in a vector
     /// that also contains `required`.
     requires: &'static [(&'static str, &'static str, &'static str)],
@@ -115,12 +113,26 @@ pub(crate) const LINUX_KBUILD: OptionProfile = OptionProfile {
         "-mpreferred-stack-boundary=3",
         "-mskip-rax-setup",
         "-mtune=generic",
-    ],
-    rejected: &[(
+        // Optimization, with the safety options below and with the
+        // frontend refusing the attributes GCC trusts as promises.
         "-O2",
-        "GCC at -O1 and above relies on the `nonnull`, `const`, and `noreturn` function attributes, which Click accepts without modeling: it deletes a `nonnull` parameter's null check even with -fno-delete-null-pointer-checks, merges `const` calls across stores, and drops the code after a `noreturn` call",
-    )],
+    ],
     requires: &[
+        (
+            "-O2",
+            "-fno-strict-aliasing",
+            "without it GCC optimizes with type-based alias assumptions, which Click neither makes nor checks",
+        ),
+        (
+            "-O2",
+            "-fno-strict-overflow",
+            "without it GCC optimizes on the assumption that signed and pointer arithmetic never overflow",
+        ),
+        (
+            "-O2",
+            "-fno-delete-null-pointer-checks",
+            "without it GCC deletes null checks after dereferences and after `returns_nonnull` calls",
+        ),
         (
             "-mno-sse",
             "-mno-80387",
@@ -162,17 +174,18 @@ impl OptionProfile {
         Ok(profile)
     }
 
+    /// Whether the profile accepts an optimization level. A compiler import
+    /// under such a profile refuses the attributes GCC's optimizer trusts as
+    /// unchecked promises; see `syntax::PromiseAttributes`.
+    pub(crate) fn optimizes(&self) -> bool {
+        self.accepted
+            .iter()
+            .any(|spelling| spelling.starts_with("-O"))
+    }
+
     /// Whether `argument` is one of this profile's exact accepted spellings.
     pub(crate) fn accepts(&self, argument: &str) -> bool {
         self.accepted.contains(&argument)
-    }
-
-    /// The reason a recorded spelling stays refused, if it is classified.
-    pub(crate) fn rejection(&self, argument: &str) -> Option<&'static str> {
-        self.rejected
-            .iter()
-            .find(|(spelling, _)| *spelling == argument)
-            .map(|(_, reason)| *reason)
     }
 
     /// Checks the requirements between accepted options in one vector.
@@ -197,8 +210,13 @@ impl OptionProfile {
         self.accepted
     }
 
+    /// The options `option` must appear beside.
     #[cfg(test)]
-    pub(crate) fn rejected(&self) -> &'static [(&'static str, &'static str)] {
-        self.rejected
+    pub(crate) fn requirements(&self, option: &str) -> Vec<&'static str> {
+        self.requires
+            .iter()
+            .filter(|(required_by, _, _)| *required_by == option)
+            .map(|(_, required, _)| *required)
+            .collect()
     }
 }

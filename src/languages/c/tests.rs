@@ -357,7 +357,12 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
         "{prototype}int32 keep(int32 x) {{ return x; }}\n"
     ))
     .expect("line markers should decode");
-    let unit = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let unit = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(unit) => unit,
         Err(error) => panic!("variadic prototype should import: {error}"),
     };
@@ -368,7 +373,12 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
         "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
     ))
     .expect("line markers should decode");
-    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("a variadic call has no model"),
         Err(error) => error,
     };
@@ -386,7 +396,12 @@ fn imported_parser_errors_keep_original_header_location() {
         "# 1 \"generated/header.h\" 1\nint32 broken(int32 x) { return x + ...; }\n",
     )
     .expect("line marker should decode");
-    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("variadic syntax should remain rejected"),
         Err(error) => error,
     };
@@ -399,7 +414,13 @@ fn imported_parser_does_not_apply_legacy_macro_name_shortcuts() {
         "# 1 \"tu.c\" 1\nint32 READ_ONCE(int32 x) { return x + 1; }\nint32 use(int32 x) { return READ_ONCE(x); }\n",
     )
     .unwrap();
-    let unit = syntax::parse_translation_unit_for_import(&source, "tu.c", &map).unwrap();
+    let unit = syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
     let rendered = format!("{:?}", unit.functions[1].body());
     assert!(!rendered.contains("SequentialRead"));
 }
@@ -411,7 +432,13 @@ fn imported_statement_calls_do_not_apply_legacy_store_shortcuts() {
             "# 1 \"tu.c\" 1\nint {name}(int x, int y) {{ return x + y; }}\nint use(int x) {{ {name}(x, 1); return x; }}\n"
         );
         let (source, map) = provenance::CSourceMap::decode(&input).unwrap();
-        let unit = syntax::parse_translation_unit_for_import(&source, "tu.c", &map).unwrap();
+        let unit = syntax::parse_translation_unit_for_import(
+            &source,
+            "tu.c",
+            &map,
+            syntax::PromiseAttributes::Accept,
+        )
+        .unwrap();
         let rendered = format!("{:?}", unit.functions[1].body());
         assert!(!rendered.contains("SequentialStore"), "{name}");
         assert!(rendered.contains(name), "original call must remain: {name}");
@@ -424,15 +451,32 @@ fn imported_static_inline_helpers_use_tu_identity_and_shared_origin() {
         "# 1 \"include/helper.h\" 1\nstatic inline int32 add_one(int32 value) { return value + 1; }\nint32 run(int32 value) { return add_one(value); }\n",
     )
     .unwrap();
-    let alpha = syntax::parse_translation_unit_for_import(&source, "alpha.c", &map).unwrap();
-    let beta = syntax::parse_translation_unit_for_import(&source, "beta.c", &map).unwrap();
+    let alpha = syntax::parse_translation_unit_for_import(
+        &source,
+        "alpha.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
+    let beta = syntax::parse_translation_unit_for_import(
+        &source,
+        "beta.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    )
+    .unwrap();
     assert_ne!(alpha.functions[0].name(), beta.functions[0].name());
 
     let (bad_source, bad_map) = provenance::CSourceMap::decode(
         "# 1 \"include/helper.h\" 1\nint32 broken(int32 value) { return value + ...; }\n",
     )
     .unwrap();
-    let error = match syntax::parse_translation_unit_for_import(&bad_source, "alpha.c", &bad_map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &bad_source,
+        "alpha.c",
+        &bad_map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("unsupported helper syntax should fail"),
         Err(error) => error,
     };
@@ -4215,7 +4259,12 @@ fn imported_call_lowering_diagnostics_use_original_header_line() {
         "# 1 \"include/alloc.h\" 1\nint32 caller() { return malloc(1); }\n",
     )
     .unwrap();
-    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+    let error = match syntax::parse_translation_unit_for_import(
+        &source,
+        "tu.c",
+        &map,
+        syntax::PromiseAttributes::Accept,
+    ) {
         Ok(_) => panic!("discarded allocation result should remain rejected"),
         Err(error) => error,
     };
@@ -13076,5 +13125,140 @@ fn c0_syntax_has_no_wide_literals_or_flexible_struct_arrays() {
         "struct packet { int32 length; uint8 data[1]; };\nint32 use(struct packet *p) { return p->length; }",
     ] {
         syntax::parse_functions(accepted).expect(accepted);
+    }
+}
+
+fn parse_import_with(source: &str, promises: syntax::PromiseAttributes) -> Result<(), String> {
+    let (source, map) = provenance::CSourceMap::decode(&format!("# 1 \"lib/tu.c\"\n{source}"))
+        .expect("line markers should decode");
+    syntax::parse_translation_unit_for_import(&source, "tu.c", &map, promises)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+/// Under an optimizing option profile, the attributes and qualifiers GCC's
+/// optimizer trusts as unchecked promises are refused with their location;
+/// without one they are accepted as before.
+#[test]
+fn optimizing_imports_refuse_optimizer_promises() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for (attribute, source) in [
+        (
+            "nonnull",
+            "extern int32 first(int32 *p) __attribute__((nonnull(1)));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "const",
+            "extern int32 square(int32 x) __attribute__((const));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "__leaf__",
+            "extern int32 peek(void) __attribute__((__leaf__));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "access",
+            "extern int32 read(const int32 *p) __attribute__((access(read_only, 1)));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "noreturn",
+            "extern void die(void) __attribute__((noreturn));\nint32 keep(int32 x) { if (x) die(); return x; }\n",
+        ),
+        (
+            "returns_twice",
+            "extern int32 again(void) __attribute__((returns_twice));\nint32 keep(int32 x) { return x; }\n",
+        ),
+        (
+            "__noreturn__",
+            "int32 keep(int32 x) {\n    __attribute__((__noreturn__)) extern void die(void);\n    if (x) die();\n    return x;\n}\n",
+        ),
+    ] {
+        let error = parse_import_with(source, Refuse).expect_err(attribute);
+        assert!(
+            error.contains(&format!(
+                "GNU function attribute `{attribute}` is refused under an optimizing compiler-option profile"
+            )) && error.starts_with("lib/tu.c:"),
+            "{attribute}: {error}"
+        );
+        parse_import_with(source, Accept)
+            .unwrap_or_else(|error| panic!("{attribute} without optimization: {error}"));
+    }
+
+    // A `noreturn` definition is refused too.
+    let error = parse_import_with(
+        "__attribute__((noreturn)) void stop(void) { stop(); }\n",
+        Refuse,
+    )
+    .unwrap_err();
+    assert!(error.contains("`noreturn` is refused"), "{error}");
+
+    // `restrict` is a promise about aliasing.
+    let restrict = "int32 first(int32 *restrict p) { return p[0]; }\n";
+    let error = parse_import_with(restrict, Refuse).unwrap_err();
+    assert!(
+        error.contains("`restrict` is refused under an optimizing compiler-option profile"),
+        "{error}"
+    );
+    parse_import_with(restrict, Accept).unwrap();
+}
+
+/// The one `noreturn` an optimizing import keeps: `compiletime_assert`'s
+/// block-scope `error` declaration, whose calls Click proves unreachable.
+#[test]
+fn optimizing_imports_keep_the_compiletime_assert_declaration() {
+    let source = "int32 guarded(int32 value) {\n    __attribute__((__noreturn__)) extern void __compiletime_assert_1(void) __attribute__((__error__(\"Unsupported access size.\")));\n    if (value)\n        __compiletime_assert_1();\n    return value;\n}\n";
+    parse_import_with(source, syntax::PromiseAttributes::Refuse).unwrap();
+
+    // Its reachable call still fails the proof.
+    let import = crate::languages::c::compiler_import::PreparedCImport::for_test_with(
+        "guarded.c",
+        &format!("# 1 \"guarded.c\"\n{source}"),
+        syntax::PromiseAttributes::Refuse,
+    );
+    let proof = "verifying \"guarded.c\";\nint32 guarded(int32 value) {\n    ensures result == value by auto;\n}\n";
+    let error = crate::surface::verify_c0_prepared_sources(proof, &[import])
+        .expect_err("a reachable call to the error declaration must fail");
+    assert!(
+        error.message().contains("is unreachable"),
+        "{}",
+        error.message()
+    );
+}
+
+/// Attributes and builtins GCC trusts that the frontend refuses in every
+/// mode, and the harmless ones an optimizing import still accepts.
+#[test]
+fn optimizer_promise_classification_without_a_profile_switch() {
+    use syntax::PromiseAttributes::{Accept, Refuse};
+    for source in [
+        "extern int32 f(void) __attribute__((pure));\n",
+        "extern int32 *f(void) __attribute__((returns_nonnull));\n",
+        "extern void *f(void) __attribute__((malloc));\n",
+        "extern void *f(uint64 n) __attribute__((alloc_size(1)));\n",
+        "extern void *f(uint64 n) __attribute__((alloc_align(1)));\n",
+        "extern void *f(void) __attribute__((assume_aligned(16)));\n",
+        "extern void f(void) __attribute__((cold));\n",
+        "extern void f(void) __attribute__((hot));\n",
+        "extern void f(void) __attribute__((noinline));\n",
+        "extern int32 f(void) __attribute__((warn_unused_result));\n",
+        "struct s { uint8 name[4] __attribute__((nonstring)); };\n",
+        "int32 f(int32 x) { if (x == 0) __builtin_unreachable(); return x; }\n",
+        "int32 f(int32 x) { __builtin_assume(x > 0); return x; }\n",
+        "int32 f(int32 x) { __attribute__((assume(x > 0))); return x; }\n",
+    ] {
+        for promises in [Accept, Refuse] {
+            assert!(
+                parse_import_with(source, promises).is_err(),
+                "{source} must be refused ({promises:?})"
+            );
+        }
+    }
+    for source in [
+        "static inline __attribute__((always_inline)) int32 f(int32 x) { return x; }\n",
+        "static inline __attribute__((gnu_inline)) int32 f(int32 x) { return x; }\n",
+        "extern int32 f(void) __attribute__((nothrow, deprecated, unused, no_instrument_function));\n",
+        "extern int32 f(void) __attribute__((weak));\n",
+        "int32 f(int32 x) { if (__builtin_expect(x == 0, 0)) return 7; return 3; }\n",
+    ] {
+        parse_import_with(source, Refuse).unwrap_or_else(|error| panic!("{source}: {error}"));
     }
 }
