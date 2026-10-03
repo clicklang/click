@@ -1,9 +1,11 @@
 # An open scope can fulfill one declared consumption before return
 
-The first close spends one unit and restores the invariant at the reduced
-Count. Reopening permits the subsequent C read. The caller initializes three
-units, calls this helper twice, and proves exact two, checking that return
-neither loses nor duplicates the early effect.
+An explicit member consumption inside an open control scope lowers Count once.
+Closing restores the counter invariant at that new Count; reopening the control
+permits a later read without consuming again. Nested calls and either branch
+preserve that effect. The caller starts with empty authority, creates three
+members, calls the contribution helper twice, and proves exact two before
+consuming the final member and retiring authority. C source is unchanged.
 
 ```c filename=early_consumption.c
 struct counter { unsigned int value; };
@@ -29,20 +31,29 @@ unsigned int sequential_early(struct counter *p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 verifying "early_consumption.c";
-resource remaining(p: struct counter*) {
+resource remaining(p: struct counter*) {}
+resource storage(p: struct counter*) {
+    owns p->value;
+    owns authority(remaining(p));
+    fact count(remaining(p)) == 0;
+}
+resource control(p: struct counter*) {
+    owns authority(remaining(p));
     owns p->value;
     fact count(remaining(p)) <= 3;
     fact p->value == 3 - count(remaining(p));
 }
 uint32 contribute_early(struct counter* p) {
-    owns remaining(p);
+    owns control(p);
     consumes remaining(p);
     requires count(remaining(p)) > 1;
+    ensures count(remaining(p)) == old(count(remaining(p))) - 1;
+    ensures p->value == old(p->value) + 1;
 } by {
-    open(remaining(p)) { have count(remaining(p)) <= 3 by { simp(); } }
-    open(remaining(p)) {
+    open(control(p)) { have count(remaining(p)) <= 3 by { simp(); } }
+    open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
                 count(remaining(p)) > 1;
@@ -58,23 +69,26 @@ uint32 contribute_early(struct counter* p) {
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
+        unfold(remaining(p));
         step();
     }
-    open(remaining(p)) { step(); }
+    open(control(p)) { step(); }
     simp();
 }
 uint32 read_current(struct counter* p) {
-    owns remaining(p);
+    owns control(p);
 } by {
-    open(remaining(p)) { execute(); }
+    open(control(p)) { execute(); }
     simp();
 }
 uint32 contribute_nested(struct counter* p) {
-    owns remaining(p);
+    owns control(p);
     consumes remaining(p);
     requires count(remaining(p)) > 1;
+    ensures count(remaining(p)) == old(count(remaining(p))) - 1;
+    ensures p->value == old(p->value) + 1;
 } by {
-    open(remaining(p)) {
+    open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
                 count(remaining(p)) > 1;
@@ -90,6 +104,7 @@ uint32 contribute_nested(struct counter* p) {
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
+        unfold(remaining(p));
         step();
     }
     step();
@@ -97,11 +112,13 @@ uint32 contribute_nested(struct counter* p) {
     simp();
 }
 uint32 contribute_branch(struct counter* p, int32 report) {
-    owns remaining(p);
+    owns control(p);
     consumes remaining(p);
     requires count(remaining(p)) > 1;
+    ensures count(remaining(p)) == old(count(remaining(p))) - 1;
+    ensures p->value == old(p->value) + 1;
 } by {
-    open(remaining(p)) {
+    open(control(p)) {
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using {
                 count(remaining(p)) > 1;
@@ -117,10 +134,11 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         have count(remaining(p)) - 1 <= 3 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
+        unfold(remaining(p));
         step();
     }
     if report != 0 {
-        open(remaining(p)) { execute(); }
+        open(control(p)) { execute(); }
         simp();
     } else {
         execute();
@@ -128,14 +146,19 @@ uint32 contribute_branch(struct counter* p, int32 report) {
     }
 }
 uint32 sequential_early(struct counter* p) {
-    owns p->value;
+    consumes storage(p);
+    produces p->value;
     ensures result == 2;
 } by {
+    unfold(storage(p));
     step();
     fold(3 of remaining(p));
+    fold(control(p));
     step();
     step();
+    unfold(control(p));
     unfold(remaining(p));
+    unfold(authority(remaining(p)));
     step();
     simp();
 }

@@ -266,6 +266,12 @@ member is consumed per increment; exact-two callers consume their final member
 and retire authority before returning memory. Whole symbolic cleanup and direct
 zero/one/two-value pipelines preserve their original C and result guarantees.
 
+`population_consumption_at_close.md` and
+`population_consumption_wrong_increment.md` now use ordinary authority-bearing
+controls. Explicit member consumption precedes invariant restoration; reopening
+does not consume again. Nested calls and both reporting branches verify, while
+the unchanged two-unit increment is rejected for failing the counter/count fact.
+
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,

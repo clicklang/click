@@ -398,6 +398,13 @@ contributions, and final cleanup consumes the remaining member before retiring
 authority and returning memory. Whole symbolic cleanup and the zero/one-value
 cleanup cases retain their original results. C source is unchanged.
 
+**Early-consumption slice:** `population_consumption_at_close.md` now uses
+explicit member consumption inside an ordinary control scope. Reopening does
+not spend again; nested calls and both reporting branches retain the one
+checked effect. The caller proves two contributions and fully retires authority.
+The wrong-increment negative uses the same protocol and fails on the concrete
+counter/count invariant. All five proofs and ten audit sites pass.
+
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
