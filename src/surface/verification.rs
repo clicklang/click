@@ -2877,14 +2877,25 @@ fn verify_c0_sources_in_context(
             claims.push(FunctionClaimRef::Ensure(0, &implicit_safety_clause));
         }
         let mut function_verified = Vec::new();
-        if let Some(grouped_proof) = function_block.grouped_proof() {
+        // Claims with their own `by` are proved one by one below; every other
+        // claim, or the body-safety claim of a contract without any, is
+        // proved together by the covering proof from one execution.
+        let (claims, covered_claims): (Vec<_>, Vec<_>) =
+            if function_block.covering_proof().is_some() {
+                claims.into_iter().partition(|claim| {
+                    has_explicit_claims && !function_block.covers_claim_proof(claim.proof())
+                })
+            } else {
+                (claims, Vec::new())
+            };
+        if let Some(grouped_proof) = function_block.covering_proof() {
             let theorems = match grouped_proof {
                 SourceProof::Tactic(SmartTactic::Auto) => prove_claims_by_grouped_auto(
                     expansion_capture.as_deref_mut(),
                     source_path,
                     &function_block,
                     parsed_function,
-                    &claims,
+                    &covered_claims,
                     &verification_function_environment,
                     &predicate_environment,
                     &click_function_environment,
@@ -2897,7 +2908,7 @@ fn verify_c0_sources_in_context(
                     source_path,
                     &function_block,
                     parsed_function,
-                    &claims,
+                    &covered_claims,
                     &verification_function_environment,
                     &predicate_environment,
                     &click_function_environment,
@@ -2926,7 +2937,8 @@ fn verify_c0_sources_in_context(
             };
             function_verified.extend(theorems.iter().cloned());
             verified.extend(theorems);
-        } else {
+        }
+        {
             for claim in claims {
                 let claim_label = if has_explicit_claims {
                     function_claim_label(function_block.signature.name(), &claim)

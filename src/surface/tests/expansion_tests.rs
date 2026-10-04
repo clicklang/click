@@ -14998,3 +14998,44 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
     );
     verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
 }
+
+/// Omitted proofs of several claims share one implicit `} by auto;`, which
+/// `click expand` at the contract's closing brace writes out after it; a
+/// claim with its own proof keeps it unchanged.
+#[test]
+fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
+    let c_source = r#"
+        int32 inc(int32 x) {
+            return x + 1;
+        }
+    "#;
+    let click_source = r#"
+        verifying "inc.c";
+
+        int32 inc(int32 x) {
+            requires x >= 0 and x <= 100;
+            ensures result >= 1 by auto;
+            ensures result <= 101;
+            ensures result <= 200;
+        }
+    "#;
+    let c_sources = [("inc.c", c_source)];
+    verify_c0_sources(click_source, &c_sources).expect("the omitted proofs should verify");
+    let close = click_source
+        .rfind('}')
+        .expect("the contract should end with a closing brace");
+    let position = expansion::position_at_offset(click_source, close);
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &c_sources, position.line, position.column)
+            .expect("the implicit grouped proof should expand");
+    assert!(
+        expanded.contains("ensures result >= 1 by auto;"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("ensures result <= 200;\n        } by {"),
+        "{expanded}"
+    );
+    assert_eq!(expanded.matches("step();").count(), 1, "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("the expanded grouped proof should verify");
+}

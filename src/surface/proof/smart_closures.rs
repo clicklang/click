@@ -3550,7 +3550,7 @@ impl<'a> Proof<'a> {
                 // spelling cannot be used as a source `rewrite`.
                 let names_a_dead_local = self
                     .focused_outcome_data()
-                    .is_some_and(|data| data.call_returned.is_some())
+                    .is_some_and(|data| !data.call_routes.is_empty())
                     && self.premise_fixed_state_view().is_some_and(|view| {
                         let mut current_names = BTreeSet::new();
                         crate::surface::collect_current_proposition_variables(

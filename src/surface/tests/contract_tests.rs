@@ -281,8 +281,9 @@ fn targeted_exceptional_caller_assumes_but_does_not_certify_an_unselected_callee
     .expect("targeted expansion may assume the callee interface");
     let error = verify_c0_sources(&expanded, &[("calls.c", c_source)])
         .expect_err("whole-file verification must still certify the callee body");
+    // The callee's two omitted proofs share its implicit grouped proof.
     assert!(
-        error.message().contains("helper.ensures_0"),
+        error.message().contains("helper.contract"),
         "unexpected error: {error:?}"
     );
 }

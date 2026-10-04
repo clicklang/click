@@ -1663,15 +1663,9 @@ pub(super) fn prepare_call_outcome_split(
     ) {
         return Ok(None);
     }
-    if !prepared
-        .core
-        .frontier
-        .continuations
-        .iter()
-        .any(|continuation| continuation.exceptional.is_some())
-    {
-        return Ok(None);
-    }
+    // Without an active handler the throw leaves the function: the threw arm
+    // ends at function exit with that throw outcome, while the returned arm
+    // continues with the rest of the function.
     // The preparation may have started at `FunctionEntry`. Re-present the
     // exact call source as a normal statement frontier for the arm's cursor;
     // the original container is retained separately for evidence matching.
@@ -1837,9 +1831,61 @@ pub(super) fn apply_prepared_call_outcome_transition(
             state,
             &transition.pure_facts,
         )? {
-            return Err(ClickError::new(
-                "`outcomes` call throw did not reach its active handler",
-            ));
+            // No handler: the throw is this path's function outcome.
+            record_completed_continuation_exits(&mut execution.core.frontier);
+            let return_assumptions = assumptions_from_propositions(&transition.pure_facts);
+            let case_outcomes =
+                crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
+                    &prepared.execution_start_state,
+                    function,
+                    arguments,
+                    transition.outcome.clone(),
+                    transition.obligations.clone(),
+                    &return_assumptions,
+                );
+            let mut completed_outcomes = Vec::new();
+            for (outcome, obligations, case_facts) in case_outcomes {
+                let mut completed_execution_facts = transition.execution_facts.clone();
+                append_execution_effect_facts(
+                    &mut completed_execution_facts,
+                    &execution.core.effect_facts,
+                );
+                for fact in case_facts {
+                    completed_execution_facts.push(ExecutionPureFact::new(fact));
+                }
+                completed_outcomes.push((
+                    outcome,
+                    completed_execution_facts,
+                    obligations,
+                    execution.core.loan_evidence().clone(),
+                ));
+            }
+            for pending in execution.core.complete_pending_exceptional_calls() {
+                completed_outcomes.push((
+                    pending.outcome,
+                    pending.execution_facts,
+                    pending.obligations,
+                    pending.loan_evidence,
+                ));
+            }
+            *available_pure_facts = transition.pure_facts.clone();
+            let completed =
+                crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+                    prepared.execution_start_state.clone(),
+                    function.clone(),
+                    arguments.to_vec(),
+                    completed_outcomes,
+                );
+            set_function_exit_execution(
+                &mut execution.core.frontier,
+                claim_label,
+                tactic_index,
+                "outcomes",
+                prepared.execution_start_state.clone(),
+                completed,
+            )?;
+            execution.core.frontier.next_statement_index = prepared.continuation_index;
+            execution.core.state = prepared.execution_start_state.clone().into();
         }
         return Ok(());
     }
@@ -1906,6 +1952,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
         context,
         None,
     )?;
+    successor.presentation.statement_steps += 1;
     Ok(ExecutionPointStepSuccessor {
         execution: successor,
         pure_facts: successor_facts,
@@ -2299,6 +2346,24 @@ fn execute_step_from_frontier_position_selecting_path(
                 // in order, replacing only its continuing path with the tail's
                 // descendants. With one descendant per edge, this order is
                 // unchanged in `suffix_transitions`.
+                call_outcome_edges = edges.filter(|edges| {
+                    edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
+                });
+            } else if matches!(
+                step_statement,
+                CStatement::Call { .. } | CStatement::CallAssign { .. }
+            ) {
+                // A direct call's continuing normal edge is its returned
+                // outcome and its terminal throw is the threw outcome, in the
+                // kernel's first-statement path order, as for try/catch above.
+                let edges = transitions
+                    .iter()
+                    .map(|transition| match transition.outcome {
+                        CStatementOutcome::Normal(_) => Some(true),
+                        CStatementOutcome::Throw { .. } => Some(false),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
                 call_outcome_edges = edges.filter(|edges| {
                     edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
                 });
@@ -2737,6 +2802,8 @@ fn execute_step_from_frontier_position_selecting_path(
         ).map_err(|reason| ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: checked call fork was rejected: {reason}"
         )))?;
+        let steps_before = execution.presentation.statement_steps;
+        execution.presentation.call_fork_steps.push(steps_before);
     } else {
         execution
             .core

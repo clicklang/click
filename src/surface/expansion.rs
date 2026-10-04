@@ -263,19 +263,16 @@ pub fn expand_c0_claim_source(
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let grouped = function_block.grouped_proof().is_some();
-    let edit = if grouped || claim == CProofClaim::Grouped {
-        ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_sources_at(click_source, c_sources, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = checked_claim_expansion_source(
-        theorem,
-        function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped,
-    )?;
+    let replacement = checked_claim_expansion_source(theorem, claim == CProofClaim::Grouped)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -315,18 +312,16 @@ fn expand_c0_project_claim_source(
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
-        ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_project_at(project, c_sources, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = checked_claim_expansion_source(
-        theorem,
-        function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped,
-    )?;
+    let replacement = checked_claim_expansion_source(theorem, claim == CProofClaim::Grouped)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -364,18 +359,16 @@ fn expand_c0_prepared_project_claim_source(
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
-        ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_prepared_project_at(project, imports, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = checked_claim_expansion_source(
-        theorem,
-        function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped,
-    )?;
+    let replacement = checked_claim_expansion_source(theorem, claim == CProofClaim::Grouped)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -410,9 +403,9 @@ fn expand_c0_prepared_claim_source(
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let grouped = function_block.grouped_proof().is_some();
-    let edit = if grouped || claim == CProofClaim::Grouped {
-        ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
@@ -420,10 +413,7 @@ fn expand_c0_prepared_claim_source(
     let verified =
         verify_c0_prepared_sources_at(click_source, imports, target.line, target.column)?;
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = checked_claim_expansion_source(
-        theorem,
-        function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped,
-    )?;
+    let replacement = checked_claim_expansion_source(theorem, claim == CProofClaim::Grouped)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -466,7 +456,7 @@ pub fn expand_c0_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
+        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
         {
             return expand_c0_claim_source(
                 click_source,
@@ -526,7 +516,7 @@ pub fn expand_c0_project_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
+        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
         {
             return expand_c0_project_claim_source(
                 project,
@@ -580,7 +570,7 @@ pub fn expand_c0_prepared_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
+        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
         {
             return expand_c0_prepared_claim_source(
                 click_source,
@@ -637,7 +627,7 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
     }
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
+        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
         {
             return expand_c0_prepared_project_claim_source(
                 project,
@@ -706,7 +696,7 @@ fn expand_program_prepared_claim_source_by_label_context(
     };
     for function in proof_function_blocks(&file) {
         let function_name = function.signature().name();
-        if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
+        if claim_label == format!("{function_name}.contract") && function.covering_proof().is_some()
         {
             return expand_program_prepared_claim_source_context(
                 project,
@@ -772,8 +762,9 @@ fn expand_program_prepared_claim_source_context(
     let function_block = proof_function_blocks(&file)
         .find(|function| function.signature().name() == function_name)
         .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
-    let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
-        ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
+    let claim = covering_claim(function_block, claim);
+    let edit = if claim == CProofClaim::Grouped {
+        find_grouped_proof_edit(&tokens, &function, function_block)?
     } else {
         find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
@@ -787,10 +778,7 @@ fn expand_program_prepared_claim_source_context(
         }
     };
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
-    let replacement = checked_claim_expansion_source(
-        theorem,
-        function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped,
-    )?;
+    let replacement = checked_claim_expansion_source(theorem, claim == CProofClaim::Grouped)?;
     let span = edit.span();
     let replacement = indent_replacement(click_source, span.start, &replacement);
     let replacement = match edit {
@@ -941,11 +929,13 @@ fn c0_smart_tactic_source_sites_file(
                 );
             }
         }
-        if let Some(proof) = function.grouped_proof() {
+        if let Some(proof) = function.covering_proof() {
             collect_smart_proof_sites(&format!("{function_name}.contract"), proof, &mut sites);
-            continue;
         }
         for (index, ensure) in function.ensures().iter().enumerate() {
+            if function.covers_claim_proof(ensure.proof()) {
+                continue;
+            }
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -1956,7 +1946,12 @@ fn select_expansion_theorem<'a>(
             .iter()
             .find(|theorem| {
                 matches_function(theorem)
-                    && matches!(theorem.claim, VerifiedClaim::Ensure { .. })
+                    && match &theorem.claim {
+                        VerifiedClaim::Ensure { clause, .. }
+                        | VerifiedClaim::ExceptionalEnsure { clause, .. } => {
+                            theorem.function_block.covers_claim_proof(clause.proof())
+                        }
+                    }
             })
             .or_else(|| verified.iter().find(matches_function)),
     };
@@ -2258,6 +2253,40 @@ fn find_proof_edit_after(
         cursor += 1;
     }
     Err(ClickError::new("could not locate source proof terminator"))
+}
+
+/// A claim without its own `by` is proved by the function's covering proof,
+/// so selecting it selects that grouped proof.
+fn covering_claim(function_block: &FunctionBlock, claim: CProofClaim) -> CProofClaim {
+    let clause = match claim {
+        CProofClaim::Grouped => return claim,
+        CProofClaim::Ensure(index) => function_block.ensures().get(index),
+        CProofClaim::ExceptionalEnsure(index) => function_block.exceptional_ensures().get(index),
+    };
+    if clause.is_some_and(|clause| function_block.covers_claim_proof(clause.proof())) {
+        CProofClaim::Grouped
+    } else {
+        claim
+    }
+}
+
+/// The written grouped proof's span, or, for the implicit `auto` that
+/// covers omitted claim proofs, an insertion after the contract block.
+fn find_grouped_proof_edit(
+    tokens: &[SourceToken],
+    function: &FunctionSource,
+    function_block: &FunctionBlock,
+) -> Result<ProofSourceEdit, ClickError> {
+    if function_block.grouped_proof().is_some() || function_block.covering_proof().is_none() {
+        return Ok(ProofSourceEdit::Explicit(find_grouped_proof_span(
+            tokens, function,
+        )?));
+    }
+    let close = &tokens[function.body_close].span;
+    Ok(ProofSourceEdit::DefaultTerminator {
+        span: close.end..close.end,
+        selector: close.start,
+    })
 }
 
 fn find_grouped_proof_span(
@@ -3046,8 +3075,8 @@ fn source_tactic_entries(
                 )));
             }
         }
-        if let Some(proof) = function_block.grouped_proof() {
-            let edit = ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?);
+        if let Some(proof) = function_block.covering_proof() {
+            let edit = find_grouped_proof_edit(&tokens, &function, function_block)?;
             proof_tactic_entries(
                 &tokens,
                 &edit,
@@ -3059,9 +3088,11 @@ fn source_tactic_entries(
                 &format!("{function_name}.contract"),
                 &mut entries,
             )?;
-            continue;
         }
         for (index, ensure) in function_block.ensures().iter().enumerate() {
+            if function_block.covers_claim_proof(ensure.proof()) {
+                continue;
+            }
             let claim = CProofClaim::Ensure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
@@ -3081,6 +3112,9 @@ fn source_tactic_entries(
             )?;
         }
         for (index, ensure) in function_block.exceptional_ensures().iter().enumerate() {
+            if function_block.covers_claim_proof(ensure.proof()) {
+                continue;
+            }
             let claim = CProofClaim::ExceptionalEnsure(index);
             let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
@@ -3778,7 +3812,7 @@ fn c0_tactic_source_position_file(
         }
         let selected = if claim_label == format!("{function_name}.contract") {
             function_block
-                .grouped_proof()
+                .covering_proof()
                 .map(|proof| (CProofClaim::Grouped, proof))
         } else {
             function_block
@@ -3817,7 +3851,13 @@ fn c0_tactic_source_position_file(
             }
         };
         let proof_span = match claim {
-            CProofClaim::Grouped => Some(find_grouped_proof_span(&tokens, &function)?),
+            CProofClaim::Grouped => {
+                match find_grouped_proof_edit(&tokens, &function, function_block)? {
+                    ProofSourceEdit::Explicit(span) => Some(span),
+                    ProofSourceEdit::DefaultTerminator { .. }
+                    | ProofSourceEdit::OmittedLoopPhase { .. } => None,
+                }
+            }
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
                 find_claim_proof_span(&tokens, &function, function_block, claim).ok()
             }

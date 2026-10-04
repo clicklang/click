@@ -2618,12 +2618,16 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Selects the edge of the one supported checked call/handler split.
-    /// The label was derived from the exact source shape and checked outcome
-    /// when the outcome goal was created, not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_returned(&self) -> Result<bool, ClickError> {
+    /// Selects the edge of the checked call split `depth` nested `outcomes`
+    /// inside the outermost one. The labels were derived from the exact
+    /// source shape and checked outcome when the outcome goal was created,
+    /// not from a user assertion.
+    pub(in crate::surface::proof) fn checked_call_returned(
+        &self,
+        depth: usize,
+    ) -> Result<bool, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_returned)
+            .and_then(|data| data.call_routes.get(depth).copied())
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })
@@ -3588,7 +3592,7 @@ mod outcome_case_tests {
                 &root,
                 &mut facts,
                 OutcomeProvenance {
-                    call_returned: None,
+                    call_routes: Vec::new(),
                     branch_decisions: PersistentSequence::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),

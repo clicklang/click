@@ -48,9 +48,10 @@ int32 set_first(int32 p[], int32 value) {
 
 Click checks the C region once. Every postcondition is then checked against the
 resulting shared proof state. Goal-specific closing steps still have their
-normal roles: `simp()` or resource reasoning closes postconditions. Per-claim proof clauses remain
-available for independent proofs, but cannot be mixed with a grouped proof in
-the same function.
+normal roles: `simp()` or resource reasoning closes postconditions. A claim
+with its own `by` keeps that independent proof, and the grouped proof covers
+the claims without one. When two or more claims omit their proofs, they share
+an implicit `} by auto;`.
 
 The shorthand `} by auto;` builds one deterministic grouped script:
 `execute()`, declared loop checks, and `simp()` when the contract has

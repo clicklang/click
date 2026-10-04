@@ -612,12 +612,19 @@ int32 set_first(int32 p[], int32 value) {
 }
 ```
 
-The trailing block executes the function once and proves every listed claim
-from that shared execution. It may also certify a resource-only contract with
-no postcondition clauses. `simp()` and resource steps discharge the
-postconditions. A function uses either this grouped form or per-claim `by`
-clauses; the two forms cannot be mixed. Structural region clauses, including
-loop proofs, retain their own proof blocks.
+The trailing block executes the function once and proves, from that shared
+execution, every listed claim that has no `by` of its own. It may also certify
+a resource-only contract with no postcondition clauses. `simp()` and resource
+steps discharge the postconditions. A claim with its own `by` keeps that proof,
+so one hard claim can be proved by hand beside a grouped proof of the rest; a
+grouped proof that would prove no claim is refused. Structural region clauses,
+including loop proofs, retain their own proof blocks.
+
+When two or more claims omit their proofs and no grouped proof is written,
+they share an implicit `} by auto;`, so the default form also executes the
+function once. `click expand` at the contract's closing `}` writes that
+grouped proof out. A single claim without a proof keeps its own default
+`auto`, which is the same proof.
 
 For contracts that need only ordinary execution, loop checks, and
 simplification, the grouped proof can be written `} by auto;`. This is a fixed

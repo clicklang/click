@@ -494,6 +494,13 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// split. This is path-routing presentation, not proof evidence: each
     /// selected outcome retains its own kernel-checked theorem and goal.
     pub(in crate::surface::proof) call_outcome_edges: Option<Vec<bool>>,
+    /// Statement `step()`s this execution lineage has taken, and, for each
+    /// maybe-throwing call it stepped over while the normal path continued,
+    /// how many steps preceded that call's step. Expansion reads these to
+    /// write each such call's terminal throw under its own `outcomes`.
+    /// Presentation only: each path keeps its own kernel-checked evidence.
+    pub(in crate::surface::proof) statement_steps: usize,
+    pub(in crate::surface::proof) call_fork_steps: PersistentSequence<usize>,
     /// The path's surface record: certificate-visible certificate facts, the
     /// premise anchor, and proof-level case choices.
     pub(in crate::surface::proof) surface_record: SurfaceRecord,
@@ -624,7 +631,7 @@ impl ExecutionProofState {
             .get(path_index)
             .cloned()
             .unwrap_or_else(|| OutcomeProvenance {
-                call_returned: None,
+                call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
@@ -674,6 +681,8 @@ impl ExecutionProofState {
                 frontier_loop_clauses: PersistentSequence::default(),
                 post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
+                statement_steps: 0,
+                call_fork_steps: PersistentSequence::default(),
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_simp: None,
@@ -831,10 +840,11 @@ impl ProofExecutionView<'_> {
 
 #[derive(Clone)]
 struct OutcomeProvenance {
-    /// The checked call edge selected on this terminal path. A surrounding
-    /// branch can add paths that never visited that call, so this belongs to
-    /// each outcome rather than to the joined frontier as one flat vector.
-    call_returned: Option<bool>,
+    /// The checked call edges selected on this terminal path, outermost
+    /// `outcomes` first; `true` is `returned`. A surrounding branch can add
+    /// paths that never visited a call, so this belongs to each outcome
+    /// rather than to the joined frontier as one flat vector.
+    call_routes: Vec<bool>,
     branch_decisions: PersistentSequence<ExecutionBranchDecision>,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
@@ -1375,9 +1385,9 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     pub(in crate::surface::proof) requirement_surfaces:
         Arc<PersistentMap<Proposition, ClickProposition>>,
     branch_decisions: PersistentSequence<ExecutionBranchDecision>,
-    /// The checked edge of a single supported call inside an int32 handler.
-    /// `true` is `returned`; `false` is `threw` and entered the handler.
-    pub(in crate::surface::proof) call_returned: Option<bool>,
+    /// The checked call edges this outcome took, outermost `outcomes`
+    /// first. `true` is `returned`; `false` is `threw`.
+    pub(in crate::surface::proof) call_routes: Vec<bool>,
 }
 
 pub(in crate::surface::proof) type OutcomeProofData =

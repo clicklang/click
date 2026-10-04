@@ -1380,15 +1380,25 @@ impl<'a> Proof<'a> {
                     if arm_index == 0 { "then" } else { "else" }
                 )));
             }
+            // A call the arm stepped together with its `return` labels the
+            // arm's own paths; it is the innermost edge on each of them.
+            let arm_call_edges = arm
+                .execution
+                .presentation
+                .call_outcome_edges
+                .as_ref()
+                .filter(|edges| edges.len() == completed.paths().len());
             for (arm_path_index, path) in completed.paths().iter().enumerate() {
                 let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
+                if provenance.call_routes.is_empty()
+                    && let Some(edges) = arm_call_edges
+                {
+                    provenance.call_routes.push(edges[arm_path_index]);
+                }
                 if call_outcomes {
-                    if provenance.call_returned.is_some() {
-                        return Err(self.step_error(
-                            "nested call-outcome routing requires a distinct checked path selector",
-                        ));
-                    }
-                    provenance.call_returned = Some(arm_index == 0);
+                    // An `outcomes` nested in this arm was joined first, so
+                    // its edge follows this one.
+                    provenance.call_routes.insert(0, arm_index == 0);
                 }
                 let mut path_facts = path.execution_facts();
                 for proposition in &arm.introduced_facts {
@@ -1402,7 +1412,7 @@ impl<'a> Proof<'a> {
                     path.outcome().clone(),
                     path_facts.clone(),
                     obligations.clone(),
-                    provenance.call_returned,
+                    provenance.call_routes.clone(),
                 );
                 let path_loan_evidence = path.loan_evidence().clone();
                 let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
@@ -1480,7 +1490,7 @@ impl<'a> Proof<'a> {
                 .presentation
                 .outcome_provenance
                 .iter()
-                .map(|path| path.call_returned)
+                .map(|path| path.call_routes.first().copied())
                 .collect();
         }
         execution.core.has_structured_branch_history = true;
