@@ -382,6 +382,9 @@ impl MachineIntegerType {
         match value {
             Bitvector32Term::MachineIntegerConstant(value) => value.format() == self.format(),
             Bitvector32Term::Variable(_) => true,
+            Bitvector32Term::MemoryLoad(_, _, kind) => {
+                crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
+            }
             Bitvector32Term::IntegerToMachine { destination, .. } => *destination == self,
             Bitvector32Term::MachineIntegerCast {
                 value,
@@ -404,6 +407,9 @@ impl MachineIntegerType {
                     return ty.constant_from_term(value).is_some();
                 }
                 Bitvector32Term::Variable(_) => return true,
+                Bitvector32Term::MemoryLoad(_, _, kind) if ty.format().bits() == 128 => {
+                    return crate::kernel::LoadKind::of_type(ty.c_type()) == Some(*kind);
+                }
                 Bitvector32Term::IntegerToMachine { destination, .. } => return *destination == ty,
                 Bitvector32Term::MachineIntegerCast {
                     value: operand,

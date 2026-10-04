@@ -730,11 +730,10 @@ fn memory_derivation_affects_footprint(
     )
 }
 
-/// The widest scalar access the kernel performs. `int64`, `uint64`, `double`
-/// and every LP64 object pointer are eight bytes; no `CValue` is wider, so a
-/// caller that cannot name its own access width may stand in this one and
-/// still bound the bytes touched.
-pub(in crate::kernel) const MAX_SCALAR_ACCESS_BYTES: i64 = 8;
+/// The widest scalar access the kernel performs. Signed and unsigned
+/// 128-bit cells are sixteen bytes. A caller that cannot name its own access
+/// width must stand in this one to bound every byte possibly touched.
+pub(in crate::kernel) const MAX_SCALAR_ACCESS_BYTES: i64 = 16;
 
 /// Whether the byte intervals `[left_start, left_start + left_bytes)` and
 /// `[right_start, right_start + right_bytes)` are disjoint.

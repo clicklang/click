@@ -222,7 +222,10 @@ pub enum Sort {
 /// in the term and let the `CValue` wrapper choose the interpretation, so a
 /// signed and an unsigned read of that width are one kind (`Bits32`,
 /// `Bits64`). Narrower reads store the extended value, which signedness
-/// changes, so they keep it. Floating-point reads are kinds of their own.
+/// changes, so they keep it. Wide 128-bit reads also keep signedness: their
+/// checked constant payloads retain the exact machine format. This profile
+/// supports exact typed cells, not signed/unsigned memory reinterpretation.
+/// Floating-point reads are kinds of their own.
 ///
 /// A pointer read is a `Bits32` read: Click names a pointer value by the
 /// four-byte word at its address (`Pointer::loaded` scales that word), which
@@ -237,6 +240,9 @@ pub enum LoadKind {
     UInt16,
     Bits32,
     Bits64,
+    /// Wide loads retain signedness because their constant payloads are typed.
+    Int128,
+    UInt128,
     Float32,
     Float64,
 }
@@ -252,6 +258,8 @@ impl LoadKind {
             CType::UInt16 => Self::UInt16,
             CType::Int32 | CType::UInt32 => Self::Bits32,
             CType::Int64 | CType::UInt64 => Self::Bits64,
+            CType::Int128 => Self::Int128,
+            CType::UInt128 => Self::UInt128,
             CType::Float32 => Self::Float32,
             CType::Float64 => Self::Float64,
             CType::Void
@@ -282,7 +290,8 @@ impl LoadKind {
             CValue::UInt16(_) => Self::UInt16,
             CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
             CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
-            CValue::Int128(_) | CValue::UInt128(_) => return None,
+            CValue::Int128(_) => Self::Int128,
+            CValue::UInt128(_) => Self::UInt128,
             CValue::Float32(_) => Self::Float32,
             CValue::Float64(_) => Self::Float64,
             CValue::Pointer(_) => Self::Bits32,
@@ -296,6 +305,17 @@ impl LoadKind {
         Self::of_value(value) == Some(self)
     }
 
+    /// Width when the kind is known but no typed producer recorded an access.
+    /// Bits32 can also name an LP64 pointer word, so keep its eight-byte ABI
+    /// footprint. A fully unknown access uses MAX_SCALAR_ACCESS_BYTES instead.
+    pub(crate) fn unrecorded_access_byte_width(self) -> u32 {
+        if self == Self::Bits32 {
+            crate::kernel::C_POINTER_BYTE_WIDTH
+        } else {
+            self.byte_width()
+        }
+    }
+
     /// How many bytes a read of this kind returns.
     pub fn byte_width(self) -> u32 {
         match self {
@@ -303,6 +323,7 @@ impl LoadKind {
             Self::Int16 | Self::UInt16 => 2,
             Self::Bits32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
+            Self::Int128 | Self::UInt128 => 16,
         }
     }
 }

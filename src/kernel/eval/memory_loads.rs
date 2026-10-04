@@ -980,6 +980,14 @@ fn evaluate_c_memory_load_case(
             CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(0)),
             CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
             CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            CType::Int128 => match crate::kernel::c_int128_literal(0) {
+                CExpression::Value(value) => value,
+                _ => unreachable!("wide literal is a value"),
+            },
+            CType::UInt128 => match crate::kernel::c_uint128_literal(0) {
+                CExpression::Value(value) => value,
+                _ => unreachable!("wide literal is a value"),
+            },
             CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
             CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
             _ if value_type.is_pointer() => CValue::typed_pointer(Pointer::null(), value_type),
@@ -1427,6 +1435,14 @@ fn canonicalized_symbolic_load_value_with_identity(
         CValue::UInt64(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
             return Some(CValue::UInt64(Bitvector32Term::Variable(fresh)));
+        }
+        CValue::Int128(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::Int128(Bitvector32Term::Variable(fresh)));
+        }
+        CValue::UInt128(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::UInt128(Bitvector32Term::Variable(fresh)));
         }
         _ => {}
     }
@@ -2078,7 +2094,9 @@ pub(crate) fn load_term_access_width(
     pointer: &Pointer,
     kind: LoadKind,
 ) -> u32 {
-    load_access_width_or_widest(memory, pointer).max(kind.byte_width())
+    recorded_load_access_width(memory, pointer)
+        .unwrap_or_else(|| kind.unrecorded_access_byte_width())
+        .max(kind.byte_width())
 }
 
 /// The widest C load recorded at this address in any snapshot, or the widest
@@ -3498,7 +3516,9 @@ pub(crate) fn load_variable_for_cell(
         memory,
         pointer,
         kind,
-        load_access_width_or_widest(memory, pointer).max(kind.byte_width()),
+        recorded_load_access_width(memory, pointer)
+            .unwrap_or_else(|| kind.unrecorded_access_byte_width())
+            .max(kind.byte_width()),
         memory,
     )
 }
@@ -3695,7 +3715,7 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
                 // other side knows exactly.
                 recorded_load_access_width(origin, pointer)
                     .or_else(|| recorded_load_access_width(memory, pointer))
-                    .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes),
+                    .unwrap_or_else(|| kind.unrecorded_access_byte_width()),
                 origin,
             ),
             canonical.clone(),
@@ -3864,7 +3884,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     value_type: CType,
 ) -> Option<CValue> {
     match value_type {
-        CType::Int128 | CType::UInt128 => None,
+        CType::Int128 | CType::UInt128 => {
+            memory.symbolic_wide_integer_load(pointer, MachineIntegerType::from_c_type(value_type)?)
+        }
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
             let load = Bitvector32Term::MemoryLoad(
