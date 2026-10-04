@@ -558,9 +558,9 @@ retirement remain later migration gates; fixture parity is not a Rust-language
 completeness metric.
 
 The optional `migrated_sidecar` field records a separate proof port for an
-unchanged source and contract. `rust-loops`, `rust-byte-sum`, and `rust-chunks-exact` now pass with
+unchanged source and contract. `rust-loops`, `rust-byte-sum`, `rust-chunks-exact`, and `rust-iterators` now pass with
 these sidecars, so source-and-contract coverage with migrated proofs is
-**14/16 (87.5%)**. A regression compares their parsed contracts and specification
+**15/16 (93.75%)**. A regression compares their parsed contracts and specification
 functions with the frozen originals, and the live sweep verifies each port
 against freshly extracted original source. It still checks the original
 sidecar and its recorded outcome separately; frozen-sidecar parity remains
@@ -727,3 +727,17 @@ checks every invariant and the decreasing measure separately.
 This advances original-source/contract coverage with proof ports from 13/16
 (81.25%) to **14/16 (87.5%)**. Frozen sidecars remain 11/16 (68.75%), imports
 remain 16/16 (100%), and the default switch and legacy retirement remain open.
+
+## Original implicit byte iteration proof port
+
+[iterator-proof](iterator-proof/README.md) verifies the byte-identical original
+`rust-iterators` source and unchanged mathematical sum contract. The proof uses
+the real iterator cursor/remaining length and the source `byte` and `total`
+locals. Named snapshots and loop/read/assignment/back-edge selectors replace
+legacy ghost names and compiler statement counts. Every overflow, memory read,
+invariant, and decreasing measure remains checked.
+
+This advances original-source/contract coverage with proof ports from 14/16
+(87.5%) to **15/16 (93.75%)**. `rust-iter-references` is the remaining proof-port
+gap. Frozen sidecars remain 11/16 (68.75%), imports remain 16/16 (100%), and
+default switching and legacy retirement remain separate gates.

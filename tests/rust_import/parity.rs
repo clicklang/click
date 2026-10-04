@@ -78,6 +78,10 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
                 "design/charon-trial/chunk-proof/chunks.click"
             ),
             (
+                "examples/rust-iterators/sum.click.import.json",
+                "design/charon-trial/iterator-proof/rust-iterators/sum.click"
+            ),
+            (
                 "examples/rust-loops/loops.click.import.json",
                 "design/charon-trial/loop-headers/loops-assignments.click"
             ),
@@ -92,7 +96,7 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
             .iter()
             .filter(|e| e.outcome == "verified" || e.migrated_sidecar.is_some())
             .count(),
-        14
+        15
     );
 }
 
