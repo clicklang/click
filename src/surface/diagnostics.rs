@@ -1929,6 +1929,8 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt16 => "an unsigned two-byte integer",
         LoadKind::Bits32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Int128 => "a signed sixteen-byte integer",
+        LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",
         LoadKind::Float64 => "a `float64`",
     }

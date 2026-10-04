@@ -181,8 +181,8 @@ fn wide_scalar_rejects_legacy_carriers_arithmetic_and_address_access() {
         }
     ));
     let value = symbolic_call_result(CType::UInt128, Variable(148_003));
-    assert_eq!(LoadKind::of_value(&value), None);
-    assert_eq!(LoadKind::of_type(CType::UInt128), None);
+    assert_eq!(LoadKind::of_value(&value), Some(LoadKind::UInt128));
+    assert_eq!(LoadKind::of_type(CType::UInt128), Some(LoadKind::UInt128));
     assert_eq!(CType::UInt128.pointer_to(), None);
 }
 

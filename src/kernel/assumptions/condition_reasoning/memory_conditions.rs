@@ -379,6 +379,12 @@ impl PureFactContext {
             LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
             LoadKind::Bits32 => Some(memory.symbolic_int32_load(pointer)),
             LoadKind::Bits64 => Some(memory.symbolic_int64_load(pointer)),
+            LoadKind::Int128 => {
+                memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)
+            }
+            LoadKind::UInt128 => {
+                memory.symbolic_wide_integer_load(pointer, MachineIntegerType::UInt128)
+            }
             LoadKind::Float32 | LoadKind::Float64 => None,
         }
     }

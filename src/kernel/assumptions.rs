@@ -3160,7 +3160,9 @@ impl PureFactContext {
     /// This rule relates load applications only. An execution value's bridge
     /// remains scoped to its certified binding, including restricted contexts.
     fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
-        let bytes = crate::kernel::load_access_width_or_widest(memory, address);
+        // This producer names an LP64 pointer read, whose width is known
+        // even when no scalar load was recorded at the same address.
+        let bytes = crate::kernel::C_POINTER_BYTE_WIDTH;
         let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
             .unwrap_or_else(|| memory.clone());
         let Some(derivation) = start.derivation() else {
@@ -3194,9 +3196,7 @@ impl PureFactContext {
             }
             _ => None,
         };
-        if let Some(source) = source
-            && bytes == crate::kernel::load_access_width_or_widest(&source, address)
-        {
+        if let Some(source) = source {
             self.equality_graph.add_checked_read_equality(
                 &Pointer::loaded_value(memory, address),
                 &Pointer::loaded_value(&source, address),

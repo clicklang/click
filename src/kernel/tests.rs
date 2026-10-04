@@ -39,6 +39,7 @@ mod state_identity_tests;
 mod thread_transition_tests;
 mod wide_multiply_tests;
 mod wide_scalar_tests;
+mod wide_storage_tests;
 
 /// Certifies a contract from the kernel's own checked executions of the
 /// function, one per resource-guard case, the way the surface certifies a

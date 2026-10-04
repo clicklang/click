@@ -353,8 +353,8 @@ The bounded shared wide scalar runtime is delivered: typed 128-bit literals
 and variables, scalar locals and function parameters/results, substitution,
 16-byte scalar size/alignment under the pinned profile, and exact Integer
 observations. Reverse Integer conversions retain both wide range obligations;
-truthiness observes all bits. Legacy arithmetic carriers and address-based
-wide access are refused; native arithmetic is admitted only in the slices below.
+truthiness observes all bits. Legacy arithmetic carriers are refused;
+native arithmetic and typed memory access are admitted only in the slices below.
 C0 identities carry the kernel types without adding source parser admission.
 
 Symbolic wide widening, narrowing, and signedness changes are delivered at
@@ -374,7 +374,17 @@ oracles, earlier operand undefined behavior, narrow operand promotion, function
 results, specification capture, and indexed work scaling are covered.
 Unsigned wrapping multiplication and other native wide operations remain open.
 
-Next add wide addressable storage/loads and frontend source admission,
+Exact typed 16-byte memory cells are delivered through the shared typed-load
+and typed-store operations. Signed and unsigned load kinds preserve their
+checked formats; symbolic reads retain snapshot identity and certified defining
+facts. Full-width extents, initialization, and resource authority remain
+required. Framing and store invalidation include the high eight bytes, and the
+conservative unknown-width bound is sixteen. Generated store sequences include
+wide cells and compare indexed gap skipping with the complete reference path;
+load/validation work is tested over multiple unrelated-memory sizes.
+Byte reinterpretation, wide pointer/array types, and source admission remain open.
+
+Next add wide pointer/array types and frontend source admission,
 retaining the source's resolved machine semantics. Use the shared formats and
 conversion policies rather than inventing a C++-specific numeric carrier.
 Then cover wide truncating division/remainder and checked narrowing

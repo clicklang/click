@@ -300,8 +300,8 @@ that exact observation with zero, including high bits above bit 63. These
 observations do not turn native arithmetic into unbounded Integer arithmetic.
 
 A wide runtime wrapper accepts only a matching wide constant, a symbolic
-variable, the shared checked Integer-to-machine node, or a typed machine cast
-for that destination.
+variable, a matching typed memory load, the shared checked Integer-to-machine
+node, or a typed machine cast for that destination.
 Legacy word constants and arithmetic nodes cannot acquire 128-bit semantics
 by retagging their wrapper. Validation examines the root and any strictly
 widening conversion chain (bounded by the five machine widths); substitutions,
@@ -317,12 +317,24 @@ At least one operand must already be signed 128-bit; a later widening cast
 cannot rescue overflow in an earlier narrow multiplication. Operand undefined
 behavior and proof obligations remain attached to the result.
 
+Exact typed 16-byte cells support signed and unsigned wide stores and loads
+through the existing typed-lvalue operations. Symbolic loads use the shared
+snapshot/address/kind identity and certified defining facts. Their kinds retain
+signedness to match the checked constant format; cross-type reinterpretation
+and byte views remain unsupported. A wide read or write requires the full
+16-byte extent and resource authority, and retains initialization obligations.
+Framing and store invalidation account for every byte, including bytes 8–15.
+The conservative fallback width for an access of unknown type is now 16;
+indexed store-gap decisions use the same bound. Known load kinds, pointer
+reads, and retained typed cells use their own access widths; a wider unknown
+fallback must not erase precise separation evidence.
+
 Other native wide arithmetic, including unsigned wrapping multiplication,
-wide pointer/array types, aggregate field access,
-byte loads, callbacks, and C/C++/Rust source spellings remain unsupported.
+wide pointer/array types, source aggregate layouts,
+byte views of wide cells, callbacks, and C/C++/Rust source spellings remain unsupported.
 Internal C0 type identities preserve the kernel sorts without adding parser
 admission. The frontends continue to reject reachable `__int128` behavior.
-Wide storage access and source admission are later slices; existing
+Wide pointer/array types and source admission are later slices; existing
 implementation fixtures remain unchanged.
 
 ## Work budgets and certificate scaling

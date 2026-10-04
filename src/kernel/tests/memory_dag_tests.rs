@@ -2383,18 +2383,18 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     };
 
     // Inside the widest scalar read at `read`: every one of these cells is a
-    // byte an eight-byte load of `read` returns.
-    for offset in 1..8 {
+    // byte a sixteen-byte load of `read` returns.
+    for offset in 1..16 {
         assert!(
             !canonical_equal_across_store_at(offset, CValue::UInt8(Bitvector32Term::Constant(7))),
             "a one-byte cell {offset} bytes above the load is inside an \
-             eight-byte read of it and must not be dropped"
+             sixteen-byte read of it and must not be dropped"
         );
     }
     assert!(
         !canonical_equal_across_store_at(4, CValue::Int32(Bitvector32Term::Constant(7))),
-        "an int32 cell four bytes above the load is the upper half of an \
-         eight-byte read of it and must not be dropped"
+        "an int32 cell four bytes above the load is inside a \
+         sixteen-byte read of it and must not be dropped"
     );
     assert!(
         !canonical_equal_across_store_at(6, CValue::Int16(Bitvector32Term::Constant(7))),
@@ -2428,11 +2428,11 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
          covers the load's first four bytes"
     );
 
-    // Outside every scalar read: these may be dropped, and the canonical
-    // form is only useful because they are.
+    // Eight bytes remains inside an unknown read; sixteen is outside every
+    // scalar read and may be dropped.
     assert!(
-        canonical_equal_across_store_at(8, CValue::Int32(Bitvector32Term::Constant(7))),
-        "a cell eight bytes above the load is outside the widest scalar read"
+        !canonical_equal_across_store_at(8, CValue::Int32(Bitvector32Term::Constant(7))),
+        "a cell eight bytes above an unknown load is still inside its maximum width"
     );
     assert!(
         canonical_equal_across_store_at(16, CValue::UInt8(Bitvector32Term::Constant(7))),
