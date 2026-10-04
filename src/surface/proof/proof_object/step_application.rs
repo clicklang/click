@@ -807,7 +807,10 @@ impl<'a> Proof<'a> {
         }
         if matches!(
             &step,
-            ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_)
+            ProofStep::Step
+                | ProofStep::StepBind(_)
+                | ProofStep::StepContract(_)
+                | ProofStep::StepCall(_)
         ) {
             return self.apply_execution_statement_step(step);
         }

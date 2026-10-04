@@ -23,6 +23,14 @@ check the read, assignment, and back-edge certificates. The live parity sweep
 reextracts the unchanged source and verifies the port separately from the
 frozen sidecar's recorded gap.
 
-This checkpoint advances proof-port coverage to 15/16. The explicit
-`rust-iter-references` proof is still a separate port; no new result for that
-fixture is claimed here.
+`rust-iter-references` now also retains the byte-identical original source,
+frozen sidecar, and full mathematical sum contract. Its explicit
+`for byte in bytes.iter()` stores references; `let loaded_byte = step();`
+names the actual checked byte read without depending on an unnamed MIR local.
+The name retains that value as compiler temporaries leave scope. Both ports
+share the contract, negative-obligation, verify/profile, expansion, audit, and
+live extraction checks.
+
+This checkpoint advances original source-and-contract coverage to 16/16
+(100%), including five separate proof ports. Frozen-sidecar compatibility
+remains 11/16 (68.75%); default switching and legacy retirement remain open.

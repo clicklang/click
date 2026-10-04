@@ -987,7 +987,10 @@ fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
 /// C or addresses a C control-flow point, by its source name.
 fn first_executing_tactic(tactics: &[ProofTactic]) -> Option<&'static str> {
     tactics.iter().find_map(|tactic| match tactic {
-        ProofTactic::Step | ProofTactic::StepContract(_) | ProofTactic::StepCall(_) => Some("step"),
+        ProofTactic::Step
+        | ProofTactic::StepBind(_)
+        | ProofTactic::StepContract(_)
+        | ProofTactic::StepCall(_) => Some("step"),
         ProofTactic::SmartExecute => Some("execute"),
         ProofTactic::ExecuteUntil(_) => Some("execute_until"),
         ProofTactic::Loop(_) => Some("loop"),

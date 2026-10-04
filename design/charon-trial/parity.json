@@ -44,7 +44,8 @@
   {
     "config": "examples/rust-iter-references/sum.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`"
+    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
+    "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click"
   },
   {
     "config": "examples/rust-iterators/sum.click.import.json",

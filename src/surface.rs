@@ -3103,6 +3103,8 @@ pub enum ProofTactic {
     Mark(String),
     Step,
     StepContract(ContractApplication),
+    /// Name the scalar value assigned by this checked statement.
+    StepBind(String),
     StepCall(CallBinderTransport),
     /// `name(args) { binder: instance }`: one application of a user-defined
     /// tactic's verified contract, with no C statement.
@@ -3378,6 +3380,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "step",
         syntax: "step()",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "step-result",
+        syntax: "let name = step()",
         class: "simple",
     },
     PublicTacticForm {
@@ -3706,6 +3713,8 @@ pub enum ProofStep {
     Mark(String),
     Step,
     StepContract(ContractApplication),
+    /// Name the scalar value assigned by this checked statement.
+    StepBind(String),
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
@@ -4037,6 +4046,7 @@ impl ProofStep {
             },
             ProofTactic::Mark(name) => Self::Mark(name.clone()),
             ProofTactic::Step => Self::Step,
+            ProofTactic::StepBind(name) => Self::StepBind(name.clone()),
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
@@ -4275,6 +4285,7 @@ impl ProofStep {
             }),
             Self::Mark(name) => ProofTactic::Mark(name.clone()),
             Self::Step => ProofTactic::Step,
+            Self::StepBind(name) => ProofTactic::StepBind(name.clone()),
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
@@ -4527,9 +4538,10 @@ fn smart_tactic_spelling(kind: SmartTacticKind) -> &'static str {
 fn certificate_step_class(step: &ProofStep) -> TacticClass {
     match step {
         ProofStep::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
-        ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
-            TacticClass::Simple(SimpleTactic::StatementTransition)
-        }
+        ProofStep::Step
+        | ProofStep::StepBind(_)
+        | ProofStep::StepContract(_)
+        | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
         ProofStep::UnfoldFunction(_) | ProofStep::UnfoldFunctionUsing { .. } => {
@@ -4856,7 +4868,7 @@ impl ProofTactic {
         match self {
             Self::Synthetic(inner) => inner.class(),
             Self::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
-            Self::Step | Self::StepContract(_) | Self::StepCall(_) => {
+            Self::Step | Self::StepBind(_) | Self::StepContract(_) | Self::StepCall(_) => {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
