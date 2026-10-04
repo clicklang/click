@@ -539,8 +539,8 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); fifteen import (93.75%). One has
-a normalization gap and five have proof-observation gaps. The required `test` gate also requires the existing live
+extraction/proof gaps. Eleven of 16 fixtures verify unchanged (68.75%); all sixteen import (100%).
+Five have proof-observation gaps. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -617,3 +617,41 @@ imports; the current flat-name subset still rejects those shapes.
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly
 rather than traversing the logical array extent.
+
+
+### Charon shared byte split_at checkpoint
+
+The adapter now imports the last rejected baseline fixture, `rust-split-at`,
+and verifies its unchanged Rust source and all four frozen contracts/proofs.
+Compiler-resolved shared byte splits retain the builtin tuple's two slice
+values as explicit pointer/usize-length components, including projections,
+complete copies/moves, replacement assignments, and storage ends. The existing
+checked split semantics enforce panic bounds, memory-model offsets, and view
+checks on byte reads. Empty input, endpoint splits, tuple copying/replacement,
+forged declarations/projections, missing authority, false claims, tool
+agreement, live re-extraction, and 8/128/1024 extent scaling are covered.
+
+The fixed baseline now measures **16/16 imports (100%)**, **11/16 frozen
+sidecars verified (68.75%)**, and **13/16 original sources/contracts verified
+with the two existing proof ports (81.25%)**. Earlier checkpoint numbers above
+are historical. Five frozen sidecars still need proof-interface migration;
+three are iterator state observations and two have existing stable-frontier
+proof ports. General tuple construction/boundaries, mutable/non-byte splits,
+and the default switch/legacy retirement remain separate gates. Full fixture
+import coverage does not mean the overall Charon migration is complete.
+
+### Original chunks contract through Charon
+
+The `design/charon-trial/chunk-proof` checkpoint now ports the original
+`rust-chunks-exact` proof while retaining its Rust source and every contract
+clause. It proves the remainder length and preservation of all input bytes
+using actual imported iterator storage, without a generated processed count.
+The preservation-only `execute_until(back_edge())` checks each crossed step
+and rejects loop/function exits; invariant and ranking closure remain checked
+separately. This removes cleanup statement counts from the migrated proof.
+
+The fixed 16-fixture baseline is now 16/16 imports (100%), 11/16 frozen
+proofs (68.75%), and 14/16 original sources/contracts with migrated proofs
+(87.5%, up from 81.25%). The remaining two proof-port gaps are
+`rust-iterators` and `rust-iter-references`. Frozen-sidecar compatibility,
+default switching, and legacy retirement remain migration work.

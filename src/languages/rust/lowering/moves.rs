@@ -260,6 +260,19 @@ pub(super) fn lower(
         let mut statements = c_skip();
         for s in &mir.blocks[block].statements {
             let statement = match s {
+                S::SliceSplit {
+                    slice,
+                    midpoint,
+                    left,
+                    right,
+                } => {
+                    let slot = |name: &String| super::super::schema::Place {
+                        name: name.clone(),
+                        value_type: Type::ByteSlice { mutable: false },
+                        span: super::super::schema::Span { line: 0, column: 0 },
+                    };
+                    cx.slice_split_slots(slice, midpoint, &slot(left), &slot(right), false)?
+                }
                 S::SharedArrayInitialize { target, source } => {
                     cx.shared_array_initialize(target, source)?
                 }
@@ -478,6 +491,9 @@ pub(super) fn lower(
                 },
             };
             let inputs: Vec<&E> = match s {
+                S::SliceSplit {
+                    slice, midpoint, ..
+                } => vec![slice, midpoint],
                 S::SharedArrayInitialize { source, .. } => vec![source],
                 S::Assign { target, value } => vec![target, value],
                 S::Initialize { fields, .. } => fields.iter().collect(),
