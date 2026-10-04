@@ -23,7 +23,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [`--trace-proof` prints no trace when the failure is a loop frontier report](trace-proof-prints-no-trace-at-a-loop-frontier.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
-- [An error in the standard library is reported against the user's module](standard-library-error-names-the-user-module.md)
 - [A postcondition about a parameter named `result` cannot be certified](result-parameter-postconditions-cannot-be-certified.md)
 - [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [Expanding a `loop` renders a match arm's pointer binder as `…`](loop-expansion-renders-arm-pointer-binders-unspellably.md)

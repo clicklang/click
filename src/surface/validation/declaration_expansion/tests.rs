@@ -159,10 +159,27 @@ fn standard_library_initialization_is_constant_across_verification_sizes() {
 }
 
 #[test]
+fn standard_library_syntax_errors_name_the_prelude_file_and_line() {
+    for source in ["\n\n// a `quoted` word", "\n\nfunction 42"] {
+        let error = load_standard_library(source).expect_err("invalid prelude must fail");
+        assert_eq!(error.kind(), ClickErrorKind::Syntax);
+        assert!(
+            error.message().contains("stdlib/prelude.click:3"),
+            "{}",
+            error.message()
+        );
+        let error = error.with_context("while checking module `example.click`");
+        assert!(
+            error.message().contains("stdlib/prelude.click:3"),
+            "module context must preserve the prelude location: {}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn standard_library_cache_preserves_all_declarations() {
-    let fresh =
-        expand_declared_resource_clauses(parser::parse_file_items(CLICK_STANDARD_LIBRARY).unwrap())
-            .unwrap();
+    let fresh = load_standard_library(CLICK_STANDARD_LIBRARY).unwrap();
     assert_eq!(standard_library().unwrap(), &fresh);
     // Accessors return independently owned categories, never a mutable view
     // of the process-wide syntax or a clone of unrelated categories.
@@ -176,9 +193,7 @@ fn standard_library_cache_preserves_all_declarations() {
     );
     assert_eq!(
         combined_algebraic_type_definitions(&empty).unwrap(),
-        parser::parse_file_items(CLICK_STANDARD_LIBRARY)
-            .unwrap()
-            .algebraic_type_definitions
+        fresh.algebraic_type_definitions
     );
 }
 

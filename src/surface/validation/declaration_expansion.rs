@@ -93,20 +93,37 @@ fn standard_library() -> Result<&'static ClickFile, ClickError> {
         .get_or_init(|| {
             #[cfg(test)]
             STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let file = expand_declared_resource_clauses(parser::parse_file_items(
-                CLICK_STANDARD_LIBRARY,
-            )?)?;
-            if !file.verifying_sources().is_empty()
-                || file.function_blocks().iter().any(|function| !function.is_external())
-            {
-                return Err(ClickError::new(
-                    "internal Click standard library must not contain verifying sources or body-bearing C function specs",
-                ));
-            }
-            Ok(file)
+            load_standard_library(CLICK_STANDARD_LIBRARY)
         })
         .as_ref()
         .map_err(Clone::clone)
+}
+
+fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
+    let file = expand_declared_resource_clauses(parser::parse_file_items_for_module(
+        source,
+        "stdlib/prelude.click",
+        0,
+        &[],
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    )?)?;
+    if !file.verifying_sources().is_empty()
+        || file
+            .function_blocks()
+            .iter()
+            .any(|function| !function.is_external())
+    {
+        return Err(ClickError::new(
+            "internal Click standard library must not contain verifying sources or body-bearing C function specs",
+        ));
+    }
+    Ok(file)
 }
 
 pub(in crate::surface) fn combined_algebraic_type_definitions(
