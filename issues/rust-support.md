@@ -655,3 +655,19 @@ proofs (68.75%), and 14/16 original sources/contracts with migrated proofs
 (87.5%, up from 81.25%). The remaining two proof-port gaps are
 `rust-iterators` and `rust-iter-references`. Frozen-sidecar compatibility,
 default switching, and legacy retirement remain migration work.
+
+### Original implicit byte iteration contract through Charon
+
+The `design/charon-trial/iterator-proof/rust-iterators` checkpoint ports the
+original `for &byte in bytes` sum proof with byte-identical Rust and the
+unchanged mathematical sum contract. It observes real iterator cursor/remaining
+state and source locals, uses named snapshots for preservation, and selects
+loop entry, scalar read, total assignment, and back edge without MIR IDs or
+numeric compiler statement counts. Signed addition overflow and iterator
+termination remain checked; no generated processed count is restored.
+
+The fixed baseline advances to 15/16 original sources/contracts verified with
+four proof ports (93.75%, up from 87.5%). Imports remain 16/16 (100%) and frozen
+sidecars remain 11/16 (68.75%). The remaining proof-port gap is
+`rust-iter-references`; frozen-proof compatibility, the default switch, and
+legacy retirement remain open.
