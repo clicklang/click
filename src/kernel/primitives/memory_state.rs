@@ -3996,10 +3996,8 @@ impl CMemory {
             };
             // Reject symbolic-address caches with one indexed lookup. Concrete
             // cells are visited only inside the selected byte region, plus the
-            // bounded prefix where an eight-byte scalar might overlap it.
-            let max_width = CType::UInt64
-                .byte_width()
-                .max(CType::VoidPointer.byte_width());
+            // bounded prefix where the widest scalar might overlap it.
+            let max_width = crate::kernel::resource_tracker::widest_scalar_access_bytes();
             if self
                 .cells
                 .concrete()

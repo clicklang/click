@@ -2743,6 +2743,8 @@ impl CType {
                     CType::Float64 => 18,
                     CType::Int128
                     | CType::UInt128
+                    | CType::Int128Pointer
+                    | CType::UInt128Pointer
                     | CType::Int8PointerPointer
                     | CType::Int8Array(_) => {
                         return None;
@@ -2750,7 +2752,9 @@ impl CType {
                     CType::Int16PointerPointer
                     | CType::UInt16PointerPointer
                     | CType::UInt32PointerPointer
+                    | CType::Int128PointerPointer
                     | CType::Int64PointerPointer
+                    | CType::UInt128PointerPointer
                     | CType::UInt64PointerPointer
                     | CType::FunctionPointer(_)
                     | CType::Int32Array(_)
@@ -2758,7 +2762,9 @@ impl CType {
                     | CType::Int16Array(_)
                     | CType::UInt16Array(_)
                     | CType::UInt32Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_)
                     | CType::Float32Pointer
                     | CType::Float64Pointer
@@ -2815,7 +2821,7 @@ impl CType {
 
     pub(crate) fn pointer_to(self) -> Option<Self> {
         match self {
-            Self::Int128 | Self::UInt128 | Self::Bool => None,
+            Self::Bool => None,
             Self::Int8 => Some(Self::Int8Pointer),
             Self::Int16 => Some(Self::Int16Pointer),
             Self::Int32 => Some(Self::Int32Pointer),
@@ -2823,7 +2829,9 @@ impl CType {
             Self::UInt16 => Some(Self::UInt16Pointer),
             Self::UInt32 => Some(Self::UInt32Pointer),
             Self::Int64 => Some(Self::Int64Pointer),
+            Self::Int128 => Some(Self::Int128Pointer),
             Self::UInt64 => Some(Self::UInt64Pointer),
+            Self::UInt128 => Some(Self::UInt128Pointer),
             Self::Float32 => Some(Self::Float32Pointer),
             Self::Float64 => Some(Self::Float64Pointer),
             Self::Int8Pointer => Some(Self::Int8PointerPointer),
@@ -2833,7 +2841,9 @@ impl CType {
             Self::UInt8Pointer => Some(Self::UInt8PointerPointer),
             Self::UInt32Pointer => Some(Self::UInt32PointerPointer),
             Self::Int64Pointer => Some(Self::Int64PointerPointer),
+            Self::Int128Pointer => Some(Self::Int128PointerPointer),
             Self::UInt64Pointer => Some(Self::UInt64PointerPointer),
+            Self::UInt128Pointer => Some(Self::UInt128PointerPointer),
             Self::Float32Pointer => Some(Self::Float32PointerPointer),
             Self::Float64Pointer => Some(Self::Float64PointerPointer),
             Self::VoidPointer => Some(Self::VoidPointerPointer),
@@ -2845,7 +2855,9 @@ impl CType {
             | Self::Int32PointerPointer
             | Self::UInt8PointerPointer
             | Self::UInt32PointerPointer
+            | Self::Int128PointerPointer
             | Self::Int64PointerPointer
+            | Self::UInt128PointerPointer
             | Self::UInt64PointerPointer
             | Self::FunctionPointer(_)
             | Self::Int32Array(_)
@@ -2853,7 +2865,9 @@ impl CType {
             | Self::Int16Array(_)
             | Self::UInt16Array(_)
             | Self::UInt32Array(_)
+            | Self::Int128Array(_)
             | Self::Int64Array(_)
+            | Self::UInt128Array(_)
             | Self::UInt64Array(_)
             | Self::Float32PointerPointer
             | Self::Float64PointerPointer
@@ -2906,7 +2920,7 @@ impl CType {
             Self::Int16Array(_) | Self::UInt16Array(_) => 2,
             Self::Int64Array(_) | Self::UInt64Array(_) | Self::Float64Array(_) => 8,
             Self::PointerArray(_, _) => 8,
-            Self::Int128 | Self::UInt128 => 16,
+            Self::Int128 | Self::UInt128 | Self::Int128Array(_) | Self::UInt128Array(_) => 16,
             scalar => scalar.byte_width().min(C_POINTER_BYTE_WIDTH),
         }
     }
@@ -2935,7 +2949,9 @@ impl CType {
             Self::UInt16Pointer => C_POINTER_BYTE_WIDTH,
             Self::UInt32Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int64Pointer => C_POINTER_BYTE_WIDTH,
+            Self::Int128Pointer => C_POINTER_BYTE_WIDTH,
             Self::UInt64Pointer => C_POINTER_BYTE_WIDTH,
+            Self::UInt128Pointer => C_POINTER_BYTE_WIDTH,
             Self::Float32Pointer => C_POINTER_BYTE_WIDTH,
             Self::Float64Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int8PointerPointer => C_POINTER_BYTE_WIDTH,
@@ -2945,7 +2961,9 @@ impl CType {
             Self::UInt16PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::UInt32PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Int64PointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::Int128PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::UInt64PointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::UInt128PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Float32PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Float64PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
@@ -2957,6 +2975,7 @@ impl CType {
             Self::Int64Array(length) | Self::UInt64Array(length) => length.saturating_mul(8),
             Self::Float32Array(length) => length.saturating_mul(4),
             Self::Float64Array(length) => length.saturating_mul(8),
+            Self::Int128Array(length) | Self::UInt128Array(length) => length.saturating_mul(16),
             Self::PointerArray(_, length) => length.saturating_mul(C_POINTER_BYTE_WIDTH),
         }
     }
@@ -2971,7 +2990,9 @@ impl CType {
             Self::UInt16Pointer => Some(Self::UInt16),
             Self::UInt32Pointer => Some(Self::UInt32),
             Self::Int64Pointer => Some(Self::Int64),
+            Self::Int128Pointer => Some(Self::Int128),
             Self::UInt64Pointer => Some(Self::UInt64),
+            Self::UInt128Pointer => Some(Self::UInt128),
             Self::Int8PointerPointer => Some(Self::Int8Pointer),
             Self::Int16PointerPointer => Some(Self::Int16Pointer),
             Self::Int32PointerPointer => Some(Self::Int32Pointer),
@@ -2979,7 +3000,9 @@ impl CType {
             Self::UInt16PointerPointer => Some(Self::UInt16Pointer),
             Self::UInt32PointerPointer => Some(Self::UInt32Pointer),
             Self::Int64PointerPointer => Some(Self::Int64Pointer),
+            Self::Int128PointerPointer => Some(Self::Int128Pointer),
             Self::UInt64PointerPointer => Some(Self::UInt64Pointer),
+            Self::UInt128PointerPointer => Some(Self::UInt128Pointer),
             Self::Float32Pointer => Some(Self::Float32),
             Self::Float64Pointer => Some(Self::Float64),
             Self::Float32PointerPointer => Some(Self::Float32Pointer),

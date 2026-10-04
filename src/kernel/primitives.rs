@@ -269,7 +269,9 @@ impl LoadKind {
             | CType::UInt8Array(_)
             | CType::UInt16Array(_)
             | CType::UInt32Array(_)
+            | CType::Int128Array(_)
             | CType::Int64Array(_)
+            | CType::UInt128Array(_)
             | CType::UInt64Array(_)
             | CType::Float32Array(_)
             | CType::Float64Array(_)
@@ -1015,7 +1017,9 @@ pub enum CType {
     UInt8Pointer,
     UInt32Pointer,
     Int64Pointer,
+    Int128Pointer,
     UInt64Pointer,
+    UInt128Pointer,
     Float32Pointer,
     Float64Pointer,
     Int8PointerPointer,
@@ -1025,7 +1029,9 @@ pub enum CType {
     UInt8PointerPointer,
     UInt32PointerPointer,
     Int64PointerPointer,
+    Int128PointerPointer,
     UInt64PointerPointer,
+    UInt128PointerPointer,
     Float32PointerPointer,
     Float64PointerPointer,
     FunctionPointer(CallbackSignature),
@@ -1036,7 +1042,9 @@ pub enum CType {
     UInt16Array(u32),
     UInt32Array(u32),
     Int64Array(u32),
+    Int128Array(u32),
     UInt64Array(u32),
+    UInt128Array(u32),
     Float32Array(u32),
     Float64Array(u32),
     /// Fixed array of object-pointer cells. The element kind remains typed;
@@ -1056,7 +1064,9 @@ pub enum CPointerArrayElement {
     UInt16,
     UInt32,
     Int64,
+    Int128,
     UInt64,
+    UInt128,
     Float32,
     Float64,
 }
@@ -1072,7 +1082,9 @@ impl CPointerArrayElement {
             CType::UInt16Pointer => Self::UInt16,
             CType::UInt32Pointer => Self::UInt32,
             CType::Int64Pointer => Self::Int64,
+            CType::Int128Pointer => Self::Int128,
             CType::UInt64Pointer => Self::UInt64,
+            CType::UInt128Pointer => Self::UInt128,
             CType::Float32Pointer => Self::Float32,
             CType::Float64Pointer => Self::Float64,
             _ => return None,
@@ -1090,7 +1102,9 @@ impl CPointerArrayElement {
             Self::UInt16 => CType::UInt16Pointer,
             Self::UInt32 => CType::UInt32Pointer,
             Self::Int64 => CType::Int64Pointer,
+            Self::Int128 => CType::Int128Pointer,
             Self::UInt64 => CType::UInt64Pointer,
+            Self::UInt128 => CType::UInt128Pointer,
             Self::Float32 => CType::Float32Pointer,
             Self::Float64 => CType::Float64Pointer,
         }
@@ -1106,7 +1120,9 @@ impl CPointerArrayElement {
             Self::UInt16 => "uint16**",
             Self::UInt32 => "uint32**",
             Self::Int64 => "int64**",
+            Self::Int128 => "int128**",
             Self::UInt64 => "uint64**",
+            Self::UInt128 => "uint128**",
             Self::Float32 => "float32**",
             Self::Float64 => "float64**",
         }
@@ -1719,7 +1735,9 @@ impl ResourceFieldSchema {
                         | CType::UInt8Array(_)
                         | CType::UInt16Array(_)
                         | CType::UInt32Array(_)
+                        | CType::Int128Array(_)
                         | CType::Int64Array(_)
+                        | CType::UInt128Array(_)
                         | CType::UInt64Array(_)
                         | CType::Float32Array(_)
                         | CType::Float64Array(_)

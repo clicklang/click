@@ -37,6 +37,7 @@ mod representation_copy_tests;
 mod resource_tests;
 mod state_identity_tests;
 mod thread_transition_tests;
+mod wide_address_tests;
 mod wide_multiply_tests;
 mod wide_scalar_tests;
 mod wide_storage_tests;

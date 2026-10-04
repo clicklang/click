@@ -1590,7 +1590,9 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                 | CType::Int16Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::PointerArray(_, _),
             ..
@@ -2426,7 +2428,9 @@ pub(in crate::kernel) fn c_expression_pointee_type(
             CType::UInt16Array(_) => Some(CType::UInt16),
             CType::UInt32Array(_) => Some(CType::UInt32),
             CType::Int64Array(_) => Some(CType::Int64),
+            CType::Int128Array(_) => Some(CType::Int128),
             CType::UInt64Array(_) => Some(CType::UInt64),
+            CType::UInt128Array(_) => Some(CType::UInt128),
             CType::PointerArray(element, _) => Some(element.pointer_type()),
             value_type => value_type.pointee_type(),
         },

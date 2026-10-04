@@ -122,7 +122,9 @@ fn scalar_or_pointer(c_type: C0Type) -> bool {
         | C0Type::Int32Pointer
         | C0Type::UInt8Pointer
         | C0Type::UInt32Pointer
+        | C0Type::Int128Pointer
         | C0Type::Int64Pointer
+        | C0Type::UInt128Pointer
         | C0Type::UInt64Pointer
         | C0Type::Float32Pointer
         | C0Type::Float64Pointer
@@ -131,7 +133,9 @@ fn scalar_or_pointer(c_type: C0Type) -> bool {
         | C0Type::Int32PointerPointer
         | C0Type::UInt8PointerPointer
         | C0Type::UInt32PointerPointer
+        | C0Type::Int128PointerPointer
         | C0Type::Int64PointerPointer
+        | C0Type::UInt128PointerPointer
         | C0Type::UInt64PointerPointer
         | C0Type::Float32PointerPointer
         | C0Type::Float64PointerPointer
@@ -145,7 +149,9 @@ fn scalar_or_pointer(c_type: C0Type) -> bool {
         | C0Type::Int16Array(_)
         | C0Type::UInt16Array(_)
         | C0Type::UInt32Array(_)
+        | C0Type::Int128Array(_)
         | C0Type::Int64Array(_)
+        | C0Type::UInt128Array(_)
         | C0Type::UInt64Array(_)
         | C0Type::Float32Array(_)
         | C0Type::Float64Array(_) => false,

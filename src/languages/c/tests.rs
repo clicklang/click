@@ -13314,3 +13314,73 @@ fn optimizer_promise_classification_without_a_profile_switch() {
         parse_import_with(source, Refuse).unwrap_or_else(|error| panic!("{source}: {error}"));
     }
 }
+
+#[test]
+fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_admission() {
+    use crate::kernel::{CPointerArrayElement as Element, CType};
+    use syntax::C0Type;
+    for (scalar, pointer, slot, array, element, kernel_scalar) in [
+        (
+            C0Type::Int128,
+            C0Type::Int128Pointer,
+            C0Type::Int128PointerPointer,
+            C0Type::Int128Array(3),
+            Element::Int128,
+            CType::Int128,
+        ),
+        (
+            C0Type::UInt128,
+            C0Type::UInt128Pointer,
+            C0Type::UInt128PointerPointer,
+            C0Type::UInt128Array(3),
+            Element::UInt128,
+            CType::UInt128,
+        ),
+    ] {
+        assert_eq!(scalar.pointer_type(), Some(pointer));
+        assert_eq!(pointer.pointer_type(), Some(slot));
+        assert_eq!(slot.pointer_type(), None);
+        assert_eq!(pointer.pointee_type(), Some(scalar));
+        assert_eq!(slot.pointee_type(), Some(pointer));
+        assert_eq!(array.pointee_type(), Some(scalar));
+        assert_eq!(scalar.abi_size_bytes(), 16);
+        assert_eq!(pointer.abi_size_bytes(), 8);
+        assert_eq!(slot.abi_size_bytes(), 8);
+        assert_eq!(array.abi_size_bytes(), 48);
+        assert_eq!(scalar.to_kernel_type(), kernel_scalar);
+        assert_eq!(pointer.to_kernel_type().pointee_type(), Some(kernel_scalar));
+        assert_eq!(
+            slot.to_kernel_type().pointee_type(),
+            Some(pointer.to_kernel_type())
+        );
+        assert_eq!(array.to_kernel_type().byte_width(), 48);
+        let slots = C0Type::PointerArray(element, 3);
+        assert_eq!(slots.pointee_type(), Some(pointer));
+        assert_eq!(slots.abi_size_bytes(), 24);
+        assert_eq!(
+            slots.to_kernel_type().pointee_type(),
+            Some(pointer.to_kernel_type())
+        );
+        assert_eq!(
+            syntax::C0Parameter::new(pointer, "p".into(), None)
+                .to_kernel_parameter()
+                .c_type(),
+            pointer.to_kernel_type()
+        );
+    }
+    for source in [
+        "__int128 value(__int128 x) { return x; }",
+        "unsigned __int128 *p;",
+        "__int128 items[3];",
+    ] {
+        assert!(
+            syntax::parse_translation_unit_for_source(
+                source,
+                "wide-types.c",
+                &source::ExpandedLineMap::empty()
+            )
+            .is_err(),
+            "{source}"
+        );
+    }
+}

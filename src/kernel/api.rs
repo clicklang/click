@@ -1296,7 +1296,9 @@ fn abstract_c_state_for_join_across_with_policy(
                 | CType::Int16Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::Float32Array(_)
                 | CType::Float64Array(_) => {

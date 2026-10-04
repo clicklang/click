@@ -3921,14 +3921,18 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Int32Pointer
         | CType::UInt8Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer => Some(memory.symbolic_pointer_load(
             pointer,
             value_type.pointee_type()?.byte_width(),
@@ -3960,7 +3964,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Int16Array(_)
         | CType::UInt16Array(_)
         | CType::UInt32Array(_)
+        | CType::Int128Array(_)
         | CType::Int64Array(_)
+        | CType::UInt128Array(_)
         | CType::UInt64Array(_)
         | CType::Float32Array(_)
         | CType::Float64Array(_) => None,

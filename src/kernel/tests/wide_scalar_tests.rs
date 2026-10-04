@@ -126,7 +126,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
 }
 
 #[test]
-fn wide_scalar_rejects_legacy_carriers_arithmetic_and_address_access() {
+fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
     let assert_mismatch = |expression| {
         assert_eq!(
             evaluated(expression),
@@ -168,22 +168,10 @@ fn wide_scalar_rejects_legacy_carriers_arithmetic_and_address_access() {
     ] {
         assert_mismatch(expression);
     }
-    let statement = c_seq(
-        c_declare("wide", CType::UInt128),
-        c_return(c_addr_of("wide")),
-    );
-    let theorem = prove_c_statement_execution(CState::new(), statement).unwrap();
-    assert!(matches!(
-        theorem.proposition(),
-        Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError { .. },
-            ..
-        }
-    ));
     let value = symbolic_call_result(CType::UInt128, Variable(148_003));
     assert_eq!(LoadKind::of_value(&value), Some(LoadKind::UInt128));
     assert_eq!(LoadKind::of_type(CType::UInt128), Some(LoadKind::UInt128));
-    assert_eq!(CType::UInt128.pointer_to(), None);
+    assert_eq!(CType::UInt128.pointer_to(), Some(CType::UInt128Pointer));
 }
 
 #[test]
