@@ -1,0 +1,41 @@
+# A List-valued count predicate preserves its arbitrary imported observation
+
+```c filename=helper.c
+void preserve(int32* pool) {}
+int32 run() { int32 pool = 0; preserve(&pool); return 0; }
+```
+
+```click resource_semantics=authority
+function population(pool: int32*) -> List<int32> {
+    List<int32>::Cons(count(ticket(pool)), List<int32>::Nil)
+}
+resource ticket(pool: int32*) { field model: List<int32>; }
+verifying "helper.c";
+void preserve(int32* pool) {
+    owns authority(ticket(pool));
+    owns member: ticket(pool);
+    requires count(ticket(pool)) == 1;
+    requires population(pool) == List<int32>::Cons(1, List<int32>::Nil);
+    ensures member.model == old(member.model);
+    ensures population(pool) == old(population(pool));
+    ensures count(ticket(pool)) == old(count(ticket(pool)));
+} by { execute(); simp(); }
+int32 run() { ensures result == 0; } by {
+    step(); step();
+    fold(authority(ticket(&pool)));
+    let first = fold(ticket(&pool), { model: List<int32>::Cons(7, List<int32>::Nil) });
+    unfold(population(&pool));
+    have count(ticket(&pool)) == 1 by simp;
+    have population(&pool) == List<int32>::Cons(1, List<int32>::Nil) by simp;
+    step(preserve(&pool), { member: first });
+    have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp;
+    have count(ticket(&pool)) == 1 by simp;
+    unfold(first);
+    unfold(authority(ticket(&pool)));
+    execute(); simp();
+}
+```
+
+```expect
+pass
+```

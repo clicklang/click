@@ -4203,7 +4203,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
                 Some(Bitvector32Term::Constant(private_total)),
                 None,
                 None,
-                None,
+                OpaqueMemberInputs::Quantity(None),
             )
             .unwrap();
         let child = entry.enter_call();
@@ -4508,4 +4508,192 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             "ledger membership without owned authority does not authorize a count fact"
         );
     }
+}
+
+#[test]
+fn named_authority_import_is_read_only_and_lookup_scales() {
+    let base = member_description(PointerBlock::ExternalArgument);
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let description = ResourceDescription::new(
+        "ticket".into(),
+        base.arguments().to_vec().into(),
+        schema.clone(),
+    );
+    let pattern = ResourceDescription::new(
+        "ticket".into(),
+        description.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let instance = ResourceInstance::new(
+        Variable::allocate_fresh().unwrap(),
+        "ticket".into(),
+        description.arguments().to_vec().into(),
+        schema,
+        vec![int32(7).into()].into(),
+    )
+    .unwrap();
+    let reference = ResourceReference::from_instance(&instance);
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let resources = ResourceContext::new().unchecked_with_facts([
+        authority.clone(),
+        CResourceFact::own(CResource::Instance(instance.clone())),
+    ]);
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(resources);
+    let imported = state.import_opaque_population_inputs(&authority).unwrap();
+    assert_eq!(imported.resources(), state.resources());
+    assert_eq!(
+        imported.owned_resource_instance(instance.identity()),
+        Some(&instance)
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(ResourceContext::new())
+            .import_opaque_population_inputs(&authority)
+            .is_err()
+    );
+    let doubled = CResourceFact::own_quantity(
+        CResource::PopulationAuthority(description.clone()),
+        Bitvector32Term::Constant(2),
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(doubled.clone()))
+            .import_opaque_population_inputs(&doubled)
+            .is_err()
+    );
+    let mut work = Vec::new();
+    for size in [16, 64, 256] {
+        let mut source = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated_{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            source = source
+                .import_observable_named_authority(&unrelated)
+                .unwrap();
+        }
+        // Same family, different explicit anchor: field recovery must not
+        // select the first imported population merely by family or block.
+        let other_pattern = pattern.map_values(|_| {
+            AlgebraicValue::C(CValue::typed_pointer(
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Constant(4),
+                },
+                CType::Int32Pointer,
+            ))
+        });
+        let other_description = ResourceDescription::new(
+            "ticket".into(),
+            other_pattern.arguments().to_vec().into(),
+            description.schema().clone(),
+        );
+        source = source
+            .import_observable_named_authority(&other_description)
+            .unwrap();
+        assert_eq!(
+            source.population_type_description(&other_pattern),
+            other_description
+        );
+        let (entry, measured) = crate::persistent::measure_persistent_work(|| {
+            let entry = source
+                .import_observable_named_authority(&description)
+                .unwrap();
+            assert_eq!(entry.population_type_description(&pattern), description);
+            entry
+        });
+        work.push(measured);
+        let count = entry.observe_symbolic(&description).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 0);
+        assert_eq!(count.delta, 0);
+        assert!(!entry.owns_population_member(&description));
+        assert_eq!(
+            entry
+                .import_observable_named_authority(&description)
+                .unwrap(),
+            entry
+        );
+        assert_eq!(
+            entry.checked_instance_exchange(&reference, false).err(),
+            Some(CreationRefusal::InvalidMember)
+        );
+        assert_eq!(
+            entry.checked_instance_exchange(&reference, true).err(),
+            Some(CreationRefusal::InvalidMember)
+        );
+        for produce in [false, true] {
+            assert_eq!(
+                entry
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &description,
+                        produce,
+                        &Bitvector32Term::Constant(1),
+                        &PureFactContext::new(),
+                    )
+                    .err(),
+                Some(CreationRefusal::InvalidMember)
+            );
+        }
+        let wrong_schema = ResourceDescription::new(
+            "ticket".into(),
+            description.arguments().to_vec().into(),
+            ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::UInt8))])
+                .unwrap(),
+        );
+        assert_eq!(
+            entry.import_observable_named_authority(&wrong_schema).err(),
+            Some(CreationRefusal::OpaqueImportConflict)
+        );
+        assert_eq!(entry.population_type_description(&pattern), description);
+        let helper = entry.enter_call();
+        let moved = entry
+            .transfer_call_fact(&entry, &helper, &description, true)
+            .unwrap();
+        assert!(moved.observe_symbolic(&description).is_none());
+        assert_eq!(moved.population_type_description(&pattern), description);
+        let held = moved.return_to(&helper);
+        assert_eq!(
+            held.observe_symbolic(&description).unwrap().entry_count,
+            count.entry_count
+        );
+        assert!(
+            held.transfer_call_fact(&entry, &helper, &description, true)
+                .is_err()
+        );
+        assert!(
+            held.transfer_call_fact(&entry, &helper, &description, false)
+                .is_err()
+        );
+        let returned = held
+            .transfer_call_fact(&helper, &entry, &description, true)
+            .unwrap()
+            .finish_call(&entry)
+            .unwrap();
+        assert_eq!(
+            returned.observe_symbolic(&description).unwrap().entry_count,
+            count.entry_count
+        );
+    }
+    assert!(work[0] > 0 && work[2] <= work[0] + 256, "{work:?}");
+    assert!(
+        CreationEvents::new()
+            .import_observable_contract_population(&description, 0)
+            .is_err()
+    );
+    assert!(
+        CreationEvents::new()
+            .created(PointerBlock::Heap(941_020))
+            .import_observable_named_authority(&description)
+            .is_err()
+    );
 }

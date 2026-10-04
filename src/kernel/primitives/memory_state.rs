@@ -5865,6 +5865,26 @@ impl CState {
         let CResource::PopulationAuthority(description) = authority.resource() else {
             return Err("population import requires authority".into());
         };
+        if !description.schema().is_countable() {
+            if authority
+                .owned_quantity_term()
+                .and_then(Bitvector32Term::as_const)
+                != Some(1)
+                || !self.resources.contains_exact_representation(authority)
+            {
+                return Err("Requires one declared owned authority for named members".into());
+            }
+            let events = self
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("opaque import requires authority mode")?
+                .import_observable_named_authority(description)
+                .map_err(|refusal| format!("named authority import refused: {refusal:?}"))?;
+            let mut next = self.clone();
+            Arc::make_mut(&mut next.population_effects).creation = Some(events);
+            return Ok(next);
+        }
         let member = CResourceFact::own(CResource::Composite {
             name: description.family().to_owned(),
             arguments: description.arguments().to_vec().into(),
@@ -6827,6 +6847,12 @@ impl CState {
         };
         let description = super::super::ResourceDescription::from_instance(instance);
         let history = if events.tracks_population(&description) {
+            if events.recognizes_imported_population(&description) {
+                return Err(
+                    "named member fold/unfold at imported authority entries is not supported yet"
+                        .into(),
+                );
+            }
             let governing = events
                 .governing_authority(&description)
                 .ok_or("Requires a matching population authority")?;

@@ -397,6 +397,18 @@ Kernel checks reject unrelated facts and resource deltas and measure bounded
 work beside increasing amounts of unrelated state. Both proofs and all four
 original expansion-audit sites pass.
 
+The `authority_named_import_*` group adds unary authority plus named-member
+preserving contracts. Entry total stays arbitrary; named instance identity and
+fields remain in ordinary checked custody, with no anonymous quantity imported.
+Two equal-argument members preserve different field values across a call, and a
+forward-declared List-valued function preserves its Count observation. The import
+ledger recovers checked schemas through an immutable indexed map. Negatives
+reject absent authority, invented exact totals, and named lifecycle changes.
+Kernel checks cover unchanged resource context, refused quantity/instance
+exchanges, authority transfer and return, and deterministic lookup scaling.
+This slice does not add wildcard named import, body opening, birth/consumption
+through helpers, or external named contract interfaces.
+
 `population_symbolic_increment_bounded.md` and
 `population_symbolic_increment_overflow.md` now select authority semantics.
 Their original C and claims are retained: a symbolic helper birth followed by
@@ -442,7 +454,7 @@ verification and audit evidence above.
 | Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `shared_heap_produced_ensure_transport.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
 | Loop and pure expression sites | `loop_old_count_invariant.md`, `loop_invariant_body.md`, `pure_click_functions.md`, `recursive_call_precondition_bounds_a_decremented_argument.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`: old versus current count in invariants and proof facts, predicate/pure-function evaluation, and diagnostics at recursive calls. |
 
-List-valued named members now use checked algebraic schemas under authority. `authority_named_list_field_private_helper.md` preserves two distinct `List<int32>` models across a private-memory helper while authority is closed, then observes aggregate counts under exposed authority; companion negatives reject counts without exposed authority and a mismatched field type. Early protected-type expansion and later member lowering share one checked schema resolver. `resource_fields_reject_quantity.md` now selects authority semantics and rejects anonymous quantities for missing separately named fields, rather than claiming the family is uncountable. The original `resource_fields_reject_count.md` and `resource_fields_reject_hidden_count.md` remain legacy controls: migrating their authority-plus-named-member contract entry depends on the still-unsupported named authority import boundary. `resource_field_child_equations.md`, `resource_field_child_equation_rejects_other_start.md`, and `resource_unfold_binds_children_and_fields.md` protect distinct field identity and child binding independent of count.
+List-valued named members now use checked algebraic schemas under authority. `authority_named_list_field_private_helper.md` preserves two distinct `List<int32>` models across a private-memory helper while authority is closed, then observes aggregate counts under exposed authority; companion negatives reject counts without exposed authority and a mismatched field type. Early protected-type expansion and later member lowering share one checked schema resolver. `resource_fields_reject_quantity.md` now selects authority semantics and rejects anonymous quantities for missing separately named fields, rather than claiming the family is uncountable. The original `resource_fields_reject_count.md` and `resource_fields_reject_hidden_count.md` remain legacy controls: migrating their memory-bearing contracts depends on named lifecycle/body-opening effects and external named contract interfaces. Unary preserving authority imports are supported, as described above. `resource_field_child_equations.md`, `resource_field_child_equation_rejects_other_start.md`, and `resource_unfold_binds_children_and_fields.md` protect distinct field identity and child binding independent of count.
 
 ### Checked-in `expect` outcomes
 
