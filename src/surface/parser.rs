@@ -143,6 +143,7 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
+#[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
