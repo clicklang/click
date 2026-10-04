@@ -4941,6 +4941,58 @@ fn c0_syntax_rejects_retyped_object_pointer_casts() {
 }
 
 #[test]
+fn c0_syntax_retyped_pointer_cast_diagnostics_name_source_types() {
+    for (source, expected, actual) in [
+        (
+            "struct a { int32 x; }; struct b { int32 y; }; struct b **as_b(struct a **p) { return (struct b **)p; }",
+            "struct b **",
+            "struct a **",
+        ),
+        (
+            "struct a { int32 x; }; struct b { int32 y; }; struct b *as_b(struct a *p) { return (struct b *)p; }",
+            "struct b *",
+            "struct a *",
+        ),
+        (
+            "struct a { int32 x; }; struct b { int32 y; }; struct b **as_b(struct a *p) { return (struct b **)p; }",
+            "struct b **",
+            "struct a *",
+        ),
+        (
+            "struct a { int32 x; }; struct b { int32 y; }; struct b *as_b(struct a **p) { return (struct b *)p; }",
+            "struct b *",
+            "struct a **",
+        ),
+        (
+            "uint8 *as_bytes(int32 *p) { return (uint8 *)p; }",
+            "uint8 *",
+            "int32 *",
+        ),
+        (
+            "int32 *as_words(char *p) { return (int32 *)p; }",
+            "int32 *",
+            "char *",
+        ),
+        (
+            "struct b { int32 y; }; struct b *as_b(int32 (*p)(int32)) { return (struct b *)p; }",
+            "struct b *",
+            "function pointer",
+        ),
+    ] {
+        let error = syntax::parse_functions(source)
+            .expect_err("retyping an object pointer must still be rejected");
+        assert!(
+            error.message().contains(&format!(
+                "retyping object-pointer casts are unsupported; expected `{expected}`, got `{actual}`"
+            )),
+            "{source}: {}",
+            error.message()
+        );
+        assert!(error.position().is_some(), "missing cast position");
+    }
+}
+
+#[test]
 fn c0_syntax_parses_object_pointer_casts_with_struct_tags() {
     let function = syntax::parse_function(
         r#"

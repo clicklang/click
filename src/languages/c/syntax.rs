@@ -19062,10 +19062,20 @@ impl Parser {
             return Ok(());
         }
 
+        let actual_struct_name = if actual.pointee_type().is_some_and(C0Type::is_pointer) {
+            self.struct_pointer_pointer_name(expression)
+        } else {
+            self.struct_pointer_name(expression)
+        };
+        let refusal = || {
+            let expected = describe_pointer_cast_type(expected, expected_struct_name);
+            let actual = describe_pointer_cast_type(actual, actual_struct_name.as_deref());
+            cast_position.error(format!(
+                "incompatible C pointer types: retyping object-pointer casts are unsupported; expected `{expected}`, got `{actual}`"
+            ))
+        };
         if !actual.is_object_pointer() || !expected.is_object_pointer() {
-            return Err(cast_position.error(format!(
-                "incompatible C pointer types: retyping object-pointer casts are unsupported; expected {expected:?}, got {actual:?}"
-            )));
+            return Err(refusal());
         }
 
         // An opaque void pointer is the supported way to carry an object
@@ -19082,15 +19092,8 @@ impl Parser {
             return Ok(());
         }
 
-        let actual_struct_name = if expected.pointee_type().is_some_and(C0Type::is_pointer) {
-            self.struct_pointer_pointer_name(expression)
-        } else {
-            self.struct_pointer_name(expression)
-        };
         if actual != expected || actual_struct_name.as_deref() != expected_struct_name {
-            return Err(cast_position.error(format!(
-                "incompatible C pointer types: retyping object-pointer casts are unsupported; expected {expected:?}, got {actual:?}"
-            )));
+            return Err(refusal());
         }
         Ok(())
     }
@@ -19814,6 +19817,21 @@ fn function_pointer_type(signature: &C0FunctionPointerSignature) -> C0Type {
             })
             .collect::<Vec<_>>(),
     ))
+}
+
+fn describe_pointer_cast_type(c_type: C0Type, struct_name: Option<&str>) -> String {
+    let spelling = match c_type {
+        C0Type::CharPointer => "char*",
+        C0Type::CharPointerPointer => "char**",
+        C0Type::FunctionPointer(_) => return "function pointer".to_string(),
+        _ => crate::kernel::c_type_spelling(c_type.to_kernel_type()),
+    };
+    let base = spelling.trim_end_matches('*');
+    let pointers = &spelling[base.len()..];
+    match struct_name {
+        Some(name) => format!("struct {name} {pointers}"),
+        None => format!("{base} {pointers}"),
+    }
 }
 
 fn describe_function_pointer_signature(signature: &C0FunctionPointerSignature) -> String {
