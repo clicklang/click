@@ -4370,7 +4370,9 @@ impl AnnotationLowerer<'_> {
                     CType::Int32Array(_)
                     | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_),
                 ..
             } => Ok(pointer),
@@ -6031,7 +6033,9 @@ impl AnnotationLowerer<'_> {
                     CType::Int32Array(_)
                     | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_),
                 ..
             } => self.lower_c_fragment_to_spec(pointer, environment),
@@ -6397,7 +6401,9 @@ impl AnnotationLowerer<'_> {
                 CType::Int32Array(_) => Some(CType::Int32),
                 CType::UInt32Array(_) => Some(CType::UInt32),
                 CType::Int64Array(_) => Some(CType::Int64),
+                CType::Int128Array(_) => Some(CType::Int128),
                 CType::UInt64Array(_) => Some(CType::UInt64),
+                CType::UInt128Array(_) => Some(CType::UInt128),
                 CType::UInt8Array(_) => Some(CType::UInt8),
                 value_type => value_type.pointee_type(),
             },
@@ -6461,6 +6467,7 @@ impl AnnotationLowerer<'_> {
             CExpression::TypedLoad { value_type, .. } => match value_type {
                 CType::Int32Array(_) => Some(4),
                 CType::Int64Array(_) | CType::UInt64Array(_) => Some(8),
+                CType::Int128Array(_) | CType::UInt128Array(_) => Some(16),
                 CType::UInt8Array(_) => Some(1),
                 value_type => value_type.pointee_type().map(CType::byte_width),
             },
@@ -6529,7 +6536,9 @@ fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
                 CType::Int32Array(_)
                 | CType::UInt32Array(_)
                 | CType::UInt8Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_),
             ..
         } => aggregate_projection_root(pointer),

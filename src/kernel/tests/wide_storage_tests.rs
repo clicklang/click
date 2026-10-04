@@ -147,8 +147,8 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
             CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
         ));
     }
-    assert_eq!(CType::Int128.pointer_to(), None);
-    assert_eq!(CType::UInt128.pointer_to(), None);
+    assert_eq!(CType::Int128.pointer_to(), Some(CType::Int128Pointer));
+    assert_eq!(CType::UInt128.pointer_to(), Some(CType::UInt128Pointer));
 }
 
 #[test]

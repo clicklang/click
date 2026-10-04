@@ -173,7 +173,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::CharPointer
             | C0Type::UInt8Pointer
             | C0Type::UInt32Pointer
+            | C0Type::Int128Pointer
             | C0Type::Int64Pointer
+            | C0Type::UInt128Pointer
             | C0Type::UInt64Pointer
             | C0Type::Int16PointerPointer
             | C0Type::UInt16PointerPointer
@@ -181,7 +183,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::CharPointerPointer
             | C0Type::UInt8PointerPointer
             | C0Type::UInt32PointerPointer
+            | C0Type::Int128PointerPointer
             | C0Type::Int64PointerPointer
+            | C0Type::UInt128PointerPointer
             | C0Type::UInt64PointerPointer
             | C0Type::Float32Pointer
             | C0Type::Float64Pointer
@@ -277,7 +281,9 @@ pub(in crate::surface) fn initial_call_state(
             | C0Type::Int16Array(_)
             | C0Type::UInt16Array(_)
             | C0Type::UInt32Array(_)
+            | C0Type::Int128Array(_)
             | C0Type::Int64Array(_)
+            | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
             | C0Type::Float32Array(_)
             | C0Type::Float64Array(_) => {
@@ -468,7 +474,9 @@ fn reject_aggregate_parameter_storage_resource(
                     CType::Int32Array(_)
                     | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_),
                 ..
             } => root(pointer),
@@ -561,11 +569,15 @@ pub(in crate::surface) fn visit_struct_field_cells(
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     match field.c_type().to_kernel_type() {
         array_type @ (CType::Int32Array(length)
+        | CType::Int128Array(length)
         | CType::Int64Array(length)
+        | CType::UInt128Array(length)
         | CType::UInt64Array(length)) => {
             let element_type = match array_type {
                 CType::Int64Array(_) => CType::Int64,
+                CType::Int128Array(_) => CType::Int128,
                 CType::UInt64Array(_) => CType::UInt64,
+                CType::UInt128Array(_) => CType::UInt128,
                 _ => CType::Int32,
             };
             for index in 0..length {
@@ -744,7 +756,9 @@ fn check_segment_base_loadability(
             | CType::Int16Array(_)
             | CType::UInt16Array(_)
             | CType::UInt32Array(_)
+            | CType::Int128Array(_)
             | CType::Int64Array(_)
+            | CType::UInt128Array(_)
             | CType::UInt64Array(_)
             | CType::Float32Array(_)
             | CType::Float64Array(_)
@@ -2914,7 +2928,9 @@ fn contract_expression_element_type(
             CType::UInt16Array(_) => Some(CType::UInt16),
             CType::UInt32Array(_) => Some(CType::UInt32),
             CType::Int64Array(_) => Some(CType::Int64),
+            CType::Int128Array(_) => Some(CType::Int128),
             CType::UInt64Array(_) => Some(CType::UInt64),
+            CType::UInt128Array(_) => Some(CType::UInt128),
             value_type => value_type.pointee_type(),
         },
         _ => None,
@@ -2949,6 +2965,7 @@ pub(in crate::surface) fn contract_expression_element_width(
                             C0Type::Int16Array(_) | C0Type::UInt16Array(_) => Some(2),
                             C0Type::UInt32Array(_) => Some(4),
                             C0Type::Int64Array(_) | C0Type::UInt64Array(_) => Some(8),
+                            C0Type::Int128Array(_) | C0Type::UInt128Array(_) => Some(16),
                             _ => None,
                         })
                 }
@@ -2964,6 +2981,7 @@ pub(in crate::surface) fn contract_expression_element_width(
             CType::Int16Array(_) | CType::UInt16Array(_) => Some(2),
             CType::UInt32Array(_) => Some(4),
             CType::Int64Array(_) | CType::UInt64Array(_) => Some(8),
+            CType::Int128Array(_) | CType::UInt128Array(_) => Some(16),
             _ => None,
         },
         _ => None,

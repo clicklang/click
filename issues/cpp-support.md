@@ -382,9 +382,19 @@ required. Framing and store invalidation include the high eight bytes, and the
 conservative unknown-width bound is sixteen. Generated store sequences include
 wide cells and compare indexed gap skipping with the complete reference path;
 load/validation work is tested over multiple unrelated-memory sizes.
-Byte reinterpretation, wide pointer/array types, and source admission remain open.
+Byte reinterpretation and source admission remain open.
 
-Next add wide pointer/array types and frontend source admission,
+Shared wide object pointers, pointer slots, fixed scalar arrays, and arrays of
+wide pointers are delivered, with exact internal C0 type identities. Element
+strides and scalar alignment are sixteen bytes; pointer objects and slots
+remain eight bytes under LP64. Address-of, indexing, and local declarations use
+the shared paths. Regression coverage includes full-width payloads, one-past
+and uninitialized reads, separate slot/pointee authority, startup versus
+ordinary-entry initializer authority, and symbolic storage scaling through one
+million elements. Compact narrow-array copies reject overlapping wide cells.
+Source spellings, wide byte reinterpretation, and wide callbacks remain open.
+
+Next add frontend source admission,
 retaining the source's resolved machine semantics. Use the shared formats and
 conversion policies rather than inventing a C++-specific numeric carrier.
 Then cover wide truncating division/remainder and checked narrowing

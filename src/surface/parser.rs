@@ -580,7 +580,9 @@ pub(in crate::surface) fn algebraic_field_c_type_supported(c_type: C0Type) -> bo
             | C0Type::UInt8Array(_)
             | C0Type::UInt16Array(_)
             | C0Type::UInt32Array(_)
+            | C0Type::Int128Array(_)
             | C0Type::Int64Array(_)
+            | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
             | C0Type::Float32Array(_)
             | C0Type::Float64Array(_)
@@ -3267,7 +3269,9 @@ impl Parser {
                 C0Type::UInt8 => C0Type::UInt8Pointer,
                 C0Type::UInt32 => C0Type::UInt32Pointer,
                 C0Type::Int64 => C0Type::Int64Pointer,
+                C0Type::Int128 => C0Type::Int128Pointer,
                 C0Type::UInt64 => C0Type::UInt64Pointer,
+                C0Type::UInt128 => C0Type::UInt128Pointer,
                 C0Type::Int8Pointer => C0Type::Int8PointerPointer,
                 C0Type::Int16Pointer => C0Type::Int16PointerPointer,
                 C0Type::UInt16Pointer => C0Type::UInt16PointerPointer,
@@ -3276,7 +3280,9 @@ impl Parser {
                 C0Type::UInt8Pointer => C0Type::UInt8PointerPointer,
                 C0Type::UInt32Pointer => C0Type::UInt32PointerPointer,
                 C0Type::Int64Pointer => C0Type::Int64PointerPointer,
+                C0Type::Int128Pointer => C0Type::Int128PointerPointer,
                 C0Type::UInt64Pointer => C0Type::UInt64PointerPointer,
+                C0Type::UInt128Pointer => C0Type::UInt128PointerPointer,
                 _ => return Err(self.error("pointer depth beyond `**` is not supported")),
             };
             if base_constant {
@@ -3386,7 +3392,9 @@ impl Parser {
                         | C0Type::Float32
                         | C0Type::Float64
                         | C0Type::Int32Array(_)
+                        | C0Type::Int128Array(_)
                         | C0Type::Int64Array(_)
+                        | C0Type::UInt128Array(_)
                         | C0Type::UInt64Array(_)
                         | C0Type::CharArray(_)
                         | C0Type::UInt8Array(_)
@@ -3590,7 +3598,9 @@ impl Parser {
             C0Type::UInt16 => (C0Type::UInt16Pointer, 2),
             C0Type::UInt32 => (C0Type::UInt32Pointer, 4),
             C0Type::Int64 => (C0Type::Int64Pointer, 8),
+            C0Type::Int128 => (C0Type::Int128Pointer, 16),
             C0Type::UInt64 => (C0Type::UInt64Pointer, 8),
+            C0Type::UInt128 => (C0Type::UInt128Pointer, 16),
             C0Type::Int8Pointer => (C0Type::Int8PointerPointer, 8),
             C0Type::Int16Pointer => (C0Type::Int16PointerPointer, 8),
             C0Type::UInt16Pointer => (C0Type::UInt16PointerPointer, 8),
@@ -3599,7 +3609,9 @@ impl Parser {
             C0Type::UInt8Pointer => (C0Type::UInt8PointerPointer, 8),
             C0Type::UInt32Pointer => (C0Type::UInt32PointerPointer, 8),
             C0Type::Int64Pointer => (C0Type::Int64PointerPointer, 8),
+            C0Type::Int128Pointer => (C0Type::Int128PointerPointer, 8),
             C0Type::UInt64Pointer => (C0Type::UInt64PointerPointer, 8),
+            C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
 
@@ -7856,7 +7868,9 @@ impl Parser {
                             | CType::Int16Array(_)
                             | CType::UInt16Array(_)
                             | CType::UInt32Array(_)
+                            | CType::Int128Array(_)
                             | CType::Int64Array(_)
+                            | CType::UInt128Array(_)
                             | CType::UInt64Array(_),
                         ..
                     } => None,
@@ -8180,7 +8194,9 @@ impl Parser {
         let array = match field.c_type {
             C0Type::Int32Array(length) => Some((length, 4, CType::Int32)),
             C0Type::Int64Array(length) => Some((length, 8, CType::Int64)),
+            C0Type::Int128Array(length) => Some((length, 16, CType::Int128)),
             C0Type::UInt64Array(length) => Some((length, 8, CType::UInt64)),
+            C0Type::UInt128Array(length) => Some((length, 16, CType::UInt128)),
             C0Type::CharArray(length) | C0Type::UInt8Array(length) => {
                 Some((length, 1, CType::UInt8))
             }
@@ -8486,11 +8502,14 @@ impl Parser {
             C0Type::Int32Array(_)
                 | C0Type::CharArray(_)
                 | C0Type::UInt8Array(_)
+                | C0Type::Int128Array(_)
                 | C0Type::Int64Array(_)
+                | C0Type::UInt128Array(_)
                 | C0Type::UInt64Array(_)
         ) {
             let width = match field.c_type {
                 C0Type::Int64Array(_) | C0Type::UInt64Array(_) => 8,
+                C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
                 C0Type::Int32Array(_) => 4,
                 _ => 1,
             };
@@ -10423,7 +10442,9 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
             | C0Type::Int64
             | C0Type::UInt64
             | C0Type::Int32Array(_)
+            | C0Type::Int128Array(_)
             | C0Type::Int64Array(_)
+            | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
             | C0Type::CharArray(_)
             | C0Type::UInt8Array(_)
@@ -10437,7 +10458,9 @@ fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, CType)> {
     match field.c_type {
         C0Type::Int32Array(_) => Some((4, CType::Int32)),
         C0Type::Int64Array(_) => Some((8, CType::Int64)),
+        C0Type::Int128Array(_) => Some((16, CType::Int128)),
         C0Type::UInt64Array(_) => Some((8, CType::UInt64)),
+        C0Type::UInt128Array(_) => Some((16, CType::UInt128)),
         C0Type::CharArray(_) => Some((1, CType::UInt8)),
         C0Type::UInt8Array(_) => Some((1, CType::UInt8)),
         _ => None,

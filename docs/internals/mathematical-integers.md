@@ -329,12 +329,25 @@ indexed store-gap decisions use the same bound. Known load kinds, pointer
 reads, and retained typed cells use their own access widths; a wider unknown
 fallback must not erase precise separation evidence.
 
+The shared runtime and internal C0 type identities also model signed and
+unsigned wide object pointers, pointer slots, fixed scalar arrays, and arrays
+of those pointers. Scalar array elements and pointer arithmetic use a 16-byte
+stride; pointer objects and pointer-array slots retain the LP64 8-byte width.
+Address-of preserves the exact pointee type. Automatic array elements retain
+initialization requirements, one-past pointers cannot be dereferenced, and
+pointer-slot authority does not grant authority over the pointee. Static array
+startup preserves full-width initializers; ordinary function entry supplies
+symbolic storage without restoring those initializers or granting resources.
+Symbolic arrays use the shared lazy storage runs, so entry and a selected read
+do not visit unrelated elements. Compact scalar-copy checks include a wide
+cell overlapping the region's prefix.
+
 Other native wide arithmetic, including unsigned wrapping multiplication,
-wide pointer/array types, source aggregate layouts,
+source aggregate layouts,
 byte views of wide cells, callbacks, and C/C++/Rust source spellings remain unsupported.
 Internal C0 type identities preserve the kernel sorts without adding parser
 admission. The frontends continue to reject reachable `__int128` behavior.
-Wide pointer/array types and source admission are later slices; existing
+Frontend source admission is the next slice; existing
 implementation fixtures remain unchanged.
 
 ## Work budgets and certificate scaling

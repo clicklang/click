@@ -533,7 +533,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt8Pointer => C0Type::UInt8Pointer,
             CType::UInt32Pointer => C0Type::UInt32Pointer,
             CType::Int64Pointer => C0Type::Int64Pointer,
+            CType::Int128Pointer => C0Type::Int128Pointer,
             CType::UInt64Pointer => C0Type::UInt64Pointer,
+            CType::UInt128Pointer => C0Type::UInt128Pointer,
             CType::Float32Pointer => C0Type::Float32Pointer,
             CType::Float64Pointer => C0Type::Float64Pointer,
             CType::Int8PointerPointer => C0Type::Int8PointerPointer,
@@ -543,7 +545,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
             CType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
             CType::Int64PointerPointer => C0Type::Int64PointerPointer,
+            CType::Int128PointerPointer => C0Type::Int128PointerPointer,
             CType::UInt64PointerPointer => C0Type::UInt64PointerPointer,
+            CType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
             CType::Float32PointerPointer => C0Type::Float32PointerPointer,
             CType::Float64PointerPointer => C0Type::Float64PointerPointer,
             CType::FunctionPointer(signature) => C0Type::FunctionPointer(*signature),
@@ -555,7 +559,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt32Array(length) => C0Type::UInt32Array(*length),
             CType::PointerArray(element, length) => C0Type::PointerArray(*element, *length),
             CType::Int64Array(length) => C0Type::Int64Array(*length),
+            CType::Int128Array(length) => C0Type::Int128Array(*length),
             CType::UInt64Array(length) => C0Type::UInt64Array(*length),
+            CType::UInt128Array(length) => C0Type::UInt128Array(*length),
             CType::Float32Array(length) => C0Type::Float32Array(*length),
             CType::Float64Array(length) => C0Type::Float64Array(*length),
         }),
@@ -827,7 +833,9 @@ fn check_pure_structural_induction(
                             | CType::Int32Array(_)
                             | CType::UInt8Array(_)
                             | CType::UInt32Array(_)
+                            | CType::Int128Array(_)
                             | CType::Int64Array(_)
+                            | CType::UInt128Array(_)
                             | CType::UInt64Array(_)
                             | CType::Float32Array(_)
                             | CType::Float64Array(_)
@@ -1412,6 +1420,18 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     },
                     CType::Int64Pointer,
                 ),
+                C0Type::Int128Pointer | C0Type::Int128Array(_) => CValue::typed_pointer(
+                    Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: scale_int32_offset(
+                            Bitvector32Term::Variable(Variable(
+                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            )),
+                            16,
+                        ),
+                    },
+                    CType::Int128Pointer,
+                ),
                 C0Type::UInt64Pointer | C0Type::UInt64Array(_) => CValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
@@ -1423,6 +1443,18 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                         ),
                     },
                     CType::UInt64Pointer,
+                ),
+                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => CValue::typed_pointer(
+                    Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: scale_int32_offset(
+                            Bitvector32Term::Variable(Variable(
+                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            )),
+                            16,
+                        ),
+                    },
+                    CType::UInt128Pointer,
                 ),
                 C0Type::Float32Pointer | C0Type::Float32Array(_) => CValue::typed_pointer(
                     Pointer {
@@ -1473,7 +1505,9 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                 | C0Type::Int16PointerPointer
                 | C0Type::UInt16PointerPointer
                 | C0Type::UInt32PointerPointer
+                | C0Type::Int128PointerPointer
                 | C0Type::Int64PointerPointer
+                | C0Type::UInt128PointerPointer
                 | C0Type::UInt64PointerPointer
                 | C0Type::Float32PointerPointer
                 | C0Type::Float64PointerPointer => {

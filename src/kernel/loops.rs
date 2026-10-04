@@ -4156,7 +4156,9 @@ fn fresh_loop_local_value(
         | CType::Int16Array(_)
         | CType::UInt16Array(_)
         | CType::UInt32Array(_)
+        | CType::Int128Array(_)
         | CType::Int64Array(_)
+        | CType::UInt128Array(_)
         | CType::UInt64Array(_)
         | CType::Float32Array(_)
         | CType::Float64Array(_) => return Ok(None),
