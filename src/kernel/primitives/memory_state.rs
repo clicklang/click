@@ -5992,6 +5992,9 @@ impl CState {
         {
             return Err("Requires one declared owned authority".into());
         }
+        if !scope.schema().is_countable() {
+            return self.import_opaque_population_inputs(authority);
+        }
         let events = self
             .population_effects
             .creation

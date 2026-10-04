@@ -362,8 +362,8 @@ These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
 
-**Preserving named authority imports:** Unary field-bearing authorities import
-an arbitrary total without anonymous member rights. Named identity and fields
+**Preserving named authority imports:** Unary and wildcard field-bearing
+authorities import an arbitrary total without anonymous member rights. Named identity and fields
 remain in the checked resource context; ordinary preserving calls return both
 that custody and authority. Count recovers the declared field schema through
 an immutable indexed import map. Regressions retain two distinct members with
@@ -371,7 +371,10 @@ equal arguments, and forward-declared List functions preserve Count observations
 across calls. Negatives reject missing authority, exact totals invented from
 local ownership, and imported named lifecycle operations. Kernel checks enforce
 read-only imports and bounded lookup work beside growing unrelated populations.
-Wildcard named imports, body-opening lifecycle effects, and external named
+Wildcard helpers preserve aggregate and exact observations while other named
+members stay framed; an authority-only helper preserves them with all members
+framed. Regressions reject invented aggregate/exact totals and lifecycle changes.
+Body-opening lifecycle effects and external named
 contract interfaces remain unsupported; the original field-count controls stay
 unchanged until those boundaries are supported.
 
@@ -381,8 +384,8 @@ proof retains two distinct List values while authority is closed, and observes
 counts after reopening it. Negatives reject anonymous field-bearing quantities,
 missing count authority, and incorrect model types. The original field-count
 contract refusals remain legacy controls: imported body opening still needs
-lifecycle effects. Unary preserving authority imports are supported by the
-slice above. This slice does not add named helper
+lifecycle effects. Unary and wildcard preserving authority imports are supported
+by the slice above. This slice does not add named helper
 lifecycle effects or sums over model fields.
 
 **Count-only observation slice:** `resource_count_observe_witness.md` now uses

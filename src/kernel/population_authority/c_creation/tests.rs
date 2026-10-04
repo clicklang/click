@@ -4512,24 +4512,47 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
 
 #[test]
 fn named_authority_import_is_read_only_and_lookup_scales() {
+    check_named_authority_import(None);
+}
+
+#[test]
+fn wildcard_named_authority_import_is_read_only_and_lookup_scales() {
+    for arity in [2, 3] {
+        check_named_authority_import(Some(arity));
+    }
+}
+
+fn check_named_authority_import(arity: Option<usize>) {
     let base = member_description(PointerBlock::ExternalArgument);
     let schema =
         ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
             .unwrap();
-    let description = ResourceDescription::new(
+    let mut description = ResourceDescription::new(
         "ticket".into(),
         base.arguments().to_vec().into(),
         schema.clone(),
     );
-    let pattern = ResourceDescription::new(
+    if let Some(arity) = arity {
+        description = description.with_population_arity(arity).unwrap();
+    }
+    let mut pattern = ResourceDescription::new(
         "ticket".into(),
         description.arguments().to_vec().into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
+    if let Some(arity) = arity {
+        pattern = pattern.with_population_arity(arity).unwrap();
+    }
+    let mut instance_arguments = description.arguments().to_vec();
+    if let Some(arity) = arity {
+        for key in 0..arity - 1 {
+            instance_arguments.push(int32(7 + key as u32).into());
+        }
+    }
     let instance = ResourceInstance::new(
         Variable::allocate_fresh().unwrap(),
         "ticket".into(),
-        description.arguments().to_vec().into(),
+        instance_arguments.into(),
         schema,
         vec![int32(7).into()].into(),
     )
@@ -4543,7 +4566,11 @@ fn named_authority_import_is_read_only_and_lookup_scales() {
     let state = CState::new()
         .with_population_creation_tracking()
         .with_resource_context(resources);
-    let imported = state.import_opaque_population_inputs(&authority).unwrap();
+    let imported = if arity.is_some() {
+        state.import_opaque_wildcard_authority(&authority).unwrap()
+    } else {
+        state.import_opaque_population_inputs(&authority).unwrap()
+    };
     assert_eq!(imported.resources(), state.resources());
     assert_eq!(
         imported.owned_resource_instance(instance.identity()),
@@ -4591,11 +4618,14 @@ fn named_authority_import_is_read_only_and_lookup_scales() {
                 CType::Int32Pointer,
             ))
         });
-        let other_description = ResourceDescription::new(
+        let mut other_description = ResourceDescription::new(
             "ticket".into(),
             other_pattern.arguments().to_vec().into(),
             description.schema().clone(),
         );
+        if let Some(arity) = arity {
+            other_description = other_description.with_population_arity(arity).unwrap();
+        }
         source = source
             .import_observable_named_authority(&other_description)
             .unwrap();
@@ -4611,6 +4641,27 @@ fn named_authority_import_is_read_only_and_lookup_scales() {
             entry
         });
         work.push(measured);
+        let exact = ResourceDescription::new(
+            description.family().into(),
+            instance.arguments().to_vec().into(),
+            description.schema().clone(),
+        );
+        let exact_count = arity.map(|_| {
+            let observed = entry
+                .observe_exact_member(&exact, &PureFactContext::new())
+                .unwrap();
+            assert!(matches!(observed.entry_count, Bitvector32Term::Variable(_)));
+            assert_eq!(observed.delta, 0);
+            assert_eq!(observed.entry_owned_members, 0);
+            assert_eq!(
+                entry
+                    .observe_exact_member(&exact, &PureFactContext::new())
+                    .unwrap()
+                    .entry_count,
+                observed.entry_count
+            );
+            observed.entry_count
+        });
         let count = entry.observe_symbolic(&description).unwrap();
         assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
         assert_eq!(count.entry_owned_members, 0);
@@ -4644,12 +4695,15 @@ fn named_authority_import_is_read_only_and_lookup_scales() {
                 Some(CreationRefusal::InvalidMember)
             );
         }
-        let wrong_schema = ResourceDescription::new(
+        let mut wrong_schema = ResourceDescription::new(
             "ticket".into(),
             description.arguments().to_vec().into(),
             ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::UInt8))])
                 .unwrap(),
         );
+        if let Some(arity) = arity {
+            wrong_schema = wrong_schema.with_population_arity(arity).unwrap();
+        }
         assert_eq!(
             entry.import_observable_named_authority(&wrong_schema).err(),
             Some(CreationRefusal::OpaqueImportConflict)
@@ -4679,6 +4733,15 @@ fn named_authority_import_is_read_only_and_lookup_scales() {
             .unwrap()
             .finish_call(&entry)
             .unwrap();
+        if let Some(exact_count) = exact_count {
+            assert_eq!(
+                returned
+                    .observe_exact_member(&exact, &PureFactContext::new())
+                    .unwrap()
+                    .entry_count,
+                exact_count
+            );
+        }
         assert_eq!(
             returned.observe_symbolic(&description).unwrap().entry_count,
             count.entry_count

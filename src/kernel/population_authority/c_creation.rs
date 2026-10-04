@@ -404,7 +404,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Result<Self, CreationRefusal> {
-        if description.population_arity().is_some() || description.schema().is_countable() {
+        if description.schema().is_countable() {
             return Err(CreationRefusal::InvalidMember);
         }
         let count = if let Some(import) = self.0.opaque_imports.get(description) {
@@ -668,7 +668,6 @@ impl CreationEvents {
         let named_authority = matches!(members, OpaqueMemberInputs::NamedAuthority);
         if named_authority
             && (description.schema().is_countable()
-                || description.population_arity().is_some()
                 || owned_members != 0
                 || symbolic_members.is_some()
                 || control.is_some())
@@ -704,11 +703,16 @@ impl CreationEvents {
         if !self.0.creators.is_empty() || !self.0.anchors.is_empty() {
             return Err(CreationRefusal::NotCreationEnvironment);
         }
-        let pattern = ResourceDescription::new(
+        let mut pattern = ResourceDescription::new(
             description.family().into(),
             description.arguments().to_vec().into(),
             crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty schema"),
         );
+        if let Some(arity) = description.population_arity() {
+            pattern = pattern
+                .with_population_arity(arity)
+                .map_err(|_| CreationRefusal::InvalidMember)?;
+        }
         if named_authority
             && self
                 .0
