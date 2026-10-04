@@ -142,6 +142,11 @@ snapshots. It records up to
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
 
+An unfinished loop `preserve` also retains its checked path for tracing. A plain
+trace follows the path named by the frontier report; `--trace-to` can select a
+checked tactic on that path or on another completed or unfinished arm. If the
+target has no recorded checked step on a retained path, the trace says so.
+
 A theorem trace shows the same checked steps as a function trace. A theorem
 with several `ensures` clauses has one accepted path for each; a plain trace
 of a successful theorem shows the first, and `--trace-to` selects the clause

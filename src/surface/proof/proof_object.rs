@@ -1092,6 +1092,23 @@ impl Proof<'_> {
         }
     }
 
+    /// Retain the checked prefix of a written loop-phase arm that ran out
+    /// of tactics. It can answer failure trace targets, but is not accepted.
+    pub(in crate::surface::proof) fn record_unfinished_trace(
+        &self,
+        claim: &str,
+        path_index: usize,
+    ) {
+        if crate::surface::proof_trace::enabled_for(claim) {
+            crate::surface::proof_trace::record_unfinished_path(
+                claim,
+                path_index,
+                trace_path_lineage(&self.node, self.focused_branch_id()),
+                Box::new(self.node.clone()),
+            );
+        }
+    }
+
     /// This proof's traced path so far, for a phase proof it is about to
     /// drive to render above its own.
     pub(in crate::surface::proof) fn trace_lineage(

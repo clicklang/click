@@ -1116,6 +1116,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // `close_invariants` on a finished arm is named while its sibling arm
     // is still being written. The report is prepared first because the
     // loop consumes the leaves it counts.
+    if crate::surface::proof_trace::enabled_for(&claim_label) {
+        for (path_index, path) in unfinished.iter().enumerate() {
+            path.proof.record_unfinished_trace(&claim_label, path_index);
+        }
+    }
     let deferred_frontier = unfinished
         .first()
         .map(|path| path.report(&claim_label, &leaves));

@@ -20,7 +20,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [The refusal of `old(c.model)` in a loop clause suggests a binding that is rejected](loop-clause-old-field-refusal-suggests-a-rejected-unfold-binding.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
-- [`--trace-proof` prints no trace when the failure is a loop frontier report](trace-proof-prints-no-trace-at-a-loop-frontier.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
 - [A postcondition about a parameter named `result` cannot be certified](result-parameter-postconditions-cannot-be-certified.md)

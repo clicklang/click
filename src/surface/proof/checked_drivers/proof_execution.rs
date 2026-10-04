@@ -2133,12 +2133,18 @@ impl UnfinishedPreservationPath<'_> {
         claim_label: &str,
         leaves: &[Proof<'_>],
     ) -> ClickError {
-        match describe_unfinished_preservation(claim_label, &self.proof, leaves, self.last_tactic) {
+        let error = match describe_unfinished_preservation(
+            claim_label,
+            &self.proof,
+            leaves,
+            self.last_tactic,
+        ) {
             Some(frontier) => ClickError::new(frontier),
             None => ClickError::new(format!(
                 "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
             )),
-        }
+        };
+        self.proof.attach_step_diagnostic(error)
     }
 }
 
