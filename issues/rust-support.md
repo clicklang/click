@@ -639,3 +639,19 @@ three are iterator state observations and two have existing stable-frontier
 proof ports. General tuple construction/boundaries, mutable/non-byte splits,
 and the default switch/legacy retirement remain separate gates. Full fixture
 import coverage does not mean the overall Charon migration is complete.
+
+### Original chunks contract through Charon
+
+The `design/charon-trial/chunk-proof` checkpoint now ports the original
+`rust-chunks-exact` proof while retaining its Rust source and every contract
+clause. It proves the remainder length and preservation of all input bytes
+using actual imported iterator storage, without a generated processed count.
+The preservation-only `execute_until(back_edge())` checks each crossed step
+and rejects loop/function exits; invariant and ranking closure remain checked
+separately. This removes cleanup statement counts from the migrated proof.
+
+The fixed 16-fixture baseline is now 16/16 imports (100%), 11/16 frozen
+proofs (68.75%), and 14/16 original sources/contracts with migrated proofs
+(87.5%, up from 81.25%). The remaining two proof-port gaps are
+`rust-iterators` and `rust-iter-references`. Frozen-sidecar compatibility,
+default switching, and legacy retirement remain migration work.

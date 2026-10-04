@@ -1959,6 +1959,10 @@ int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
 fn charon_migrated_sidecars_preserve_original_source_contracts() {
     for (original, migrated) in [
         (
+            include_str!("../../../examples/rust-chunks-exact/chunks.click"),
+            include_str!("../../../design/charon-trial/chunk-proof/chunks.click"),
+        ),
+        (
             include_str!("../../../examples/rust-loops/loops.click"),
             include_str!("../../../design/charon-trial/loop-headers/loops-assignments.click"),
         ),

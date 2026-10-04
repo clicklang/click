@@ -28,7 +28,8 @@
   {
     "config": "examples/rust-chunks-exact/chunks.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "local `chunks_remaining` has no value at this frontier"
+    "diagnostic": "local `chunks_remaining` has no value at this frontier",
+    "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click"
   },
   {
     "config": "examples/rust-field-borrow/guard.click.import.json",

@@ -3643,3 +3643,6 @@ mod slice_into_iteration;
 
 #[path = "rust_import/split_slices.rs"]
 mod split_slices;
+
+#[path = "rust_import/chunk_proof.rs"]
+mod chunk_proof;

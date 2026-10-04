@@ -5463,6 +5463,8 @@ pub enum CodeRegionRef {
     },
     /// A statement with an explicit scalar memory load, in executable preorder.
     Read(usize),
+    /// The current loop preservation region's checked back edge.
+    BackEdge,
 }
 
 /// A proof-visible name for one recorded symbolic state.
