@@ -776,6 +776,93 @@ fn match_arm_selection(
         .then_some(selection)
 }
 
+/// Writes the per-path suffixes of an execution that stepped over
+/// maybe-throwing calls whose throw left the function while the normal path
+/// continued. Each such call's `step()` becomes an `outcomes` at that call:
+/// its `threw` arm steps the call and closes that one terminal path, and its
+/// `returned` arm steps the call and continues with the rest of the steps,
+/// holding the next such call's `outcomes`. `fork_steps` gives, per call in
+/// execution order, how many statement steps preceded it; the terminal paths
+/// are the continuing ones followed by one threw path per call, from
+/// `pending_start`; `continuing_call_edges` routes the continuing ones when
+/// they end at a call fused with its `return`. Returns `false`, leaving
+/// `steps` unchanged, when the surface does not have that shape.
+pub(super) fn append_surface_tactics_across_call_forks(
+    steps: &mut Vec<ProofStep>,
+    path_tactics: &[Vec<ProofTactic>],
+    fork_steps: &[usize],
+    pending_start: usize,
+    continuing_call_edges: Option<&[bool]>,
+) -> Result<bool, String> {
+    if fork_steps.is_empty()
+        || pending_start == 0
+        || path_tactics.len() != pending_start + fork_steps.len()
+    {
+        return Ok(false);
+    }
+    // Statement steps before the first structured step are at top level, in
+    // the order they ran; a fork cannot follow an open split.
+    let mut statement_positions = Vec::new();
+    for (position, step) in steps.iter().enumerate() {
+        match step {
+            ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
+                statement_positions.push(position)
+            }
+            ProofStep::If { .. } | ProofStep::Match { .. } | ProofStep::CallOutcomes { .. } => {
+                break;
+            }
+            _ => {}
+        }
+    }
+    let mut fork_positions = Vec::with_capacity(fork_steps.len());
+    for &fork in fork_steps {
+        let Some(&position) = statement_positions.get(fork) else {
+            return Ok(false);
+        };
+        if !matches!(steps[position], ProofStep::Step)
+            || fork_positions.last().is_some_and(|last| *last >= position)
+        {
+            return Ok(false);
+        }
+        fork_positions.push(position);
+    }
+    let path_steps = |tactics: &[ProofTactic]| {
+        ProofCertificate::from_proof_tactics(tactics)
+            .map(ProofCertificate::into_steps)
+            .map_err(|error| format!("path contained a non-simple tactic: {error:?}"))
+    };
+    let last = *fork_positions.last().expect("at least one fork");
+    let mut tail = steps[last..].to_vec();
+    append_surface_tactics_by_leaf(
+        &mut tail,
+        &path_tactics[..pending_start],
+        continuing_call_edges,
+    )?;
+    for (fork_index, &position) in fork_positions.iter().enumerate().rev() {
+        let mut threw = vec![ProofStep::Step];
+        threw.extend(path_steps(&path_tactics[pending_start + fork_index])?);
+        let outcomes = ProofStep::CallOutcomes {
+            returned_proof: Box::new(
+                ProofCertificate::from_steps(tail)
+                    .map_err(|error| error.raw_summary().to_string())?,
+            ),
+            threw_proof: Box::new(
+                ProofCertificate::from_steps(threw)
+                    .map_err(|error| error.raw_summary().to_string())?,
+            ),
+        };
+        let start = if fork_index == 0 {
+            0
+        } else {
+            fork_positions[fork_index - 1]
+        };
+        tail = steps[start..position].to_vec();
+        tail.push(outcomes);
+    }
+    *steps = tail;
+    Ok(true)
+}
+
 pub(super) fn append_surface_tactics_by_leaf(
     steps: &mut Vec<ProofStep>,
     path_tactics: &[Vec<ProofTactic>],

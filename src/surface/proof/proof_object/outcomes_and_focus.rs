@@ -740,9 +740,13 @@ impl<'a> Proof<'a> {
                             premise_anchor: frontier_anchor.clone(),
                             requirement_surfaces: requirement_surfaces.clone(),
                             branch_decisions: provenance.branch_decisions,
-                            call_returned: provenance
-                                .call_returned
-                                .or_else(|| call_edges.map(|edges| edges[path_index])),
+                            call_routes: if provenance.call_routes.is_empty() {
+                                call_edges
+                                    .map(|edges| vec![edges[path_index]])
+                                    .unwrap_or_default()
+                            } else {
+                                provenance.call_routes
+                            },
                         },
                     )),
                 ),

@@ -6683,6 +6683,12 @@ impl ExecutionProofCore {
         pending
     }
 
+    /// Where the completed pending exceptional paths begin among this
+    /// execution's terminal paths, once they have been appended.
+    pub(crate) fn pending_exceptional_start(&self) -> Option<usize> {
+        self.pending_exceptional_start
+    }
+
     pub(crate) fn pending_exceptional_pure_facts(&self, path_index: usize) -> Option<&ProofFacts> {
         let start = self.pending_exceptional_start?;
         path_index

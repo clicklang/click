@@ -6619,8 +6619,37 @@ impl FunctionBlock {
         self.tactic_procedure
     }
 
+    /// The written grouped proof after the contract block, if any.
     pub fn grouped_proof(&self) -> Option<&SourceProof> {
         self.grouped_proof.as_ref()
+    }
+
+    /// The one proof of every claim without its own `by`: the written
+    /// grouped proof, or `auto` when two or more claims omit theirs. Each
+    /// claim with its own `by` keeps that proof. A single claim without one
+    /// keeps its per-claim default, which is the same proof over the same
+    /// single execution.
+    pub fn covering_proof(&self) -> Option<&SourceProof> {
+        static IMPLICIT_AUTO: SourceProof = SourceProof::Tactic(SmartTactic::Auto);
+        if let Some(proof) = &self.grouped_proof {
+            return Some(proof);
+        }
+        (!self.external && !self.tactic_procedure && self.claims_without_proof() >= 2)
+            .then_some(&IMPLICIT_AUTO)
+    }
+
+    /// Whether `claim_proof`, a claim's own `by` clause, leaves that claim to
+    /// the covering proof.
+    pub fn covers_claim_proof(&self, claim_proof: &SourceProof) -> bool {
+        matches!(claim_proof, SourceProof::Default) && self.covering_proof().is_some()
+    }
+
+    fn claims_without_proof(&self) -> usize {
+        self.ensures
+            .iter()
+            .chain(&self.exceptional_ensures)
+            .filter(|clause| matches!(clause.proof, SourceProof::Default))
+            .count()
     }
 
     fn with_frontier_loop_clause(&self, clause: &StructuralClause, loop_index: usize) -> Self {

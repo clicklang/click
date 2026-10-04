@@ -2776,13 +2776,14 @@ impl Parser {
         self.expect(Token::RBrace)?;
         let grouped_proof = if self.peek_ident() == Some("by") {
             let proof = self.parse_by_clause()?;
-            if ensures
-                .iter()
-                .chain(exceptional_ensures.iter())
-                .any(|clause| !matches!(clause.proof(), SourceProof::Default))
+            // The grouped proof proves every claim without its own `by`; one
+            // that would prove none is refused rather than silently unused.
+            let mut claims = ensures.iter().chain(exceptional_ensures.iter()).peekable();
+            if claims.peek().is_some()
+                && claims.all(|clause| !matches!(clause.proof(), SourceProof::Default))
             {
                 return Err(self.error(
-                    "a grouped function proof cannot be combined with individual claim proofs",
+                    "this grouped function proof proves no claim: every postcondition has its own `by`",
                 ));
             }
             Some(proof)

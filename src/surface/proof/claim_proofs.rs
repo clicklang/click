@@ -44,9 +44,12 @@ fn post_execution_population_obligation(obligation: &ProofObligation) -> bool {
     )
 }
 
+/// `call_depth` counts the `outcomes` arms already entered on this route; a
+/// nested `outcomes` reads the call edge at that depth.
 fn select_checked_post_execution_tactics<'a>(
     proof: &Proof<'_>,
     tactics: impl IntoIterator<Item = &'a DeferredPostExecutionTactic>,
+    call_depth: usize,
     selected: &mut Vec<&'a DeferredPostExecutionTactic>,
     choices: &mut Vec<SurfacePathChoice>,
 ) -> Result<(), ClickError> {
@@ -72,13 +75,13 @@ fn select_checked_post_execution_tactics<'a>(
                     tactic_offset: selected.len(),
                 });
                 let arm = if value { then_tactics } else { else_tactics };
-                select_checked_post_execution_tactics(proof, arm, selected, choices)?;
+                select_checked_post_execution_tactics(proof, arm, call_depth, selected, choices)?;
             }
             PostExecutionTactic::CallOutcomes {
                 returned_tactics,
                 threw_tactics,
             } => {
-                let returned = proof.checked_call_returned()?;
+                let returned = proof.checked_call_returned(call_depth)?;
                 choices.push(SurfacePathChoice {
                     occurrence: deferred.source_index,
                     selector: SurfacePathSelector::CallOutcome,
@@ -90,7 +93,13 @@ fn select_checked_post_execution_tactics<'a>(
                 } else {
                     threw_tactics
                 };
-                select_checked_post_execution_tactics(proof, arm, selected, choices)?;
+                select_checked_post_execution_tactics(
+                    proof,
+                    arm,
+                    call_depth + 1,
+                    selected,
+                    choices,
+                )?;
             }
             _ => selected.push(deferred),
         }
@@ -2268,6 +2277,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         select_checked_post_execution_tactics(
                             branch_proof,
                             proof_execution.presentation.post_execution_tactics.iter(),
+                            0,
                             &mut selected_post_execution_tactics,
                             &mut selected_post_choices,
                         )?;
@@ -2651,7 +2661,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                 );
                             }
                             PostExecutionTactic::Have(have) => {
-                                let CFunctionOutcome::Return { .. } = &outcome else {
+                                // A throw outcome is proved like a return: its
+                                // `exceptional ensures` names the thrown value
+                                // `exception`, which smart `simp` already
+                                // scopes with the same checked `have`.
+                                let (CFunctionOutcome::Return { .. }
+                                | CFunctionOutcome::Throw { .. }) = &outcome
+                                else {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `have` requires a return outcome"
                                     )));
@@ -5192,6 +5208,54 @@ pub(super) fn finish_ordered_proof<'a>(
                 append_surface_tactics_flat(steps, path_tactics)
             }
         };
+        // An execution that stepped over maybe-throwing calls while its
+        // normal path continued writes each call's threw path under that
+        // call's own `outcomes`; any other shape appends the post-execution
+        // tactics and then the closers by leaf, as before.
+        let call_fork_steps = proof_execution
+            .presentation
+            .call_fork_steps
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        let pending_exceptional_start = proof_execution.core.pending_exceptional_start();
+        let append_post_and_closers = |steps: &mut Vec<ProofStep>,
+                                       post: &[Vec<ProofTactic>],
+                                       closers: &[Vec<ProofTactic>]|
+         -> Result<(), String> {
+            if let Some(pending_start) = pending_exceptional_start
+                && !call_fork_steps.is_empty()
+                && retained_surface.path_choices.is_empty()
+                && post.len() == closers.len()
+            {
+                let combined = post
+                    .iter()
+                    .zip(closers)
+                    .map(|(post, closers)| post.iter().chain(closers).cloned().collect())
+                    .collect::<Vec<Vec<ProofTactic>>>();
+                let continuing_call_edges = proof_execution
+                    .presentation
+                    .call_outcome_edges
+                    .as_deref()
+                    .filter(|edges| edges.len() == pending_start);
+                if append_surface_tactics_across_call_forks(
+                    steps,
+                    &combined,
+                    &call_fork_steps,
+                    pending_start,
+                    continuing_call_edges,
+                )? {
+                    return Ok(());
+                }
+            }
+            if post.iter().any(|tactics| !tactics.is_empty()) {
+                append_surface_tactics(steps, post)?;
+            }
+            if closers.iter().any(|tactics| !tactics.is_empty()) {
+                append_surface_tactics(steps, closers)?;
+            }
+            Ok(())
+        };
         if proof_context.constants.grouped_contract {
             let mut expanded = retained_surface.clone();
             if surface_post_choices_by_path
@@ -5230,25 +5294,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                 }
-            } else {
-                if surface_post_tactics_by_path
-                    .iter()
-                    .any(|tactics| !tactics.is_empty())
-                    && let Err(message) =
-                        append_surface_tactics(&mut expanded.steps, &surface_post_tactics_by_path)
-                {
-                    expanded.block(message);
-                }
-                if surface_grouped_closers_by_path
-                    .iter()
-                    .any(|tactics| !tactics.is_empty())
-                    && let Err(message) = append_surface_tactics(
-                        &mut expanded.steps,
-                        &surface_grouped_closers_by_path,
-                    )
-                {
-                    expanded.block(message);
-                }
+            } else if let Err(message) = append_post_and_closers(
+                &mut expanded.steps,
+                &surface_post_tactics_by_path,
+                &surface_grouped_closers_by_path,
+            ) {
+                expanded.block(message);
             }
             // One admitted certificate, shared by every theorem this context
             // produced. Admitting it per theorem charged each of them the
@@ -5276,22 +5327,11 @@ pub(super) fn finish_ordered_proof<'a>(
         } else {
             for (claim_index, claim) in claims.iter().enumerate() {
                 let mut expanded = retained_surface.clone();
-                if surface_post_tactics_by_path
-                    .iter()
-                    .any(|tactics| !tactics.is_empty())
-                    && let Err(message) =
-                        append_surface_tactics(&mut expanded.steps, &surface_post_tactics_by_path)
-                {
-                    expanded.block(message);
-                }
-                if surface_closers_by_claim[claim_index]
-                    .iter()
-                    .any(|tactics| !tactics.is_empty())
-                    && let Err(message) = append_surface_tactics(
-                        &mut expanded.steps,
-                        &surface_closers_by_claim[claim_index],
-                    )
-                {
+                if let Err(message) = append_post_and_closers(
+                    &mut expanded.steps,
+                    &surface_post_tactics_by_path,
+                    &surface_closers_by_claim[claim_index],
+                ) {
                     expanded.block(message);
                 }
                 let verified_claim = claim.verified_claim();
