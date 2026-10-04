@@ -5317,6 +5317,24 @@ impl Parser {
         if self.peek_ident() == Some("step") {
             self.position += 1;
             self.expect(Token::LParen)?;
+            if self.peek() == Some(&Token::RParen) {
+                let CallOutputPattern::Single(name) = output else {
+                    return Err(self.error("`let name = step()` requires one scalar result name"));
+                };
+                if self.current_contract_bindings.contains(&name)
+                    || self.current_integer_params.contains(&name)
+                    || self.current_integer_lets.contains(&name)
+                    || self.current_resource_bindings.contains_key(&name)
+                    || self.current_proof_let_names.contains(&name)
+                {
+                    return Err(
+                        self.error(format!("step result name `{name}` is already in scope"))
+                    );
+                }
+                self.position += 1;
+                self.expect(Token::Semicolon)?;
+                return Ok(ProofTactic::StepBind(name));
+            }
             if !self.call_binder_transport_follows() {
                 return Err(self.error(
                             "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",

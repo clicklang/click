@@ -93,6 +93,7 @@ fn arm_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
+        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
         tactic => linear_execution_proof_step(tactic),
     }
@@ -121,6 +122,7 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
+        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
         ProofTactic::UserTactic(application) => Some(ProofStep::UserTactic(application.clone())),
         ProofTactic::TransportUsing {
@@ -277,6 +279,7 @@ fn checked_execution_arm_tactics_end(
             indexed.tactic,
             ProofTactic::Step
                 | ProofTactic::StepContract(_)
+                | ProofTactic::StepBind(_)
                 | ProofTactic::StepCall(_)
                 | ProofTactic::Loop(_)
         ) {
@@ -4088,6 +4091,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
+        ProofTactic::StepBind(name) => format!("let {name} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "execute()".to_string(),

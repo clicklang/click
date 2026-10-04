@@ -1956,8 +1956,79 @@ int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
 }
 
 #[test]
+fn step_result_binding_names_checked_values_and_survives_overwrite() {
+    let source = "int32 f(const uint8* p) {uint8 x; x=*p; x=(uint8)0; return (int32)x;}";
+    let proof = r#"verifying "read.c";
+int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
+    execute_until(read(0));
+    let value = step();
+    mark loaded;
+    have 0<=(int32)value and 255>=(int32)value by {simp();}
+    have value==load_uint8(p) by {simp();}
+    step();
+    have x==0 by {simp();}
+    have value==at(loaded, x) by {simp();}
+    have 0<=(int32)value and 255>=(int32)value by {simp();}
+    execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    for invalid in [
+        proof.replace("views p[0..1];", ""),
+        proof.replace("255>=(int32)value", "256==(int32)value"),
+        proof.replace("value==at(loaded, x)", "value==x"),
+        proof.replace("let value = step();", "let x = step();"),
+        proof.replace(
+            "let value = step();",
+            "let value = step(); let value = step();",
+        ),
+        proof.replace(
+            "execute_until(read(0));",
+            "execute_until(read(0)); step(); step();",
+        ),
+    ] {
+        assert!(verify_c0_sources(&invalid, &[("read.c", source)]).is_err());
+    }
+}
+
+#[test]
+fn step_result_binding_work_scales_with_assigned_values() {
+    let mut previous = None;
+    for count in [8, 16, 32, 64] {
+        let mut source = String::from("int32 f() {int32 x;");
+        let mut proof = format!(
+            "verifying \"assign.c\"; int32 f() {{ensures result=={};}} by {{step();",
+            count - 1
+        );
+        for index in 0..count {
+            source.push_str(&format!("x={index};"));
+            proof.push_str(&format!("let value_{index} = step();"));
+        }
+        source.push_str("return x;}");
+        proof.push_str("have value_0==0 by {simp();} step(); simp();}");
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&proof, &[("assign.c", source.as_str())])
+        });
+        result.unwrap();
+        assert!(work > 0);
+        if let Some(previous) = previous {
+            assert!(
+                work <= 3 * previous,
+                "{count} bindings: {work} work after {previous}"
+            );
+        }
+        previous = Some(work);
+    }
+}
+
+#[test]
 fn charon_migrated_sidecars_preserve_original_source_contracts() {
     for (original, migrated) in [
+        (
+            include_str!("../../../examples/rust-iter-references/sum.click"),
+            include_str!(
+                "../../../design/charon-trial/iterator-proof/rust-iter-references/sum.click"
+            ),
+        ),
         (
             include_str!("../../../examples/rust-iterators/sum.click"),
             include_str!("../../../design/charon-trial/iterator-proof/rust-iterators/sum.click"),

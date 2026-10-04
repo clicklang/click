@@ -805,9 +805,10 @@ pub(super) fn append_surface_tactics_across_call_forks(
     let mut statement_positions = Vec::new();
     for (position, step) in steps.iter().enumerate() {
         match step {
-            ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
-                statement_positions.push(position)
-            }
+            ProofStep::Step
+            | ProofStep::StepBind(_)
+            | ProofStep::StepContract(_)
+            | ProofStep::StepCall(_) => statement_positions.push(position),
             ProofStep::If { .. } | ProofStep::Match { .. } | ProofStep::CallOutcomes { .. } => {
                 break;
             }

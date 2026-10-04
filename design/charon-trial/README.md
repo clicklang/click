@@ -558,9 +558,9 @@ retirement remain later migration gates; fixture parity is not a Rust-language
 completeness metric.
 
 The optional `migrated_sidecar` field records a separate proof port for an
-unchanged source and contract. `rust-loops`, `rust-byte-sum`, `rust-chunks-exact`, and `rust-iterators` now pass with
-these sidecars, so source-and-contract coverage with migrated proofs is
-**15/16 (93.75%)**. A regression compares their parsed contracts and specification
+unchanged source and contract. `rust-loops`, `rust-byte-sum`, `rust-chunks-exact`,
+`rust-iterators`, and `rust-iter-references` now pass with these sidecars, so
+source-and-contract coverage with migrated proofs is **16/16 (100%)**. A regression compares their parsed contracts and specification
 functions with the frozen originals, and the live sweep verifies each port
 against freshly extracted original source. It still checks the original
 sidecar and its recorded outcome separately; frozen-sidecar parity remains
@@ -741,3 +741,19 @@ This advances original-source/contract coverage with proof ports from 14/16
 (87.5%) to **15/16 (93.75%)**. `rust-iter-references` is the remaining proof-port
 gap. Frozen sidecars remain 11/16 (68.75%), imports remain 16/16 (100%), and
 default switching and legacy retirement remain separate gates.
+
+## Original reference byte iteration proof
+
+The [iterator-proof](iterator-proof/README.md) checkpoint now verifies the
+unchanged `rust-iter-references` source and its full mathematical sum contract.
+`let loaded_byte = step();` binds the value of the checked scalar read,
+following the existing checked call-result binding model. The proof uses actual
+iterator cursor/remaining state, readable source frontiers, and named snapshots;
+it contains no MIR IDs, compiler statement indices, or synthetic processed
+count. Ordinary read permissions, signed overflow, and decreases are checked.
+
+Original source-and-contract coverage reaches **16/16 (100%)**, up from
+15/16 (93.75%). Imports stay **16/16 (100%)**, and frozen sidecars stay
+**11/16 (68.75%)**. This completes the fixed baseline's proof ports; it does
+not complete default switching, frozen-proof compatibility work, or legacy
+importer retirement.

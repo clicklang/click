@@ -139,6 +139,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Sorry => line(output, &prefix, "sorry();"),
         ProofTactic::Step => line(output, &prefix, "step();"),
         ProofTactic::StepContract(name) => line(output, &prefix, &format!("step({name});")),
+        ProofTactic::StepBind(name) => line(output, &prefix, &format!("let {name} = step();")),
         ProofTactic::StepCall(transport) => line(output, &prefix, &format!("{transport};")),
         ProofTactic::UserTactic(application) => line(
             output,

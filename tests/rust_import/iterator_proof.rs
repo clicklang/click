@@ -1,8 +1,9 @@
 use super::*;
 
-fn project() -> Project {
+fn project(fixture: &str) -> Project {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("design/charon-trial/iterator-proof/rust-iterators");
+        .join("design/charon-trial/iterator-proof")
+        .join(fixture);
     let p = Project::new("");
     for (destination, original) in [
         ("sum.rs", "sum.rs"),
@@ -22,17 +23,21 @@ fn project() -> Project {
     }
     p
 }
-#[test]
-fn charon_iterator_proof_preserves_source_and_checks_obligations() {
+fn preserves_source_and_checks_obligations(fixture: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let migrated = root
+        .join("design/charon-trial/iterator-proof")
+        .join(fixture);
+    let original = root.join("examples").join(fixture);
     assert_eq!(
-        include_str!("../../design/charon-trial/iterator-proof/rust-iterators/sum.rs"),
-        include_str!("../../examples/rust-iterators/sum.rs")
+        fs::read(migrated.join("sum.rs")).unwrap(),
+        fs::read(original.join("sum.rs")).unwrap()
     );
     assert_eq!(
-        include_str!("../../design/charon-trial/iterator-proof/rust-iterators/frozen.click"),
-        include_str!("../../examples/rust-iterators/sum.click")
+        fs::read(migrated.join("frozen.click")).unwrap(),
+        fs::read(original.join("sum.click")).unwrap()
     );
-    let p = project();
+    let p = project(fixture);
     let prepared = load_import(&p.config()).unwrap();
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     assert!(!proof.contains("__rust_"));
@@ -50,27 +55,24 @@ fn charon_iterator_proof_preserves_source_and_checks_obligations() {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }
-#[test]
-fn charon_iterator_proof_profile_agrees() {
-    let p = project();
+fn profile_agrees(fixture: &str) {
+    let p = project(fixture);
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
 }
-#[test]
-fn charon_iterator_proof_expansion_rechecks() {
-    let p = project();
+fn expansion_rechecks(fixture: &str) {
+    let p = project(fixture);
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
-#[test]
-fn charon_iterator_proof_audits_checked_frontiers() {
+fn audits_checked_frontiers(fixture: &str) {
     for selector in [
         "execute_until(read(0))",
         "execute_until(assignment(total, 1))",
         "execute_until(back_edge())",
     ] {
-        let p = project();
+        let p = project(fixture);
         assert_cli(&p, &["verify"]);
         let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
         let offset = proof.find(selector).unwrap();
@@ -80,3 +82,38 @@ fn charon_iterator_proof_audits_checked_frontiers() {
         assert_cli(&p, &["audit", "--start-at", &cursor, "--max-sites", "1"]);
     }
 }
+
+macro_rules! iterator_checks {
+    ($fixture:literal, $obligations:ident, $profile:ident, $expand:ident, $audit:ident) => {
+        #[test]
+        fn $obligations() {
+            preserves_source_and_checks_obligations($fixture);
+        }
+        #[test]
+        fn $profile() {
+            profile_agrees($fixture);
+        }
+        #[test]
+        fn $expand() {
+            expansion_rechecks($fixture);
+        }
+        #[test]
+        fn $audit() {
+            audits_checked_frontiers($fixture);
+        }
+    };
+}
+iterator_checks!(
+    "rust-iterators",
+    charon_iterator_proof_preserves_source_and_checks_obligations,
+    charon_iterator_proof_profile_agrees,
+    charon_iterator_proof_expansion_rechecks,
+    charon_iterator_proof_audits_checked_frontiers
+);
+iterator_checks!(
+    "rust-iter-references",
+    charon_reference_iterator_proof_preserves_source_and_checks_obligations,
+    charon_reference_iterator_proof_profile_agrees,
+    charon_reference_iterator_proof_expansion_rechecks,
+    charon_reference_iterator_proof_audits_checked_frontiers
+);

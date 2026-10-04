@@ -671,3 +671,21 @@ four proof ports (93.75%, up from 87.5%). Imports remain 16/16 (100%) and frozen
 sidecars remain 11/16 (68.75%). The remaining proof-port gap is
 `rust-iter-references`; frozen-proof compatibility, the default switch, and
 legacy retirement remain open.
+
+### Original reference byte iteration contract through Charon
+
+The `design/charon-trial/iterator-proof/rust-iter-references` checkpoint ports
+the final original sum proof with byte-identical Rust and unchanged contract.
+`let loaded_byte = step();` names the checked scalar assignment value, so
+unnamed compiler temporaries require no MIR identifiers in the sidecar.
+Bindings retain their checked value after the source local is overwritten or
+leaves scope. The real cursor/remaining state, read access, signed addition,
+mathematical prefix sum, and termination all remain checked. No generated
+processed count or additional precondition is introduced.
+
+The fixed baseline reaches 16/16 original sources/contracts verified with
+five proof ports (100%, up from 93.75%). Imports remain 16/16 (100%); frozen
+sidecars remain 11/16 (68.75%). No proof-port gaps remain in this baseline.
+Default switching, frozen-sidecar compatibility policy, and retirement of the
+legacy importer are still open migration gates, so this is not a claim that
+the entire Charon migration is complete.
