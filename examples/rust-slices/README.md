@@ -16,7 +16,7 @@ current Click memory-range boundary; lengths and bounds checks are still
 64-bit, and an index with a nonzero high word cannot alias a small byte range.
 `length` and `empty` inspect metadata without requiring a byte resource.
 
-Build `scripts/build-rust-exporter.sh`, then run:
+Build `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-slices/bytes.click

@@ -11,7 +11,7 @@ a view or missing fragment cannot supply ownership. No new sidecar syntax is
 needed. rustc establishes the source borrows' legality; Click checks the
 extracted memory operations and functional claims.
 
-Build `scripts/build-rust-exporter.sh`, then run:
+Build `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-field-borrow/guard.click

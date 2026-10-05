@@ -104,6 +104,63 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
     );
 }
 
+/// Canonical examples use locked native imports without starting either compiler.
+#[test]
+fn charon_canonical_examples_use_locked_native_artifacts() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut adopted = 0;
+    for entry in inventory() {
+        let path = root.join(&entry.config);
+        let config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        if entry.outcome != "verified" {
+            assert_eq!(config["schema"], 2);
+            assert!(config.get("backend").is_none());
+            continue;
+        }
+        assert_eq!(config["schema"], 3);
+        assert_eq!(config["backend"], "charon-trial");
+        assert!(config["artifact"].as_str().unwrap().ends_with(".ullbc"));
+        let prepared = load_import(&path).unwrap();
+        let sidecar = path.with_file_name(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches(".import.json"),
+        );
+        C0VerificationSession::new_program_prepared(
+            &fs::read_to_string(sidecar).unwrap(),
+            &prepared,
+        )
+        .unwrap();
+        adopted += 1;
+    }
+    assert_eq!(
+        adopted, 11,
+        "canonical adoption uses the fixed 16-fixture baseline"
+    );
+}
+
+#[test]
+fn charon_canonical_basic_tools_agree() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
+    let p = Project::new("");
+    for name in [
+        "borrow.rs",
+        "borrow.click",
+        "borrow.ullbc",
+        "borrow.click.import.json",
+        "borrow.click.import.json.lock",
+    ] {
+        fs::write(p.root.join(name), fs::read(root.join(name)).unwrap()).unwrap();
+    }
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["audit", "--max-sites", "1"]);
+}
+
 #[test]
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {

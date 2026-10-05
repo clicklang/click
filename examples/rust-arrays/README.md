@@ -6,10 +6,10 @@ and `i32`. Indexed reads, writes, and element borrows require a full-width
 zero-length array), local aliases and reborrows, a direct helper call, and
 parent reuse with preservation of an untouched word.
 
-From the repository root, after installing the pinned Rust exporter toolchain:
+From the repository root, after installing the pinned Charon toolchain:
 
 ```sh
-scripts/build-rust-exporter.sh
+scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-arrays/arrays.click
 cargo run --bin click -- verify examples/rust-arrays/arrays.click
 cargo run --bin click -- profile examples/rust-arrays/arrays.click

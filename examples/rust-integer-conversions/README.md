@@ -17,7 +17,7 @@ shift counts, zero divisors, overflow, missing permissions, and false claims.
 The fixture's smart proof sites pass expansion audit and checked re-verification.
 
 ```sh
-scripts/build-rust-exporter.sh
+scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-integer-conversions/accumulator.click
 cargo run --bin click -- verify examples/rust-integer-conversions/accumulator.click
 cargo run --bin click -- audit examples/rust-integer-conversions/accumulator.click

@@ -6,7 +6,7 @@ modular reduction, shift-and-bitwise packing, unsigned comparison, and truncatio
 Rust overflow and invalid shift counts are checked obligations; discarding high
 bits in a shift and truncating an `as u8` cast are permitted.
 
-Build `scripts/build-rust-exporter.sh`, then run:
+Build `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
