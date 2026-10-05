@@ -2173,6 +2173,27 @@ fn validate_algebraic_expression_node(
                 context,
             )
         }
+        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+            let (left, right) =
+                integer_truncation_arguments(name, arguments).map_err(ClickError::new)?;
+            for argument in [left, right] {
+                if validate_algebraic_expression(
+                    argument,
+                    variables,
+                    click_functions,
+                    predicates,
+                    definitions,
+                    context,
+                )?
+                .is_some()
+                {
+                    return Err(ClickError::new(format!(
+                        "{name} expects mathematical Integer arguments in {context}"
+                    )));
+                }
+            }
+            Ok(None)
+        }
         ContractExpression::Call { name, arguments }
             if integer_conversion_target(name).is_some() =>
         {

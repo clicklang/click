@@ -12651,6 +12651,8 @@ fn spec_integer_is_obligation_free(value: &SpecIntegerExpression) -> bool {
         | SpecIntegerExpression::Multiply(left, right) => {
             spec_integer_is_obligation_free(left) && spec_integer_is_obligation_free(right)
         }
+        SpecIntegerExpression::TruncatingQuotient(_, _)
+        | SpecIntegerExpression::TruncatingRemainder(_, _) => false,
         SpecIntegerExpression::PureFunctionApplication { arguments, .. } => {
             arguments.iter().all(spec_argument_is_obligation_free)
         }
@@ -12853,7 +12855,9 @@ fn spec_integer_expression_reads_current_parameter(
         }
         SpecIntegerExpression::Add(left, right)
         | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right) => {
+        | SpecIntegerExpression::Multiply(left, right)
+        | SpecIntegerExpression::TruncatingQuotient(left, right)
+        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
             spec_integer_expression_reads_current_parameter(left, parameter_name)
                 || spec_integer_expression_reads_current_parameter(right, parameter_name)
         }

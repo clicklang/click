@@ -539,6 +539,9 @@ fn integer_expression_kind(
     }
     match expression {
         ContractExpression::IntegerLiteral(_) => Some(false),
+        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+            (arguments.len() == 2).then_some(true)
+        }
         ContractExpression::Call { name, arguments } if name == "to_integer" => {
             (arguments.len() == 1).then_some(true)
         }
@@ -770,6 +773,9 @@ fn contains_integer_expression_signal(
     locals: &BTreeSet<String>,
 ) -> bool {
     match expression {
+        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+            arguments.len() == 2
+        }
         ContractExpression::Call { name, arguments } if name == "to_integer" => {
             arguments.len() == 1
         }
@@ -1162,6 +1168,26 @@ fn infer_scoped_spec_value_type(
                 context,
                 expected_integer,
             )
+        }
+        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+            let (left, right) =
+                integer_truncation_arguments(name, arguments).map_err(ClickError::new)?;
+            for argument in [left, right] {
+                if infer_scoped_spec_value_type(
+                    argument,
+                    variables,
+                    integer_bindings,
+                    click_functions,
+                    context,
+                    true,
+                )? != SpecValueType::Integer
+                {
+                    return Err(ClickError::new(format!(
+                        "{name} expects two Integer arguments"
+                    )));
+                }
+            }
+            Ok(SpecValueType::Integer)
         }
         ContractExpression::Call { name, arguments } if name == "to_integer" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
@@ -1767,6 +1793,16 @@ fn infer_spec_value_type(
             )
             .map_err(ClickError::new)?;
             infer_spec_value_type(&substituted, variables, click_functions, context)
+        }
+        expression @ ContractExpression::Call { name, .. } if is_integer_truncation(name) => {
+            infer_scoped_spec_value_type(
+                expression,
+                variables,
+                &BTreeSet::new(),
+                click_functions,
+                context,
+                true,
+            )
         }
         ContractExpression::Call { name, arguments } if name == "to_integer" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
@@ -2616,6 +2652,10 @@ pub(super) fn infer_contract_expression_type(
             )
             .map_err(ClickError::new)?;
             infer_contract_expression_type(&substituted, variables, click_functions, context)
+        }
+        expression @ ContractExpression::Call { name, .. } if is_integer_truncation(name) => {
+            infer_spec_value_type(expression, variables, click_functions, context)?;
+            Ok(None)
         }
         ContractExpression::Call { name, arguments } if is_integer_conversion(name) => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
@@ -3612,7 +3652,11 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(body, click_functions, context)
         }
         ContractExpression::Call { name, arguments } => {
-            let builtin_arity = (is_integer_conversion(name) || name == "to_nat").then_some(1);
+            let builtin_arity = if is_integer_truncation(name) {
+                Some(2)
+            } else {
+                (is_integer_conversion(name) || name == "to_nat").then_some(1)
+            };
             let Some(arity) = builtin_arity.as_ref().or_else(|| click_functions.get(name)) else {
                 return Err(ClickError::new(format!(
                     "unknown function `{name}` in {context}"

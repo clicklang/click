@@ -418,7 +418,7 @@ fn wide_division_work_scales_with_explicit_operations() {
 }
 
 #[test]
-fn wide_division_checked_function_artifacts_replay_exactly() {
+fn wide_division_checked_function_artifacts_recheck_exactly() {
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         for remainder in [false, true] {
             let (zero, _, _, safe) = guards(ty);
@@ -454,8 +454,8 @@ fn wide_division_checked_function_artifacts_replay_exactly() {
                 )
             };
             let first = check();
-            let replay = check();
-            assert_eq!(first.agrees_with(&replay), Ok(()));
+            let recheck = check();
+            assert_eq!(first.agrees_with(&recheck), Ok(()));
             assert_eq!(first.paths().len(), 1);
             assert!(
                 first.paths()[0]

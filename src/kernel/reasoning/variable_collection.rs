@@ -852,7 +852,9 @@ pub(crate) fn collect_spec_integer_variables(
             SpecIntegerExpression::Negate(inner) => pending.push(inner),
             SpecIntegerExpression::Add(left, right)
             | SpecIntegerExpression::Subtract(left, right)
-            | SpecIntegerExpression::Multiply(left, right) => {
+            | SpecIntegerExpression::Multiply(left, right)
+            | SpecIntegerExpression::TruncatingQuotient(left, right)
+            | SpecIntegerExpression::TruncatingRemainder(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
@@ -934,7 +936,9 @@ fn collect_spec_integer_bound_variables_inner(
         }
         SpecIntegerExpression::Add(left, right)
         | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right) => {
+        | SpecIntegerExpression::Multiply(left, right)
+        | SpecIntegerExpression::TruncatingQuotient(left, right)
+        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
             collect_spec_integer_bound_variables_inner(left, variables, integer_seen);
             collect_spec_integer_bound_variables_inner(right, variables, integer_seen);
         }

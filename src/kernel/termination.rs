@@ -1369,7 +1369,9 @@ fn collect_spec_integer_expression_c_variables(
         }
         SpecIntegerExpression::Add(left, right)
         | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right) => {
+        | SpecIntegerExpression::Multiply(left, right)
+        | SpecIntegerExpression::TruncatingQuotient(left, right)
+        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
             collect_spec_integer_expression_c_variables(left, reads)?;
             collect_spec_integer_expression_c_variables(right, reads)
         }

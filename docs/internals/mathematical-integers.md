@@ -455,6 +455,39 @@ execution obligations are preserved before either operation.
 
 Exact guard lookup does not scan unrelated ambient facts. Regressions cover
 signed/unsigned extrema, quotient and remainder signs, zero and MIN/-1,
-missing guards, explicit promotions, checked function artifact replay, and
-2/8/32/128-operation work scaling. C++ source admission, surface truncation
-spellings and wide source memory remain separate work; schema remains 38.
+missing guards, explicit promotions, checked function artifact rechecking, and
+2/8/32/128-operation work scaling. C++ source admission and wide source memory remain separate work; schema remains 38.
+
+
+## Explicit truncation in proofs
+
+`truncating_quotient(a, b)` and `truncating_remainder(a, b)` take two
+mathematical Integer arguments. Quotients truncate toward zero; a nonzero
+remainder has the dividend's sign. Both require `b != 0`, including under
+cancellation or multiplication by zero. Native operand evaluation retains its
+own definedness obligations: `truncating_quotient(to_integer(x + 1), 3)` also
+requires the machine addition to be defined.
+
+Nonzero constants fold exactly at arbitrary width. Mathematical `MIN/-1`
+therefore denotes the positive unbounded quotient; it does not establish that
+a native signed division is defined. Symbolic terms remain opaque to affine
+reasoning. These explicit spellings leave mathematical Integer `/` and `%`
+unavailable, preserving their separate planned Euclidean policy.
+
+<!-- verified-example: mdtests/integer_truncation.md -->
+```click
+theorem guarded(a: Integer, b: Integer) {
+    requires b != 0;
+    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by simp;
+    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by simp;
+}
+```
+
+The kernel retains deferred operands and mandatory domain obligations before
+constructing shared terms. A pure expression with a nonzero constant divisor
+can use the shared Integer DAG directly. Deferred truncation is not treated
+as an obligation-free argument or a total fold summary. Expansion preserves
+the spellings and verifies again; regressions check hostile constants, erased
+guards, full-width signs, native operand obligations, shared aliases, and
+lookup with unrelated facts. This adds proof notation, not C++ source
+operation admission; artifact schema remains 38.

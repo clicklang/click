@@ -1580,6 +1580,8 @@ pub enum SpecIntegerExpression {
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
+    TruncatingQuotient(Box<Self>, Box<Self>),
+    TruncatingRemainder(Box<Self>, Box<Self>),
     /// A symbolic fold over either machine Int32 or mathematical Integer
     /// endpoints.  The kernel keeps this opaque; bounded expansion belongs
     /// to explicit fold reasoning, so evaluating this node never unrolls a

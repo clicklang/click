@@ -1680,7 +1680,7 @@ fn proposition_or_all(mut propositions: Vec<Proposition>) -> Proposition {
     propositions.pop().expect("nonempty disjunction level")
 }
 
-fn retain_required_conversion_obligation(
+fn retain_required_integer_obligation(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
     proposition: Proposition,
@@ -1794,7 +1794,7 @@ fn evaluate_spec_integer_expression_paths_in(
                     let bits = c_value_bitvector_term(&path.value).ok_or(ExecutionLimit::Paths)?;
                     let value = IntegerTerm::from_machine(ty, bits).ok_or(ExecutionLimit::Paths)?;
                     let mut obligations = path.obligations;
-                    retain_required_conversion_obligation(
+                    retain_required_integer_obligation(
                         &mut obligations,
                         assumptions,
                         domain.clone(),
@@ -1858,6 +1858,28 @@ fn evaluate_spec_integer_expression_paths_in(
             budget,
             IntegerBinaryOperation::Multiply,
         ),
+        SpecIntegerExpression::TruncatingQuotient(left, right) => evaluate_integer_binary_paths_in(
+            state,
+            left,
+            right,
+            loop_entry_state,
+            assumptions,
+            algebraic_bindings,
+            budget,
+            IntegerBinaryOperation::TruncatingQuotient,
+        ),
+        SpecIntegerExpression::TruncatingRemainder(left, right) => {
+            evaluate_integer_binary_paths_in(
+                state,
+                left,
+                right,
+                loop_entry_state,
+                assumptions,
+                algebraic_bindings,
+                budget,
+                IntegerBinaryOperation::TruncatingRemainder,
+            )
+        }
         SpecIntegerExpression::RangeFold {
             index,
             initial,
@@ -3060,7 +3082,7 @@ fn evaluate_integer_binary_paths_in(
             algebraic_bindings,
             budget,
         )? {
-            let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
+            let Some((facts, mut obligations)) = merge_execution_pure_facts_and_obligations(
                 &left_path.facts,
                 &left_path.obligations,
                 &right_path.facts,
@@ -3072,13 +3094,32 @@ fn evaluate_integer_binary_paths_in(
             let left_bits = integer_term_bits(&left_path.value);
             let right_bits = integer_term_bits(&right_path.value);
             let work = match operation {
-                IntegerBinaryOperation::Multiply => left_bits.saturating_mul(right_bits),
+                IntegerBinaryOperation::Multiply
+                | IntegerBinaryOperation::TruncatingQuotient
+                | IntegerBinaryOperation::TruncatingRemainder => {
+                    left_bits.saturating_mul(right_bits)
+                }
                 IntegerBinaryOperation::Add | IntegerBinaryOperation::Subtract => {
                     left_bits.saturating_add(right_bits)
                 }
             };
             if crate::instrumentation::numeric_operation_work_exceeded(work) {
                 return Err(ExecutionLimit::Deadline);
+            }
+            if matches!(
+                operation,
+                IntegerBinaryOperation::TruncatingQuotient
+                    | IntegerBinaryOperation::TruncatingRemainder
+            ) {
+                let nonzero = ConditionTerm::integer_not_equal(
+                    right_path.value.clone(),
+                    IntegerTerm::constant_i64(0),
+                );
+                retain_required_integer_obligation(
+                    &mut obligations,
+                    &path_assumptions,
+                    Proposition::ConditionIs(nonzero, true),
+                );
             }
             let value = match operation {
                 IntegerBinaryOperation::Add => {
@@ -3089,6 +3130,12 @@ fn evaluate_integer_binary_paths_in(
                 }
                 IntegerBinaryOperation::Multiply => {
                     IntegerTerm::multiply(left_path.value.clone(), right_path.value)
+                }
+                IntegerBinaryOperation::TruncatingQuotient => {
+                    IntegerTerm::truncating_quotient(left_path.value.clone(), right_path.value)
+                }
+                IntegerBinaryOperation::TruncatingRemainder => {
+                    IntegerTerm::truncating_remainder(left_path.value.clone(), right_path.value)
                 }
             };
             result.push(SpecIntegerPath {
@@ -3106,6 +3153,8 @@ enum IntegerBinaryOperation {
     Add,
     Subtract,
     Multiply,
+    TruncatingQuotient,
+    TruncatingRemainder,
 }
 
 fn integer_term_bits(term: &IntegerTerm) -> usize {
@@ -3615,7 +3664,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         if super::check_nat_integer_law("nat_integer_nonnegative", &required)
                             .is_none()
                         {
-                            retain_required_conversion_obligation(
+                            retain_required_integer_obligation(
                                 &mut obligations,
                                 assumptions,
                                 required,
@@ -5251,7 +5300,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
                 .into_iter()
                 .map(|mut path| {
                     if let Some(domain) = domain.clone() {
-                        retain_required_conversion_obligation(
+                        retain_required_integer_obligation(
                             &mut path.obligations,
                             assumptions,
                             domain,
@@ -6430,8 +6479,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     ConditionTerm::integer_less_equal(path.value.clone(), upper.clone()),
                     true,
                 );
-                retain_required_conversion_obligation(&mut obligations, assumptions, lower_bound);
-                retain_required_conversion_obligation(&mut obligations, assumptions, upper_bound);
+                retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
+                retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
                 let value = c_value_from_bitvector_term(
                     destination.c_type(),
                     Bitvector32Term::IntegerToMachine {
@@ -9938,6 +9987,97 @@ mod wide_scalar_conversion_tests {
                 obligation.proposition(),
                 Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true)
             )));
+        }
+    }
+}
+
+#[cfg(test)]
+mod integer_truncation_tests {
+    use super::*;
+
+    fn truncation(remainder: bool, left: IntegerTerm, right: IntegerTerm) -> SpecIntegerExpression {
+        let left = Box::new(SpecIntegerExpression::Term(left));
+        let right = Box::new(SpecIntegerExpression::Term(right));
+        if remainder {
+            SpecIntegerExpression::TruncatingRemainder(left, right)
+        } else {
+            SpecIntegerExpression::TruncatingQuotient(left, right)
+        }
+    }
+
+    #[test]
+    fn integer_truncation_capture_requires_domain_even_when_result_cancels() {
+        let left = IntegerTerm::Variable(Variable(150_091));
+        let right = IntegerTerm::Variable(Variable(150_092));
+        let nonzero = ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0));
+        let empty = PureFactContext::new();
+        let guarded = PureFactContext::new().assume_condition(nonzero, true);
+        for remainder in [false, true] {
+            let term = truncation(remainder, left.clone(), right.clone());
+            let expected = if remainder {
+                IntegerTerm::truncating_remainder(left.clone(), right.clone())
+            } else {
+                IntegerTerm::truncating_quotient(left.clone(), right.clone())
+            };
+            assert_eq!(
+                capture_spec_integer_value(&CState::new(), &term, None, &guarded).unwrap(),
+                expected
+            );
+            for expression in [
+                term.clone(),
+                SpecIntegerExpression::Multiply(
+                    Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
+                    Box::new(term.clone()),
+                ),
+                SpecIntegerExpression::Subtract(Box::new(term.clone()), Box::new(term)),
+            ] {
+                assert!(
+                    capture_spec_integer_value(&CState::new(), &expression, None, &empty).is_err()
+                );
+                assert!(
+                    capture_spec_integer_value(&CState::new(), &expression, None, &guarded).is_ok()
+                );
+            }
+            let zero = truncation(
+                remainder,
+                IntegerTerm::constant_i64(7),
+                IntegerTerm::constant_i64(0),
+            );
+            assert!(capture_spec_integer_value(&CState::new(), &zero, None, &empty).is_err());
+        }
+    }
+
+    #[test]
+    fn integer_truncation_guard_lookup_ignores_unrelated_facts() {
+        let left = IntegerTerm::Variable(Variable(150_093));
+        let right = IntegerTerm::Variable(Variable(150_094));
+        for remainder in [false, true] {
+            let expression = truncation(remainder, left.clone(), right.clone());
+            let mut measured = Vec::new();
+            for count in [16, 64, 256, 1024] {
+                let mut assumptions = PureFactContext::new().assume_condition(
+                    ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0)),
+                    true,
+                );
+                for index in 0..count {
+                    assumptions = assumptions.assume_condition(
+                        ConditionTerm::integer_not_equal(
+                            IntegerTerm::Variable(Variable(151_000 + index)),
+                            IntegerTerm::constant_i64(0),
+                        ),
+                        true,
+                    );
+                }
+                let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    capture_spec_integer_value(&CState::new(), &expression, None, &assumptions)
+                });
+                value.unwrap();
+                measured.push(work);
+            }
+            assert!(
+                measured.iter().all(|work| *work == measured[0]),
+                "{measured:?}"
+            );
         }
     }
 }

@@ -1193,4 +1193,19 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
             Err(FoldReadDecline::UnsupportedConstruct(_))
         ));
     }
+    for divisor in [IntegerTerm::var(ITEM), IntegerTerm::constant_i64(3)] {
+        let left = Box::new(SpecIntegerExpression::FromMachine(Box::new(item())));
+        let right = Box::new(SpecIntegerExpression::Term(divisor));
+        for expression in [
+            SpecIntegerExpression::TruncatingQuotient(left.clone(), right.clone()),
+            SpecIntegerExpression::TruncatingRemainder(left, right),
+        ] {
+            assert_eq!(
+                checker.integer(&expression, Scope::Body),
+                Err(FoldReadDecline::UnsupportedConstruct(
+                    "a deferred truncating division".to_string()
+                ))
+            );
+        }
+    }
 }

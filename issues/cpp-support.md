@@ -448,12 +448,20 @@ matching signed or unsigned 128-bit operands. Zero and signed MIN/-1 guards
 precede result construction for both operations. Unknown guards retain UB
 paths; the normal path retains exact certified Integer observations of its
 quotient/remainder. Signed overflow uses the existing logical proposition
-model (`left != MIN || right != -1`). Replay and deterministic scaling
+model (`left != MIN || right != -1`). Rechecking and deterministic scaling
 regressions cover native execution and exact guard lookup. Promotions remain
 explicit, and artifact schema stays 38 with source admission closed.
 
-Next add full-width quotient/remainder proof spellings and round-trip
-expansion support, then admit wide C++ division/remainder and cover checked narrowing
+Full-width quotient/remainder proof spellings and expansion are delivered.
+`truncating_quotient` and `truncating_remainder` operate on mathematical
+Integers and require a nonzero divisor even when surrounding arithmetic
+erases the result. Native operand obligations survive; mathematical MIN/-1
+remains unbounded, distinct from native overflow. Regressions cover constant
+signs/extrema, hostile claims, missing guards, expansion/reverification, shared
+pure aliases, and indexed guard lookup. Deferred expressions remain excluded
+from obligation-free arguments and total fold summaries.
+
+Next admit wide C++ division/remainder and cover checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before
