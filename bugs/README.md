@@ -25,4 +25,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [Expanding a `loop` renders a match arm's pointer binder as `…`](loop-expansion-renders-arm-pointer-binders-unspellably.md)
 - [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
-- [Pure `witness` rejects machine-integer existentials](pure-witness-rejects-machine-integer-existentials.md)
+- [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
+- [A pure witness cannot evaluate a declaration-level let alias](pure-witness-cannot-use-a-declaration-let-alias.md)

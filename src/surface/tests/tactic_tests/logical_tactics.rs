@@ -2925,3 +2925,107 @@ fn parses_outcomes_arms_in_either_order() {
         error.message()
     );
 }
+
+#[test]
+fn pure_machine_witness_instantiates_supported_c_binders() {
+    let source = r#"
+        theorem split_sum(n: int32) {
+            requires 0 <= n and n <= 100;
+            ensures exists (a: int32, b: int32) { a + b == n and 0 <= a and 0 <= b } by {
+                witness { a: n, b: 0 };
+                simp();
+            }
+        }
+        theorem pointer_witness(p: int32*) {
+            ensures exists (q: int32*) { q == p } by {
+                witness { q: p };
+                simp();
+            }
+        }
+    "#;
+    verify_c0_sources(source, &[]).expect("pure witness accepts machine and pointer binders");
+    let false_claim = source.replace("b: 0", "b: 1");
+    assert!(
+        verify_c0_sources(&false_claim, &[]).is_err(),
+        "the instantiated body must still be proved"
+    );
+}
+
+#[test]
+fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
+    for (source, expected, actual) in [
+        (
+            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; simp(); } }"#,
+            "int32",
+            "Flag",
+        ),
+        (
+            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; simp(); } }"#,
+            "int32",
+            "Integer",
+        ),
+        (
+            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness { x: p }; simp(); } }"#,
+            "int32",
+            "int32*",
+        ),
+        (
+            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness { x: n }; simp(); } }"#,
+            "int32*",
+            "int32",
+        ),
+        (
+            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness { x: p }; simp(); } }"#,
+            "int32*",
+            "int64*",
+        ),
+    ] {
+        let error = verify_c0_sources(source, &[]).expect_err("witness type must match its binder");
+        let message = error.message();
+        assert!(message.contains("witness `x`"), "{message}");
+        assert!(
+            message.contains(&format!("expected {expected}")),
+            "{message}"
+        );
+        assert!(message.contains(&format!("got {actual}")), "{message}");
+    }
+}
+
+#[test]
+fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
+    for pointer_type in [
+        "void*", "int8*", "uint8*", "int16*", "uint16*", "int32*", "uint32*", "int64*", "uint64*",
+        "int32**",
+    ] {
+        let source = format!(
+            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness {{ p: p }}; simp(); }} }}"
+        );
+        verify_c0_sources(&source, &[])
+            .unwrap_or_else(|error| panic!("{pointer_type}: {}", error.message()));
+    }
+    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness { n: n }; simp(); } }";
+    verify_c0_sources(source, &[])
+        .expect("a witness keeps its lexical alias despite binder shadowing");
+    let position = expansion::position_at_offset(source, source.find("simp();").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("the proof after a pure machine witness expands");
+    verify_c0_sources(&expanded, &[]).expect("the expanded witness proof re-verifies");
+}
+
+#[test]
+fn pure_machine_witness_does_not_narrow_unsupported_binder_widths() {
+    for scalar_type in ["int64", "uint8"] {
+        let source = format!(
+            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness {{ x: n }}; simp(); }} }}"
+        );
+        let error = verify_c0_sources(&source, &[])
+            .expect_err("these binder widths still need typed quantifier lowering");
+        assert!(
+            error
+                .message()
+                .contains("only int32 and pointer binders are supported"),
+            "{}",
+            error.message()
+        );
+    }
+}

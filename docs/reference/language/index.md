@@ -2313,8 +2313,11 @@ such as `exists (k: int32) { lo <= k and k < hi and p[k] == x }` does not
 currently let the earlier conjunct guard the later memory read during lowering.
 
 Existential goals are proved explicitly in proof scripts with `witness`.
-The witness name must match the existential binder. For a symbolic `.any`, the
-range item name is the existential binder:
+The witness name must match the existential binder. Pure theorem scripts also
+support `int32` and pointer witnesses, alongside `Integer` and algebraic
+witnesses. The value must have the binder's type, and the instantiated body
+still needs a proof. See [the pure witness example](https://github.com/clicklang/click/blob/master/mdtests/pure_machine_witness.md).
+For a symbolic `.any`, the range item name is the existential binder:
 
 <!-- verified-example: mdtests/exists_and_symbolic_any.md -->
 ```click
