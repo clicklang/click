@@ -241,6 +241,22 @@ fn partition_outcome_cases(
         return Ok(OutcomeEvidenceFork::Keep);
     };
     let node = &nodes[index];
+    // Retained C and proof case decisions already choose this source arm.
+    // Consult them at every nested node, not only at the root: re-lowering
+    // a short-circuit condition can otherwise lose its checked truth value
+    // and fork an inconsistent descendant.
+    if let Some(value) = provenance.branch_decisions.value(node.condition)? {
+        return partition_outcome_cases(
+            nodes,
+            node.arms[usize::from(!value)],
+            authority,
+            query,
+            facts,
+            provenance,
+            lower,
+            emit,
+        );
+    }
     let lowered = lower(node.condition, facts)?;
     let positive = crate::kernel::canonical_condition_fact(&lowered);
     let negative =
@@ -2909,15 +2925,9 @@ impl<'a> Proof<'a> {
                 facts.with_kernel_checked_fact(fact.clone())
             });
             let snapshots = provenance.recorded_snapshots.clone();
-            let recorded = provenance
-                .branch_decisions
-                .iter()
-                .find(|decision| &decision.condition == condition)
-                .map(|decision| decision.value);
-            let next = recorded.map_or(Some(root), |value| arms[usize::from(!value)]);
             let fork = partition_outcome_cases(
                 &nodes,
-                next,
+                Some(root),
                 self.facts(),
                 &query,
                 &mut path_facts,
@@ -3708,6 +3718,110 @@ mod outcome_case_tests {
     use super::*;
 
     #[test]
+    fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
+        for size in [4, 8, 16, 32] {
+            let conditions = (0..size)
+                .map(|index| ClickProposition::PredicateCall {
+                    name: format!("case_{index}"),
+                    arguments: Vec::new(),
+                })
+                .collect::<Vec<_>>();
+            let nodes = conditions
+                .iter()
+                .enumerate()
+                .map(|(index, condition)| OutcomeCase {
+                    condition,
+                    arms: [None, (index + 1 < size).then_some(index + 1)],
+                })
+                .collect::<Vec<_>>();
+            let mut decisions = ExecutionBranchDecisions::default();
+            // Execution can record inner C decisions before an enclosing
+            // proof case is joined. Lookup must not depend on history order.
+            for condition in conditions.iter().rev() {
+                decisions.push(ExecutionBranchDecision {
+                    condition: condition.clone(),
+                    value: false,
+                });
+            }
+            let provenance = OutcomeProvenance {
+                call_routes: Vec::new(),
+                branch_decisions: decisions,
+                surface_propositions: SurfacePropositionMap::default(),
+                recorded_snapshots: RecordedSnapshots::default(),
+                generated_load_bindings: PersistentMap::default(),
+                generated_load_source_resolutions: PersistentMap::default(),
+                generated_load_source_events: PersistentSequence::default(),
+            };
+            let root = ProofFacts::default();
+            let mut leaves = 0;
+            let (fork, work) = crate::instrumentation::measure_deterministic_work(|| {
+                partition_outcome_cases(
+                    &nodes,
+                    Some(0),
+                    &root,
+                    &root,
+                    &mut Vec::new(),
+                    provenance,
+                    &|_, _| panic!("a recorded case must not be lowered again"),
+                    &mut |facts, provenance| {
+                        assert!(facts.is_empty(), "no invented case facts");
+                        assert_eq!(provenance.branch_decisions.iter().count(), size);
+                        leaves += 1;
+                    },
+                )
+                .unwrap()
+            });
+            assert!(matches!(fork, OutcomeEvidenceFork::Keep));
+            assert_eq!(leaves, 1, "only the checked false path is retained");
+            assert!(
+                work <= size * 128,
+                "linear case work at size {size}: {work}"
+            );
+        }
+    }
+
+    #[test]
+    fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
+        let selected = ClickProposition::PredicateCall {
+            name: "selected".to_string(),
+            arguments: Vec::new(),
+        };
+        let mut previous_work = None;
+        for size in [8, 32, 128, 512] {
+            let mut decisions = ExecutionBranchDecisions::default();
+            decisions.push(ExecutionBranchDecision {
+                condition: selected.clone(),
+                value: false,
+            });
+            for index in 0..size {
+                decisions.push(ExecutionBranchDecision {
+                    condition: ClickProposition::PredicateCall {
+                        name: format!("unrelated_{index}"),
+                        arguments: Vec::new(),
+                    },
+                    value: true,
+                });
+            }
+            let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+                decisions.value(&selected).unwrap()
+            });
+            assert_eq!(value, Some(false));
+            if let Some(previous) = previous_work {
+                assert!(
+                    work <= previous * 2,
+                    "lookup grew with history: {previous} -> {work}"
+                );
+            }
+            previous_work = Some(work);
+            decisions.push(ExecutionBranchDecision {
+                condition: selected.clone(),
+                value: true,
+            });
+            assert!(decisions.value(&selected).is_err());
+        }
+    }
+
+    #[test]
     fn nested_case_partition_work_visits_only_reached_nodes() {
         for size in [4, 8, 16, 32] {
             let conditions = (0..size)
@@ -3743,7 +3857,7 @@ mod outcome_case_tests {
                 &mut facts,
                 OutcomeProvenance {
                     call_routes: Vec::new(),
-                    branch_decisions: PersistentSequence::default(),
+                    branch_decisions: ExecutionBranchDecisions::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),
                     generated_load_bindings: PersistentMap::default(),

@@ -1357,3 +1357,33 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
     drop(worker);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn short_circuit_conditions_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let deadline = Instant::now() + Duration::from_secs(120);
+    for relative in [
+        "mdtests/a_bounded_argument_to_a_narrow_parameter_is_in_its_range.md",
+        "mdtests/a_condition_reaching_one_value_along_two_paths_splits_into_them.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(sites.len() >= 2, "{relative}: {sites:?}");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| {
+                panic!(
+                    "{relative}:{}:{} should audit: {message}",
+                    site.position.line, site.position.column
+                )
+            });
+        }
+    }
+}

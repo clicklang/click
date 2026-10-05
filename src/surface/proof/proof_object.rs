@@ -536,9 +536,9 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Kernel facts whose checked C-branch Surface spellings must survive a
     /// join for extraction and explicit historical premises.
     pub(in crate::surface::proof) branch_surface_facts: PersistentOrderedSet<Proposition>,
-    /// Decisions on the currently focused branch execution lineage. Forks append
-    /// one entry in constant time.
-    branch_decisions: PersistentSequence<ExecutionBranchDecision>,
+    /// Decisions on the currently focused branch execution lineage. Forks
+    /// share history and add only the new decision and its index entry.
+    branch_decisions: ExecutionBranchDecisions,
     /// Path-local provenance aligned with terminal execution candidates.
     /// Keeping each outcome's lineage, Surface lowerings, and recorded-snapshot
     /// snapshots in one record makes their correspondence structural rather
@@ -691,7 +691,7 @@ impl ExecutionProofState {
                 expansion: ExpansionCursor::default(),
                 branch_path,
                 branch_surface_facts: PersistentOrderedSet::default(),
-                branch_decisions: PersistentSequence::default(),
+                branch_decisions: ExecutionBranchDecisions::default(),
                 outcome_provenance: Arc::new(Vec::new()),
                 generated_load_bindings: PersistentMap::default(),
                 generated_load_binding_events: PersistentSequence::default(),
@@ -708,6 +708,63 @@ impl ExecutionProofState {
 struct ExecutionBranchDecision {
     condition: ClickProposition,
     value: bool,
+}
+
+/// Keeps source order for certificate stitching and an exact-condition index
+/// for case selection. Looking up one condition never walks path history.
+#[derive(Clone, Default)]
+struct ExecutionBranchDecisions {
+    ordered: PersistentSequence<ExecutionBranchDecision>,
+    by_condition: PersistentMap<String, Vec<ExecutionBranchDecision>>,
+}
+
+impl ExecutionBranchDecisions {
+    fn key(condition: &ClickProposition) -> String {
+        let key = format!("{condition:?}");
+        crate::instrumentation::record_deterministic_work(key.len());
+        key
+    }
+
+    fn push(&mut self, decision: ExecutionBranchDecision) {
+        let key = Self::key(&decision.condition);
+        let mut bucket = self.by_condition.get(&key).cloned().unwrap_or_default();
+        // Exact equality, rather than the debug key, decides membership.
+        if !bucket.iter().any(|existing| {
+            existing.condition == decision.condition && existing.value == decision.value
+        }) {
+            bucket.push(decision.clone());
+            self.by_condition = self.by_condition.with_inserted(key, bucket);
+        }
+        self.ordered.push(decision);
+    }
+
+    fn value(&self, condition: &ClickProposition) -> Result<Option<bool>, ClickError> {
+        let mut result = None;
+        if let Some(bucket) = self.by_condition.get(&Self::key(condition)) {
+            for decision in bucket {
+                if &decision.condition != condition {
+                    continue;
+                }
+                if result.is_some_and(|value| value != decision.value) {
+                    return Err(ClickError::new(
+                        "checked execution path records both sides of the post-execution `if` condition"
+                            .to_string(),
+                    ));
+                }
+                result = Some(decision.value);
+            }
+        }
+        Ok(result)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &ExecutionBranchDecision> {
+        self.ordered.iter()
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.ordered.is_empty()
+    }
 }
 
 /// Read-only terminal data borrowed from an execution `Proof` by claim
@@ -845,7 +902,7 @@ struct OutcomeProvenance {
     /// paths that never visited a call, so this belongs to each outcome
     /// rather than to the joined frontier as one flat vector.
     call_routes: Vec<bool>,
-    branch_decisions: PersistentSequence<ExecutionBranchDecision>,
+    branch_decisions: ExecutionBranchDecisions,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
     #[allow(dead_code)]
@@ -1401,7 +1458,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     /// function-entry Surface premise without scanning unrelated facts.
     pub(in crate::surface::proof) requirement_surfaces:
         Arc<PersistentMap<Proposition, ClickProposition>>,
-    branch_decisions: PersistentSequence<ExecutionBranchDecision>,
+    branch_decisions: ExecutionBranchDecisions,
     /// The checked call edges this outcome took, outermost `outcomes`
     /// first. `true` is `returned`; `false` is `threw`.
     pub(in crate::surface::proof) call_routes: Vec<bool>,

@@ -14,7 +14,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion is unavailable where a call has an exceptional path](expansion-unavailable-for-exceptional-call-paths.md)
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
 - [Expanded proof no longer certifies a `produces` claim](expansion-loses-produced-resource-claim.md)
-- [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
 - [The refusal of `old(c.model)` in a loop clause suggests a binding that is rejected](loop-clause-old-field-refusal-suggests-a-rejected-unfold-binding.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
