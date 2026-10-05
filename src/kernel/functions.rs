@@ -2209,9 +2209,9 @@ pub(super) fn execute_c_function_verification_paths(
     Ok(paths)
 }
 
-/// C calls have no certified population transition yet, including calls with
-/// empty contracts and runtime-provided summaries. Heap allocation/free are
-/// separate statement forms and do not pass through this function boundary.
+/// Unadmitted calls cannot update an authority population. Verified effects
+/// and explicitly preserving assumed interfaces are checked at their own call
+/// boundaries; allocation/free use separate statement forms.
 fn authority_mode_call_refusal(caller_state: &CState) -> Option<CRuntimeError> {
     caller_state.uses_population_authority_semantics().then(|| {
         CRuntimeError::FunctionContract(
@@ -2772,6 +2772,46 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
             .all(|(left, right)| left.term() == right.term() && left.quantity() == right.quantity())
 }
 
+/// An assumed contract may preserve a ledger, but it has no body certificate
+/// justifying population births or spends. Named occurrences must be borrowed
+/// and returned with exactly the same identity and description as well.
+pub(super) fn authority_mode_preserves_assumed_resource_contract(
+    interface: &CFunctionContractInterface,
+) -> bool {
+    if authority_mode_protected_families(interface).is_empty()
+        || !authority_mode_preserves_resource_contract(interface)
+    {
+        return false;
+    }
+    let named = |spec: &&CResourceSpec| spec.family() == ResourceFamily::Instance;
+    let mut inputs = interface
+        .resource_requires()
+        .iter()
+        .filter(named)
+        .collect::<Vec<_>>();
+    let mut outputs = interface
+        .resource_ensures()
+        .iter()
+        .filter(named)
+        .collect::<Vec<_>>();
+    let admitted = |spec: &&CResourceSpec| {
+        spec.role() == CResourceTransferRole::Borrow
+            && spec.access() == CResourceAccessMode::Own
+            && spec.quantity() == &CResourceQuantity::One
+            && spec.guard().is_none()
+    };
+    if !inputs.iter().all(admitted) || !outputs.iter().all(admitted) {
+        return false;
+    }
+    inputs.sort_by_key(|spec| spec.term());
+    outputs.sort_by_key(|spec| spec.term());
+    inputs.len() == outputs.len()
+        && inputs.iter().zip(outputs).all(|(input, output)| {
+            input.term() == output.term()
+                && input.resource_arguments() == output.resource_arguments()
+        })
+}
+
 /// Direct population-like companions remain conserved. A control wrapper's
 /// own authority is moved by the checked call boundary; named instances and
 /// memory clauses retain their ordinary resource validation.
@@ -3274,6 +3314,82 @@ mod authority_helper_admission_tests {
         ))];
         assert!(!authority_mode_preserves_resource_contract(&interface));
     }
+    #[test]
+    fn assumed_authority_contracts_preserve_named_identity_without_lifecycle_rights() {
+        assert!(!authority_mode_preserves_assumed_resource_contract(
+            &CFunctionContractInterface::new(CType::Void, Vec::new())
+        ));
+        let mut interface = companion_interface("reference");
+        interface
+            .resource_requires
+            .retain(|spec| spec.family() == ResourceFamily::PopulationAuthority);
+        interface
+            .resource_ensures
+            .retain(|spec| spec.family() == ResourceFamily::PopulationAuthority);
+        let identity = Variable::allocate_fresh().unwrap();
+        let schema =
+            ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let member = CResourceSpec::composite(
+            CResourceAccessMode::Own,
+            "ticket".into(),
+            vec![c_variable("p")],
+            vec![CType::Int32Pointer],
+        );
+        let named = CResourceSpec::instance(
+            identity,
+            "member".into(),
+            schema.clone(),
+            member.clone(),
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Current,
+        )
+        .unwrap();
+        interface.resource_requires.push(named.clone());
+        interface.resource_ensures.push(named);
+        assert!(authority_mode_preserves_assumed_resource_contract(
+            &interface
+        ));
+        for role in [
+            CResourceTransferRole::Consume,
+            CResourceTransferRole::Produce,
+        ] {
+            let mut changed = interface.clone();
+            if role == CResourceTransferRole::Consume {
+                let last = changed.resource_requires.last_mut().unwrap();
+                *last = last.clone().with_role(role);
+                changed.resource_ensures.pop();
+            } else {
+                changed.resource_requires.pop();
+                let last = changed.resource_ensures.last_mut().unwrap();
+                *last = last.clone().with_role(role);
+            }
+            assert!(!authority_mode_preserves_assumed_resource_contract(
+                &changed
+            ));
+        }
+        let mut changed = interface.clone();
+        changed.resource_ensures.pop();
+        changed.resource_ensures.push(
+            CResourceSpec::instance(
+                Variable::allocate_fresh().unwrap(),
+                "member".into(),
+                schema,
+                member,
+                CResourceTransferRole::Borrow,
+                CResourceSnapshot::Current,
+            )
+            .unwrap(),
+        );
+        assert!(!authority_mode_preserves_assumed_resource_contract(
+            &changed
+        ));
+        interface.resource_ensures.pop();
+        assert!(!authority_mode_preserves_assumed_resource_contract(
+            &interface
+        ));
+    }
+
     fn companion_interface(member_family: &str) -> CFunctionContractInterface {
         let member = CResourceSpec::composite(
             CResourceAccessMode::Own,
@@ -3760,7 +3876,12 @@ pub(super) fn execute_c_function_call_paths(
             .is_none()
         && !environment
             .get_external_function_rule(function.name())
-            .is_some_and(CExternalFunctionRule::is_scoped_unselected)
+            .is_some_and(|rule| {
+                rule.is_scoped_unselected()
+                    || authority_mode_preserves_assumed_resource_contract(
+                        rule.function.contract_interface(),
+                    )
+            })
     {
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
@@ -6598,7 +6719,8 @@ fn prepare_verified_function_call<'a>(
             || (application.evidence.is_none()
                 && !environment
                     .get_external_function_rule(application.name)
-                    .is_some_and(CExternalFunctionRule::is_scoped_unselected)))
+                    .is_some_and(CExternalFunctionRule::is_scoped_unselected)
+                && !authority_mode_preserves_assumed_resource_contract(contract_interface)))
     {
         return Ok(Err(CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),

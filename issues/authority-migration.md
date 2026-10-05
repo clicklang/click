@@ -374,9 +374,14 @@ read-only imports and bounded lookup work beside growing unrelated populations.
 Wildcard helpers preserve aggregate and exact observations while other named
 members stay framed; an authority-only helper preserves them with all members
 framed. Regressions reject invented aggregate/exact totals and lifecycle changes.
-Body-opening lifecycle effects and external named
-contract interfaces remain unsupported; the original field-count controls stay
-unchanged until those boundaries are supported.
+External and named callback contracts now build entry contexts in the selected
+resource semantics. Assumed interfaces may preserve explicitly owned authority
+and named occurrences through the shared checked call engine. They cannot birth
+or spend named members, replace identity, or introduce anonymous lifecycle
+rights. Regressions retain unary/wildcard counts and List-valued fields, and
+reject missing authority, duplicate binders, another anchor, and consumption.
+Body-opening lifecycle effects remain unsupported; the original field-count
+controls stay unchanged until those boundaries are supported.
 
 **List-valued named fields:** Protected resource types and named member lowering
 now share checked algebraic field schemas. A private-memory preserving helper
