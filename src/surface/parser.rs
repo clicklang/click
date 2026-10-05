@@ -544,6 +544,8 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
             | "int8"
             | "int16"
             | "int64"
+            | "int128"
+            | "uint128"
             | "uint8"
             | "uint8_t"
             | "uint32"
@@ -3232,6 +3234,8 @@ impl Parser {
                 "uint32" | "uint32_t" => C0Type::UInt32,
                 "int64" | "int64_t" | "ssize_t" => C0Type::Int64,
                 "uint64" | "size_t" | "uint64_t" => C0Type::UInt64,
+                "int128" => C0Type::Int128,
+                "uint128" => C0Type::UInt128,
                 "float" => C0Type::Float32,
                 "double" => C0Type::Float64,
                 "volatile" => {

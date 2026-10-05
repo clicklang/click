@@ -25,7 +25,8 @@ obligations. In particular, `to_integer(x + 1)` does not discharge an
 overflow obligation for `x + 1`.
 
 Reverse conversions are destination-specific: `to_int8`, `to_int16`, `to_int32`,
-`to_uint8`, `to_uint16`, `to_uint32`, `to_int64`, and `to_uint64`. A conversion
+`to_uint8`, `to_uint16`, `to_uint32`, `to_int64`, `to_uint64`, `to_int128`,
+and `to_uint128`. A conversion
 requires proof that the Integer lies in the destination's exact range. It does
 not truncate, wrap, saturate, or insert an unchecked assumption. A symbolic
 conversion requires both bounds, even in a reflexive proposition.
@@ -247,8 +248,11 @@ allocation is charged before constructing bounded exact values.
 
 Signed and unsigned 128-bit constants, their full endpoint ranges, widening,
 and narrowing are represented and tested against independent exact arithmetic.
-The kernel also has a bounded wide scalar profile, described below. Source
-`__int128` execution and surface `int128` / `uint128` types remain unsupported.
+The kernel also has a bounded wide scalar profile, described below. Contracts
+use `int128` / `uint128` for full-width scalar values. C++ admits the bounded
+`__int128` source profile described in the import reference; ordinary C and
+Rust source admission remain separate. Reverse conversion arguments supply
+Integer context even to negative literals beyond the 64-bit range.
 
 ## Explicit machine modulo casts
 
@@ -343,12 +347,14 @@ do not visit unrelated elements. Compact scalar-copy checks include a wide
 cell overlapping the region's prefix.
 
 Other native wide arithmetic, including unsigned wrapping multiplication,
-source aggregate layouts,
-byte views of wide cells, callbacks, and C/C++/Rust source spellings remain unsupported.
-Internal C0 type identities preserve the kernel sorts without adding parser
-admission. The frontends continue to reject reachable `__int128` behavior.
-Frontend source admission is the next slice; existing
-implementation fixtures remain unchanged.
+source aggregate layouts, byte views of wide cells, and callbacks remain
+unsupported. C++ now admits wide scalar locals, parameters, results,
+matching-width call captures, modulo integral casts, Boolean conversions, and
+checked signed multiplication. Contracts observe these values through
+`to_integer` and use checked reverse conversions; native wide comparisons are
+not admitted. Wide source pointers, references, arrays, and record fields
+remain unsupported, as do ordinary C and Rust wide source spellings. Internal
+C0 identities model the wider memory profile without granting source admission.
 
 ## Work budgets and certificate scaling
 

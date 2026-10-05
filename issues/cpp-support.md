@@ -166,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 37 and earlier locks require
+needs separate support. Artifact schema is now 38 and earlier locks require
 an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
 
 ## Required invariant
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 37. The full `__int128` path remains a prerequisite for the
+artifact schema is now 38. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 37
+arrangement restrictions remain semantic-profile limitations. Artifact schema 38
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -265,8 +265,8 @@ serialized nesting budget bounds recursive input. Local semantic validators
 reuse the metadata helpers when checked in isolation. Regressions mutate every
 span and identity in a corpus covering all recursive variants, distinguish
 malformed metadata from unsupported nested lifetimes, and measure growing
-syntax/alias work without cloning lexical environments. Artifact schema remains
-37 and existing supported-source proofs remain unchanged.
+syntax/alias work without cloning lexical environments. Artifact schema is now
+38 and existing supported-source proofs remain unchanged.
 
 Next extend the shared scalar and kernel design for the fee arithmetic milestone.
 
@@ -397,8 +397,8 @@ C++ frontend admission now covers signed/unsigned `__int128` intermediates:
 mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
-carrier was introduced. Function boundaries retain the existing narrow scalar
-profile. Exporter and schema both reject unsupported wide operations. Schema 37
+carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
+Exporter and schema both reject unsupported wide operations. Schema 38
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -408,9 +408,23 @@ Oracle checks cover all signedness combinations and both narrowing and widening,
 and deterministic multi-size tests keep unrelated fact populations out of the
 wide product lookup.
 
-Next admit wide scalar parameters and results together with proof contract
-syntax and shared source argument initialization; then cover wide truncating
-division/remainder and checked narrowing
+Wide scalar parameters/results and proof contracts are delivered. The exporter
+and schema accept matching-width calls and captures; source entry uses the
+shared typed symbolic values. Contracts spell `int128` / `uint128`, observe
+all bits with `to_integer`, and use checked `to_int128` / `to_uint128` with
+both destination bounds. Negative full-range literals retain their Integer
+context through reverse conversions. Regressions cover extrema, hostile
+high-bit claims, cast round trips, modular calls with framed narrow memory,
+expansion/reverification, audit, and deterministic signature scaling at
+2/8/32/128 parameters. Schema 38 requires refreshing earlier locks.
+
+The nested-call regression records a bounded search limitation: `simp` closes
+a direct observer equality but does not chain two Integer equalities. Keep
+that proof-composition follow-up explicit; do not accept pending goals or
+retag wide values as narrow integers. Native wide arithmetic comparisons and
+wide source memory/aggregate admission remain separate work.
+
+Next cover wide truncating division/remainder and checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before

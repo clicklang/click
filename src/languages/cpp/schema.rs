@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 37;
+pub(crate) const EXPORT_SCHEMA: u32 = 38;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -920,10 +920,6 @@ impl CppFunction {
     ) -> Result<(), String> {
         super::budget::check_function(self)?;
         super::validity::check_function(self, logical_source, alias_sources)?;
-        reject_wide_boundary(&self.return_type)?;
-        for parameter in &self.parameters {
-            reject_wide_boundary(&parameter.value_type)?;
-        }
         match &self.function_kind {
             CppFunctionKind::Free
             | CppFunctionKind::StaticMethod { .. }
@@ -3490,15 +3486,6 @@ fn require_signed_int64(value: &CppType, allow_const: bool, label: &str) -> Resu
     }
 }
 
-// Source admission is deliberately limited to intermediates until the contract
-// surface can express full-width input/output values without narrowing.
-fn reject_wide_boundary(value: &CppType) -> Result<(), String> {
-    if Scalar::of(value).is_some_and(|scalar| scalar.kind.is_wide()) {
-        return Err("C++ wide function parameters and returns are not supported yet".into());
-    }
-    Ok(())
-}
-
 fn require_scalar_integer(value: &CppType, label: &str) -> Result<(), String> {
     if Scalar::mutable_kind(value).is_some_and(ScalarKind::is_integer) {
         Ok(())
@@ -4586,7 +4573,7 @@ mod tests {
     }
 
     #[test]
-    fn wide_artifact_function_boundaries_are_rejected_before_lowering() {
+    fn wide_artifact_function_boundaries_require_matching_types() {
         let sources = BTreeSet::from(["fixture.cpp".into()]);
         let mut function = CppFunction {
             declaration_id: "root".into(),
@@ -4617,11 +4604,7 @@ mod tests {
         };
         validate(&function).unwrap();
         function.return_type = signed_integer(128, false);
-        assert!(
-            validate(&function)
-                .unwrap_err()
-                .contains("wide function parameters and returns")
-        );
+        assert!(validate(&function).unwrap_err().contains("return"));
         function.return_type = signed_integer(64, false);
         function.parameters.push(CppPlace {
             declaration_id: "input".into(),
@@ -4629,11 +4612,7 @@ mod tests {
             value_type: signed_integer(128, false),
             span: cleanup_span(),
         });
-        assert!(
-            validate(&function)
-                .unwrap_err()
-                .contains("wide function parameters and returns")
-        );
+        validate(&function).unwrap();
     }
 
     #[test]
@@ -4650,7 +4629,6 @@ mod tests {
                 value_type: ty.clone(),
                 span: cleanup_span(),
             };
-            assert!(reject_wide_boundary(&ty).is_err());
             for operator in [
                 CppBinaryOperator::Add,
                 CppBinaryOperator::Subtract,

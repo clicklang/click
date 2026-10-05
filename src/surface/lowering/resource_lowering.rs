@@ -103,10 +103,15 @@ pub(in crate::surface) fn initial_call_state(
             continue;
         }
         match parameter.c_type() {
-            C0Type::Int128 | C0Type::UInt128 => {
-                return Err(ClickError::new(
-                    "wide source parameters are not yet supported".to_string(),
-                ));
+            C0Type::Int128 => {
+                arguments.push(CExpression::Value(CValue::Int128(
+                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
+                )));
+            }
+            C0Type::UInt128 => {
+                arguments.push(CExpression::Value(CValue::UInt128(
+                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
+                )));
             }
 
             C0Type::Void => {
