@@ -27,3 +27,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [A pure witness cannot evaluate a declaration-level let alias](pure-witness-cannot-use-a-declaration-let-alias.md)
+- [Expanding one smart site in `__rb_insert` exhausts memory](expanding-a-site-in-rb-insert-exhausts-memory.md)
