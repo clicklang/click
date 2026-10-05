@@ -166,36 +166,62 @@ fn external_array_load_substitution_changes_only_the_copied_lane() {
 fn external_array_execution_requires_full_authority_and_mutability() {
     let source = external(933_000);
     let target = external(933_001);
-    for (read, write, mutable) in [(4, 4, true), (3, 4, true), (4, 3, true), (4, 4, false)] {
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-                view_memory_fact(source.clone(), 0, read),
-                own_memory_fact(target.clone(), 0, write),
-            ]));
-        let target_value = CPointerValue::new(target.clone(), CType::UInt32Pointer)
-            .with_pointee_constant(!mutable);
-        let theorem = prove_c_statement_execution(
-            state,
-            c_write_scalar_array_region(
-                CExpression::Value(CValue::Pointer(target_value)),
-                c_pointer_value(source.clone()),
-                CType::UInt32,
-                4,
-                true,
-            ),
-        )
-        .unwrap();
-        assert_eq!(
-            matches!(
-                theorem.proposition(),
-                Proposition::CStatementExecutes {
-                    outcome: CStatementOutcome::Normal(_),
-                    ..
+    let mut samples = Vec::new();
+    for count in [1, 2, 4, 1024, 1_000_000] {
+        for copy in [false, true] {
+            for (read, write, mutable) in [
+                (count, count, true),
+                (count - 1, count, true),
+                (count, count - 1, true),
+                (count, count, false),
+            ] {
+                let state = CState::new().with_resource_context(
+                    ResourceContext::new().unchecked_with_facts([
+                        view_memory_fact(source.clone(), 0, read),
+                        own_memory_fact(target.clone(), 0, write),
+                    ]),
+                );
+                let target_value = CPointerValue::new(target.clone(), CType::UInt32Pointer)
+                    .with_pointee_constant(!mutable);
+                let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    prove_c_statement_execution(
+                        state,
+                        c_write_scalar_array_region(
+                            CExpression::Value(CValue::Pointer(target_value)),
+                            if copy {
+                                c_pointer_value(source.clone())
+                            } else {
+                                c_uint32_literal(7)
+                            },
+                            CType::UInt32,
+                            count,
+                            copy,
+                        ),
+                    )
+                    .unwrap()
+                });
+                let valid = (!copy || read == count) && write == count && mutable;
+                assert_eq!(
+                    matches!(
+                        theorem.proposition(),
+                        Proposition::CStatementExecutes {
+                            outcome: CStatementOutcome::Normal(_),
+                            ..
+                        }
+                    ),
+                    valid,
+                    "count={count}, copy={copy}, read={read}, write={write}, mutable={mutable}",
+                );
+                if valid && copy {
+                    samples.push(work);
                 }
-            ),
-            read == 4 && write == 4 && mutable
-        );
+            }
+        }
     }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 2 + 128),
+        "bulk authority checks must stay compact: {samples:?}"
+    );
 }
 
 #[test]

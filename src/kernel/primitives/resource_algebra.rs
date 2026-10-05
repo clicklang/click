@@ -5047,6 +5047,36 @@ impl ResourceContext {
         false
     }
 
+    /// A bulk read covers physical bytes, even when its width happens
+    /// to equal the ABI pointer width. Scalar pointer-cell conventions do
+    /// not shorten an array copy's footprint.
+    pub(in crate::kernel) fn permits_storage_read(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) else {
+            return false;
+        };
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(address) = entries.address(entry) else {
+                continue;
+            };
+            let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                address,
+                0u32.into(),
+                bytes.into(),
+                1,
+            ));
+            if resource_fact_entails(self.fact(entry), &required, assumptions) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Storage authority uses the same retained occurrence and graph alignment
     /// as resource support. Equality selects the owner; quantity and the entire
     /// byte footprint remain ordinary resource entailment obligations.

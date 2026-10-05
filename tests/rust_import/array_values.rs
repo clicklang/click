@@ -104,6 +104,9 @@ fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
             "ensures target[1] == old(source[0]);",
         ),
         ("ensures *value == 5u32;", "ensures *value == 4u32;"),
+        ("views source[0..2];", "views source[0..1];"),
+        ("owns target[0..2];", "views target[0..2];"),
+        ("owns target[0..2];", "owns target[0..1];"),
     ] {
         let invalid = sidecar.replace(before, after);
         assert_ne!(invalid, sidecar);
@@ -241,4 +244,31 @@ fn charon_external_array_copies_live_refresh() {
         &load_import(&p.config()).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+#[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
+fn charon_whole_array_copy_live_refresh_checks_full_authority() {
+    let p = Project::new(include_str!("../../examples/rust-array-values/arrays.rs"));
+    let sidecar = include_str!("../../examples/rust-array-values/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    let config = serde_json::json!({
+        "schema": 3, "backend": "charon-trial", "language": "rust",
+        "target": "x86_64-unknown-linux-gnu", "source": "borrow.rs",
+        "exporter": PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon"),
+        "artifact": "borrow.ullbc",
+    });
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for (before, after) in [
+        ("views source[0..2];", "views source[0..1];"),
+        ("owns target[0..2];", "views target[0..2];"),
+        ("owns target[0..2];", "owns target[0..1];"),
+    ] {
+        let invalid = sidecar.replace(before, after);
+        assert_ne!(invalid, sidecar);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
 }
