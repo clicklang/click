@@ -214,6 +214,21 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
 }
 
 #[test]
+fn wide_scalar_boolean_cast_observes_high_bits_without_narrowing() {
+    for (input, expected) in [
+        (c_uint128_literal(0), 0),
+        (c_uint128_literal(1u128 << 64), 1),
+        (c_uint128_literal(u128::MAX), 1),
+        (c_int128_literal(i128::MIN), 1),
+    ] {
+        assert_eq!(
+            evaluated(c_cast(input, CType::Bool)),
+            CExpressionOutcome::Value(CValue::Bool(Bitvector32Term::Constant(expected)))
+        );
+    }
+}
+
+#[test]
 fn wide_scalar_observation_work_scales_with_explicit_values() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {

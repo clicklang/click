@@ -647,6 +647,15 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    if target_type == CType::Bool && matches!(value.c_type(), CType::Int128 | CType::UInt128) {
+        let source = MachineIntegerType::from_c_type(value.c_type())?;
+        let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
+        return Some(CValue::Bool(Bitvector32Term::if_then_else(
+            ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(0)),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        )));
+    }
     if matches!(value.c_type(), CType::Int128 | CType::UInt128)
         || matches!(target_type, CType::Int128 | CType::UInt128)
     {

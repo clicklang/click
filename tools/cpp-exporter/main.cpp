@@ -245,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 36;
+    artifact["schema"] = 37;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -334,6 +334,18 @@ private:
       fail(declaration->getLocation(),
            "the supported C++ function must declare noexcept outside the "
            "exception-enabled object-free profile");
+      return std::nullopt;
+    }
+    auto wide_scalar = [this](clang::QualType type) {
+      return type->isIntegerType() && context_.getTypeSize(type) == 128;
+    };
+    if (wide_scalar(declaration->getReturnType()) ||
+        std::any_of(declaration->param_begin(), declaration->param_end(),
+                    [&](const clang::ParmVarDecl *parameter) {
+                      return wide_scalar(parameter->getType());
+                    })) {
+      fail(declaration->getLocation(),
+           "C++ wide function parameters and returns are not supported yet");
       return std::nullopt;
     }
     std::optional<Json> return_type;
@@ -620,9 +632,10 @@ private:
       return Json(std::move(result));
     }
     if (!type->isIntegerType() || (context_.getTypeSize(type) != 32 &&
-                                   context_.getTypeSize(type) != 64)) {
+                                   context_.getTypeSize(type) != 64 &&
+                                   context_.getTypeSize(type) != 128)) {
       fail(location, "the supported C++ slice supports bool, signed/unsigned "
-                     "32/64-bit integers, selected signed references, mutable "
+                     "32/64/128-bit integers, selected signed references, mutable "
                      "int*, and one simple record-reference type");
       return std::nullopt;
     }
@@ -771,7 +784,8 @@ private:
                                   left->getType()) ||
             !context_.hasSameType(binary->getRHS()->getType(),
                                   left->getType()) ||
-            !left->getType()->isSignedIntegerType()) {
+            !left->getType()->isSignedIntegerType() ||
+            context_.getTypeSize(left->getType()) == 128) {
           fail(binary->getOperatorLoc(), "supported C++ += and -= require a "
                                          "direct signed integer field and "
                                          "same-width operands");
@@ -1113,7 +1127,8 @@ private:
     }
     const bool mutable_int = local->getType()->isIntegerType() &&
                              (context_.getTypeSize(local->getType()) == 32 ||
-                              context_.getTypeSize(local->getType()) == 64) &&
+                              context_.getTypeSize(local->getType()) == 64 ||
+                              context_.getTypeSize(local->getType()) == 128) &&
                              !local->getType().hasQualifiers();
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
@@ -1134,7 +1149,7 @@ private:
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable "
            "signed/unsigned "
-           "32/64-bit integer or one simple record object");
+           "32/64/128-bit integer or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit()) {
@@ -1281,7 +1296,8 @@ private:
       initializer["arguments"] = std::move(arguments);
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call =
-            llvm::dyn_cast<clang::CallExpr>(semantic_initializer)) {
+            llvm::dyn_cast<clang::CallExpr>(semantic_initializer);
+               call != nullptr && !is_numeric_limits_max_call(call)) {
       if (call->getDirectCallee() == nullptr ||
           !context_.hasSameType(call->getDirectCallee()->getReturnType(),
                                 local->getType())) {
@@ -2010,7 +2026,8 @@ private:
         limits_max) {
       if (expression->getType()->isIntegerType() &&
           (context_.getTypeSize(expression->getType()) == 32 ||
-           context_.getTypeSize(expression->getType()) == 64) &&
+           context_.getTypeSize(expression->getType()) == 64 ||
+           context_.getTypeSize(expression->getType()) == 128) &&
           expression->isCXX11ConstantExpr(context_)) {
         clang::Expr::EvalResult evaluated;
         if (expression->EvaluateAsInt(evaluated, context_,
@@ -2046,7 +2063,8 @@ private:
           (cast->getType()->isBooleanType() ||
            (cast->getType()->isIntegerType() &&
             (context_.getTypeSize(cast->getType()) == 32 ||
-             context_.getTypeSize(cast->getType()) == 64)))) {
+             context_.getTypeSize(cast->getType()) == 64 ||
+             context_.getTypeSize(cast->getType()) == 128)))) {
         return lower_expression(cast->getSubExpr(), function);
       }
       if (cast->getCastKind() != clang::CK_IntegralCast &&
@@ -2068,6 +2086,10 @@ private:
     }
     if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
         unary != nullptr && unary->getOpcode() == clang::UO_Minus) {
+      if (context_.getTypeSize(unary->getType()) == 128) {
+        fail(unary->getOperatorLoc(), "C++ wide negation is not supported");
+        return std::nullopt;
+      }
       auto value = lower_expression(unary->getSubExpr(), function);
       auto value_type = lower_type(unary->getType(), unary->getExprLoc());
       auto zero_type = lower_type(unary->getType(), unary->getExprLoc());
@@ -2222,6 +2244,17 @@ private:
              "comparisons, and built-in bool && bool only");
         return std::nullopt;
       }
+      const auto operand_type = binary->getLHS()->getType();
+      const bool wide = operand_type->isIntegerType() &&
+                        context_.getTypeSize(operand_type) == 128;
+      const bool signed_wide_product = wide &&
+          binary->getOpcode() == clang::BO_Mul &&
+          binary->getType()->isSignedIntegerType();
+      if (wide && !signed_wide_product) {
+        fail(binary->getOperatorLoc(),
+             "C++ wide arithmetic supports checked signed multiplication only; wide comparisons are unsupported");
+        return std::nullopt;
+      }
       if (binary->getOpcode() == clang::BO_Add ||
           binary->getOpcode() == clang::BO_Sub ||
           binary->getOpcode() == clang::BO_Mul ||
@@ -2229,7 +2262,8 @@ private:
           binary->getOpcode() == clang::BO_Rem) {
         if (!binary->getType()->isIntegerType() ||
             (context_.getTypeSize(binary->getType()) != 32 &&
-             context_.getTypeSize(binary->getType()) != 64)) {
+             context_.getTypeSize(binary->getType()) != 64 &&
+             !signed_wide_product)) {
           fail(binary->getOperatorLoc(),
                "C++ arithmetic requires signed/unsigned 32/64-bit operands; "
                "pointer "

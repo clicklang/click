@@ -12,6 +12,8 @@ pub(super) enum ScalarKind {
     Int64,
     UInt32,
     UInt64,
+    Int128,
+    UInt128,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,6 +37,8 @@ impl Scalar {
                     (64, true) => ScalarKind::Int64,
                     (32, false) => ScalarKind::UInt32,
                     (64, false) => ScalarKind::UInt64,
+                    (128, true) => ScalarKind::Int128,
+                    (128, false) => ScalarKind::UInt128,
                     _ => return None,
                 },
                 *is_const,
@@ -60,6 +64,10 @@ impl ScalarKind {
         self != Self::Bool
     }
 
+    pub fn is_wide(self) -> bool {
+        matches!(self, Self::Int128 | Self::UInt128)
+    }
+
     pub fn kernel_type(self) -> CType {
         match self {
             Self::Bool => CType::Bool,
@@ -67,6 +75,8 @@ impl ScalarKind {
             Self::Int64 => CType::Int64,
             Self::UInt32 => CType::UInt32,
             Self::UInt64 => CType::UInt64,
+            Self::Int128 => CType::Int128,
+            Self::UInt128 => CType::UInt128,
         }
     }
 
@@ -77,6 +87,8 @@ impl ScalarKind {
             Self::Int64 => C0Type::Int64,
             Self::UInt32 => C0Type::UInt32,
             Self::UInt64 => C0Type::UInt64,
+            Self::Int128 => C0Type::Int128,
+            Self::UInt128 => C0Type::UInt128,
         }
     }
 
@@ -177,10 +189,10 @@ mod tests {
                         source_aliases: vec![],
                     };
                     let scalar = Scalar::of(&ty);
-                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64));
+                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64 | 128));
                     assert_eq!(
                         Scalar::mutable_kind(&ty).is_some(),
-                        matches!(bits, 32 | 64) && !is_const
+                        matches!(bits, 32 | 64 | 128) && !is_const
                     );
                     if let Some(scalar) = scalar {
                         assert_eq!(scalar.is_const, is_const);
@@ -226,6 +238,27 @@ mod tests {
                 ScalarKind::Int64,
                 vec!["-9223372036854775808", "9223372036854775807", "0"],
                 vec!["-9223372036854775809", "9223372036854775808"],
+            ),
+            (
+                ScalarKind::Int128,
+                vec![
+                    "-170141183460469231731687303715884105728",
+                    "170141183460469231731687303715884105727",
+                    "0",
+                ],
+                vec![
+                    "-170141183460469231731687303715884105729",
+                    "170141183460469231731687303715884105728",
+                ],
+            ),
+            (
+                ScalarKind::UInt128,
+                vec![
+                    "0",
+                    "18446744073709551616",
+                    "340282366920938463463374607431768211455",
+                ],
+                vec!["-1", "340282366920938463463374607431768211456"],
             ),
             (
                 ScalarKind::UInt32,
