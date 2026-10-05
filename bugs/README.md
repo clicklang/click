@@ -28,4 +28,3 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [A pure witness cannot evaluate a declaration-level let alias](pure-witness-cannot-use-a-declaration-let-alias.md)
 - [A deferred Charon expansion selects cases using a dead compiler local](charon-deferred-expansion-uses-dead-compiler-local.md)
-- [A native whole-array copy accepts an incomplete source view](charon-array-copy-accepts-incomplete-source-view.md)

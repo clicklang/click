@@ -738,11 +738,15 @@ This run is diagnostic evidence, not a completed migration gate.
 Two failures were independently reproduced through the ordinary native CLI:
 
 - [Deferred expansion uses a dead compiler local](../bugs/charon-deferred-expansion-uses-dead-compiler-local.md).
-- [Whole-array copy accepts an incomplete source view](../bugs/charon-array-copy-accepts-incomplete-source-view.md).
+- Whole-array copy accepted an incomplete source view; this authority defect is
+  now fixed with full physical-range checks for both source and destination.
+  Kernel regressions cover partial permissions and compact work through one
+  million elements. Locked native and freshly extracted unchanged Rust fixtures
+  reject short source views, read-only destinations, and short destination owns.
 
-These tooling and authority defects block retirement. The attempted default,
+The deferred-expansion tooling defect still blocks retirement. The attempted default,
 extractor, and CI changes were restored to the previously green checkpoint;
-no failing production switch is delivered. Fix both defects, port the original
+no failing production switch is delivered. Fix the remaining defect, port the original
 regressions, and only then remove the legacy build/runtime and implicit backend.
 The remaining supported identity `From` case and test assumptions also need
 review during that port; importing all 16 canonical fixtures alone does not
