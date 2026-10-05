@@ -279,6 +279,20 @@ same custody ledger as units; kernel tests also preserve exact wildcard member
 counts and check quantity-independent work. True symbolic-batch/unit mixing
 is still a separate migration capability.
 
+`a_population_count_is_not_a_wrapped_total.md` now selects authority semantics.
+It retains all original C and count claims, supplies authority and the empty
+entry population, and rejects the second two-billion birth at the checked
+member transition. `authority_numeric_population_total.md` keeps the entire
+original C while independently verifying the numeric caller's exact total of
+seven. `authority_large_symbolic_population_total.md` admits the first large
+symbolic birth; the numeric maximum/overflow pair admits the exact signed
+maximum and rejects a further birth. These use the existing checked engine.
+Repeated symbolic births remain unsupported even for bounded totals, so the
+overflow negative is not evidence of that capability. Only the two scalar
+logical callback controls in the sequential inventory still use legacy mode;
+named body-opening/lifecycle effects and recovered-prototype review remain
+unfinished.
+
 `population_count_states_its_transition.md` and
 `population_count_across_a_produces_transition.md` now select authority semantics
 and explicitly create the produced member. The real count transition verifies;

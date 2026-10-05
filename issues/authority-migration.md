@@ -447,6 +447,17 @@ three addition domains rather than accepting modular equality as a domain proof.
 This does not admit splitting a symbolic batch or mixing a symbolic input/spend
 with numerical effects; those remain separate ledger boundaries.
 
+**Overflow-total control:** `a_population_count_is_not_a_wrapped_total.md`
+now uses explicit authority and a defined-addition contract, with all three
+original C functions and their count claims retained. The first two-billion
+symbolic birth succeeds; the checked transition rejects the second birth
+before publishing a wrapped count. The original numeric caller verifies
+independently with its exact `3 + 4 == 7` total. Companion fixtures admit a
+single large symbolic birth and a numeric total exactly at `2147483647`, and
+reject a further numerical birth. All twelve positive expansion sites audit.
+Repeated symbolic births remain unsupported even when their sum is bounded;
+this migrates the overflow refusal, not that broader ledger capability.
+
 **Global-count decision resolved:** Remove the two obsolete fixtures that
 counted across all independently anchored populations or used integer-only
 population identities. No arena abstraction or new syntax is required for this
