@@ -1444,10 +1444,27 @@ impl<'a> Proof<'a> {
                     execution_evidence
                         .push(arm.execution.core.execution_evidence[arm_path_index].clone());
                     if proof_case_split {
+                        // This join's decision precedes its arms' decisions.
+                        // Keep the shared prefix and rebuild only the nested
+                        // suffix; appending here would reverse nested cases.
+                        let prefix = &parent_execution.presentation.branch_decisions;
+                        let nested = provenance
+                            .branch_decisions
+                            .suffix_since(prefix)
+                            .ok_or_else(|| {
+                                self.step_error(
+                                    "terminal proof cases lost their branch decision ancestry",
+                                )
+                            })?;
+                        provenance.branch_decisions = prefix.clone();
                         provenance.branch_decisions.push(ExecutionBranchDecision {
                             condition: surface_condition.clone(),
                             value: arm_index == 0,
                         });
+                        for decision in nested {
+                            crate::instrumentation::record_deterministic_work(1);
+                            provenance.branch_decisions.push(decision);
+                        }
                     }
                     outcome_provenance.push(provenance);
                 }
@@ -2697,7 +2714,46 @@ impl<'a> Proof<'a> {
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
-        let (mut advanced, record) = self.split_focused_execution_if(condition)?;
+        // This selector will also surround deferred path-dependent closers
+        // after return. Read it where the case was checked, rather than from
+        // a compiler temporary or a parameter's later value at function exit.
+        let mut proof = self.clone();
+        let execution = proof.execution().expect("execute cases retain a frontier");
+        let ProofContext::Execution(context) = proof.context.as_ref() else {
+            unreachable!("execute cases retain an execution context")
+        };
+        let point = ProgramPointRef {
+            region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+            kind: ProgramPointKind::Entry,
+        };
+        let frontier = execution.core.frontier.clone();
+        let state = execution.core.state.clone();
+        let (recorded, result) = proof.clone().edit_execution_presentation(|presentation| {
+            record_current_statement_entry(
+                &frontier,
+                &mut presentation.recorded_snapshots,
+                &state,
+                context.function_block,
+                context.function,
+                context.arguments,
+                context.claim_label,
+                context.tactic_index,
+                "execute cases",
+            )
+        })?;
+        result?;
+        proof = recorded;
+        let anchored =
+            super::super::cursor_execution::surface_frozen_at_snapshot(&condition, &point)?;
+        let original = proof.lower_surface_proposition(&condition, "execute case condition")?;
+        let frozen =
+            proof.lower_surface_proposition(&anchored, "anchored execute case condition")?;
+        if original != frozen {
+            return Err(
+                proof.step_error("anchored execute case condition changed its checked meaning")
+            );
+        }
+        let (mut advanced, record) = proof.split_focused_execution_if(anchored)?;
         for take_then in [true, false] {
             let Some(next) = advanced
                 .focus_execution_if_arm(&record, take_then)?
