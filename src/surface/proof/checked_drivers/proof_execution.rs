@@ -1740,7 +1740,10 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
-            let plan = proof.plan_execution_match(proof_match)?;
+            let plan = proof.plan_execution_match(proof_match, |index| {
+                execution_region_leading_tactic(&arms[index])
+                    .map_or(usize::MAX, |tactic| tactic.source_index)
+            })?;
             // Every arm continues into the region's own continuation: a
             // preservation path never rejoins across the back edge, so each
             // arm closes the invariants and reaches the loop's boundary on
@@ -2624,7 +2627,10 @@ fn advance_execution_match<'a>(
     }
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
-    let mut plan = proof.plan_execution_match(source)?;
+    let mut plan = proof.plan_execution_match(source, |index| {
+        execution_region_leading_tactic(&arms[index])
+            .map_or(usize::MAX, |tactic| tactic.source_index)
+    })?;
     // An arm that only bridges facts and then refutes itself owes no C
     // outcome either. Its bridge (`have`s, unfolds, theorem applications, no
     // C step) runs in the arm, and its `contradiction` excludes the

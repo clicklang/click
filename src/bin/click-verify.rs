@@ -1664,6 +1664,43 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[test]
+    fn refused_match_arm_contradiction_reports_its_own_tactic() {
+        for name in [
+            "arm_contradiction_reports_its_source",
+            "nested_arm_contradiction_reports_its_source",
+            "bridged_arm_contradiction_reports_its_source",
+            "arm_contradiction_after_loop_reports_its_source",
+        ] {
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{name}.md"));
+            let source = fs::read_to_string(&fixture).unwrap();
+            let (line, tactic) = source
+                .lines()
+                .enumerate()
+                .find(|(_, line)| {
+                    line.trim()
+                        .starts_with("contradiction(x.model == Cell::Present(")
+                })
+                .map(|(line, tactic)| (line + 1, tactic.trim()))
+                .unwrap();
+            let report = entry_with([fixture.display().to_string()])
+                .expect_err("the constructor is not refuted");
+            assert!(
+                report.contains(&format!("tactic@{line}:")),
+                "{name}: {report}"
+            );
+            assert!(report.contains(tactic), "{name}: {report}");
+            assert!(
+                report.contains("requires an exact fact and its negation"),
+                "{name}: {report}"
+            );
+            assert!(
+                report.contains("in match arm `Cell::Present`"),
+                "{name}: {report}"
+            );
+        }
+    }
+
     fn loop_frontier_trace_report(target: Option<usize>) -> String {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/loop_preserve_frontier_report_multi_exit.md");
