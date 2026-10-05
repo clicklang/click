@@ -145,6 +145,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 
 #[derive(Clone, Debug)]
 pub(super) struct PureTheoremContext {
+    pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: CMemory,
     pub(super) values: BTreeMap<String, CValue>,
     pub(super) integer_values:
@@ -152,6 +153,64 @@ pub(super) struct PureTheoremContext {
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
     pub(super) surface_requirements: SurfacePropositionMap,
+}
+
+impl PureTheoremContext {
+    fn with_declaration_bindings(
+        &self,
+        bindings: &[(String, Option<ClickType>, ContractExpression)],
+    ) -> Result<Self, ClickError> {
+        let mut context = self.clone();
+        let names: BTreeSet<_> = bindings
+            .iter()
+            .flat_map(|(_, _, value)| contract_expression_referenced_names(value))
+            .collect();
+        let mut substitutions = BTreeMap::new();
+        for name in names {
+            if let Some(value) = self.values.get(&name) {
+                substitutions.insert(
+                    name.clone(),
+                    ContractExpression::CFragment(CExpression::Value(value.clone())),
+                );
+            } else if let Some(value) = self.integer_values.get(&name) {
+                // This spelling cannot be written by a source-level binder.
+                let captured = format!("@declaration:{name}");
+                context.integer_values = context
+                    .integer_values
+                    .with_inserted(captured.clone(), value.clone());
+                substitutions.insert(name, ContractExpression::Binding(captured));
+            }
+        }
+        for (name, click_type, value) in bindings {
+            let value =
+                substitute_contract_expression(value, &substitutions).map_err(ClickError::new)?;
+            let promoted = super::surface_lowering::promote_integer_expression(
+                &value,
+                &context.integer_values,
+                &crate::persistent::PersistentMap::default(),
+            );
+            let is_integer = click_type.as_ref() == Some(&ClickType::Integer)
+                || contract_expression_referenced_names(&promoted)
+                    .iter()
+                    .any(|name| context.integer_values.get(name).is_some());
+            let value = if is_integer
+                && let Ok(value) = crate::surface::lowering::lower_contract_integer_to_spec(
+                    &promoted,
+                    &context.integer_values,
+                ) {
+                let captured = format!("@declaration:{name}");
+                context.integer_values = context
+                    .integer_values
+                    .with_inserted(captured.clone(), value);
+                ContractExpression::Binding(captured)
+            } else {
+                value
+            };
+            substitutions.insert(name.clone(), value.clone());
+            context.declaration_bindings.insert(name.clone(), value);
+        }
+        Ok(context)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1182,6 +1241,7 @@ pub(super) fn pure_theorem_context(
         }
     }
     Ok(PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         memory,
         values,
         integer_values,
@@ -1598,6 +1658,15 @@ fn verify_theorem_ensure(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
+    // Resolve declaration aliases against the outer parameter values once.
+    // Proof-local introductions can shadow either name without recapturing it.
+    let scoped_context;
+    let context = if ensure_clause.proof_bindings.is_empty() {
+        context
+    } else {
+        scoped_context = context.with_declaration_bindings(&ensure_clause.proof_bindings)?;
+        &scoped_context
+    };
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
         return Err(ClickError::new(
             crate::surface::validation::theorem_resource_conclusion_refusal(theorem.name()),

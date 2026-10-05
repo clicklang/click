@@ -1279,6 +1279,8 @@ pub enum Requirement {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnsureClause {
+    /// Value aliases visible where this claim and its proof were written.
+    proof_bindings: Vec<(String, Option<ClickType>, ContractExpression)>,
     name: Option<String>,
     ensure: Ensure,
     proof: SourceProof,
@@ -1885,6 +1887,7 @@ fn clone_requirement_iteratively(requirement: &Requirement) -> Requirement {
 
 fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
     EnsureClause {
+        proof_bindings: clause.proof_bindings.clone(),
         name: clause.name.clone(),
         ensure: match &clause.ensure {
             Ensure::Proposition(proposition) => {

@@ -1975,6 +1975,8 @@ impl<'a> Proof<'a> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             unreachable!()
         };
+        let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
+        let expression = &expression;
         let mut names = BTreeSet::new();
         collect_contract_expression_referenced_names(expression, &mut names);
         let mut integers = context.theorem_context.integer_values.clone();

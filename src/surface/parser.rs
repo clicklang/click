@@ -2278,6 +2278,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
                                 proof,
@@ -2320,6 +2321,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
                                 proof,
@@ -2581,6 +2583,7 @@ impl Parser {
                         ensures.push(
                             apply_contract_lets_to_ensure_clause(
                                 EnsureClause {
+                                    proof_bindings: Vec::new(),
                                     name: None,
                                     ensure: Ensure::Resource(resource),
                                     proof,
@@ -2639,6 +2642,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
                                 proof,
@@ -2699,6 +2703,7 @@ impl Parser {
                     ensures.push(
                         apply_contract_lets_to_ensure_clause(
                             EnsureClause {
+                                proof_bindings: Vec::new(),
                                 name: None,
                                 ensure: Ensure::Resource(resource),
                                 proof,
@@ -4384,6 +4389,7 @@ impl Parser {
 
         Ok((
             EnsureClause {
+                proof_bindings: Vec::new(),
                 name,
                 ensure,
                 proof,
@@ -10323,6 +10329,7 @@ fn expand_aggregate_requirement(requirement: Requirement) -> Vec<Requirement> {
 
 fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
     let EnsureClause {
+        proof_bindings,
         name,
         ensure,
         proof,
@@ -10333,6 +10340,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         Ensure::Resource(resource) => expand_aggregate_resource_clause(resource)
             .into_iter()
             .map(|resource| EnsureClause {
+                proof_bindings: proof_bindings.clone(),
                 name: name.clone(),
                 ensure: Ensure::Resource(resource),
                 proof: proof.clone(),
@@ -10341,6 +10349,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             })
             .collect(),
         ensure => vec![EnsureClause {
+            proof_bindings,
             name,
             ensure,
             proof,
