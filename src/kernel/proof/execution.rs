@@ -734,6 +734,7 @@ fn checks_population_member_exchange(
             !matches!(
                 spec.term(),
                 crate::kernel::CResourceTerm::Memory(_)
+                    | crate::kernel::CResourceTerm::Token { .. }
                     | crate::kernel::CResourceTerm::Composite { .. }
             ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                 || spec.quantity() != &crate::kernel::CResourceQuantity::One
@@ -924,7 +925,7 @@ impl CheckedPopulationMemberRewrite {
         let allowed = crate::kernel::functions::instantiate_private_member_body_facts(
             &self.selected,
             &self.definition,
-            self.before_state.memory(),
+            &self.before_state,
             self.before_facts.assumptions(),
         )?
         .propositions
@@ -1951,7 +1952,7 @@ impl CheckedResourceRewrite {
                 let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
                     selected,
                     definition,
-                    after_state.memory(),
+                    after_state,
                     assumptions,
                 )
                 .ok_or("Requires ownership of every cell read by member body facts")?;
@@ -2986,7 +2987,7 @@ pub(crate) struct CheckedResourceObservation {
     pub(crate) after_state: CState,
     pub(crate) before_facts: ProofFacts,
     pub(crate) after_facts: ProofFacts,
-    definition: CCompositeResourceDefinition,
+    definition: Option<CCompositeResourceDefinition>,
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
 }
 
@@ -3006,7 +3007,68 @@ impl CheckedResourceObservation {
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
         if before_state.uses_population_authority_semantics() {
-            return Err("resource observation is unavailable in authority mode");
+            let unchanged = before_state.memory.diagnostic_identity()
+                == after_state.memory.diagnostic_identity()
+                && before_state.shares_non_memory_storage_with(after_state)
+                && Arc::ptr_eq(
+                    &before_state.population_effects,
+                    &after_state.population_effects,
+                );
+            if !unchanged {
+                return Err("count observation changed execution state or member custody");
+            }
+            let crate::kernel::CResource::Composite { name, .. } = observed.resource() else {
+                return Err("count observation requires an owned declared member");
+            };
+            function
+                .composite_resource_definition(name)
+                .ok_or("the observed definition is not registered on the function")?;
+            let bound = crate::kernel::api::checked_owned_resource_count_lower_bound(
+                before_state,
+                observed,
+                before_facts.assumptions(),
+            )
+            .ok_or("count observation lacks member ownership or count authority")?;
+            let quantity = observed
+                .owned_quantity_term()
+                .ok_or("count observation requires owned member quantity")?;
+            let nonnegative = Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::signed_less_equal(
+                    Bitvector32Term::Constant(0),
+                    quantity.clone(),
+                ),
+                true,
+            );
+            let introduced = after_facts
+                .introduced_since(before_facts)
+                .ok_or("count observation facts do not descend from input facts")?;
+            for fact in introduced {
+                let checked = if fact == bound {
+                    // The bound was reconstructed and certified from this
+                    // immutable ledger and its exact member custody above.
+                    continue;
+                } else if fact == nonnegative {
+                    crate::kernel::api::prove_owned_resource_quantity_nonnegative(
+                        before_state,
+                        observed,
+                        &fact,
+                        before_facts.assumptions(),
+                    )
+                } else {
+                    return Err("count observation introduced an unrelated fact or member body");
+                };
+                if checked.is_none() {
+                    return Err("count observation has no checked bound derivation");
+                }
+            }
+            return Ok(Self {
+                before_state: before_state.clone(),
+                after_state: after_state.clone(),
+                before_facts: before_facts.clone(),
+                after_facts: after_facts.clone(),
+                definition: None,
+                load_equalities: Vec::new(),
+            });
         }
         if !before_state.loan_bindings_are_consistent()
             || !after_state.loan_bindings_are_consistent()
@@ -3184,7 +3246,7 @@ impl CheckedResourceObservation {
             after_state: after_state.clone(),
             before_facts: before_facts.clone(),
             after_facts: after_facts.clone(),
-            definition,
+            definition: Some(definition),
             load_equalities,
         })
     }
@@ -3195,8 +3257,17 @@ impl CheckedResourceObservation {
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        if state.uses_population_authority_semantics()
-            || state != &self.before_state
+        let same_state = if self.before_state.uses_population_authority_semantics() {
+            state.memory.diagnostic_identity() == self.before_state.memory.diagnostic_identity()
+                && state.shares_non_memory_storage_with(&self.before_state)
+                && Arc::ptr_eq(
+                    &state.population_effects,
+                    &self.before_state.population_effects,
+                )
+        } else {
+            state == &self.before_state
+        };
+        if !same_state
             || facts.introduced_since(&self.before_facts).is_none()
             || self.load_equalities.iter().any(|equality| {
                 !equality.checks_with_call_events(self.before_facts.assumptions(), call_events)
@@ -3219,8 +3290,8 @@ impl CheckedResourceObservation {
     }
 
     /// The registered composite definition the event applied.
-    pub(crate) fn definition(&self) -> &CCompositeResourceDefinition {
-        &self.definition
+    pub(crate) fn definition(&self) -> Option<&CCompositeResourceDefinition> {
+        self.definition.as_ref()
     }
 }
 
@@ -6266,9 +6337,9 @@ fn events_use_the_function_definitions(
     ) -> bool {
         let definitions = function.composite_resource_definitions();
         events.iter().all(|event| match event {
-            CheckedExecutionEvent::ResourceObservation(observation) => {
-                definitions.contains(observation.definition())
-            }
+            CheckedExecutionEvent::ResourceObservation(observation) => observation
+                .definition()
+                .is_none_or(|definition| definitions.contains(definition)),
             CheckedExecutionEvent::PopulationAuthorityRewrite(_) => true,
             // The application was checked against the environment's own
             // verified rule; the rule carries the definitions it was
@@ -10804,7 +10875,11 @@ mod tests {
         assert!(
             !changed_definition
                 .composite_resource_definitions()
-                .contains(observation.definition()),
+                .contains(
+                    observation
+                        .definition()
+                        .expect("legacy body observation has a definition")
+                ),
             "a retained observation must remain tied to its checked definition"
         );
     }
@@ -12816,103 +12891,141 @@ mod population_authority_rewrite_tests {
 
     #[test]
     fn checked_member_exchange_transfers_exact_contained_resource() {
-        let (state, authority) = source_state();
-        let facts = ProofFacts::default();
-        let CResource::PopulationAuthority(description) = authority.resource() else {
-            unreachable!()
-        };
-        let member = CResourceFact::own(CResource::Composite {
-            name: "reference".into(),
-            arguments: description.arguments().to_vec().into(),
-        });
-        let child = CResourceFact::own(CResource::Composite {
-            name: "payload".into(),
-            arguments: description.arguments().to_vec().into(),
-        });
-        let definition = CCompositeResourceDefinition::new(
-            "reference",
-            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
-            None,
-            false,
-            vec![CResourceSpec::composite(
-                crate::kernel::CResourceAccessMode::Own,
-                "payload".into(),
-                vec![crate::kernel::c_variable("p")],
-                vec![CType::Int32Pointer],
-            )],
-            vec![],
-        );
-        let function = c_function(
-            CType::Void,
-            "member",
-            vec![],
-            CStatement::Return(CExpression::Value(CValue::Void)),
-        )
-        .with_composite_resource_definitions(vec![definition.clone()]);
-        let (empty, _) = state
-            .checked_population_authority_exchange(&authority, true, facts.assumptions())
-            .unwrap();
-        assert!(empty.checked_population_member_exchange(
-            &member, true, &definition, facts.assumptions(),
-        ).is_err());
-        let empty = empty
-            .clone()
-            .with_resource_context(empty.resources().clone().unchecked_with_fact(child.clone()));
-        let (one, birth) = empty
-            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
-            .unwrap();
-        assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
-        assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
-        let event = CheckedPopulationMemberRewrite::check(
-            &function, &empty, &facts, &member, true, &birth, &one, &facts,
-        )
-        .unwrap();
-        assert!(event.advance_checked(&empty, &facts).is_some());
-        let duplicated = one
-            .clone()
-            .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
-        assert!(
-            CheckedPopulationMemberRewrite::check(
-                &function,
-                &empty,
-                &facts,
-                &member,
-                true,
-                &birth,
-                &duplicated,
-                &facts,
+        for abstract_token in [false, true] {
+            let (state, authority) = source_state();
+            let facts = ProofFacts::default();
+            let CResource::PopulationAuthority(description) = authority.resource() else {
+                unreachable!()
+            };
+            let member = CResourceFact::own(CResource::Composite {
+                name: "reference".into(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            let (child, child_spec) = if abstract_token {
+                (
+                    CResourceFact::own(CResource::Token {
+                        name: "payload".into(),
+                        arguments: vec![crate::kernel::int32(7).into()].into(),
+                    }),
+                    CResourceSpec::token(
+                        crate::kernel::CResourceAccessMode::Own,
+                        "payload".into(),
+                        vec![crate::kernel::c_int32_literal(7)],
+                        vec![CType::Int32],
+                    ),
+                )
+            } else {
+                (
+                    CResourceFact::own(CResource::Composite {
+                        name: "payload".into(),
+                        arguments: description.arguments().to_vec().into(),
+                    }),
+                    CResourceSpec::composite(
+                        crate::kernel::CResourceAccessMode::Own,
+                        "payload".into(),
+                        vec![crate::kernel::c_variable("p")],
+                        vec![CType::Int32Pointer],
+                    ),
+                )
+            };
+            let definition = CCompositeResourceDefinition::new(
+                "reference",
+                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![child_spec],
+                vec![],
+            );
+            let function = c_function(
+                CType::Void,
+                "member",
+                vec![],
+                CStatement::Return(CExpression::Value(CValue::Void)),
             )
-            .is_err()
-        );
-        assert!(one.checked_population_member_exchange(
-            &member, true, &definition, facts.assumptions(),
-        ).is_err());
-        let (zero, death) = one
-            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .with_composite_resource_definitions(vec![definition.clone()]);
+            let (empty, _) = state
+                .checked_population_authority_exchange(&authority, true, facts.assumptions())
+                .unwrap();
+            assert!(
+                empty
+                    .checked_population_member_exchange(
+                        &member,
+                        true,
+                        &definition,
+                        facts.assumptions(),
+                    )
+                    .is_err()
+            );
+            let empty = empty.clone().with_resource_context(
+                empty.resources().clone().unchecked_with_fact(child.clone()),
+            );
+            let (one, birth) = empty
+                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+                .unwrap();
+            assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
+            assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
+            let event = CheckedPopulationMemberRewrite::check(
+                &function, &empty, &facts, &member, true, &birth, &one, &facts,
+            )
             .unwrap();
-        assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
-        assert!(
-            !zero
-                .resources()
-                .satisfies_fact(&member, facts.assumptions())
-        );
-        let event = CheckedPopulationMemberRewrite::check(
-            &function, &one, &facts, &member, false, &death, &zero, &facts,
-        )
-        .unwrap();
-        assert!(event.advance_checked(&one, &facts).is_some());
-        let missing = zero.clone().with_resource_context(
-            zero.resources()
+            assert!(event.advance_checked(&empty, &facts).is_some());
+            let duplicated = one
                 .clone()
-                .without_fact_incrementally(&child, facts.assumptions())
-                .unwrap(),
-        );
-        assert!(
-            CheckedPopulationMemberRewrite::check(
-                &function, &one, &facts, &member, false, &death, &missing, &facts,
+                .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
+            assert!(
+                CheckedPopulationMemberRewrite::check(
+                    &function,
+                    &empty,
+                    &facts,
+                    &member,
+                    true,
+                    &birth,
+                    &duplicated,
+                    &facts,
+                )
+                .is_err()
+            );
+            assert!(
+                one.checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition,
+                    facts.assumptions(),
+                )
+                .is_err()
+            );
+            let (zero, death) = one
+                .checked_population_member_exchange(
+                    &member,
+                    false,
+                    &definition,
+                    facts.assumptions(),
+                )
+                .unwrap();
+            assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
+            assert!(
+                !zero
+                    .resources()
+                    .satisfies_fact(&member, facts.assumptions())
+            );
+            let event = CheckedPopulationMemberRewrite::check(
+                &function, &one, &facts, &member, false, &death, &zero, &facts,
             )
-            .is_err()
-        );
+            .unwrap();
+            assert!(event.advance_checked(&one, &facts).is_some());
+            let missing = zero.clone().with_resource_context(
+                zero.resources()
+                    .clone()
+                    .without_fact_incrementally(&child, facts.assumptions())
+                    .unwrap(),
+            );
+            assert!(
+                CheckedPopulationMemberRewrite::check(
+                    &function, &one, &facts, &member, false, &death, &missing, &facts,
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]
@@ -12973,10 +13086,40 @@ mod population_authority_rewrite_tests {
             crate::kernel::functions::instantiate_private_member_body_facts(
                 &member,
                 &definition,
-                &memory,
+                &CState::new()
+                    .with_population_creation_tracking()
+                    .with_memory(memory.clone())
+                    .with_resource_context(resources.clone()),
                 &assumptions,
             )
             .is_none()
+        );
+        let work = [8, 32, 128, 512].map(|locals| {
+            let mut state = CState::new()
+                .with_population_creation_tracking()
+                .with_memory(memory.clone())
+                .with_resource_context(resources.clone());
+            for index in 0..locals {
+                state = state.with_local(format!("unrelated_{index}"), crate::kernel::int32(index));
+            }
+            let (instantiated, work) = crate::persistent::measure_persistent_work(|| {
+                crate::kernel::functions::instantiate_private_member_body_facts(
+                    &member,
+                    &definition,
+                    &state,
+                    &assumptions,
+                )
+            });
+            assert!(instantiated.is_none());
+            work
+        });
+        assert!(
+            work[0] > 0,
+            "member fact checking must charge work: {work:?}"
+        );
+        assert!(
+            work.iter().all(|sample| *sample <= work[0] + 128),
+            "member fact checking must not visit unrelated caller locals: {work:?}"
         );
     }
 
@@ -13251,6 +13394,147 @@ mod population_authority_rewrite_tests {
                 &facts,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn authority_count_observation_rejects_unchecked_deltas_and_scales() {
+        let work = [16usize, 64, 256].map(|size| {
+            let (state, authority) = source_state();
+            let facts = ProofFacts::default();
+            let (state, _) = state
+                .checked_population_authority_exchange(&authority, true, facts.assumptions())
+                .unwrap();
+            let CResource::PopulationAuthority(description) = authority.resource() else {
+                unreachable!()
+            };
+            let member = CResourceFact::own(CResource::Composite {
+                name: "reference".into(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            let definition = CCompositeResourceDefinition::new(
+                "reference",
+                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![],
+                vec![],
+            );
+            let (mut state, _) = state
+                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+                .unwrap();
+            let mut resources = state.resources().clone();
+            for index in 0..size {
+                state = state.with_local(
+                    format!("unrelated_{index}"),
+                    crate::kernel::int32(index as u32),
+                );
+                resources = resources.unchecked_with_fact(CResourceFact::own_token(
+                    format!("unrelated_{index}"),
+                    vec![],
+                ));
+            }
+            state = state.with_resource_context(resources);
+            let function = c_function(
+                CType::Void,
+                "observe",
+                vec![],
+                CStatement::Return(CExpression::Value(CValue::Void)),
+            )
+            .with_composite_resource_definitions(vec![definition]);
+            let bound = crate::kernel::api::checked_owned_resource_count_lower_bound(
+                &state,
+                &member,
+                facts.assumptions(),
+            )
+            .unwrap();
+            let after_facts = facts.with_fact(bound);
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                let observation = CheckedResourceObservation::check(
+                    &function,
+                    &state,
+                    &facts,
+                    &member,
+                    &state,
+                    &after_facts,
+                    &PersistentOrderedSet::default(),
+                    &CheckedCallEvents::default(),
+                )
+                .unwrap();
+                assert!(observation.definition().is_none());
+                assert!(
+                    observation
+                        .advance_checked(&state, &facts, &CheckedCallEvents::default(),)
+                        .is_some()
+                );
+            });
+            let forged_facts = after_facts.with_fact(Proposition::Predicate {
+                name: "unproved_body_fact".into(),
+                arguments: vec![],
+            });
+            assert!(
+                CheckedResourceObservation::check(
+                    &function,
+                    &state,
+                    &facts,
+                    &member,
+                    &state,
+                    &forged_facts,
+                    &PersistentOrderedSet::default(),
+                    &CheckedCallEvents::default(),
+                )
+                .is_err()
+            );
+            let added_member = state.clone().with_resource_context(
+                state
+                    .resources()
+                    .clone()
+                    .unchecked_with_fact(CResourceFact::own_token("forged_child".into(), vec![])),
+            );
+            assert!(
+                CheckedResourceObservation::check(
+                    &function,
+                    &state,
+                    &facts,
+                    &member,
+                    &added_member,
+                    &after_facts,
+                    &PersistentOrderedSet::default(),
+                    &CheckedCallEvents::default(),
+                )
+                .is_err()
+            );
+            for missing in [&member, &authority] {
+                let missing = state.clone().with_resource_context(
+                    state
+                        .resources()
+                        .clone()
+                        .without_fact_incrementally(missing, facts.assumptions())
+                        .unwrap(),
+                );
+                assert!(
+                    CheckedResourceObservation::check(
+                        &function,
+                        &missing,
+                        &facts,
+                        &member,
+                        &missing,
+                        &after_facts,
+                        &PersistentOrderedSet::default(),
+                        &CheckedCallEvents::default(),
+                    )
+                    .is_err()
+                );
+            }
+            work
+        });
+        assert!(
+            work[0] > 0,
+            "count observation must charge checked work: {work:?}"
+        );
+        assert!(
+            work.iter().all(|sample| *sample <= work[0] + 64),
+            "count observation scanned unrelated state: {work:?}"
         );
     }
 

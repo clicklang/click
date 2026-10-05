@@ -1,8 +1,9 @@
 # Quantities do not apply to field-bearing resources
 
-Even a quantity of one must not route through the counted-resource machinery.
+Even a quantity of one cannot supply an identified member and its model fields.
+Authority permits counting named members without making them anonymous quantities.
 
-```click
+```click resource_semantics=authority
 resource cell(p: int32*) {
     field model: List<int32>;
     owns p[0..1];
@@ -14,5 +15,5 @@ int32 read_cell(int32* p) {
 ```
 
 ```expect
-fail: resource `cell` has fields and is not countable
+fail: resource `cell` has fields; quantities require separately named members
 ```

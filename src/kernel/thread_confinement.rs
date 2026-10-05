@@ -139,6 +139,7 @@ mod tests {
             None,
             vec![],
             vec![SpecProposition::Predicate {
+                resource_state_dependent: true,
                 name: "population_invariant".into(),
                 arguments: vec![],
             }],
@@ -213,6 +214,7 @@ mod tests {
             None,
             vec![],
             vec![SpecProposition::Predicate {
+                resource_state_dependent: true,
                 name: "population_invariant".into(),
                 arguments: vec![],
             }],

@@ -1,8 +1,7 @@
-# A second membership cannot reopen a suspended population body
+# An alias cannot reopen an exposed control body
 
-A scoped `open` exposes the one body owned by an active population. It does
-not consume a unit, and closing the block requires every body resource to be
-restored.
+The equal argument identifies the same ordinary control. Nested opening would
+duplicate its exclusive counter memory and population authority.
 
 ```c filename=resource_population_open.c
 struct object {
@@ -14,8 +13,10 @@ int32 object_refcount(struct object* obj, struct object* alias) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(object_ref(obj));
     owns obj->refs;
     fact obj->refs == count(object_ref(obj));
 }
@@ -23,13 +24,13 @@ resource object_ref(obj: struct object*) {
 verifying "resource_population_open.c";
 
 int32 object_refcount(struct object* obj, struct object* alias) {
-    owns object_ref(obj);
+    owns control(obj);
     requires alias == obj;
 
     ensures result == count(object_ref(obj));
 } by {
-    open(object_ref(obj)) {
-        open(object_ref(alias)) { execute(); }
+    open(control(obj)) {
+        open(control(alias)) { execute(); }
     }
     simp();
 }

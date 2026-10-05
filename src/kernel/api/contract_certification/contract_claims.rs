@@ -1428,6 +1428,10 @@ fn function_claim_holds_on_prepared_path(
                     || forall_loadable_covered_by_fact(assumptions, obligation)
                     || certification_proves_exists_obligation_from_facts(assumptions, obligation)
                     || assumptions.proves_exact(obligation)
+                    || crate::kernel::api::checked_int32_reassociated_add_domain(
+                        assumptions,
+                        obligation,
+                    )
             };
             let certifies = |proof: &&CCheckedFunctionProposition| {
                 // Cheapest checks first: a completion from another

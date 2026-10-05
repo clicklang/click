@@ -419,13 +419,8 @@ pub(in crate::surface) fn initial_call_state(
                     .map_err(ClickError::new)?;
                 continue;
             }
-            let member = CResourceFact::own(CResource::Composite {
-                name: description.family().to_owned(),
-                arguments: description.arguments().to_vec().into(),
-            });
-            let owned_members = u32::from(state.resources().contains_exact_representation(&member));
             state = state
-                .import_opaque_population(&authority, owned_members)
+                .import_opaque_population_inputs(&authority)
                 .map_err(ClickError::new)?;
         }
         let controls = state

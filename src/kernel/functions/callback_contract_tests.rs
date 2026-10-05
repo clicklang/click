@@ -828,6 +828,7 @@ fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
     let target = CFunctionContract::new("Target", template.clone()).unwrap();
     let pointer_type = source.function_pointer_type();
     let premise = SpecProposition::Predicate {
+        resource_state_dependent: false,
         name: source.predicate_name(),
         arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
             c_variable("callback"),
@@ -1615,10 +1616,12 @@ fn selected_contract_and_requirement_ordinals_stay_with_their_call() {
     .with_contract(
         vec![
             SpecProposition::Predicate {
+                resource_state_dependent: true,
                 name: "first_requirement".to_string(),
                 arguments: vec![],
             },
             SpecProposition::Predicate {
+                resource_state_dependent: true,
                 name: "second_requirement".to_string(),
                 arguments: vec![],
             },
@@ -1802,6 +1805,7 @@ fn missing_contract_requirement_source_map_fails_closed() {
     )
     .with_contract(
         vec![SpecProposition::Predicate {
+            resource_state_dependent: true,
             name: "requirement".to_string(),
             arguments: vec![],
         }],
@@ -1832,6 +1836,7 @@ fn missing_contract_requirement_source_map_fails_closed() {
 #[test]
 fn contract_source_maps_do_not_change_function_semantic_identity() {
     let requirements = vec![SpecProposition::Predicate {
+        resource_state_dependent: true,
         name: "requirement".to_string(),
         arguments: vec![],
     }];
