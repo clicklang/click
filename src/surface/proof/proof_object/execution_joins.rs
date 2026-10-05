@@ -2586,8 +2586,9 @@ impl<'a> Proof<'a> {
             }
             if let Some(target) = until {
                 // `execute_until` runs one path and does not split it: a
-                // frontier the bare step cannot take (an undecided C `if`)
-                // is refused with that step's own diagnostic.
+                // frontier the bare step cannot take (an undecided C `if`, a
+                // maybe-throwing call) is refused with that step's own
+                // diagnostic.
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof.step_error(format!(
@@ -3429,7 +3430,6 @@ impl<'a> Proof<'a> {
             &thrown.theorem,
             &thrown.outcome,
             &thrown.path_facts,
-            &thrown.execution_facts,
             &thrown.obligations,
         )
         .map_err(|_| {
