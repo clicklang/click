@@ -166,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 36 and earlier locks require
+needs separate support. Artifact schema is now 37 and earlier locks require
 an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
 
 ## Required invariant
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 36. `__int128` remains a feature prerequisite for the
+artifact schema is now 37. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 36
+arrangement restrictions remain semantic-profile limitations. Artifact schema 37
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -266,7 +266,7 @@ reuse the metadata helpers when checked in isolation. Regressions mutate every
 span and identity in a corpus covering all recursive variants, distinguish
 malformed metadata from unsupported nested lifetimes, and measure growing
 syntax/alias work without cloning lexical environments. Artifact schema remains
-36 and existing supported-source proofs remain unchanged.
+37 and existing supported-source proofs remain unchanged.
 
 Next extend the shared scalar and kernel design for the fee arithmetic milestone.
 
@@ -337,9 +337,8 @@ modulo conversion have distinct APIs, with exhaustive small-value and exact
 wide-endpoint oracle tests. Existing machine bounds, Integer observations and
 reverse conversions, rewrite normalization, and C++ literals/constant casts
 use this layer. Runtime bridges require an exact format match. General
-source-level `__int128` execution remains unsupported; the bounded kernel
-wide scalar profile below admits only the listed operations, without frontend
-admission.
+source-level `__int128` execution is limited to the bounded intermediate
+profile below; the shared kernel also provides the listed internal operations.
 
 The shared runtime now has an explicit modulo cast boundary for existing
 8–64-bit integer values. C++20 and Rust select the same symbolic conversion
@@ -392,12 +391,26 @@ the shared paths. Regression coverage includes full-width payloads, one-past
 and uninitialized reads, separate slot/pointee authority, startup versus
 ordinary-entry initializer authority, and symbolic storage scaling through one
 million elements. Compact narrow-array copies reject overlapping wide cells.
-Source spellings, wide byte reinterpretation, and wide callbacks remain open.
+Source pointers/arrays, wide byte reinterpretation, and wide callbacks remain open.
 
-Next add frontend source admission,
-retaining the source's resolved machine semantics. Use the shared formats and
-conversion policies rather than inventing a C++-specific numeric carrier.
-Then cover wide truncating division/remainder and checked narrowing
+C++ frontend admission now covers signed/unsigned `__int128` intermediates:
+mutable locals, full-width compiler constants, C++20 integral casts, Boolean
+conversion of all bits, and checked signed multiplication. The existing scalar
+interpretation maps directly to shared formats and kernel types; no C++ numeric
+carrier was introduced. Function boundaries retain the existing narrow scalar
+profile. Exporter and schema both reject unsupported wide operations. Schema 37
+requires refreshing older artifacts. High-bit products and modulo casts verify
+through execute/simp, expansion, and retained audit; narrow and wide overflow
+remain obligations even under a trivial postcondition. Shared wide-to-Boolean
+conversion and safe nested modulo cast normalization are now covered directly;
+known narrow 64-bit operands use indexed equalities with signedness retained.
+Oracle checks cover all signedness combinations and both narrowing and widening,
+and deterministic multi-size tests keep unrelated fact populations out of the
+wide product lookup.
+
+Next admit wide scalar parameters and results together with proof contract
+syntax and shared source argument initialization; then cover wide truncating
+division/remainder and checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before

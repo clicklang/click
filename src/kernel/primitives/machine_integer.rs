@@ -519,6 +519,28 @@ impl Bitvector32Term {
                 .constant_term(constant.convert_modulo(destination.format()))
                 .expect("matching destination format");
         }
+        // The outer conversion keeps only bits the intermediate preserved.
+        // If it widens again, retain the intermediate signed interpretation.
+        if let Self::MachineIntegerCast {
+            source: original,
+            destination: intermediate,
+            value: operand,
+        } = value
+        {
+            if intermediate == source && destination.format().bits() <= intermediate.format().bits()
+            {
+                return Self::machine_integer_cast(original, destination, *operand);
+            }
+            return Self::MachineIntegerCast {
+                value: Box::new(Self::MachineIntegerCast {
+                    source: original,
+                    destination: intermediate,
+                    value: operand,
+                }),
+                source,
+                destination,
+            };
+        }
         Self::MachineIntegerCast {
             value: Box::new(value),
             source,
@@ -597,6 +619,61 @@ mod tests {
                         "{source:?}->{destination:?}: {integer}"
                     );
                     assert_eq!(actual, literal);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nested_modulo_casts_match_an_independent_oracle_and_preserve_widening_sign() {
+        use crate::kernel::Variable;
+        use crate::kernel::reasoning::substitute_bitvector_variable_in_c_value;
+        use MachineIntegerType::*;
+        let types = [Int8, UInt8, Int32, UInt32, Int64, UInt64, Int128, UInt128];
+        let variable = Variable(149_003);
+        let modulo = |value: &BigInt, ty: MachineIntegerType| {
+            let modulus = BigInt::from(1) << ty.format().bits();
+            let mut result = ((value % &modulus) + &modulus) % &modulus;
+            if ty.format().is_signed() && result >= (&modulus >> 1) {
+                result -= modulus;
+            }
+            result
+        };
+        for source in types {
+            let (min, max) = source.format().bounds();
+            for intermediate in types {
+                for destination in types {
+                    let inner = Bitvector32Term::machine_integer_cast(
+                        source,
+                        intermediate,
+                        Bitvector32Term::Variable(variable),
+                    );
+                    let term =
+                        Bitvector32Term::machine_integer_cast(intermediate, destination, inner);
+                    if destination == source
+                        && intermediate.format().bits() >= source.format().bits()
+                    {
+                        assert_eq!(term, Bitvector32Term::Variable(variable));
+                    }
+                    for input in [min.clone(), max.clone(), 0.into(), 1.into()] {
+                        let constant =
+                            MachineIntegerConstant::from_integer(source.format(), &input).unwrap();
+                        let value = destination.value_from_term(term.clone());
+                        let result = substitute_bitvector_variable_in_c_value(
+                            &value,
+                            variable,
+                            &source.constant_term(constant).unwrap(),
+                        );
+                        let expected = modulo(&modulo(&input, intermediate), destination);
+                        assert_eq!(
+                            destination
+                                .constant_from_value(&result)
+                                .unwrap()
+                                .to_integer(),
+                            expected,
+                            "{source:?}->{intermediate:?}->{destination:?}: {input}"
+                        );
+                    }
                 }
             }
         }

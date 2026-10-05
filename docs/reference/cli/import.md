@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 36;
+its documented application invariant. The typed artifact schema is now 37;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -529,7 +529,7 @@ scalar parameters/locals and locked constants: supported casts, comparisons,
 and logical conjunction. Reference/pointer/field reads, runtime calls, arithmetic,
 and side effects are rejected. Compiler-folded constants retain the existing
 pinned-Clang constant policy. Bitcoin's library `Assume` macro and general
-assertion/abort behavior remain unsupported. Schema 36 requires an explicit
+assertion/abort behavior remain unsupported. Schema 37 requires an explicit
 refresh of earlier locks.
 
 Scalar interpretation is shared by the artifact validator, execution lowering,
@@ -560,8 +560,24 @@ negative dividends, exact division, zero, signed extrema, and the largest
 positive int32 divisor, together with expansion and retained audit sessions.
 These are concrete rounding cases, not a general rounding theorem. General
 quotient/remainder contracts and a modular caller with unrelated memory also
-verify. Bitcoin's actual rounding helper uses `__int128`; wider integers
-remain unsupported.
+verify. Bitcoin's actual rounding helper still requires wide division and
+remainder, which remain unsupported.
+
+The `wide-intermediates` fixture admits signed and unsigned `__int128` locals,
+compiler constants, and Clang-resolved integral casts inside functions with the
+existing 32/64-bit or Boolean signatures. C++20 casts use the shared modulo
+conversion policy, and Boolean conversion observes all 128 bits. Signed wide
+multiplication uses the shared checked runtime operation; casting a narrow
+product afterwards cannot remove its original overflow obligation. High-bit
+products, signed extrema, symbolic cast round trips, source-width overflow,
+wide overflow, expansion, and retained audit have regression coverage.
+
+Wide parameters and returns are refused until the proof contract surface can
+express them directly. Wide pointers, references, record fields, arrays,
+comparisons, negation, addition, subtraction, unsigned multiplication, division,
+and remainder remain unsupported. Both the live exporter and serialized artifact
+validator reject these operations. Schema 37 requires refreshing older locks.
+This slice does not yet verify the unchanged Bitcoin fee arithmetic helpers.
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
 same-type arithmetic/comparisons now use the common unsigned kernel types.
@@ -600,7 +616,7 @@ regressions.
 The pinned Clang exporter evaluates constant `sizeof` expressions and static
 zero-argument constexpr `std::numeric_limits::max()` calls in selected expression
 positions. These produce distinct `compiler_constant` nodes with a checked
-32/64-bit value/type and the original source span. The exporter preserves runtime
+32/64/128-bit value/type and the original source span. The exporter preserves runtime
 expression semantics under the pinned target and locked preprocessor input
 closure. Standard-library semantics remain part of the trusted compiler input.
 Runtime calls are never folded by this allowlist. General constexpr calls in

@@ -840,7 +840,7 @@ fn apply_c_int128_multiply(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    fn observe(value: CValue) -> Option<IntegerTerm> {
+    fn observe(value: CValue, assumptions: &PureFactContext) -> Option<IntegerTerm> {
         let ty = match value.c_type() {
             // Boolean operands are normalized 0/1. The other narrow types
             // retain their actual numeric interpretation before promotion.
@@ -861,9 +861,28 @@ fn apply_c_int128_multiply(
             | CValue::Int128(term) => term,
             _ => return None,
         };
-        IntegerTerm::from_machine(ty, term)
+        let observed = IntegerTerm::from_machine(ty, term)?;
+        // Numeric widening has already normalized to the original observer.
+        // Resolve only its indexed equality component, keeping the original
+        // signedness; unknown values retain both product-bound obligations.
+        if let IntegerTerm::Machine(machine) = &observed {
+            let constant = match machine.ty() {
+                MachineIntegerType::Int64 => assumptions
+                    .wide_constant_from_equalities(machine.value())
+                    .map(|value| IntegerTerm::constant_i64(value as i64)),
+                MachineIntegerType::UInt64 => assumptions
+                    .wide_constant_from_equalities(machine.value())
+                    .map(|value| IntegerTerm::constant(num_bigint::BigInt::from(value))),
+                _ => None,
+            };
+            if let Some(constant) = constant {
+                return Some(constant);
+            }
+        }
+        Some(observed)
     }
-    let (Some(left), Some(right)) = (observe(left), observe(right)) else {
+    let (Some(left), Some(right)) = (observe(left, assumptions), observe(right, assumptions))
+    else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
     let product = IntegerTerm::multiply(left, right);
