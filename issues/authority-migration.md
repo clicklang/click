@@ -343,7 +343,7 @@ cache repair remains removed. Milestones 1 and 2 are complete; milestone 3 is ne
    duplicate helper inputs, count observations without authority, unauthorized
    lifecycle changes, late establishment, and retirement with live members.
    Anonymous quantities cannot manufacture missing instance fields. Legacy
-   field-count rejection fixtures remain controls.
+   field-count rejection fixtures were retained until their Milestone 3 migration.
 
 **Exit gate passed:** Two disjoint field-bearing members preserve identity and
 private state; exclusive-memory conflicts and unauthorized transitions fail.
@@ -380,16 +380,21 @@ and named occurrences through the shared checked call engine. They cannot birth
 or spend named members, replace identity, or introduce anonymous lifecycle
 rights. Regressions retain unary/wildcard counts and List-valued fields, and
 reject missing authority, duplicate binders, another anchor, and consumption.
-Body-opening lifecycle effects remain unsupported; the original field-count
-controls stay unchanged until those boundaries are supported.
+Body-opening lifecycle effects remain unsupported. The two original field-count
+controls now select authority and pass: the external interface retains its
+original count precondition with named custody, and the forward-declared pure
+function keeps its List-valued count body. A caller exercises sealed private
+memory, model preservation, and cleanup. Companion negatives reject direct or
+hidden observations and calls when authority is closed, including after a prior
+authorized observation. The external reader remains an explicit assumption;
+this does not certify its absent C body.
 
 **List-valued named fields:** Protected resource types and named member lowering
 now share checked algebraic field schemas. A private-memory preserving helper
 proof retains two distinct List values while authority is closed, and observes
 counts after reopening it. Negatives reject anonymous field-bearing quantities,
-missing count authority, and incorrect model types. The original field-count
-contract refusals remain legacy controls: imported body opening still needs
-lifecycle effects. Unary and wildcard preserving authority imports are supported
+missing count authority, and incorrect model types. The original field-count controls now use authority with preserving external
+interfaces; imported body opening still needs lifecycle effects. Unary and wildcard preserving authority imports are supported
 by the slice above. This slice does not add named helper
 lifecycle effects or sums over model fields.
 

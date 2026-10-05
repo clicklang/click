@@ -1,4 +1,4 @@
-# A field-bearing external interface counts with explicit authority
+# A field-count external call needs exposed authority
 
 ```c filename=read_cell.c
 int32 read_cell(int32* p);
@@ -18,6 +18,8 @@ resource cell(p: int32*) {
     owns p[0..1];
 }
 
+resource control(p: int32*) { owns authority(cell(p)); }
+
 verifying "read_cell.c";
 
 extern int32 read_cell(int32* p) {
@@ -34,6 +36,7 @@ int32 run() { ensures result == 0; } by {
     step();
     fold(authority(cell(p)));
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });
+    fold(control(p));
     step(read_cell(p), { member: first });
     have first.model == List<int32>::Cons(7, List<int32>::Nil) by simp;
     have count(cell(p)) == 1 by simp;
@@ -44,5 +47,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-pass
+fail: Requires owns authority(cell(...))
 ```
