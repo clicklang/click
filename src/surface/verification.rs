@@ -712,6 +712,7 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &predicate_environment,
         &click_function_environment,
         &resource_environment,
+        sources.resource_semantics_mode(),
     )?
     .with_byte_order(file.selected_c_target().byte_order());
     let refinement_targets = file
@@ -784,6 +785,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
         &predicate_environment,
         &click_function_environment,
         &resource_environment,
+        sources.resource_semantics_mode(),
     )?
     .with_byte_order(file.selected_c_target().byte_order());
     for target in contract_refinement_targets(&file, theorem_name) {
@@ -2511,6 +2513,7 @@ fn verify_c0_sources_in_context(
             &predicate_environment,
             &click_function_environment,
             &resource_environment,
+            c_sources.resource_semantics_mode(),
         )?;
         let modeled_mutex_definitions: BTreeMap<_, _> = if selected_thread_runtime
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
@@ -6832,18 +6835,23 @@ pub(in crate::surface) fn build_function_environment(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     resource_environment: &ResourceEnvironment,
+    resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<CExecutionEnvironment, ClickError> {
     let mut environment = CExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
         let parsed_function = external_c0_function(function_block);
-        let (state, arguments, _, _) = initial_claim_context(
+        let InitialClaimContext {
+            state, arguments, ..
+        } = initial_claim_context_with_mode(
             function_block,
             &parsed_function,
             resource_environment,
             predicate_environment,
             click_function_environment,
             &format!("{}.named contract", definition.name()),
+            None,
+            resource_semantics_mode,
         )
         .map_err(|error| {
             error
@@ -6982,13 +6990,17 @@ pub(in crate::surface) fn build_function_environment(
             continue;
         }
         let parsed_function = external_c0_function(function_block);
-        let (state, arguments, _, _) = initial_claim_context(
+        let InitialClaimContext {
+            state, arguments, ..
+        } = initial_claim_context_with_mode(
             function_block,
             &parsed_function,
             resource_environment,
             predicate_environment,
             click_function_environment,
             &format!("{}.external contract", function_block.signature().name()),
+            None,
+            resource_semantics_mode,
         )?;
         let function = annotated_function(
             function_block,

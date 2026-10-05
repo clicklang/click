@@ -2499,6 +2499,7 @@ fn exceptional_postconditions_observe_the_throw_state() {
 #[test]
 fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
     let predicate = SpecProposition::Predicate {
+        resource_state_dependent: true,
         name: "positive".to_string(),
         arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
             c_variable("result"),
@@ -5774,4 +5775,70 @@ fn aggregate_copy_requires_write_authority_for_each_destination_field() {
             );
         }
     }
+}
+
+#[test]
+fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
+    let a = Bitvector32Term::Variable(Variable(960_170));
+    let b = Bitvector32Term::Variable(Variable(960_171));
+    let c = Bitvector32Term::Variable(Variable(960_172));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::signed_add_overflows(a.clone(), Bitvector32Term::add(b.clone(), c.clone())),
+        false,
+    );
+    let guards = [
+        ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+        ConditionTerm::signed_add_overflows(Bitvector32Term::add(a.clone(), b.clone()), c.clone()),
+        ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
+    ];
+    for missing in 0..3 {
+        let mut facts = PureFactContext::new();
+        for (index, guard) in guards.iter().enumerate() {
+            if index != missing {
+                facts = facts.assume_condition(guard.clone(), false);
+            }
+        }
+        assert!(
+            !crate::kernel::api::checked_int32_reassociated_add_domain(&facts, &goal),
+            "missing domain {missing} was accepted"
+        );
+    }
+    let work = [16, 64, 256].map(|size| {
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(961_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        for guard in &guards {
+            facts = facts.assume_condition(guard.clone(), false);
+        }
+        let (accepted, work) = crate::persistent::measure_persistent_work(|| {
+            crate::kernel::api::checked_int32_reassociated_add_domain(&facts, &goal)
+        });
+        assert!(accepted);
+        work
+    });
+    assert!(work[0] > 0);
+    assert!(
+        work.iter().all(|sample| *sample <= work[0] + 256),
+        "regrouping scanned unrelated facts: {work:?}"
+    );
+    // The sequential total can be in range while the regrouped inner sum
+    // overflows: MIN + MAX + 1 == 0 is not a license to evaluate MAX + 1.
+    let a = Bitvector32Term::Constant(i32::MIN as u32);
+    let b = Bitvector32Term::Constant(i32::MAX as u32);
+    let c = Bitvector32Term::Constant(1);
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::signed_add_overflows(a, Bitvector32Term::add(b, c)),
+        false,
+    );
+    assert!(!crate::kernel::api::checked_int32_reassociated_add_domain(
+        &PureFactContext::new(),
+        &goal
+    ));
 }

@@ -1,6 +1,8 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 
+pub(in crate::kernel) mod predicate_dependencies;
+
 type EvaluatedSpecResource = (CResource, Vec<ExecutionPureFact>, Vec<ProofObligation>);
 type SpecResourceBuilder = Box<dyn Fn(Vec<CValue>) -> Option<CResource>>;
 
@@ -1562,17 +1564,20 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             })
             .collect())
         }
-        SpecProposition::Predicate { name, arguments } => {
-            lower_spec_predicate_proposition_at_state_in(
-                state,
-                name,
-                arguments,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )
-        }
+        SpecProposition::Predicate {
+            name,
+            arguments,
+            resource_state_dependent,
+        } => lower_spec_predicate_proposition_at_state_in(
+            state,
+            name,
+            arguments,
+            *resource_state_dependent,
+            loop_entry_state,
+            assumptions,
+            algebraic_bindings,
+            budget,
+        ),
         SpecProposition::ResourceSeparate { left, right } => {
             lower_spec_resource_relation_at_state_in(
                 state,
@@ -5510,6 +5515,7 @@ fn lower_spec_predicate_proposition_at_state_in(
     state: &CState,
     name: &str,
     arguments: &[SpecPredicateArgument],
+    resource_state_dependent: bool,
     loop_entry_state: Option<&CState>,
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
@@ -5582,7 +5588,9 @@ fn lower_spec_predicate_proposition_at_state_in(
     // it is independent of the caller's current resource-population snapshot.
     // Keeping the uniform predicate state argument canonical lets a closed
     // pure theorem establish the same fact at every later application site.
-    let predicate_state = if CFunctionContract::surface_name_from_predicate(name).is_some() {
+    let predicate_state = if !resource_state_dependent
+        || CFunctionContract::surface_name_from_predicate(name).is_some()
+    {
         CState::new()
     } else {
         state.resource_state_snapshot()
@@ -6043,6 +6051,21 @@ fn evaluate_resource_count_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    // A predicate records immutable observations, not execution custody. Restore
+    // its captured read witness only inside this evaluator; no resource step
+    // sees this context, and the numeric model remains the captured ledger.
+    let predicate_state = state
+        .population_effects
+        .predicate_count_permissions
+        .as_ref()
+        .map(|permissions| {
+            let mut observed = state.clone();
+            observed.resources = permissions.0.as_ref().clone();
+            std::sync::Arc::make_mut(&mut observed.population_effects)
+                .predicate_count_permissions = None;
+            observed
+        });
+    let state = predicate_state.as_ref().unwrap_or(state);
     let authority_mode = state.uses_population_authority_semantics();
     let observed_state = (!authority_mode).then(|| state.count_observation_state(assumptions));
     let state = observed_state
@@ -6210,7 +6233,7 @@ fn evaluate_resource_count_paths(
                     creation.observe_symbolic(&description)
                 };
                 if let Some(symbolic) = symbolic {
-                    let entry = symbolic.entry_count;
+                    let entry = symbolic.entry_count.clone();
                     // An imported control's checked equality to a population
                     // count entails this bound, including any member owned by
                     // the helper at entry. It is not an arbitrary C assumption.
@@ -6223,21 +6246,27 @@ fn evaluate_resource_count_paths(
                         true,
                     );
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
-                    let delta =
-                        symbolic
-                            .symbolic_delta
-                            .clone()
-                            .or_else(|| match symbolic.delta.cmp(&0) {
-                                std::cmp::Ordering::Less => Some((
-                                    false,
-                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
-                                )),
-                                std::cmp::Ordering::Greater => Some((
-                                    true,
-                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
-                                )),
-                                std::cmp::Ordering::Equal => None,
-                            });
+                    // The composed quantity is itself signed arithmetic. A
+                    // wrapped inner sum must not disappear inside entry + delta.
+                    if let Some((true, quantity)) = &symbolic.symbolic_delta
+                        && symbolic.delta > 0
+                    {
+                        let overflow = ConditionTerm::signed_add_overflows(
+                            quantity.clone(),
+                            Bitvector32Term::Constant(symbolic.delta as u32),
+                        );
+                        let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                        if !path_assumptions.proves_exact(&no_overflow)
+                            && PureFactContext::decide_intrinsically(&overflow) != Some(false)
+                            && path_assumptions.decide(&overflow) != Some(false)
+                        {
+                            obligations.push(
+                                ProofObligation::verification_condition(no_overflow)
+                                    .with_context("composed member quantity fits in int32"),
+                            );
+                        }
+                    }
+                    let delta = symbolic.combined_delta();
                     let count = match delta {
                         None => entry,
                         Some((true, quantity)) => {
@@ -6250,6 +6279,10 @@ fn evaluate_resource_count_paths(
                             if !bounded.proves_exact(&no_overflow)
                                 && PureFactContext::decide_intrinsically(&overflow) != Some(false)
                                 && bounded.decide(&overflow) != Some(false)
+                                && !crate::kernel::api::checked_int32_reassociated_add_domain(
+                                    &bounded,
+                                    &no_overflow,
+                                )
                             {
                                 obligations.push(
                                     ProofObligation::verification_condition(no_overflow)

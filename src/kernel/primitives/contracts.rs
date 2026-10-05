@@ -1368,7 +1368,16 @@ impl CFunction {
 }
 
 impl CPredicateUnfolding {
-    pub fn new(predicate: SpecProposition, body: SpecProposition) -> Self {
+    pub fn new(mut predicate: SpecProposition, body: SpecProposition) -> Self {
+        if let SpecProposition::Predicate {
+            resource_state_dependent,
+            ..
+        } = &mut predicate
+        {
+            // A client cannot erase a model dependency from a registered body.
+            *resource_state_dependent |=
+                super::super::spec::predicate_dependencies::observes_resource_state(&body);
+        }
         Self { predicate, body }
     }
 

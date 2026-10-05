@@ -1,10 +1,10 @@
-# Pure functions cannot hide counting a field-bearing resource
+# A pure function describes a field-bearing count without granting authority
 
 The function precedes the resource to check forward declaration resolution.
 
-```click
+```click resource_semantics=authority
 function population(p: int32*) -> List<int32> {
-    List::Cons(count(cell(p)), List::Nil)
+    List<int32>::Cons(count(cell(p)), List<int32>::Nil)
 }
 
 resource cell(p: int32*) {
@@ -14,5 +14,5 @@ resource cell(p: int32*) {
 ```
 
 ```expect
-fail: resource `cell` has fields and is not countable
+pass
 ```

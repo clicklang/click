@@ -1,4 +1,7 @@
-# Restoring a value does not restore suspended access authority
+# Restoring a value cannot duplicate suspended control custody
+
+The aliased helper argument denotes the same open control. A self-assignment
+restores its value but cannot lend the control while its body remains exposed.
 
 ```c filename=reopen.c
 struct object { int32 refs; };
@@ -6,20 +9,22 @@ void inspect(struct object* obj) { }
 void restored(struct object* obj, struct object* alias) { obj->refs = obj->refs; inspect(alias); }
 ```
 
-```click
-resource reference(obj: struct object*) {
+```click resource_semantics=authority
+resource reference(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(reference(obj));
     owns obj->refs;
     fact obj->refs == count(reference(obj));
 }
 verifying "reopen.c";
 void inspect(struct object* obj) {
-    owns reference(obj);
+    owns control(obj);
 } by { execute(); simp(); }
 void restored(struct object* obj, struct object* alias) {
-    owns reference(obj);
+    owns control(obj);
     requires alias == obj;
 } by {
-    open(reference(obj)) {
+    open(control(obj)) {
         step();
         step();
         execute();

@@ -5621,13 +5621,42 @@ pub enum SmartTactic {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PredicateEnvironment {
     definitions: BTreeMap<String, PredicateDefinition>,
+    resource_state_dependent: BTreeSet<String>,
     contract_signatures: BTreeMap<String, C0Type>,
     contract_definitions: BTreeMap<String, ContractDefinition>,
 }
 
 impl PredicateEnvironment {
     fn new(definitions: &[PredicateDefinition]) -> Self {
+        let mut resource_state_dependent = BTreeSet::new();
+        let mut callers: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for definition in definitions {
+            let mut counts = BTreeSet::new();
+            validation::collect_resource_count_families(definition.body(), &mut counts);
+            let mut predicates = BTreeSet::new();
+            validation::collect_called_predicates(definition.body(), &mut predicates);
+            if !counts.is_empty() || predicates.contains("held") {
+                resource_state_dependent.insert(definition.name().to_string());
+            }
+            for predicate in predicates {
+                callers
+                    .entry(predicate)
+                    .or_default()
+                    .push(definition.name().to_string());
+            }
+        }
+        let mut pending = resource_state_dependent.iter().cloned().collect::<Vec<_>>();
+        while let Some(name) = pending.pop() {
+            if let Some(dependents) = callers.get(&name) {
+                for dependent in dependents {
+                    if resource_state_dependent.insert(dependent.clone()) {
+                        pending.push(dependent.clone());
+                    }
+                }
+            }
+        }
         Self {
+            resource_state_dependent,
             definitions: definitions
                 .iter()
                 .map(|definition| (definition.name().to_string(), definition.clone()))

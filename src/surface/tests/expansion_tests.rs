@@ -1973,6 +1973,10 @@ fn return_population_proofs_expand_without_effect_clauses() {
             vec!["consume_population"],
         ),
         (
+            "population_cleanup_consumes_whole_quantity.md",
+            vec!["cleanup"],
+        ),
+        (
             "resource_count_predicate_snapshot.md",
             vec!["object_retain"],
         ),

@@ -2281,6 +2281,9 @@ pub enum SpecProposition {
     Predicate {
         name: String,
         arguments: Vec<SpecPredicateArgument>,
+        /// Whether the definition observes the resource model. Memory snapshots
+        /// remain explicit predicate arguments independently of this flag.
+        resource_state_dependent: bool,
     },
     ResourceSeparate {
         left: SpecResource,
@@ -5656,6 +5659,11 @@ fn intern_c_memory_ref_with_read_identity(
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct PopulationEffects {
+    /// Read permissions captured for evaluating a predicate's immutable count
+    /// snapshot. The creation root supplies its logical identity; this witness
+    /// cannot supply resources to an execution or resource rewrite.
+    pub(super) predicate_count_permissions: Option<PredicateCountPermissions>,
+
     /// Function-local consumption committed at closure; callee binding resets it.
     pub(super) committed_consumptions: CountedPopulations,
     /// Reserved final totals; current Count is unavailable until every worker
@@ -5731,6 +5739,36 @@ pub struct CState {
     /// nothing — the outermost one — has nothing to collide with and keeps
     /// the plain spelling.
     pub(super) enclosing_frame_holds_locals: bool,
+}
+
+#[derive(Clone)]
+pub(super) struct PredicateCountPermissions(pub(super) std::sync::Arc<ResourceContext>);
+
+// Permissions justify observing the count but do not change its value. The
+// enclosing CState compares the captured creation root independently.
+impl PartialEq for PredicateCountPermissions {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+impl Eq for PredicateCountPermissions {}
+impl PartialOrd for PredicateCountPermissions {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for PredicateCountPermissions {
+    fn cmp(&self, _: &Self) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
+}
+impl std::hash::Hash for PredicateCountPermissions {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
+}
+impl std::fmt::Debug for PredicateCountPermissions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<captured count read permissions>")
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

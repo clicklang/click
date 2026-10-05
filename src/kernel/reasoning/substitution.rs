@@ -3860,6 +3860,10 @@ fn substitute_bitvector_variable_in_c_state(
         ),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
             creation: state.population_effects.creation.clone(),
+            predicate_count_permissions: state
+                .population_effects
+                .predicate_count_permissions
+                .clone(),
             committed_consumptions: substitute_bitvector_variable_in_population_counts(
                 &state.population_effects.committed_consumptions,
                 from,
@@ -6667,6 +6671,10 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
         ),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
             creation: state.population_effects.creation.clone(),
+            predicate_count_permissions: state
+                .population_effects
+                .predicate_count_permissions
+                .clone(),
             committed_consumptions: substitute_pointer_variable_in_population_counts(
                 &state.population_effects.committed_consumptions,
                 from,
@@ -7616,7 +7624,12 @@ fn substitute_pointer_variable_in_spec_proposition(
                 body, from, to,
             )),
         },
-        SpecProposition::Predicate { name, arguments } => SpecProposition::Predicate {
+        SpecProposition::Predicate {
+            name,
+            arguments,
+            resource_state_dependent,
+        } => SpecProposition::Predicate {
+            resource_state_dependent: *resource_state_dependent,
             name: name.clone(),
             arguments: arguments
                 .iter()

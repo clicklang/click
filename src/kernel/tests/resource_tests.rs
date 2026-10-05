@@ -8163,3 +8163,97 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
         "prior members prohibit a fresh empty authority"
     );
 }
+
+#[test]
+fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
+    let pointer = Pointer {
+        block: PointerBlock::Heap(940_601),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+    let description = crate::kernel::ResourceDescription::new(
+        "member".into(),
+        arguments.clone(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description));
+    let selected = CResourceFact::own(CResource::Composite {
+        name: "member".into(),
+        arguments: arguments.clone(),
+    });
+    let definition = CCompositeResourceDefinition::new(
+        "member",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![],
+        vec![],
+    );
+    let assumptions = PureFactContext::new();
+    let mut created = CState::new()
+        .with_population_creation_tracking()
+        .with_memory(
+            CMemory::new()
+                .with_heap_allocation_claim(pointer.clone(), 4)
+                .unwrap(),
+        );
+    created.record_population_storage_creation(pointer.block.clone());
+    let (empty, _) = created
+        .checked_population_authority_exchange(&authority, true, &assumptions)
+        .unwrap();
+    let (one, _) = empty
+        .checked_population_member_exchange(&selected, true, &definition, &assumptions)
+        .unwrap();
+    let snapshot = one.resource_state_snapshot();
+    let (two, _) = one
+        .checked_population_member_exchange(&selected, true, &definition, &assumptions)
+        .unwrap();
+    let expression = SpecExpression::CountedResourceCount {
+        name: "member".into(),
+        arguments: vec![Some(SpecExpression::Value(CValue::pointer(pointer)))],
+    };
+    let read = |state: &CState| {
+        c_evaluate_spec_expression_at_state(state, &expression, None, &assumptions)
+            .unwrap()
+            .0
+    };
+    assert_eq!(read(&snapshot), int32(1));
+    assert_eq!(read(&snapshot.resource_state_snapshot()), int32(1));
+    assert_eq!(read(&two), int32(2));
+    assert!(
+        !snapshot
+            .resources()
+            .satisfies_fact(&authority, &assumptions)
+    );
+    assert!(!snapshot.resources().satisfies_fact(&selected, &assumptions));
+    // Even explicitly supplying custody cannot turn a logical snapshot into
+    // a second branch of the linear population ledger.
+    let forged = snapshot.with_resource_context(one.resources().clone());
+    let instance = ResourceInstance::new(
+        Variable::allocate_fresh().unwrap(),
+        "member".into(),
+        arguments,
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap(),
+        vec![int32(7).into()].into(),
+    )
+    .unwrap();
+    for establish in [false, true] {
+        assert!(
+            forged
+                .checked_population_authority_exchange(&authority, establish, &assumptions)
+                .is_err()
+        );
+        assert!(
+            forged
+                .checked_population_member_exchange(&selected, establish, &definition, &assumptions)
+                .is_err()
+        );
+        assert!(
+            forged
+                .clone()
+                .record_instance_population_exchange(&forged, &instance, establish, &assumptions)
+                .is_err()
+        );
+    }
+}

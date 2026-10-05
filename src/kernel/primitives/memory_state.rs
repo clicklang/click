@@ -5716,7 +5716,14 @@ impl CState {
             (Some(left), Some(right)) => same_or_empty_map(left, right),
             _ => false,
         };
-        same_bindings
+        self.population_effects
+            .predicate_count_permissions
+            .is_some()
+            == other
+                .population_effects
+                .predicate_count_permissions
+                .is_some()
+            && same_bindings
             && same_or_empty_map(&self.locals.bindings, &other.locals.bindings)
             && same_or_empty_map(&self.locals.slots, &other.locals.slots)
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
@@ -5885,6 +5892,90 @@ impl CState {
         Ok(next)
     }
 
+    pub(crate) fn import_opaque_population_inputs(
+        &self,
+        authority: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            return Err("population import requires authority".into());
+        };
+        if !description.schema().is_countable() {
+            if authority
+                .owned_quantity_term()
+                .and_then(Bitvector32Term::as_const)
+                != Some(1)
+                || !self.resources.contains_exact_representation(authority)
+            {
+                return Err("Requires one declared owned authority for named members".into());
+            }
+            let events = self
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("opaque import requires authority mode")?
+                .import_observable_named_authority(description)
+                .map_err(|refusal| format!("named authority import refused: {refusal:?}"))?;
+            let mut next = self.clone();
+            Arc::make_mut(&mut next.population_effects).creation = Some(events);
+            return Ok(next);
+        }
+        let member = CResourceFact::own(CResource::Composite {
+            name: description.family().to_owned(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let held = self
+            .resources
+            .exact_resource_facts(member.resource())
+            .into_iter()
+            .filter(|fact| fact.owned_quantity_term().is_some())
+            .collect::<Vec<_>>();
+        if let [held] = held.as_slice() {
+            self.import_opaque_population_quantity(authority, held)
+        } else {
+            self.import_opaque_population(
+                authority,
+                u32::from(self.resources.contains_exact_representation(&member)),
+            )
+        }
+    }
+
+    /// Retain the exact held batch as custody, independent of its arbitrary
+    /// global entry total. No population creation occurs at helper entry.
+    pub(crate) fn import_opaque_population_quantity(
+        &self,
+        authority: &CResourceFact,
+        member: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(description), authority_quantity) =
+            authority
+        else {
+            return Err("batch import requires owned authority".into());
+        };
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member else {
+            return Err("batch import requires an owned declared member quantity".into());
+        };
+        if authority_quantity.as_const() != Some(1)
+            || name != description.family()
+            || arguments.as_ref() != description.arguments()
+            || !self.resources.contains_exact_representation(authority)
+            || !self.resources.contains_exact_representation(member)
+        {
+            return Err(
+                "batch import requires this authority's exact declared owned quantity".into(),
+            );
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("batch import requires authority mode")?
+            .import_observable_contract_population_quantity(description, quantity)
+            .map_err(|refusal| format!("batch population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
     /// Import exactly the authority and identified member declared at a
     /// wildcard helper entry. Neither input is a population creation event.
     pub(crate) fn import_opaque_wildcard_population(
@@ -5934,6 +6025,9 @@ impl CState {
             || !self.resources.contains_exact_representation(authority)
         {
             return Err("Requires one declared owned authority".into());
+        }
+        if !scope.schema().is_countable() {
+            return self.import_opaque_population_inputs(authority);
         }
         let events = self
             .population_effects
@@ -6115,7 +6209,7 @@ impl CState {
                 let imported = events
                     .observe_symbolic(&description)
                     .ok_or("Requires a current authority count")?;
-                if let Some((produce, quantity)) = imported.symbolic_delta {
+                if let Some((produce, quantity)) = imported.combined_delta() {
                     if produce {
                         Bitvector32Term::add(imported.entry_count, quantity)
                     } else {
@@ -6448,6 +6542,13 @@ impl CState {
         establish: bool,
         assumptions: &PureFactContext,
     ) -> Result<(CState, CheckedPopulationAuthorityExchange), String> {
+        if self
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change authority".into());
+        }
         let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected
         else {
             return Err("Requires owns authority(R(p))".into());
@@ -6526,6 +6627,13 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
+        if self
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change membership".into());
+        }
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
         else {
             return Err("Requires owns R(p)".into());
@@ -6555,6 +6663,7 @@ impl CState {
                 !matches!(
                     spec.term(),
                     super::super::CResourceTerm::Memory(_)
+                        | super::super::CResourceTerm::Token { .. }
                         | super::super::CResourceTerm::Composite { .. }
                 ) || spec.access() != super::super::CResourceAccessMode::Own
                     || spec.quantity() != &super::super::CResourceQuantity::One
@@ -6642,7 +6751,10 @@ impl CState {
         };
         for child in &body {
             let Some(range) = child.memory_own_range() else {
-                if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                if let CResourceFact::Own(
+                    CResource::Token { .. } | CResource::Composite { .. },
+                    quantity,
+                ) = child
                     && quantity.as_const() == Some(1)
                 {
                     // Transfer the folded child; do not expose its contents or
@@ -6687,7 +6799,7 @@ impl CState {
             let instantiated = crate::kernel::functions::instantiate_private_member_body_facts(
                 selected,
                 definition,
-                &self.memory,
+                self,
                 assumptions,
             )
             .ok_or("Requires ownership of every cell read by member body facts")?;
@@ -6760,11 +6872,24 @@ impl CState {
         produce: bool,
         assumptions: &PureFactContext,
     ) -> Result<(), String> {
+        if before
+            .population_effects
+            .predicate_count_permissions
+            .is_some()
+        {
+            return Err("predicate count snapshots cannot change named membership".into());
+        }
         let Some(events) = &before.population_effects.creation else {
             return Ok(());
         };
         let description = super::super::ResourceDescription::from_instance(instance);
         let history = if events.tracks_population(&description) {
+            if events.recognizes_imported_population(&description) {
+                return Err(
+                    "named member fold/unfold at imported authority entries is not supported yet"
+                        .into(),
+                );
+            }
             let governing = events
                 .governing_authority(&description)
                 .ok_or("Requires a matching population authority")?;
@@ -7403,6 +7528,26 @@ impl CState {
     /// an unrelated C step from changing the identity of a predicate merely
     /// because the predicate language can also observe resource counts.
     pub fn resource_state_snapshot(&self) -> Self {
+        if self.uses_population_authority_semantics() {
+            return Self {
+                population_effects: Arc::new(PopulationEffects {
+                    // Nested predicates recapture the same logical model.
+                    // Their execution resource context is intentionally empty;
+                    // keep the original count-only witness instead of using it.
+                    predicate_count_permissions: Some(
+                        self.population_effects
+                            .predicate_count_permissions
+                            .clone()
+                            .unwrap_or_else(|| {
+                                PredicateCountPermissions(Arc::new(self.resources.clone()))
+                            }),
+                    ),
+                    creation: self.population_effects.creation.clone(),
+                    ..PopulationEffects::default()
+                }),
+                ..Self::new()
+            };
+        }
         let observed_families = self
             .counted_populations
             .iter()

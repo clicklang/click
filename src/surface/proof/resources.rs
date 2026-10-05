@@ -1565,7 +1565,23 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             ))
         })?;
         let count_authority = abstract_resource.clone();
-        if assumptions.proves(&count_kernel) {
+        if state.uses_population_authority_semantics() {
+            let checked = crate::kernel::checked_owned_resource_count_lower_bound(
+                &state,
+                &count_authority,
+                &assumptions,
+            )
+            .ok_or_else(|| {
+                ClickError::new("count observation cannot certify the owned quantity bound")
+            })?;
+            if checked != count_kernel {
+                return Err(ClickError::new(
+                    "count observation does not match its checked ledger bound",
+                ));
+            }
+            surface_propositions.record_lowering(&count_witness, &count_kernel)?;
+            available_pure_facts.insert(count_kernel);
+        } else if assumptions.proves(&count_kernel) {
             let derivation = prove_owned_resource_count_lower_bound(
                 &state,
                 &count_authority,
@@ -1650,6 +1666,11 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             surface_propositions
                 .record_lowering(&count_nonnegative_witness, &count_nonnegative_kernel)?;
         }
+    }
+    if state.uses_population_authority_semantics() {
+        // Authority-mode observation names checked count/quantity facts only.
+        // Member bodies remain folded, with their custody and memory unchanged.
+        return Ok((state, abstract_resource));
     }
     let underlying_resource = match resource {
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
