@@ -1,31 +1,64 @@
 use super::*;
 
+// Operands here have already undergone the language's scalar promotions.
+// Keep both constant-folding entry points on the shared format semantics.
+fn checked_machine_div_rem_const(
+    ty: MachineIntegerType,
+    left: u128,
+    right: u128,
+) -> Option<(u128, u128)> {
+    let left = MachineIntegerConstant::from_bits(ty.format(), left)?;
+    let right = MachineIntegerConstant::from_bits(ty.format(), right)?;
+    let (quotient, remainder) = left.truncating_div_rem(right).ok()?;
+    Some((quotient.bits(), remainder.bits()))
+}
+
 fn checked_signed_divide_const(left: u32, right: u32) -> Option<u32> {
-    let left = left as i32;
-    let right = right as i32;
-    if right == 0 || (left == i32::MIN && right == -1) {
-        None
-    } else {
-        Some((left / right) as u32)
-    }
+    checked_machine_div_rem_const(MachineIntegerType::Int32, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u32)
 }
 
 fn checked_signed_remainder_const(left: u32, right: u32) -> Option<u32> {
-    let left = left as i32;
-    let right = right as i32;
-    if right == 0 || (left == i32::MIN && right == -1) {
-        None
-    } else {
-        Some((left % right) as u32)
-    }
+    checked_machine_div_rem_const(MachineIntegerType::Int32, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u32)
 }
 
 fn checked_unsigned_divide_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then(|| left / right)
+    checked_machine_div_rem_const(MachineIntegerType::UInt32, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u32)
 }
 
 fn checked_unsigned_remainder_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then(|| left % right)
+    checked_machine_div_rem_const(MachineIntegerType::UInt32, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u32)
+}
+
+fn checked_int64_divide_const(left: i64, right: i64) -> Option<i64> {
+    checked_machine_div_rem_const(
+        MachineIntegerType::Int64,
+        left as u64 as u128,
+        right as u64 as u128,
+    )
+    .map(|(quotient, _)| quotient as i64)
+}
+
+fn checked_int64_remainder_const(left: i64, right: i64) -> Option<i64> {
+    checked_machine_div_rem_const(
+        MachineIntegerType::Int64,
+        left as u64 as u128,
+        right as u64 as u128,
+    )
+    .map(|(_, remainder)| remainder as i64)
+}
+
+fn checked_uint64_divide_const(left: u64, right: u64) -> Option<u64> {
+    checked_machine_div_rem_const(MachineIntegerType::UInt64, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u64)
+}
+
+fn checked_uint64_remainder_const(left: u64, right: u64) -> Option<u64> {
+    checked_machine_div_rem_const(MachineIntegerType::UInt64, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u64)
 }
 
 fn checked_shift_count_const(count: u32) -> Option<u32> {
@@ -729,12 +762,12 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
         Bitvector32Term::Int64Divide(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right)
+            checked_int64_divide_const(left, right)
         }
         Bitvector32Term::Int64Remainder(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right)
+            checked_int64_remainder_const(left, right)
         }
         Bitvector32Term::Int64ShiftLeft(left, right) => {
             let left = int64_constant(left)?;
@@ -801,11 +834,11 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         }
         Bitvector32Term::UInt64Divide(left, right) => {
             let right = uint64_constant(right)?;
-            uint64_constant(left)?.checked_div(right)
+            checked_uint64_divide_const(uint64_constant(left)?, right)
         }
         Bitvector32Term::UInt64Remainder(left, right) => {
             let right = uint64_constant(right)?;
-            uint64_constant(left)?.checked_rem(right)
+            checked_uint64_remainder_const(uint64_constant(left)?, right)
         }
         Bitvector32Term::UInt64ShiftLeft(left, right) => {
             let count = int64_shift_count_constant(right)?;
@@ -1511,19 +1544,14 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_divide(left: Self, right: Self) -> Self {
-        Self::int64_binary(
-            left,
-            right,
-            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right),
-            Self::Int64Divide,
-        )
+        Self::int64_binary(left, right, checked_int64_divide_const, Self::Int64Divide)
     }
 
     pub(crate) fn int64_remainder(left: Self, right: Self) -> Self {
         Self::int64_binary(
             left,
             right,
-            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right),
+            checked_int64_remainder_const,
             Self::Int64Remainder,
         )
     }
@@ -1628,19 +1656,14 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_divide(left: Self, right: Self) -> Self {
-        Self::uint64_binary(
-            left,
-            right,
-            |left, right| (right != 0).then(|| left / right),
-            Self::UInt64Divide,
-        )
+        Self::uint64_binary(left, right, checked_uint64_divide_const, Self::UInt64Divide)
     }
 
     pub(crate) fn uint64_remainder(left: Self, right: Self) -> Self {
         Self::uint64_binary(
             left,
             right,
-            |left, right| (right != 0).then(|| left % right),
+            checked_uint64_remainder_const,
             Self::UInt64Remainder,
         )
     }
