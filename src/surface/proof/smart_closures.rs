@@ -2113,8 +2113,8 @@ impl<'a> Proof<'a> {
     }
 
     /// The same indexed bound selection at function exit, where a bound can
-    /// also sit inside a written conjunction or be the negation of a branch
-    /// condition. Loop and statement-frontier goals keep their own closers,
+    /// also be the negation of a branch condition. Loop and statement-frontier
+    /// goals keep their own closers,
     /// whose premises name the loop head and contract. Runs last, after
     /// every route whose selected steps it would otherwise hide in
     /// expansion.
@@ -2127,9 +2127,9 @@ impl<'a> Proof<'a> {
     }
 
     /// Each goal variable's bound bucket is an O(log n) lookup, and each
-    /// bound it lists costs one indexed fact or conjunct membership test. A
-    /// bound held only as a proper conjunct of a fact is made a fact by one
-    /// checked `extract` step before the certificate cites it.
+    /// bound it lists costs one indexed fact membership test. A leaf conjunct
+    /// of a fact is itself an indexed fact, so a bound written inside a
+    /// conjunction needs no `extract`.
     fn try_indexed_signed_arithmetic(
         &self,
         surfaces: &SurfacePropositionMap,
@@ -2139,7 +2139,6 @@ impl<'a> Proof<'a> {
         let surface_goal = self.surface_goal()?;
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         let mut available = BTreeSet::new();
-        let mut conjuncts = BTreeSet::new();
         for variable in crate::kernel::proposition_variables(goal) {
             for (endpoint, other, strict, forward) in self
                 .facts()
@@ -2157,15 +2156,10 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
                 };
                 let fact = Proposition::ConditionIs(condition, true);
-                let mut found = false;
                 for form in std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact)) {
                     if self.facts().contains(&form) {
                         available.insert(form);
-                        found = true;
                     }
-                }
-                if !found && !is_pure && self.facts().contains_proper_conjunct(&fact) {
-                    conjuncts.insert(fact);
                 }
             }
         }
@@ -2178,30 +2172,16 @@ impl<'a> Proof<'a> {
                 pairs.push((fact, source));
             }
         }
-        let mut proof = None;
-        for fact in conjuncts {
-            let Some(source) = self.spelled_comparison_surface(&fact) else {
-                continue;
-            };
-            let current = proof.as_ref().unwrap_or(self);
-            let Ok(extracted) = current.apply_step(ProofStep::Extract(source.clone())) else {
-                continue;
-            };
-            proof = Some(extracted);
-            pairs.push((fact, source));
-        }
         let kernels = pairs
             .iter()
             .map(|(fact, _)| fact.clone())
             .collect::<Vec<_>>();
         let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
-        let proof = proof.unwrap_or_else(|| self.clone());
-        let certificate = proof.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
-        proof
-            .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::SignedInt32(certificate),
-            }))
-            .ok()
+        let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
+        self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+            family: ArithmeticCertificateFamily::SignedInt32(certificate),
+        }))
+        .ok()
     }
 
     /// Select only guards actually occurring in the goal, through indexed
