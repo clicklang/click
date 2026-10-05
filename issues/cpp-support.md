@@ -434,8 +434,18 @@ linear work over 2/8/32/128 explicit operations. This is representation
 semantics; frontend promotions and language UB/panic policies remain separate.
 No wide source division admission is claimed. Artifact schema remains 38.
 
-Next introduce a shared symbolic truncating quotient/remainder representation,
-its zero/overflow guards, and full-width contract observations; then admit
+The shared symbolic truncating quotient/remainder representation is delivered.
+It uses distinct interned Integer DAG nodes, exact nonzero constant folding,
+conservative affine refusal, and shared-node-aware traversal, substitution,
+alpha keys, framing, and diagnostics. Zero divisors remain opaque, and no
+unguarded cancellation or native definedness claim is introduced. Multi-size
+regressions cover shared DAGs and numeric bit-length work. Arithmetic-spine
+proposition substitution now memoizes shared children instead of revisiting
+them along every path.
+
+Next add native wide division/remainder execution with zero and signed MIN/-1
+overflow guards, plus full-width contract observations and proof spellings;
+then admit
 wide C++ division/remainder and cover checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`

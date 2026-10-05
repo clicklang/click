@@ -2335,6 +2335,8 @@ fn integer_carrier_in_integer(term: &IntegerTerm, variable: Variable) -> bool {
         | IntegerTerm::Add(_, _)
         | IntegerTerm::Subtract(_, _)
         | IntegerTerm::Multiply(_, _)
+        | IntegerTerm::TruncatingQuotient(_, _)
+        | IntegerTerm::TruncatingRemainder(_, _)
         | IntegerTerm::PureFunctionApplication(_)
         | IntegerTerm::AlgebraicMatch { .. }
         | IntegerTerm::RangeFold { .. } => true,

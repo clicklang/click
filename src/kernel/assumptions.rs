@@ -2503,7 +2503,9 @@ fn collect_integer_node_memory_loads(
         ),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_integer_memory_loads_with_width(
                 left,
                 current_memory,
