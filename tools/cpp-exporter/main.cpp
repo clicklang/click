@@ -245,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 37;
+    artifact["schema"] = 38;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -334,18 +334,6 @@ private:
       fail(declaration->getLocation(),
            "the supported C++ function must declare noexcept outside the "
            "exception-enabled object-free profile");
-      return std::nullopt;
-    }
-    auto wide_scalar = [this](clang::QualType type) {
-      return type->isIntegerType() && context_.getTypeSize(type) == 128;
-    };
-    if (wide_scalar(declaration->getReturnType()) ||
-        std::any_of(declaration->param_begin(), declaration->param_end(),
-                    [&](const clang::ParmVarDecl *parameter) {
-                      return wide_scalar(parameter->getType());
-                    })) {
-      fail(declaration->getLocation(),
-           "C++ wide function parameters and returns are not supported yet");
       return std::nullopt;
     }
     std::optional<Json> return_type;
@@ -524,7 +512,8 @@ private:
         !parameter->getType().hasQualifiers() &&
         parameter->getType()->isIntegerType() &&
         (context_.getTypeSize(parameter->getType()) == 32 ||
-         context_.getTypeSize(parameter->getType()) == 64);
+         context_.getTypeSize(parameter->getType()) == 64 ||
+         context_.getTypeSize(parameter->getType()) == 128);
     const bool by_value_bool =
         reference == nullptr &&
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
@@ -535,7 +524,7 @@ private:
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
-           "32/64-bit integer, int&, const "
+           "32/64/128-bit integer, int&, const "
            "int&, const signed-64 reference, or mutable int* parameter, or a "
            "mutable or const simple-record reference parameter");
       return std::nullopt;
@@ -1764,7 +1753,8 @@ private:
         (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
          (parameter->getType()->isIntegerType() &&
           (context_.getTypeSize(parameter->getType()) == 32 ||
-           context_.getTypeSize(parameter->getType()) == 64)))) {
+           context_.getTypeSize(parameter->getType()) == 64 ||
+           context_.getTypeSize(parameter->getType()) == 128)))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;

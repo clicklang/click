@@ -4181,7 +4181,9 @@ impl AnnotationLowerer<'_> {
                     | CValue::UInt16(bits)
                     | CValue::UInt32(bits)
                     | CValue::Int64(bits)
-                    | CValue::UInt64(bits)) = value
+                    | CValue::UInt64(bits)
+                    | CValue::Int128(bits)
+                    | CValue::UInt128(bits)) = value
                     else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()

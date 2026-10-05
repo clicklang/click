@@ -235,10 +235,10 @@ into C text. The `const-reference-alias` fixture writes through an `int&` and
 reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
-currently by-value `bool` or signed/unsigned 32/64-bit integers, `int&`, `const int&`,
+currently by-value `bool` or signed/unsigned 32/64/128-bit integers, `int&`, `const int&`,
 mutable `int*`, one `const` signed-64 reference, and mutable or const references
 to supported simple record types with distinct proof-facing names. Selected functions return `int`,
-signed/unsigned 64-bit integers, `unsigned int`, `bool`, or `void`.
+signed/unsigned 64/128-bit integers, `unsigned int`, `bool`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a
@@ -309,7 +309,7 @@ continues to reject them. Omitting `noexcept` does not itself declare a Click
 exception.
 
 The `return-call` fixtures add direct `return helper(...)` for matching signed
-or unsigned 32/64-bit and Boolean return types, including concrete function and
+or unsigned 32/64/128-bit and Boolean return types, including concrete function and
 method template instances. The typed `return_call` node retains the callee's
 Clang identity, typed arguments, result type, source span, and cleanup chain.
 Implicit calls on `this` retain the existing checked receiver interface; arbitrary
@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 37;
+its documented application invariant. The typed artifact schema is now 38;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -572,11 +572,20 @@ product afterwards cannot remove its original overflow obligation. High-bit
 products, signed extrema, symbolic cast round trips, source-width overflow,
 wide overflow, expansion, and retained audit have regression coverage.
 
-Wide parameters and returns are refused until the proof contract surface can
-express them directly. Wide pointers, references, record fields, arrays,
+The `wide-contracts` fixture adds by-value wide parameters, results, and
+matching-width call captures. Contracts spell these types `int128` and
+`uint128`; `to_integer(value)` observes their full mathematical value.
+`to_int128(z)` and `to_uint128(z)` require both exact destination bounds;
+these proof conversions remain distinct from C++ modulo casts. Identities,
+cast round trips, full signed/unsigned endpoints, modular calls with framed
+narrow memory, expansion, and retained audit have regression coverage.
+Bounded `simp` recognizes direct observer equalities; it does not currently
+chain two Integer observer equalities through nested calls.
+
+Wide pointers, references, record fields, arrays,
 comparisons, negation, addition, subtraction, unsigned multiplication, division,
 and remainder remain unsupported. Both the live exporter and serialized artifact
-validator reject these operations. Schema 37 requires refreshing older locks.
+validator reject these operations. Schema 38 requires refreshing older locks.
 This slice does not yet verify the unchanged Bitcoin fee arithmetic helpers.
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
