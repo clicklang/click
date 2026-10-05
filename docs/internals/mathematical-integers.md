@@ -270,8 +270,9 @@ C/C++ undefined behavior or Rust panic policy. Existing signed/unsigned
 32/64-bit term construction and recursive constant observations use it while
 retaining their execution guards and symbolic nodes. Exact-oracle checks cover
 all formats and exhaustive byte pairs; operation batches have deterministic
-linear work checks. Symbolic wide quotient/remainder terms and C++ frontend
-admission remain the next slice. Artifact schema remains 38.
+linear work checks. The symbolic representation is described below; guarded
+wide execution and C++ frontend admission remain the next slice. Artifact
+schema remains 38.
 
 ## Explicit machine modulo casts
 
@@ -407,3 +408,28 @@ to make an Integer proof succeed.
 - [Intermediate-overflow regression](https://github.com/clicklang/click/blob/master/mdtests/integer_sum_range_fold_intermediate_overflow.md)
 - [Endpoint congruence regression](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_rewrite_under_equality.md)
 - [Endpoint congruence refusal](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_reject_a_different_body.md)
+
+## Symbolic truncating quotient and remainder
+
+The shared Integer DAG has explicit `TruncatingQuotient` and
+`TruncatingRemainder` nodes for the native machine arithmetic foundation.
+These internal nodes are distinct from the planned Euclidean Integer `/` and
+`%` surface operators. Nonzero root constants fold exactly, with a quotient
+truncated toward zero and a remainder carrying the dividend's sign. The
+representation is unbounded, so signed machine MIN/-1 overflow belongs to the
+native execution guard, rather than the mathematical term constructor.
+
+A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
+these nodes do not certify a native division's definedness. Native execution
+must establish nonzero divisors and the signed overflow exclusion before
+producing results. Wide source division and its contract spellings remain
+closed until that guarded execution and observation path is implemented.
+
+Interning, alpha keys, variable collectors, binder-aware rewriting, fold
+framing, and diagnostics preserve the distinct operators. The affine solver
+conservatively refuses symbolic truncation. Arithmetic-spine proposition
+substitution memoizes shared nodes and rebuilds both operands; substituting
+nonzero constants folds, while substituting a zero divisor stays opaque.
+Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
+2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
+Artifact schema remains 38 because no source operation is newly admitted.

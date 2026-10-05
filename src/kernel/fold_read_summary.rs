@@ -397,6 +397,11 @@ impl BodyChecker<'_> {
                     pending.push(left.as_ref());
                     pending.push(right.as_ref());
                 }
+                IntegerTerm::TruncatingQuotient(_, _) | IntegerTerm::TruncatingRemainder(_, _) => {
+                    return Err(Self::unsupported(
+                        "a truncating division without native guards",
+                    ));
+                }
                 IntegerTerm::Machine(_) => {
                     return Err(Self::unsupported("an unevaluated machine value"));
                 }
@@ -795,7 +800,9 @@ fn zip_integer(
         (IntegerTerm::Negate(a), IntegerTerm::Negate(b)) => zip_integer(a, b, assumptions, checked),
         (IntegerTerm::Add(a, b), IntegerTerm::Add(c, d))
         | (IntegerTerm::Subtract(a, b), IntegerTerm::Subtract(c, d))
-        | (IntegerTerm::Multiply(a, b), IntegerTerm::Multiply(c, d)) => {
+        | (IntegerTerm::Multiply(a, b), IntegerTerm::Multiply(c, d))
+        | (IntegerTerm::TruncatingQuotient(a, b), IntegerTerm::TruncatingQuotient(c, d))
+        | (IntegerTerm::TruncatingRemainder(a, b), IntegerTerm::TruncatingRemainder(c, d)) => {
             zip_integer(a, c, assumptions, checked)?;
             zip_integer(b, d, assumptions, checked)
         }

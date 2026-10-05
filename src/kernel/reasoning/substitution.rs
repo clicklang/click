@@ -1964,7 +1964,9 @@ fn collect_integer_bound_variables_seen(
         }
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             if seen.insert(left.id()) {
                 collect_integer_bound_variables_seen(left, variables, seen);
             }

@@ -318,7 +318,9 @@ fn collect_integer_carriers(
         IntegerTerm::Negate(value) => collect_integer_shared_carriers(value, variables, seen),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_integer_shared_carriers(left, variables, seen);
             if variables.exhausted() {
                 return;
@@ -2444,6 +2446,14 @@ impl<'a> TermRewrite<'a> {
                     IntegerTerm::Subtract(left.into(), right.into())
                 }
             }
+            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
+                self.integer_shared(left),
+                self.integer_shared(right),
+            ),
+            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
+                self.integer_shared(left),
+                self.integer_shared(right),
+            ),
             IntegerTerm::Multiply(left, right) => IntegerTerm::Multiply(
                 self.integer_shared(left).into(),
                 self.integer_shared(right).into(),
@@ -4265,6 +4275,89 @@ mod tests {
             assert_eq!(rewrite.term(&input), expected);
             assert!(rewrite.changed);
             assert_eq!(rewrite.visits, 2 + 2 * size);
+        }
+    }
+
+    #[test]
+    fn truncating_integer_rewrite_preserves_sharing_and_substitutes_variables() {
+        let variable = Variable(65001);
+        let replacement = IntegerTerm::var(Variable(65002));
+        for depth in [2usize, 8, 32, 128] {
+            let mut expression = IntegerTerm::var(variable);
+            for level in 0..depth {
+                let child: SharedIntegerTerm = expression.into();
+                expression = if level % 2 == 0 {
+                    IntegerTerm::TruncatingQuotient(child.clone(), child)
+                } else {
+                    IntegerTerm::TruncatingRemainder(child.clone(), child)
+                };
+            }
+            let input = Term::Integer(expression);
+            let renamings = BTreeMap::new();
+            let mut rewrite =
+                TermRewrite::for_integer_variables(variable, &replacement, false, &renamings);
+            let Term::Integer(output) = rewrite.term(&input) else {
+                unreachable!()
+            };
+            assert!(rewrite.visits <= 2 * depth + 8);
+            let mut node: SharedIntegerTerm = output.into();
+            for _ in 0..depth {
+                let (a, b) = match node.as_ref() {
+                    IntegerTerm::TruncatingQuotient(a, b)
+                    | IntegerTerm::TruncatingRemainder(a, b) => (a, b),
+                    _ => unreachable!(),
+                };
+                assert_eq!(a.id(), b.id());
+                node = a.clone();
+            }
+            assert_eq!(node.as_ref(), &replacement);
+        }
+    }
+
+    #[test]
+    fn truncating_integer_rewrite_freshens_colliding_fold_binders() {
+        let source = Variable(65003);
+        let accumulator = Variable(65004);
+        let item = Variable(65005);
+        for remainder in [false, true] {
+            let a = IntegerTerm::var(source).into();
+            let b = IntegerTerm::var(accumulator).into();
+            let body = if remainder {
+                IntegerTerm::TruncatingRemainder(a, b)
+            } else {
+                IntegerTerm::TruncatingQuotient(a, b)
+            };
+            let fold = IntegerTerm::range_fold(
+                crate::kernel::IntegerRangeFoldIndex::Integer {
+                    start: IntegerTerm::constant_i64(0).into(),
+                    end: IntegerTerm::constant_i64(2).into(),
+                },
+                IntegerTerm::constant_i64(0),
+                accumulator,
+                item,
+                body,
+            );
+            let c = BTreeMap::new();
+            let integers = BTreeMap::from([(source, IntegerTerm::var(accumulator))]);
+            let algebraic = BTreeMap::new();
+            let mut rewrite = TermRewrite::for_typed_variables(&c, &integers, &algebraic);
+            let Term::Integer(IntegerTerm::RangeFold {
+                accumulator: renamed,
+                body,
+                ..
+            }) = rewrite.term(&Term::Integer(fold))
+            else {
+                unreachable!()
+            };
+            assert_ne!(renamed, accumulator);
+            let (a, b) = match body.as_ref() {
+                IntegerTerm::TruncatingQuotient(a, b) | IntegerTerm::TruncatingRemainder(a, b) => {
+                    (a, b)
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(a.as_ref(), &IntegerTerm::var(accumulator));
+            assert_eq!(b.as_ref(), &IntegerTerm::var(renamed));
         }
     }
 

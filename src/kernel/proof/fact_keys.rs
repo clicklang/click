@@ -1296,6 +1296,8 @@ enum IntegerTermBinaryOp {
     Add,
     Subtract,
     Multiply,
+    TruncatingQuotient,
+    TruncatingRemainder,
 }
 
 fn alpha_integer_key(
@@ -1521,6 +1523,16 @@ fn alpha_integer_node(
         },
         IntegerTerm::Multiply(left, right) => AlphaIntegerNode::Binary {
             operator: IntegerTermBinaryOp::Multiply,
+            left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
+            right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
+        },
+        IntegerTerm::TruncatingQuotient(left, right) => AlphaIntegerNode::Binary {
+            operator: IntegerTermBinaryOp::TruncatingQuotient,
+            left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
+            right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
+        },
+        IntegerTerm::TruncatingRemainder(left, right) => AlphaIntegerNode::Binary {
+            operator: IntegerTermBinaryOp::TruncatingRemainder,
             left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
             right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
         },
@@ -3512,6 +3524,42 @@ mod integer_alpha_scaling_tests {
             left.hash(&mut left_hash);
             right.hash(&mut right_hash);
             assert_eq!(left_hash.finish(), right_hash.finish());
+        }
+    }
+
+    #[test]
+    fn truncating_integer_alpha_keys_preserve_operator_and_shared_binders() {
+        for depth in [2usize, 8, 32, 128] {
+            let build = |variable, remainder| {
+                let mut term = IntegerTerm::var(Variable(variable));
+                for _ in 0..depth {
+                    let child: SharedIntegerTerm = term.into();
+                    term = if remainder {
+                        IntegerTerm::TruncatingRemainder(child.clone(), child)
+                    } else {
+                        IntegerTerm::TruncatingQuotient(child.clone(), child)
+                    };
+                }
+                term
+            };
+            let key = |variable, remainder| {
+                alpha_integer_key(
+                    &build(variable, remainder),
+                    &mut BTreeMap::from([(Variable(variable), 0)]),
+                )
+                .unwrap()
+            };
+            let (left, work) =
+                crate::instrumentation::measure_deterministic_work(|| key(91001, false));
+            let right = key(91002, false);
+            assert_eq!(left, right);
+            assert!(work <= 8 * depth + 16, "depth={depth}, work={work}");
+            assert_ne!(left, key(91001, true));
+            let mut a = DefaultHasher::new();
+            let mut b = DefaultHasher::new();
+            left.hash(&mut a);
+            right.hash(&mut b);
+            assert_eq!(a.finish(), b.finish());
         }
     }
 

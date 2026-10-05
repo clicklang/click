@@ -15114,3 +15114,30 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
         }
     }
 }
+
+#[test]
+fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() {
+    for (c_source, expected) in [
+        (
+            "int32 choose(int32 x) { x = x + 1; int32 flag = x < 7; if (flag) { x = x + 1; return x; } else { return 7; } }",
+            "if old(x) + 1 < 7 { (old(x) + 1) + 1 } else { 7 }",
+        ),
+        (
+            "int32 choose(int32 x) { x = x + 1; int32 flag = x < 7; if (flag) { int32 inner = x < 4; if (inner) { x = x + 2; return x; } else { x = x + 1; return x; } } else { return 7; } }",
+            "if old(x) + 1 < 7 { if old(x) + 1 < 4 { (old(x) + 1) + 2 } else { (old(x) + 1) + 1 } } else { 7 }",
+        ),
+    ] {
+        let source = format!(
+            "verifying \"choose.c\";\nint32 choose(int32 x) {{ requires 0 <= x; requires x <= 100; ensures result == ({expected}); }} by {{\nexecute();\nsimp();\n}}"
+        );
+        verify_c0_sources(&source, &[("choose.c", c_source)]).unwrap();
+        let expanded = expand_c0_tactic_source_at(&source, &[("choose.c", c_source)], 4, 1)
+            .unwrap_or_else(|error| panic!("{}\nC source: {c_source}", error.message()));
+        verify_c0_sources(&expanded, &[("choose.c", c_source)]).unwrap_or_else(|error| {
+            panic!(
+                "deferred closer must reverify: {}\n{expanded}",
+                error.message()
+            )
+        });
+    }
+}

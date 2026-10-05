@@ -737,17 +737,23 @@ This run is diagnostic evidence, not a completed migration gate.
 
 Two failures were independently reproduced through the ordinary native CLI:
 
-- [Deferred expansion uses a dead compiler local](../bugs/charon-deferred-expansion-uses-dead-compiler-local.md).
+- Deferred expansion used a dead compiler local. Automatic case selectors now
+  retain their checked statement-entry snapshot, preserving existing `at` and
+  `old` references and checking that the anchored condition has the same meaning.
+  Nested case decisions are retained in outermost-first order. The unchanged
+  native fixture passes isolated prepared expansion, retained-session audit,
+  and whole-claim expansion; regressions also cover changed parameters and
+  nested computed guards.
 - Whole-array copy accepted an incomplete source view; this authority defect is
   now fixed with full physical-range checks for both source and destination.
   Kernel regressions cover partial permissions and compact work through one
   million elements. Locked native and freshly extracted unchanged Rust fixtures
   reject short source views, read-only destinations, and short destination owns.
 
-The deferred-expansion tooling defect still blocks retirement. The attempted default,
+Both independently reproduced blockers are now fixed. The attempted default,
 extractor, and CI changes were restored to the previously green checkpoint;
-no failing production switch is delivered. Fix the remaining defect, port the original
-regressions, and only then remove the legacy build/runtime and implicit backend.
+no failing production switch is delivered. Port the original regressions and
+only then remove the legacy build/runtime and implicit backend.
 The remaining supported identity `From` case and test assumptions also need
 review during that port; importing all 16 canonical fixtures alone does not
 establish complete regression parity.

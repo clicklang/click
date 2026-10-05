@@ -1127,8 +1127,18 @@ pub(super) fn surface_at_snapshot<K: RecordedSnapshotKey + ?Sized>(
     annotate_surface_at_snapshot(surface, &selector, SnapshotAnnotation::Reread)
 }
 
+/// Freeze a case selector at its checked frontier without retargeting explicit
+/// snapshots or `old` expressions already carried by the selector.
+pub(super) fn surface_frozen_at_snapshot<K: RecordedSnapshotKey + ?Sized>(
+    surface: &ClickProposition,
+    key: &K,
+) -> Result<ClickProposition, ClickError> {
+    annotate_surface_at_snapshot(surface, &key.to_selector(), SnapshotAnnotation::Freeze)
+}
+
 #[derive(Clone, Copy)]
 enum SnapshotAnnotation {
+    Freeze,
     /// Re-read every operand in the selected snapshot, replacing an existing `at`
     /// selector: fact transport across a statement re-reads the source
     /// form at the statement's exit, having proved the cells unchanged.
@@ -1152,7 +1162,8 @@ fn annotate_surface_at_snapshot(
         });
     }
     let expression_at_snapshot = |expression: &ContractExpression| match (annotation, expression) {
-        (_, ContractExpression::Old(_)) => expression.clone(),
+        (_, ContractExpression::Old(_))
+        | (SnapshotAnnotation::Freeze, ContractExpression::At { .. }) => expression.clone(),
         (SnapshotAnnotation::Reread, ContractExpression::At { expression, .. }) => {
             ContractExpression::At {
                 selector: selector.clone(),
