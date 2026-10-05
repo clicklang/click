@@ -733,7 +733,7 @@ impl AlgebraicFieldType {
 
 /// A value type in the Click specification language. C types are one family
 /// of Click types; specification-only algebraic datatypes are another.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ClickType {
     /// A declaration-scoped type parameter. Generic logical declarations are
     /// instantiated to concrete types at applications, or rigid arbitrary
@@ -774,7 +774,7 @@ impl AlgebraicTypeApplication {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AlgebraicTypeApplication {
     /// Internal rigid type parameter, never a datatype with zero constructors.
     rigid: bool,
@@ -782,7 +782,7 @@ pub struct AlgebraicTypeApplication {
     arguments: Vec<ClickType>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AlgebraicMatchArm {
     type_name: String,
     variant: String,
@@ -1367,7 +1367,7 @@ pub enum Ensure {
     Resource(ResourceClause),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceClause {
     /// A resource owned or viewed exactly when its contract condition holds.
     /// Initially exposed in loop contracts, using ordinary resource assertions.
@@ -1441,7 +1441,7 @@ impl IteratedTactic {
 /// needs (index bounds, element stride and offsets, guard cell and value) is
 /// derived from these by [`crate::surface::lowering::iterated_clause_shape`],
 /// which validation runs once per definition.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IteratedResourceClause {
     /// The resource definition whose body declares the clause.
     pub(crate) owner: String,
@@ -1455,7 +1455,7 @@ pub struct IteratedResourceClause {
     pub(crate) element: ContractSegment,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
     name: String,
     identity: Variable,
@@ -1469,7 +1469,7 @@ pub struct ResourceInstanceBinding {
     child_bindings: Option<std::sync::Arc<[(String, String, Variable)]>>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceFieldAccess {
     owner: String,
     resource_name: String,
@@ -1480,7 +1480,7 @@ pub struct ResourceFieldAccess {
     click_type: Option<ClickType>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
     Memory(ContractSegment),
     Declared {
@@ -1491,19 +1491,19 @@ pub enum ResourceSubject {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceAccessMode {
     Own,
     View,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceKind {
     Composite,
     Token,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ClickProposition {
     Comparison {
         left: ContractExpression,
@@ -2223,7 +2223,7 @@ fn collect_current_proposition_variables(
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ContractExpression {
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when
@@ -2927,7 +2927,7 @@ impl SpecElaborationContext {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ContractSegment {
     state: ContractSegmentState,
     base: CExpression,
@@ -2936,7 +2936,7 @@ pub struct ContractSegment {
     surface: ContractSegmentSurface,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum ContractSegmentSurface {
     Range {
         base: ContractExpression,
@@ -2992,13 +2992,13 @@ impl ContractSegment {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ContractSegmentState {
     Current,
     Old,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ComparisonOperator {
     Equal,
     NotEqual,
@@ -5463,7 +5463,7 @@ pub struct ClickFunctionApplication {
     arguments: Vec<ContractExpression>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum CodeRegionRef {
     Function,
     Loop(usize),
@@ -5486,7 +5486,7 @@ pub enum CodeRegionRef {
 /// Program points are locations in C. Marks are proof-local names bound to
 /// the current state, so they deliberately remain a separate variant rather
 /// than masquerading as C code regions.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum SnapshotSelector {
     ProgramPoint(ProgramPointRef),
     Mark(String),
@@ -5498,13 +5498,13 @@ impl From<ProgramPointRef> for SnapshotSelector {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ProgramPointRef {
     region: CodeRegionRef,
     kind: ProgramPointKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum ProgramPointKind {
     Entry,
     Exit,

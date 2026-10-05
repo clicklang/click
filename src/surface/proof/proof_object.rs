@@ -697,6 +697,7 @@ impl ExecutionProofState {
 
 #[derive(Clone)]
 struct ExecutionBranchDecision {
+    fingerprint: std::sync::OnceLock<u64>,
     condition: ClickProposition,
     value: bool,
 }
@@ -706,32 +707,55 @@ struct ExecutionBranchDecision {
 #[derive(Clone, Default)]
 struct ExecutionBranchDecisions {
     ordered: PersistentSequence<ExecutionBranchDecision>,
-    by_condition: PersistentMap<String, Vec<ExecutionBranchDecision>>,
+    by_condition: PersistentMap<u64, Vec<Arc<ExecutionBranchDecision>>>,
 }
 
 impl ExecutionBranchDecisions {
-    fn key(condition: &ClickProposition) -> String {
-        let key = format!("{condition:?}");
-        crate::instrumentation::record_deterministic_work(key.len());
-        key
+    fn key(condition: &ClickProposition) -> u64 {
+        use std::hash::{Hash, Hasher};
+        struct CountedHasher(std::collections::hash_map::DefaultHasher);
+        impl Hasher for CountedHasher {
+            fn finish(&self) -> u64 {
+                self.0.finish()
+            }
+            fn write(&mut self, bytes: &[u8]) {
+                crate::instrumentation::record_deterministic_work(bytes.len());
+                self.0.write(bytes);
+            }
+        }
+        let mut hasher = CountedHasher(std::collections::hash_map::DefaultHasher::new());
+        condition.hash(&mut hasher);
+        hasher.finish()
     }
 
     fn push(&mut self, decision: ExecutionBranchDecision) {
-        let key = Self::key(&decision.condition);
+        let key = *decision
+            .fingerprint
+            .get_or_init(|| Self::key(&decision.condition));
         let mut bucket = self.by_condition.get(&key).cloned().unwrap_or_default();
-        // Exact equality, rather than the debug key, decides membership.
+        // Fingerprints only select a bucket; exact syntax equality decides
+        // membership and guards against hash collisions.
         if !bucket.iter().any(|existing| {
             existing.condition == decision.condition && existing.value == decision.value
         }) {
-            bucket.push(decision.clone());
+            bucket.push(Arc::new(decision.clone()));
             self.by_condition = self.by_condition.with_inserted(key, bucket);
         }
         self.ordered.push(decision);
     }
 
+    #[cfg(test)]
     fn value(&self, condition: &ClickProposition) -> Result<Option<bool>, ClickError> {
+        self.value_for_key(condition, Self::key(condition))
+    }
+
+    fn value_for_key(
+        &self,
+        condition: &ClickProposition,
+        key: u64,
+    ) -> Result<Option<bool>, ClickError> {
         let mut result = None;
-        if let Some(bucket) = self.by_condition.get(&Self::key(condition)) {
+        if let Some(bucket) = self.by_condition.get(&key) {
             for decision in bucket {
                 if &decision.condition != condition {
                     continue;
@@ -746,6 +770,10 @@ impl ExecutionBranchDecisions {
             }
         }
         Ok(result)
+    }
+
+    fn suffix_since(&self, ancestor: &Self) -> Option<Vec<ExecutionBranchDecision>> {
+        self.ordered.suffix_since(&ancestor.ordered)
     }
 
     fn iter(&self) -> impl Iterator<Item = &ExecutionBranchDecision> {

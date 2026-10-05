@@ -159,6 +159,7 @@ mod projection_path_tests {
 /// A source-sized decision graph. Both arms point to the shared continuation;
 /// walking an arm never visits the syntax or outcomes of its sibling.
 struct OutcomeCase<'a> {
+    fingerprint: u64,
     condition: &'a ClickProposition,
     arms: [Option<usize>; 2],
 }
@@ -179,7 +180,11 @@ fn outcome_case_region<'a>(
                 outcome_case_region(then_tactics, next, nodes),
                 outcome_case_region(else_tactics, next, nodes),
             ];
-            nodes.push(OutcomeCase { condition, arms });
+            nodes.push(OutcomeCase {
+                fingerprint: ExecutionBranchDecisions::key(condition),
+                condition,
+                arms,
+            });
             next = Some(nodes.len() - 1);
         }
     }
@@ -201,6 +206,7 @@ fn descend_outcome_case(
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let mut child = provenance;
     child.branch_decisions.push(ExecutionBranchDecision {
+        fingerprint: std::sync::OnceLock::from(node.fingerprint),
         condition: node.condition.clone(),
         value,
     });
@@ -245,7 +251,10 @@ fn partition_outcome_cases(
     // Consult them at every nested node, not only at the root: re-lowering
     // a short-circuit condition can otherwise lose its checked truth value
     // and fork an inconsistent descendant.
-    if let Some(value) = provenance.branch_decisions.value(node.condition)? {
+    if let Some(value) = provenance
+        .branch_decisions
+        .value_for_key(node.condition, node.fingerprint)?
+    {
         return partition_outcome_cases(
             nodes,
             node.arms[usize::from(!value)],
@@ -2897,7 +2906,11 @@ impl<'a> Proof<'a> {
             outcome_case_region(then_tactics, None, &mut nodes),
             outcome_case_region(else_tactics, None, &mut nodes),
         ];
-        nodes.push(OutcomeCase { condition, arms });
+        nodes.push(OutcomeCase {
+            fingerprint: ExecutionBranchDecisions::key(condition),
+            condition,
+            arms,
+        });
         let root = nodes.len() - 1;
         for (path_index, path) in checked.paths().iter().enumerate() {
             check_verification_deadline()?;
@@ -3730,6 +3743,7 @@ mod outcome_case_tests {
                 .iter()
                 .enumerate()
                 .map(|(index, condition)| OutcomeCase {
+                    fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
                     arms: [None, (index + 1 < size).then_some(index + 1)],
                 })
@@ -3739,6 +3753,7 @@ mod outcome_case_tests {
             // proof case is joined. Lookup must not depend on history order.
             for condition in conditions.iter().rev() {
                 decisions.push(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
                     condition: condition.clone(),
                     value: false,
                 });
@@ -3781,6 +3796,42 @@ mod outcome_case_tests {
     }
 
     #[test]
+    fn branch_decision_fingerprint_collisions_do_not_select_an_unrelated_case() {
+        let selected = ClickProposition::PredicateCall {
+            name: "selected".to_string(),
+            arguments: Vec::new(),
+        };
+        let unrelated = ClickProposition::PredicateCall {
+            name: "unrelated".to_string(),
+            arguments: Vec::new(),
+        };
+        let mut decisions = ExecutionBranchDecisions::default();
+        // Simulate a fingerprint collision: opposite values of a different
+        // source condition must neither choose nor contradict this case.
+        decisions.by_condition = decisions.by_condition.with_inserted(
+            ExecutionBranchDecisions::key(&selected),
+            vec![
+                Arc::new(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
+                    condition: unrelated.clone(),
+                    value: false,
+                }),
+                Arc::new(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
+                    condition: unrelated,
+                    value: true,
+                }),
+                Arc::new(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
+                    condition: selected.clone(),
+                    value: true,
+                }),
+            ],
+        );
+        assert_eq!(decisions.value(&selected).unwrap(), Some(true));
+    }
+
+    #[test]
     fn branch_decision_lookup_does_not_scan_history_and_refuses_conflicts() {
         let selected = ClickProposition::PredicateCall {
             name: "selected".to_string(),
@@ -3790,11 +3841,13 @@ mod outcome_case_tests {
         for size in [8, 32, 128, 512] {
             let mut decisions = ExecutionBranchDecisions::default();
             decisions.push(ExecutionBranchDecision {
+                fingerprint: std::sync::OnceLock::new(),
                 condition: selected.clone(),
                 value: false,
             });
             for index in 0..size {
                 decisions.push(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
                     condition: ClickProposition::PredicateCall {
                         name: format!("unrelated_{index}"),
                         arguments: Vec::new(),
@@ -3814,6 +3867,7 @@ mod outcome_case_tests {
             }
             previous_work = Some(work);
             decisions.push(ExecutionBranchDecision {
+                fingerprint: std::sync::OnceLock::new(),
                 condition: selected.clone(),
                 value: true,
             });
@@ -3834,6 +3888,7 @@ mod outcome_case_tests {
                 .iter()
                 .enumerate()
                 .map(|(index, condition)| OutcomeCase {
+                    fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
                     arms: [
                         if index + 1 < size {
