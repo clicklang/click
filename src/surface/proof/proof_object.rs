@@ -494,13 +494,6 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// split. This is path-routing presentation, not proof evidence: each
     /// selected outcome retains its own kernel-checked theorem and goal.
     pub(in crate::surface::proof) call_outcome_edges: Option<Vec<bool>>,
-    /// Statement `step()`s this execution lineage has taken, and, for each
-    /// maybe-throwing call it stepped over while the normal path continued,
-    /// how many steps preceded that call's step. Expansion reads these to
-    /// write each such call's terminal throw under its own `outcomes`.
-    /// Presentation only: each path keeps its own kernel-checked evidence.
-    pub(in crate::surface::proof) statement_steps: usize,
-    pub(in crate::surface::proof) call_fork_steps: PersistentSequence<usize>,
     /// The path's surface record: certificate-visible certificate facts, the
     /// premise anchor, and proof-level case choices.
     pub(in crate::surface::proof) surface_record: SurfaceRecord,
@@ -681,8 +674,6 @@ impl ExecutionProofState {
                 frontier_loop_clauses: PersistentSequence::default(),
                 post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
-                statement_steps: 0,
-                call_fork_steps: PersistentSequence::default(),
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_simp: None,

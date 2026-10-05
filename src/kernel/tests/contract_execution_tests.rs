@@ -1946,15 +1946,6 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     );
     let call_state = CState::new().with_local("after", int32(0));
     let call_root = crate::kernel::proof::ProofFacts::from_ordered(&[]);
-    let call_split = crate::kernel::proof::CheckedCallOutcomeSplit::check(
-        call_state.clone(),
-        call_statement.clone(),
-        &call_root,
-        &environment,
-        0,
-        0,
-    )
-    .expect("the direct call must have exactly two checked outcome successors");
     let call_paths = prove_symbolic_c_execution_paths_with_environment(
         call_state.clone(),
         call_statement.clone(),
@@ -1979,6 +1970,31 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     }
     let normal = normal.expect("normal successor");
     let exceptional = exceptional.expect("exceptional successor");
+    let path_facts = |facts: &[ExecutionPureFact]| {
+        facts
+            .iter()
+            .map(|fact| fact.proposition().clone())
+            .collect::<Vec<_>>()
+    };
+    let outcome_of =
+        |theorem: &Theorem| match crate::kernel::api::proof_evidence_conclusion(theorem) {
+            Proposition::CStatementVerifies { outcome, .. } => outcome.clone(),
+            other => panic!("unexpected call successor: {other:?}"),
+        };
+    let call_split = crate::kernel::proof::CheckedCallOutcomeSplit::from_certified_transitions(
+        call_state.clone(),
+        call_statement.clone(),
+        &call_root,
+        normal.theorem(),
+        &outcome_of(normal.theorem()),
+        &path_facts(normal.facts()),
+        normal.obligations(),
+        exceptional.theorem(),
+        &outcome_of(exceptional.theorem()),
+        &path_facts(exceptional.facts()),
+        exceptional.obligations(),
+    )
+    .expect("the direct call must have exactly two checked outcome successors");
     assert!(call_split.validates(
         &call_state,
         &call_statement,
@@ -2000,88 +2016,6 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
         normal.theorem(),
         exceptional.theorem(),
     ));
-    let caller = c_function(CType::Int32, "caller", Vec::new(), call_statement.clone())
-        .with_int32_exceptional_outcome();
-    let mut parent = crate::kernel::proof::ExecutionProofCore::at_entry(
-        call_state.clone(),
-        crate::kernel::proof::ExecutionFrontier::default(),
-    );
-    parent.frontier.position = crate::kernel::proof::FrontierPosition::StatementEntry {
-        remaining: std::sync::Arc::new(call_statement.clone()),
-    };
-    let no_loans = crate::kernel::loans::empty_checked_loan_evidence_sequence();
-    let branch = call_split
-        .record_branches(
-            &parent,
-            &caller,
-            &[],
-            &call_state,
-            &call_statement,
-            &call_root,
-            crate::kernel::proof::CallOutcomeArmEvidence {
-                theorem: normal.theorem(),
-                context: &PureFactContext::new(),
-                execution_facts: &normal.execution_facts(),
-                obligations: normal.obligations(),
-                loan_evidence: &no_loans,
-            },
-            crate::kernel::proof::CallOutcomeArmEvidence {
-                theorem: exceptional.theorem(),
-                context: &PureFactContext::new(),
-                execution_facts: &exceptional.execution_facts(),
-                obligations: exceptional.obligations(),
-                loan_evidence: &no_loans,
-            },
-        )
-        .expect("each named outcome must advance its own checked proof trace");
-    assert!(!branch.returned.evidence_completed);
-    assert!(branch.threw.evidence_completed);
-    assert!(
-        branch
-            .returned
-            .evidence_state
-            .as_ref()
-            .unwrap()
-            .locals()
-            .contains_name("call_result")
-    );
-    assert!(
-        !branch
-            .threw
-            .evidence_state
-            .as_ref()
-            .unwrap()
-            .locals()
-            .contains_name("call_result")
-    );
-    assert_eq!(branch.returned.execution_evidence.len(), 1);
-    assert_eq!(branch.threw.execution_evidence.len(), 1);
-    assert!(
-        call_split
-            .record_branches(
-                &parent,
-                &caller,
-                &[],
-                &call_state,
-                &call_statement,
-                &call_root,
-                crate::kernel::proof::CallOutcomeArmEvidence {
-                    theorem: exceptional.theorem(),
-                    context: &PureFactContext::new(),
-                    execution_facts: &exceptional.execution_facts(),
-                    obligations: exceptional.obligations(),
-                    loan_evidence: &no_loans,
-                },
-                crate::kernel::proof::CallOutcomeArmEvidence {
-                    theorem: normal.theorem(),
-                    context: &PureFactContext::new(),
-                    execution_facts: &normal.execution_facts(),
-                    obligations: normal.obligations(),
-                    loan_evidence: &no_loans,
-                },
-            )
-            .is_err()
-    );
     let statement = c_seq(
         call_statement,
         c_seq(

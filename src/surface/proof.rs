@@ -44,7 +44,6 @@ mod theorem_application;
 mod timing;
 use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
-    CallOutcomeArmEvidence, CheckedCallOutcomeSplit, CheckedCallOutcomeSplitError,
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
     ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,

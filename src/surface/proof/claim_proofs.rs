@@ -2088,11 +2088,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut path_grouped_surface_closers = Vec::new();
                     let mut path_surface_post_tactics = Vec::new();
                     let mut path_deferred_capture_tactics = Vec::new();
-                    let path_base_facts = proof_execution
-                        .core
-                        .pending_exceptional_pure_facts(path_index)
-                        .cloned()
-                        .unwrap_or_else(|| proof.facts().clone());
+                    let path_base_facts = proof.facts().clone();
                     let missing_obligations = crate::instrumentation::measure_operation(
                         function_block.signature().name(),
                         &proof_label,
@@ -5208,46 +5204,12 @@ pub(super) fn finish_ordered_proof<'a>(
                 append_surface_tactics_flat(steps, path_tactics)
             }
         };
-        // An execution that stepped over maybe-throwing calls while its
-        // normal path continued writes each call's threw path under that
-        // call's own `outcomes`; any other shape appends the post-execution
-        // tactics and then the closers by leaf, as before.
-        let call_fork_steps = proof_execution
-            .presentation
-            .call_fork_steps
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
-        let pending_exceptional_start = proof_execution.core.pending_exceptional_start();
+        // The post-execution tactics, then the closers, each placed at the
+        // surface leaf of the paths that produced them.
         let append_post_and_closers = |steps: &mut Vec<ProofStep>,
                                        post: &[Vec<ProofTactic>],
                                        closers: &[Vec<ProofTactic>]|
          -> Result<(), String> {
-            if let Some(pending_start) = pending_exceptional_start
-                && !call_fork_steps.is_empty()
-                && retained_surface.path_choices.is_empty()
-                && post.len() == closers.len()
-            {
-                let combined = post
-                    .iter()
-                    .zip(closers)
-                    .map(|(post, closers)| post.iter().chain(closers).cloned().collect())
-                    .collect::<Vec<Vec<ProofTactic>>>();
-                let continuing_call_edges = proof_execution
-                    .presentation
-                    .call_outcome_edges
-                    .as_deref()
-                    .filter(|edges| edges.len() == pending_start);
-                if append_surface_tactics_across_call_forks(
-                    steps,
-                    &combined,
-                    &call_fork_steps,
-                    pending_start,
-                    continuing_call_edges,
-                )? {
-                    return Ok(());
-                }
-            }
             if post.iter().any(|tactics| !tactics.is_empty()) {
                 append_surface_tactics(steps, post)?;
             }
