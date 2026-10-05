@@ -1434,6 +1434,10 @@ impl<'a> Proof<'a> {
                     sort: Sort::Algebraic(_),
                     ..
                 } => self.apply_pure_algebraic_witness(witness),
+                Proposition::Exists {
+                    sort: Sort::CInt32 | Sort::CPointer(_),
+                    ..
+                } => self.apply_pure_machine_witness(witness),
                 _ => self.apply_pure_integer_witness(witness),
             };
         }
@@ -1635,6 +1639,150 @@ impl<'a> Proof<'a> {
         Ok(CheckedFocusedTransition::replacing(
             self.state().locals().clone(),
             Some(self.refined_proposition(context, goal, surface_goal, true)),
+            Vec::new(),
+            Vec::new(),
+        ))
+    }
+
+    fn apply_pure_machine_witness(
+        &self,
+        witness: &ProofWitness,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Pure(context) = self.context.as_ref() else {
+            unreachable!()
+        };
+        let goal = self
+            .proposition_goal("`witness` requires a proposition goal")?
+            .clone();
+        let checked_witness = ProofWitness::single(
+            witness.name().to_owned(),
+            self.substitute_fixed_state_locals_in_expression(witness.value())?,
+        );
+        let non_machine_type = match checked_witness.value() {
+            ContractExpression::Binding(name)
+                if context.theorem_context.integer_values.get(name).is_some()
+                    || self.local_integer_values().get(name).is_some() =>
+            {
+                Some("Integer".to_owned())
+            }
+            ContractExpression::AlgebraicVariable { algebraic_type, .. }
+            | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+                Some(crate::surface::validation::describe_click_type(
+                    &ClickType::Algebraic(algebraic_type.clone()),
+                ))
+            }
+            _ => None,
+        };
+        if let Some(actual) = non_machine_type {
+            let expected = match &goal {
+                Proposition::Exists {
+                    sort: Sort::CInt32, ..
+                } => CType::Int32,
+                Proposition::Exists {
+                    sort: Sort::CPointer(c_type),
+                    ..
+                } => *c_type,
+                _ => unreachable!("pure machine witness dispatch requires a C binder"),
+            };
+            return Err(self.step_error(format!(
+                "witness `{}` has the wrong type: expected {}, got {actual}",
+                witness.name(),
+                describe_c0_type(crate::surface::generics::c0_type_from_kernel(expected)),
+            )));
+        }
+        // Capture only the written value using the theorem's retained memory
+        // and lexical bindings, then use the same typed instantiation as a
+        // fixed-state witness. No assumption or proof of the body is added.
+        let names = contract_expression_referenced_names(checked_witness.value());
+        let values = names
+            .iter()
+            .filter_map(|name| {
+                context
+                    .theorem_context
+                    .values
+                    .get(name)
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect();
+        let arrays = names
+            .iter()
+            .filter_map(|name| {
+                context
+                    .theorem_context
+                    .array_refs
+                    .get(name)
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect();
+        let algebraic_values = names
+            .iter()
+            .filter_map(|name| {
+                self.local_algebraic_values()
+                    .get(name)
+                    .cloned()
+                    .or_else(|| {
+                        context
+                            .structural_induction_setup
+                            .as_ref()?
+                            .algebraic_values
+                            .get(name)
+                            .cloned()
+                    })
+                    .map(|value| (name.clone(), value))
+            })
+            .collect();
+        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
+            checked_witness.value(),
+            self.facts().assumptions(),
+            &values,
+            &arrays,
+            algebraic_values,
+            &state,
+            &state,
+            None,
+            &RecordedSnapshots::new(),
+            context.predicate_environment,
+            context.click_function_environment,
+            &BTreeSet::new(),
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not evaluate witness `{}`: {message}",
+                witness.name(),
+            ))
+        })?;
+        let proposition = apply_witness_tactic(
+            &checked_witness,
+            value,
+            goal,
+            self.claim_label(),
+            0,
+            self.certificate().steps().len(),
+        )
+        .map_err(|error| self.attach_step_diagnostic(error))?;
+        let surface_goal = match self.surface_goal() {
+            Some(ClickProposition::Exists {
+                name,
+                written_name,
+                body,
+                ..
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
+                Some(
+                    substitute_click_proposition(body, &substitutions).map_err(|message| {
+                        self.step_error(format!(
+                            "could not instantiate machine witness goal: {message}"
+                        ))
+                    })?,
+                )
+            }
+            _ => None,
+        };
+        let branch = self.refined_branch_state(self.facts().clone());
+        Ok(CheckedFocusedTransition::replacing(
+            self.state().locals().clone(),
+            Some(self.refined_proposition(branch, proposition, surface_goal, true)),
             Vec::new(),
             Vec::new(),
         ))
