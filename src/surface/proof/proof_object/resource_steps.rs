@@ -535,6 +535,7 @@ impl<'a> Proof<'a> {
             selected_children.as_deref(),
         )
         .map_err(|refusal| self.step_error(refusal.describe()))?;
+        crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
             let source_bindings = rewrite.body_clauses.first().and_then(|clause| {
                 let variant = clause.arm.as_deref()?;

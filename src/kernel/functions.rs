@@ -22971,6 +22971,28 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     };
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
         .map_err(ResourceRewriteRefusal::OwnedMessage)?;
+    // Publish provenance only after the complete rewrite is checked. It names
+    // the affected identities without retaining or scanning a proof history.
+    if unfold {
+        next.resources
+            .record_instance_consumption(instance.identity, Some(InstanceConsumption::Unfold));
+        for child in &introduced_children {
+            next.resources
+                .record_instance_consumption(child.identity, None);
+        }
+    } else {
+        next.resources
+            .record_instance_consumption(instance.identity, None);
+        for (slot, identity) in &explicit_children {
+            next.resources.record_instance_consumption(
+                *identity,
+                Some(InstanceConsumption::FoldChild {
+                    parent: instance.identity,
+                    slot: (*slot).into(),
+                }),
+            );
+        }
+    }
     Ok(ResourceInstanceRewriteResult {
         state: next,
         semantic_facts,

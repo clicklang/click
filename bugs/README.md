@@ -14,7 +14,6 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
 - [Expanded proof no longer certifies a `produces` claim](expansion-loses-produced-resource-claim.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
-- [The refusal of `old(c.model)` in a loop clause suggests a binding that is rejected](loop-clause-old-field-refusal-suggests-a-rejected-unfold-binding.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
