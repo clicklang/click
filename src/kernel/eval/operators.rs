@@ -955,6 +955,157 @@ fn apply_c_int128_multiply(
     paths
 }
 
+/// Division on already-resolved wide formats. Promotions belong to the
+/// caller; the native guards precede construction of the mathematical term.
+fn apply_c_int128_division_like(
+    left: CValue,
+    right: CValue,
+    mut facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    remainder: bool,
+) -> Vec<CExpressionPath> {
+    let (destination, left, right) = match (left, right) {
+        (CValue::Int128(a), CValue::Int128(b)) => (MachineIntegerType::Int128, a, b),
+        (CValue::UInt128(a), CValue::UInt128(b)) => (MachineIntegerType::UInt128, a, b),
+        _ => return vec![c_type_mismatch_expression_path(facts, obligations)],
+    };
+    let (Some(left), Some(right)) = (
+        IntegerTerm::from_machine(destination, left),
+        IntegerTerm::from_machine(destination, right),
+    ) else {
+        return vec![c_type_mismatch_expression_path(facts, obligations)];
+    };
+    let mut paths = Vec::new();
+    let zero = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0));
+    match decide_with_facts(assumptions, &facts, &zero) {
+        Some(true) => {
+            return vec![CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+                facts,
+                obligations,
+            }];
+        }
+        Some(false) => {}
+        None => {
+            let mut bad = facts.clone();
+            add_condition_path_fact(&mut bad, assumptions, zero.clone(), true)
+                .expect("unknown divisor has a zero path");
+            paths.push(CExpressionPath {
+                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+                facts: bad,
+                obligations: obligations.clone(),
+            });
+            add_condition_path_fact(&mut facts, assumptions, zero, false)
+                .expect("unknown divisor has a nonzero path");
+        }
+    }
+    if destination == MachineIntegerType::Int128 {
+        let min =
+            ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
+        let minus_one = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
+        let a = decide_with_facts(assumptions, &facts, &min);
+        let b = decide_with_facts(assumptions, &facts, &minus_one);
+        let (safe, overflow, known) = match (a, b) {
+            (Some(false), _) | (_, Some(false)) => (None, None, Some(false)),
+            (Some(true), Some(true)) => (None, None, Some(true)),
+            (Some(true), None) => (
+                Some(Proposition::ConditionIs(minus_one.clone(), false)),
+                Some(Proposition::ConditionIs(minus_one, true)),
+                None,
+            ),
+            (None, Some(true)) => (
+                Some(Proposition::ConditionIs(min.clone(), false)),
+                Some(Proposition::ConditionIs(min, true)),
+                None,
+            ),
+            (None, None) => (
+                Some(Proposition::Or(
+                    Box::new(Proposition::ConditionIs(min.clone(), false)),
+                    Box::new(Proposition::ConditionIs(minus_one.clone(), false)),
+                )),
+                Some(Proposition::And(
+                    Box::new(Proposition::ConditionIs(min, true)),
+                    Box::new(Proposition::ConditionIs(minus_one, true)),
+                )),
+                None,
+            ),
+        };
+        let known = known.or_else(|| {
+            let safe = safe.as_ref()?;
+            if assumptions.proves_exact(safe) || facts.iter().any(|f| f.proposition() == safe) {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        match known {
+            Some(true) => {
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::SignedOverflow,
+                    ),
+                    facts,
+                    obligations,
+                });
+                return paths;
+            }
+            Some(false) => {}
+            None => {
+                let mut bad = facts.clone();
+                add_path_fact(&mut bad, assumptions, overflow.unwrap())
+                    .expect("unknown signed overflow has an overflow path");
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::SignedOverflow,
+                    ),
+                    facts: bad,
+                    obligations: obligations.clone(),
+                });
+                add_path_fact(&mut facts, assumptions, safe.unwrap())
+                    .expect("unknown signed overflow has a normal path");
+            }
+        }
+    }
+    let result = if remainder {
+        IntegerTerm::truncating_remainder(left, right)
+    } else {
+        IntegerTerm::truncating_quotient(left, right)
+    };
+    // Typed operands bound the quotient/remainder. Nonzero excludes division
+    // failure; excluding MIN/-1 is sufficient for either signed result to fit.
+    let term = if let Some(constant) = result.as_const() {
+        destination
+            .constant_term(
+                MachineIntegerConstant::from_integer(destination.format(), constant)
+                    .expect("guarded native quotient/remainder fits its format"),
+            )
+            .expect("exact wide format")
+    } else {
+        Bitvector32Term::IntegerToMachine {
+            value: result.clone().into(),
+            destination,
+        }
+    };
+    let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
+    let definition = ConditionTerm::integer_equal(observed, result);
+    if definition != ConditionTerm::Constant(true) {
+        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+            definition, true,
+        )));
+    }
+    paths.push(CExpressionPath {
+        outcome: CExpressionOutcome::Value(match destination {
+            MachineIntegerType::Int128 => CValue::Int128(term),
+            MachineIntegerType::UInt128 => CValue::UInt128(term),
+            _ => unreachable!(),
+        }),
+        facts,
+        obligations,
+    });
+    paths
+}
+
 pub(in crate::kernel) fn apply_c_divide(
     left: CValue,
     right: CValue,
@@ -962,6 +1113,12 @@ pub(in crate::kernel) fn apply_c_divide(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return apply_c_int128_division_like(left, right, facts, obligations, assumptions, false);
+    }
+
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -1024,6 +1181,12 @@ pub(in crate::kernel) fn apply_c_remainder(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return apply_c_int128_division_like(left, right, facts, obligations, assumptions, true);
+    }
+
     let (left, right) = promote_c_bool_scalar_operands(left, right);
     if let Some(width @ (ScalarWidth::Int64 | ScalarWidth::UInt64)) = scalar_width(&left, &right) {
         return apply_c_wide_remainder(left, right, width, facts, obligations, assumptions);

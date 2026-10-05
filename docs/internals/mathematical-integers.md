@@ -423,7 +423,7 @@ A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
 these nodes do not certify a native division's definedness. Native execution
 must establish nonzero divisors and the signed overflow exclusion before
 producing results. Wide source division and its contract spellings remain
-closed until that guarded execution and observation path is implemented.
+closed until proof spellings and expansion support are implemented.
 
 Interning, alpha keys, variable collectors, binder-aware rewriting, fold
 framing, and diagnostics preserve the distinct operators. The affine solver
@@ -433,3 +433,28 @@ nonzero constants folds, while substituting a zero divisor stays opaque.
 Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
 2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
 Artifact schema remains 38 because no source operation is newly admitted.
+
+## Guarded wide native division
+
+Kernel execution admits quotient and remainder on matching `Int128` or
+`UInt128` values. Callers must resolve promotions before this boundary.
+Execution checks the divisor's full-width Integer observation against zero.
+Signed execution additionally excludes `MIN/-1` for both `/` and `%`, using
+`left != MIN || right != -1` in the existing proposition model. Each unknown
+guard retains a UB path and a guarded normal path; proving nonzero alone does
+not eliminate signed overflow, and proving the overflow exclusion alone does
+not eliminate division by zero. Known operand conditions simplify the guard.
+
+After these guards, the shared mathematical quotient/remainder fits the
+result's native format. Constants preserve their signedness and all 128 bits;
+symbolic results use the checked Integer-to-machine representation. Only the
+normal path carries the kernel-certified equation equating its full-width
+machine observation with that mathematical term. This equation follows from
+the native operation, rather than an assumed conversion range. Operand
+execution obligations are preserved before either operation.
+
+Exact guard lookup does not scan unrelated ambient facts. Regressions cover
+signed/unsigned extrema, quotient and remainder signs, zero and MIN/-1,
+missing guards, explicit promotions, checked function artifact replay, and
+2/8/32/128-operation work scaling. C++ source admission, surface truncation
+spellings and wide source memory remain separate work; schema remains 38.

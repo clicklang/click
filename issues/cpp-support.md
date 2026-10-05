@@ -443,10 +443,17 @@ regressions cover shared DAGs and numeric bit-length work. Arithmetic-spine
 proposition substitution now memoizes shared children instead of revisiting
 them along every path.
 
-Next add native wide division/remainder execution with zero and signed MIN/-1
-overflow guards, plus full-width contract observations and proof spellings;
-then admit
-wide C++ division/remainder and cover checked narrowing
+Native wide division/remainder execution is delivered for already-resolved,
+matching signed or unsigned 128-bit operands. Zero and signed MIN/-1 guards
+precede result construction for both operations. Unknown guards retain UB
+paths; the normal path retains exact certified Integer observations of its
+quotient/remainder. Signed overflow uses the existing logical proposition
+model (`left != MIN || right != -1`). Replay and deterministic scaling
+regressions cover native execution and exact guard lookup. Promotions remain
+explicit, and artifact schema stays 38 with source admission closed.
+
+Next add full-width quotient/remainder proof spellings and round-trip
+expansion support, then admit wide C++ division/remainder and cover checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before
