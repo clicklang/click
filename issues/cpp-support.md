@@ -424,7 +424,19 @@ that proof-composition follow-up explicit; do not accept pending goals or
 retag wide values as narrow integers. Native wide arithmetic comparisons and
 wide source memory/aggregate admission remain separate work.
 
-Next cover wide truncating division/remainder and checked narrowing
+Shared truncating constant division is delivered as the next foundation.
+The checked machine-format operation returns both quotient and remainder with
+signedness and width preserved, rejects mismatched formats and zero divisors,
+and refuses signed MIN/-1 for either operation. Existing 32/64-bit folding
+and recursive constant observations use it. Exact-oracle coverage includes
+all 8–128-bit formats, full signed/unsigned extrema, every byte pair, and
+linear work over 2/8/32/128 explicit operations. This is representation
+semantics; frontend promotions and language UB/panic policies remain separate.
+No wide source division admission is claimed. Artifact schema remains 38.
+
+Next introduce a shared symbolic truncating quotient/remainder representation,
+its zero/overflow guards, and full-width contract observations; then admit
+wide C++ division/remainder and cover checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before

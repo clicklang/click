@@ -30,7 +30,9 @@ pub(crate) use contracts::{
 };
 mod integer;
 mod machine_integer;
-pub use machine_integer::{MachineIntegerConstant, MachineIntegerFormat, MachineIntegerWidth};
+pub use machine_integer::{
+    MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
+};
 mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,

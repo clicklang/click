@@ -722,3 +722,32 @@ to 16/16 (100%); imports and source/contract proof coverage remain 16/16 (100%).
 Frozen-sidecar compatibility stays 11/16 (68.75%); the five literal old proofs
 retain their recorded interface gaps rather than restoring generated names.
 The implicit default switch and retirement of legacy extraction remain open.
+
+
+### Retirement attempt: reproduced blockers
+
+Canonical adoption remains 16/16 (100%), and the adoption PR has merged.
+Switching the implicit default and deleting the legacy extractor requires
+moving the remaining compiler-backed regressions onto native Charon inputs.
+An attempted run of all 72 original `rust_*` integration tests through Charon
+passed 48 and failed 24. Many failures are stale legacy artifact assertions,
+frontier names, diagnostics, or old unsupported-feature expectations; they
+must be ported with unchanged source/contracts and meaningful negative cases.
+This run is diagnostic evidence, not a completed migration gate.
+
+Two failures were independently reproduced through the ordinary native CLI:
+
+- [Deferred expansion uses a dead compiler local](../bugs/charon-deferred-expansion-uses-dead-compiler-local.md).
+- Whole-array copy accepted an incomplete source view; this authority defect is
+  now fixed with full physical-range checks for both source and destination.
+  Kernel regressions cover partial permissions and compact work through one
+  million elements. Locked native and freshly extracted unchanged Rust fixtures
+  reject short source views, read-only destinations, and short destination owns.
+
+The deferred-expansion tooling defect still blocks retirement. The attempted default,
+extractor, and CI changes were restored to the previously green checkpoint;
+no failing production switch is delivered. Fix the remaining defect, port the original
+regressions, and only then remove the legacy build/runtime and implicit backend.
+The remaining supported identity `From` case and test assumptions also need
+review during that port; importing all 16 canonical fixtures alone does not
+establish complete regression parity.

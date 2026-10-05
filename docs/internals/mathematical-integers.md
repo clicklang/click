@@ -254,6 +254,25 @@ use `int128` / `uint128` for full-width scalar values. C++ admits the bounded
 Rust source admission remain separate. Reverse conversion arguments supply
 Integer context even to negative literals beyond the 64-bit range.
 
+## Truncating machine constant division
+
+`MachineIntegerConstant::truncating_div_rem` computes a quotient and remainder
+in one already-resolved signed/unsigned 8–128-bit format. It rounds the
+quotient toward zero; a nonzero remainder has the dividend's sign, with
+`a == b*q + r` and `abs(r) < abs(b)`. This is machine arithmetic, separate
+from the planned Euclidean division of mathematical Integer values.
+
+Both results retain the input format. Format mismatch, division by zero, and
+signed `MIN / -1` overflow are distinct failures. The overflow also refuses
+`MIN % -1`, even though its mathematical remainder is zero. Language
+promotions happen before this representation operation; it does not decide
+C/C++ undefined behavior or Rust panic policy. Existing signed/unsigned
+32/64-bit term construction and recursive constant observations use it while
+retaining their execution guards and symbolic nodes. Exact-oracle checks cover
+all formats and exhaustive byte pairs; operation batches have deterministic
+linear work checks. Symbolic wide quotient/remainder terms and C++ frontend
+admission remain the next slice. Artifact schema remains 38.
+
 ## Explicit machine modulo casts
 
 The shared kernel `c_integer_cast_modulo` boundary implements Rust integer `as`
