@@ -757,3 +757,30 @@ only then remove the legacy build/runtime and implicit backend.
 The remaining supported identity `From` case and test assumptions also need
 review during that port; importing all 16 canonical fixtures alone does not
 establish complete regression parity.
+
+
+### Native backend retirement completed
+
+The backend migration now has one path: schema-3 imports default to native
+Charon, including all 16 canonical examples. Explicit `charon` and historical
+`charon-trial` configurations use that same adapter. Schema 2 is rejected
+before extraction; the legacy exporter, compiler/runtime pin, build scripts,
+and CI archive have been removed. Pinned Charon and its driver replace them in
+preparation and archive consumers. Every native lock is refreshed under the
+versioned profile; ordinary verification still loads checked artifacts offline.
+
+The original 72 regression responsibilities remain covered through native
+artifacts or direct move/drop corruption checks. Ports preserve Rust sources
+and contracts, use semantic loop frontiers and actual iterator state, and keep
+false-result, panic, memory-authority, compiler-borrow, and expansion negatives.
+Newly accepted patterns are proved instead of retaining obsolete rejection
+expectations. Unsigned identity `From<T>` is resolved and signature-checked
+under `unsigned-from-v2` alongside the existing widening conversions.
+Borrowed iterator forwarding preserves one concrete state and checks resolved
+standard declarations and associated-item signatures. Repeated extraction also
+normalizes temporary output metadata, keeping shared-artifact locks reproducible.
+
+Backend migration is complete (100% of the extraction, canonical adoption,
+regression-port, default-switch, and legacy-retirement gates). General Rust
+support and unchanged checksum-crate extraction remain separate feature work;
+this issue stays open for those supported-subset and crate-boundary goals.

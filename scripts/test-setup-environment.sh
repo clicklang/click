@@ -74,9 +74,9 @@ if "$repository/scripts/setup-environment.sh" --docs-only > "$directory/output" 
 fi
 
 # Archive consumers need no Rust compiler or documentation-tool installation.
-source "$repository/scripts/rust-exporter-toolchain.sh"
-mkdir -p "$RUST_EXPORTER_SYSROOT/lib/rustlib/$RUST_EXPORTER_TARGET/lib"
-touch "$RUST_EXPORTER_SYSROOT/lib/librustc_driver-mock.so"
+source "$repository/scripts/charon-toolchain.sh"
+mkdir -p "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib"
+touch "$CHARON_SYSROOT/lib/librustc_driver-mock.so"
 export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.143'
 cp "$directory/cached-nextest" "$directory/bin/cargo-nextest"
 cat > "$directory/bin/rustup" <<'EOF'
@@ -98,17 +98,17 @@ chmod +x "$directory/bin/llvm-config-19" "$directory/bin/uname"
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
 
 # Fresh archive consumers have no runtime cache and still never call rustup.
-"$repository/scripts/rust-exporter-runtime.sh" pack "$directory/runtime.tar.gz"
-cached_runtime="$RUST_EXPORTER_SYSROOT"
+"$repository/scripts/charon-runtime.sh" pack "$directory/runtime.tar.gz"
+cached_runtime="$CHARON_SYSROOT"
 export RUSTUP_HOME="$directory/cold-rustup"
 source "$repository/scripts/rust-exporter-toolchain.sh"
 if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
     echo "error: setup accepted a missing exporter runtime" >&2
     exit 1
 fi
-"$repository/scripts/rust-exporter-runtime.sh" restore "$directory/runtime.tar.gz"
-[[ -f "$RUST_EXPORTER_SYSROOT/lib/librustc_driver-mock.so" ]]
-[[ ! -d "$RUST_EXPORTER_SYSROOT/bin" ]]
+"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
+[[ -f "$CHARON_SYSROOT/lib/librustc_driver-mock.so" ]]
+[[ ! -d "$CHARON_SYSROOT/bin" ]]
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
 
 # Refuse mismatched identities before creating the destination runtime.
@@ -116,12 +116,12 @@ printf 'wrong compiler identity\n' > "$directory/click-rust-runtime.identity"
 tar -czf "$directory/wrong-runtime.tar.gz" -C "$cached_runtime" lib \
     -C "$directory" click-rust-runtime.identity
 export RUSTUP_HOME="$directory/wrong-rustup"
-if "$repository/scripts/rust-exporter-runtime.sh" restore "$directory/wrong-runtime.tar.gz" > "$directory/output" 2>&1; then
+if "$repository/scripts/charon-runtime.sh" restore "$directory/wrong-runtime.tar.gz" > "$directory/output" 2>&1; then
     echo "error: restored a mismatched Rust runtime archive" >&2
     exit 1
 fi
 [[ ! -e "$RUSTUP_HOME" ]]
-if "$repository/scripts/rust-exporter-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
+if "$repository/scripts/charon-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
     echo "error: packed a missing Rust runtime" >&2
     exit 1
 fi

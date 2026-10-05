@@ -1,30 +1,18 @@
 # Experimental Rust imports
 
-Click's first Rust frontend accepts a small safe, monomorphic subset of Rust
-2024. It imports unchanged source through a repository-owned exporter using
-pinned rustc typed HIR and drop-elaborated MIR after type checking and borrow
-checking. The exporter writes a typed JSON artifact; Click lowers that artifact directly to the shared
-kernel execution vocabulary. Verification uses the same sidecars, tactics,
-certificates, and bounded engine as C and C++.
+Click accepts a small safe, monomorphic subset of Rust 2024. Its Rust importer
+uses pinned, unmodified [Charon](https://github.com/AeneasVerif/charon) after rustc
+type and borrow checking. Every imported body follows the native ULLBC control
+flow path into Click's shared execution, memory, and certificate rules.
+Verification uses the same sidecars, tactics, and bounded engine as C and C++.
 
-The [Charon adapter](https://github.com/clicklang/click/blob/master/design/charon-trial/README.md) now routes
-checked arithmetic, owned guard cleanup, borrowed while loops with a live
-restoring guard, resolved unsigned conversions, compact scalar arrays, and
-shared/mutable byte slices with full-width length, dynamic bounds, reborrows and
-local calls, plus stored shared exact-chunk state, owned moves, typed
-`next`/Option dispatch and remainder, nested iterator loops, and shared/mutable
-byte-array coercions, unsigned checksum arithmetic and borrowed scalar array
-fields, with compact owned array-field construction, moves, nonuniform
-snapshot copies and stored shared scalar array iteration, through
-one ULLBC body representation
-and the same engine. It has a separate pinned compiler/profile. All 16 canonical
-Rust examples now select Charon and load native ULLBC artifacts. Their original
-Rust source and contracts are preserved; five legacy sidecars have archived,
-digest-pinned originals and use their verified proof ports in the examples.
-The sections below describe the existing safe Rust contracts; consult the
-adapter's migration inventory for its accepted subset. Charon is not yet the
-implicit import default, and the legacy exporter remains available during
-migration and for archived regressions.
+Charon is the default and sole extraction backend. All 16 canonical examples
+use native `.ullbc` artifacts, and the original compiler-backed regressions run
+through Charon. Original Rust source and contracts are preserved; five sidecars
+have digest-pinned archived proofs and verified native proof ports. The
+[adapter inventory](https://github.com/clicklang/click/blob/master/design/charon-trial/README.md)
+records the migration evidence. The repository-owned HIR/MIR exporter, its
+separate compiler pin, and schema-2 import path have been retired.
 
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),
@@ -55,12 +43,12 @@ and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
-exporter, refresh existing imports. Charon examples use configuration schema 3
-with `backend: "charon-trial"` and native `.ullbc` artifacts. Legacy imports keep
-configuration schema 2 and typed JSON artifacts; their typed artifact and lock
-use schema 8. The normal example gate checks locked native inputs offline,
-while the required live Charon gate refreshes and verifies all 16 original
-Rust fixtures.
+extractor or adapter semantics, refresh existing imports. Configurations use
+schema 3 and native `.ullbc` artifacts. Omitting `backend` selects Charon;
+`"charon"` and the historical `"charon-trial"` spelling are also accepted.
+Schema 2 is rejected with a migration diagnostic. The normal example gate
+checks locked native inputs offline, while the required live Charon gate
+refreshes and verifies all 16 original Rust fixtures.
 
 ## Supported semantics
 
@@ -76,7 +64,7 @@ size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
 The fixed profile is Rust 2024, compiler commit
-`01dfd79246f1b2d5f146616deff08223a840a9ae`, target
+`923c95cdf5ba65cea505aa2ea829f578e1506ed8`, target
 `x86_64-unknown-linux-gnu`, overflow checks enabled, panic abort, and MIR optimization level zero. Click must
 prove that arithmetic overflow does not occur. Compiler acceptance alone does
 not prove a functional claim or panic freedom.
@@ -395,7 +383,7 @@ Local non-Copy structs support whole-value construction and moves, scope and
 early-return cleanup, conditional initialization/moves, and explicit
 `std::mem::drop`. Structs can have lifetime parameters and a local `Drop`
 implementation. The compiler selects drop order and drop flags through its
-structured, acyclic drop-elaborated MIR; Click does not reconstruct cleanup
+ULLBC control flow; Click does not reconstruct cleanup
 from source scopes. Destructor bodies require verified sidecar contracts.
 
 Private checked live flags require a live source and dead destination for a
@@ -421,12 +409,11 @@ profiling, audit, expansion, and re-verification without new Click syntax.
 rustc establishes source borrow legality. These checks do not yet extract a
 complete Rust loan protocol or infer ownership contracts from Rust types.
 
-This slice excludes partial moves, nested owned fields, Copy trait support,
-by-value aggregate calls/returns, cycles or unstructured shared MIR regions,
-heap owners such as `Box`/`Vec`, and panic unwinding. Owned-value MIR currently
-supports scalar/reference assignments and comparisons; arithmetic in these
-functions fails extraction. The scalar/reference HIR slice retains its checked
-arithmetic support.
+The adapter supports moving a reference field out of a plain local struct.
+It still excludes general partial moves with cleanup, nested owned fields,
+by-value aggregate calls/returns, unstructured control flow, heap owners such
+as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
+same native body representation; there is no whole-function coverage switch.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-move-drop/guard.click

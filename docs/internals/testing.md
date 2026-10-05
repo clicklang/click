@@ -245,7 +245,7 @@ CI uses these internal modes for code-affecting changes:
   legacy sidecars have archived paths and SHA-256 digests in the inventory;
   the gate checks their recorded frozen outcomes independently. These ignored tests
   run explicitly on a separate runner. The local counterpart is
-  `scripts/check.sh --charon-live`; build the legacy exporter first.
+  `scripts/check.sh --charon-live`, which builds pinned Charon first.
 
 The final required `test` check requires quality, preparation, every
 partition, and live Charon extraction to pass. A failed or cancelled quality job fails this gate even
@@ -254,15 +254,17 @@ when every test succeeds.
 `scripts/setup-environment.sh` installs pinned nextest release binaries and
 reuses matching installed versions, including source builds without commit
 metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
-runners restore those files instead of reinstalling Clang. The Rust exporter
-has a separately pinned compiler/runtime identity in
-`scripts/rust-exporter-toolchain.sh`. The build job bundles its runtime libraries
-with the compiled tests. Consumers restore those libraries before setup and
-check the archive's compiler, target, and toolchain identity. Missing caches do
-not prevent test execution. Ordinary archive consumers do not install a Rust
-compiler or mdBook. The live Charon consumer also installs the separate compiler
-and rustc development components selected by
-`src/languages/rust/charon-profile.json`. That compiled-in profile owns extractor
+runners restore those files instead of reinstalling Clang. Native Rust
+extraction uses the compiler/runtime identity in
+`src/languages/rust/charon-profile.json`; `scripts/charon-toolchain.sh` derives
+its runtime paths from that profile. Preparation bundles the runtime libraries
+with the tests using `scripts/charon-runtime.sh`; consumers validate the
+compiler, target, and toolchain identity and restore those libraries before
+setup, so missing caches do not prevent test execution. Ordinary
+archive consumers require the runtime files and unpack both Charon executables
+from `charon.tar`, without installing another compiler or mdBook. Preparation
+installs the pinned compiler with `rustc-dev` and `rust-src`, builds Charon once,
+and archives it alongside Click's tests. The compiled-in profile owns extractor
 pins, flags, and versioned adapter interpretations; the build script reads the
 same profile. Cargo's extractor dependency pin is checked against it.
 

@@ -2,7 +2,6 @@
 use serde::{Deserialize, Serialize};
 
 pub const SCHEMA: u32 = 8;
-pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

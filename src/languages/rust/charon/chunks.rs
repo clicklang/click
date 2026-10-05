@@ -6,7 +6,7 @@ fn shared_slice(ty: &a::Ty, template: bool) -> bool {
         if matches!(pointee.kind(), a::TyKind::Slice(element, _) if if template { variable(element) } else { byte_slice(pointee) }))
 }
 impl Adapter<'_> {
-    fn chunk_adt(&self, ty: &a::Ty, template: bool) -> bool {
+    pub(super) fn chunk_adt(&self, ty: &a::Ty, template: bool) -> bool {
         let a::TyKind::Adt(r) = ty.kind() else {
             return false;
         };

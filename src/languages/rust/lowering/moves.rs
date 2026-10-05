@@ -42,12 +42,7 @@ pub(super) fn lower(
         }
         let statement = match &local.value_type {
             Type::Unit => c_skip(),
-            Type::Reference { pointee, .. }
-                if **pointee == Type::ChunkIterator
-                    || matches!(pointee.as_ref(), Type::SharedArrayIterator { .. }) =>
-            {
-                c_skip()
-            }
+            Type::Reference { .. } if iterator_reference(&local.value_type) => c_skip(),
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
                 let flag = format!("__rust_owned_live_{index}");
@@ -521,6 +516,18 @@ fn successors(t: &T, exit: usize) -> Vec<usize> {
 }
 // A reverse topological pass builds the postdominator tree. Binary lifting
 // keeps each merge logarithmic; no path enumeration or graph-wide set clones.
+fn iterator_reference(ty: &Type) -> bool {
+    match ty {
+        Type::Reference { pointee, .. } => {
+            matches!(
+                pointee.as_ref(),
+                Type::ChunkIterator | Type::SharedArrayIterator { .. }
+            ) || iterator_reference(pointee)
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 fn postdominators(mir: &MirBody, order: &[usize]) -> Vec<usize> {
     let graph = mir
