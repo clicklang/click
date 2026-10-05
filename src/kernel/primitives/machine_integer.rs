@@ -104,6 +104,15 @@ pub struct MachineIntegerConstant {
     bits: u128,
 }
 
+/// Failure of truncating division in one already-resolved machine format.
+/// This does not select a source language's promotion or panic/UB policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MachineIntegerDivisionError {
+    FormatMismatch,
+    DivisionByZero,
+    SignedOverflow,
+}
+
 impl MachineIntegerConstant {
     /// Interpret an explicitly supplied representation, without truncation.
     pub fn from_bits(format: MachineIntegerFormat, bits: u128) -> Option<Self> {
@@ -170,6 +179,46 @@ impl MachineIntegerConstant {
 
     pub const fn bits(self) -> u128 {
         self.bits
+    }
+
+    /// Quotient truncated toward zero and remainder with the dividend's sign.
+    /// Both results retain the exact operand format. Signed MIN / -1 and
+    /// MIN % -1 fail together, even though the mathematical remainder is zero.
+    /// Source promotions must happen before calling this representation API.
+    pub fn truncating_div_rem(
+        self,
+        divisor: Self,
+    ) -> Result<(Self, Self), MachineIntegerDivisionError> {
+        use MachineIntegerDivisionError::*;
+        crate::instrumentation::record_deterministic_work(1);
+        if self.format != divisor.format {
+            return Err(FormatMismatch);
+        }
+        if divisor.bits == 0 {
+            return Err(DivisionByZero);
+        }
+        if self.format.signed {
+            let left = self.signed_value();
+            let right = divisor.signed_value();
+            let quotient = left.checked_div(right).ok_or(SignedOverflow)?;
+            // A host i128 quotient can still overflow a narrower format.
+            let quotient = Self::from_signed(self.format, quotient).ok_or(SignedOverflow)?;
+            let remainder =
+                Self::from_signed(self.format, left.checked_rem(right).ok_or(SignedOverflow)?)
+                    .expect("a defined truncating remainder fits its operand format");
+            Ok((quotient, remainder))
+        } else {
+            Ok((
+                Self {
+                    format: self.format,
+                    bits: self.bits / divisor.bits,
+                },
+                Self {
+                    format: self.format,
+                    bits: self.bits % divisor.bits,
+                },
+            ))
+        }
     }
 
     fn signed_value(self) -> i128 {
@@ -842,6 +891,115 @@ mod tests {
     fn types() -> impl Iterator<Item = MachineIntegerType> {
         use MachineIntegerType::*;
         [Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64].into_iter()
+    }
+
+    fn check_truncating_division(left: MachineIntegerConstant, right: MachineIntegerConstant) {
+        use num_traits::{Signed, Zero};
+        let a = left.to_integer();
+        let b = right.to_integer();
+        let result = left.truncating_div_rem(right);
+        if b.is_zero() {
+            assert_eq!(result, Err(MachineIntegerDivisionError::DivisionByZero));
+            return;
+        }
+        let quotient = &a / &b;
+        let remainder = &a % &b;
+        let (min, max) = left.format().bounds();
+        if quotient < min || quotient > max {
+            assert_eq!(result, Err(MachineIntegerDivisionError::SignedOverflow));
+            return;
+        }
+        let (q, r) = result.unwrap();
+        assert_eq!(q.format(), left.format());
+        assert_eq!(r.format(), left.format());
+        assert_eq!(q.to_integer(), quotient, "{a} / {b}");
+        assert_eq!(r.to_integer(), remainder, "{a} % {b}");
+        assert_eq!(&b * &quotient + &remainder, a);
+        assert!(remainder.abs() < b.abs());
+        assert!(remainder.is_zero() || remainder.sign() == a.sign());
+    }
+
+    #[test]
+    fn truncating_machine_division_matches_exact_oracle_at_every_width() {
+        for format in formats() {
+            let (min, max) = format.bounds();
+            let mut values = vec![min.clone(), &min + 1, max.clone(), &max - 1];
+            for value in [
+                -7i128,
+                -3,
+                -2,
+                -1,
+                0,
+                1,
+                2,
+                3,
+                7,
+                1i128 << 64,
+                (1i128 << 100) + 1,
+            ] {
+                if let Some(value) = MachineIntegerConstant::from_signed(format, value) {
+                    values.push(value.to_integer());
+                }
+            }
+            for left in &values {
+                for right in &values {
+                    check_truncating_division(
+                        MachineIntegerConstant::from_integer(format, left).unwrap(),
+                        MachineIntegerConstant::from_integer(format, right).unwrap(),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn truncating_machine_division_exhausts_signed_and_unsigned_bytes() {
+        for signed in [false, true] {
+            let format = MachineIntegerFormat::new(MachineIntegerWidth::Bits8, signed);
+            for left in 0..=255 {
+                for right in 0..=255 {
+                    check_truncating_division(
+                        MachineIntegerConstant::from_bits(format, left).unwrap(),
+                        MachineIntegerConstant::from_bits(format, right).unwrap(),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn truncating_machine_division_refuses_format_retagging() {
+        for left in formats() {
+            for right in formats() {
+                if left != right {
+                    let a = MachineIntegerConstant::from_unsigned(left, 1).unwrap();
+                    // Mismatch takes precedence even if the divisor is zero.
+                    for bits in [0, 1] {
+                        let b = MachineIntegerConstant::from_unsigned(right, bits).unwrap();
+                        assert_eq!(
+                            a.truncating_div_rem(b),
+                            Err(MachineIntegerDivisionError::FormatMismatch)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn truncating_machine_division_work_scales_with_explicit_operations() {
+        for format in formats() {
+            let left = MachineIntegerConstant::from_bits(format, format.mask()).unwrap();
+            let right = MachineIntegerConstant::from_unsigned(format, 3).unwrap();
+            for size in [2usize, 8, 32, 128] {
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..size {
+                        left.truncating_div_rem(right).unwrap();
+                    }
+                });
+                assert!(work <= 4 * size, "{format:?}, {size}: {work}");
+            }
+        }
     }
 
     #[test]
