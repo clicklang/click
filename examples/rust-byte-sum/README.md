@@ -17,7 +17,7 @@ never grants indexing authority. The proof covers empty input as well as
 nonempty slices. This is a building block for the pinned checksum assessment,
 not a proof of a checksum library.
 
-Build the pinned exporter with `scripts/build-rust-exporter.sh`, then run:
+Build the pinned Charon with `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-byte-sum/sum.click

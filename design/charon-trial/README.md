@@ -564,7 +564,8 @@ source-and-contract coverage with migrated proofs is **16/16 (100%)**. A regress
 functions with the frozen originals, and the live sweep verifies each port
 against freshly extracted original source. It still checks the original
 sidecar and its recorded outcome separately; frozen-sidecar parity remains
-11/16 and is still a default-switch gate.
+11/16. Five digest-pinned archived sidecars retain their proof-interface gaps;
+canonical adoption uses their verified ports with unchanged source/contracts.
 
 The gate also runs all existing live compiler/borrow-checker rejection tests.
 Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
@@ -774,3 +775,24 @@ and original source/contract proof coverage (both **16/16, 100%**) and frozen
 sidecar compatibility (**11/16, 68.75%**). The remaining five canonical examples
 still use the legacy exporter until their completed proof ports are adopted.
 The implicit backend default and legacy exporter retirement remain open.
+
+## Complete canonical proof-port adoption
+
+All **16/16 canonical Rust examples (100%)** now use native Charon imports,
+up from 11/16 (68.75%). The five remaining examples adopt their verified proof
+ports with unchanged Rust source, signatures, specification functions,
+preconditions, and postconditions. Their fresh native artifacts and locks are
+checked in for offline example verification.
+
+`parity.json` records each replaced original sidecar's archived path and SHA-256
+digest. The live gate checks every current canonical proof after fresh
+extraction, then independently checks archived frozen outcomes. Contract
+regressions compare the adopted canonical sidecars directly with the archives;
+legacy-backend regressions also explicitly use archived legacy proofs.
+No historical frozen failure is relabeled as a success.
+
+Imports, original source/contract proof coverage, and canonical adoption are
+all **16/16 (100%)**. Literal frozen-sidecar compatibility remains **11/16
+(68.75%)**, a historical compatibility measure rather than a promise to retain
+legacy generated names. The implicit backend default and legacy extractor
+retirement remain open migration gates.

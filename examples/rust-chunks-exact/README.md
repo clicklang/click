@@ -26,11 +26,12 @@ input. Zero sizes require an unreachable-panic proof, including on empty
 input. Mutable chunks, iterator copies/adapters, and explicit `next()` calls
 are outside this increment. The pinned checksum libraries remain unverified.
 
-The loop-invariant closure uses an expanded, checked certificate so ordinary
-verification and audits avoid repeating its arithmetic search.
+The proof uses source read and assignment frontiers, named snapshots, and
+`execute_until(back_edge())` to observe checked iterator progress. Invariant and
+ranking closure check the input partition and termination separately.
 
 ```sh
-scripts/build-rust-exporter.sh
+scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-chunks-exact/chunks.click
 cargo run --bin click -- verify examples/rust-chunks-exact/chunks.click
 cargo run --bin click -- audit examples/rust-chunks-exact/chunks.click

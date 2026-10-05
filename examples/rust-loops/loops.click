@@ -4,7 +4,9 @@ int32 count(int32 n) {
     requires n >= 0;
     ensures result == n;
 } by {
-    execute_until(statement(4));
+    execute_until(assignment(i, 0)); step();
+    have i == 0 by { simp(); }
+    execute_until(loop(0));
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
@@ -17,7 +19,9 @@ int32 accumulate(int32 n, int32 value) {
     requires value == 1;
     ensures result == n;
 } by {
-    execute_until(statement(7));
+    execute_until(assignment(i, 0)); step();
+    have i == 0 by { simp(); }
+    execute_until(loop(0));
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
@@ -31,7 +35,9 @@ uint64 walk(const uint8* bytes, uint64 bytes_len) {
     views bytes[0..(int32)bytes_len];
     ensures result == bytes_len;
 } by {
-    execute_until(statement(4));
+    execute_until(assignment(i, 0)); step();
+    have i == 0 by { simp(); }
+    execute_until(loop(0));
     loop {
         decreases bytes_len - i;
         invariant i <= bytes_len;

@@ -28,7 +28,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
         include_str!("../../examples/rust-chunks-exact/chunks.rs")
     );
     assert_eq!(
-        include_str!("../../design/charon-trial/chunk-proof/frozen.click"),
+        include_str!("../../design/charon-trial/chunk-proof/chunks.click"),
         include_str!("../../examples/rust-chunks-exact/chunks.click")
     );
     let p = project();

@@ -33,7 +33,7 @@ fn charon_slice_into_iter_imports_unchanged_sum_and_tracks_the_remaining_proof_g
     );
     assert_eq!(
         include_str!("../../design/charon-trial/into-slices/sum.click"),
-        include_str!("../../examples/rust-iterators/sum.click")
+        include_str!("../../design/charon-trial/iterator-proof/rust-iterators/frozen.click")
     );
     let p = project("sum");
     let prepared = load_import(&p.config()).unwrap();
