@@ -670,11 +670,7 @@ impl<'a> Proof<'a> {
         let requirement_surfaces = Arc::new(requirement_surfaces);
         let mut goals = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
-            let mut facts = execution
-                .core
-                .pending_exceptional_pure_facts(path_index)
-                .cloned()
-                .unwrap_or_else(|| self.facts().clone());
+            let mut facts = self.facts().clone();
             // One checked statement may produce several candidate outcomes.
             // The enclosing Proof facts select the feasible successors; an
             // exact contradictory path fact cannot become a typed outcome
@@ -837,11 +833,18 @@ impl<'a> Proof<'a> {
         let mut statement_index = execution.core.frontier.next_statement_index;
         let mut descended_through_try = false;
         loop {
-            if matches!(
-                statement,
-                CStatement::Call { .. } | CStatement::CallAssign { .. }
-            ) {
-                return Ok(descended_through_try);
+            // A call is a fork when it may throw: inside a `try` the throw
+            // enters the handler, and outside any `try` it leaves the
+            // function. Either way its two successors are two proof arms,
+            // like a C `if`'s.
+            if let CStatement::Call { function_name, .. }
+            | CStatement::CallAssign { function_name, .. } = &statement
+            {
+                return Ok(descended_through_try
+                    || context
+                        .function_environment
+                        .get_function(function_name)
+                        .is_some_and(|callee| !callee.exceptional_signature().is_empty()));
             }
             let CStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);

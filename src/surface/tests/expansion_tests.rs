@@ -15039,3 +15039,78 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
     assert_eq!(expanded.matches("step();").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &c_sources).expect("the expanded grouped proof should verify");
 }
+
+/// A maybe-throwing call is a fork wherever it sits, so the closers of its
+/// threw path go in that call's own `outcomes` arm. Straight-line, after a C
+/// `if`, and inside one arm of a C `if`, every proof shape of every claim
+/// expands to source that re-verifies.
+#[test]
+fn throwing_call_forks_expand_and_reverify_in_every_position() {
+    let c_source = r#"
+        int32 helper(int32 x) { return x; }
+        int32 straight(int32 x) {
+            int32 y = helper(x);
+            int32 z = helper(y);
+            return z;
+        }
+        int32 after(int32 x) {
+            int32 y = 0;
+            if (x > 0) {
+                y = 1;
+            }
+            y = helper(x);
+            return y;
+        }
+        int32 inside(int32 x) {
+            int32 y = 0;
+            if (x > 0) {
+                y = helper(x);
+            }
+            return y;
+        }
+    "#;
+    let contract = |name: &str, normal: &str, proofs: [&str; 3]| {
+        format!(
+            "int32 {name}(int32 x) throws int32 {{\n    ensures {normal}{};\n    exceptional ensures exception == 7{};\n}}{}\n",
+            proofs[0], proofs[1], proofs[2]
+        )
+    };
+    let c_sources = [("forks.c", c_source)];
+    for proofs in [
+        ["", "", ""],
+        [" by auto", " by auto", ""],
+        ["", "", " by auto;"],
+    ] {
+        let click_source = format!(
+            "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x by auto;\n    exceptional ensures exception == 7 by auto;\n}}\n{}{}{}",
+            contract("straight", "result == x", proofs),
+            contract("after", "result == x", proofs),
+            contract("inside", "result >= 0", proofs),
+        );
+        verify_c0_sources(&click_source, &c_sources)
+            .unwrap_or_else(|error| panic!("{proofs:?} should verify: {}", error.message()));
+        for function in ["straight", "after", "inside"] {
+            let claims = if proofs[0].is_empty() {
+                vec![CProofClaim::Grouped]
+            } else {
+                vec![CProofClaim::Ensure(0), CProofClaim::ExceptionalEnsure(0)]
+            };
+            for claim in claims {
+                let expanded = expand_c0_claim_source(&click_source, &c_sources, function, claim)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{function} {claim:?} {proofs:?} should expand: {}",
+                            error.message()
+                        )
+                    });
+                assert!(expanded.contains("outcomes {"), "{expanded}");
+                verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
+                    panic!(
+                        "{function} {claim:?} {proofs:?} expansion should re-verify: {}\n{expanded}",
+                        error.message()
+                    )
+                });
+            }
+        }
+    }
+}
