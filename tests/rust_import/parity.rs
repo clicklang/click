@@ -174,6 +174,24 @@ fn charon_canonical_basic_tools_agree() {
     }
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
+    let prepared = load_import(&p.config()).unwrap();
+    let expanded =
+        click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 8, 5).unwrap();
+    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    assert_cli(
+        &p,
+        &[
+            "audit",
+            "--claim",
+            "choose.contract",
+            "--start-at",
+            &format!("{}:8:5", p.root.join("borrow.click").display()),
+            "--max-sites",
+            "1",
+        ],
+    );
+    assert_cli(&p, &["expand", "--claim", "choose.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
     assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["audit", "--max-sites", "1"]);
