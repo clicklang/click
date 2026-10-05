@@ -2093,7 +2093,7 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
-        if let Some(arithmetic) = self.try_function_exit_signed_arithmetic() {
+        if let Some(arithmetic) = self.try_execution_signed_arithmetic() {
             return Ok(Some(arithmetic));
         }
         // The pure signed certificate already ran above on this same proof
@@ -2112,24 +2112,43 @@ impl<'a> Proof<'a> {
         self.try_indexed_signed_arithmetic(&context.theorem_context.surface_requirements, None)
     }
 
-    /// The same indexed bound selection at function exit, where a bound can
-    /// also sit inside a written conjunction or be the negation of a branch
-    /// condition. Loop and statement-frontier goals keep their own closers,
-    /// whose premises name the loop head and contract. Runs last, after
-    /// every route whose selected steps it would otherwise hide in
-    /// expansion.
-    fn try_function_exit_signed_arithmetic(&self) -> Option<Self> {
-        let ProofContext::Execution(_) = self.context.as_ref() else {
+    /// The same indexed bound selection on an execution proof: at function
+    /// exit, at a statement frontier, or inside a loop phase, so simp reads a
+    /// variable's bounds the same way wherever it runs. A bound can also be
+    /// the negation of a branch condition. A goal that is itself an available
+    /// fact is left to `assumption`. Runs last, after every route whose
+    /// selected steps it would otherwise hide in expansion.
+    fn try_execution_signed_arithmetic(&self) -> Option<Self> {
+        if NamedPremiseClosureScope::active() {
             return None;
+        }
+        let goal = self.goal()?;
+        if std::iter::once(goal.clone())
+            .chain(condition_polarity_forms(goal))
+            .any(|form| self.facts().contains(&form))
+        {
+            return None;
+        }
+        let (surfaces, anchor) = match self.context.as_ref() {
+            ProofContext::Pure(_) => return None,
+            ProofContext::FixedState(context) => {
+                (context.surface_propositions, context.premise_anchor.clone())
+            }
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(data) => (&data.surface_propositions, data.premise_anchor.clone()),
+                None => (
+                    &self.execution()?.surface_propositions,
+                    self.execution().and_then(frontier_premise_anchor),
+                ),
+            },
         };
-        let data = self.focused_outcome_data()?;
-        self.try_indexed_signed_arithmetic(&data.surface_propositions, data.premise_anchor.as_ref())
+        self.try_indexed_signed_arithmetic(surfaces, anchor.as_ref())
     }
 
     /// Each goal variable's bound bucket is an O(log n) lookup, and each
-    /// bound it lists costs one indexed fact or conjunct membership test. A
-    /// bound held only as a proper conjunct of a fact is made a fact by one
-    /// checked `extract` step before the certificate cites it.
+    /// bound it lists costs one indexed fact membership test. A leaf conjunct
+    /// of a fact is itself an indexed fact, so a bound written inside a
+    /// conjunction needs no `extract`.
     fn try_indexed_signed_arithmetic(
         &self,
         surfaces: &SurfacePropositionMap,
@@ -2139,7 +2158,6 @@ impl<'a> Proof<'a> {
         let surface_goal = self.surface_goal()?;
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         let mut available = BTreeSet::new();
-        let mut conjuncts = BTreeSet::new();
         for variable in crate::kernel::proposition_variables(goal) {
             for (endpoint, other, strict, forward) in self
                 .facts()
@@ -2157,15 +2175,10 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
                 };
                 let fact = Proposition::ConditionIs(condition, true);
-                let mut found = false;
                 for form in std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact)) {
                     if self.facts().contains(&form) {
                         available.insert(form);
-                        found = true;
                     }
-                }
-                if !found && !is_pure && self.facts().contains_proper_conjunct(&fact) {
-                    conjuncts.insert(fact);
                 }
             }
         }
@@ -2178,30 +2191,16 @@ impl<'a> Proof<'a> {
                 pairs.push((fact, source));
             }
         }
-        let mut proof = None;
-        for fact in conjuncts {
-            let Some(source) = self.spelled_comparison_surface(&fact) else {
-                continue;
-            };
-            let current = proof.as_ref().unwrap_or(self);
-            let Ok(extracted) = current.apply_step(ProofStep::Extract(source.clone())) else {
-                continue;
-            };
-            proof = Some(extracted);
-            pairs.push((fact, source));
-        }
         let kernels = pairs
             .iter()
             .map(|(fact, _)| fact.clone())
             .collect::<Vec<_>>();
         let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
-        let proof = proof.unwrap_or_else(|| self.clone());
-        let certificate = proof.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
-        proof
-            .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::SignedInt32(certificate),
-            }))
-            .ok()
+        let certificate = self.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
+        self.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+            family: ArithmeticCertificateFamily::SignedInt32(certificate),
+        }))
+        .ok()
     }
 
     /// Select only guards actually occurring in the goal, through indexed
@@ -7334,6 +7333,33 @@ impl<'a> Proof<'a> {
             }
             Err(error) => Err(error),
         }
+    }
+}
+
+thread_local! {
+    static NAMED_PREMISE_CLOSURE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks a closure whose premises are named, not selected from ambient
+/// facts: a loop bundle member may cite only the loop head's premises and
+/// the contract, so simp's per-variable bound lookup, which reads every
+/// available bound, stays out of it.
+pub(in crate::surface::proof) struct NamedPremiseClosureScope;
+
+impl NamedPremiseClosureScope {
+    pub(in crate::surface::proof) fn enter() -> Self {
+        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        NamedPremiseClosureScope
+    }
+
+    fn active() -> bool {
+        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.get() > 0)
+    }
+}
+
+impl Drop for NamedPremiseClosureScope {
+    fn drop(&mut self) {
+        NAMED_PREMISE_CLOSURE_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
     }
 }
 

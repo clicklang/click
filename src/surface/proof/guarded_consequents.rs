@@ -228,7 +228,8 @@ impl<'a> Proof<'a> {
     /// Spell one order or equality comparison from the current state's
     /// names, accepted only when the spelling lowers back to `kernel`. Simp
     /// uses it for a selected bound that has no recorded spelling of its
-    /// own: a conjunct of a written fact, or a branch condition's negation.
+    /// own: a leaf conjunct of a written fact, whose recorded spelling is the
+    /// whole conjunction, or a branch condition's negation.
     pub(super) fn spelled_comparison_surface(
         &self,
         kernel: &Proposition,
