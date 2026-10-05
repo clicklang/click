@@ -1,15 +1,11 @@
-# Population calls: what the caller keeps and what it re-reads
+# Calls preserve framed cells and refresh borrowed counter state
 
-Positive controls for `call_inside_open_population_does_not_assume_its_body.md`
-and `population_call_drops_the_cached_body_cell.md`.
-
-`restore_around_a_call` holds `object_ref(obj)` open across an unrelated call
-and restores the count cell before closing: its own stores survive the call,
-which writes nothing the caller owns, so the close proves the body fact from
-them without the call assuming it. `count_before_retain` reads the count cell,
-closes the body, and calls `object_retain`; the post-call body fact names the
-re-read cell at the new count, and the value read before the call is the
-pre-call count.
+The retaining helper borrows the ordinary counter/authority control, updates
+the cell, explicitly creates one member, and returns the restored control.
+`count_before_retain` proves the same pre-call value equals the new count minus
+one. `restore_around_a_call` temporarily breaks its open control invariant,
+calls an unrelated helper, and restores the saved value before closing. The
+unrelated call cannot assume the suspended invariant. All C is unchanged.
 
 ```c filename=population_call_controls.c
 struct object {
@@ -42,8 +38,10 @@ int32 count_before_retain(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(object_ref(obj));
     owns obj->refs;
     fact obj->refs == count(object_ref(obj));
 }
@@ -56,21 +54,23 @@ int32 three() {
 
 struct object* object_retain(struct object* obj) {
     requires count(object_ref(obj)) < 2147483647;
-    owns object_ref(obj);
+    owns control(obj);
     produces object_ref(obj);
     ensures result == obj;
 } by {
-    open(object_ref(obj)) {
+    open(control(obj)) {
+        step();
+        fold(object_ref(obj));
         execute();
     }
     simp();
 }
 
 int32 restore_around_a_call(struct object* obj) {
-    owns object_ref(obj);
+    owns control(obj);
     ensures result == count(object_ref(obj));
 } by {
-    open(object_ref(obj)) {
+    open(control(obj)) {
         step();
         step();
         step();
@@ -83,11 +83,11 @@ int32 restore_around_a_call(struct object* obj) {
 
 int32 count_before_retain(struct object* obj) {
     requires count(object_ref(obj)) < 2147483647;
-    owns object_ref(obj);
+    owns control(obj);
     produces object_ref(obj);
     ensures result == count(object_ref(obj)) - 1;
 } by {
-    open(object_ref(obj)) {
+    open(control(obj)) {
         step();
         step();
     }

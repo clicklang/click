@@ -938,6 +938,173 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
 }
 
 #[test]
+fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(940_150));
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_add_overflows(quantity.clone(), Bitvector32Term::Constant(3)),
+            false,
+        );
+    let work = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(Bitvector32Term::Constant(0)),
+                None,
+                None,
+            )
+            .unwrap();
+        let symbolic = entry
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &assumptions)
+            .unwrap()
+            .0;
+        assert!(matches!(
+            symbolic.checked_member_exchange_quantity(
+                &block,
+                &description,
+                true,
+                &Bitvector32Term::Constant(3),
+                &PureFactContext::new()
+            ),
+            Err(CreationRefusal::InvalidQuantity)
+        ));
+        let (_, work) = crate::persistent::measure_persistent_work(|| {
+            let born = symbolic
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(3),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            let observed = born.observe_symbolic(&description).unwrap();
+            assert_eq!(observed.delta, 3);
+            assert_eq!(
+                observed.combined_delta(),
+                Some((
+                    true,
+                    Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(3))
+                ))
+            );
+            assert_eq!(
+                born.imported_member_delta_since_entry(&description),
+                observed.combined_delta()
+            );
+            let child = born.enter_call();
+            let sent = child
+                .transfer_call_fact(&born, &child, &description, true)
+                .unwrap()
+                .transfer_call_fact(&born, &child, &description, false)
+                .unwrap();
+            // A numerical fragment can be passed and spent independently of the
+            // caller's framed symbolic batch and two other numerical members.
+            let spent = sent
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            assert_eq!(spent.observe_symbolic(&description).unwrap().delta, 2);
+            let returned = spent
+                .transfer_call_fact(&child, &born, &description, true)
+                .unwrap()
+                .finish_call(&born)
+                .unwrap();
+            let restored = returned
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(2),
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            assert_eq!(
+                restored
+                    .observe_symbolic(&description)
+                    .unwrap()
+                    .combined_delta(),
+                Some((true, quantity.clone()))
+            );
+            assert!(restored.owns_population_member(&description));
+            assert!(matches!(
+                restored.checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions
+                ),
+                Err(CreationRefusal::MissingMembers)
+            ));
+            let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+            assert!(
+                restored
+                    .transfer_call_fact_quantity(
+                        &born,
+                        &child,
+                        &description,
+                        false,
+                        &wrong,
+                        &assumptions
+                    )
+                    .is_err()
+            );
+            let lent = restored
+                .transfer_call_fact(&born, &child, &description, true)
+                .unwrap();
+            assert!(matches!(
+                lent.checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(1),
+                    &assumptions
+                ),
+                Err(CreationRefusal::MissingAuthority)
+            ));
+        });
+        work
+    });
+    assert!(work[0] > 0);
+    assert!(
+        work.iter().all(|sample| *sample <= work[0] + 256),
+        "mixed batch work scanned unrelated populations: {work:?}"
+    );
+}
+
+#[test]
 fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     let description = member_description(PointerBlock::ExternalArgument);
     // Keep this a genuinely symbolic batch: fixed numerical batches now
@@ -1006,7 +1173,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     assert!(born.owns_population_member(&description));
     assert!(matches!(
         born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
-        Err(CreationRefusal::InvalidQuantity)
+        Err(CreationRefusal::MissingMembers)
     ));
 }
 
@@ -3445,7 +3612,7 @@ mod wildcard_scope_tests {
     }
 
     #[test]
-    fn wildcard_helper_birth_checks_bound_identity_and_single_transition() {
+    fn wildcard_helper_birth_and_consumption_check_bound_identity_and_custody() {
         let (scope, member) = opaque_scope(0);
         let entry = CreationEvents::new()
             .import_opaque_wildcard_authority(&scope)
@@ -3505,9 +3672,24 @@ mod wildcard_scope_tests {
         assert!(birth(&issued, &different, &bounded).is_err());
         assert!(
             issued
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &different, false)
+                .is_err()
+        );
+        let (returned, death) = issued
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .unwrap();
+        assert!(death.matches(&issued, &returned, &member, false));
+        assert!(!death.matches(&issued, &returned, &different, false));
+        let restored = returned.observe_symbolic(&scope).unwrap();
+        assert_eq!(restored.entry_count, count.entry_count);
+        assert_eq!(restored.delta, 0);
+        assert!(!returned.owns_imported_population_member(&member));
+        assert!(
+            returned
                 .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
                 .is_err()
         );
+
         assert!(
             issued
                 .checked_establish(&PointerBlock::ExternalArgument, &scope)
@@ -4021,7 +4203,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
                 Some(Bitvector32Term::Constant(private_total)),
                 None,
                 None,
-                None,
+                OpaqueMemberInputs::Quantity(None),
             )
             .unwrap();
         let child = entry.enter_call();
@@ -4213,4 +4395,554 @@ fn local_numeric_batch_work_does_not_grow_with_quantity() {
     });
     assert!(work[0].0 > 0 && work[0].1 > 0, "{work:?}");
     assert!(work.iter().all(|n| *n == work[0]), "{work:?}");
+}
+
+#[test]
+fn authority_contract_entry_retains_only_authenticated_member_bounds() {
+    let block = PointerBlock::ExternalArgument;
+    let description = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::typed_pointer(
+                Pointer {
+                    block,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CType::Int32Pointer,
+            )
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let member = CResourceFact::own(CResource::Composite {
+        name: description.family().into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let member_spec = CResourceSpec::composite(
+        CResourceAccessMode::Own,
+        "reference".into(),
+        vec![c_variable("p")],
+        vec![CType::Int32Pointer],
+    );
+    let authority_spec = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: None,
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(member_spec.clone()),
+                schema: description.schema().clone(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Borrow,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    let function = c_function(
+        CType::Void,
+        "inspect",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        c_return(c_void_value()),
+    )
+    .with_resource_summary(vec![authority_spec, member_spec.clone()], vec![])
+    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        "reference",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![],
+        vec![],
+    )]);
+    let AlgebraicValue::C(pointer) = &description.arguments()[0] else {
+        unreachable!();
+    };
+    let member_only_function = function
+        .clone()
+        .with_resource_summary(vec![member_spec], vec![]);
+    for tracked_quantity in [0, 1] {
+        let state = CState::new()
+            .with_population_creation_tracking()
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_facts([authority.clone(), member.clone()]),
+            )
+            .import_opaque_population(&authority, tracked_quantity)
+            .unwrap();
+        let count = state
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .observe_symbolic(&description)
+            .unwrap()
+            .entry_count;
+        let entry =
+            c_function_contract_entry(&state, &function, &[CExpression::Value(pointer.clone())])
+                .unwrap();
+        let lower_bound = Proposition::ConditionIs(
+            // `states` is an exact lookup. Match the count evaluator's
+            // canonical orientation, rather than asking it to prove `1 <= n`.
+            ConditionTerm::signed_greater_equal(count.clone(), Bitvector32Term::Constant(1)),
+            true,
+        );
+        assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
+        assert!(
+            !entry.states(&Proposition::ConditionIs(
+                ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(1)),
+                true
+            )),
+            "one locally owned member does not imply an exact global count"
+        );
+        let without_authority =
+            state.with_resource_context(ResourceContext::new().unchecked_with_fact(member.clone()));
+        let entry_without_authority = c_function_contract_entry(
+            &without_authority,
+            &member_only_function,
+            &[CExpression::Value(pointer.clone())],
+        )
+        .unwrap();
+        assert!(
+            !entry_without_authority.states(&lower_bound),
+            "ledger membership without owned authority does not authorize a count fact"
+        );
+    }
+}
+
+#[test]
+fn named_authority_import_is_read_only_and_lookup_scales() {
+    check_named_authority_import(None);
+}
+
+#[test]
+fn wildcard_named_authority_import_is_read_only_and_lookup_scales() {
+    for arity in [2, 3] {
+        check_named_authority_import(Some(arity));
+    }
+}
+
+fn check_named_authority_import(arity: Option<usize>) {
+    let base = member_description(PointerBlock::ExternalArgument);
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let mut description = ResourceDescription::new(
+        "ticket".into(),
+        base.arguments().to_vec().into(),
+        schema.clone(),
+    );
+    if let Some(arity) = arity {
+        description = description.with_population_arity(arity).unwrap();
+    }
+    let mut pattern = ResourceDescription::new(
+        "ticket".into(),
+        description.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    if let Some(arity) = arity {
+        pattern = pattern.with_population_arity(arity).unwrap();
+    }
+    let mut instance_arguments = description.arguments().to_vec();
+    if let Some(arity) = arity {
+        for key in 0..arity - 1 {
+            instance_arguments.push(int32(7 + key as u32).into());
+        }
+    }
+    let instance = ResourceInstance::new(
+        Variable::allocate_fresh().unwrap(),
+        "ticket".into(),
+        instance_arguments.into(),
+        schema,
+        vec![int32(7).into()].into(),
+    )
+    .unwrap();
+    let reference = ResourceReference::from_instance(&instance);
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let resources = ResourceContext::new().unchecked_with_facts([
+        authority.clone(),
+        CResourceFact::own(CResource::Instance(instance.clone())),
+    ]);
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(resources);
+    let imported = if arity.is_some() {
+        state.import_opaque_wildcard_authority(&authority).unwrap()
+    } else {
+        state.import_opaque_population_inputs(&authority).unwrap()
+    };
+    assert_eq!(imported.resources(), state.resources());
+    assert_eq!(
+        imported.owned_resource_instance(instance.identity()),
+        Some(&instance)
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(ResourceContext::new())
+            .import_opaque_population_inputs(&authority)
+            .is_err()
+    );
+    let doubled = CResourceFact::own_quantity(
+        CResource::PopulationAuthority(description.clone()),
+        Bitvector32Term::Constant(2),
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(doubled.clone()))
+            .import_opaque_population_inputs(&doubled)
+            .is_err()
+    );
+    let mut work = Vec::new();
+    for size in [16, 64, 256] {
+        let mut source = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated_{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            source = source
+                .import_observable_named_authority(&unrelated)
+                .unwrap();
+        }
+        // Same family, different explicit anchor: field recovery must not
+        // select the first imported population merely by family or block.
+        let other_pattern = pattern.map_values(|_| {
+            AlgebraicValue::C(CValue::typed_pointer(
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Constant(4),
+                },
+                CType::Int32Pointer,
+            ))
+        });
+        let mut other_description = ResourceDescription::new(
+            "ticket".into(),
+            other_pattern.arguments().to_vec().into(),
+            description.schema().clone(),
+        );
+        if let Some(arity) = arity {
+            other_description = other_description.with_population_arity(arity).unwrap();
+        }
+        source = source
+            .import_observable_named_authority(&other_description)
+            .unwrap();
+        assert_eq!(
+            source.population_type_description(&other_pattern),
+            other_description
+        );
+        let (entry, measured) = crate::persistent::measure_persistent_work(|| {
+            let entry = source
+                .import_observable_named_authority(&description)
+                .unwrap();
+            assert_eq!(entry.population_type_description(&pattern), description);
+            entry
+        });
+        work.push(measured);
+        let exact = ResourceDescription::new(
+            description.family().into(),
+            instance.arguments().to_vec().into(),
+            description.schema().clone(),
+        );
+        let exact_count = arity.map(|_| {
+            let observed = entry
+                .observe_exact_member(&exact, &PureFactContext::new())
+                .unwrap();
+            assert!(matches!(observed.entry_count, Bitvector32Term::Variable(_)));
+            assert_eq!(observed.delta, 0);
+            assert_eq!(observed.entry_owned_members, 0);
+            assert_eq!(
+                entry
+                    .observe_exact_member(&exact, &PureFactContext::new())
+                    .unwrap()
+                    .entry_count,
+                observed.entry_count
+            );
+            observed.entry_count
+        });
+        let count = entry.observe_symbolic(&description).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 0);
+        assert_eq!(count.delta, 0);
+        assert!(!entry.owns_population_member(&description));
+        assert_eq!(
+            entry
+                .import_observable_named_authority(&description)
+                .unwrap(),
+            entry
+        );
+        assert_eq!(
+            entry.checked_instance_exchange(&reference, false).err(),
+            Some(CreationRefusal::InvalidMember)
+        );
+        assert_eq!(
+            entry.checked_instance_exchange(&reference, true).err(),
+            Some(CreationRefusal::InvalidMember)
+        );
+        for produce in [false, true] {
+            assert_eq!(
+                entry
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &description,
+                        produce,
+                        &Bitvector32Term::Constant(1),
+                        &PureFactContext::new(),
+                    )
+                    .err(),
+                Some(CreationRefusal::InvalidMember)
+            );
+        }
+        let mut wrong_schema = ResourceDescription::new(
+            "ticket".into(),
+            description.arguments().to_vec().into(),
+            ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::UInt8))])
+                .unwrap(),
+        );
+        if let Some(arity) = arity {
+            wrong_schema = wrong_schema.with_population_arity(arity).unwrap();
+        }
+        assert_eq!(
+            entry.import_observable_named_authority(&wrong_schema).err(),
+            Some(CreationRefusal::OpaqueImportConflict)
+        );
+        assert_eq!(entry.population_type_description(&pattern), description);
+        let helper = entry.enter_call();
+        let moved = entry
+            .transfer_call_fact(&entry, &helper, &description, true)
+            .unwrap();
+        assert!(moved.observe_symbolic(&description).is_none());
+        assert_eq!(moved.population_type_description(&pattern), description);
+        let held = moved.return_to(&helper);
+        assert_eq!(
+            held.observe_symbolic(&description).unwrap().entry_count,
+            count.entry_count
+        );
+        assert!(
+            held.transfer_call_fact(&entry, &helper, &description, true)
+                .is_err()
+        );
+        assert!(
+            held.transfer_call_fact(&entry, &helper, &description, false)
+                .is_err()
+        );
+        let returned = held
+            .transfer_call_fact(&helper, &entry, &description, true)
+            .unwrap()
+            .finish_call(&entry)
+            .unwrap();
+        if let Some(exact_count) = exact_count {
+            assert_eq!(
+                returned
+                    .observe_exact_member(&exact, &PureFactContext::new())
+                    .unwrap()
+                    .entry_count,
+                exact_count
+            );
+        }
+        assert_eq!(
+            returned.observe_symbolic(&description).unwrap().entry_count,
+            count.entry_count
+        );
+    }
+    assert!(work[0] > 0 && work[2] <= work[0] + 256, "{work:?}");
+    assert!(
+        CreationEvents::new()
+            .import_observable_contract_population(&description, 0)
+            .is_err()
+    );
+    assert!(
+        CreationEvents::new()
+            .created(PointerBlock::Heap(941_020))
+            .import_observable_named_authority(&description)
+            .is_err()
+    );
+}
+
+#[test]
+fn exact_symbolic_births_use_numeric_custody_and_scale() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(990_001));
+    let samples = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("exact-unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(991_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(Bitvector32Term::Constant(0)),
+                None,
+                None,
+            )
+            .unwrap();
+        facts = facts.assume_condition(
+            ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(1_000_000_000)),
+            true,
+        );
+        PureFactContext::reset_exact_constant_fact_visits();
+        let (born, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let first = entry
+                .checked_member_exchange_quantity(&block, &description, true, &quantity, &facts)
+                .unwrap()
+                .0;
+            first
+                .checked_member_exchange_quantity(&block, &description, true, &quantity, &facts)
+                .unwrap()
+                .0
+        });
+        assert_eq!(PureFactContext::exact_constant_fact_visits(), 2);
+        assert_eq!(
+            born.observe_symbolic(&description).unwrap().delta,
+            2_000_000_000
+        );
+        assert!(
+            born.0
+                .opaque_imports
+                .get(&description)
+                .unwrap()
+                .symbolic_delta
+                .is_none()
+        );
+        assert!(
+            born.checked_member_exchange_quantity(&block, &description, true, &quantity, &facts,)
+                .is_err(),
+            "a third billion must not wrap the population"
+        );
+        let child = born.enter_call();
+        let sent = child
+            .transfer_call_fact(&born, &child, &description, true)
+            .unwrap()
+            .transfer_call_fact_quantity(&born, &child, &description, false, &quantity, &facts)
+            .unwrap();
+        let spent = sent
+            .checked_member_exchange_quantity(&block, &description, false, &quantity, &facts)
+            .unwrap()
+            .0;
+        let returned = spent
+            .transfer_call_fact(&child, &born, &description, true)
+            .unwrap()
+            .finish_call(&born)
+            .unwrap();
+        assert_eq!(
+            returned.observe_symbolic(&description).unwrap().delta,
+            1_000_000_000
+        );
+        assert!(returned.owns_population_member(&description));
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(990_002));
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(0)),
+            None,
+            None,
+        )
+        .unwrap();
+    let bounds = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(Bitvector32Term::Constant(10), quantity.clone()),
+            true,
+        );
+    let first = entry
+        .checked_member_exchange_quantity(&block, &description, true, &quantity, &bounds)
+        .unwrap()
+        .0;
+    assert!(
+        first
+            .0
+            .opaque_imports
+            .get(&description)
+            .unwrap()
+            .symbolic_delta
+            .is_some()
+    );
+    assert_eq!(
+        first
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &bounds,)
+            .unwrap_err(),
+        CreationRefusal::InvalidQuantity
+    );
+    let negative = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(u32::MAX)),
+        true,
+    );
+    assert!(
+        entry
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &negative,)
+            .is_err()
+    );
+}
+
+#[test]
+fn numeric_member_birth_overflow_is_not_missing_custody() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let full = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            i32::MAX as u32,
+            Some(Bitvector32Term::Constant(i32::MAX as u32)),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        full.checked_member_exchange_quantity(
+            &block,
+            &description,
+            true,
+            &Bitvector32Term::Constant(1),
+            &PureFactContext::new(),
+        )
+        .unwrap_err(),
+        CreationRefusal::PopulationCountOverflow
+    );
+    assert!(full.owns_population_member(&description));
+    assert_eq!(
+        full.observe_symbolic(&description).unwrap().entry_count,
+        Bitvector32Term::Constant(i32::MAX as u32)
+    );
 }

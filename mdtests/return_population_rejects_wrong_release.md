@@ -1,26 +1,33 @@
 # Consuming one reference does not justify clearing a nonfinal stored count
 
+One checked consumption leaves at least two members because the entry count
+is greater than two. The unchanged C clears the counter to zero, so its
+ordinary authority-bearing control cannot restore the remaining-count equation.
+
 ```c filename=release.c
 struct object { int32 refs; };
 void release(struct object* obj) { obj->refs = 0; }
 ```
 
-```click
-resource reference(obj: struct object*) {
+```click resource_semantics=authority
+resource reference(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(reference(obj));
     owns obj->refs;
     fact obj->refs == count(reference(obj));
 }
 verifying "release.c";
 void release(struct object* obj) {
     requires 2 < count(reference(obj));
+    owns control(obj);
     owns reference(obj);
     consumes reference(obj);
 } by {
-    open(reference(obj)) { execute(); }
+    open(control(obj)) { unfold(reference(obj)); execute(); }
     simp();
 }
 ```
 
 ```expect
-fail: requires an exact body fact
+fail: Requires obj->refs == count(reference(obj))
 ```

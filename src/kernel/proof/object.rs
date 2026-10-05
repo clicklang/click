@@ -2886,6 +2886,7 @@ mod tests {
             ),
             CLoopInvariantCheck::new(
                 SpecProposition::Predicate {
+                    resource_state_dependent: true,
                     name: "invariant".into(),
                     arguments: vec![],
                 },

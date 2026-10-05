@@ -1659,6 +1659,63 @@ fn c_function_contract_entry_facts(
             | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
+        if entry_state.uses_population_authority_semantics() {
+            // Retain the same authenticated population facts as a written
+            // count requirement. Owning a member entails its lower bound even
+            // when the contract first mentions count in a postcondition.
+            let Some(arguments) = arguments
+                .iter()
+                .map(|argument| {
+                    let AlgebraicValue::C(value) = argument else {
+                        return None;
+                    };
+                    Some(Some(SpecExpression::Value(value.clone())))
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            // A concrete member also witnesses the anchored wildcard total.
+            // Evaluate both observations through the checked ledger rather than
+            // equating either total to the helper's locally owned quantity.
+            let mut observations = vec![arguments.clone()];
+            if arguments.len() > 1 {
+                let mut wildcard = vec![None; arguments.len()];
+                wildcard[0] = arguments[0].clone();
+                observations.push(wildcard);
+            }
+            for arguments in observations {
+                let expression = SpecExpression::CountedResourceCount {
+                    name: name.clone(),
+                    arguments,
+                };
+                let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                    &entry_state,
+                    &expression,
+                    &assumptions,
+                    &BTreeMap::new(),
+                    &mut budget,
+                ) else {
+                    continue;
+                };
+                let [path] = paths.as_slice() else {
+                    continue;
+                };
+                if !path.obligations.iter().all(|obligation| {
+                    PureFactContext::settles_exactly(&assumptions, obligation.proposition())
+                }) {
+                    continue;
+                }
+                for fact in &path.facts {
+                    assumptions = entry_facts.assume(
+                        assumptions,
+                        CContractEntryFactOrigin::PopulationCount,
+                        fact.proposition().clone(),
+                    );
+                }
+            }
+            continue;
+        }
         let Some(count) = entry_state.counted_population(name, arguments) else {
             continue;
         };

@@ -200,9 +200,10 @@ ordinary resources, and exact member observations. A control can package two
 same-anchor authorities with counter facts; direct and nested checkout preserve
 that control and caller-retained slots. No new parameter syntax is needed.
 
-Named proof-field population identity, the original bounded-pool sidecar,
-remaining sequential groups, mutex/worker migration, and the default switch
-remain unfinished. Earlier checkpoint numbers 0–5 correspond to the completed
+The original bounded-pool sidecar and local/preserving named-member identity
+are complete. Named-member helper lifecycle effects, remaining sequential
+groups, mutex/worker migration, and the default switch remain unfinished.
+Earlier checkpoint numbers 0–5 correspond to the completed
 foundation; unfinished checkpoint 6–12 work is reorganized below. Detailed
 historical evidence belongs in the inventory, not a second competing roadmap.
 
@@ -342,7 +343,7 @@ cache repair remains removed. Milestones 1 and 2 are complete; milestone 3 is ne
    duplicate helper inputs, count observations without authority, unauthorized
    lifecycle changes, late establishment, and retirement with live members.
    Anonymous quantities cannot manufacture missing instance fields. Legacy
-   field-count rejection fixtures remain controls.
+   field-count rejection fixtures were retained until their Milestone 3 migration.
 
 **Exit gate passed:** Two disjoint field-bearing members preserve identity and
 private state; exclusive-memory conflicts and unauthorized transitions fail.
@@ -355,11 +356,74 @@ named-member expansion-audit sites passed.
 helpers with explicit authority still needs checked lifecycle effects. Calls
 cannot silently remove or add a tracked member without updating the ledger;
 unsupported transitions are rejected. Symbolic quantities of heterogeneous
-instances, algebraic/list field descriptions, and general sums over fields are
-not implemented. Local lifecycle operations and preserving helpers are supported.
+instances and general sums over fields are not implemented. List-valued field
+descriptions are supported by the Milestone 3 slice. Local lifecycle operations and preserving helpers are supported.
 These limits do not restrict ordinary uncounted named resources.
 
 ### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
+
+**Preserving named authority imports:** Unary and wildcard field-bearing
+authorities import an arbitrary total without anonymous member rights. Named identity and fields
+remain in the checked resource context; ordinary preserving calls return both
+that custody and authority. Count recovers the declared field schema through
+an immutable indexed import map. Regressions retain two distinct members with
+equal arguments, and forward-declared List functions preserve Count observations
+across calls. Negatives reject missing authority, exact totals invented from
+local ownership, and imported named lifecycle operations. Kernel checks enforce
+read-only imports and bounded lookup work beside growing unrelated populations.
+Wildcard helpers preserve aggregate and exact observations while other named
+members stay framed; an authority-only helper preserves them with all members
+framed. Regressions reject invented aggregate/exact totals and lifecycle changes.
+External and named callback contracts now build entry contexts in the selected
+resource semantics. Assumed interfaces may preserve explicitly owned authority
+and named occurrences through the shared checked call engine. They cannot birth
+or spend named members, replace identity, or introduce anonymous lifecycle
+rights. Regressions retain unary/wildcard counts and List-valued fields, and
+reject missing authority, duplicate binders, another anchor, and consumption.
+Body-opening lifecycle effects remain unsupported. The two original field-count
+controls now select authority and pass: the external interface retains its
+original count precondition with named custody, and the forward-declared pure
+function keeps its List-valued count body. A caller exercises sealed private
+memory, model preservation, and cleanup. Companion negatives reject direct or
+hidden observations and calls when authority is closed, including after a prior
+authorized observation. The external reader remains an explicit assumption;
+this does not certify its absent C body.
+
+**List-valued named fields:** Protected resource types and named member lowering
+now share checked algebraic field schemas. A private-memory preserving helper
+proof retains two distinct List values while authority is closed, and observes
+counts after reopening it. Negatives reject anonymous field-bearing quantities,
+missing count authority, and incorrect model types. The original field-count controls now use authority with preserving external
+interfaces; imported body opening still needs lifecycle effects. Unary and wildcard preserving authority imports are supported
+by the slice above. This slice does not add named helper
+lifecycle effects or sums over model fields.
+
+**Count-only observation slice:** `resource_count_observe_witness.md` now uses
+explicit authority with both original C functions and lower-bound claims
+unchanged. Observation checks the exact owned quantity against the immutable
+authority ledger; it does not project private bodies or change memory, member
+custody, or population state. Unary helper entry retains numeric and symbolic
+batch custody independently of the arbitrary global total. Regressions cover
+zero quantity, missing authority, closed private memory, and refusal to equate
+local symbolic custody with the global total. Kernel checks reject forged facts
+and resource deltas, with deterministic work checks beside unrelated state.
+
+**Load-origin fixture slice:** The first-seen-per-function regression uses
+explicit empty slot authorities and checked capacity-batch creation. Pool
+memory remains independently owned; the reset helper performs no population
+operation. The unchanged zero-reset and two-pool C pipelines preserve their
+postconditions and the first pool's predicate across the second call.
+
+**Abstract-token member slice:** `resource_pattern_counts_cross_contracts.md`
+uses explicit wildcard authority with the original checkout, return, and
+roundtrip C programs unchanged. A member privately owns its exact abstract
+`available(object)` token; creation consumes the token and consumption returns
+it. Return accepts arbitrary entry totals, with its decrement bound supplied by
+checked member custody rather than an exact-count-equals-one requirement.
+Contract entry retains the checked wildcard bound as well as the exact bound.
+A helper-created nonexclusive member can subsequently be consumed by its exact
+current owner; identity and single-spend checks remain enforced. The three
+proofs and nine expansion-audit sites pass.
 
 **First small slice:** The constant-quantity fixtures now use authority semantics.
 `let_bound_constant_quantity.md` packages allocation, counter memory, and
@@ -369,11 +433,46 @@ zero/negative boundary with a separate reference family and owned counter
 memory. Negative coefficients report the required nonnegative fact rather
 than `InvalidQuantity`. C source is unchanged.
 
-**Next boundaries found:** A symbolic helper birth followed by a unit birth is
-currently rejected because numeric and symbolic ledger effects cannot mix.
-The reduced reproduction is the original pair of
-`population_symbolic_increment_{bounded,overflow}.md` fixtures with explicit
-authority and defined-addition contracts.
+**Mixed-birth slice:** The original
+`population_symbolic_increment_{bounded,overflow}.md` pair now uses explicit
+authority and defined-addition contracts with unchanged C. A checked symbolic
+birth can be followed by numerical births and consumption of those separately
+held numerical fragments; the count retains both deltas. The bounded case
+preserves `count == n + 1`; the overflowing case rejects the second helper's
+undefined addition. Numerical custody transfers independently of the symbolic
+batch, preserving exact quantities, authority custody, and single-spend checks.
+An arbitrary-entry companion and a false-total companion check that neither
+the entry total nor the unit delta disappears. Signed regrouping checks all
+three addition domains rather than accepting modular equality as a domain proof.
+This does not admit splitting a symbolic batch or mixing a symbolic input/spend
+with numerical effects; those remain separate ledger boundaries.
+
+**Overflow-total control:** `a_population_count_is_not_a_wrapped_total.md`
+now uses explicit authority and a defined-addition contract, with all three
+original C functions and their count claims retained. The first two-billion
+symbolic birth succeeds; the checked transition rejects the second birth
+before publishing a wrapped count. The original numeric caller verifies
+independently with its exact `3 + 4 == 7` total. Companion fixtures admit a
+single large symbolic birth and a numeric total exactly at `2147483647`, and
+reject a further numerical birth. All twelve positive expansion sites audit.
+Repeated births without an exact numeric quantity remain unsupported,
+even when their sum is bounded;
+this migrates the overflow refusal, not that broader ledger capability.
+
+**Exactly known batch slice:** A symbolic quantity pinned by a recorded exact
+integer equality now uses the numeric birth ledger. The original repeated-birth
+C verifies with `k == 1000000000` and an exact total of two billion, while the
+original two-billion overflow caller remains rejected at its second call.
+Exact quantities also select numerical fragments for ordinary helper transfer
+and consumption, leaving the other batch framed. Missing authority, invented
+totals, and overconsumption remain rejected. Bounds alone do not normalize a
+quantity, and genuinely symbolic entry custody keeps its representation on
+spend. The lookup uses the existing indexed exact-equality map; kernel scaling
+coverage checks 16/64/256 unrelated facts and populations. A numeric birth beyond the signed count limit now reports
+`PopulationCountOverflow`, rather than missing member custody; the existing
+symbolic-increment overflow control retains its C and second-call refusal.
+This does not add
+general repeated symbolic births or symbolic batch splitting.
 
 **Global-count decision resolved:** Remove the two obsolete fixtures that
 counted across all independently anchored populations or used integer-only
@@ -419,6 +518,75 @@ entry-to-post count relation; the negative rejects its fixed post-count claim.
 The produced-population predicate fixture and its ordinary caller also select
 authority semantics. They require an empty entry family explicitly and retain
 the original C and ensured predicate through positive and zero quantities.
+
+**Owned-count certification slice:** Independent contract certification now
+retains the count evaluator's authenticated member bounds under authority
+semantics. A helper with one owned member and matching authority can certify
+`1 <= count(...)` without assuming the global total is exactly one. Consumption
+uses the updated count, and neither an untracked resource fact nor a member
+without authority supplies the bound. The `authority_owned_count_*` regressions
+cover helper calls, nonnegative remaining counts, and exact/stale/unauthorized
+count refusals. This does not enable general `observe` in authority mode.
+
+**Private predicate facts slice:** Private member fact instantiation retains
+the current verification model and population state instead of starting a
+legacy state. Definition-local parameters and the member's own body remain
+the only local bindings and read permissions. The count-independent memory
+predicate fixture now uses explicit empty-family authority and keeps its
+original C and predicate claim through a checked birth. Foreign-memory facts
+remain rejected, and checking work stays bounded beside unrelated caller locals.
+
+**Consumed-predicate slice:** `consumed_population_count_in_ensured_predicate.md`
+now uses an ordinary accounting control containing C fields and both family
+authorities. Explicit symbolic member consumption and the unchanged C update
+restore the current predicate and the private count equation. A companion
+rejects a declared consumption that the proof omits; a C update alone cannot
+restore that equation. The original C and ensured claim are preserved.
+
+**Predicate precondition repair:** Count-bearing predicates capture the
+authority ledger rather than a legacy empty model. Nested predicates retain
+the same count-only read witness; it neither supplies execution resources nor
+permits authority, anonymous-member, or named-member lifecycle changes.
+Definition dependencies select the resource snapshot while count-independent
+predicates retain their identity. Positive and false-zero regressions check
+the unchanged C counter, and kernel tests check captured counts, forbidden
+transfers, dependency registration, and deterministic scanning work.
+An explicit subtraction lemma restores the existing consumption predicate
+under the correct model and returns its sum's definedness for invariant close.
+
+**Single-spend negative slice:** The missing-contract, repeated-consumption,
+and nested-overconsumption fixtures now separate member custody from an
+ordinary counter/authority control. Each retains its unchanged C and reaches
+the intended missing-member return obligation after explicit checked spends.
+Restoring the count equation cannot authorize an undeclared second consumption
+or return a member already spent by the proof or a helper.
+
+**Partial-cleanup slice:** `population_cleanup_rejects_partial_quantity.md`
+now rejects a partial spend that would restore a control with the wrong
+count/counter relation. A whole-quantity companion with the same C consumes
+all members after exposing the control and returns its memory and authority.
+This preserves the cleanup refusal without reintroducing the legacy blanket
+requirement that every quantity consumption be a whole-population operation.
+
+**Scoped-body slice:** The population-opening positive, explicit-piece helper,
+and restored-body helper fixtures now use ordinary counter/authority controls
+with unchanged C. Their reentrant, aliased, and nested-opening companions
+reject duplicating a suspended control. An unrelated call cannot assume the
+caller-open control invariant after a contradictory store. Opening does not
+create or consume members; body facts must be restored before closing.
+
+**Cached-call slice:** The paired cached-body fixtures now borrow an ordinary
+counter/authority control and explicitly create the retained member before
+return. The unchanged caller preserves its cached pre-call value and proves
+it equals the post-call count minus one, while the arbitrary-result negative
+still fails. An unrelated call preserves the caller-framed saved cell without
+assuming a temporarily broken control invariant.
+
+**Return-refusal slice:** All four return-population negatives now select
+authority semantics. Explicit births/consumption cannot restore a missing
+increment, an untouched sibling counter, or a nonfinal counter cleared to zero.
+The missing-write case owns count authority but only views C memory, and fails
+on the store itself. Every original C program and refusal obligation is retained.
 
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.

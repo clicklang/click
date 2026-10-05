@@ -2477,17 +2477,20 @@ fn automatic_scope_exit_preserves_expanded_execution() {
 fn bounded_population_increment_expands_and_checks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/population_symbolic_increment_bounded.md");
-    let fixture = crate::cli::read_mdtest(&path).unwrap();
-    let source = fixture.click_source.as_deref().unwrap();
+    // The Markdown loader carries its explicit resource semantics through
+    // verification, expansion, and certificate verification.
+    let loaded = crate::cli::load_target_inputs(&path, None).unwrap();
+    let fixture = loaded.mdtest.as_ref().unwrap();
+    let project = &loaded.project;
     let inputs = fixture
         .c_sources
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    verify_c0_sources(source, &inputs).unwrap();
+    verify_c0_project(project, &inputs).unwrap();
     let expanded =
-        expand_c0_claim_source(source, &inputs, "increment", CProofClaim::Grouped).unwrap();
-    verify_c0_sources(&expanded, &inputs).unwrap();
+        expand_c0_project_claim_source_by_label(project, &inputs, "increment.contract").unwrap();
+    verify_c0_project(&project.with_entry_source(expanded), &inputs).unwrap();
 }
 
 #[test]

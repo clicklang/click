@@ -1,8 +1,8 @@
-# Resource population bodies open without changing their count
+# Control bodies open without changing their population count
 
-A scoped `open` exposes the one body owned by an active population. It does
-not consume a unit, and closing the block requires every body resource to be
-restored.
+An ordinary control owns the counter cell and population authority. Scoped
+opening exposes that body without creating or consuming a reference member,
+and closing restores its exact counter/count relation. The C is unchanged.
 
 ```c filename=resource_population_open.c
 struct object {
@@ -14,8 +14,10 @@ int32 object_refcount(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+resource control(obj: struct object*) {
+    owns authority(object_ref(obj));
     owns obj->refs;
     fact obj->refs == count(object_ref(obj));
 }
@@ -23,11 +25,11 @@ resource object_ref(obj: struct object*) {
 verifying "resource_population_open.c";
 
 int32 object_refcount(struct object* obj) {
-    owns object_ref(obj);
+    owns control(obj);
 
     ensures result == count(object_ref(obj));
 } by {
-    open(object_ref(obj)) {
+    open(control(obj)) {
         execute();
     }
     simp();

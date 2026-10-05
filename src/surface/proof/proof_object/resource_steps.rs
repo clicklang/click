@@ -219,7 +219,7 @@ impl<'a> Proof<'a> {
             crate::kernel::instantiate_private_member_body_facts(
                 &selected,
                 compiled_definition,
-                execution.core.state.memory(),
+                &execution.core.state,
                 before_facts.assumptions(),
             )
             .ok_or_else(|| {
@@ -1888,14 +1888,6 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        if self
-            .execution()
-            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
-        {
-            return Err(self.step_error(
-                "resource observation may introduce untracked members in authority mode",
-            ));
-        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`observe` requires an execution-frontier proof"));
         };

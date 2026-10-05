@@ -22,9 +22,9 @@ void observe_many_permits(struct owner* owner, int32 amount) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 resource permit(owner: struct owner*) {
-    views object(owner);
+
 }
 
 verifying "observe_one_permit.c";
@@ -32,6 +32,7 @@ verifying "observe_many_permits.c";
 
 void observe_one_permit(struct owner* owner) {
     owns object(owner);
+    owns authority(permit(owner));
     owns permit(owner);
 
     ensures 1 <= count(permit(owner));
@@ -44,6 +45,7 @@ void observe_one_permit(struct owner* owner) {
 void observe_many_permits(struct owner* owner, int32 amount) {
     requires 0 <= amount;
     owns object(owner);
+    owns authority(permit(owner));
     owns amount of permit(owner);
 
     ensures amount <= count(permit(owner));

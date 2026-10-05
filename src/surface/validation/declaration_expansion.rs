@@ -6,6 +6,7 @@ mod tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
+    field_schema: Option<crate::kernel::ResourceFieldSchema>,
     parameter_types: Vec<C0Type>,
     resource_parameter_families: Vec<String>,
     kind: ResourceKind,
@@ -205,6 +206,21 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
 ) -> Result<ClickFile, ClickError> {
     // A failure before the first declaration belongs to none of them.
     crate::surface::clear_ambient_proof_source();
+    // Legacy standard-library expansion must not re-enter its OnceLock.
+    // Authority schemas use the same checked algebraic definitions as lowering.
+    let field_environment = if semantics == ResourceSemanticsMode::Authority
+        && file
+            .resource_definitions()
+            .iter()
+            .any(|definition| !definition.is_countable())
+    {
+        Some(ClickFunctionEnvironment::with_algebraic_types(
+            &[],
+            &combined_algebraic_type_definitions(&file)?,
+        ))
+    } else {
+        None
+    };
     let mut resource_definitions = file
         .resource_definitions()
         .iter()
@@ -215,6 +231,9 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
                     fields: std::sync::Arc::new(definition.fields().iter().enumerate()
                         .map(|(index, field)| (field.name().to_string(), (index, field.click_type().clone())))
                         .collect()),
+                    field_schema: field_environment.as_ref().map(|environment|
+                        crate::surface::lowering::resolve_resource_field_schema(definition, environment)
+                    ).transpose()?,
                     has_fields: !definition.is_countable(),
                     resource_parameter_families: definition.resource_parameters().iter().map(|parameter| {
                         let ResourceClause::Named { resource, .. } = parameter else { unreachable!() };
@@ -248,6 +267,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         .entry(CResourceFact::ALLOCATION_RESOURCE_NAME.to_string())
         .or_insert_with(|| DeclaredResourceInfo {
             fields: Default::default(),
+            field_schema: None,
             has_fields: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
@@ -258,6 +278,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         "mutex_guard".into(),
         DeclaredResourceInfo {
             fields: Default::default(),
+            field_schema: None,
             has_fields: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
@@ -269,6 +290,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         "mutex_live".into(),
         DeclaredResourceInfo {
             fields: Default::default(),
+            field_schema: None,
             has_fields: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
@@ -280,6 +302,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         "mutex_use".into(),
         DeclaredResourceInfo {
             fields: Default::default(),
+            field_schema: None,
             has_fields: false,
             resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
@@ -291,6 +314,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses_with_semantics(
         "authority".into(),
         DeclaredResourceInfo {
             fields: Default::default(),
+            field_schema: None,
             has_fields: false,
             resource_parameter_families: Vec::new(),
             parameter_types: Vec::new(),
@@ -1658,6 +1682,9 @@ fn expand_declared_resource_clause(
 fn declared_resource_type_schema(
     info: &DeclaredResourceInfo,
 ) -> Result<crate::kernel::ResourceFieldSchema, ClickError> {
+    if let Some(schema) = &info.field_schema {
+        return Ok(schema.clone());
+    }
     let mut fields = info
         .fields
         .iter()
@@ -2552,9 +2579,11 @@ fn reject_counted_field_resource(
         ResourceClause::Declared { name, .. }
             if definitions.get(name).is_some_and(|info| info.has_fields) =>
         {
-            Err(ClickError::new(format!(
-                "resource `{name}` has fields and is not countable"
-            )))
+            Err(ClickError::new(if definitions.authority_mode {
+                format!("resource `{name}` has fields; quantities require separately named members")
+            } else {
+                format!("resource `{name}` has fields and is not countable")
+            }))
         }
         ResourceClause::Quantified { resource, .. } => {
             reject_counted_field_resource(resource, definitions)

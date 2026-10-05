@@ -951,7 +951,12 @@ impl<'a> TermRewrite<'a> {
                     body: Box::new(body),
                 }
             }
-            SpecProposition::Predicate { name, arguments } => SpecProposition::Predicate {
+            SpecProposition::Predicate {
+                name,
+                arguments,
+                resource_state_dependent,
+            } => SpecProposition::Predicate {
+                resource_state_dependent: *resource_state_dependent,
                 name: name.clone(),
                 arguments: arguments
                     .iter()
