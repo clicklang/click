@@ -1291,3 +1291,69 @@ int32 double_it(int32 x) {
     assert!(sites.iter().any(|site| site.tactic_name == "simp"));
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_site() {
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/rb_ascending_walk_to_root.md");
+    let original = fs::read_to_string(fixture).unwrap();
+    let source = original.replacen(
+        "function plug(",
+        "theorem ptr_self(p: struct rb_node*) { ensures p == p by { simp(); } }\n\
+         theorem ptr_equal(p: struct rb_node*, q: struct rb_node*) { requires p == q; ensures p == q by { assumption(); } }\n\nfunction plug(",
+        1,
+    ).replace("initialize by simp;", "");
+    let anchor = "                    have identity == parent by {\n                        extract(identity == parent);\n                    }";
+    assert!(
+        source.contains(anchor),
+        "fixture must retain the Left arm's pointer equality"
+    );
+    let source = source.replacen(
+        anchor,
+        &format!(
+            "{anchor}\n\
+        have identity == identity by {{ apply(ptr_self(identity)); assumption(); }}\n\
+        have identity == parent by {{ apply(ptr_equal(identity, parent)); assumption(); }}"
+        ),
+        1,
+    );
+    let directory =
+        std::env::temp_dir().join(format!("click-audit-loop-pointer-{}", std::process::id()));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("loop_pointer.md");
+    fs::write(&path, source).unwrap();
+    let prepared = load_audit_source(&path).unwrap();
+    verify_c0_sources(&prepared.click_source, &source_refs(&prepared.c_sources))
+        .expect("the original loop must verify before expansion");
+    let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+    let loop_site = sites
+        .iter()
+        .find(|site| site.tactic_name == "loop")
+        .unwrap();
+    let expanded = expand_location(&format_location(&site_location(loop_site)))
+        .expect("the loop's named pointer arguments must expand");
+    assert!(expanded.contains("apply(ptr_self(identity))"), "{expanded}");
+    assert!(
+        expanded.contains("apply(ptr_equal(identity, parent))"),
+        "{expanded}"
+    );
+    let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    for (index, site) in sites.iter().enumerate() {
+        audit_site(
+            site,
+            &mut worker,
+            &AuditLimits::default(),
+            index == 0,
+            deadline,
+        )
+        .unwrap_or_else(|message| {
+            panic!(
+                "{}:{} {}: {message}",
+                site.position.line, site.position.column, site.tactic_name
+            )
+        });
+    }
+    drop(worker);
+    fs::remove_dir_all(directory).unwrap();
+}

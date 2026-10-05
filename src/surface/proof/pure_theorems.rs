@@ -159,6 +159,8 @@ impl PureTheoremContext {
     fn with_declaration_bindings(
         &self,
         bindings: &[(String, Option<ClickType>, ContractExpression)],
+        predicate_environment: &PredicateEnvironment,
+        click_function_environment: &ClickFunctionEnvironment,
     ) -> Result<Self, ClickError> {
         let mut context = self.clone();
         let names: BTreeSet<_> = bindings
@@ -181,6 +183,7 @@ impl PureTheoremContext {
                 substitutions.insert(name, ContractExpression::Binding(captured));
             }
         }
+        let assumptions = assumptions_from_propositions(&context.requires);
         for (name, click_type, value) in bindings {
             let value =
                 substitute_contract_expression(value, &substitutions).map_err(ClickError::new)?;
@@ -189,15 +192,65 @@ impl PureTheoremContext {
                 &context.integer_values,
                 &crate::persistent::PersistentMap::default(),
             );
-            let is_integer = click_type.as_ref() == Some(&ClickType::Integer)
-                || contract_expression_referenced_names(&promoted)
+            let is_integer = match click_type.as_ref() {
+                Some(ClickType::Integer) => true,
+                Some(_) => false,
+                None => contract_expression_referenced_names(&promoted)
                     .iter()
-                    .any(|name| context.integer_values.get(name).is_some());
-            let value = if is_integer
-                && let Ok(value) = crate::surface::lowering::lower_contract_integer_to_spec(
+                    .any(|name| context.integer_values.get(name).is_some()),
+            };
+            let value = if is_integer {
+                let value = match crate::surface::lowering::lower_contract_integer_to_spec(
                     &promoted,
                     &context.integer_values,
                 ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        // Conversion-backed and function-backed aliases also
+                        // need shared terms. Inlining their source expressions
+                        // would double a binary alias chain at every binding.
+                        let state = CState::new().with_memory(context.memory.clone());
+                        let integer_values = contract_expression_referenced_names(&promoted)
+                            .into_iter()
+                            .filter_map(|name| {
+                                context
+                                    .integer_values
+                                    .get(&name)
+                                    .map(|value| (name, value.clone()))
+                            })
+                            .fold(
+                                crate::persistent::PersistentMap::default(),
+                                |values, (name, value)| values.with_inserted(name, value),
+                            );
+                        let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
+                            &ClickProposition::Comparison {
+                                left: promoted,
+                                operator: ComparisonOperator::Equal,
+                                right: ContractExpression::IntegerLiteral("0".into()),
+                            }, BTreeMap::new(), BTreeMap::new(), &state, BTreeMap::new(), BTreeMap::new(),
+                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(),
+                            &PureFactContext::new(), predicate_environment, click_function_environment,
+                            BTreeSet::new(), BTreeMap::new(),
+                        ).map_err(ClickError::new)?;
+                        let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
+                        else {
+                            // An unannotated machine conversion can reference
+                            // Integer inputs without having an Integer result.
+                            // Keep its typed expression rather than narrowing it.
+                            if click_type.as_ref() == Some(&ClickType::Integer) {
+                                return Err(ClickError::new(
+                                    "declaration alias must be an Integer expression",
+                                ));
+                            }
+                            substitutions.insert(name.clone(), value.clone());
+                            context.declaration_bindings.insert(name.clone(), value);
+                            continue;
+                        };
+                        let term = crate::kernel::capture_spec_integer_value(&state, &left, Some(&state), &assumptions)
+                            .map_err(|refusal| ClickError::new(crate::surface::proof_diagnostics::render::describe_spec_capture_refusal(&refusal)))?;
+                        crate::kernel::SpecIntegerExpression::Term(term)
+                    }
+                };
                 let captured = format!("@declaration:{name}");
                 context.integer_values = context
                     .integer_values
@@ -1664,7 +1717,11 @@ fn verify_theorem_ensure(
     let context = if ensure_clause.proof_bindings.is_empty() {
         context
     } else {
-        scoped_context = context.with_declaration_bindings(&ensure_clause.proof_bindings)?;
+        scoped_context = context.with_declaration_bindings(
+            &ensure_clause.proof_bindings,
+            predicate_environment,
+            click_function_environment,
+        )?;
         &scoped_context
     };
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
