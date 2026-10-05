@@ -556,7 +556,9 @@ fn collect_integer_affine_terms(
             IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
             IntegerTerm::Add(left, right)
             | IntegerTerm::Subtract(left, right)
-            | IntegerTerm::Multiply(left, right) => {
+            | IntegerTerm::Multiply(left, right)
+            | IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
                 stack.push((right.clone(), false));
                 stack.push((left.clone(), false));
             }
@@ -655,6 +657,10 @@ fn collect_integer_affine_terms(
                     return None;
                 }
             }
+            // Truncation is nonlinear: do not interpret it as affine arithmetic.
+            IntegerTerm::TruncatingQuotient(_, _) | IntegerTerm::TruncatingRemainder(_, _) => {
+                return None;
+            }
             IntegerTerm::Multiply(left, right) => {
                 let (child, factor) = if let Some(value) = left.as_const() {
                     (right, value)
@@ -691,6 +697,21 @@ mod tests {
     use crate::kernel::Variable;
 
     use super::*;
+
+    #[test]
+    fn truncating_integer_nodes_are_not_affine_division_laws() {
+        let x: crate::kernel::SharedIntegerTerm = IntegerTerm::var(Variable(91003)).into();
+        for term in [
+            IntegerTerm::TruncatingQuotient(x.clone(), x.clone()),
+            IntegerTerm::TruncatingRemainder(x.clone(), x),
+        ] {
+            let proposition = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(1).into()),
+                true,
+            );
+            assert!(integer_affine_claim(&proposition).is_none());
+        }
+    }
 
     #[test]
     fn integer_affine_dag_scaling_includes_distinct_variables_and_shared_paths() {

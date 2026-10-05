@@ -6955,9 +6955,10 @@ fn integer_range_fold_predecessor_index(
 /// This is Leibniz for a proof step that already holds the two terms' proved
 /// equality: rewriting *some* occurrences is sound, so the walk is
 /// deliberately shallow. It descends only the arithmetic spine -- negation,
-/// addition, subtraction, multiplication -- and compares interned identity
+/// addition, subtraction, multiplication, truncating quotient/remainder -- and
+/// compares interned identity
 /// everywhere else, so it never enters a range fold's binders and its work is
-/// linear in the proposition it rebuilds.
+/// linear in the distinct arithmetic DAG nodes and proposition it rebuilds.
 pub fn substitute_integer_term_in_proposition(
     proposition: &Proposition,
     from: &SharedIntegerTerm,
@@ -6968,29 +6969,46 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> SharedIntegerTerm {
+        if let Some(result) = memo.get(&term.id()) {
+            return result.clone();
+        }
         crate::instrumentation::record_deterministic_work(1);
         if term == from {
             *changed = true;
+            memo.insert(term.id(), to.clone());
             return to.clone();
         }
         let rebuilt = match term.as_ref() {
-            IntegerTerm::Negate(inner) => IntegerTerm::Negate(walk_term(inner, from, to, changed)),
+            IntegerTerm::Negate(inner) => {
+                IntegerTerm::Negate(walk_term(inner, from, to, changed, memo))
+            }
             IntegerTerm::Add(left, right) => IntegerTerm::Add(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
             IntegerTerm::Subtract(left, right) => IntegerTerm::Subtract(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
             IntegerTerm::Multiply(left, right) => IntegerTerm::Multiply(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
-            _ => return term.clone(),
+            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
+                walk_term(left, from, to, changed, memo).as_ref().clone(),
+                walk_term(right, from, to, changed, memo).as_ref().clone(),
+            ),
+            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
+                walk_term(left, from, to, changed, memo).as_ref().clone(),
+                walk_term(right, from, to, changed, memo).as_ref().clone(),
+            ),
+            _ => term.as_ref().clone(),
         };
-        SharedIntegerTerm::intern(rebuilt)
+        let result = SharedIntegerTerm::intern(rebuilt);
+        memo.insert(term.id(), result.clone());
+        result
     }
 
     fn walk_condition(
@@ -6998,16 +7016,18 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> ConditionTerm {
-        let rebuild = |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
-                       left: &SharedIntegerTerm,
-                       right: &SharedIntegerTerm,
-                       changed: &mut bool| {
-            constructor(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
-            )
-        };
+        let mut rebuild =
+            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+             left: &SharedIntegerTerm,
+             right: &SharedIntegerTerm,
+             changed: &mut bool| {
+                constructor(
+                    walk_term(left, from, to, changed, memo),
+                    walk_term(right, from, to, changed, memo),
+                )
+            };
         match condition {
             ConditionTerm::IntegerLessThan(left, right) => {
                 rebuild(ConditionTerm::IntegerLessThan, left, right, changed)
@@ -7036,30 +7056,40 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> Proposition {
         match proposition {
-            Proposition::ConditionIs(condition, expected) => {
-                Proposition::ConditionIs(walk_condition(condition, from, to, changed), *expected)
-            }
+            Proposition::ConditionIs(condition, expected) => Proposition::ConditionIs(
+                walk_condition(condition, from, to, changed, memo),
+                *expected,
+            ),
             Proposition::And(left, right) => Proposition::And(
-                Box::new(walk(left, from, to, changed)),
-                Box::new(walk(right, from, to, changed)),
+                Box::new(walk(left, from, to, changed, memo)),
+                Box::new(walk(right, from, to, changed, memo)),
             ),
             Proposition::Or(left, right) => Proposition::Or(
-                Box::new(walk(left, from, to, changed)),
-                Box::new(walk(right, from, to, changed)),
+                Box::new(walk(left, from, to, changed, memo)),
+                Box::new(walk(right, from, to, changed, memo)),
             ),
-            Proposition::Not(body) => Proposition::Not(Box::new(walk(body, from, to, changed))),
+            Proposition::Not(body) => {
+                Proposition::Not(Box::new(walk(body, from, to, changed, memo)))
+            }
             Proposition::Implies(antecedent, consequent) => Proposition::Implies(
-                Box::new(walk(antecedent, from, to, changed)),
-                Box::new(walk(consequent, from, to, changed)),
+                Box::new(walk(antecedent, from, to, changed, memo)),
+                Box::new(walk(consequent, from, to, changed, memo)),
             ),
             proposition => proposition.clone(),
         }
     }
 
     let mut changed = false;
-    let rewritten = walk(proposition, from, to, &mut changed);
+    let rewritten = walk(
+        proposition,
+        from,
+        to,
+        &mut changed,
+        &mut std::collections::HashMap::new(),
+    );
     changed.then_some(rewritten)
 }
 

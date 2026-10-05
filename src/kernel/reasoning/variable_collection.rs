@@ -986,7 +986,9 @@ fn collect_integer_bound_identities(
         }
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_shared_integer_bound_identities(left, variables, integer_seen);
             collect_shared_integer_bound_identities(right, variables, integer_seen);
         }
@@ -2173,7 +2175,9 @@ fn collect_integer_carrier_variables_seen(
         }
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_shared_integer_carrier_variables_seen(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -2501,7 +2505,9 @@ fn collect_integer_free_variables_seen(
         IntegerTerm::Negate(value) => collect_shared_integer_variables_seen(value, variables, seen),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_shared_integer_variables_seen(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -2857,7 +2863,9 @@ fn collect_integer_variables_seen(
         IntegerTerm::Negate(value) => collect_shared_integer_variables(value, variables, seen),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_shared_integer_variables(left, variables, seen);
             collect_shared_integer_variables(right, variables, seen);
         }
@@ -3592,7 +3600,9 @@ fn collect_integer_bitvector_capture_variables(
         }
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_shared_integer_bitvector_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3764,7 +3774,9 @@ fn collect_integer_scope_summary(
         IntegerTerm::Negate(value) => collect_integer_scope_summary_shared(value, summaries),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             let mut summary = collect_integer_scope_summary_shared(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4321,7 +4333,9 @@ fn collect_integer_binder_variables_seen(
         ),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
             collect_integer_binder_variables_shared(
                 left,
                 integer_variables,
