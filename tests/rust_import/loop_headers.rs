@@ -99,7 +99,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
         include_str!("../../examples/rust-loops/loops.rs")
     );
     assert_eq!(
-        include_str!("../../design/charon-trial/loop-headers/loops.click"),
+        include_str!("../../design/charon-trial/loop-headers/loops-assignments.click"),
         include_str!("../../examples/rust-loops/loops.click")
     );
     assert_eq!(
@@ -107,7 +107,7 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
         include_str!("../../examples/rust-byte-sum/sum.rs")
     );
     assert_eq!(
-        include_str!("../../design/charon-trial/loop-headers/sum.click"),
+        include_str!("../../design/charon-trial/loop-headers/sum-proof.click"),
         include_str!("../../examples/rust-byte-sum/sum.click")
     );
     for (name, diagnostic) in [

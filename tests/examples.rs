@@ -85,7 +85,7 @@ fn canonical_charon_examples_verify_locked_inputs() {
         run_example_in_thread(config.parent().unwrap()).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
-    assert_eq!(checked, 11);
+    assert_eq!(checked, 16);
 }
 
 #[test]

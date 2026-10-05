@@ -1,6 +1,7 @@
 //! Unchanged legacy sources and contracts define migration parity.
 use super::*;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -10,6 +11,10 @@ struct Entry {
     diagnostic: String,
     #[serde(default)]
     migrated_sidecar: Option<String>,
+    #[serde(default)]
+    frozen_sidecar: Option<String>,
+    #[serde(default)]
+    frozen_sha256: Option<String>,
 }
 fn inventory() -> Vec<Entry> {
     serde_json::from_str(include_str!("../../design/charon-trial/parity.json")).unwrap()
@@ -48,6 +53,24 @@ fn charon_parity_inventory_covers_every_rust_example() {
             "verified" | "rejected" | "proof-gap"
         ));
         assert_eq!(entry.diagnostic.is_empty(), entry.outcome == "verified");
+        assert_eq!(
+            entry.frozen_sidecar.is_some(),
+            entry.migrated_sidecar.is_some()
+        );
+        assert_eq!(
+            entry.frozen_sha256.is_some(),
+            entry.frozen_sidecar.is_some()
+        );
+        if let Some(frozen) = &entry.frozen_sidecar {
+            let bytes = fs::read(root.join(frozen)).unwrap();
+            assert_eq!(
+                Some(format!("{:x}", Sha256::digest(&bytes))),
+                entry.frozen_sha256
+            );
+            let canonical = root.join(entry.config.trim_end_matches(".import.json"));
+            let port = root.join(entry.migrated_sidecar.as_ref().unwrap());
+            assert_eq!(fs::read(canonical).unwrap(), fs::read(port).unwrap());
+        }
     }
     let expected: Vec<_> = entries.into_iter().map(|e| e.config).collect();
     assert_eq!(
@@ -112,11 +135,6 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
     for entry in inventory() {
         let path = root.join(&entry.config);
         let config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        if entry.outcome != "verified" {
-            assert_eq!(config["schema"], 2);
-            assert!(config.get("backend").is_none());
-            continue;
-        }
         assert_eq!(config["schema"], 3);
         assert_eq!(config["backend"], "charon-trial");
         assert!(config["artifact"].as_str().unwrap().ends_with(".ullbc"));
@@ -136,7 +154,7 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
         adopted += 1;
     }
     assert_eq!(
-        adopted, 11,
+        adopted, 16,
         "canonical adoption uses the fixed 16-fixture baseline"
     );
 }
@@ -194,24 +212,28 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                         .to_string_lossy()
                         .trim_end_matches(".import.json"),
                 );
-                if let Some(migrated) = &entry.migrated_sidecar {
-                    let sidecar = fs::read_to_string(root.join(migrated)).unwrap();
-                    if let Err(error) =
-                        C0VerificationSession::new_program_prepared(&sidecar, &prepared)
-                    {
-                        mismatches.push(format!(
-                            "{}: migrated proof failed: {}",
-                            entry.config,
-                            error.message()
-                        ));
-                    }
+                let canonical = fs::read_to_string(&sidecar).unwrap();
+                let canonical_error =
+                    C0VerificationSession::new_program_prepared(&canonical, &prepared)
+                        .err()
+                        .map(|error| error.message().to_owned());
+                if let Some(error) = &canonical_error {
+                    mismatches.push(format!("{}: canonical proof failed: {error}", entry.config));
                 }
-                match C0VerificationSession::new_program_prepared(
-                    &fs::read_to_string(sidecar).unwrap(),
-                    &prepared,
-                ) {
-                    Ok(_) => ("verified", String::new()),
-                    Err(error) => ("proof-gap", error.message().to_owned()),
+                // Preserve original frozen outcomes independently of canonical adoption.
+                let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
+                    C0VerificationSession::new_program_prepared(
+                        &fs::read_to_string(root.join(frozen)).unwrap(),
+                        &prepared,
+                    )
+                    .err()
+                    .map(|error| error.message().to_owned())
+                } else {
+                    canonical_error
+                };
+                match frozen_error {
+                    None => ("verified", String::new()),
+                    Some(error) => ("proof-gap", error),
                 }
             }
         };

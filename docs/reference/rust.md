@@ -17,13 +17,14 @@ byte-array coercions, unsigned checksum arithmetic and borrowed scalar array
 fields, with compact owned array-field construction, moves, nonuniform
 snapshot copies and stored shared scalar array iteration, through
 one ULLBC body representation
-and the same engine. It has a separate pinned compiler/profile. Eleven of the
-16 canonical Rust examples now select Charon and load native ULLBC artifacts;
-the remaining five still select the repository-owned exporter while their
-completed proof ports await adoption. The sections below describe the existing
-safe Rust contracts; consult the adapter's migration inventory for its accepted
-subset. Charon is not yet the implicit import default, and the legacy exporter
-remains available during migration.
+and the same engine. It has a separate pinned compiler/profile. All 16 canonical
+Rust examples now select Charon and load native ULLBC artifacts. Their original
+Rust source and contracts are preserved; five legacy sidecars have archived,
+digest-pinned originals and use their verified proof ports in the examples.
+The sections below describe the existing safe Rust contracts; consult the
+adapter's migration inventory for its accepted subset. Charon is not yet the
+implicit import default, and the legacy exporter remains available during
+migration and for archived regressions.
 
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),

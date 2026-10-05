@@ -34,7 +34,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         fs::read(original.join("sum.rs")).unwrap()
     );
     assert_eq!(
-        fs::read(migrated.join("frozen.click")).unwrap(),
+        fs::read(migrated.join("sum.click")).unwrap(),
         fs::read(original.join("sum.click")).unwrap()
     );
     let p = project(fixture);

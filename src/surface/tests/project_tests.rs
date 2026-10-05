@@ -2024,26 +2024,26 @@ fn step_result_binding_work_scales_with_assigned_values() {
 fn charon_migrated_sidecars_preserve_original_source_contracts() {
     for (original, migrated) in [
         (
-            include_str!("../../../examples/rust-iter-references/sum.click"),
             include_str!(
-                "../../../design/charon-trial/iterator-proof/rust-iter-references/sum.click"
+                "../../../design/charon-trial/iterator-proof/rust-iter-references/frozen.click"
             ),
+            include_str!("../../../examples/rust-iter-references/sum.click"),
         ),
         (
+            include_str!("../../../design/charon-trial/iterator-proof/rust-iterators/frozen.click"),
             include_str!("../../../examples/rust-iterators/sum.click"),
-            include_str!("../../../design/charon-trial/iterator-proof/rust-iterators/sum.click"),
         ),
         (
+            include_str!("../../../design/charon-trial/chunk-proof/frozen.click"),
             include_str!("../../../examples/rust-chunks-exact/chunks.click"),
-            include_str!("../../../design/charon-trial/chunk-proof/chunks.click"),
         ),
         (
+            include_str!("../../../design/charon-trial/loop-headers/loops.click"),
             include_str!("../../../examples/rust-loops/loops.click"),
-            include_str!("../../../design/charon-trial/loop-headers/loops-assignments.click"),
         ),
         (
+            include_str!("../../../design/charon-trial/loop-headers/sum.click"),
             include_str!("../../../examples/rust-byte-sum/sum.click"),
-            include_str!("../../../design/charon-trial/loop-headers/sum-proof.click"),
         ),
     ] {
         let original = parse(original).unwrap();

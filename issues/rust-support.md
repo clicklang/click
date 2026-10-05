@@ -706,3 +706,19 @@ inventory. Imports and original source/contract proof coverage stay 16/16
 completed proof ports in the remaining canonical examples, then switch the
 implicit backend default and retire legacy extraction. No claim of full
 migration completion is made by this rollout measure.
+
+### Complete canonical proof-port adoption
+
+The remaining five canonical examples now select native Charon extraction and
+their verified proof ports. Rust source and original contracts are unchanged.
+Fresh ULLBC artifacts and locks support offline verification for all 16
+examples. The archived original sidecars are pinned by SHA-256 in the parity
+inventory, and legacy-backend regressions use those explicit archives.
+
+The live gate independently checks all current canonical proofs and original
+frozen outcomes after fresh extraction. Contract regressions compare canonical
+ports with archived originals. Canonical adoption advances from 11/16 (68.75%)
+to 16/16 (100%); imports and source/contract proof coverage remain 16/16 (100%).
+Frozen-sidecar compatibility stays 11/16 (68.75%); the five literal old proofs
+retain their recorded interface gaps rather than restoring generated names.
+The implicit default switch and retirement of legacy extraction remain open.

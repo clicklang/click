@@ -9,7 +9,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
     views bytes[0..(int32)(uint32)bytes_len];
     ensures to_integer(result) == old(prefix(bytes, (int32)(uint32)bytes_len));
 } by {
-    execute_until(statement(7));
+    execute_until(loop(0));
     have prefix(bytes, (int32)(uint32)i) == 0 by {
         unfold(prefix(bytes, (int32)(uint32)i)) using {
             0 >= (int32)(uint32)i;
@@ -33,6 +33,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer((int32)(uint32)i);
         invariant to_integer(total) == prefix(bytes, (int32)(uint32)i);
         preserve by {
+            execute_until(read(0)); step();
             have bytes_len <= 2147483647u64 by {
                 normalize() using {
                     bytes_len <= 1000u64;
@@ -54,7 +55,6 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     to_integer((int32)(uint32)i) <= 1000;
                 }
             }
-            execute_until(statement(18));
             have ((int32)(uint32)i) < (int32)(uint32)bytes_len by {
                 simp() using {
                     i < bytes_len;
@@ -67,9 +67,6 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
             have 0 <= (int32)(uint32)bytes_len by {
                 simp();
             }
-            have 0 <= (int32)bytes[(int32)(uint32)i] and 255 >= (int32)bytes[(int32)(uint32)i] by {
-                simp();
-            }
             have defined(bytes[(int32)(uint32)i]) by {
                 transport(at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len])), defined(bytes[(int32)(uint32)i])) using {
                     at(function.entry, viewable(bytes[0..(int32)(uint32)bytes_len]));
@@ -77,6 +74,9 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     0 <= (int32)(uint32)i;
                     ((int32)(uint32)i) < (int32)(uint32)bytes_len;
                 }
+            }
+            have 0 <= (int32)bytes[(int32)(uint32)i] and 255 >= (int32)bytes[(int32)(uint32)i] by {
+                simp();
             }
             have 0 <= to_integer((int32)bytes[(int32)(uint32)i]) by {
                 apply(int32_less_equal_to_integer(0, (int32)bytes[(int32)(uint32)i])) using {
@@ -171,7 +171,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     to_integer(total + (int32)bytes[(int32)(uint32)i]) == to_integer(total) + to_integer((int32)bytes[(int32)(uint32)i]);
                 }
             }
-            execute_until(statement(26));
+            execute_until(assignment(i, 1));
             step();
             have i <= bytes_len by {
                 simp();
@@ -197,6 +197,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                     i <= 1000u64;
                 }
             }
+            step(); step(); step();
             close_invariants();
         }
     }
