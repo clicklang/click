@@ -757,3 +757,20 @@ Original source-and-contract coverage reaches **16/16 (100%)**, up from
 **11/16 (68.75%)**. This completes the fixed baseline's proof ports; it does
 not complete default switching, frozen-proof compatibility work, or legacy
 importer retirement.
+
+## Canonical native example adoption
+
+Eleven canonical examples now use schema-3 `charon-trial` configurations,
+native ULLBC artifacts, and fresh import locks. Their Rust source and Click
+sidecars are unchanged, and legacy JSON outputs are no longer needed.
+Ordinary example verification checks those locked native inputs offline;
+the required live gate still re-extracts all 16 original Rust fixtures and
+checks their frozen outcomes and proof ports. Archive consumers need no
+Charon compiler installation.
+
+Canonical-example adoption is **11/16 (68.75%)**, up from 0/16. This is a
+rollout measure using the same fixed fixture inventory, separate from imports
+and original source/contract proof coverage (both **16/16, 100%**) and frozen
+sidecar compatibility (**11/16, 68.75%**). The remaining five canonical examples
+still use the legacy exporter until their completed proof ports are adopted.
+The implicit backend default and legacy exporter retirement remain open.

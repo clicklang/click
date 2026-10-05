@@ -1,8 +1,9 @@
 {
-  "schema": 2,
+  "schema": 3,
   "language": "rust",
   "target": "x86_64-unknown-linux-gnu",
   "source": "arithmetic.rs",
-  "exporter": "../../target/rust-exporter/debug/click-rust-exporter",
-  "artifact": "arithmetic.rs.click-rust.json"
+  "exporter": "../../target/charon/debug/charon",
+  "artifact": "arithmetic.ullbc",
+  "backend": "charon-trial"
 }

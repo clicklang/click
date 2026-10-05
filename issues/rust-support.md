@@ -689,3 +689,20 @@ sidecars remain 11/16 (68.75%). No proof-port gaps remain in this baseline.
 Default switching, frozen-sidecar compatibility policy, and retirement of the
 legacy importer are still open migration gates, so this is not a claim that
 the entire Charon migration is complete.
+
+### Canonical native examples
+
+The 11 canonical Rust examples whose frozen sidecars already verify under
+Charon now select native extraction in their normal import configurations.
+Rust source and proof text are unchanged; native ULLBC artifacts and genuine
+refresh locks replace their locally generated legacy JSON inputs. The ordinary example
+gate checks locked native inputs offline, and the required live gate continues
+to freshly extract all 16 original sources and check contracts. CI archive
+consumers therefore need no Charon compiler merely to verify an example.
+
+Canonical adoption reaches 11/16 (68.75%), up from 0/16, using the same fixed
+inventory. Imports and original source/contract proof coverage stay 16/16
+(100%); frozen-sidecar compatibility stays 11/16 (68.75%). Next adopt the five
+completed proof ports in the remaining canonical examples, then switch the
+implicit backend default and retire legacy extraction. No claim of full
+migration completion is made by this rollout measure.

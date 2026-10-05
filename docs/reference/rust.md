@@ -7,7 +7,7 @@ checking. The exporter writes a typed JSON artifact; Click lowers that artifact 
 kernel execution vocabulary. Verification uses the same sidecars, tactics,
 certificates, and bounded engine as C and C++.
 
-An opt-in [Charon adapter trial](https://github.com/clicklang/click/blob/master/design/charon-trial/README.md) now routes
+The [Charon adapter](https://github.com/clicklang/click/blob/master/design/charon-trial/README.md) now routes
 checked arithmetic, owned guard cleanup, borrowed while loops with a live
 restoring guard, resolved unsigned conversions, compact scalar arrays, and
 shared/mutable byte slices with full-width length, dynamic bounds, reborrows and
@@ -17,9 +17,13 @@ byte-array coercions, unsigned checksum arithmetic and borrowed scalar array
 fields, with compact owned array-field construction, moves, nonuniform
 snapshot copies and stored shared scalar array iteration, through
 one ULLBC body representation
-and the same engine. It has a separate pinned compiler/profile and a narrower
-accepted subset. The sections below describe the existing default frontend;
-the trial is the migration path being evaluated before replacing that frontend.
+and the same engine. It has a separate pinned compiler/profile. Eleven of the
+16 canonical Rust examples now select Charon and load native ULLBC artifacts;
+the remaining five still select the repository-owned exporter while their
+completed proof ports await adoption. The sections below describe the existing
+safe Rust contracts; consult the adapter's migration inventory for its accepted
+subset. Charon is not yet the implicit import default, and the legacy exporter
+remains available during migration.
 
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),
@@ -32,10 +36,9 @@ stable while the disjoint field is mutated.
 
 ## Reproduce the example
 
-Run `scripts/setup-environment.sh` once. Its full mode installs
-`nightly-2026-06-16` with `rustc-dev` and the `x86_64-unknown-linux-gnu` target. Click itself continues to use
-its separately pinned stable toolchain. Build the exporter with
-`scripts/build-rust-exporter.sh`, then run:
+Run `scripts/setup-environment.sh` once for Click's pinned stable toolchain.
+Build pinned Charon and install its separate compiler with
+`scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/basic-rust/borrow.click
@@ -51,8 +54,12 @@ and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
-exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 8.
+exporter, refresh existing imports. Charon examples use configuration schema 3
+with `backend: "charon-trial"` and native `.ullbc` artifacts. Legacy imports keep
+configuration schema 2 and typed JSON artifacts; their typed artifact and lock
+use schema 8. The normal example gate checks locked native inputs offline,
+while the required live Charon gate refreshes and verifies all 16 original
+Rust fixtures.
 
 ## Supported semantics
 
@@ -193,7 +200,7 @@ call, parent reuse, and preservation of an untouched word. Its helper owns
 only the indexed word, allowing the caller to retain the remaining storage.
 
 ```sh
-scripts/build-rust-exporter.sh
+scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-arrays/arrays.click
 cargo run --bin click -- verify examples/rust-arrays/arrays.click
 cargo run --bin click -- audit examples/rust-arrays/arrays.click
