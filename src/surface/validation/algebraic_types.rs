@@ -2173,6 +2173,29 @@ fn validate_algebraic_expression_node(
                 context,
             )
         }
+        ContractExpression::Call { name, arguments }
+            if integer_conversion_target(name).is_some() =>
+        {
+            let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
+            // Reverse conversions give their argument mathematical Integer
+            // context. Do not infer a C width for a large contextual numeral;
+            // the Integer validator and kernel check its type and range.
+            if validate_algebraic_expression(
+                argument,
+                variables,
+                click_functions,
+                predicates,
+                definitions,
+                context,
+            )?
+            .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "{name} expects a mathematical Integer, not an algebraic value in {context}"
+                )));
+            }
+            Ok(None)
+        }
         ContractExpression::Call { name, arguments } if name == "to_nat" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             super::type_validation::validate_to_nat_argument_type(

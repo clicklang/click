@@ -11,6 +11,8 @@ pub(super) fn integer_conversion_target(name: &str) -> Option<C0Type> {
         "to_uint32" => C0Type::UInt32,
         "to_int64" => C0Type::Int64,
         "to_uint64" => C0Type::UInt64,
+        "to_int128" => C0Type::Int128,
+        "to_uint128" => C0Type::UInt128,
         _ => return None,
     })
 }
@@ -30,6 +32,8 @@ pub(super) fn machine_integer_source_type(c_type: C0Type) -> bool {
             | C0Type::UInt32
             | C0Type::Int64
             | C0Type::UInt64
+            | C0Type::Int128
+            | C0Type::UInt128
     )
 }
 
@@ -453,6 +457,58 @@ mod tests {
             verify_c0_sources(&expanded, &[])
                 .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
             assert!(!expanded.contains("by simp"), "{expanded}");
+        }
+    }
+
+    #[test]
+    fn wide_integer_observations_and_checked_conversions_expand_and_recheck() {
+        for source in [
+            "theorem observe(x: int128) { ensures to_integer(x) == to_integer(x) by simp; }",
+            "theorem observe(x: uint128) { ensures to_integer(x) == to_integer(x) by simp; }",
+            "theorem observe() { ensures to_integer(to_int128(-170141183460469231731687303715884105728)) == -170141183460469231731687303715884105728 by simp; }",
+            "theorem observe() { ensures to_integer(to_int128(170141183460469231731687303715884105727)) == 170141183460469231731687303715884105727 by simp; }",
+            "theorem observe() { ensures to_integer(to_uint128(340282366920938463463374607431768211455)) == 340282366920938463463374607431768211455 by simp; }",
+        ] {
+            verify_c0_sources(source, &[])
+                .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(source, &[], "observe.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[])
+                .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+        }
+        for (target, value) in [
+            ("int128", "-170141183460469231731687303715884105729"),
+            ("int128", "170141183460469231731687303715884105728"),
+            ("uint128", "-1"),
+            ("uint128", "340282366920938463463374607431768211456"),
+        ] {
+            let source = format!(
+                "theorem bad() {{ ensures to_integer(to_{target}({value})) == {value} by simp; }}"
+            );
+            assert!(verify_c0_sources(&source, &[]).is_err(), "{source}");
+        }
+        for (target, lower, upper) in [
+            (
+                "int128",
+                "-170141183460469231731687303715884105728",
+                "170141183460469231731687303715884105727",
+            ),
+            ("uint128", "0", "340282366920938463463374607431768211455"),
+        ] {
+            for (requirements, valid) in [
+                (
+                    format!("requires z >= {lower}; requires z <= {upper};"),
+                    true,
+                ),
+                (format!("requires z >= {lower};"), false),
+                (format!("requires z <= {upper};"), false),
+                (String::new(), false),
+            ] {
+                let source = format!(
+                    "theorem observe(z: Integer) {{ {requirements} ensures to_integer(to_{target}(z)) == to_integer(to_{target}(z)) by simp; }}"
+                );
+                assert_eq!(verify_c0_sources(&source, &[]).is_ok(), valid, "{source}");
+            }
         }
     }
 
