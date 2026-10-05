@@ -60,7 +60,7 @@ documentation inventory keep the following accepted words synchronized.
 | `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
 | `take`, `give`, `gather`, `scatter` | Iterated guarded-ownership tactics: move one element out of or into an iterated fact, and form or dissolve the whole fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `both`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
-| `witness`, `let`, `satisfy` | Existential introduction and elimination. |
+| `witness`, `obtain` | Existential introduction and elimination. `let` binds what an operation produces. |
 | `assumption`, `extract`, `normalize`, `intro`, `split`, `left`, `right`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate special { ... }`. `integer_certificate { ... }` remains a parser-only legacy alias for the mathematical family. |
 | `signed_int32` | Selects the public checked signed-machine arithmetic-certificate family. |
@@ -81,7 +81,7 @@ documentation inventory keep the following accepted words synchronized.
 | `reverse` | Selects the reverse equality direction for `eq_to_le`. |
 | `rewrite`, `transport`, `instantiate`, `simp`, `induct`, `close_invariants` | Equality, snapshot, quantifier, simplification, induction, and loop-proof tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
-| `function`, `loop`, `statement`, `entry`, `exit` | Program-region and program-point selectors. |
+| `function`, `loop`, `statement`, `assignment`, `read`, `entry`, `exit` | Program-region and program-point selectors. `assignment(local, N)` and `read(N)` are execution targets only. |
 
 See [Tactics](../tactics/index.md) for tactic syntax and classification. A word
 listed here isn't necessarily valid in every identifier or expression

@@ -406,7 +406,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
                 requires x == 0;
                 let saved: Integer = x;
                 ensures exists (x: Integer) { saved == 1 } by {
-                    witness(x = 1);
+                    witness { x: 1 };
                     normalize();
                 }
             }
@@ -450,7 +450,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
         theorem existential(x: Integer) {
             let saved: Integer = x;
             ensures exists (x: Integer) { saved == x } by {
-                witness(x = x);
+                witness { x: x };
                 normalize();
             }
         }
@@ -460,7 +460,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
             ensures exists (z: Integer) {
                 forall (x: Integer) { z == saved }
             } by {
-                witness(z = x);
+                witness { z: x };
                 intro();
                 have x == x by { normalize(); }
                 normalize();
@@ -534,7 +534,7 @@ fn parses_proof_if_tactic() {
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "by auto;",
-        "by { execute(); let (k: int32) satisfy { k == k }; witness(j = k + 1); simp(); }",
+        "by { execute(); obtain (k: int32) { k == k }; witness { j: k + 1 }; simp(); }",
     );
     let file = parse(&source).expect("existential explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -545,13 +545,13 @@ fn parses_existential_proof_tactics() {
         if binding.bindings == [("k".to_string(), ClickType::C(C0Type::Int32))]));
     assert_eq!(
         tactics[2],
-        ProofTactic::Witness(ProofWitness {
-            name: "j".to_string(),
-            value: ContractExpression::Add(
+        ProofTactic::Witness(ProofWitness::single(
+            "j".to_string(),
+            ContractExpression::Add(
                 Box::new(ContractExpression::Binding("k".to_string())),
                 Box::new(current_int(1)),
-            ),
-        })
+            )
+        ))
     );
     assert!(matches!(tactics[3], ProofTactic::Simp));
 }
@@ -1245,7 +1245,7 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
                 ensures exists (j: int32) { j == result };
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness(j = x);
+                    witness { j: x };
                     simp();
                 }
                 execute();
@@ -1319,8 +1319,8 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    let (k: int32) satisfy { k == x };
-                    witness(j = k);
+                    obtain (k: int32) { k == x };
+                    witness { j: k };
                     simp();
                 }
                 execute();
@@ -1382,7 +1382,7 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
     verify_c0_sources(&rewritten, &[("choose_witness.c", c_source)])
         .expect("the serialized choose proof should independently verify");
 
-    let corrupted = rewritten.replacen("witness(j = k);", "witness(j = 0);", 1);
+    let corrupted = rewritten.replacen("witness { j: k }", "witness { j: 0 }", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked witness"
@@ -1401,7 +1401,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == x } by {
-                    witness(j = x);
+                    witness { j: x };
                     normalize();
                 }
                 execute();
@@ -1440,7 +1440,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
                 ensures result == x;
             } by {
                 have exists (j: int32) { j == 0 and y == 0 } by {
-                    witness(j = x);
+                    witness { j: x };
                     simp();
                 }
                 execute();
@@ -1468,7 +1468,10 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
         ..expanded
             .find("execute();")
             .expect("expansion should retain the proof suffix")];
-    assert!(expanded_have.contains("witness(j = x);"), "{expanded_have}");
+    assert!(
+        expanded_have.contains("witness { j: x }"),
+        "{expanded_have}"
+    );
     assert!(expanded_have.contains("split();"), "{expanded_have}");
     assert!(!expanded_have.contains("simp();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("witness_pair.c", c_source)])
@@ -1637,12 +1640,15 @@ fn cases_eliminates_a_disjunctive_premise() {
         } by {
             execute();
             have x <= 2 by {
-                cases (x == 1 or x == 2) {
-                    rewrite(x == 1);
-                    normalize();
-                } {
-                    rewrite(x == 2);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
+                    x == 2 => {
+                        rewrite(x == 2);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1669,12 +1675,15 @@ fn cases_requires_its_exact_disjunction_as_an_available_fact() {
         } by {
             execute();
             have x <= 3 by {
-                cases (x == 1 or x == 3) {
-                    rewrite(x == 1);
-                    normalize();
-                } {
-                    rewrite(x == 3);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
+                    x == 3 => {
+                        rewrite(x == 3);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1710,12 +1719,15 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
         } by {
             execute();
             have x <= 2 by {
-                cases (x == 1 or x == 2) {
-                    rewrite(x == 2);
-                    normalize();
-                } {
-                    rewrite(x == 1);
-                    normalize();
+                cases {
+                    x == 1 => {
+                        rewrite(x == 2);
+                        normalize();
+                    }
+                    x == 2 => {
+                        rewrite(x == 1);
+                        normalize();
+                    }
                 }
             }
             simp();
@@ -1740,10 +1752,13 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
             requires x <= 0 or x > 0;
 
             ensures x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
         }
@@ -1958,10 +1973,13 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                 assumption();
             }
             have x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
             have x == 0 or not (x == 0) by {
@@ -2129,7 +2147,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     ensures exists (k: int32) { k == result };
                 } by {
                     execute();
-                    witness(k = result);
+                    witness { k: result };
                     simp();
                 }
             "#,
@@ -2143,7 +2161,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
                     requires exists (k: int32) { k == x };
                     ensures result == x;
                 } by {
-                    let (k: int32) satisfy { k == x };
+                    obtain (k: int32) { k == x };
                     execute();
                     simp();
                 }
@@ -2199,10 +2217,13 @@ fn smart_pure_cases_retains_checked_arm_proofs_directly() {
             requires x <= 0 or x > 0;
 
             ensures x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    simp();
-                } {
-                    simp();
+                cases {
+                    x <= 0 => {
+                        simp();
+                    }
+                    x > 0 => {
+                        simp();
+                    }
                 }
             }
         }
@@ -2228,10 +2249,13 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
         } by {
             execute();
             have x <= 0 or x > 0 by {
-                cases (x <= 0 or x > 0) {
-                    left();
-                } {
-                    right();
+                cases {
+                    x <= 0 => {
+                        left();
+                    }
+                    x > 0 => {
+                        right();
+                    }
                 }
             }
             assumption();
@@ -2459,24 +2483,20 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
 
             ensures result == left[0] or result == right[0] by {
                 step();
-                branch {
-                    ensuring {
-                        fact selected == left or selected == right;
-                        views selected[0..1];
+                branch ensuring {
+                    fact selected == left or selected == right;
+                    views selected[0..1];
+                } then {
+                    step();
+                    have selected == left or selected == right by {
+                        have selected == left by { normalize(); }
+                        left();
                     }
-                    then {
-                        step();
-                        have selected == left or selected == right by {
-                            have selected == left by { normalize(); }
-                            left();
-                        }
-                    }
-                    else {
-                        step();
-                        have selected == left or selected == right by {
-                            have selected == right by { normalize(); }
-                            right();
-                        }
+                } else {
+                    step();
+                    have selected == left or selected == right by {
+                        have selected == right by { normalize(); }
+                        right();
                     }
                 }
                 step();
@@ -2811,4 +2831,201 @@ fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
 
     verify_c0_sources(click_source, &[])
         .expect_err("a false nonnegative leg must not be rubber-stamped");
+}
+
+const THREE_WAY_CASES: &str = r#"
+theorem three_way(x: int32) {
+    requires x == 1 or x == 2 or x == 3;
+    ensures x >= 1 by {
+        cases {
+            x == 1 => {
+                rewrite(x == 1);
+                normalize();
+            }
+            x == 2 => {
+                simp();
+            }
+            x == 3 => {
+                rewrite(x == 3);
+                normalize();
+            }
+        }
+    }
+}
+"#;
+
+/// `cases` takes one arm per disjunct, any number from two: three arms
+/// eliminate `x == 1 or x == 2 or x == 3`, and expansion of the smart
+/// tactic in the middle arm keeps every arm in place and reverifies.
+#[test]
+fn three_arm_cases_verifies_and_expands() {
+    verify_c0_sources(THREE_WAY_CASES, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
+    let expanded = expand_c0_claim_source_by_label(THREE_WAY_CASES, &[], "three_way.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for arm in ["x == 1 => {", "x == 2 => {", "x == 3 => {"] {
+        assert!(expanded.contains(arm), "{expanded}");
+    }
+    assert!(!expanded.contains("simp();"), "{expanded}");
+    verify_c0_sources(&expanded, &[])
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// The arms' disjunction is grouped left to right in the written order, and
+/// it must be exactly an available fact: arms written out of order are
+/// refused rather than matched up.
+#[test]
+fn cases_arms_out_of_the_disjunction_order_are_refused() {
+    let reordered = THREE_WAY_CASES
+        .replacen("x == 1 => {", "x == 0 => {", 1)
+        .replacen("x == 2 => {", "x == 1 => {", 1)
+        .replacen("x == 0 => {", "x == 2 => {", 1);
+    let error = verify_c0_sources(&reordered, &[])
+        .expect_err("arms out of the disjunction's order are a different disjunction");
+    assert!(
+        error
+            .message()
+            .contains("`cases` requires its exact disjunction as an available fact"),
+        "{}",
+        error.message()
+    );
+}
+
+/// `outcomes` names its arms like `match` does, so they may come in either
+/// order, each exactly once.
+#[test]
+fn parses_outcomes_arms_in_either_order() {
+    let source = FILL3_CLICK.replace(
+        "by auto;",
+        "by { outcomes { threw => { simp(); } returned => { execute(); simp(); } } }",
+    );
+    let file = parse(&source).expect("outcomes arms in either order should parse");
+    let tactics = file.function_blocks()[0].ensures()[0]
+        .proof()
+        .tactics()
+        .expect("expected tactics");
+    assert!(matches!(
+        &tactics[0],
+        ProofTactic::CallOutcomes(ProofCallOutcomes {
+            returned_tactics,
+            threw_tactics,
+        }) if returned_tactics == &[ProofTactic::SmartExecute, ProofTactic::Simp]
+            && threw_tactics == &[ProofTactic::Simp]
+    ));
+
+    let duplicate = FILL3_CLICK.replace(
+        "by auto;",
+        "by { outcomes { returned => { simp(); } returned => { simp(); } } }",
+    );
+    let error = parse(&duplicate).expect_err("an arm written twice is refused");
+    assert!(
+        error
+            .message()
+            .contains("duplicate `outcomes` arm `returned`"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn pure_machine_witness_instantiates_supported_c_binders() {
+    let source = r#"
+        theorem split_sum(n: int32) {
+            requires 0 <= n and n <= 100;
+            ensures exists (a: int32, b: int32) { a + b == n and 0 <= a and 0 <= b } by {
+                witness { a: n, b: 0 };
+                simp();
+            }
+        }
+        theorem pointer_witness(p: int32*) {
+            ensures exists (q: int32*) { q == p } by {
+                witness { q: p };
+                simp();
+            }
+        }
+    "#;
+    verify_c0_sources(source, &[]).expect("pure witness accepts machine and pointer binders");
+    let false_claim = source.replace("b: 0", "b: 1");
+    assert!(
+        verify_c0_sources(&false_claim, &[]).is_err(),
+        "the instantiated body must still be proved"
+    );
+}
+
+#[test]
+fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
+    for (source, expected, actual) in [
+        (
+            r#"spec enum Flag { Clear } theorem bad(n: Flag) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; simp(); } }"#,
+            "int32",
+            "Flag",
+        ),
+        (
+            r#"theorem bad(n: Integer) { ensures exists (x: int32) { x == 0 } by { witness { x: n }; simp(); } }"#,
+            "int32",
+            "Integer",
+        ),
+        (
+            r#"theorem bad(p: int32*) { ensures exists (x: int32) { x == 0 } by { witness { x: p }; simp(); } }"#,
+            "int32",
+            "int32*",
+        ),
+        (
+            r#"theorem bad(n: int32) { ensures exists (x: int32*) { x == x } by { witness { x: n }; simp(); } }"#,
+            "int32*",
+            "int32",
+        ),
+        (
+            r#"theorem bad(p: int64*) { ensures exists (x: int32*) { x == x } by { witness { x: p }; simp(); } }"#,
+            "int32*",
+            "int64*",
+        ),
+    ] {
+        let error = verify_c0_sources(source, &[]).expect_err("witness type must match its binder");
+        let message = error.message();
+        assert!(message.contains("witness `x`"), "{message}");
+        assert!(
+            message.contains(&format!("expected {expected}")),
+            "{message}"
+        );
+        assert!(message.contains(&format!("got {actual}")), "{message}");
+    }
+}
+
+#[test]
+fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
+    for pointer_type in [
+        "void*", "int8*", "uint8*", "int16*", "uint16*", "int32*", "uint32*", "int64*", "uint64*",
+        "int32**",
+    ] {
+        let source = format!(
+            "theorem retain(p: {pointer_type}) {{ let saved = p; ensures exists (p: {pointer_type}) {{ p == saved }} by {{ witness {{ p: p }}; simp(); }} }}"
+        );
+        verify_c0_sources(&source, &[])
+            .unwrap_or_else(|error| panic!("{pointer_type}: {}", error.message()));
+    }
+    let source = "theorem retain(n: int32) { let saved = n; ensures exists (n: int32) { n == saved } by { witness { n: n }; simp(); } }";
+    verify_c0_sources(source, &[])
+        .expect("a witness keeps its lexical alias despite binder shadowing");
+    let position = expansion::position_at_offset(source, source.find("simp();").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("the proof after a pure machine witness expands");
+    verify_c0_sources(&expanded, &[]).expect("the expanded witness proof re-verifies");
+}
+
+#[test]
+fn pure_machine_witness_does_not_narrow_unsupported_binder_widths() {
+    for scalar_type in ["int64", "uint8"] {
+        let source = format!(
+            "theorem retain(n: {scalar_type}) {{ ensures exists (x: {scalar_type}) {{ x == n }} by {{ witness {{ x: n }}; simp(); }} }}"
+        );
+        let error = verify_c0_sources(&source, &[])
+            .expect_err("these binder widths still need typed quantifier lowering");
+        assert!(
+            error
+                .message()
+                .contains("only int32 and pointer binders are supported"),
+            "{}",
+            error.message()
+        );
+    }
 }

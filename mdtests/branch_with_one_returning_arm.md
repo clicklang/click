@@ -26,13 +26,10 @@ int32 early_exit(int32 c) {
 } by {
     step();
     step();
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
     step();
     step();
     simp();

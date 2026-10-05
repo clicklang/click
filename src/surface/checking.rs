@@ -330,7 +330,7 @@ pub(super) fn evaluate_witness_tactic_value(
         post_state,
         result,
         assumptions,
-        &witness.value,
+        witness.value(),
         predicate_environment,
         click_function_environment,
         recorded_snapshots,
@@ -339,7 +339,7 @@ pub(super) fn evaluate_witness_tactic_value(
     .map_err(|message| {
         ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: could not evaluate witness value for `{}`: {message}",
-            witness.name
+            witness.name()
         ))
     })?;
     Ok(value)
@@ -364,10 +364,43 @@ pub(super) fn apply_witness_tactic(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal is not an existential proposition"
         )));
     };
-    if name != witness.name {
+    if name != witness.name() {
         return Err(ClickError::new(format!(
             "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: goal binds `{name}`, but proof provided witness `{}`",
-            witness.name
+            witness.name()
+        )));
+    }
+
+    let expected = match &sort {
+        Sort::CInt32 => Some(CType::Int32),
+        Sort::CPointer(c_type) => Some(*c_type),
+        _ => None,
+    };
+    if let Some(expected) = expected
+        && !expected.accepts(&witness_value)
+    {
+        let actual = match &witness_value {
+            CValue::Void => CType::Void,
+            CValue::Bool(_) => CType::Bool,
+            CValue::Int8(_) => CType::Int8,
+            CValue::Int16(_) => CType::Int16,
+            CValue::Int32(_) => CType::Int32,
+            CValue::UInt8(_) => CType::UInt8,
+            CValue::UInt16(_) => CType::UInt16,
+            CValue::UInt32(_) => CType::UInt32,
+            CValue::Int64(_) => CType::Int64,
+            CValue::UInt64(_) => CType::UInt64,
+            CValue::Int128(_) => CType::Int128,
+            CValue::UInt128(_) => CType::UInt128,
+            CValue::Float32(_) => CType::Float32,
+            CValue::Float64(_) => CType::Float64,
+            CValue::Pointer(pointer) => pointer.c_type(),
+        };
+        return Err(ClickError::new(format!(
+            "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong type: expected {}, got {}",
+            witness.name(),
+            describe_c0_type(super::generics::c0_type_from_kernel(expected)),
+            describe_c0_type(super::generics::c0_type_from_kernel(actual)),
         )));
     }
 
@@ -380,22 +413,10 @@ pub(super) fn apply_witness_tactic(
         {
             crate::kernel::substitute_pointer_variable_in_proposition(&body, var, pointer.pointer())
         }
-        (Sort::CPointer(_), CValue::Pointer(_)) => {
-            return Err(ClickError::new(format!(
-                "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` has the wrong pointer kind",
-                witness.name
-            )));
-        }
-        (Sort::CInt32, _) => {
-            return Err(ClickError::new(format!(
-                "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: witness `{}` did not evaluate to int32",
-                witness.name
-            )));
-        }
         _ => {
             return Err(ClickError::new(format!(
                 "`witness` failed for `{claim_label}` path {path_index}, tactic {tactic_index}: unsupported existential witness sort for `{}`",
-                witness.name
+                witness.name()
             )));
         }
     };

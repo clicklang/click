@@ -1296,7 +1296,9 @@ fn abstract_c_state_for_join_across_with_policy(
                 | CType::Int16Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::Float32Array(_)
                 | CType::Float64Array(_) => {
@@ -1578,6 +1580,17 @@ pub fn c_source_cast_with_pointee_qualifiers_and_struct(
     }
 }
 
+/// Explicit modulo conversion between admitted machine integer types.
+/// The evaluator checks both runtime types. This policy is shared by Rust and
+/// C++20; ordinary C casts continue to use `c_cast` and its checked policy.
+pub fn c_integer_cast_modulo(expression: CExpression, target_type: CType) -> CExpression {
+    let mut result = c_cast(expression, target_type);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::Modulo;
+    }
+    result
+}
+
 /// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
 pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
     let mut result = c_cast(expression, CType::Int64);
@@ -1638,6 +1651,30 @@ pub fn c_uint8_literal(value: u8) -> CExpression {
 
 pub fn c_uint32_literal(value: u32) -> CExpression {
     CExpression::Value(uint32(Bitvector32Term::Constant(value)))
+}
+
+/// Signed wide literal in the common checked machine arena.
+pub fn c_int128_literal(value: i128) -> CExpression {
+    let ty = MachineIntegerType::Int128;
+    CExpression::Value(
+        ty.constant_value(
+            MachineIntegerConstant::from_signed(ty.format(), value)
+                .expect("i128 fits the signed 128-bit format"),
+        )
+        .expect("exact wide format"),
+    )
+}
+
+/// Unsigned wide literal; the high 64 bits are retained.
+pub fn c_uint128_literal(value: u128) -> CExpression {
+    let ty = MachineIntegerType::UInt128;
+    CExpression::Value(
+        ty.constant_value(
+            MachineIntegerConstant::from_unsigned(ty.format(), value)
+                .expect("u128 fits the unsigned 128-bit format"),
+        )
+        .expect("exact wide format"),
+    )
 }
 
 pub fn c_int64_literal(value: i64) -> CExpression {
@@ -7042,9 +7079,10 @@ fn integer_range_fold_predecessor_index(
 /// This is Leibniz for a proof step that already holds the two terms' proved
 /// equality: rewriting *some* occurrences is sound, so the walk is
 /// deliberately shallow. It descends only the arithmetic spine -- negation,
-/// addition, subtraction, multiplication -- and compares interned identity
+/// addition, subtraction, multiplication, truncating quotient/remainder -- and
+/// compares interned identity
 /// everywhere else, so it never enters a range fold's binders and its work is
-/// linear in the proposition it rebuilds.
+/// linear in the distinct arithmetic DAG nodes and proposition it rebuilds.
 pub fn substitute_integer_term_in_proposition(
     proposition: &Proposition,
     from: &SharedIntegerTerm,
@@ -7055,29 +7093,46 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> SharedIntegerTerm {
+        if let Some(result) = memo.get(&term.id()) {
+            return result.clone();
+        }
         crate::instrumentation::record_deterministic_work(1);
         if term == from {
             *changed = true;
+            memo.insert(term.id(), to.clone());
             return to.clone();
         }
         let rebuilt = match term.as_ref() {
-            IntegerTerm::Negate(inner) => IntegerTerm::Negate(walk_term(inner, from, to, changed)),
+            IntegerTerm::Negate(inner) => {
+                IntegerTerm::Negate(walk_term(inner, from, to, changed, memo))
+            }
             IntegerTerm::Add(left, right) => IntegerTerm::Add(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
             IntegerTerm::Subtract(left, right) => IntegerTerm::Subtract(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
             IntegerTerm::Multiply(left, right) => IntegerTerm::Multiply(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
+                walk_term(left, from, to, changed, memo),
+                walk_term(right, from, to, changed, memo),
             ),
-            _ => return term.clone(),
+            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
+                walk_term(left, from, to, changed, memo).as_ref().clone(),
+                walk_term(right, from, to, changed, memo).as_ref().clone(),
+            ),
+            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
+                walk_term(left, from, to, changed, memo).as_ref().clone(),
+                walk_term(right, from, to, changed, memo).as_ref().clone(),
+            ),
+            _ => term.as_ref().clone(),
         };
-        SharedIntegerTerm::intern(rebuilt)
+        let result = SharedIntegerTerm::intern(rebuilt);
+        memo.insert(term.id(), result.clone());
+        result
     }
 
     fn walk_condition(
@@ -7085,16 +7140,18 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> ConditionTerm {
-        let rebuild = |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
-                       left: &SharedIntegerTerm,
-                       right: &SharedIntegerTerm,
-                       changed: &mut bool| {
-            constructor(
-                walk_term(left, from, to, changed),
-                walk_term(right, from, to, changed),
-            )
-        };
+        let mut rebuild =
+            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+             left: &SharedIntegerTerm,
+             right: &SharedIntegerTerm,
+             changed: &mut bool| {
+                constructor(
+                    walk_term(left, from, to, changed, memo),
+                    walk_term(right, from, to, changed, memo),
+                )
+            };
         match condition {
             ConditionTerm::IntegerLessThan(left, right) => {
                 rebuild(ConditionTerm::IntegerLessThan, left, right, changed)
@@ -7123,30 +7180,40 @@ pub fn substitute_integer_term_in_proposition(
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
+        memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
     ) -> Proposition {
         match proposition {
-            Proposition::ConditionIs(condition, expected) => {
-                Proposition::ConditionIs(walk_condition(condition, from, to, changed), *expected)
-            }
+            Proposition::ConditionIs(condition, expected) => Proposition::ConditionIs(
+                walk_condition(condition, from, to, changed, memo),
+                *expected,
+            ),
             Proposition::And(left, right) => Proposition::And(
-                Box::new(walk(left, from, to, changed)),
-                Box::new(walk(right, from, to, changed)),
+                Box::new(walk(left, from, to, changed, memo)),
+                Box::new(walk(right, from, to, changed, memo)),
             ),
             Proposition::Or(left, right) => Proposition::Or(
-                Box::new(walk(left, from, to, changed)),
-                Box::new(walk(right, from, to, changed)),
+                Box::new(walk(left, from, to, changed, memo)),
+                Box::new(walk(right, from, to, changed, memo)),
             ),
-            Proposition::Not(body) => Proposition::Not(Box::new(walk(body, from, to, changed))),
+            Proposition::Not(body) => {
+                Proposition::Not(Box::new(walk(body, from, to, changed, memo)))
+            }
             Proposition::Implies(antecedent, consequent) => Proposition::Implies(
-                Box::new(walk(antecedent, from, to, changed)),
-                Box::new(walk(consequent, from, to, changed)),
+                Box::new(walk(antecedent, from, to, changed, memo)),
+                Box::new(walk(consequent, from, to, changed, memo)),
             ),
             proposition => proposition.clone(),
         }
     }
 
     let mut changed = false;
-    let rewritten = walk(proposition, from, to, &mut changed);
+    let rewritten = walk(
+        proposition,
+        from,
+        to,
+        &mut changed,
+        &mut std::collections::HashMap::new(),
+    );
     changed.then_some(rewritten)
 }
 
@@ -7809,6 +7876,8 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
+        Bitvector32Term::MachineIntegerCast { .. } => term.clone(),
+
         Bitvector32Term::Add(left, right) => {
             let (left, right) = binary(left, right);
             Bitvector32Term::add(left, right)
@@ -7914,6 +7983,7 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::PointerAddress(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_)
         | Bitvector32Term::Int64From32(_)
         | Bitvector32Term::Int64FromUInt32(_)
         | Bitvector32Term::UInt64From32(_)

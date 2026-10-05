@@ -69,6 +69,26 @@ fn concurrency_mutex_parity_source_is_frozen() {
 }
 
 #[test]
+fn canonical_charon_examples_verify_locked_inputs() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let inventory: Vec<serde_json::Value> =
+        serde_json::from_slice(&fs::read(root.join("design/charon-trial/parity.json")).unwrap())
+            .unwrap();
+    let mut checked = 0;
+    for entry in inventory {
+        let config = root.join(entry["config"].as_str().unwrap());
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
+        if metadata["backend"] != "charon-trial" {
+            continue;
+        }
+        run_example_in_thread(config.parent().unwrap()).unwrap_or_else(|error| panic!("{error}"));
+        checked += 1;
+    }
+    assert_eq!(checked, 16);
+}
+
+#[test]
 fn example_projects() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let examples_dir = manifest_dir.join("examples");
@@ -312,7 +332,18 @@ fn run_example_project(project: &Path) -> Result<(), String> {
             .and_then(|name| name.to_str())
             .ok_or_else(|| format!("invalid example sidecar `{}`", click_path.display()))?;
         let config = click_path.with_file_name(format!("{name}.import.json"));
-        if config.exists() {
+        // Native Rust artifacts are checked offline here. The required
+        // charon-live gate freshly extracts every canonical Rust source and
+        // checks its contract; ordinary archive consumers need no Charon toolchain.
+        let native_rust = if config.exists() {
+            let metadata: serde_json::Value =
+                serde_json::from_slice(&fs::read(&config).map_err(|error| error.to_string())?)
+                    .map_err(|error| error.to_string())?;
+            metadata["language"] == "rust" && metadata["backend"] == "charon-trial"
+        } else {
+            false
+        };
+        if config.exists() && !native_rust {
             refresh_compiler_import(&config).map_err(|error| {
                 format!(
                     "sidecar `{}` import refresh failed: {error}",

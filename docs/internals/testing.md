@@ -235,9 +235,15 @@ CI uses these internal modes for code-affecting changes:
   hash partitions cover the unit and compiler-import tests; mdtests and
   examples each have their own runner and remain serial within that runner.
 
+- Canonical examples that select native Charon imports load their locked
+  artifacts in the ordinary example suite, without starting a compiler. Other
+  compiler-backed examples keep their refresh checks. The separate required
+  live Charon gate supplies fresh extraction coverage for native Rust examples.
 - The `charon-live` archive suite re-extracts Rust checkpoints and the complete
-  legacy fixture parity inventory with pinned Charon and rustc, then checks
-  their contracts through the shared verification engine. These ignored tests
+  fixed fixture parity inventory with pinned Charon and rustc, then checks
+  every canonical contract through the shared verification engine. Replaced
+  legacy sidecars have archived paths and SHA-256 digests in the inventory;
+  the gate checks their recorded frozen outcomes independently. These ignored tests
   run explicitly on a separate runner. The local counterpart is
   `scripts/check.sh --charon-live`; build the legacy exporter first.
 

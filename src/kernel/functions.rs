@@ -8093,6 +8093,8 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
         CType::UInt32 => "uint32",
         CType::Int64 => "int64",
         CType::UInt64 => "uint64",
+        CType::Int128 => "int128",
+        CType::UInt128 => "uint128",
         CType::Float32 => "float32",
         CType::Float64 => "float64",
         CType::Int8Pointer => "int8*",
@@ -8102,7 +8104,9 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
         CType::UInt8Pointer => "uint8*",
         CType::UInt32Pointer => "uint32*",
         CType::Int64Pointer => "int64*",
+        CType::Int128Pointer => "int128*",
         CType::UInt64Pointer => "uint64*",
+        CType::UInt128Pointer => "uint128*",
         CType::Float32Pointer => "float32*",
         CType::Float64Pointer => "float64*",
         CType::Int8PointerPointer => "int8**",
@@ -8112,7 +8116,9 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
         CType::UInt8PointerPointer => "uint8**",
         CType::UInt32PointerPointer => "uint32**",
         CType::Int64PointerPointer => "int64**",
+        CType::Int128PointerPointer => "int128**",
         CType::UInt64PointerPointer => "uint64**",
+        CType::UInt128PointerPointer => "uint128**",
         CType::Float32PointerPointer => "float32**",
         CType::Float64PointerPointer => "float64**",
         CType::FunctionPointer(_) => "void (*)()",
@@ -8123,7 +8129,9 @@ pub(crate) fn c_type_spelling(c_type: CType) -> &'static str {
         CType::UInt16Array(_) => "uint16*",
         CType::UInt32Array(_) => "uint32*",
         CType::Int64Array(_) => "int64*",
+        CType::Int128Array(_) => "int128*",
         CType::UInt64Array(_) => "uint64*",
+        CType::UInt128Array(_) => "uint128*",
         CType::Float32Array(_) => "float32*",
         CType::Float64Array(_) => "float64*",
         CType::PointerArray(element, _) => element.decayed_type_spelling(),
@@ -13313,7 +13321,12 @@ fn spec_expression_constant(expression: &SpecExpression) -> Option<u32> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term) => term.as_const(),
-        CValue::Void | CValue::Float32(_) | CValue::Float64(_) | CValue::Pointer(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Float32(_)
+        | CValue::Float64(_)
+        | CValue::Pointer(_) => None,
         CValue::Bool(term) => term.as_const(),
     }
 }
@@ -15363,6 +15376,8 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         CType::UInt32 => CValue::UInt32(Bitvector32Term::Variable(variable)),
         CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
         CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
+        CType::Int128 => CValue::Int128(Bitvector32Term::Variable(variable)),
+        CType::UInt128 => CValue::UInt128(Bitvector32Term::Variable(variable)),
         CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
         CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
         CType::Int8Pointer | CType::Int8PointerPointer => {
@@ -15373,14 +15388,18 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         | CType::Int32Pointer
         | CType::UInt8Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer
         | CType::Float32Pointer
         | CType::Float64Pointer
@@ -15399,7 +15418,9 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         | CType::Int16Array(_)
         | CType::UInt16Array(_)
         | CType::UInt32Array(_)
+        | CType::Int128Array(_)
         | CType::Int64Array(_)
+        | CType::UInt128Array(_)
         | CType::UInt64Array(_)
         | CType::Float32Array(_)
         | CType::Float64Array(_) => {
@@ -15641,7 +15662,9 @@ fn collect_c_memory_read_expressions(statement: &CStatement, reads: &mut Vec<CEx
                         | CType::Int16Array(_)
                         | CType::UInt16Array(_)
                         | CType::UInt32Array(_)
+                        | CType::Int128Array(_)
                         | CType::Int64Array(_)
+                        | CType::UInt128Array(_)
                         | CType::UInt64Array(_)
                         | CType::Float32Array(_)
                         | CType::Float64Array(_)
@@ -17047,7 +17070,9 @@ fn materialize_symbolic_array(
                 | CType::UInt16
                 | CType::UInt32
                 | CType::Int64
+                | CType::Int128
                 | CType::UInt64
+                | CType::UInt128
                 | CType::Float32
                 | CType::Float64
         );
@@ -17095,8 +17120,14 @@ fn materialize_symbolic_aggregate_fields(
             CType::Int64Array(length) => {
                 memory = materialize_symbolic_array(memory, &field_base, CType::Int64, length);
             }
+            CType::Int128Array(length) => {
+                memory = materialize_symbolic_array(memory, &field_base, CType::Int128, length);
+            }
             CType::UInt64Array(length) => {
                 memory = materialize_symbolic_array(memory, &field_base, CType::UInt64, length);
+            }
+            CType::UInt128Array(length) => {
+                memory = materialize_symbolic_array(memory, &field_base, CType::UInt128, length);
             }
             CType::UInt8Array(length) => {
                 memory = materialize_symbolic_array(memory, &field_base, CType::UInt8, length);
@@ -17143,7 +17174,9 @@ fn symbolic_storage_has_value(c_type: CType) -> bool {
                 | CType::UInt16
                 | CType::UInt32
                 | CType::Int64
+                | CType::Int128
                 | CType::UInt64
+                | CType::UInt128
                 | CType::Float32
                 | CType::Float64
         )
@@ -17162,7 +17195,9 @@ fn symbolic_aggregate_cells(layout: &CAggregateLayout) -> Option<Vec<(u32, CType
         let (element_type, length) = match field.c_type() {
             CType::Int32Array(length) => (CType::Int32, length),
             CType::Int64Array(length) => (CType::Int64, length),
+            CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
+            CType::UInt128Array(length) => (CType::UInt128, length),
             CType::UInt8Array(length) => (CType::UInt8, length),
             CType::Float32Array(length) => (CType::Float32, length),
             CType::Float64Array(length) => (CType::Float64, length),
@@ -17265,10 +17300,16 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
             | CType::UInt16
             | CType::UInt32
             | CType::Int64
+                | CType::Int128
             | CType::UInt64
+                | CType::UInt128
             | CType::Float32
             | CType::Float64
             | CType::VoidPointer
+            | CType::Int128Pointer
+            | CType::UInt128Pointer
+            | CType::Int128PointerPointer
+            | CType::UInt128PointerPointer
             | CType::Int32Pointer
             | CType::UInt8Pointer
             | CType::Float32Pointer
@@ -17282,7 +17323,9 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
             | CType::FunctionPointer(_) => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
             CType::Int64Array(length) => (CType::Int64, length),
+            CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
+            CType::UInt128Array(length) => (CType::UInt128, length),
             CType::UInt8Array(length) => (CType::UInt8, length),
             CType::Float32Array(length) => (CType::Float32, length),
             CType::Float64Array(length) => (CType::Float64, length),
@@ -17302,9 +17345,28 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
                 CType::UInt32 => uint32(0),
                 CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
                 CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                CType::Int128 => MachineIntegerType::Int128
+                    .constant_value(
+                        MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                CType::UInt128 => MachineIntegerType::UInt128
+                    .constant_value(
+                        MachineIntegerConstant::from_unsigned(
+                            MachineIntegerType::UInt128.format(),
+                            0,
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap(),
                 CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
                 CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
-                CType::Int32Pointer
+                CType::Int128Pointer
+                | CType::UInt128Pointer
+                | CType::Int128PointerPointer
+                | CType::UInt128PointerPointer
+                | CType::Int32Pointer
                 | CType::UInt8Pointer
                 | CType::Float32Pointer
                 | CType::Float64Pointer
@@ -17322,7 +17384,9 @@ fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValu
                 | CType::UInt8Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::Float32Array(_)
                 | CType::Float64Array(_)
@@ -17561,12 +17625,16 @@ fn aggregate_copy_reads_uninitialized(
             | CType::UInt16
             | CType::UInt32
             | CType::Int64
+            | CType::Int128
             | CType::UInt64
+            | CType::UInt128
             | CType::Float32
             | CType::Float64 => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
             CType::Int64Array(length) => (CType::Int64, length),
+            CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
+            CType::UInt128Array(length) => (CType::UInt128, length),
             CType::UInt8Array(length) => (CType::UInt8, length),
             CType::Int32Pointer
             | CType::UInt8Pointer
@@ -17717,12 +17785,16 @@ fn copy_aggregate_fields(
             | CType::UInt16
             | CType::UInt32
             | CType::Int64
+                | CType::Int128
             | CType::UInt64
+                | CType::UInt128
             | CType::Float32
             | CType::Float64 => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
             CType::Int64Array(length) => (CType::Int64, length),
+            CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
+            CType::UInt128Array(length) => (CType::UInt128, length),
             CType::UInt8Array(length) => (CType::UInt8, length),
             CType::Int32Pointer
             | CType::UInt8Pointer
@@ -28670,7 +28742,9 @@ fn resolve_retained_aggregate_fields(
                 | CType::Int16Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::Float32Array(_)
                 | CType::Float64Array(_)

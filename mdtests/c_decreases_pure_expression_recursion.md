@@ -36,27 +36,24 @@ int32 drain(int32 n) {
     ensures result == 0;
 } by {
     step();
-    branch {
-        then {
-            have 0 <= level(n - 1) by {
-                unfold(level(n - 1));
-                apply(int32_positive_predecessor_is_nonnegative(n)) using {
-                    n > 0;
-                }
+    branch then {
+        have 0 <= level(n - 1) by {
+            unfold(level(n - 1));
+            apply(int32_positive_predecessor_is_nonnegative(n)) using {
+                n > 0;
             }
-            have level(n - 1) < level(n) by {
-                unfold(level(n - 1));
-                unfold(level(n));
-                apply(int32_positive_predecessor_strictly_decreases(n)) using {
-                    n > 0;
-                }
-            }
-            step();
-            step();
-            simp();
         }
-        else {}
-    }
+        have level(n - 1) < level(n) by {
+            unfold(level(n - 1));
+            unfold(level(n));
+            apply(int32_positive_predecessor_strictly_decreases(n)) using {
+                n > 0;
+            }
+        }
+        step();
+        step();
+        simp();
+    } else {}
     step();
     simp();
 }

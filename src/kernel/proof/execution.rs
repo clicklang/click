@@ -10,12 +10,11 @@ use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
 use crate::kernel::{
-    Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExecutionEnvironment,
-    CExecutionSemantics, CExpression, CFunction, CFunctionExecutionCandidates, CFunctionOutcome,
-    CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec, CRuntimeError, CState,
-    CStatement, CStatementOutcome, CValue, CVerifiedLoopRule, ExecutionBudget, ExecutionLimit,
-    ExecutionPureFact, Pointer, Proposition, PureFactContext, ResourceContext, SpecProposition,
-    Theorem, Variable,
+    Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExpression, CFunction,
+    CFunctionExecutionCandidates, CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec,
+    CRuntimeError, CState, CStatement, CStatementOutcome, CValue, CVerifiedLoopRule,
+    ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition, PureFactContext,
+    ResourceContext, SpecProposition, Theorem, Variable,
 };
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
@@ -4911,32 +4910,10 @@ pub(crate) struct CheckedCallOutcomeSplit {
     root_facts: ProofFacts,
     normal: CStatementOutcome,
     exceptional: CStatementOutcome,
-    exceptional_facts: Vec<Proposition>,
-    exceptional_execution_facts: Vec<ExecutionPureFact>,
-    exceptional_obligations: Vec<crate::kernel::ProofObligation>,
-}
-
-/// The two independently checked proof descendants of one direct call.
-/// Only `returned` may continue at the following statement; `threw` has
-/// already reached its terminal exceptional outcome. Neither descendant
-/// carries the other's running state or theorem trace.
-pub(crate) struct CheckedCallOutcomeBranches {
-    pub(crate) returned: ExecutionProofCore,
-    pub(crate) threw: ExecutionProofCore,
-}
-
-/// Evidence offered for one named arm of a checked direct-call split.
-pub(crate) struct CallOutcomeArmEvidence<'a> {
-    pub(crate) theorem: &'a Theorem,
-    pub(crate) context: &'a PureFactContext,
-    pub(crate) execution_facts: &'a [ExecutionPureFact],
-    pub(crate) obligations: &'a [crate::kernel::ProofObligation],
-    pub(crate) loan_evidence: &'a crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
 #[derive(Debug)]
 pub(crate) enum CheckedCallOutcomeSplitError {
-    Limit(ExecutionLimit),
     InvalidEvidence,
 }
 
@@ -4958,7 +4935,6 @@ impl CheckedCallOutcomeSplit {
         exceptional_theorem: &Theorem,
         exceptional: &CStatementOutcome,
         exceptional_path_facts: &[Proposition],
-        exceptional_execution_facts: &[ExecutionPureFact],
         exceptional_obligations: &[crate::kernel::ProofObligation],
     ) -> Result<Self, CheckedCallOutcomeSplitError> {
         if !matches!(
@@ -5018,102 +4994,6 @@ impl CheckedCallOutcomeSplit {
             root_facts: root_facts.clone(),
             normal: normal.clone(),
             exceptional: exceptional.clone(),
-            exceptional_facts: exceptional_path_facts.to_vec(),
-            exceptional_execution_facts: exceptional_execution_facts.to_vec(),
-            exceptional_obligations: exceptional_obligations.to_vec(),
-        })
-    }
-
-    pub(crate) fn check(
-        state: CState,
-        statement: CStatement,
-        root_facts: &ProofFacts,
-        environment: &CExecutionEnvironment,
-        next_opaque_call: u64,
-        next_kernel_variable: u64,
-    ) -> Result<Self, CheckedCallOutcomeSplitError> {
-        if !matches!(
-            statement,
-            CStatement::Call { .. } | CStatement::CallAssign { .. }
-        ) {
-            return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
-        }
-        let mut budget = ExecutionBudget::continuing_from(next_kernel_variable)
-            .with_next_opaque_call(next_opaque_call);
-        let (execution, _) = crate::kernel::api::prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-            state.clone(),
-            statement.clone(),
-            root_facts.assumptions().clone(),
-            environment.clone(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            &mut budget,
-        );
-        if let Some(limit) = execution.limit() {
-            return Err(CheckedCallOutcomeSplitError::Limit(limit));
-        }
-        let mut normal = None;
-        let mut exceptional = None;
-        let mut exceptional_facts = None;
-        let mut exceptional_execution_facts = None;
-        let mut exceptional_obligations = None;
-        for path in execution.paths() {
-            if path
-                .facts()
-                .iter()
-                .any(|fact| root_facts.directly_conflicts_with(fact.proposition()))
-            {
-                continue;
-            }
-            let mut facts = root_facts.clone();
-            for fact in path.facts() {
-                facts = facts.with_kernel_checked_fact(fact.proposition().clone());
-            }
-            if path.obligations().iter().any(|obligation| {
-                !checked_branch_fact_is_available(&facts, obligation.proposition())
-            }) {
-                return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
-            }
-            let Proposition::CStatementVerifies {
-                state: proved_state,
-                statement: proved_statement,
-                outcome,
-            } = crate::kernel::api::proof_evidence_conclusion(path.theorem())
-            else {
-                return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
-            };
-            if proved_state != &state || proved_statement != &statement {
-                return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
-            }
-            match outcome {
-                CStatementOutcome::Normal(_) if normal.replace(outcome.clone()).is_none() => {}
-                CStatementOutcome::Throw { .. }
-                    if exceptional.replace(outcome.clone()).is_none() =>
-                {
-                    exceptional_facts = Some(
-                        path.facts()
-                            .iter()
-                            .map(|fact| fact.proposition().clone())
-                            .collect(),
-                    );
-                    exceptional_execution_facts = Some(path.execution_facts());
-                    exceptional_obligations = Some(path.obligations().to_vec());
-                }
-                _ => return Err(CheckedCallOutcomeSplitError::InvalidEvidence),
-            }
-        }
-        let (Some(normal), Some(exceptional)) = (normal, exceptional) else {
-            return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
-        };
-        Ok(Self {
-            state,
-            statement,
-            root_facts: root_facts.clone(),
-            normal,
-            exceptional,
-            exceptional_facts: exceptional_facts.expect("throw path has facts"),
-            exceptional_execution_facts: exceptional_execution_facts
-                .expect("throw path has execution facts"),
-            exceptional_obligations: exceptional_obligations.expect("throw path has obligations"),
         })
     }
 
@@ -5151,60 +5031,6 @@ impl CheckedCallOutcomeSplit {
                     outcome,
                 } if proved_state == state && proved_statement == statement && outcome == *expected
             )
-        })
-    }
-
-    /// Advance both call outcomes from the *same* parent into separate
-    /// checked traces. The witness certifies exhaustive `returned`/`threw`
-    /// coverage before either arm is accepted; each arm then independently
-    /// checks its source transition and premise context.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn record_branches(
-        &self,
-        parent: &ExecutionProofCore,
-        function: &CFunction,
-        arguments: &[CExpression],
-        state: &CState,
-        statement: &CStatement,
-        root_facts: &ProofFacts,
-        returned: CallOutcomeArmEvidence<'_>,
-        threw: CallOutcomeArmEvidence<'_>,
-    ) -> Result<CheckedCallOutcomeBranches, EvidenceRefusal> {
-        if !self.validates(
-            state,
-            statement,
-            root_facts,
-            returned.theorem,
-            threw.theorem,
-        ) {
-            return Err("call arms do not match the exhaustive returned/threw split".into());
-        }
-        let mut returned_core = parent.clone();
-        returned_core.record_statement_transition_with_loan_evidence(
-            function,
-            arguments,
-            returned.theorem.clone(),
-            returned.context.clone(),
-            returned.execution_facts,
-            returned.obligations,
-            returned.loan_evidence,
-        )?;
-        let mut threw_core = parent.clone();
-        threw_core.record_statement_transition_with_loan_evidence(
-            function,
-            arguments,
-            threw.theorem.clone(),
-            threw.context.clone(),
-            threw.execution_facts,
-            threw.obligations,
-            threw.loan_evidence,
-        )?;
-        if returned_core.evidence_completed || !threw_core.evidence_completed {
-            return Err("call arms did not reach returned and threw frontiers".into());
-        }
-        Ok(CheckedCallOutcomeBranches {
-            returned: returned_core,
-            threw: threw_core,
         })
     }
 }
@@ -5394,16 +5220,6 @@ pub(crate) struct ExceptionalContinuation {
     pub(crate) cleanup_unwind: bool,
 }
 
-#[derive(Clone)]
-pub(crate) struct PendingExceptionalPath {
-    trace: PersistentSequence<CheckedExecutionEvent>,
-    pub(crate) outcome: CFunctionOutcome,
-    pub(crate) execution_facts: Vec<ExecutionPureFact>,
-    pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
-    pub(crate) pure_facts: ProofFacts,
-    pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
-}
-
 /// Surface-independent execution state owned by a checked proof branch.
 ///
 /// Language lowering and certificate capture wrap this value with their own
@@ -5455,9 +5271,6 @@ pub(crate) struct ExecutionProofCore {
     /// advancing. They are appended to the completed trace set only at the
     /// function boundary, so ordinary frontier operations still own exactly
     /// one active trace and never mutate a terminal sibling.
-    pending_exceptional: PersistentSequence<PendingExceptionalPath>,
-    completed_pending_exceptional: Option<Arc<Vec<PendingExceptionalPath>>>,
-    pending_exceptional_start: Option<usize>,
     /// Stable-view call evidence retained along the focused execution path.
     /// This is kept beside the checked event trace so loop planning can pass
     /// the exact path evidence into its exit candidates.
@@ -6659,109 +6472,6 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
 }
 
 impl ExecutionProofCore {
-    /// Retains the terminal half of a complete direct-call split while this
-    /// core follows the normal half. The two arms must descend from the same
-    /// single-trace parent and carry the exact outcomes named by the kernel's
-    /// exhaustive call witness.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn record_pending_exceptional_call(
-        &mut self,
-        split: &CheckedCallOutcomeSplit,
-        parent: &Self,
-        function: &CFunction,
-        execution_start_state: &CState,
-        state: &CState,
-        statement: &CStatement,
-        root_facts: &ProofFacts,
-        normal_theorem: &Theorem,
-        exceptional_theorem: &Theorem,
-        exceptional: &Self,
-        outcome: CFunctionOutcome,
-        execution_facts: Vec<ExecutionPureFact>,
-        obligations: Vec<crate::kernel::ProofObligation>,
-        pure_facts: ProofFacts,
-    ) -> Result<(), &'static str> {
-        let introduced = pure_facts
-            .introduced_since(root_facts)
-            .ok_or("exceptional facts do not descend from the call's fact root")?;
-        if introduced
-            .iter()
-            .any(|fact| !split.exceptional_facts.contains(fact))
-            || execution_facts.iter().any(|fact| {
-                !split.exceptional_execution_facts.contains(fact)
-                    && !parent.effect_facts.contains(fact)
-            })
-        {
-            return Err("exceptional facts were not issued by the checked call path");
-        }
-        let (expected_outcome, expected_obligations) =
-            crate::kernel::api::c_function_outcome_from_statement_outcome(
-                execution_start_state,
-                function,
-                split.exceptional.clone(),
-                split.exceptional_obligations.clone(),
-                pure_facts.assumptions(),
-            );
-        if !split.validates(
-            state,
-            statement,
-            root_facts,
-            normal_theorem,
-            exceptional_theorem,
-        ) || parent.execution_evidence.len() != 1
-            || self.execution_evidence.len() != 1
-            || exceptional.execution_evidence.len() != 1
-            || self.pending_exceptional_start.is_some()
-            || !exceptional.evidence_completed
-            || self.evidence_completed
-            || !matches!(outcome, CFunctionOutcome::Throw { .. })
-            || outcome != expected_outcome
-            || obligations != expected_obligations
-            || self.execution_evidence[0]
-                .suffix_since(&parent.execution_evidence[0])
-                .is_none()
-            || exceptional.execution_evidence[0]
-                .suffix_since(&parent.execution_evidence[0])
-                .is_none()
-        {
-            return Err("call outcomes did not form a checked normal/exceptional fork");
-        }
-        self.pending_exceptional.push(PendingExceptionalPath {
-            trace: exceptional.execution_evidence[0].clone(),
-            loan_evidence: exceptional.loan_evidence.clone(),
-            outcome,
-            execution_facts,
-            obligations,
-            pure_facts,
-        });
-        Ok(())
-    }
-
-    /// Appends each already-terminal sibling once, after the live successor
-    /// has completed. Candidate construction consumes the returned metadata
-    /// in exactly this trace order.
-    pub(crate) fn complete_pending_exceptional_calls(&mut self) -> Vec<PendingExceptionalPath> {
-        if self.pending_exceptional.is_empty() || self.completed_pending_exceptional.is_some() {
-            return Vec::new();
-        }
-        debug_assert!(self.evidence_completed);
-        self.pending_exceptional_start = Some(self.execution_evidence.len());
-        let pending = self.pending_exceptional.to_vec();
-        self.completed_pending_exceptional = Some(Arc::new(pending.clone()));
-        for path in &pending {
-            self.execution_evidence.push(path.trace.clone());
-        }
-        pending
-    }
-
-    pub(crate) fn pending_exceptional_pure_facts(&self, path_index: usize) -> Option<&ProofFacts> {
-        let start = self.pending_exceptional_start?;
-        path_index
-            .checked_sub(start)
-            .and_then(|index| self.completed_pending_exceptional.as_ref()?.get(index))
-            .map(|path| &path.pure_facts)
-    }
-
     pub(crate) fn register_current_call_views(&self, assumptions: &PureFactContext) {
         let Some(evidence_state) = &self.evidence_state else {
             return;
@@ -6810,9 +6520,6 @@ impl ExecutionProofCore {
             frontier,
             effect_facts: Default::default(),
             execution_evidence: vec![PersistentSequence::default()].into(),
-            pending_exceptional: Default::default(),
-            completed_pending_exceptional: None,
-            pending_exceptional_start: None,
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
             return_resource_rewrites: Default::default(),
             checked_call_events: CheckedCallEvents::new(),

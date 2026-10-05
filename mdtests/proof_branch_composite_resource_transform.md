@@ -67,19 +67,15 @@ int32 select_ready(int32 key, int32 choose_left) {
 
     ensures result >= 0 by {
         step();
-        branch {
-            ensuring {
-                fact selected == key;
-                owns ready_bundle(key);
-            }
-            then {
-                step();
-                fold(ready_bundle(key));
-            }
-            else {
-                step();
-                fold(ready_bundle(key));
-            }
+        branch ensuring {
+            fact selected == key;
+            owns ready_bundle(key);
+        } then {
+            step();
+            fold(ready_bundle(key));
+        } else {
+            step();
+            fold(ready_bundle(key));
         }
         observe(ready_bundle(key));
         step();

@@ -1071,6 +1071,18 @@ impl Renderer<'_> {
             IntegerTerm::Add(left, right) => self.integer_binary(left, "+", right),
             IntegerTerm::Subtract(left, right) => self.integer_binary(left, "-", right),
             IntegerTerm::Multiply(left, right) => self.integer_binary(left, "*", right),
+            IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                self.push(if matches!(i, IntegerTerm::TruncatingQuotient(_, _)) {
+                    "truncating_quotient("
+                } else {
+                    "truncating_remainder("
+                });
+                self.integer_shared(left);
+                self.push(", ");
+                self.integer_shared(right);
+                self.push(")");
+            }
             IntegerTerm::PureFunctionApplication(application) => {
                 self.push(application.name());
                 self.push("(");
@@ -1465,6 +1477,16 @@ impl Renderer<'_> {
             crate::kernel::CValue::Void => self.push("void"),
             crate::kernel::CValue::Bool(v) => {
                 self.push("bool(");
+                self.bitvector(v);
+                self.push(")");
+            }
+            crate::kernel::CValue::Int128(v) => {
+                self.push("int128(");
+                self.bitvector(v);
+                self.push(")");
+            }
+            crate::kernel::CValue::UInt128(v) => {
+                self.push("uint128(");
                 self.bitvector(v);
                 self.push(")");
             }

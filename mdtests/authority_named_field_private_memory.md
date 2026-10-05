@@ -22,7 +22,7 @@ resource ticket(pool: int32*, tag: int32) {
 verifying "private_members.c";
 int32 run() { ensures result == 0 or result == 3; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, 7), { cell: p, serial: 1 });

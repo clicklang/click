@@ -670,11 +670,7 @@ impl<'a> Proof<'a> {
         let requirement_surfaces = Arc::new(requirement_surfaces);
         let mut goals = Vec::new();
         for (path_index, path) in checked.paths().iter().enumerate() {
-            let mut facts = execution
-                .core
-                .pending_exceptional_pure_facts(path_index)
-                .cloned()
-                .unwrap_or_else(|| self.facts().clone());
+            let mut facts = self.facts().clone();
             // One checked statement may produce several candidate outcomes.
             // The enclosing Proof facts select the feasible successors; an
             // exact contradictory path fact cannot become a typed outcome
@@ -740,9 +736,13 @@ impl<'a> Proof<'a> {
                             premise_anchor: frontier_anchor.clone(),
                             requirement_surfaces: requirement_surfaces.clone(),
                             branch_decisions: provenance.branch_decisions,
-                            call_returned: provenance
-                                .call_returned
-                                .or_else(|| call_edges.map(|edges| edges[path_index])),
+                            call_routes: if provenance.call_routes.is_empty() {
+                                call_edges
+                                    .map(|edges| vec![edges[path_index]])
+                                    .unwrap_or_default()
+                            } else {
+                                provenance.call_routes
+                            },
                         },
                     )),
                 ),
@@ -833,11 +833,18 @@ impl<'a> Proof<'a> {
         let mut statement_index = execution.core.frontier.next_statement_index;
         let mut descended_through_try = false;
         loop {
-            if matches!(
-                statement,
-                CStatement::Call { .. } | CStatement::CallAssign { .. }
-            ) {
-                return Ok(descended_through_try);
+            // A call is a fork when it may throw: inside a `try` the throw
+            // enters the handler, and outside any `try` it leaves the
+            // function. Either way its two successors are two proof arms,
+            // like a C `if`'s.
+            if let CStatement::Call { function_name, .. }
+            | CStatement::CallAssign { function_name, .. } = &statement
+            {
+                return Ok(descended_through_try
+                    || context
+                        .function_environment
+                        .get_function(function_name)
+                        .is_some_and(|callee| !callee.exceptional_signature().is_empty()));
             }
             let CStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);
@@ -876,6 +883,20 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`execute_until` requires an execution proof"));
         };
+        if let CodeRegionRef::Assignment { local, occurrence } = region {
+            return context
+                .constants
+                .source_layout
+                .assignment_entry(local, *occurrence)
+                .map_err(|message| self.step_error(message));
+        }
+        if let CodeRegionRef::Read(occurrence) = region {
+            return context
+                .constants
+                .source_layout
+                .read_entry(*occurrence)
+                .map_err(|message| self.step_error(message));
+        }
         let region = resolve_code_region_ref(
             context.function_block,
             region,

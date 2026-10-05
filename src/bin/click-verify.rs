@@ -665,6 +665,7 @@ fn proof_error_report(
         report.push_str(&context.join("\n"));
     }
     if show_trace {
+        let source_locations = ProofSourceLocations::new(project, inputs);
         let target = trace_target.cloned().or_else(|| {
             project
                 .entry_source()
@@ -680,8 +681,7 @@ fn proof_error_report(
             }
             let label = error.proof_claim_label().and_then(|claim| {
                 let source = project.entry_source()?;
-                let position =
-                    proof_source_position_for_path(claim, path, project, inputs, source)?;
+                let position = source_locations.position(claim, path, source)?;
                 let multiple = tactic_line_has_multiple_starts(source, &position).unwrap_or(true);
                 let line = position.line + line_offset;
                 let label = if multiple {
@@ -697,7 +697,7 @@ fn proof_error_report(
         let branch_arm = |path: &[usize], target: &click::surface::SourcePosition| {
             let source = project.entry_source()?;
             let claim = error.proof_claim_label()?;
-            let branch = proof_source_position_for_path(claim, path, project, inputs, source)?;
+            let branch = source_locations.position(claim, path, source)?;
             tactic_arm_containing_position(source, &branch, target)
                 .ok()
                 .flatten()
@@ -709,8 +709,7 @@ fn proof_error_report(
             let Some(claim) = error.proof_claim_label() else {
                 return false;
             };
-            let Some(have) = proof_source_position_for_path(claim, path, project, inputs, source)
-            else {
+            let Some(have) = source_locations.position(claim, path, source) else {
                 return false;
             };
             tactic_have_body_contains_position(source, &have, target).unwrap_or(false)
@@ -731,6 +730,10 @@ fn proof_error_report(
                 report.push_str("\n\n");
                 report.push_str(&formatted);
             }
+        } else {
+            report.push_str(
+                "\n\nproof trace unavailable: no checked path was retained for this failure",
+            );
         }
         return report;
     }
@@ -865,23 +868,68 @@ fn proof_source_position_for_path(
     inputs: &CInput,
     source: &str,
 ) -> Option<click::surface::SourcePosition> {
-    let source_index = *path.first()?;
-    let outer = match inputs {
-        CInput::Bundle(sources) => {
-            c0_project_tactic_source_position(project, &source_refs(sources), claim, source_index)
-        }
-        CInput::Prepared(imports) => {
-            c0_prepared_project_tactic_source_position(project, imports, claim, source_index)
-        }
-        CInput::PreparedProgram(import) => {
-            program_prepared_project_tactic_source_position(project, import, claim, source_index)
+    ProofSourceLocations::new(project, inputs).position(claim, path, source)
+}
+
+/// Resolving an enclosing tactic parses and resolves the project. A trace
+/// walks many nested tactics under the same enclosing step, so share that
+/// resolution across all of its location callbacks.
+struct ProofSourceLocations<'a> {
+    project: &'a ClickProject,
+    inputs: &'a CInput,
+    outer: RefCell<HashMap<(String, usize), Option<click::surface::SourcePosition>>>,
+}
+
+impl<'a> ProofSourceLocations<'a> {
+    fn new(project: &'a ClickProject, inputs: &'a CInput) -> Self {
+        Self {
+            project,
+            inputs,
+            outer: RefCell::new(HashMap::new()),
         }
     }
-    .ok()?;
-    if path.len() == 1 {
-        Some(outer)
-    } else {
-        nested_tactic_source_position(source, &outer, &path[1..]).ok()
+
+    fn position(
+        &self,
+        claim: &str,
+        path: &[usize],
+        source: &str,
+    ) -> Option<click::surface::SourcePosition> {
+        let source_index = *path.first()?;
+        let key = (claim.to_owned(), source_index);
+        let cached = self.outer.borrow().get(&key).cloned();
+        let outer = if let Some(cached) = cached {
+            cached
+        } else {
+            let outer = match self.inputs {
+                CInput::Bundle(sources) => c0_project_tactic_source_position(
+                    self.project,
+                    &source_refs(sources),
+                    claim,
+                    source_index,
+                ),
+                CInput::Prepared(imports) => c0_prepared_project_tactic_source_position(
+                    self.project,
+                    imports,
+                    claim,
+                    source_index,
+                ),
+                CInput::PreparedProgram(import) => program_prepared_project_tactic_source_position(
+                    self.project,
+                    import,
+                    claim,
+                    source_index,
+                ),
+            }
+            .ok();
+            self.outer.borrow_mut().insert(key, outer.clone());
+            outer
+        }?;
+        if path.len() == 1 {
+            Some(outer)
+        } else {
+            nested_tactic_source_position(source, &outer, &path[1..]).ok()
+        }
     }
 }
 
@@ -1393,6 +1441,7 @@ fn verify_file_within_limits(
             Some(unit) => with_proof_trace(unit.name(), || {
                 let verified = run_selected().map_err(report)?;
                 // The renderer asks for one step's location several times.
+                let source_locations = ProofSourceLocations::new(&project, &inputs);
                 let located = RefCell::new(HashMap::<
                     (String, Vec<usize>),
                     Option<(String, click::surface::SourcePosition)>,
@@ -1404,8 +1453,7 @@ fn verify_file_within_limits(
                     }
                     let label = (|| {
                         let source = project.entry_source()?;
-                        let position =
-                            proof_source_position_for_path(claim, path, &project, &inputs, source)?;
+                        let position = source_locations.position(claim, path, source)?;
                         let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
                         let line = position.line + line_offset;
                         let label = if multiple {
@@ -1420,8 +1468,7 @@ fn verify_file_within_limits(
                 };
                 let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
                     let source = project.entry_source()?;
-                    let branch =
-                        proof_source_position_for_path(claim, path, &project, &inputs, source)?;
+                    let branch = source_locations.position(claim, path, source)?;
                     tactic_arm_containing_position(source, &branch, target)
                         .ok()
                         .flatten()
@@ -1431,9 +1478,7 @@ fn verify_file_within_limits(
                         let Some(source) = project.entry_source() else {
                             return false;
                         };
-                        let Some(have) =
-                            proof_source_position_for_path(claim, path, &project, &inputs, source)
-                        else {
+                        let Some(have) = source_locations.position(claim, path, source) else {
                             return false;
                         };
                         tactic_have_body_contains_position(source, &have, target).unwrap_or(false)
@@ -1618,6 +1663,148 @@ mod incremental_tests;
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn refused_match_arm_contradiction_reports_its_own_tactic() {
+        for name in [
+            "arm_contradiction_reports_its_source",
+            "nested_arm_contradiction_reports_its_source",
+            "bridged_arm_contradiction_reports_its_source",
+            "arm_contradiction_after_loop_reports_its_source",
+        ] {
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("mdtests/{name}.md"));
+            let source = fs::read_to_string(&fixture).unwrap();
+            let (line, tactic) = source
+                .lines()
+                .enumerate()
+                .find(|(_, line)| {
+                    line.trim()
+                        .starts_with("contradiction(x.model == Cell::Present(")
+                })
+                .map(|(line, tactic)| (line + 1, tactic.trim()))
+                .unwrap();
+            let report = entry_with([fixture.display().to_string()])
+                .expect_err("the constructor is not refuted");
+            assert!(
+                report.contains(&format!("tactic@{line}:")),
+                "{name}: {report}"
+            );
+            assert!(report.contains(tactic), "{name}: {report}");
+            assert!(
+                report.contains("requires an exact fact and its negation"),
+                "{name}: {report}"
+            );
+            assert!(
+                report.contains("in match arm `Cell::Present`"),
+                "{name}: {report}"
+            );
+        }
+    }
+
+    fn loop_frontier_trace_report(target: Option<usize>) -> String {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/loop_preserve_frontier_report_multi_exit.md");
+        let mut arguments = vec!["--trace-proof".to_owned(), "scan".to_owned()];
+        if let Some(line) = target {
+            arguments.extend(["--trace-to".to_owned(), line.to_string()]);
+        }
+        arguments.push(fixture.display().to_string());
+        entry_with(arguments).expect_err("the loop proof remains unfinished")
+    }
+
+    #[test]
+    fn loop_frontier_trace_reports_the_unfinished_path() {
+        let report = loop_frontier_trace_report(None);
+        assert!(report.contains("stopped inside the loop body"), "{report}");
+        let (_, trace) = report
+            .split_once("proof trace (checked tactics and branch facts):")
+            .unwrap_or_else(|| panic!("missing proof trace: {report}"));
+        for line in [48, 49, 59] {
+            assert!(trace.contains(&format!("tactic@{line}: step\n")), "{trace}");
+        }
+        assert!(!trace.contains("tactic@57:"), "{trace}");
+    }
+
+    #[test]
+    fn loop_frontier_trace_to_selects_checked_tactics() {
+        for target in [48, 57, 59] {
+            let report = loop_frontier_trace_report(Some(target));
+            let (_, trace) = report
+                .split_once("proof trace (checked tactics and branch facts):")
+                .unwrap_or_else(|| panic!("missing proof trace at {target}: {report}"));
+            assert!(
+                trace.contains(&format!("tactic@{target}: step\n")),
+                "{trace}"
+            );
+            if target == 48 {
+                assert!(!trace.contains("tactic@49:"), "{trace}");
+            } else if target == 57 {
+                assert!(!trace.contains("tactic@59:"), "{trace}");
+            } else {
+                assert!(!trace.contains("tactic@57:"), "{trace}");
+            }
+        }
+    }
+
+    #[test]
+    fn loop_frontier_trace_to_an_unreached_tactic_explains_the_missing_step() {
+        let report = loop_frontier_trace_report(Some(63));
+        assert!(
+            report.contains("target tactic has no recorded checked step on a retained path"),
+            "{report}"
+        );
+        assert!(!report.contains("tactic@63: step\n"), "{report}");
+    }
+
+    #[test]
+    fn loop_frontier_trace_to_selects_another_unfinished_arm() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/loop_preserve_frontier_report_multi_exit.md");
+        let mut loaded = load_target_inputs(&fixture, None).unwrap();
+        let line_offset = loaded.line_offset();
+        // Leave both arms unfinished, preserving physical source line numbers.
+        loaded.click_source = loaded.click_source.replace(
+            "                step();\n                step();",
+            "                step();\n                ",
+        );
+        loaded.project = loaded
+            .project
+            .with_entry_source(loaded.click_source.clone());
+        let target = resolve_trace_target(
+            &loaded.click_source,
+            line_offset,
+            &TraceTo {
+                line: 59,
+                column: None,
+            },
+        )
+        .unwrap();
+        let CInput::Bundle(sources) = &loaded.inputs else {
+            panic!("expected C fixture")
+        };
+        let report = with_proof_trace("scan", || {
+            let error = verify_c0_project_functions(
+                &loaded.project,
+                &source_refs(sources),
+                ["scan".to_owned()],
+            )
+            .expect_err("both preservation arms remain unfinished");
+            proof_error_report(
+                &error,
+                &fixture,
+                true,
+                &loaded.project,
+                &loaded.inputs,
+                line_offset,
+                Some(&target),
+            )
+        });
+        assert!(report.contains("tactic@59: step\n"), "{report}");
+        assert!(
+            !report.contains("target tactic has no recorded checked step"),
+            "{report}"
+        );
+    }
 
     #[test]
     fn trace_target_uses_a_unique_line_or_an_explicit_column() {

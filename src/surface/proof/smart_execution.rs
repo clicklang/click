@@ -13,15 +13,20 @@ impl<'a> Proof<'a> {
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
+        if *region == CodeRegionRef::BackEdge {
+            return self.try_execute_to_back_edge_descendant();
+        }
         let target = self.resolve_statement_target(region)?;
         let Some(current) = self.current_statement_index()? else {
             return Err(self.step_error(format!(
-                "`execute_until(statement({target}))` cannot run after execution already reached function exit"
+                "`execute_until({})` cannot run after execution already reached function exit",
+                describe_code_region_ref(region)
             )));
         };
         if target < current {
             return Err(self.step_error(format!(
-                "`execute_until(statement({target}))` cannot move backward from statement({current})"
+                "`execute_until({})` cannot move backward from statement({current})",
+                describe_code_region_ref(region)
             )));
         }
         if target == current {
@@ -39,6 +44,64 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         Ok(Some((proof, introduced_facts)))
+    }
+
+    /// Finish only the current preservation region. Every advance is an
+    /// ordinary checked step; reaching the boundary grants no invariant or
+    /// termination authority. Refuse branch splits and non-back-edge exits.
+    fn try_execute_to_back_edge_descendant(
+        &self,
+    ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
+        let frontier = &self
+            .execution()
+            .ok_or_else(|| self.step_error("`back_edge()` requires a loop preservation frontier"))?
+            .core
+            .frontier;
+        if !frontier.in_loop_body
+            || frontier.region != crate::kernel::proof::ExecutionRegionKind::LoopBody
+        {
+            return Err(self.step_error("`back_edge()` requires the current loop preservation region; it cannot select a branch arm boundary"));
+        }
+        if frontier.is_at_region_boundary() && !frontier.loop_control.is_exit() {
+            return Ok(None);
+        }
+        let mut proof = self.clone();
+        let mut facts = Vec::new();
+        let mut retried = BTreeSet::new();
+        let mut steps = 0;
+        loop {
+            let frontier = &proof
+                .execution()
+                .ok_or_else(|| proof.step_error("execution proof lost its semantic frontier"))?
+                .core
+                .frontier;
+            if frontier.region != crate::kernel::proof::ExecutionRegionKind::LoopBody {
+                return Err(proof.step_error("`back_edge()` cannot finish a nested branch or loop region; prove that region separately"));
+            }
+            if frontier.is_at_region_boundary() {
+                if frontier.loop_control.is_exit() {
+                    return Err(proof
+                        .step_error("`back_edge()` reached a loop exit instead of the back edge"));
+                }
+                return Ok(Some((proof, facts)));
+            }
+            if frontier.is_at_function_exit() {
+                return Err(proof
+                    .step_error("`back_edge()` reached function exit instead of the back edge"));
+            }
+            proof.charge_execute_step(&mut steps)?;
+            if let Some(next) = proof.try_smart_statement_step(ProofStep::Step, &mut retried)? {
+                facts.extend(next.added_facts().iter().cloned());
+                proof = next;
+                retried.clear();
+            } else {
+                return match proof.apply_step(ProofStep::Step) {
+                    Err(error) => Err(error),
+                    Ok(_) => Err(proof
+                        .step_error("`back_edge()` found no checked advance from this frontier")),
+                };
+            }
+        }
     }
 
     /// Runs `execute_until` on this Proof and returns only the

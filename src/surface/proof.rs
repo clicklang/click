@@ -44,7 +44,6 @@ mod theorem_application;
 mod timing;
 use crate::kernel::fresh_int32_variable_for_propositions;
 use crate::kernel::proof::{
-    CallOutcomeArmEvidence, CheckedCallOutcomeSplit, CheckedCallOutcomeSplitError,
     ExceptionalContinuation, ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind,
     FrontierPosition, LoopControlExit, PersistentOrderedSet, PersistentSequence,
     ProofExecutionContinuation, ProofFacts, SharedVec, old_reference_state,
@@ -1242,8 +1241,11 @@ fn source_tactic_width(tactic: &ProofTactic) -> usize {
                 + source_tactic_count(&proof_if.else_tactics)
         }
         ProofTactic::Cases(proof_cases) => {
-            1 + source_tactic_count(&proof_cases.left_tactics)
-                + source_tactic_count(&proof_cases.right_tactics)
+            1 + proof_cases
+                .arms()
+                .iter()
+                .map(|arm| source_tactic_count(arm.tactics()))
+                .sum::<usize>()
         }
         ProofTactic::StructuralInduct { arms, .. } => {
             1 + arms
@@ -2559,9 +2561,9 @@ fn tactic_contains_frontier_loop(tactic: &ProofTactic) -> bool {
             .chain(&both.right_tactics)
             .any(tactic_contains_frontier_loop),
         ProofTactic::Cases(cases) => cases
-            .left_tactics
+            .arms()
             .iter()
-            .chain(&cases.right_tactics)
+            .flat_map(|arm| arm.tactics())
             .any(tactic_contains_frontier_loop),
         ProofTactic::Match(proof_match) => proof_match
             .arms

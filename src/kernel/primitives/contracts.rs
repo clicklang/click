@@ -99,7 +99,9 @@ impl CGlobal {
                     | CType::Int32Pointer
                     | CType::UInt8Pointer
                     | CType::UInt32Pointer
+                    | CType::Int128Pointer
                     | CType::Int64Pointer
+                    | CType::UInt128Pointer
                     | CType::UInt64Pointer
                     | CType::Float32Pointer
                     | CType::Float64Pointer
@@ -109,7 +111,9 @@ impl CGlobal {
                     | CType::Int32PointerPointer
                     | CType::UInt8PointerPointer
                     | CType::UInt32PointerPointer
+                    | CType::Int128PointerPointer
                     | CType::Int64PointerPointer
+                    | CType::UInt128PointerPointer
                     | CType::UInt64PointerPointer
                     | CType::Float32PointerPointer
                     | CType::Float64PointerPointer
@@ -205,6 +209,8 @@ impl CGlobalArray {
                     | CType::UInt32
                     | CType::Int64
                     | CType::UInt64
+                    | CType::Int128
+                    | CType::UInt128
             ) || element_type.is_pointer(),
             "C global arrays require supported scalar or pointer elements"
         );
@@ -396,7 +402,9 @@ impl CStaticLocal {
                     | CType::Int32Pointer
                     | CType::UInt8Pointer
                     | CType::UInt32Pointer
+                    | CType::Int128Pointer
                     | CType::Int64Pointer
+                    | CType::UInt128Pointer
                     | CType::UInt64Pointer
                     | CType::Float32Pointer
                     | CType::Float64Pointer
@@ -406,7 +414,9 @@ impl CStaticLocal {
                     | CType::Int32PointerPointer
                     | CType::UInt8PointerPointer
                     | CType::UInt32PointerPointer
+                    | CType::Int128PointerPointer
                     | CType::Int64PointerPointer
+                    | CType::UInt128PointerPointer
                     | CType::UInt64PointerPointer
                     | CType::Float32PointerPointer
                     | CType::Float64PointerPointer
@@ -502,6 +512,8 @@ impl CStaticArray {
                     | CType::UInt32
                     | CType::Int64
                     | CType::UInt64
+                    | CType::Int128
+                    | CType::UInt128
             ) || element_type.is_pointer(),
             "C static local arrays require supported scalar or pointer elements"
         );

@@ -612,12 +612,19 @@ int32 set_first(int32 p[], int32 value) {
 }
 ```
 
-The trailing block executes the function once and proves every listed claim
-from that shared execution. It may also certify a resource-only contract with
-no postcondition clauses. `simp()` and resource steps discharge the
-postconditions. A function uses either this grouped form or per-claim `by`
-clauses; the two forms cannot be mixed. Structural region clauses, including
-loop proofs, retain their own proof blocks.
+The trailing block executes the function once and proves, from that shared
+execution, every listed claim that has no `by` of its own. It may also certify
+a resource-only contract with no postcondition clauses. `simp()` and resource
+steps discharge the postconditions. A claim with its own `by` keeps that proof,
+so one hard claim can be proved by hand beside a grouped proof of the rest; a
+grouped proof that would prove no claim is refused. Structural region clauses,
+including loop proofs, retain their own proof blocks.
+
+When two or more claims omit their proofs and no grouped proof is written,
+they share an implicit `} by auto;`, so the default form also executes the
+function once. `click expand` at the contract's closing `}` writes that
+grouped proof out. A single claim without a proof keeps its own default
+`auto`, which is the same proof.
 
 For contracts that need only ordinary execution, loop checks, and
 simplification, the grouped proof can be written `} by auto;`. This is a fixed
@@ -631,13 +638,13 @@ function reaches its return frontier:
 ```click
 execute();
 have exists (k: int32) { k == result } by {
-    witness(k = result);
+    witness { k: result };
     simp();
 }
 simp();
 ```
 
-The scoped proof may use `let ... satisfy` and `witness`. Its established proposition is
+The scoped proof may use `obtain` and `witness`. Its established proposition is
 added to every completed execution path, so later `simp()` can use it to close
 the matching postcondition without applying those existential steps to other
 contract claims.
@@ -893,13 +900,10 @@ its condition as a logical case split:
 
 <!-- verified-example: mdtests/frontier_branch.md -->
 ```click
-branch {
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch then {
+    step();
+} else {
+    step();
 }
 step();
 ```
@@ -946,16 +950,12 @@ optional common-frontier interface to `branch`:
 
 <!-- verified-example: mdtests/proof_branch_interface_continuation.md -->
 ```click
-branch {
-    ensuring {
-        fact y >= 0;
-    }
-    then {
-        step();
-    }
-    else {
-        step();
-    }
+branch ensuring {
+    fact y >= 0;
+} then {
+    step();
+} else {
+    step();
 }
 step();
 ```
@@ -1218,7 +1218,7 @@ consumes p[0..1];
 
 `requires` clauses have no fact labels. `ensures` labels still identify
 postcondition claims. To open an available existential precondition, spell its
-proposition with `let (...) satisfy { ... };`.
+proposition with `obtain (...) { ... };`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
 `int32` element ranges. The byte count is derived from the base pointer's
@@ -2313,14 +2313,17 @@ such as `exists (k: int32) { lo <= k and k < hi and p[k] == x }` does not
 currently let the earlier conjunct guard the later memory read during lowering.
 
 Existential goals are proved explicitly in proof scripts with `witness`.
-The witness name must match the existential binder. For a symbolic `.any`, the
-range item name is the existential binder:
+The witness name must match the existential binder. Pure theorem scripts also
+support `int32` and pointer witnesses, alongside `Integer` and algebraic
+witnesses. The value must have the binder's type, and the instantiated body
+still needs a proof. See [the pure witness example](https://github.com/clicklang/click/blob/master/mdtests/pure_machine_witness.md).
+For a symbolic `.any`, the range item name is the existential binder:
 
 <!-- verified-example: mdtests/exists_and_symbolic_any.md -->
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     execute();
-    witness(k = lo);
+    witness { k: lo };
     simp();
 }
 ```
@@ -2648,7 +2651,7 @@ let k: int32 where k == x;
 
 ensures result == k by {
     execute();
-    witness(k = x);
+    witness { k: x };
     simp();
 }
 ```

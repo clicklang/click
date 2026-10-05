@@ -1,31 +1,64 @@
 use super::*;
 
+// Operands here have already undergone the language's scalar promotions.
+// Keep both constant-folding entry points on the shared format semantics.
+fn checked_machine_div_rem_const(
+    ty: MachineIntegerType,
+    left: u128,
+    right: u128,
+) -> Option<(u128, u128)> {
+    let left = MachineIntegerConstant::from_bits(ty.format(), left)?;
+    let right = MachineIntegerConstant::from_bits(ty.format(), right)?;
+    let (quotient, remainder) = left.truncating_div_rem(right).ok()?;
+    Some((quotient.bits(), remainder.bits()))
+}
+
 fn checked_signed_divide_const(left: u32, right: u32) -> Option<u32> {
-    let left = left as i32;
-    let right = right as i32;
-    if right == 0 || (left == i32::MIN && right == -1) {
-        None
-    } else {
-        Some((left / right) as u32)
-    }
+    checked_machine_div_rem_const(MachineIntegerType::Int32, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u32)
 }
 
 fn checked_signed_remainder_const(left: u32, right: u32) -> Option<u32> {
-    let left = left as i32;
-    let right = right as i32;
-    if right == 0 || (left == i32::MIN && right == -1) {
-        None
-    } else {
-        Some((left % right) as u32)
-    }
+    checked_machine_div_rem_const(MachineIntegerType::Int32, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u32)
 }
 
 fn checked_unsigned_divide_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then(|| left / right)
+    checked_machine_div_rem_const(MachineIntegerType::UInt32, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u32)
 }
 
 fn checked_unsigned_remainder_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then(|| left % right)
+    checked_machine_div_rem_const(MachineIntegerType::UInt32, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u32)
+}
+
+fn checked_int64_divide_const(left: i64, right: i64) -> Option<i64> {
+    checked_machine_div_rem_const(
+        MachineIntegerType::Int64,
+        left as u64 as u128,
+        right as u64 as u128,
+    )
+    .map(|(quotient, _)| quotient as i64)
+}
+
+fn checked_int64_remainder_const(left: i64, right: i64) -> Option<i64> {
+    checked_machine_div_rem_const(
+        MachineIntegerType::Int64,
+        left as u64 as u128,
+        right as u64 as u128,
+    )
+    .map(|(_, remainder)| remainder as i64)
+}
+
+fn checked_uint64_divide_const(left: u64, right: u64) -> Option<u64> {
+    checked_machine_div_rem_const(MachineIntegerType::UInt64, left.into(), right.into())
+        .map(|(quotient, _)| quotient as u64)
+}
+
+fn checked_uint64_remainder_const(left: u64, right: u64) -> Option<u64> {
+    checked_machine_div_rem_const(MachineIntegerType::UInt64, left.into(), right.into())
+        .map(|(_, remainder)| remainder as u64)
 }
 
 fn checked_shift_count_const(count: u32) -> Option<u32> {
@@ -202,6 +235,10 @@ impl Bitvector32Term {
 
     pub(crate) fn as_const(&self) -> Option<u32> {
         match self {
+            Self::MachineIntegerCast { .. } => None,
+
+            Self::MachineIntegerConstant(_) => None,
+
             Self::Constant(value) => Some(*value),
             Self::Variable(_)
             | Self::MemoryLoad(_, _, _)
@@ -725,12 +762,12 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
         Bitvector32Term::Int64Divide(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right)
+            checked_int64_divide_const(left, right)
         }
         Bitvector32Term::Int64Remainder(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right)
+            checked_int64_remainder_const(left, right)
         }
         Bitvector32Term::Int64ShiftLeft(left, right) => {
             let left = int64_constant(left)?;
@@ -797,11 +834,11 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         }
         Bitvector32Term::UInt64Divide(left, right) => {
             let right = uint64_constant(right)?;
-            uint64_constant(left)?.checked_div(right)
+            checked_uint64_divide_const(uint64_constant(left)?, right)
         }
         Bitvector32Term::UInt64Remainder(left, right) => {
             let right = uint64_constant(right)?;
-            uint64_constant(left)?.checked_rem(right)
+            checked_uint64_remainder_const(uint64_constant(left)?, right)
         }
         Bitvector32Term::UInt64ShiftLeft(left, right) => {
             let count = int64_shift_count_constant(right)?;
@@ -1403,14 +1440,11 @@ impl Bitvector32Term {
             }
         }
         match value {
-            Self::UInt64Add(a, b) if b.uint64_as_const().is_some() => Self::add(
-                root(*a),
-                Self::Constant(b.uint64_as_const().unwrap() as u32),
-            ),
-            Self::UInt64Add(a, b) if a.uint64_as_const().is_some() => Self::add(
-                Self::Constant(a.uint64_as_const().unwrap() as u32),
-                root(*b),
-            ),
+            Self::UInt64Add(a, b) => match (*a, *b) {
+                (a, Self::UInt64Constant(b)) => Self::add(root(a), Self::Constant(b as u32)),
+                (Self::UInt64Constant(a), b) => Self::add(Self::Constant(a as u32), root(b)),
+                (a, b) => root(Self::UInt64Add(Box::new(a), Box::new(b))),
+            },
             value => root(value),
         }
     }
@@ -1510,19 +1544,14 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_divide(left: Self, right: Self) -> Self {
-        Self::int64_binary(
-            left,
-            right,
-            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right),
-            Self::Int64Divide,
-        )
+        Self::int64_binary(left, right, checked_int64_divide_const, Self::Int64Divide)
     }
 
     pub(crate) fn int64_remainder(left: Self, right: Self) -> Self {
         Self::int64_binary(
             left,
             right,
-            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right),
+            checked_int64_remainder_const,
             Self::Int64Remainder,
         )
     }
@@ -1627,19 +1656,14 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn uint64_divide(left: Self, right: Self) -> Self {
-        Self::uint64_binary(
-            left,
-            right,
-            |left, right| (right != 0).then(|| left / right),
-            Self::UInt64Divide,
-        )
+        Self::uint64_binary(left, right, checked_uint64_divide_const, Self::UInt64Divide)
     }
 
     pub(crate) fn uint64_remainder(left: Self, right: Self) -> Self {
         Self::uint64_binary(
             left,
             right,
-            |left, right| (right != 0).then(|| left % right),
+            checked_uint64_remainder_const,
             Self::UInt64Remainder,
         )
     }
@@ -2740,13 +2764,20 @@ impl CType {
                     CType::UInt64Pointer => 16,
                     CType::Float32 => 17,
                     CType::Float64 => 18,
-                    CType::Int8PointerPointer | CType::Int8Array(_) => {
+                    CType::Int128
+                    | CType::UInt128
+                    | CType::Int128Pointer
+                    | CType::UInt128Pointer
+                    | CType::Int8PointerPointer
+                    | CType::Int8Array(_) => {
                         return None;
                     }
                     CType::Int16PointerPointer
                     | CType::UInt16PointerPointer
                     | CType::UInt32PointerPointer
+                    | CType::Int128PointerPointer
                     | CType::Int64PointerPointer
+                    | CType::UInt128PointerPointer
                     | CType::UInt64PointerPointer
                     | CType::FunctionPointer(_)
                     | CType::Int32Array(_)
@@ -2754,7 +2785,9 @@ impl CType {
                     | CType::Int16Array(_)
                     | CType::UInt16Array(_)
                     | CType::UInt32Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_)
                     | CType::Float32Pointer
                     | CType::Float64Pointer
@@ -2819,7 +2852,9 @@ impl CType {
             Self::UInt16 => Some(Self::UInt16Pointer),
             Self::UInt32 => Some(Self::UInt32Pointer),
             Self::Int64 => Some(Self::Int64Pointer),
+            Self::Int128 => Some(Self::Int128Pointer),
             Self::UInt64 => Some(Self::UInt64Pointer),
+            Self::UInt128 => Some(Self::UInt128Pointer),
             Self::Float32 => Some(Self::Float32Pointer),
             Self::Float64 => Some(Self::Float64Pointer),
             Self::Int8Pointer => Some(Self::Int8PointerPointer),
@@ -2829,7 +2864,9 @@ impl CType {
             Self::UInt8Pointer => Some(Self::UInt8PointerPointer),
             Self::UInt32Pointer => Some(Self::UInt32PointerPointer),
             Self::Int64Pointer => Some(Self::Int64PointerPointer),
+            Self::Int128Pointer => Some(Self::Int128PointerPointer),
             Self::UInt64Pointer => Some(Self::UInt64PointerPointer),
+            Self::UInt128Pointer => Some(Self::UInt128PointerPointer),
             Self::Float32Pointer => Some(Self::Float32PointerPointer),
             Self::Float64Pointer => Some(Self::Float64PointerPointer),
             Self::VoidPointer => Some(Self::VoidPointerPointer),
@@ -2841,7 +2878,9 @@ impl CType {
             | Self::Int32PointerPointer
             | Self::UInt8PointerPointer
             | Self::UInt32PointerPointer
+            | Self::Int128PointerPointer
             | Self::Int64PointerPointer
+            | Self::UInt128PointerPointer
             | Self::UInt64PointerPointer
             | Self::FunctionPointer(_)
             | Self::Int32Array(_)
@@ -2849,7 +2888,9 @@ impl CType {
             | Self::Int16Array(_)
             | Self::UInt16Array(_)
             | Self::UInt32Array(_)
+            | Self::Int128Array(_)
             | Self::Int64Array(_)
+            | Self::UInt128Array(_)
             | Self::UInt64Array(_)
             | Self::Float32PointerPointer
             | Self::Float64PointerPointer
@@ -2861,6 +2902,12 @@ impl CType {
 
     pub(crate) fn accepts(self, value: &CValue) -> bool {
         match (self, value) {
+            (Self::Int128, CValue::Int128(term)) => {
+                MachineIntegerType::Int128.accepts_wide_term(term)
+            }
+            (Self::UInt128, CValue::UInt128(term)) => {
+                MachineIntegerType::UInt128.accepts_wide_term(term)
+            }
             (Self::Int8, CValue::Int8(_)) => true,
             (Self::Void, CValue::Void)
             | (Self::Bool, CValue::Bool(_))
@@ -2896,6 +2943,7 @@ impl CType {
             Self::Int16Array(_) | Self::UInt16Array(_) => 2,
             Self::Int64Array(_) | Self::UInt64Array(_) | Self::Float64Array(_) => 8,
             Self::PointerArray(_, _) => 8,
+            Self::Int128 | Self::UInt128 | Self::Int128Array(_) | Self::UInt128Array(_) => 16,
             scalar => scalar.byte_width().min(C_POINTER_BYTE_WIDTH),
         }
     }
@@ -2914,6 +2962,7 @@ impl CType {
             Self::UInt32 => 4,
             Self::Int64 => 8,
             Self::UInt64 => 8,
+            Self::Int128 | Self::UInt128 => 16,
             Self::Float32 => 4,
             Self::Float64 => 8,
             Self::Int8Pointer => C_POINTER_BYTE_WIDTH,
@@ -2923,7 +2972,9 @@ impl CType {
             Self::UInt16Pointer => C_POINTER_BYTE_WIDTH,
             Self::UInt32Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int64Pointer => C_POINTER_BYTE_WIDTH,
+            Self::Int128Pointer => C_POINTER_BYTE_WIDTH,
             Self::UInt64Pointer => C_POINTER_BYTE_WIDTH,
+            Self::UInt128Pointer => C_POINTER_BYTE_WIDTH,
             Self::Float32Pointer => C_POINTER_BYTE_WIDTH,
             Self::Float64Pointer => C_POINTER_BYTE_WIDTH,
             Self::Int8PointerPointer => C_POINTER_BYTE_WIDTH,
@@ -2933,7 +2984,9 @@ impl CType {
             Self::UInt16PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::UInt32PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Int64PointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::Int128PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::UInt64PointerPointer => C_POINTER_BYTE_WIDTH,
+            Self::UInt128PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Float32PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::Float64PointerPointer => C_POINTER_BYTE_WIDTH,
             Self::FunctionPointer(_) => C_POINTER_BYTE_WIDTH,
@@ -2945,6 +2998,7 @@ impl CType {
             Self::Int64Array(length) | Self::UInt64Array(length) => length.saturating_mul(8),
             Self::Float32Array(length) => length.saturating_mul(4),
             Self::Float64Array(length) => length.saturating_mul(8),
+            Self::Int128Array(length) | Self::UInt128Array(length) => length.saturating_mul(16),
             Self::PointerArray(_, length) => length.saturating_mul(C_POINTER_BYTE_WIDTH),
         }
     }
@@ -2959,7 +3013,9 @@ impl CType {
             Self::UInt16Pointer => Some(Self::UInt16),
             Self::UInt32Pointer => Some(Self::UInt32),
             Self::Int64Pointer => Some(Self::Int64),
+            Self::Int128Pointer => Some(Self::Int128),
             Self::UInt64Pointer => Some(Self::UInt64),
+            Self::UInt128Pointer => Some(Self::UInt128),
             Self::Int8PointerPointer => Some(Self::Int8Pointer),
             Self::Int16PointerPointer => Some(Self::Int16Pointer),
             Self::Int32PointerPointer => Some(Self::Int32Pointer),
@@ -2967,7 +3023,9 @@ impl CType {
             Self::UInt16PointerPointer => Some(Self::UInt16Pointer),
             Self::UInt32PointerPointer => Some(Self::UInt32Pointer),
             Self::Int64PointerPointer => Some(Self::Int64Pointer),
+            Self::Int128PointerPointer => Some(Self::Int128Pointer),
             Self::UInt64PointerPointer => Some(Self::UInt64Pointer),
+            Self::UInt128PointerPointer => Some(Self::UInt128Pointer),
             Self::Float32Pointer => Some(Self::Float32),
             Self::Float64Pointer => Some(Self::Float64),
             Self::Float32PointerPointer => Some(Self::Float32Pointer),
@@ -3044,6 +3102,8 @@ impl CValue {
             Self::UInt32(_) => CType::UInt32,
             Self::Int64(_) => CType::Int64,
             Self::UInt64(_) => CType::UInt64,
+            Self::Int128(_) => CType::Int128,
+            Self::UInt128(_) => CType::UInt128,
             Self::Float32(_) => CType::Float32,
             Self::Float64(_) => CType::Float64,
             Self::Pointer(pointer) => pointer.c_type(),
@@ -3062,6 +3122,7 @@ impl CValue {
             Self::UInt32(_) => 4,
             Self::Int64(_) => 8,
             Self::UInt64(_) => 8,
+            Self::Int128(_) | Self::UInt128(_) => 16,
             Self::Float32(_) => 4,
             Self::Float64(_) => 8,
             Self::Pointer(_) => C_POINTER_BYTE_WIDTH,

@@ -377,7 +377,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     // Computing the source statement is only worth it when timings are read.
     let timings_enabled = crate::instrumentation::enabled();
     let initialize_statement_index = if timings_enabled {
-        SourceExecutionLayout::for_function(environment.parsed_function)?
+        environment
+            .source_layout
             .loop_body_entry(loop_index)
             .unwrap_or(0)
     } else {
@@ -680,7 +681,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         },
         |source| source.claim_label.clone(),
     );
-    let source_layout = SourceExecutionLayout::for_function(environment.parsed_function)?;
+    let source_layout = environment.source_layout.clone();
     let loop_body_statement_index = source_layout.loop_body_entry(loop_index).ok_or_else(|| {
         ClickError::new(format!("`{claim_label}` has no source loop({loop_index})"))
     })?;
@@ -891,7 +892,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         // these generated tactics by expand.
         detach_generated_suffix_from_source_indices(&mut program, first_generated_tactic_index);
     }
-    let source_layout = SourceExecutionLayout::for_function(environment.parsed_function)?;
+    let source_layout = environment.source_layout.clone();
     let natural_loop = source_layout.natural_loop_target(loop_index).is_some();
     let loop_body_statement_index = source_layout.loop_body_entry(loop_index).ok_or_else(|| {
         ClickError::new(format!("`{claim_label}` has no source loop({loop_index})"))
@@ -1115,6 +1116,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // `close_invariants` on a finished arm is named while its sibling arm
     // is still being written. The report is prepared first because the
     // loop consumes the leaves it counts.
+    if crate::surface::proof_trace::enabled_for(&claim_label) {
+        for (path_index, path) in unfinished.iter().enumerate() {
+            path.proof.record_unfinished_trace(&claim_label, path_index);
+        }
+    }
     let deferred_frontier = unfinished
         .first()
         .map(|path| path.report(&claim_label, &leaves));

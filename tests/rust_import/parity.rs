@@ -1,6 +1,7 @@
 //! Unchanged legacy sources and contracts define migration parity.
 use super::*;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -8,6 +9,12 @@ struct Entry {
     config: String,
     outcome: String,
     diagnostic: String,
+    #[serde(default)]
+    migrated_sidecar: Option<String>,
+    #[serde(default)]
+    frozen_sidecar: Option<String>,
+    #[serde(default)]
+    frozen_sha256: Option<String>,
 }
 fn inventory() -> Vec<Entry> {
     serde_json::from_str(include_str!("../../design/charon-trial/parity.json")).unwrap()
@@ -46,6 +53,24 @@ fn charon_parity_inventory_covers_every_rust_example() {
             "verified" | "rejected" | "proof-gap"
         ));
         assert_eq!(entry.diagnostic.is_empty(), entry.outcome == "verified");
+        assert_eq!(
+            entry.frozen_sidecar.is_some(),
+            entry.migrated_sidecar.is_some()
+        );
+        assert_eq!(
+            entry.frozen_sha256.is_some(),
+            entry.frozen_sidecar.is_some()
+        );
+        if let Some(frozen) = &entry.frozen_sidecar {
+            let bytes = fs::read(root.join(frozen)).unwrap();
+            assert_eq!(
+                Some(format!("{:x}", Sha256::digest(&bytes))),
+                entry.frozen_sha256
+            );
+            let canonical = root.join(entry.config.trim_end_matches(".import.json"));
+            let port = root.join(entry.migrated_sidecar.as_ref().unwrap());
+            assert_eq!(fs::read(canonical).unwrap(), fs::read(port).unwrap());
+        }
     }
     let expected: Vec<_> = entries.into_iter().map(|e| e.config).collect();
     assert_eq!(
@@ -53,6 +78,125 @@ fn charon_parity_inventory_covers_every_rust_example() {
         "update the live parity inventory when fixtures change"
     );
 }
+#[test]
+fn charon_parity_migrated_proof_inventory_is_explicit() {
+    let entries = inventory();
+    let migrated: Vec<_> = entries
+        .iter()
+        .filter_map(|e| {
+            e.migrated_sidecar
+                .as_ref()
+                .map(|path| (e.config.as_str(), path.as_str()))
+        })
+        .collect();
+    assert_eq!(
+        migrated,
+        [
+            (
+                "examples/rust-byte-sum/sum.click.import.json",
+                "design/charon-trial/loop-headers/sum-proof.click"
+            ),
+            (
+                "examples/rust-chunks-exact/chunks.click.import.json",
+                "design/charon-trial/chunk-proof/chunks.click"
+            ),
+            (
+                "examples/rust-iter-references/sum.click.import.json",
+                "design/charon-trial/iterator-proof/rust-iter-references/sum.click"
+            ),
+            (
+                "examples/rust-iterators/sum.click.import.json",
+                "design/charon-trial/iterator-proof/rust-iterators/sum.click"
+            ),
+            (
+                "examples/rust-loops/loops.click.import.json",
+                "design/charon-trial/loop-headers/loops-assignments.click"
+            ),
+        ]
+    );
+    assert_eq!(
+        entries.iter().filter(|e| e.outcome == "verified").count(),
+        11
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|e| e.outcome == "verified" || e.migrated_sidecar.is_some())
+            .count(),
+        16
+    );
+}
+
+/// Canonical examples use locked native imports without starting either compiler.
+#[test]
+fn charon_canonical_examples_use_locked_native_artifacts() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut adopted = 0;
+    for entry in inventory() {
+        let path = root.join(&entry.config);
+        let config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(config["schema"], 3);
+        assert_eq!(config["backend"], "charon-trial");
+        assert!(config["artifact"].as_str().unwrap().ends_with(".ullbc"));
+        let prepared = load_import(&path).unwrap();
+        let sidecar = path.with_file_name(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .trim_end_matches(".import.json"),
+        );
+        C0VerificationSession::new_program_prepared(
+            &fs::read_to_string(sidecar).unwrap(),
+            &prepared,
+        )
+        .unwrap();
+        adopted += 1;
+    }
+    assert_eq!(
+        adopted, 16,
+        "canonical adoption uses the fixed 16-fixture baseline"
+    );
+}
+
+#[test]
+fn charon_canonical_basic_tools_agree() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/basic-rust");
+    let p = Project::new("");
+    for name in [
+        "borrow.rs",
+        "borrow.click",
+        "borrow.ullbc",
+        "borrow.click.import.json",
+        "borrow.click.import.json.lock",
+    ] {
+        fs::write(p.root.join(name), fs::read(root.join(name)).unwrap()).unwrap();
+    }
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["profile"]);
+    let prepared = load_import(&p.config()).unwrap();
+    let expanded =
+        click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 8, 5).unwrap();
+    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    assert_cli(
+        &p,
+        &[
+            "audit",
+            "--claim",
+            "choose.contract",
+            "--start-at",
+            &format!("{}:8:5", p.root.join("borrow.click").display()),
+            "--max-sites",
+            "1",
+        ],
+    );
+    assert_cli(&p, &["expand", "--claim", "choose.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+    assert_cli(&p, &["audit", "--max-sites", "1"]);
+}
+
 #[test]
 #[ignore = "requires the pinned live Charon/compiler; scripts/check.sh --charon-live"]
 fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
@@ -86,12 +230,28 @@ fn charon_legacy_parity_live_refresh_and_unchanged_contracts() {
                         .to_string_lossy()
                         .trim_end_matches(".import.json"),
                 );
-                match C0VerificationSession::new_program_prepared(
-                    &fs::read_to_string(sidecar).unwrap(),
-                    &prepared,
-                ) {
-                    Ok(_) => ("verified", String::new()),
-                    Err(error) => ("proof-gap", error.message().to_owned()),
+                let canonical = fs::read_to_string(&sidecar).unwrap();
+                let canonical_error =
+                    C0VerificationSession::new_program_prepared(&canonical, &prepared)
+                        .err()
+                        .map(|error| error.message().to_owned());
+                if let Some(error) = &canonical_error {
+                    mismatches.push(format!("{}: canonical proof failed: {error}", entry.config));
+                }
+                // Preserve original frozen outcomes independently of canonical adoption.
+                let frozen_error = if let Some(frozen) = &entry.frozen_sidecar {
+                    C0VerificationSession::new_program_prepared(
+                        &fs::read_to_string(root.join(frozen)).unwrap(),
+                        &prepared,
+                    )
+                    .err()
+                    .map(|error| error.message().to_owned())
+                } else {
+                    canonical_error
+                };
+                match frozen_error {
+                    None => ("verified", String::new()),
+                    Some(error) => ("proof-gap", error),
                 }
             }
         };

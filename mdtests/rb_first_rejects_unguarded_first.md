@@ -446,10 +446,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
             }
             have t.model != RbTree::Empty by { simp(); }
             have n != 0 by { simp(); }
-            branch {
-                then { contradiction(n == 0); }
-                else {}
-            }
+            branch then { contradiction(n == 0); } else {}
             loop {
                 owns ctx: ctx_at(n, root);
                 owns t: rb_at(n);

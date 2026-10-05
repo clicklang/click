@@ -767,6 +767,29 @@ impl<'a> Proof<'a> {
             )));
         }
 
+        // A witness for several binders instantiates them in the order
+        // written and is recorded as the one step that was written.
+        if let ProofStep::Witness(witness) = &step
+            && !witness.is_single()
+        {
+            let mut current = self.clone();
+            for single in witness.singles() {
+                current = current.apply_step_with_origin_inner(ProofStep::Witness(single), None)?;
+            }
+            return Ok(Self {
+                site: self.site.clone(),
+                context: self.context.clone(),
+                state: current.state.clone(),
+                node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
+                    parent: Some(self.node.clone()),
+                    step: Some(Arc::new(step)),
+                    focused_branch: current.focused_branch_id(),
+                    depth: self.node.depth + 1,
+                    split_branches: Vec::new(),
+                }),
+            });
+        }
         if let ProofStep::CloseInvariantsBy(body) = &step {
             return self.apply_close_invariants_body(&body.to_proof_tactics());
         }
@@ -784,7 +807,10 @@ impl<'a> Proof<'a> {
         }
         if matches!(
             &step,
-            ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_)
+            ProofStep::Step
+                | ProofStep::StepBind(_)
+                | ProofStep::StepContract(_)
+                | ProofStep::StepCall(_)
         ) {
             return self.apply_execution_statement_step(step);
         }

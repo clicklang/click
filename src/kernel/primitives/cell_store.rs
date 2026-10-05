@@ -763,7 +763,9 @@ pub(crate) fn cell_run_value(
         CType::UInt16 => CValue::UInt16(load),
         CType::UInt32 => CValue::UInt32(load),
         CType::Int64 => CValue::Int64(load),
+        CType::Int128 => CValue::Int128(load),
         CType::UInt64 => CValue::UInt64(load),
+        CType::UInt128 => CValue::UInt128(load),
         CType::Float32 => CValue::Float32(load),
         CType::Float64 => CValue::Float64(load),
         CType::FunctionPointer(_) => {
@@ -1406,6 +1408,12 @@ impl CellStore {
 
     fn reset(&mut self) {
         self.logical = OnceLock::new();
+    }
+
+    /// An explicitly stored value, without synthesizing a run-slot value.
+    /// Dependency selection must not introduce a run's generated load atoms.
+    pub(in crate::kernel) fn explicitly_stored_value(&self, pointer: &Pointer) -> Option<&CValue> {
+        self.concrete.get(pointer)
     }
 
     /// The cell at `pointer`, read from a run slot without building the

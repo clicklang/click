@@ -774,6 +774,9 @@ pub(in crate::kernel) fn apply_c_multiply(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_)) || matches!(right, CValue::Int128(_)) {
+        return apply_c_int128_multiply(left, right, facts, obligations, assumptions);
+    }
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -824,6 +827,132 @@ pub(in crate::kernel) fn apply_c_multiply(
     } else {
         apply_c_int32_multiply(left, right, facts, obligations, assumptions)
     }
+}
+
+/// Signed wide multiplication is exact multiplication followed by the shared
+/// checked machine conversion. Range failure is native signed overflow, not
+/// a modulo cast or an unbounded Integer result. Other wide operations keep
+/// their own admission boundary.
+fn apply_c_int128_multiply(
+    left: CValue,
+    right: CValue,
+    mut facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    fn observe(value: CValue, assumptions: &PureFactContext) -> Option<IntegerTerm> {
+        let ty = match value.c_type() {
+            // Boolean operands are normalized 0/1. The other narrow types
+            // retain their actual numeric interpretation before promotion.
+            CType::Bool => MachineIntegerType::UInt8,
+            CType::UInt128 => return None,
+            ty => MachineIntegerType::from_c_type(ty)?,
+        };
+        let term = match value {
+            CValue::Bool(term)
+            | CValue::Int8(term)
+            | CValue::UInt8(term)
+            | CValue::Int16(term)
+            | CValue::UInt16(term)
+            | CValue::Int32(term)
+            | CValue::UInt32(term)
+            | CValue::Int64(term)
+            | CValue::UInt64(term)
+            | CValue::Int128(term) => term,
+            _ => return None,
+        };
+        let observed = IntegerTerm::from_machine(ty, term)?;
+        // Numeric widening has already normalized to the original observer.
+        // Resolve only its indexed equality component, keeping the original
+        // signedness; unknown values retain both product-bound obligations.
+        if let IntegerTerm::Machine(machine) = &observed {
+            let constant = match machine.ty() {
+                MachineIntegerType::Int64 => assumptions
+                    .wide_constant_from_equalities(machine.value())
+                    .map(|value| IntegerTerm::constant_i64(value as i64)),
+                MachineIntegerType::UInt64 => assumptions
+                    .wide_constant_from_equalities(machine.value())
+                    .map(|value| IntegerTerm::constant(num_bigint::BigInt::from(value))),
+                _ => None,
+            };
+            if let Some(constant) = constant {
+                return Some(constant);
+            }
+        }
+        Some(observed)
+    }
+    let (Some(left), Some(right)) = (observe(left, assumptions), observe(right, assumptions))
+    else {
+        return vec![c_type_mismatch_expression_path(facts, obligations)];
+    };
+    let product = IntegerTerm::multiply(left, right);
+    let destination = MachineIntegerType::Int128;
+    let (min, max) = destination.format().bounds();
+    let mut paths = Vec::new();
+    for (guard, equivalent) in [
+        (
+            ConditionTerm::integer_greater_equal(
+                product.clone(),
+                IntegerTerm::constant(min.clone()),
+            ),
+            ConditionTerm::integer_less_equal(IntegerTerm::constant(min), product.clone()),
+        ),
+        (
+            ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max.clone())),
+            ConditionTerm::integer_greater_equal(IntegerTerm::constant(max), product.clone()),
+        ),
+    ] {
+        // Product-bound certificates use <= for either endpoint. Consult the
+        // equivalent orientation directly rather than searching ambient facts.
+        match decide_with_facts(assumptions, &facts, &guard)
+            .or_else(|| decide_with_facts(assumptions, &facts, &equivalent))
+        {
+            Some(false) => {
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::SignedOverflow,
+                    ),
+                    facts,
+                    obligations,
+                });
+                return paths;
+            }
+            Some(true) => {}
+            None => {
+                let mut overflow_facts = facts.clone();
+                add_condition_path_fact(&mut overflow_facts, assumptions, guard.clone(), false)
+                    .expect("unknown wide multiplication bound must have a consistent false path");
+                paths.push(CExpressionPath {
+                    outcome: CExpressionOutcome::UndefinedBehavior(
+                        CUndefinedBehavior::SignedOverflow,
+                    ),
+                    facts: overflow_facts,
+                    obligations: obligations.clone(),
+                });
+                add_condition_path_fact(&mut facts, assumptions, guard, true)
+                    .expect("unknown wide multiplication bound must have a consistent true path");
+            }
+        }
+    }
+    let term = if let Some(constant) = product.as_const() {
+        destination
+            .constant_term(
+                MachineIntegerConstant::from_integer(destination.format(), constant)
+                    .expect("both signed wide product bounds hold"),
+            )
+            .expect("exact wide format")
+    } else {
+        Bitvector32Term::IntegerToMachine {
+            value: product.into(),
+            destination,
+        }
+    };
+    paths.push(CExpressionPath {
+        outcome: CExpressionOutcome::Value(CValue::Int128(term)),
+        facts,
+        obligations,
+    });
+    paths
 }
 
 pub(in crate::kernel) fn apply_c_divide(
@@ -1734,7 +1863,12 @@ fn pointer_index_term(
             Some((Bitvector32Term::uint32_from_64(value), false, false))
         }
         CValue::UInt64(value) => Some((value, true, true)),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -3004,7 +3138,12 @@ fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)>
         CValue::UInt16(value) => Some((value, false, false)),
         CValue::Int64(value) => Some((value, false, true)),
         CValue::UInt64(value) => Some((value, true, true)),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -3108,7 +3247,12 @@ pub(in crate::kernel) fn apply_c_shift_left(
             right_is_64_bit,
             apply_c_int32_shift_left_valid_count,
         ),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => {
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => {
             vec![c_type_mismatch_expression_path(facts, obligations)]
         }
     }
@@ -3254,7 +3398,12 @@ pub(in crate::kernel) fn apply_c_shift_right(
                 }]
             },
         ),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => {
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => {
             vec![c_type_mismatch_expression_path(facts, obligations)]
         }
     }

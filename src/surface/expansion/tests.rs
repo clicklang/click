@@ -110,7 +110,7 @@ fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
 
 #[test]
 fn trace_target_selects_only_the_arm_containing_its_source_position() {
-    let source = "by {\n  branch { then { step(); } else { step(); } }\n  step();\n}\n";
+    let source = "by {\n  branch then { step(); } else { step(); }\n  step();\n}\n";
     let branch = position_at_offset(source, source.find("branch").unwrap());
     let then_step = position_at_offset(
         source,
@@ -670,17 +670,13 @@ int32 increment_selected(int32 x) {
     requires x < 2147483647;
     ensures result > 0 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-                fact y < 2147483647;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+            fact y < 2147483647;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         step();
@@ -727,17 +723,13 @@ int32 positive_after_branch(int32 x) {
     requires x < 2147483647;
     ensures result > 0 by {
         step();
-        branch {
-            ensuring {
-                fact y >= 0;
-                fact y < 2147483647;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y >= 0;
+            fact y < 2147483647;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         step();
@@ -782,10 +774,7 @@ verifying "same.c";
 int32 same_after_branch(int32 x, int32 flag) {
     ensures result == x by {
         step();
-        branch {
-            then { step(); }
-            else { step(); }
-        }
+        branch then { step(); } else { step(); }
         step();
         simp();
     }
@@ -825,13 +814,10 @@ verifying "returning.c";
 
 int32 clamp_nonnegative(int32 x) {
     ensures result >= 0 by {
-        branch {
-            then {
-                step();
-                simp();
-            }
-            else {}
-        }
+        branch then {
+            step();
+            simp();
+        } else {}
         step();
         simp();
     }
@@ -878,21 +864,13 @@ verifying "nested.c";
 int32 nested_nonnegative(int32 x, int32 flag) {
     ensures result >= 0 by {
         step();
-        branch {
-            ensuring {
+        branch ensuring {
+            fact y >= 0;
+        } then {
+            branch ensuring {
                 fact y >= 0;
-            }
-            then {
-                branch {
-                    ensuring {
-                        fact y >= 0;
-                    }
-                    then { step(); }
-                    else { step(); }
-                }
-            }
-            else { step(); }
-        }
+            } then { step(); } else { step(); }
+        } else { step(); }
         step();
         simp();
     }
@@ -941,9 +919,9 @@ int32 nested_nonnegative(int32 x, int32 flag) {
     });
 
     let inner_offset = click_source
-        .find("                branch {")
+        .find("            branch ensuring {")
         .expect("inner branch should exist")
-        + 16;
+        + 12;
     let inner_position = position_at_offset(click_source, inner_offset);
     let inner = expand_c0_tactic_source_at(
         click_source,
@@ -1492,10 +1470,10 @@ int32 contains(uint8 p[], int32 n) {
     ensures bytes_contains(p, 0, n, 'x') by {
         execute();
         unfold(bytes_contains);
-        let (found: int32) satisfy {
+        obtain (found: int32) {
             0 <= found and found < n and p[found] == 'x'
         };
-        witness(k = found);
+        witness { k: found };
         simp();
     }
 }"#;
@@ -1512,7 +1490,7 @@ int32 contains(uint8 p[], int32 n) {
     // The `simp` closes the proof the `witness` opened, so it expands to
     // that one step rather than restating the claim.
     assert!(
-        expanded.contains("witness(k = found);\n        assumption();"),
+        expanded.contains("witness { k: found };\n        assumption();"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &[("contains.c", c_source)])
@@ -2473,10 +2451,13 @@ fn smart_sites_inside_and_after_cases_and_outcomes_resolve_to_their_source() {
 theorem pick_nonzero(r: int32) {
     requires r == 18 or r == -1;
     ensures r != 0 by {
-        cases (r == 18 or r == -1) {
-            have r > 0 by { simp(); }
-        } {
-            have r < 0 by { simp(); }
+        cases {
+            r == 18 => {
+                have r > 0 by { simp(); }
+            }
+            r == -1 => {
+                have r < 0 by { simp(); }
+            }
         }
         simp();
     }
@@ -2515,10 +2496,10 @@ int32 client(int32 x) {
 } by {
     step();
     outcomes {
-        returned {
+        returned => {
             simp();
         }
-        threw {
+        threw => {
             simp();
         }
     }

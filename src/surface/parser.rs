@@ -143,6 +143,7 @@ pub(super) fn declares_only_definitions(source: &str) -> bool {
     true
 }
 
+#[cfg(test)]
 pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
     let mut parser =
         Parser::new(source).map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
@@ -462,7 +463,7 @@ struct Parser {
     current_arm_binding_types: BTreeMap<String, AlgebraicFieldType>,
     current_integer_params: BTreeSet<String>,
     current_integer_lets: BTreeSet<String>,
-    /// Names introduced by `let (...) satisfy` in this proof block only.
+    /// Names introduced by `obtain (...)` in this proof block only.
     /// Nested `have` and branch blocks start a new lexical binder scope;
     /// semantic freshness is checked again by the proof object.
     current_proof_let_names: BTreeSet<String>,
@@ -543,6 +544,8 @@ pub(super) fn is_c_type_keyword(name: &str) -> bool {
             | "int8"
             | "int16"
             | "int64"
+            | "int128"
+            | "uint128"
             | "uint8"
             | "uint8_t"
             | "uint32"
@@ -580,7 +583,9 @@ pub(in crate::surface) fn algebraic_field_c_type_supported(c_type: C0Type) -> bo
             | C0Type::UInt8Array(_)
             | C0Type::UInt16Array(_)
             | C0Type::UInt32Array(_)
+            | C0Type::Int128Array(_)
             | C0Type::Int64Array(_)
+            | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
             | C0Type::Float32Array(_)
             | C0Type::Float64Array(_)
@@ -1807,7 +1812,7 @@ impl Parser {
                             binding.name
                         )));
                     }
-                    if witnesses.iter().any(|witness| witness.name == binding.name) {
+                    if witnesses.iter().any(|witness| witness.name() == binding.name) {
                         return Err(
                             self.error(format!("duplicate resource witness `{}`", binding.name))
                         );
@@ -2776,13 +2781,14 @@ impl Parser {
         self.expect(Token::RBrace)?;
         let grouped_proof = if self.peek_ident() == Some("by") {
             let proof = self.parse_by_clause()?;
-            if ensures
-                .iter()
-                .chain(exceptional_ensures.iter())
-                .any(|clause| !matches!(clause.proof(), SourceProof::Default))
+            // The grouped proof proves every claim without its own `by`; one
+            // that would prove none is refused rather than silently unused.
+            let mut claims = ensures.iter().chain(exceptional_ensures.iter()).peekable();
+            if claims.peek().is_some()
+                && claims.all(|clause| !matches!(clause.proof(), SourceProof::Default))
             {
                 return Err(self.error(
-                    "a grouped function proof cannot be combined with individual claim proofs",
+                    "this grouped function proof proves no claim: every postcondition has its own `by`",
                 ));
             }
             Some(proof)
@@ -3228,6 +3234,8 @@ impl Parser {
                 "uint32" | "uint32_t" => C0Type::UInt32,
                 "int64" | "int64_t" | "ssize_t" => C0Type::Int64,
                 "uint64" | "size_t" | "uint64_t" => C0Type::UInt64,
+                "int128" => C0Type::Int128,
+                "uint128" => C0Type::UInt128,
                 "float" => C0Type::Float32,
                 "double" => C0Type::Float64,
                 "volatile" => {
@@ -3266,7 +3274,9 @@ impl Parser {
                 C0Type::UInt8 => C0Type::UInt8Pointer,
                 C0Type::UInt32 => C0Type::UInt32Pointer,
                 C0Type::Int64 => C0Type::Int64Pointer,
+                C0Type::Int128 => C0Type::Int128Pointer,
                 C0Type::UInt64 => C0Type::UInt64Pointer,
+                C0Type::UInt128 => C0Type::UInt128Pointer,
                 C0Type::Int8Pointer => C0Type::Int8PointerPointer,
                 C0Type::Int16Pointer => C0Type::Int16PointerPointer,
                 C0Type::UInt16Pointer => C0Type::UInt16PointerPointer,
@@ -3275,7 +3285,9 @@ impl Parser {
                 C0Type::UInt8Pointer => C0Type::UInt8PointerPointer,
                 C0Type::UInt32Pointer => C0Type::UInt32PointerPointer,
                 C0Type::Int64Pointer => C0Type::Int64PointerPointer,
+                C0Type::Int128Pointer => C0Type::Int128PointerPointer,
                 C0Type::UInt64Pointer => C0Type::UInt64PointerPointer,
+                C0Type::UInt128Pointer => C0Type::UInt128PointerPointer,
                 _ => return Err(self.error("pointer depth beyond `**` is not supported")),
             };
             if base_constant {
@@ -3385,7 +3397,9 @@ impl Parser {
                         | C0Type::Float32
                         | C0Type::Float64
                         | C0Type::Int32Array(_)
+                        | C0Type::Int128Array(_)
                         | C0Type::Int64Array(_)
+                        | C0Type::UInt128Array(_)
                         | C0Type::UInt64Array(_)
                         | C0Type::CharArray(_)
                         | C0Type::UInt8Array(_)
@@ -3589,7 +3603,9 @@ impl Parser {
             C0Type::UInt16 => (C0Type::UInt16Pointer, 2),
             C0Type::UInt32 => (C0Type::UInt32Pointer, 4),
             C0Type::Int64 => (C0Type::Int64Pointer, 8),
+            C0Type::Int128 => (C0Type::Int128Pointer, 16),
             C0Type::UInt64 => (C0Type::UInt64Pointer, 8),
+            C0Type::UInt128 => (C0Type::UInt128Pointer, 16),
             C0Type::Int8Pointer => (C0Type::Int8PointerPointer, 8),
             C0Type::Int16Pointer => (C0Type::Int16PointerPointer, 8),
             C0Type::UInt16Pointer => (C0Type::UInt16PointerPointer, 8),
@@ -3598,7 +3614,9 @@ impl Parser {
             C0Type::UInt8Pointer => (C0Type::UInt8PointerPointer, 8),
             C0Type::UInt32Pointer => (C0Type::UInt32PointerPointer, 8),
             C0Type::Int64Pointer => (C0Type::Int64PointerPointer, 8),
+            C0Type::Int128Pointer => (C0Type::Int128PointerPointer, 8),
             C0Type::UInt64Pointer => (C0Type::UInt64PointerPointer, 8),
+            C0Type::UInt128Pointer => (C0Type::UInt128PointerPointer, 8),
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
 
@@ -5109,6 +5127,15 @@ impl Parser {
         let result = self.parse_by_clause_body();
         self.restore_proof_let_bindings(let_checkpoint);
         self.current_proof_let_names = previous_proof_let_names;
+        // A `;` after a closing brace ends nothing; accept it after a block
+        // proof as everywhere else, though it is never required.
+        if result.is_ok()
+            && self.position > 0
+            && self.tokens.get(self.position - 1) == Some(&Token::RBrace)
+            && self.peek() == Some(&Token::Semicolon)
+        {
+            self.position += 1;
+        }
         result
     }
 
@@ -5302,14 +5329,29 @@ impl Parser {
     // common tactic dispatcher so nested proof bodies fit the bounded stack.
     #[inline(never)]
     fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
-        if self.peek() == Some(&Token::LParen) {
-            return self.parse_let_satisfy();
-        }
         let output = self.parse_let_output_pattern()?;
         self.expect(Token::Equal)?;
         if self.peek_ident() == Some("step") {
             self.position += 1;
             self.expect(Token::LParen)?;
+            if self.peek() == Some(&Token::RParen) {
+                let CallOutputPattern::Single(name) = output else {
+                    return Err(self.error("`let name = step()` requires one scalar result name"));
+                };
+                if self.current_contract_bindings.contains(&name)
+                    || self.current_integer_params.contains(&name)
+                    || self.current_integer_lets.contains(&name)
+                    || self.current_resource_bindings.contains_key(&name)
+                    || self.current_proof_let_names.contains(&name)
+                {
+                    return Err(
+                        self.error(format!("step result name `{name}` is already in scope"))
+                    );
+                }
+                self.position += 1;
+                self.expect(Token::Semicolon)?;
+                return Ok(ProofTactic::StepBind(name));
+            }
             if !self.call_binder_transport_follows() {
                 return Err(self.error(
                             "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
@@ -5436,7 +5478,9 @@ impl Parser {
         }))
     }
 
-    fn parse_let_satisfy(&mut self) -> Result<ProofTactic, ClickError> {
+    /// `obtain (name: Type, ...) { P }` opens an available
+    /// `exists (name: Type, ...) { P }`, binding its typed names.
+    fn parse_obtain(&mut self) -> Result<ProofTactic, ClickError> {
         self.expect(Token::LParen)?;
         let mut bindings = Vec::new();
         loop {
@@ -5467,7 +5511,6 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RParen)?;
-        self.expect_ident_spelling("satisfy")?;
         self.expect(Token::LBrace)?;
         let previous_integer_context = self.integer_literal_context;
         for (name, click_type) in &bindings {
@@ -5492,7 +5535,9 @@ impl Parser {
         }
         let body = self.parse_proposition()?;
         self.expect(Token::RBrace)?;
-        self.expect(Token::Semicolon)?;
+        if self.peek() == Some(&Token::Semicolon) {
+            self.position += 1;
+        }
         self.integer_literal_context = previous_integer_context;
         self.current_proof_let_names
             .extend(bindings.iter().map(|(name, _)| name.clone()));
@@ -5640,21 +5685,28 @@ impl Parser {
             }));
         }
         if name == "cases" {
-            self.expect(Token::LParen)?;
-            let disjunction = self.parse_proposition()?;
-            self.expect(Token::RParen)?;
-            // Each branch proves the goal under exactly its assumed disjunct.
-            // Both branches are always spelled; there is no implicit side.
-            let left_tactics = self.parse_possibly_empty_tactic_block()?;
-            let right_tactics = self.parse_possibly_empty_tactic_block()?;
+            // One arm per disjunct, each naming the disjunct it assumes:
+            // `cases { A => { ... } B => { ... } }`. The arms' disjunction,
+            // grouped left to right, must be an available fact.
+            self.expect(Token::LBrace)?;
+            let mut arms = Vec::new();
+            while self.peek() != Some(&Token::RBrace) {
+                let assumption = self.parse_proposition()?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                arms.push(ProofCaseArm::new(assumption, tactics));
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
+            self.expect(Token::RBrace)?;
+            if arms.len() < 2 {
+                return Err(self.error("`cases` needs one arm for each disjunct, at least two"));
+            }
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
-            return Ok(ProofTactic::Cases(ProofCases {
-                disjunction,
-                left_tactics,
-                right_tactics,
-            }));
+            return Ok(ProofTactic::Cases(ProofCases::new(arms)));
         }
         if name == "match" {
             let scrutinee = self.parse_contract_expression()?;
@@ -5720,7 +5772,6 @@ impl Parser {
             return Ok(ProofTactic::Match(Box::new(ProofMatch { scrutinee, arms })));
         }
         if name == "branch" {
-            self.expect(Token::LBrace)?;
             let ensuring = if self.peek_ident() == Some("ensuring") {
                 self.position += 1;
                 self.expect(Token::LBrace)?;
@@ -5756,7 +5807,6 @@ impl Parser {
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect(Token::RBrace)?;
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
@@ -5767,12 +5817,36 @@ impl Parser {
             }));
         }
         if name == "outcomes" {
+            // `outcomes { returned => { ... } threw => { ... } }`: one arm per
+            // way the call can end, in either order, as `match` arms are.
             self.expect(Token::LBrace)?;
-            self.expect_ident_spelling("returned")?;
-            let returned_tactics = self.parse_possibly_empty_tactic_block()?;
-            self.expect_ident_spelling("threw")?;
-            let threw_tactics = self.parse_possibly_empty_tactic_block()?;
+            let mut returned_tactics = None;
+            let mut threw_tactics = None;
+            while self.peek() != Some(&Token::RBrace) {
+                let arm = self.expect_ident("`returned` or `threw`")?;
+                self.expect(Token::FatArrow)?;
+                let tactics = self.parse_possibly_empty_tactic_block()?;
+                let slot = match arm.as_str() {
+                    "returned" => &mut returned_tactics,
+                    "threw" => &mut threw_tactics,
+                    _ => {
+                        return Err(self.error(format!(
+                            "`outcomes` arms are `returned` and `threw`, got `{arm}`"
+                        )));
+                    }
+                };
+                if slot.replace(tactics).is_some() {
+                    return Err(self.error(format!("duplicate `outcomes` arm `{arm}`")));
+                }
+                if self.peek() == Some(&Token::Comma) {
+                    self.position += 1;
+                }
+            }
             self.expect(Token::RBrace)?;
+            let (Some(returned_tactics), Some(threw_tactics)) = (returned_tactics, threw_tactics)
+            else {
+                return Err(self.error("`outcomes` needs both a `returned` and a `threw` arm"));
+            };
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
@@ -6115,13 +6189,33 @@ impl Parser {
                 ProofTactic::ObserveResource(resource)
             }
             "witness" => {
-                self.expect(Token::LParen)?;
-                let name = self.expect_ident("witness variable name")?;
-                self.expect(Token::Equal)?;
-                let value = self.parse_contract_expression()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::Witness(ProofWitness { name, value })
+                // `witness { k: value, ... }`: a value for each named binder
+                // of the existential goal, in order.
+                self.expect(Token::LBrace)?;
+                let mut bindings: Vec<(String, ContractExpression)> = Vec::new();
+                while self.peek() != Some(&Token::RBrace) {
+                    let name = self.expect_ident("witness binder name")?;
+                    if bindings.iter().any(|(bound, _)| bound == &name) {
+                        return Err(self.error(format!("duplicate witness for `{name}`")));
+                    }
+                    self.expect(Token::Colon)?;
+                    let value = self.parse_contract_expression()?;
+                    bindings.push((name, value));
+                    if self.peek() != Some(&Token::Comma) {
+                        break;
+                    }
+                    self.position += 1;
+                }
+                self.expect(Token::RBrace)?;
+                if bindings.is_empty() {
+                    return Err(self.error("`witness` needs at least one `binder: value`"));
+                }
+                if self.peek() == Some(&Token::Semicolon) {
+                    self.position += 1;
+                }
+                return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
+            "obtain" => return self.parse_obtain(),
             "assumption" => {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Assumption
@@ -7228,12 +7322,31 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(CodeRegionRef::Statement(index))
             }
+            Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
+                self.expect(Token::LParen)?;
+                self.expect(Token::RParen)?;
+                Ok(CodeRegionRef::BackEdge)
+            }
+            Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
+                self.expect(Token::LParen)?;
+                let occurrence = self.expect_index("read occurrence")?;
+                self.expect(Token::RParen)?;
+                Ok(CodeRegionRef::Read(occurrence))
+            }
+            Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
+                self.expect(Token::LParen)?;
+                let local = self.expect_ident("assignment local")?;
+                self.expect(Token::Comma)?;
+                let occurrence = self.expect_index("assignment occurrence")?;
+                self.expect(Token::RParen)?;
+                Ok(CodeRegionRef::Assignment { local, occurrence })
+            }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
             )),
         }
     }
@@ -7778,7 +7891,9 @@ impl Parser {
                             | CType::Int16Array(_)
                             | CType::UInt16Array(_)
                             | CType::UInt32Array(_)
+                            | CType::Int128Array(_)
                             | CType::Int64Array(_)
+                            | CType::UInt128Array(_)
                             | CType::UInt64Array(_),
                         ..
                     } => None,
@@ -8102,7 +8217,9 @@ impl Parser {
         let array = match field.c_type {
             C0Type::Int32Array(length) => Some((length, 4, CType::Int32)),
             C0Type::Int64Array(length) => Some((length, 8, CType::Int64)),
+            C0Type::Int128Array(length) => Some((length, 16, CType::Int128)),
             C0Type::UInt64Array(length) => Some((length, 8, CType::UInt64)),
+            C0Type::UInt128Array(length) => Some((length, 16, CType::UInt128)),
             C0Type::CharArray(length) | C0Type::UInt8Array(length) => {
                 Some((length, 1, CType::UInt8))
             }
@@ -8408,11 +8525,14 @@ impl Parser {
             C0Type::Int32Array(_)
                 | C0Type::CharArray(_)
                 | C0Type::UInt8Array(_)
+                | C0Type::Int128Array(_)
                 | C0Type::Int64Array(_)
+                | C0Type::UInt128Array(_)
                 | C0Type::UInt64Array(_)
         ) {
             let width = match field.c_type {
                 C0Type::Int64Array(_) | C0Type::UInt64Array(_) => 8,
+                C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
                 C0Type::Int32Array(_) => 4,
                 _ => 1,
             };
@@ -10345,7 +10465,9 @@ fn field_has_direct_memory_place(field: &ResolvedField) -> bool {
             | C0Type::Int64
             | C0Type::UInt64
             | C0Type::Int32Array(_)
+            | C0Type::Int128Array(_)
             | C0Type::Int64Array(_)
+            | C0Type::UInt128Array(_)
             | C0Type::UInt64Array(_)
             | C0Type::CharArray(_)
             | C0Type::UInt8Array(_)
@@ -10359,7 +10481,9 @@ fn scalar_array_field_element(field: &ResolvedField) -> Option<(u32, CType)> {
     match field.c_type {
         C0Type::Int32Array(_) => Some((4, CType::Int32)),
         C0Type::Int64Array(_) => Some((8, CType::Int64)),
+        C0Type::Int128Array(_) => Some((16, CType::Int128)),
         C0Type::UInt64Array(_) => Some((8, CType::UInt64)),
+        C0Type::UInt128Array(_) => Some((16, CType::UInt128)),
         C0Type::CharArray(_) => Some((1, CType::UInt8)),
         C0Type::UInt8Array(_) => Some((1, CType::UInt8)),
         _ => None,

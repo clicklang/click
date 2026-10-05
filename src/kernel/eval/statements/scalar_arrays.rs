@@ -102,10 +102,9 @@ pub(super) fn execute(
                 element_type.byte_width(),
             ));
             if bytes != 0
-                && state
+                && !state
                     .resources()
-                    .memory_write_range(target, bytes, &selected)
-                    .is_none()
+                    .owns_storage_access(target, bytes, &selected)
             {
                 paths.push(path(
                     CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -132,12 +131,11 @@ pub(super) fn execute(
                     ));
                     continue;
                 };
-                if !crate::kernel::reasoning::resource_context_has_read(
-                    state.resources(),
-                    source.pointer(),
-                    bytes,
-                    &selected,
-                ) {
+                if !crate::kernel::api::with_extended_dag_bridging(|| {
+                    state
+                        .resources()
+                        .permits_storage_read(source.pointer(), bytes, &selected)
+                }) {
                     let resource =
                         CResourceFact::view_memory(CMemoryRange::new_with_element_width(
                             source.pointer().clone(),

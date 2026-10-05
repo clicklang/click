@@ -2281,7 +2281,9 @@ impl RankingMachineTerm {
             | CValue::UInt16(term) => (RankingMachineType::Int32, term),
             CValue::UInt32(term) => (RankingMachineType::UInt32, term),
             CValue::UInt64(term) => (RankingMachineType::UInt64, term),
-            CValue::Void
+            CValue::Int128(_)
+            | CValue::UInt128(_)
+            | CValue::Void
             | CValue::Int64(_)
             | CValue::Float32(_)
             | CValue::Float64(_)

@@ -2016,7 +2016,7 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     }
     let (_, base_height, base_allocations) = allocation_samples[0];
     assert!(
-        base_allocations <= 57,
+        base_allocations <= 65,
         "small persistent fact insertion allocated {base_allocations} nodes (identity index included)"
     );
     for (size, height, allocations) in allocation_samples {
@@ -2026,8 +2026,12 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
         // order fact such as these), and the stated-requirement identity map
         // plus its bucket. Every one is an AVL path copy. The identity map
         // and bucket add two constant base nodes and the order-fact index
-        // seven (57 rather than the former 48); adding two tree levels may
-        // therefore add at most 24 nodes (measured: 16).
+        // seven (57 rather than the former 48). The condition-variable
+        // adjacency adds its one-variable outer node and a fact-bucket path,
+        // eight more base nodes (65). Atomic dependency selection reuses
+        // that scalar adjacency rather than filing the same keys again.
+        // Adding two tree levels must still add
+        // at most 24 nodes; the new bucket adds one path, not an ambient copy.
         let allocation_bound = base_allocations + 12 * (height - base_height);
         assert!(
             allocations <= allocation_bound,
@@ -2845,10 +2849,10 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         sort: Sort::CInt32,
         body: Box::new(expected),
     };
-    let witness = ProofWitness {
-        name: "chosen".to_string(),
-        value: ContractExpression::CFragment(CExpression::Value(int32(7))),
-    };
+    let witness = ProofWitness::single(
+        "chosen".to_string(),
+        ContractExpression::CFragment(CExpression::Value(int32(7))),
+    );
     let expected_surface = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("chosen".to_string())),
         operator: ComparisonOperator::Equal,
@@ -2861,7 +2865,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         body: Box::new(expected_surface),
     };
     let instantiated_surface = ClickProposition::Comparison {
-        left: witness.value.clone(),
+        left: witness.value().clone(),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(7))),
     };
@@ -2887,10 +2891,10 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             &[],
         );
         let retained_root = root.clone();
-        let wrong_name = ProofStep::Witness(ProofWitness {
-            name: "other".to_string(),
-            value: ContractExpression::CFragment(CExpression::Value(int32(7))),
-        });
+        let wrong_name = ProofStep::Witness(ProofWitness::single(
+            "other".to_string(),
+            ContractExpression::CFragment(CExpression::Value(int32(7))),
+        ));
         let error = root
             .apply_step(wrong_name)
             .err()
@@ -3133,12 +3137,10 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         assert_eq!(chosen.certificate().steps(), &[ProofStep::Choose(choice)]);
 
         let completed = chosen
-            .apply_step(ProofStep::Witness(ProofWitness {
-                name: "witness".to_string(),
-                value: ContractExpression::CFragment(CExpression::Variable(
-                    "candidate".to_string(),
-                )),
-            }))
+            .apply_step(ProofStep::Witness(ProofWitness::single(
+                "witness".to_string(),
+                ContractExpression::CFragment(CExpression::Variable("candidate".to_string())),
+            )))
             .expect("witness should resolve the one referenced proof local")
             .apply_step(ProofStep::Assumption)
             .expect("the chosen existential fact should close the refined goal");
@@ -13042,15 +13044,12 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let click_file = crate::surface::parse(
         r#"int32 caller(bool construct, bool should_throw) {
             ensures result == result by {
-                branch {
-                    then {
-                        outcomes {
-                            returned { step(); }
-                            threw { step(); execute(); }
-                        }
+                branch then {
+                    outcomes {
+                        returned => { step(); }
+                        threw => { step(); execute(); }
                     }
-                    else { }
-                }
+                } else { }
                 step();
             }
         }"#,
@@ -13231,7 +13230,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             outcomes
                 .focus_branch(id)
                 .unwrap()
-                .checked_call_returned()
+                .checked_call_returned(0)
                 .ok()
         })
         .collect::<Vec<_>>();

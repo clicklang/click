@@ -2,18 +2,64 @@
 //! Collapse inner regions once; reject irreducible cycles and extra exits.
 use super::*;
 
-/// Interpret the scalar header in assignment order. Only total comparisons,
-/// literals, copies, and boolean negation are admitted; no memory reads,
-/// arithmetic, calls, borrows, or ownership events can be moved into a guard.
+/// Negate a total integer/boolean comparison without hiding its ordering fact.
+pub(super) fn negate_condition(condition: E) -> E {
+    match condition {
+        E::Not { value } => *value,
+        E::Boolean { value } => E::Boolean { value: !value },
+        E::Binary {
+            operator,
+            left_type,
+            right_type,
+            left,
+            right,
+        } => {
+            let inverse = match operator.as_str() {
+                "eq" => "ne",
+                "ne" => "eq",
+                "lt" => "ge",
+                "le" => "gt",
+                "gt" => "le",
+                "ge" => "lt",
+                _ => {
+                    return E::Not {
+                        value: Box::new(E::Binary {
+                            operator,
+                            left_type,
+                            right_type,
+                            left,
+                            right,
+                        }),
+                    };
+                }
+            };
+            E::Binary {
+                operator: inverse.into(),
+                left_type,
+                right_type,
+                left,
+                right,
+            }
+        }
+        other => E::Not {
+            value: Box::new(other),
+        },
+    }
+}
+
+/// Interpret the header in assignment order. Admit only total scalar copies,
+/// comparisons, negation, and shared slice pointer/length metadata copies.
+/// Memory reads, arithmetic, ordinary calls, and ownership events stay excluded.
 /// Bound substitution growth rather than expanding a shared expression DAG
 /// exponentially. The fixed bound makes work linear in header size.
 pub(super) fn header_condition(
     mir: &MirBody,
-    header: usize,
+    headers: &[usize],
     condition: &E,
     scalar_names: &BTreeSet<String>,
+    metadata_names: &BTreeSet<String>,
 ) -> Result<E, String> {
-    let scalar = |name: &str| scalar_names.contains(name);
+    let scalar = |name: &str| scalar_names.contains(name) || metadata_names.contains(name);
     fn substitute(
         value: &E,
         definitions: &BTreeMap<String, E>,
@@ -34,14 +80,21 @@ pub(super) fn header_condition(
                     value.clone()
                 }
             }
+            E::SliceLength { slice } => E::SliceLength {
+                slice: Box::new(substitute(slice, definitions, scalar, remaining)?),
+            },
+            E::Borrow {
+                place,
+                value_type: Type::ByteSlice { mutable: false } | Type::SharedScalarSlice { .. },
+            } => substitute(place, definitions, scalar, remaining)?,
             E::ChunkHasNext { .. }
             | E::SharedArrayHasNext { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
             | E::Boolean { .. } => value.clone(),
-            E::Not { value } => E::Not {
-                value: Box::new(substitute(value, definitions, scalar, remaining)?),
-            },
+            E::Not { value } => {
+                negate_condition(substitute(value, definitions, scalar, remaining)?)
+            }
             E::Binary {
                 operator,
                 left_type,
@@ -61,7 +114,10 @@ pub(super) fn header_condition(
         })
     }
     let mut definitions = BTreeMap::new();
-    for statement in &mir.blocks[header].statements {
+    for statement in headers
+        .iter()
+        .flat_map(|header| &mir.blocks[*header].statements)
+    {
         match statement {
             S::Assign {
                 target: E::Local { name },
@@ -78,6 +134,8 @@ pub(super) fn header_condition(
 }
 
 pub(super) struct While {
+    pub headers: Vec<usize>,
+    pub test: usize,
     pub body: usize,
     pub exit: usize,
     pub body_on_true: bool,
@@ -87,6 +145,7 @@ pub(super) struct Flow {
     pub joins: Vec<usize>,
     pub loops: BTreeMap<usize, While>,
     pub scalar_names: BTreeSet<String>,
+    pub metadata_names: BTreeSet<String>,
 }
 impl Flow {
     pub fn analyze(function: &Function, mir: &MirBody) -> Result<Self, String> {
@@ -177,11 +236,31 @@ impl Flow {
             if membership[root(&mut parents, 0)] == Some(header) && header != 0 {
                 return Err("MIR loop has an entry bypassing its header".into());
             }
+            // A natural header may be a straight-line chain ending at its
+            // test, e.g. compiler-resolved slice metadata followed by a
+            // comparison. Every continuation must have exactly its preceding
+            // header block as predecessor; never absorb a shared join, nested
+            // loop, effectful terminator, or another loop entry.
+            let mut headers = vec![header];
+            let mut test = header;
+            while let T::Goto { target } = mir.blocks[test].terminator {
+                crate::instrumentation::record_deterministic_work(1);
+                if target >= exit
+                    || target == header
+                    || predecessors[target].as_slice() != [test]
+                    || membership[target] != Some(header)
+                    || loops.contains_key(&target)
+                {
+                    return Err("MIR loop requires a conditional while header with single-entry continuations".into());
+                }
+                headers.push(target);
+                test = target;
+            }
             let T::If {
                 then_target,
                 else_target,
                 ..
-            } = mir.blocks[header].terminator
+            } = mir.blocks[test].terminator
             else {
                 return Err("MIR loop requires a conditional while header".into());
             };
@@ -195,7 +274,7 @@ impl Flow {
                 (else_target, then_target)
             };
             for &block in &members {
-                if block == header {
+                if block == header || block == test {
                     continue;
                 }
                 for &predecessor in &predecessors[block] {
@@ -225,6 +304,8 @@ impl Flow {
             loops.insert(
                 header,
                 While {
+                    headers,
+                    test,
                     body,
                     exit: after,
                     body_on_true,
@@ -268,7 +349,19 @@ impl Flow {
                 .filter(|p| {
                     matches!(
                         p.value_type,
-                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Bool
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool
+                    )
+                })
+                .map(|p| p.name.clone())
+                .collect(),
+            metadata_names: function
+                .parameters
+                .iter()
+                .chain(&mir.locals)
+                .filter(|p| {
+                    matches!(
+                        p.value_type,
+                        Type::ByteSlice { mutable: false } | Type::SharedScalarSlice { .. }
                     )
                 })
                 .map(|p| p.name.clone())
@@ -313,6 +406,209 @@ mod tests {
             else_target: no,
         }
     }
+    #[test]
+    fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
+        for width in [8, 32, 128] {
+            let mut blocks = (0..width)
+                .map(|index| {
+                    let mut b = block(if index + 1 == width {
+                        branch(width, width + 1)
+                    } else {
+                        T::Goto { target: index + 1 }
+                    });
+                    b.statements.push(S::Assign {
+                        target: E::Local {
+                            name: "marker".into(),
+                        },
+                        value: E::Integer {
+                            value: index as i32,
+                        },
+                    });
+                    b
+                })
+                .collect::<Vec<_>>();
+            let mut body = block(T::Goto { target: 0 });
+            body.statements.push(S::Assign {
+                target: E::Local {
+                    name: "marker".into(),
+                },
+                value: E::Integer { value: -1 },
+            });
+            blocks.push(body);
+            blocks.push(block(T::Return));
+            let f = function(blocks);
+            let flow = Flow::analyze(&f, f.mir.as_ref().unwrap()).unwrap();
+            assert_eq!(flow.loops[&0].headers, (0..width).collect::<Vec<_>>());
+            assert_eq!(flow.loops[&0].test, width - 1);
+            let export = RustExport {
+                schema: 8,
+                compiler_commit: String::new(),
+                target: String::new(),
+                edition: "2024".into(),
+                overflow_checks: true,
+                panic: "abort".into(),
+                mir_opt_level: 0,
+                logical_source: "flow.rs".into(),
+                records: vec![],
+                functions: vec![f],
+            };
+            let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                super::super::super::lower(&export)
+            });
+            let function = lowered.unwrap().0[0].to_kernel_function();
+            let mut pending = vec![function.body()];
+            let (mut loops, mut assignments, mut nodes) = (0, 0, 0);
+            while let Some(statement) = pending.pop() {
+                nodes += 1;
+                match statement {
+                    CStatement::Seq(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+                    CStatement::While { body, .. } => {
+                        loops += 1;
+                        pending.push(body);
+                    }
+                    CStatement::Assign { name, .. } if name == "marker" => assignments += 1,
+                    CStatement::Break => panic!("do not manufacture a break"),
+                    _ => (),
+                }
+            }
+            assert_eq!(loops, 1);
+            assert_eq!(assignments, width * 2 + 1);
+            assert!(nodes < 32 * width, "width {width}: {nodes}");
+            assert!(work < 128 * width, "width {width}: {work}");
+        }
+    }
+
+    #[test]
+    fn split_while_headers_reject_calls_shared_entries_and_early_exits() {
+        for blocks in [
+            vec![
+                block(T::Call {
+                    function: "guard".into(),
+                    arguments: vec![],
+                    destination: "marker".into(),
+                    target: 1,
+                }),
+                block(branch(2, 3)),
+                block(T::Goto { target: 0 }),
+                block(T::Return),
+            ],
+            vec![
+                block(T::Drop {
+                    local: "marker".into(),
+                    record: "Guard".into(),
+                    target: 1,
+                }),
+                block(branch(2, 3)),
+                block(T::Goto { target: 0 }),
+                block(T::Return),
+            ],
+            vec![
+                block(branch(1, 2)),
+                block(T::Goto { target: 2 }),
+                block(branch(3, 4)),
+                block(T::Goto { target: 1 }),
+                block(T::Return),
+            ],
+            vec![
+                block(T::Goto { target: 1 }),
+                block(branch(2, 4)),
+                block(branch(3, 4)),
+                block(T::Goto { target: 0 }),
+                block(T::Return),
+            ],
+        ] {
+            let f = function(blocks);
+            assert!(Flow::analyze(&f, f.mir.as_ref().unwrap()).is_err());
+        }
+    }
+
+    #[test]
+    fn split_while_guard_uses_entry_metadata_and_refuses_memory_or_arithmetic() {
+        let local = |name: &str| E::Local { name: name.into() };
+        let scalar = BTreeSet::from(["i".into(), "size".into(), "test".into()]);
+        let metadata = BTreeSet::from(["bytes".into(), "alias".into()]);
+        let comparison = |operator: &str| E::Binary {
+            operator: operator.into(),
+            left_type: Type::Usize,
+            right_type: Type::Usize,
+            left: Box::new(local("i")),
+            right: Box::new(local("size")),
+        };
+        let mut mir = MirBody {
+            locals: vec![],
+            blocks: vec![
+                MirBlock {
+                    statements: vec![
+                        S::Assign {
+                            target: local("alias"),
+                            value: E::Borrow {
+                                place: Box::new(local("bytes")),
+                                value_type: Type::ByteSlice { mutable: false },
+                            },
+                        },
+                        S::Assign {
+                            target: local("size"),
+                            value: E::SliceLength {
+                                slice: Box::new(local("alias")),
+                            },
+                        },
+                    ],
+                    terminator: T::Goto { target: 1 },
+                },
+                MirBlock {
+                    statements: vec![
+                        S::EndStorage {
+                            local: "alias".into(),
+                        },
+                        S::Assign {
+                            target: local("test"),
+                            value: E::Not {
+                                value: Box::new(comparison("ge")),
+                            },
+                        },
+                    ],
+                    terminator: T::Return,
+                },
+            ],
+        };
+        let expected = E::Binary {
+            operator: "lt".into(),
+            left_type: Type::Usize,
+            right_type: Type::Usize,
+            left: Box::new(local("i")),
+            right: Box::new(E::SliceLength {
+                slice: Box::new(local("bytes")),
+            }),
+        };
+        assert_eq!(
+            serde_json::to_value(
+                header_condition(&mir, &[0, 1], &local("test"), &scalar, &metadata).unwrap()
+            )
+            .unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        for value in [
+            comparison("add"),
+            E::Deref {
+                reference: Box::new(local("bytes")),
+                value_type: Type::I32,
+            },
+            E::Borrow {
+                place: Box::new(local("i")),
+                value_type: Type::Reference {
+                    mutable: true,
+                    pointee: Box::new(Type::Usize),
+                },
+            },
+        ] {
+            mir.blocks[0].statements = vec![S::Assign {
+                target: local("size"),
+                value,
+            }];
+            assert!(header_condition(&mir, &[0, 1], &local("test"), &scalar, &metadata).is_err());
+        }
+    }
+
     #[test]
     fn mir_while_rejects_extra_exits_and_invalid_entries() {
         for (blocks, expected) in [
@@ -503,7 +799,7 @@ mod tests {
                 terminator: T::Return,
             }],
         };
-        let guard = header_condition(&mir, 0, &local("b"), &names).unwrap();
+        let guard = header_condition(&mir, &[0], &local("b"), &names, &BTreeSet::new()).unwrap();
         let expected = comparison(local("i"), E::Integer { value: 5 });
         assert_eq!(
             serde_json::to_value(guard).unwrap(),
@@ -520,7 +816,7 @@ mod tests {
             ));
         }
         assert!(
-            header_condition(&mir, 0, &local("t19"), &names)
+            header_condition(&mir, &[0], &local("t19"), &names, &BTreeSet::new())
                 .unwrap_err()
                 .contains("256-node")
         );
@@ -534,9 +830,10 @@ mod tests {
         assert!(
             header_condition(
                 &mir,
-                0,
+                &[0],
                 &local("i"),
-                &BTreeSet::from(["i".into(), "m".into()])
+                &BTreeSet::from(["i".into(), "m".into()]),
+                &BTreeSet::new()
             )
             .is_err()
         );

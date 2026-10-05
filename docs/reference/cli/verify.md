@@ -133,7 +133,7 @@ location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `open`), and the ordinary error omits the internal premise dump.
 An `assumption()` failure on an existential goal suggests the
-`witness(name = value)` tactic. A trace reports facts introduced into the
+`witness { name: value }` tactic. A trace reports facts introduced into the
 focused proof context and changes to exact resource representations, using
 Click spelling where it represents the checked fact. It follows only the
 branch relevant to the selected tactic and does not print whole memory
@@ -141,6 +141,11 @@ snapshots. It records up to
 2,048 checked steps and renders at most 64 KiB. The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
+
+An unfinished loop `preserve` also retains its checked path for tracing. A plain
+trace follows the path named by the frontier report; `--trace-to` can select a
+checked tactic on that path or on another completed or unfinished arm. If the
+target has no recorded checked step on a retained path, the trace says so.
 
 A theorem trace shows the same checked steps as a function trace. A theorem
 with several `ensures` clauses has one accepted path for each; a plain trace

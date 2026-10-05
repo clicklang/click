@@ -1380,15 +1380,25 @@ impl<'a> Proof<'a> {
                     if arm_index == 0 { "then" } else { "else" }
                 )));
             }
+            // A call the arm stepped together with its `return` labels the
+            // arm's own paths; it is the innermost edge on each of them.
+            let arm_call_edges = arm
+                .execution
+                .presentation
+                .call_outcome_edges
+                .as_ref()
+                .filter(|edges| edges.len() == completed.paths().len());
             for (arm_path_index, path) in completed.paths().iter().enumerate() {
                 let mut provenance = arm.execution.provenance_for_outcome(arm_path_index);
+                if provenance.call_routes.is_empty()
+                    && let Some(edges) = arm_call_edges
+                {
+                    provenance.call_routes.push(edges[arm_path_index]);
+                }
                 if call_outcomes {
-                    if provenance.call_returned.is_some() {
-                        return Err(self.step_error(
-                            "nested call-outcome routing requires a distinct checked path selector",
-                        ));
-                    }
-                    provenance.call_returned = Some(arm_index == 0);
+                    // An `outcomes` nested in this arm was joined first, so
+                    // its edge follows this one.
+                    provenance.call_routes.insert(0, arm_index == 0);
                 }
                 let mut path_facts = path.execution_facts();
                 for proposition in &arm.introduced_facts {
@@ -1402,7 +1412,7 @@ impl<'a> Proof<'a> {
                     path.outcome().clone(),
                     path_facts.clone(),
                     obligations.clone(),
-                    provenance.call_returned,
+                    provenance.call_routes.clone(),
                 );
                 let path_loan_evidence = path.loan_evidence().clone();
                 let retained_index = retained_path_keys.get(&path_key).and_then(|entries| {
@@ -1434,10 +1444,27 @@ impl<'a> Proof<'a> {
                     execution_evidence
                         .push(arm.execution.core.execution_evidence[arm_path_index].clone());
                     if proof_case_split {
+                        // This join's decision precedes its arms' decisions.
+                        // Keep the shared prefix and rebuild only the nested
+                        // suffix; appending here would reverse nested cases.
+                        let prefix = &parent_execution.presentation.branch_decisions;
+                        let nested = provenance
+                            .branch_decisions
+                            .suffix_since(prefix)
+                            .ok_or_else(|| {
+                                self.step_error(
+                                    "terminal proof cases lost their branch decision ancestry",
+                                )
+                            })?;
+                        provenance.branch_decisions = prefix.clone();
                         provenance.branch_decisions.push(ExecutionBranchDecision {
                             condition: surface_condition.clone(),
                             value: arm_index == 0,
                         });
+                        for decision in nested {
+                            crate::instrumentation::record_deterministic_work(1);
+                            provenance.branch_decisions.push(decision);
+                        }
                     }
                     outcome_provenance.push(provenance);
                 }
@@ -1480,7 +1507,7 @@ impl<'a> Proof<'a> {
                 .presentation
                 .outcome_provenance
                 .iter()
-                .map(|path| path.call_returned)
+                .map(|path| path.call_routes.first().copied())
                 .collect();
         }
         execution.core.has_structured_branch_history = true;
@@ -2576,8 +2603,9 @@ impl<'a> Proof<'a> {
             }
             if let Some(target) = until {
                 // `execute_until` runs one path and does not split it: a
-                // frontier the bare step cannot take (an undecided C `if`)
-                // is refused with that step's own diagnostic.
+                // frontier the bare step cannot take (an undecided C `if`, a
+                // maybe-throwing call) is refused with that step's own
+                // diagnostic.
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof.step_error(format!(
@@ -2686,7 +2714,46 @@ impl<'a> Proof<'a> {
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
-        let (mut advanced, record) = self.split_focused_execution_if(condition)?;
+        // This selector will also surround deferred path-dependent closers
+        // after return. Read it where the case was checked, rather than from
+        // a compiler temporary or a parameter's later value at function exit.
+        let mut proof = self.clone();
+        let execution = proof.execution().expect("execute cases retain a frontier");
+        let ProofContext::Execution(context) = proof.context.as_ref() else {
+            unreachable!("execute cases retain an execution context")
+        };
+        let point = ProgramPointRef {
+            region: CodeRegionRef::Statement(execution.core.frontier.next_statement_index),
+            kind: ProgramPointKind::Entry,
+        };
+        let frontier = execution.core.frontier.clone();
+        let state = execution.core.state.clone();
+        let (recorded, result) = proof.clone().edit_execution_presentation(|presentation| {
+            record_current_statement_entry(
+                &frontier,
+                &mut presentation.recorded_snapshots,
+                &state,
+                context.function_block,
+                context.function,
+                context.arguments,
+                context.claim_label,
+                context.tactic_index,
+                "execute cases",
+            )
+        })?;
+        result?;
+        proof = recorded;
+        let anchored =
+            super::super::cursor_execution::surface_frozen_at_snapshot(&condition, &point)?;
+        let original = proof.lower_surface_proposition(&condition, "execute case condition")?;
+        let frozen =
+            proof.lower_surface_proposition(&anchored, "anchored execute case condition")?;
+        if original != frozen {
+            return Err(
+                proof.step_error("anchored execute case condition changed its checked meaning")
+            );
+        }
+        let (mut advanced, record) = proof.split_focused_execution_if(anchored)?;
         for take_then in [true, false] {
             let Some(next) = advanced
                 .focus_execution_if_arm(&record, take_then)?
@@ -3419,7 +3486,6 @@ impl<'a> Proof<'a> {
             &thrown.theorem,
             &thrown.outcome,
             &thrown.path_facts,
-            &thrown.execution_facts,
             &thrown.obligations,
         )
         .map_err(|_| {

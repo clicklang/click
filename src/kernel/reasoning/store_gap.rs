@@ -17,8 +17,8 @@
 //! `Constant(c)` beside a store at `Constant(k)`, or `Add(S, Constant(c))`
 //! beside a store at `Add(S, Constant(k))` or at bare `S`, for one anchor
 //! `S`, with `c != 0` and the two byte windows disjoint for every cell width
-//! (`c + 8 <= k` or `k + bytes <= c`; no `CValue` is wider than eight bytes,
-//! and a `Void` cell stands in eight). Because [`PointerOffsetTerm`] orders
+//! (`c + 16 <= k` or `k + bytes <= c`; no `CValue` is wider than sixteen
+//! bytes, and a `Void` cell stands in sixteen). Because [`PointerOffsetTerm`] orders
 //! `Constant` before every other variant, the keys `Add(S, Constant(c))` for
 //! `c` in one interval are exactly one contiguous key range, and so are the
 //! keys `Constant(c)`.
@@ -309,7 +309,12 @@ mod tests {
             1 => CValue::UInt8(Bitvector32Term::Constant(seed & 0xff)),
             2 => CValue::Int16(Bitvector32Term::Constant(seed & 0x7fff)),
             4 => CValue::Int32(Bitvector32Term::Constant(seed)),
-            _ => CValue::Int64(Bitvector32Term::Int64Constant(i64::from(seed))),
+            8 => CValue::Int64(Bitvector32Term::Int64Constant(i64::from(seed))),
+            16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
+                crate::kernel::CExpression::Value(value) => value,
+                _ => unreachable!("literal is a value"),
+            },
+            _ => unreachable!("tested scalar width"),
         }
     }
 
@@ -609,7 +614,7 @@ mod tests {
         );
     }
 
-    /// Generated store sequences — widths 1, 2, 4 and 8, overlapping and
+    /// Generated store sequences — widths 1, 2, 4, 8 and 16, overlapping and
     /// adjacent, constant and anchored offsets on four anchor shapes,
     /// negative shifts, symbolic indices whose drops leave forget marks, and
     /// non-canonical spellings — produce the same memory, forget mark
@@ -632,7 +637,7 @@ mod tests {
                     block: "store-gap".into(),
                     offset: generated_offset(&mut generator, anchor, &anchors),
                 };
-                let width = [1, 2, 4, 8][usize::try_from(generator.below(4)).expect("small")];
+                let width = [1, 2, 4, 8, 16][usize::try_from(generator.below(5)).expect("small")];
                 let value =
                     value_of_width(width, u32::try_from(generator.below(1000)).expect("small"));
                 skipped += skipped_cells(&fast, &store_gap_kept_ranges(&pointer, width, context));

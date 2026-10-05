@@ -54,7 +54,7 @@ fn both_and_outcome_expands_and_rechecks() {
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "by auto;",
-        "by { branch { then { step(); } else { execute(); } } }",
+        "by { branch then { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch tactic should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -77,7 +77,7 @@ fn parses_frontier_branch_tactic() {
 fn parses_frontier_branch_ensuring_interface() {
     let source = FILL3_CLICK.replace(
         "by auto;",
-        "by { branch { ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } } }",
+        "by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { execute(); } }",
     );
     let file = parse(&source).expect("frontier branch ensuring interface should parse");
     let tactics = file.function_blocks()[0].ensures()[0]
@@ -120,15 +120,12 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
             requires selected(x);
             ensures returns_one: result == 1;
         } by {
-            branch {
-                then {
-                    unfold(selected);
-                    step();
-                }
-                else {
-                    unfold(selected);
-                    step();
-                }
+            branch then {
+                unfold(selected);
+                step();
+            } else {
+                unfold(selected);
+                step();
             }
             step();
             simp();
@@ -182,10 +179,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
         int32 choose_sign(int32 x) {
             ensures result == 1 or result == 2;
         } by {
-            branch {
-                then { step(); }
-                else { step(); }
-            }
+            branch then { step(); } else { step(); }
             simp();
         }
     "#;
@@ -223,8 +217,8 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
         int32 two_branches(int32 x, int32 y) {
             ensures result == x;
         } by {
-            branch { then {} else {} }
-            branch { then {} else {} }
+            branch then {} else {}
+            branch then {} else {}
             step();
             simp();
         }
@@ -262,10 +256,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         int32 constant_negative(int32 x) {
             requires x < 0;
             ensures returns_one: result == 1 by {
-                branch {
-                    then { step(); }
-                    else { step(); }
-                }
+                branch then { step(); } else { step(); }
                 step();
                 simp();
             }
@@ -659,11 +650,10 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
     let tactics = vec![
         ProofTactic::Have(ProofHave {
             proposition: disjunction.clone(),
-            proof: SourceProof::Script(vec![ProofTactic::Cases(ProofCases {
-                disjunction,
-                left_tactics: vec![ProofTactic::Left],
-                right_tactics: vec![ProofTactic::Right],
-            })]),
+            proof: SourceProof::Script(vec![ProofTactic::Cases(ProofCases::new(vec![
+                ProofCaseArm::new(nonnegative.clone(), vec![ProofTactic::Left]),
+                ProofCaseArm::new(negative.clone(), vec![ProofTactic::Right]),
+            ]))]),
         }),
         ProofTactic::Enumerate,
     ];
@@ -1068,4 +1058,57 @@ fn grouped_outcome_simp_splits_an_unfold_active_conjunction_ensure() {
             error.message()
         )
     });
+}
+
+#[test]
+fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
+    for (spelling, region) in [
+        (
+            "assignment(i, 2)",
+            CodeRegionRef::Assignment {
+                local: "i".into(),
+                occurrence: 2,
+            },
+        ),
+        ("assignment", CodeRegionRef::Label("assignment".into())),
+    ] {
+        let source = FILL3_CLICK.replace(
+            "by auto;",
+            &format!("by {{ execute_until({spelling}); execute(); simp(); }}"),
+        );
+        let file = parse(&source).unwrap();
+        assert_eq!(
+            file.function_blocks()[0].ensures()[0]
+                .proof()
+                .tactics()
+                .unwrap()[0],
+            ProofTactic::ExecuteUntil(region)
+        );
+    }
+    for spelling in ["assignment(i, -1)", "assignment(i)", "assignment(, 0)"] {
+        let source =
+            FILL3_CLICK.replace("by auto;", &format!("by {{ execute_until({spelling}); }}"));
+        assert!(parse(&source).is_err());
+    }
+}
+
+#[test]
+fn parses_execute_until_read_and_preserves_read_labels() {
+    for (spelling, region) in [
+        ("read(2)", CodeRegionRef::Read(2)),
+        ("read", CodeRegionRef::Label("read".into())),
+    ] {
+        let source = FILL3_CLICK.replace(
+            "by auto;",
+            &format!("by {{execute_until({spelling}); execute(); simp();}}"),
+        );
+        let file = parse(&source).unwrap();
+        assert_eq!(
+            file.function_blocks()[0].ensures()[0]
+                .proof()
+                .tactics()
+                .unwrap()[0],
+            ProofTactic::ExecuteUntil(region)
+        );
+    }
 }

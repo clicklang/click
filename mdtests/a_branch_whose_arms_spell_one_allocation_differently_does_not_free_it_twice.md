@@ -52,18 +52,14 @@ int32 twice(int32* p, int32 flag) {
     ensures result == 0;
 } by {
     step();
-    branch {
-        ensuring {
-            owns allocated(s);
-        }
-        then {
-            step();
-        }
-        else {
-            step();
-            unfold(allocated(p));
-            fold(allocated(s));
-        }
+    branch ensuring {
+        owns allocated(s);
+    } then {
+        step();
+    } else {
+        step();
+        unfold(allocated(p));
+        fold(allocated(s));
     }
     unfold(allocated(s));
     step();

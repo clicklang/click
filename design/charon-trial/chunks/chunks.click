@@ -401,10 +401,13 @@ uint64 walk(const uint8* bytes, uint64 bytes_len) {
     }
 }
     have iter_remaining < 4 by {
-        cases(not (0 < iter_remaining) or not (4 <= iter_remaining)) {
-            have iter_remaining <= 0 by { simp(); }
-            arithmetic() using { iter_remaining <= 0; }
-        } { simp(); }
+        cases {
+            not (0 < iter_remaining) => {
+                have iter_remaining <= 0 by { simp(); }
+                arithmetic() using { iter_remaining <= 0; }
+            }
+            not (4 <= iter_remaining) => { simp(); }
+        }
     }
     have iter_remaining % 4 == iter_remaining by { normalize() using { 0 <= iter_remaining; iter_remaining < 4; } }
     have iter_remaining == 0 by { simp(); }

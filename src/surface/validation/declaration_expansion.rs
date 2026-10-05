@@ -94,20 +94,37 @@ fn standard_library() -> Result<&'static ClickFile, ClickError> {
         .get_or_init(|| {
             #[cfg(test)]
             STANDARD_LIBRARY_PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let file = expand_declared_resource_clauses(parser::parse_file_items(
-                CLICK_STANDARD_LIBRARY,
-            )?)?;
-            if !file.verifying_sources().is_empty()
-                || file.function_blocks().iter().any(|function| !function.is_external())
-            {
-                return Err(ClickError::new(
-                    "internal Click standard library must not contain verifying sources or body-bearing C function specs",
-                ));
-            }
-            Ok(file)
+            load_standard_library(CLICK_STANDARD_LIBRARY)
         })
         .as_ref()
         .map_err(Clone::clone)
+}
+
+fn load_standard_library(source: &str) -> Result<ClickFile, ClickError> {
+    let file = expand_declared_resource_clauses(parser::parse_file_items_for_module(
+        source,
+        "stdlib/prelude.click",
+        0,
+        &[],
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+    )?)?;
+    if !file.verifying_sources().is_empty()
+        || file
+            .function_blocks()
+            .iter()
+            .any(|function| !function.is_external())
+    {
+        return Err(ClickError::new(
+            "internal Click standard library must not contain verifying sources or body-bearing C function specs",
+        ));
+    }
+    Ok(file)
 }
 
 pub(in crate::surface) fn combined_algebraic_type_definitions(
@@ -1041,10 +1058,10 @@ fn expand_declared_resource_tactic_with_expressions(
                 .collect::<Result<_, _>>()?;
             Ok(ProofTactic::ApplyTheorem(application))
         }
-        ProofTactic::Witness(mut witness) => {
-            witness.value =
-                expand_declared_resource_expression(witness.value, resource_definitions)?;
-            Ok(ProofTactic::Witness(witness))
+        ProofTactic::Witness(witness) => {
+            Ok(ProofTactic::Witness(witness.try_map_values(|value| {
+                expand_declared_resource_expression(value.clone(), resource_definitions)
+            })?))
         }
         ProofTactic::ApplyInduction {
             hypothesis,
@@ -1259,22 +1276,18 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
-        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-            disjunction: expand_declared_resource_proposition(
-                proof_cases.disjunction,
-                resource_definitions,
-            )?,
-            left_tactics: proof_cases
-                .left_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-            right_tactics: proof_cases
-                .right_tactics
-                .into_iter()
-                .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        })),
+        ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(proof_cases.try_map(
+            |assumption| {
+                expand_declared_resource_proposition(assumption.clone(), resource_definitions)
+            },
+            |tactics| {
+                tactics
+                    .iter()
+                    .cloned()
+                    .map(|tactic| expand_declared_resource_tactic(tactic, resource_definitions))
+                    .collect::<Result<Vec<_>, _>>()
+            },
+        )?)),
         ProofTactic::StructuralInduct {
             parameter,
             hypothesis,

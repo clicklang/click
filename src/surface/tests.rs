@@ -1825,7 +1825,7 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
     );
     for tactic in [
         "apply(law(count(cell(p))));",
-        "witness(x = count(cell(p)));",
+        "witness { x: count(cell(p)) };",
     ]
     .into_iter()
     {
@@ -2269,6 +2269,7 @@ fn ensure_comparison(
 
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
+mod back_edge_tests;
 mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;

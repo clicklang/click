@@ -1022,14 +1022,18 @@ pub(super) fn execute_c_heap_allocate_paths(
         | CType::Int16Pointer
         | CType::UInt16Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
@@ -1257,7 +1261,12 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
                 unsigned: false,
             })
         }),
-        CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
+        CValue::Int128(_)
+        | CValue::UInt128(_)
+        | CValue::Void
+        | CValue::Pointer(_)
+        | CValue::Float32(_)
+        | CValue::Float64(_) => None,
     }
 }
 
@@ -1381,14 +1390,18 @@ pub(crate) fn execute_c_realloc_assign_paths(
         | CType::Int16Pointer
         | CType::UInt16Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
@@ -4110,6 +4123,7 @@ pub(in crate::kernel) fn declare_local(
     // and file-scope blocks, rather than a path fact at each address-of.
     register_block_alignment(&pointer.block, c_type.abi_alignment());
     let byte_width = match c_type {
+        CType::Int128 | CType::UInt128 => 16,
         CType::Void => unreachable!("void local objects are not supported"),
         CType::Bool => 1,
         CType::VoidPointer | CType::VoidPointerPointer => C_POINTER_BYTE_WIDTH,
@@ -4125,14 +4139,18 @@ pub(in crate::kernel) fn declare_local(
         | CType::Int32Pointer
         | CType::UInt8Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer
         | CType::Float32Pointer
         | CType::Float64Pointer
@@ -4251,6 +4269,22 @@ pub(in crate::kernel) fn declare_local(
             );
             return Ok(state);
         }
+        CType::Int128Array(length) => {
+            state.set_memory(
+                state
+                    .memory
+                    .clone()
+                    .with_block(pointer.block.clone(), length.saturating_mul(16)),
+            );
+            state.locals.set_array_object_at_with_constant(
+                name.to_string(),
+                CType::Int128,
+                length,
+                pointer,
+                constant,
+            );
+            return Ok(state);
+        }
         CType::UInt64Array(length) => {
             state.set_memory(
                 state
@@ -4261,6 +4295,22 @@ pub(in crate::kernel) fn declare_local(
             state.locals.set_array_object_at_with_constant(
                 name.to_string(),
                 CType::UInt64,
+                length,
+                pointer,
+                constant,
+            );
+            return Ok(state);
+        }
+        CType::UInt128Array(length) => {
+            state.set_memory(
+                state
+                    .memory
+                    .clone()
+                    .with_block(pointer.block.clone(), length.saturating_mul(16)),
+            );
+            state.locals.set_array_object_at_with_constant(
+                name.to_string(),
+                CType::UInt128,
                 length,
                 pointer,
                 constant,

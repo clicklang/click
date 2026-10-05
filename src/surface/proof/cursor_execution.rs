@@ -1127,8 +1127,18 @@ pub(super) fn surface_at_snapshot<K: RecordedSnapshotKey + ?Sized>(
     annotate_surface_at_snapshot(surface, &selector, SnapshotAnnotation::Reread)
 }
 
+/// Freeze a case selector at its checked frontier without retargeting explicit
+/// snapshots or `old` expressions already carried by the selector.
+pub(super) fn surface_frozen_at_snapshot<K: RecordedSnapshotKey + ?Sized>(
+    surface: &ClickProposition,
+    key: &K,
+) -> Result<ClickProposition, ClickError> {
+    annotate_surface_at_snapshot(surface, &key.to_selector(), SnapshotAnnotation::Freeze)
+}
+
 #[derive(Clone, Copy)]
 enum SnapshotAnnotation {
+    Freeze,
     /// Re-read every operand in the selected snapshot, replacing an existing `at`
     /// selector: fact transport across a statement re-reads the source
     /// form at the statement's exit, having proved the cells unchanged.
@@ -1152,7 +1162,8 @@ fn annotate_surface_at_snapshot(
         });
     }
     let expression_at_snapshot = |expression: &ContractExpression| match (annotation, expression) {
-        (_, ContractExpression::Old(_)) => expression.clone(),
+        (_, ContractExpression::Old(_))
+        | (SnapshotAnnotation::Freeze, ContractExpression::At { .. }) => expression.clone(),
         (SnapshotAnnotation::Reread, ContractExpression::At { expression, .. }) => {
             ContractExpression::At {
                 selector: selector.clone(),
@@ -1663,15 +1674,9 @@ pub(super) fn prepare_call_outcome_split(
     ) {
         return Ok(None);
     }
-    if !prepared
-        .core
-        .frontier
-        .continuations
-        .iter()
-        .any(|continuation| continuation.exceptional.is_some())
-    {
-        return Ok(None);
-    }
+    // Without an active handler the throw leaves the function: the threw arm
+    // ends at function exit with that throw outcome, while the returned arm
+    // continues with the rest of the function.
     // The preparation may have started at `FunctionEntry`. Re-present the
     // exact call source as a normal statement frontier for the arm's cursor;
     // the original container is retained separately for evidence matching.
@@ -1837,9 +1842,53 @@ pub(super) fn apply_prepared_call_outcome_transition(
             state,
             &transition.pure_facts,
         )? {
-            return Err(ClickError::new(
-                "`outcomes` call throw did not reach its active handler",
-            ));
+            // No handler: the throw is this path's function outcome.
+            record_completed_continuation_exits(&mut execution.core.frontier);
+            let return_assumptions = assumptions_from_propositions(&transition.pure_facts);
+            let case_outcomes =
+                crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
+                    &prepared.execution_start_state,
+                    function,
+                    arguments,
+                    transition.outcome.clone(),
+                    transition.obligations.clone(),
+                    &return_assumptions,
+                );
+            let mut completed_outcomes = Vec::new();
+            for (outcome, obligations, case_facts) in case_outcomes {
+                let mut completed_execution_facts = transition.execution_facts.clone();
+                append_execution_effect_facts(
+                    &mut completed_execution_facts,
+                    &execution.core.effect_facts,
+                );
+                for fact in case_facts {
+                    completed_execution_facts.push(ExecutionPureFact::new(fact));
+                }
+                completed_outcomes.push((
+                    outcome,
+                    completed_execution_facts,
+                    obligations,
+                    execution.core.loan_evidence().clone(),
+                ));
+            }
+            *available_pure_facts = transition.pure_facts.clone();
+            let completed =
+                crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+                    prepared.execution_start_state.clone(),
+                    function.clone(),
+                    arguments.to_vec(),
+                    completed_outcomes,
+                );
+            set_function_exit_execution(
+                &mut execution.core.frontier,
+                claim_label,
+                tactic_index,
+                "outcomes",
+                prepared.execution_start_state.clone(),
+                completed,
+            )?;
+            execution.core.frontier.next_statement_index = prepared.continuation_index;
+            execution.core.state = prepared.execution_start_state.clone().into();
         }
         return Ok(());
     }
@@ -2199,7 +2248,6 @@ fn execute_step_from_frontier_position_selecting_path(
     if let Some(selected_path_fact) = selected_path_fact {
         transitions.retain(|transition| transition.path_facts.contains(selected_path_fact));
     }
-    let mut pending_exceptional_call = None;
     let mut call_outcome_edges = None;
     // A direct call can have one continuing normal outcome and one terminal
     // throw. An int32 try/catch can similarly have one continuing normal
@@ -2299,6 +2347,24 @@ fn execute_step_from_frontier_position_selecting_path(
                 // in order, replacing only its continuing path with the tail's
                 // descendants. With one descendant per edge, this order is
                 // unchanged in `suffix_transitions`.
+                call_outcome_edges = edges.filter(|edges| {
+                    edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
+                });
+            } else if matches!(
+                step_statement,
+                CStatement::Call { .. } | CStatement::CallAssign { .. }
+            ) {
+                // A direct call's continuing normal edge is its returned
+                // outcome and its terminal throw is the threw outcome, in the
+                // kernel's first-statement path order, as for try/catch above.
+                let edges = transitions
+                    .iter()
+                    .map(|transition| match transition.outcome {
+                        CStatementOutcome::Normal(_) => Some(true),
+                        CStatementOutcome::Throw { .. } => Some(false),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
                 call_outcome_edges = edges.filter(|edges| {
                     edges.len() == 2 && edges.iter().filter(|returned| **returned).count() == 1
                 });
@@ -2409,14 +2475,6 @@ fn execute_step_from_frontier_position_selecting_path(
                 ));
             }
         }
-        for pending in execution.core.complete_pending_exceptional_calls() {
-            completed_outcomes.push((
-                pending.outcome,
-                pending.execution_facts,
-                pending.obligations,
-                pending.loan_evidence,
-            ));
-        }
         let state: &mut CState = &mut execution.core.state;
         let completed =
             crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
@@ -2465,30 +2523,13 @@ fn execute_step_from_frontier_position_selecting_path(
             .count()
             == 1
     {
-        let root_facts = ProofFacts::from_ordered(available_pure_facts);
-        let split = CheckedCallOutcomeSplit::check(
-            current_state.clone(),
-            step_statement.clone(),
-            &root_facts,
-            function_environment,
-            next_opaque_call_before_step,
-            next_kernel_variable_before_step,
-        )
-        .map_err(|error| match error {
-            CheckedCallOutcomeSplitError::Limit(limit) => ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: call outcome split stopped at {}",
-                limit.describe()
-            )),
-            CheckedCallOutcomeSplitError::InvalidEvidence => ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: call outcomes lack an exhaustive checked split"
-            )),
-        })?;
-        let throw_index = transitions
-            .iter()
-            .position(|transition| matches!(transition.outcome, CStatementOutcome::Throw { .. }))
-            .unwrap();
-        let throw_transition = transitions.remove(throw_index);
-        pending_exceptional_call = Some((split, root_facts, throw_transition));
+        // A maybe-throwing call has two successors, like an undecided C
+        // `if`: each is its own proof arm, so one linear step cannot take
+        // both.
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached `{}`, which may throw; its returned and threw successors are separate proof arms. Write `outcomes {{ returned => {{ step(); ... }} threw => {{ step(); ... }} }}` here, or let `execute()` split it",
+            describe_statement_head(&step_statement)
+        )));
     }
     // A statement whose checked successors differ only in their path facts
     // -- a load that may or may not read the cell an earlier store wrote --
@@ -2499,7 +2540,6 @@ fn execute_step_from_frontier_position_selecting_path(
     // frontier on each side of that split.
     if transitions.len() > 1
         && !descended_try
-        && pending_exceptional_call.is_none()
         && let Some(path_cases) = path_cases
         && statement_successors_are_path_cases(&transitions)
     {
@@ -2674,88 +2714,23 @@ fn execute_step_from_frontier_position_selecting_path(
         )?;
     }
 
-    if let Some((split, root_facts, throw_transition)) = pending_exceptional_call {
-        let parent = execution.core.clone();
-        let branches = split
-            .record_branches(
-                &parent,
-                function,
-                arguments,
-                &current_state,
-                &step_statement,
-                &root_facts,
-                CallOutcomeArmEvidence {
-                    theorem: &transition.theorem,
-                    context: &transition.context,
-                    execution_facts: &transition.execution_facts,
-                    obligations: &transition.obligations,
-                    loan_evidence: &transition.loan_evidence,
-                },
-                CallOutcomeArmEvidence {
-                    theorem: &throw_transition.theorem,
-                    context: &throw_transition.context,
-                    execution_facts: &throw_transition.execution_facts,
-                    obligations: &throw_transition.obligations,
-                    loan_evidence: &throw_transition.loan_evidence,
-                },
-            )
-            .map_err(|refusal| ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: checked returned/threw call branch was rejected: {}",
+    execution
+        .core
+        .record_statement_transition_with_loan_evidence(
+            function,
+            arguments,
+            transition.theorem.clone(),
+            transition.context.clone(),
+            &transition.execution_facts,
+            &transition.obligations,
+            &transition.loan_evidence,
+        )
+        .map_err(|refusal| {
+            ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded statement evidence the proof object rejected: {}",
                 describe_evidence_refusal(&refusal, parameters, arguments)
-            )))?;
-        execution.core = branches.returned;
-        let exceptional = branches.threw;
-        let mut throw_facts = root_facts.clone();
-        for fact in &throw_transition.path_facts {
-            throw_facts = throw_facts.with_kernel_checked_fact(fact.clone());
-        }
-        let return_assumptions = throw_facts.assumptions();
-        let (outcome, obligations) = c_function_outcome_from_statement_outcome(
-            &execution_start_state,
-            function,
-            throw_transition.outcome,
-            throw_transition.obligations,
-            return_assumptions,
-        );
-        let mut execution_facts = throw_transition.execution_facts;
-        append_execution_effect_facts(&mut execution_facts, &parent.effect_facts);
-        execution.core.record_pending_exceptional_call(
-            &split,
-            &parent,
-            function,
-            &execution_start_state,
-            &current_state,
-            &step_statement,
-            &root_facts,
-            &transition.theorem,
-            &throw_transition.theorem,
-            &exceptional,
-            outcome,
-            execution_facts,
-            obligations,
-            throw_facts,
-        ).map_err(|reason| ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: checked call fork was rejected: {reason}"
-        )))?;
-    } else {
-        execution
-            .core
-            .record_statement_transition_with_loan_evidence(
-                function,
-                arguments,
-                transition.theorem.clone(),
-                transition.context.clone(),
-                &transition.execution_facts,
-                &transition.obligations,
-                &transition.loan_evidence,
-            )
-            .map_err(|refusal| {
-                ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded statement evidence the proof object rejected: {}",
-                    describe_evidence_refusal(&refusal, parameters, arguments)
-                ))
-            })?;
-    }
+            ))
+        })?;
     // A direct memory-snapshot transport needs no surface `transport`
     // tactic, but its target still needs a stable source form for a
     // later proof step. Record that form during both planning and
@@ -3054,14 +3029,6 @@ fn execute_step_from_frontier_position_selecting_path(
                         execution.core.loan_evidence().clone(),
                     ));
                 }
-                for pending in execution.core.complete_pending_exceptional_calls() {
-                    completed_outcomes.push((
-                        pending.outcome,
-                        pending.execution_facts,
-                        pending.obligations,
-                        pending.loan_evidence,
-                    ));
-                }
                 let completed =
                     crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
                         execution_start_state.clone(),
@@ -3157,20 +3124,12 @@ fn execute_step_from_frontier_position_selecting_path(
                 &mut completed_execution_facts,
                 &execution.core.effect_facts,
             );
-            let mut completed_outcomes = vec![(
+            let completed_outcomes = vec![(
                 CFunctionOutcome::VerificationDiverges,
                 completed_execution_facts,
                 transition_obligations,
                 execution.core.loan_evidence().clone(),
             )];
-            for pending in execution.core.complete_pending_exceptional_calls() {
-                completed_outcomes.push((
-                    pending.outcome,
-                    pending.execution_facts,
-                    pending.obligations,
-                    pending.loan_evidence,
-                ));
-            }
             let completed =
                 crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
                     execution_start_state.clone(),

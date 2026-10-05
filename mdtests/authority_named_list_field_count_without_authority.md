@@ -29,7 +29,7 @@ void bump(int32* pool, int32* p) {
 } by { unfold(member); step(); fold(member); execute(); simp(); }
 int32 run() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(ticket(&pool, _)));
     let first = fold(ticket(&pool, p), { model: List<int32>::Cons(1, List<int32>::Nil) });
@@ -46,5 +46,5 @@ int32 run() { ensures result == 0 or result == 9; } by {
 ```
 
 ```expect
-fail: authority
+fail: count(...) requires owning authority for that population
 ```

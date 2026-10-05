@@ -209,6 +209,20 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } => {
+                        let _ = write!(identity, "tmcast{source:?}:{destination:?}(");
+                        tasks.push(HavocIdentityTask::Text(")"));
+                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                    }
+
+                    Bitvector32Term::MachineIntegerConstant(value) => {
+                        let _ = write!(identity, "twc{:?}:{:032x};", value.format(), value.bits());
+                    }
+
                     Bitvector32Term::Constant(value) => {
                         let _ = write!(identity, "tc{value};");
                     }
@@ -2072,10 +2086,12 @@ fn call_havoc_keeps_cell(
             CallHavocCellRule::Dropped
         };
     }
-    if assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer) {
+    let bytes = crate::kernel::reasoning::cell_access_byte_width(value);
+    if assumptions.ranges_directly_disjoint_from_access(mutable_ranges, pointer, bytes)
+        || assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
+    {
         return CallHavocCellRule::Separate;
     }
-    let bytes = crate::kernel::reasoning::cell_access_byte_width(value);
     match kept.and_then(|kept| kept.member_holding(pointer, bytes, assumptions)) {
         Some(range) => CallHavocCellRule::KeptByCaller(range),
         None => CallHavocCellRule::Dropped,
@@ -3980,10 +3996,8 @@ impl CMemory {
             };
             // Reject symbolic-address caches with one indexed lookup. Concrete
             // cells are visited only inside the selected byte region, plus the
-            // bounded prefix where an eight-byte scalar might overlap it.
-            let max_width = CType::UInt64
-                .byte_width()
-                .max(CType::VoidPointer.byte_width());
+            // bounded prefix where the widest scalar might overlap it.
+            let max_width = crate::kernel::resource_tracker::widest_scalar_access_bytes();
             if self
                 .cells
                 .concrete()
@@ -5621,6 +5635,26 @@ impl CMemory {
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
+    }
+
+    pub(in crate::kernel) fn symbolic_wide_integer_load(
+        &self,
+        pointer: &Pointer,
+        ty: MachineIntegerType,
+    ) -> Option<CValue> {
+        if ty.format().bits() != 128 {
+            return None;
+        }
+        let load = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(self.clone()),
+            Box::new(pointer.clone()),
+            LoadKind::of_type(ty.c_type())?,
+        );
+        Some(match ty {
+            MachineIntegerType::Int128 => CValue::Int128(load),
+            MachineIntegerType::UInt128 => CValue::UInt128(load),
+            _ => return None,
+        })
     }
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> CValue {

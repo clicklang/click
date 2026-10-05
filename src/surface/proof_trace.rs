@@ -21,19 +21,20 @@ struct Capture {
     joins: HashMap<usize, TraceJoin>,
     bodies: HashMap<usize, TraceBody>,
     scope_parents: HashMap<usize, TraceScope>,
-    accepted_paths: Vec<TraceAcceptedPath>,
+    retained_paths: Vec<TraceRetainedPath>,
     limit_reached: bool,
 }
 
-struct TraceAcceptedPath {
+struct TraceRetainedPath {
     claim: String,
-    /// A loop phase's completed path, recorded while the function's own
+    completed: bool,
+    /// A loop phase's path, recorded while the function's own
     /// path is still being driven. It is rendered only for a target that
     /// lies on it; a plain trace shows the function's path.
     nested: bool,
     path_index: usize,
     lineage: Vec<TracePathNode>,
-    /// Retain the accepted provenance chain until the CLI has rendered it.
+    /// Retain the checked provenance chain until the CLI has rendered it.
     _retained: Box<dyn Any>,
 }
 
@@ -259,7 +260,7 @@ pub fn with_proof_trace<R>(function: &str, verify: impl FnOnce() -> R) -> R {
             joins: HashMap::new(),
             bodies: HashMap::new(),
             scope_parents: HashMap::new(),
-            accepted_paths: Vec::new(),
+            retained_paths: Vec::new(),
             limit_reached: false,
         }))
     });
@@ -394,12 +395,33 @@ pub(super) fn record_accepted_path(
     lineage: Vec<TracePathNode>,
     retained: Box<dyn Any>,
 ) {
+    record_retained_path(claim, path_index, nested, true, lineage, retained);
+}
+
+pub(super) fn record_unfinished_path(
+    claim: &str,
+    path_index: usize,
+    lineage: Vec<TracePathNode>,
+    retained: Box<dyn Any>,
+) {
+    record_retained_path(claim, path_index, true, false, lineage, retained);
+}
+
+fn record_retained_path(
+    claim: &str,
+    path_index: usize,
+    nested: bool,
+    completed: bool,
+    lineage: Vec<TracePathNode>,
+    retained: Box<dyn Any>,
+) {
     CAPTURE.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(capture) = slot.as_mut() else { return };
-        if capture.accepted_paths.len() < MAX_STEPS {
-            capture.accepted_paths.push(TraceAcceptedPath {
+        if capture.retained_paths.len() < MAX_STEPS {
+            capture.retained_paths.push(TraceRetainedPath {
                 claim: claim.to_owned(),
+                completed,
                 nested,
                 path_index,
                 lineage,
@@ -429,18 +451,44 @@ pub(super) fn render(
         if !enabled_for(claim) {
             return None;
         }
-        Some(
-            render_lineage(
-                capture,
-                lineage,
-                labels,
-                tactic_location,
-                branch_arm,
-                have_body_contains,
-                target,
-            )
-            .0,
-        )
+        let (mut report, reached) = render_lineage(
+            capture,
+            lineage,
+            labels,
+            tactic_location,
+            branch_arm,
+            have_body_contains,
+            target,
+        );
+        if let Some(target) = target
+            && !reached
+        {
+            // A failing loop phase can have already checked a sibling arm.
+            // Only retained checked paths may answer a target outside the
+            // failure's own lineage; recorded search candidates cannot.
+            for path in capture
+                .retained_paths
+                .iter()
+                .filter(|path| path.claim == claim)
+            {
+                let mut path_labels = SnapshotLabels::default();
+                let (alternative, reached) = render_lineage(
+                    capture,
+                    &path.lineage,
+                    &mut path_labels,
+                    tactic_location,
+                    branch_arm,
+                    have_body_contains,
+                    Some(target),
+                );
+                if reached {
+                    *labels = path_labels;
+                    return Some(alternative);
+                }
+            }
+            report.push_str("\n    target tactic has no recorded checked step on a retained path");
+        }
+        Some(report)
     })
 }
 
@@ -460,14 +508,14 @@ pub(crate) fn render_accepted(
         // The function's own paths first; a loop phase's path only answers a
         // target that lies inside the phase.
         let paths = capture
-            .accepted_paths
+            .retained_paths
             .iter()
-            .filter(|path| !path.nested)
+            .filter(|path| path.completed && !path.nested)
             .chain(
                 capture
-                    .accepted_paths
+                    .retained_paths
                     .iter()
-                    .filter(|path| path.nested && target.is_some()),
+                    .filter(|path| path.completed && path.nested && target.is_some()),
             );
         for path in paths {
             let locate = |indices: &[usize]| tactic_location(&path.claim, indices);
@@ -490,9 +538,9 @@ pub(crate) fn render_accepted(
             if target.is_none() || reached {
                 *labels = path_labels;
                 if capture
-                    .accepted_paths
+                    .retained_paths
                     .iter()
-                    .filter(|path| !path.nested)
+                    .filter(|path| path.completed && !path.nested)
                     .count()
                     > 1
                 {
@@ -1347,8 +1395,20 @@ mod tests {
                 resources: Vec::new(),
                 more_resources: 0,
             };
-            record(1, step("source tactic 0: accepted".into()));
-            record(2, step("source tactic 0: abandoned candidate".into()));
+            record(
+                1,
+                TraceStep {
+                    source_tactic_path: Some(vec![0]),
+                    ..step("source tactic 0: accepted".into())
+                },
+            );
+            record(
+                2,
+                TraceStep {
+                    source_tactic_path: Some(vec![0]),
+                    ..step("source tactic 0: abandoned candidate".into())
+                },
+            );
             record(3, step("source tactic 0: mark".into()));
             record_accepted_path(
                 "f.contract",
@@ -1377,6 +1437,65 @@ mod tests {
             assert!(report.contains("accepted"), "{report}");
             assert!(!report.contains("abandoned candidate"), "{report}");
             assert!(!report.contains(": mark"), "{report}");
+            let targeted = render(
+                "f.contract",
+                &[TracePathNode {
+                    node: 3,
+                    selected_arm: None,
+                }],
+                &mut SnapshotLabels::default(),
+                &|_| Some(("tactic@2".into(), SourcePosition::new(2, 1))),
+                &|_, _| None,
+                &|_, _| false,
+                Some(&SourcePosition::new(2, 1)),
+            )
+            .unwrap();
+            assert!(targeted.contains("accepted"), "{targeted}");
+            assert!(!targeted.contains("abandoned candidate"), "{targeted}");
+            record(
+                4,
+                TraceStep {
+                    source_tactic_path: Some(vec![1]),
+                    ..step("source tactic 1: unfinished arm".into())
+                },
+            );
+            record_unfinished_path(
+                "f.contract",
+                0,
+                vec![TracePathNode {
+                    node: 4,
+                    selected_arm: None,
+                }],
+                Box::new(()),
+            );
+            let locate = |path: &[usize]| {
+                let line = path[0] + 2;
+                Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+            };
+            let target = SourcePosition::new(3, 1);
+            assert!(
+                render_accepted(
+                    &mut SnapshotLabels::default(),
+                    &|_, path| locate(path),
+                    &|_, _, _| None,
+                    &|_, _, _| false,
+                    Some(&target),
+                )
+                .is_none(),
+                "an unfinished arm cannot become an accepted proof trace"
+            );
+            let unfinished = render(
+                "f.contract",
+                &[],
+                &mut SnapshotLabels::default(),
+                &locate,
+                &|_, _| None,
+                &|_, _| false,
+                Some(&target),
+            )
+            .unwrap();
+            assert!(unfinished.contains("unfinished arm"), "{unfinished}");
+            assert!(!unfinished.contains("abandoned candidate"), "{unfinished}");
         });
     }
 }

@@ -30,22 +30,18 @@ int32 branch_nested_resource_scope(int32* p, int32 flag) {
 
     ensures result >= 0 by {
         step();
-        branch {
-            ensuring {
-                fact result >= 0;
-                owns bounded_cell(p);
+        branch ensuring {
+            fact result >= 0;
+            owns bounded_cell(p);
+        } then {
+            open(bounded_cell(p)) {
+                step();
+                have result >= 0 by simp;
             }
-            then {
-                open(bounded_cell(p)) {
-                    step();
-                    have result >= 0 by simp;
-                }
-            }
-            else {
-                open(bounded_cell(p)) {
-                    step();
-                    have result >= 0 by simp;
-                }
+        } else {
+            open(bounded_cell(p)) {
+                step();
+                have result >= 0 by simp;
             }
         }
         step();

@@ -46,6 +46,10 @@ pub enum IntegerTerm {
     Add(SharedIntegerTerm, SharedIntegerTerm),
     Subtract(SharedIntegerTerm, SharedIntegerTerm),
     Multiply(SharedIntegerTerm, SharedIntegerTerm),
+    /// Explicit truncation toward zero for guarded native machine division.
+    /// A zero divisor stays opaque; this is not the surface Integer / policy.
+    TruncatingQuotient(SharedIntegerTerm, SharedIntegerTerm),
+    TruncatingRemainder(SharedIntegerTerm, SharedIntegerTerm),
     /// An opaque pure specification function application.  The body is
     /// exposed only by the checked `unfold` rule.
     PureFunctionApplication(SharedIntegerApplication),
@@ -261,6 +265,12 @@ impl Clone for IntegerTerm {
             Self::Add(left, right) => Self::Add(left.clone(), right.clone()),
             Self::Subtract(left, right) => Self::Subtract(left.clone(), right.clone()),
             Self::Multiply(left, right) => Self::Multiply(left.clone(), right.clone()),
+            Self::TruncatingQuotient(left, right) => {
+                Self::TruncatingQuotient(left.clone(), right.clone())
+            }
+            Self::TruncatingRemainder(left, right) => {
+                Self::TruncatingRemainder(left.clone(), right.clone())
+            }
             Self::PureFunctionApplication(application) => {
                 Self::PureFunctionApplication(application.clone())
             }
@@ -295,6 +305,8 @@ pub enum MachineIntegerType {
     UInt32,
     Int64,
     UInt64,
+    Int128,
+    UInt128,
 }
 
 impl MachineIntegerType {
@@ -308,6 +320,8 @@ impl MachineIntegerType {
             CType::UInt32 => Self::UInt32,
             CType::Int64 => Self::Int64,
             CType::UInt64 => Self::UInt64,
+            CType::Int128 => Self::Int128,
+            CType::UInt128 => Self::UInt128,
             _ => return None,
         })
     }
@@ -322,6 +336,8 @@ impl MachineIntegerType {
             Self::UInt32 => CType::UInt32,
             Self::Int64 => CType::Int64,
             Self::UInt64 => CType::UInt64,
+            Self::Int128 => CType::Int128,
+            Self::UInt128 => CType::UInt128,
         }
     }
 }
@@ -588,6 +604,16 @@ impl fmt::Debug for IntegerTerm {
                 .field(&left.id())
                 .field(&right.id())
                 .finish(),
+            Self::TruncatingQuotient(left, right) => formatter
+                .debug_tuple("TruncatingQuotient")
+                .field(&left.id())
+                .field(&right.id())
+                .finish(),
+            Self::TruncatingRemainder(left, right) => formatter
+                .debug_tuple("TruncatingRemainder")
+                .field(&left.id())
+                .field(&right.id())
+                .finish(),
             Self::PureFunctionApplication(application) => formatter
                 .debug_struct("PureFunctionApplication")
                 .field("id", &application.id())
@@ -631,6 +657,8 @@ enum IntegerShallowKey {
     Add(u64, u64),
     Subtract(u64, u64),
     Multiply(u64, u64),
+    TruncatingQuotient(u64, u64),
+    TruncatingRemainder(u64, u64),
     PureFunctionApplication(u64),
     AlgebraicMatch {
         scrutinee: Box<AlgebraicTerm>,
@@ -689,7 +717,9 @@ impl IntegerTerm {
                 IntegerTerm::Negate(value) => visit_shared(value, variables, seen),
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right) => {
+                | IntegerTerm::Multiply(left, right)
+                | IntegerTerm::TruncatingQuotient(left, right)
+                | IntegerTerm::TruncatingRemainder(left, right) => {
                     visit_shared(left, variables, seen);
                     visit_shared(right, variables, seen);
                 }
@@ -708,45 +738,38 @@ impl IntegerTerm {
         variables.into_iter().next_back()
     }
     pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
-        let constant = match (&ty, &value) {
-            (MachineIntegerType::Int8, Bitvector32Term::Constant(v)) => {
-                i8::try_from(*v as i32).ok().map(BigInt::from)
-            }
-            (MachineIntegerType::Int16, Bitvector32Term::Constant(v)) => {
-                i16::try_from(*v as i32).ok().map(BigInt::from)
-            }
-            (MachineIntegerType::Int32, Bitvector32Term::Constant(v)) => {
-                Some(BigInt::from(*v as i32))
-            }
-            (MachineIntegerType::Int64, Bitvector32Term::Int64Constant(v)) => {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt32, Bitvector32Term::Constant(v)) => Some(BigInt::from(*v)),
-            (MachineIntegerType::UInt64, Bitvector32Term::UInt64Constant(v)) => {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt8, Bitvector32Term::Constant(v))
-                if *v <= u32::from(u8::MAX) =>
-            {
-                Some(BigInt::from(*v))
-            }
-            (MachineIntegerType::UInt16, Bitvector32Term::Constant(v))
-                if *v <= u32::from(u16::MAX) =>
-            {
-                Some(BigInt::from(*v))
-            }
-            _ if matches!(
-                value,
-                Bitvector32Term::Constant(_)
-                    | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_)
-            ) =>
-            {
+        if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
+            return None;
+        }
+        let value = match value {
+            Bitvector32Term::MachineIntegerCast { destination, .. } if destination != ty => {
                 return None;
             }
-            _ => return Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value))),
+            // Strictly increasing widths bound this normalization by the
+            // closed set of machine widths, even for caller-built terms.
+            Bitvector32Term::MachineIntegerCast {
+                source,
+                value: operand,
+                ..
+            } if ty.format().bits() > source.format().bits()
+                && ty.format().contains(source.format()) =>
+            {
+                return Self::from_machine(source, *operand);
+            }
+            value => value,
         };
-        constant.map(Self::constant)
+        if matches!(
+            value,
+            Bitvector32Term::Constant(_)
+                | Bitvector32Term::Int64Constant(_)
+                | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
+        ) {
+            ty.constant_from_term(&value)
+                .map(|value| Self::constant(value.to_integer()))
+        } else {
+            Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value)))
+        }
     }
 
     fn shallow_key(&self) -> IntegerShallowKey {
@@ -758,6 +781,12 @@ impl IntegerTerm {
             Self::Add(left, right) => IntegerShallowKey::Add(left.id(), right.id()),
             Self::Subtract(left, right) => IntegerShallowKey::Subtract(left.id(), right.id()),
             Self::Multiply(left, right) => IntegerShallowKey::Multiply(left.id(), right.id()),
+            Self::TruncatingQuotient(left, right) => {
+                IntegerShallowKey::TruncatingQuotient(left.id(), right.id())
+            }
+            Self::TruncatingRemainder(left, right) => {
+                IntegerShallowKey::TruncatingRemainder(left.id(), right.id())
+            }
             Self::PureFunctionApplication(application) => {
                 IntegerShallowKey::PureFunctionApplication(application.id())
             }
@@ -999,6 +1028,33 @@ impl IntegerTerm {
         )
     }
 
+    pub(crate) fn truncating_quotient(left: Self, right: Self) -> Self {
+        Self::truncating_division(left, right, false)
+    }
+
+    pub(crate) fn truncating_remainder(left: Self, right: Self) -> Self {
+        Self::truncating_division(left, right, true)
+    }
+
+    fn truncating_division(left: Self, right: Self, remainder: bool) -> Self {
+        if let (Self::Constant(a), Self::Constant(b)) = (&left, &right)
+            && !b.is_zero()
+        {
+            // Charge before arbitrary precision division. Native wide inputs
+            // are bounded, but these shared representation nodes are not.
+            charge_multiply_bits(a, b);
+            return Self::Constant(if remainder { a % b } else { a / b });
+        }
+        // Do not cancel x/x or simplify 0/x before execution's zero guard.
+        let left = SharedIntegerTerm::intern(left);
+        let right = SharedIntegerTerm::intern(right);
+        if remainder {
+            Self::TruncatingRemainder(left, right)
+        } else {
+            Self::TruncatingQuotient(left, right)
+        }
+    }
+
     pub(crate) fn multiply(left: Self, right: Self) -> Self {
         if let (Self::Constant(left), Self::Constant(right)) = (&left, &right) {
             charge_multiply_bits(left, right);
@@ -1066,6 +1122,19 @@ fn fmt_integer_term(
             write!(formatter, "(")?;
             fmt_integer_shared(left, formatter, seen)?;
             write!(formatter, " * ")?;
+            fmt_integer_shared(right, formatter, seen)?;
+            write!(formatter, ")")
+        }
+        IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
+            let name = if matches!(term, IntegerTerm::TruncatingQuotient(_, _)) {
+                "truncating_quotient"
+            } else {
+                "truncating_remainder"
+            };
+            write!(formatter, "{name}(")?;
+            fmt_integer_shared(left, formatter, seen)?;
+            write!(formatter, ", ")?;
             fmt_integer_shared(right, formatter, seen)?;
             write!(formatter, ")")
         }
@@ -1200,7 +1269,9 @@ mod tests {
                 IntegerTerm::Negate(value) => pending.push(value.clone()),
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
-                | IntegerTerm::Multiply(left, right) => {
+                | IntegerTerm::Multiply(left, right)
+                | IntegerTerm::TruncatingQuotient(left, right)
+                | IntegerTerm::TruncatingRemainder(left, right) => {
                     pending.push(left.clone());
                     pending.push(right.clone());
                 }
@@ -1598,6 +1669,12 @@ mod tests {
                 IntegerTerm::Multiply(left, right) => {
                     eval_integer(left, integers, bits) * eval_integer(right, integers, bits)
                 }
+                IntegerTerm::TruncatingQuotient(left, right) => {
+                    eval_integer(left, integers, bits) / eval_integer(right, integers, bits)
+                }
+                IntegerTerm::TruncatingRemainder(left, right) => {
+                    eval_integer(left, integers, bits) % eval_integer(right, integers, bits)
+                }
                 IntegerTerm::Negate(value) => -eval_integer(value, integers, bits),
                 IntegerTerm::PureFunctionApplication(_) => {
                     unreachable!("the range-fold law test evaluator has no pure-function model")
@@ -1952,6 +2029,187 @@ mod tests {
                 pair[1] <= 4 * pair[0] + 8,
                 "the conservative product allowance scales by bit products"
             );
+        }
+    }
+    #[test]
+    fn truncating_integer_nodes_fold_exactly_with_signed_remainders() {
+        use num_traits::Signed;
+        let values = [
+            BigInt::from(i128::MIN),
+            BigInt::from(i128::MAX),
+            BigInt::from(u128::MAX),
+            BigInt::from(-7),
+            BigInt::from(7),
+            BigInt::zero(),
+        ];
+        for a in &values {
+            for b in values.iter().filter(|b| !b.is_zero()) {
+                let q = IntegerTerm::truncating_quotient(
+                    IntegerTerm::constant(a.clone()),
+                    IntegerTerm::constant(b.clone()),
+                );
+                let r = IntegerTerm::truncating_remainder(
+                    IntegerTerm::constant(a.clone()),
+                    IntegerTerm::constant(b.clone()),
+                );
+                let q = q.as_const().unwrap();
+                let r = r.as_const().unwrap();
+                assert_eq!(a, &(q * b + r));
+                assert!(r.abs() < b.abs());
+                assert!(r.is_zero() || r.sign() == a.sign());
+            }
+        }
+        assert_eq!(
+            IntegerTerm::truncating_quotient(
+                IntegerTerm::constant_i64(-7),
+                IntegerTerm::constant_i64(3)
+            )
+            .as_const(),
+            Some(&BigInt::from(-2))
+        );
+        assert_eq!(
+            IntegerTerm::truncating_remainder(
+                IntegerTerm::constant_i64(-7),
+                IntegerTerm::constant_i64(3)
+            )
+            .as_const(),
+            Some(&BigInt::from(-1))
+        );
+        // Representation arithmetic is unbounded: native MIN/-1 overflow is
+        // an execution guard, not a property of the mathematical quotient.
+        assert_eq!(
+            IntegerTerm::truncating_quotient(
+                IntegerTerm::constant(BigInt::from(i128::MIN)),
+                IntegerTerm::constant_i64(-1)
+            )
+            .as_const(),
+            Some(&(BigInt::one() << 127usize))
+        );
+    }
+
+    #[test]
+    fn truncating_integer_nodes_do_not_cancel_unguarded_divisors() {
+        let x = IntegerTerm::var(Variable(81));
+        for (a, b) in [
+            (x.clone(), x.clone()),
+            (IntegerTerm::constant_i64(0), x),
+            (IntegerTerm::constant_i64(7), IntegerTerm::constant_i64(0)),
+            (IntegerTerm::constant_i64(0), IntegerTerm::constant_i64(0)),
+        ] {
+            assert!(matches!(
+                IntegerTerm::truncating_quotient(a.clone(), b.clone()),
+                IntegerTerm::TruncatingQuotient(_, _)
+            ));
+            assert!(matches!(
+                IntegerTerm::truncating_remainder(a, b),
+                IntegerTerm::TruncatingRemainder(_, _)
+            ));
+        }
+    }
+
+    #[test]
+    fn truncating_integer_congruence_rewrites_both_operands() {
+        let x: SharedIntegerTerm = IntegerTerm::var(Variable(82)).into();
+        let y: SharedIntegerTerm = IntegerTerm::var(Variable(83)).into();
+        for remainder in [false, true] {
+            let term = if remainder {
+                IntegerTerm::TruncatingRemainder(x.clone(), y.clone())
+            } else {
+                IntegerTerm::TruncatingQuotient(x.clone(), y.clone())
+            };
+            let proposition = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
+                true,
+            );
+            let first = crate::kernel::substitute_integer_term_in_proposition(
+                &proposition,
+                &x,
+                &IntegerTerm::constant_i64(-7).into(),
+            )
+            .unwrap();
+            let rewritten = crate::kernel::substitute_integer_term_in_proposition(
+                &first,
+                &y,
+                &IntegerTerm::constant_i64(3).into(),
+            )
+            .unwrap();
+            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = rewritten
+            else {
+                unreachable!()
+            };
+            assert_eq!(
+                left.as_const(),
+                Some(&BigInt::from(if remainder { -1 } else { -2 }))
+            );
+            let zero = crate::kernel::substitute_integer_term_in_proposition(
+                &first,
+                &y,
+                &IntegerTerm::constant_i64(0).into(),
+            )
+            .unwrap();
+            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = zero else {
+                unreachable!()
+            };
+            assert!(left.as_const().is_none(), "zero substitution stays opaque");
+        }
+    }
+
+    #[test]
+    fn truncating_integer_congruence_visits_shared_nodes_once() {
+        for depth in [2usize, 8, 32, 128] {
+            let from: SharedIntegerTerm = IntegerTerm::var(Variable(84)).into();
+            let to: SharedIntegerTerm = IntegerTerm::var(Variable(85)).into();
+            let mut term = from.clone();
+            for level in 0..depth {
+                term = if level % 2 == 0 {
+                    IntegerTerm::TruncatingQuotient(term.clone(), term).into()
+                } else {
+                    IntegerTerm::TruncatingRemainder(term.clone(), term).into()
+                };
+            }
+            let goal =
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(term.clone(), term), true);
+            let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::substitute_integer_term_in_proposition(&goal, &from, &to).unwrap()
+            });
+            assert!(work <= 4 * depth + 8, "depth={depth}, work={work}");
+            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
+                rewritten
+            else {
+                unreachable!()
+            };
+            assert_eq!(left.id(), right.id());
+            let mut node = left;
+            for _ in 0..depth {
+                let (left, right) = match node.as_ref() {
+                    IntegerTerm::TruncatingQuotient(a, b)
+                    | IntegerTerm::TruncatingRemainder(a, b) => (a, b),
+                    _ => unreachable!(),
+                };
+                assert_eq!(left.id(), right.id());
+                node = left.clone();
+            }
+            assert_eq!(node, to);
+        }
+    }
+
+    #[test]
+    fn truncating_integer_constant_work_scales_with_operand_bits() {
+        let mut work = Vec::new();
+        for bits in [64usize, 128, 256, 512] {
+            let a: BigInt = (BigInt::one() << bits) + 7;
+            let b: BigInt = (BigInt::one() << (bits / 2)) + 1;
+            let (_, charged) = crate::instrumentation::measure_deterministic_work(|| {
+                IntegerTerm::truncating_quotient(
+                    IntegerTerm::constant(a.clone()),
+                    IntegerTerm::constant(b.clone()),
+                )
+            });
+            work.push(charged);
+        }
+        for pair in work.windows(2) {
+            assert!(pair[1] > 3 * pair[0]);
+            assert!(pair[1] <= 4 * pair[0] + 16);
         }
     }
 }

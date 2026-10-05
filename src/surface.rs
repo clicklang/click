@@ -30,8 +30,7 @@ use crate::kernel::{
     c_condition_fact_has_memory, c_condition_fact_memories, c_contract_refinement_context,
     c_declare, c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks,
     c_function, c_function_contract_entry_state, c_function_contract_refinement_arguments,
-    c_function_contract_refinement_context, c_function_entry_state,
-    c_function_outcome_from_statement_outcome, c_function_specification,
+    c_function_contract_refinement_context, c_function_entry_state, c_function_specification,
     c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
     c_loop_preservation_contexts, c_pointer_offsets_proven_equal_for_effect,
     c_resources_directly_match, c_seq, c_termination_height_plan, c_typed_pointer_value,
@@ -311,6 +310,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "not",
     "object",
     "observe",
+    "obtain",
     "of",
     "old",
     "open",
@@ -328,7 +328,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "reverse",
     "scale",
     "same_object",
-    "satisfy",
     "scatter",
     "separate",
     "simp",
@@ -3103,6 +3102,8 @@ pub enum ProofTactic {
     Mark(String),
     Step,
     StepContract(ContractApplication),
+    /// Name the scalar value assigned by this checked statement.
+    StepBind(String),
     StepCall(CallBinderTransport),
     /// `name(args) { binder: instance }`: one application of a user-defined
     /// tactic's verified contract, with no C statement.
@@ -3240,10 +3241,10 @@ fn tactic_sorry_outside_have(tactic: &ProofTactic, in_have: bool) -> bool {
             .arms
             .iter()
             .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
-        ProofTactic::Cases(cases) => {
-            tactic_sorry_outside_have_in(&cases.left_tactics, in_have)
-                || tactic_sorry_outside_have_in(&cases.right_tactics, in_have)
-        }
+        ProofTactic::Cases(cases) => cases
+            .arms
+            .iter()
+            .any(|arm| tactic_sorry_outside_have_in(&arm.tactics, in_have)),
         ProofTactic::Both(both) => {
             tactic_sorry_outside_have_in(&both.left_tactics, in_have)
                 || tactic_sorry_outside_have_in(&both.right_tactics, in_have)
@@ -3381,6 +3382,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "step-result",
+        syntax: "let name = step()",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "step-contract",
         syntax: "step(Contract)",
         class: "simple",
@@ -3512,7 +3518,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "cases",
-        syntax: "cases (A or B)",
+        syntax: "cases {",
         class: "control",
     },
     PublicTacticForm {
@@ -3527,7 +3533,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "outcomes",
-        syntax: "outcomes { returned { ... } threw { ... } }",
+        syntax: "outcomes { returned => { ... } threw => { ... } }",
         class: "control",
     },
     PublicTacticForm {
@@ -3542,12 +3548,12 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "witness",
-        syntax: "witness(name = value)",
+        syntax: "witness {",
         class: "simple",
     },
     PublicTacticForm {
-        id: "let-satisfy",
-        syntax: "let (name: Type, ...) satisfy { P }",
+        id: "obtain",
+        syntax: "obtain (",
         class: "simple",
     },
     PublicTacticForm {
@@ -3706,6 +3712,8 @@ pub enum ProofStep {
     Mark(String),
     Step,
     StepContract(ContractApplication),
+    /// Name the scalar value assigned by this checked statement.
+    StepBind(String),
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
@@ -4037,6 +4045,7 @@ impl ProofStep {
             },
             ProofTactic::Mark(name) => Self::Mark(name.clone()),
             ProofTactic::Step => Self::Step,
+            ProofTactic::StepBind(name) => Self::StepBind(name.clone()),
             ProofTactic::StepContract(name) => Self::StepContract(name.clone()),
             ProofTactic::StepCall(transport) => Self::StepCall(transport.clone()),
             ProofTactic::UserTactic(application) => Self::UserTactic(application.clone()),
@@ -4190,23 +4199,18 @@ impl ProofStep {
                         .collect(),
                 )),
             },
-            ProofTactic::Cases(proof_cases) => Self::Cases {
-                disjunction: proof_cases.disjunction.clone(),
-                left_proof: Box::new(ProofCertificate::from_validated_steps(
-                    proof_cases
-                        .left_tactics
-                        .iter()
-                        .map(Self::from_validated_tactic)
-                        .collect(),
-                )),
-                right_proof: Box::new(ProofCertificate::from_validated_steps(
-                    proof_cases
-                        .right_tactics
-                        .iter()
-                        .map(Self::from_validated_tactic)
-                        .collect(),
-                )),
-            },
+            ProofTactic::Cases(proof_cases) => {
+                let (disjunction, left, right) = proof_cases.binary();
+                Self::Cases {
+                    disjunction,
+                    left_proof: Box::new(ProofCertificate::from_validated_steps(
+                        left.iter().map(Self::from_validated_tactic).collect(),
+                    )),
+                    right_proof: Box::new(ProofCertificate::from_validated_steps(
+                        right.iter().map(Self::from_validated_tactic).collect(),
+                    )),
+                }
+            }
             ProofTactic::Branch(proof_branch) => Self::Branch {
                 ensuring: proof_branch.ensuring.clone(),
                 then_proof: Box::new(ProofCertificate::from_validated_steps(
@@ -4280,6 +4284,7 @@ impl ProofStep {
             }),
             Self::Mark(name) => ProofTactic::Mark(name.clone()),
             Self::Step => ProofTactic::Step,
+            Self::StepBind(name) => ProofTactic::StepBind(name.clone()),
             Self::StepContract(name) => ProofTactic::StepContract(name.clone()),
             Self::StepCall(transport) => ProofTactic::StepCall(transport.clone()),
             Self::UserTactic(application) => ProofTactic::UserTactic(application.clone()),
@@ -4406,11 +4411,11 @@ impl ProofStep {
                 disjunction,
                 left_proof,
                 right_proof,
-            } => ProofTactic::Cases(ProofCases {
-                disjunction: disjunction.clone(),
-                left_tactics: left_proof.to_proof_tactics(),
-                right_tactics: right_proof.to_proof_tactics(),
-            }),
+            } => ProofTactic::Cases(ProofCases::from_binary(
+                disjunction,
+                left_proof.to_proof_tactics(),
+                right_proof.to_proof_tactics(),
+            )),
             Self::Branch {
                 ensuring,
                 then_proof,
@@ -4532,9 +4537,10 @@ fn smart_tactic_spelling(kind: SmartTacticKind) -> &'static str {
 fn certificate_step_class(step: &ProofStep) -> TacticClass {
     match step {
         ProofStep::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
-        ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => {
-            TacticClass::Simple(SimpleTactic::StatementTransition)
-        }
+        ProofStep::Step
+        | ProofStep::StepBind(_)
+        | ProofStep::StepContract(_)
+        | ProofStep::StepCall(_) => TacticClass::Simple(SimpleTactic::StatementTransition),
         ProofStep::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
         ProofStep::UnfoldPredicate(_) => TacticClass::Simple(SimpleTactic::UnfoldPredicate),
         ProofStep::UnfoldFunction(_) | ProofStep::UnfoldFunctionUsing { .. } => {
@@ -4727,15 +4733,15 @@ fn validate_certificate_tactics(
                     let ProofTactic::Cases(proof_cases) = tactic else {
                         unreachable!("tactic class and variant must agree")
                     };
+                    let (_, left, right) = proof_cases.binary();
                     path.push(CertificatePathSegment::LeftCase);
-                    let left_result = validate_certificate_tactics(&proof_cases.left_tactics, path);
+                    let left_result = validate_certificate_tactics(&left, path);
                     path.pop();
                     if left_result.is_err() {
                         left_result
                     } else {
                         path.push(CertificatePathSegment::RightCase);
-                        let right_result =
-                            validate_certificate_tactics(&proof_cases.right_tactics, path);
+                        let right_result = validate_certificate_tactics(&right, path);
                         path.pop();
                         right_result
                     }
@@ -4861,7 +4867,7 @@ impl ProofTactic {
         match self {
             Self::Synthetic(inner) => inner.class(),
             Self::Mark(_) => TacticClass::Simple(SimpleTactic::Mark),
-            Self::Step | Self::StepContract(_) | Self::StepCall(_) => {
+            Self::Step | Self::StepBind(_) | Self::StepContract(_) | Self::StepCall(_) => {
                 TacticClass::Simple(SimpleTactic::StatementTransition)
             }
             Self::UserTactic(_) => TacticClass::Simple(SimpleTactic::UserTactic),
@@ -4971,14 +4977,155 @@ pub struct ProofBoth {
     pub right_tactics: Vec<ProofTactic>,
 }
 
-/// Explicit elimination of a disjunctive fact: proof checking requires the written
-/// disjunction is an available fact, then checks each branch under exactly its
-/// assumed disjunct. Both branches are always written; nothing is searched.
+/// Explicit elimination of a disjunctive fact: proof checking requires the
+/// disjunction of the arms' assumptions, grouped left to right as `or`
+/// parses, to be an available fact, then checks each arm under exactly its
+/// assumption. Every arm is written; nothing is searched.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCases {
-    disjunction: ClickProposition,
-    left_tactics: Vec<ProofTactic>,
-    right_tactics: Vec<ProofTactic>,
+    arms: Vec<ProofCaseArm>,
+}
+
+/// One arm of `cases`: the disjunct it assumes and the proof under it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofCaseArm {
+    assumption: ClickProposition,
+    tactics: Vec<ProofTactic>,
+}
+
+impl ProofCaseArm {
+    pub(crate) fn new(assumption: ClickProposition, tactics: Vec<ProofTactic>) -> Self {
+        Self {
+            assumption,
+            tactics,
+        }
+    }
+
+    pub(crate) fn assumption(&self) -> &ClickProposition {
+        &self.assumption
+    }
+
+    pub(crate) fn tactics(&self) -> &[ProofTactic] {
+        &self.tactics
+    }
+}
+
+impl ProofCases {
+    /// At least two arms; a parser or certificate never builds fewer.
+    pub(crate) fn new(arms: Vec<ProofCaseArm>) -> Self {
+        debug_assert!(arms.len() >= 2, "`cases` has at least two arms");
+        Self { arms }
+    }
+
+    pub(crate) fn arms(&self) -> &[ProofCaseArm] {
+        &self.arms
+    }
+
+    /// The disjunction the arms eliminate.
+    pub(crate) fn disjunction(&self) -> ClickProposition {
+        case_arms_disjunction(&self.arms)
+    }
+
+    /// The same arms with each tactic list rewritten by `rewrite`.
+    pub(crate) fn try_map_tactics<E>(
+        &self,
+        mut rewrite: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
+    ) -> Result<Self, E> {
+        self.try_map(
+            |assumption| Ok(assumption.clone()),
+            |tactics| rewrite(tactics),
+        )
+    }
+
+    /// The same arms with each assumption and tactic list rewritten.
+    pub(crate) fn try_map<E>(
+        &self,
+        mut assumption: impl FnMut(&ClickProposition) -> Result<ClickProposition, E>,
+        mut tactics: impl FnMut(&[ProofTactic]) -> Result<Vec<ProofTactic>, E>,
+    ) -> Result<Self, E> {
+        Ok(Self {
+            arms: self
+                .arms
+                .iter()
+                .map(|arm| {
+                    Ok(ProofCaseArm {
+                        assumption: assumption(&arm.assumption)?,
+                        tactics: tactics(&arm.tactics)?,
+                    })
+                })
+                .collect::<Result<_, E>>()?,
+        })
+    }
+
+    /// The two-armed form the kernel splits on: every arm but the last
+    /// against the last, with the leading arms as a nested `cases`.
+    pub(crate) fn binary(&self) -> (ClickProposition, Vec<ProofTactic>, Vec<ProofTactic>) {
+        let (last, leading) = self.arms.split_last().expect("`cases` has arms");
+        let left = match leading {
+            [only] => only.tactics.clone(),
+            _ => vec![ProofTactic::Cases(Self {
+                arms: leading.to_vec(),
+            })],
+        };
+        (self.disjunction(), left, last.tactics.clone())
+    }
+
+    /// Rebuilds the arms of a two-armed certificate, flattening a left arm
+    /// that is itself the `cases` on the left disjunct, as [`Self::binary`]
+    /// writes one.
+    pub(crate) fn from_binary(
+        disjunction: &ClickProposition,
+        left: Vec<ProofTactic>,
+        right: Vec<ProofTactic>,
+    ) -> Self {
+        let (left_assumption, right_assumption) = split_case_disjunction(disjunction)
+            .unwrap_or_else(|| (disjunction.clone(), disjunction.clone()));
+        let mut arms = match left.as_slice() {
+            [ProofTactic::Cases(inner)] if inner.disjunction() == left_assumption => {
+                inner.arms.clone()
+            }
+            _ => vec![ProofCaseArm {
+                assumption: left_assumption,
+                tactics: left,
+            }],
+        };
+        arms.push(ProofCaseArm {
+            assumption: right_assumption,
+            tactics: right,
+        });
+        Self { arms }
+    }
+}
+
+/// The two disjuncts of a written `cases` disjunction. A disjunction read at
+/// a snapshot, `at(s, A or B)`, splits into `at(s, A)` and `at(s, B)`.
+fn split_case_disjunction(
+    disjunction: &ClickProposition,
+) -> Option<(ClickProposition, ClickProposition)> {
+    match disjunction {
+        ClickProposition::Or(left, right) => Some((left.as_ref().clone(), right.as_ref().clone())),
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => {
+            let (left, right) = split_case_disjunction(proposition)?;
+            let at = |proposition| ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(proposition),
+            };
+            Some((at(left), at(right)))
+        }
+        _ => None,
+    }
+}
+
+/// The disjunction of the arms' assumptions, grouped left to right.
+pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> ClickProposition {
+    let mut arms = arms.iter();
+    let first = arms.next().expect("`cases` has arms").assumption.clone();
+    arms.fold(first, |disjunction, arm| {
+        ClickProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
+    })
 }
 
 /// Explicit proof-by-constructor-cases, not evaluation of a pure expression.
@@ -5319,6 +5466,16 @@ pub enum CodeRegionRef {
     Loop(usize),
     Statement(usize),
     Label(String),
+    /// A static local assignment occurrence in the executable layout.
+    /// Currently accepted by `execute_until`, not snapshot expressions.
+    Assignment {
+        local: String,
+        occurrence: usize,
+    },
+    /// A statement with an explicit scalar memory load, in executable preorder.
+    Read(usize),
+    /// The current loop preservation region's checked back edge.
+    BackEdge,
 }
 
 /// A proof-visible name for one recorded symbolic state.
@@ -5350,10 +5507,88 @@ pub enum ProgramPointKind {
     Exit,
 }
 
+/// `witness { k: value, ... }`: a value for each named binder of the
+/// existential goal, instantiated in the order written.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofWitness {
+    bindings: Vec<WitnessBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WitnessBinding {
     name: String,
     value: ContractExpression,
+}
+
+impl ProofWitness {
+    pub(crate) fn single(name: String, value: ContractExpression) -> Self {
+        Self {
+            bindings: vec![WitnessBinding { name, value }],
+        }
+    }
+
+    pub(crate) fn new(bindings: Vec<(String, ContractExpression)>) -> Self {
+        Self {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, value)| WitnessBinding { name, value })
+                .collect(),
+        }
+    }
+
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&str, &ContractExpression)> {
+        self.bindings
+            .iter()
+            .map(|binding| (binding.name.as_str(), &binding.value))
+    }
+
+    /// One single-binder witness per binding, in order; a step with several
+    /// bindings is applied as these.
+    pub(crate) fn singles(&self) -> impl Iterator<Item = Self> + '_ {
+        self.bindings.iter().map(|binding| Self {
+            bindings: vec![binding.clone()],
+        })
+    }
+
+    pub(crate) fn is_single(&self) -> bool {
+        self.bindings.len() == 1
+    }
+
+    /// The binder of a single-binder witness.
+    pub(crate) fn name(&self) -> &str {
+        debug_assert!(
+            self.is_single(),
+            "a multi-binder witness is applied binding by binding"
+        );
+        &self.bindings[0].name
+    }
+
+    /// The value of a single-binder witness.
+    pub(crate) fn value(&self) -> &ContractExpression {
+        debug_assert!(
+            self.is_single(),
+            "a multi-binder witness is applied binding by binding"
+        );
+        &self.bindings[0].value
+    }
+
+    pub(crate) fn try_map_values<E>(
+        &self,
+        mut map: impl FnMut(&ContractExpression) -> Result<ContractExpression, E>,
+    ) -> Result<Self, E> {
+        Ok(Self {
+            bindings: self
+                .bindings
+                .iter()
+                .map(|binding| {
+                    Ok(WitnessBinding {
+                        name: binding.name.clone(),
+                        value: map(&binding.value)?,
+                    })
+                })
+                .collect::<Result<_, E>>()?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6426,8 +6661,37 @@ impl FunctionBlock {
         self.tactic_procedure
     }
 
+    /// The written grouped proof after the contract block, if any.
     pub fn grouped_proof(&self) -> Option<&SourceProof> {
         self.grouped_proof.as_ref()
+    }
+
+    /// The one proof of every claim without its own `by`: the written
+    /// grouped proof, or `auto` when two or more claims omit theirs. Each
+    /// claim with its own `by` keeps that proof. A single claim without one
+    /// keeps its per-claim default, which is the same proof over the same
+    /// single execution.
+    pub fn covering_proof(&self) -> Option<&SourceProof> {
+        static IMPLICIT_AUTO: SourceProof = SourceProof::Tactic(SmartTactic::Auto);
+        if let Some(proof) = &self.grouped_proof {
+            return Some(proof);
+        }
+        (!self.external && !self.tactic_procedure && self.claims_without_proof() >= 2)
+            .then_some(&IMPLICIT_AUTO)
+    }
+
+    /// Whether `claim_proof`, a claim's own `by` clause, leaves that claim to
+    /// the covering proof.
+    pub fn covers_claim_proof(&self, claim_proof: &SourceProof) -> bool {
+        matches!(claim_proof, SourceProof::Default) && self.covering_proof().is_some()
+    }
+
+    fn claims_without_proof(&self) -> usize {
+        self.ensures
+            .iter()
+            .chain(&self.exceptional_ensures)
+            .filter(|clause| matches!(clause.proof, SourceProof::Default))
+            .count()
     }
 
     fn with_frontier_loop_clause(&self, clause: &StructuralClause, loop_index: usize) -> Self {
@@ -6944,12 +7208,10 @@ impl ProofTactic {
                 }
             }
             Self::Cases(proof_cases) => {
-                for tactic in proof_cases
-                    .left_tactics
-                    .iter()
-                    .chain(&proof_cases.right_tactics)
-                {
-                    tactic.collect_termination_loop_clauses(clauses);
+                for arm in &proof_cases.arms {
+                    for tactic in &arm.tactics {
+                        tactic.collect_termination_loop_clauses(clauses);
+                    }
                 }
             }
             Self::StructuralInduct { arms, .. } => {

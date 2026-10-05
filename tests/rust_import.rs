@@ -2921,8 +2921,8 @@ fn rust_while_loop_invariants_verify_and_expand() {
     let p = Project::new(include_str!("../examples/rust-loops/loops.rs"));
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar =
-        include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
+    let sidecar = include_str!("../design/charon-trial/loop-headers/loops.click")
+        .replace("loops.rs", "borrow.rs");
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     assert_eq!(verified.len(), 3);
     for false_claim in [
@@ -3060,8 +3060,8 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     let p = Project::new(include_str!("../examples/rust-byte-sum/sum.rs"));
     refresh_import(&p.config()).unwrap();
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar =
-        include_str!("../examples/rust-byte-sum/sum.click").replace("sum.rs", "borrow.rs");
+    let sidecar = include_str!("../design/charon-trial/loop-headers/sum.click")
+        .replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace(
@@ -3132,8 +3132,8 @@ fn rust_slice_for_sum_verifies_and_expands() {
     refresh_import(&p.config()).unwrap();
     assert_slice_iterator_artifact(&p, false);
     let prepared = load_import(&p.config()).unwrap();
-    let sidecar =
-        include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
+    let sidecar = include_str!("../design/charon-trial/iterator-proof/rust-iterators/frozen.click")
+        .replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     let copied_iter = Project::new(
         &include_str!("../examples/rust-iterators/sum.rs")
@@ -3201,7 +3201,8 @@ fn rust_slice_for_rejects_unsupported_iteration() {
 fn rust_slice_iter_reference_sum_verifies_and_expands() {
     let source = include_str!("../examples/rust-iter-references/sum.rs");
     let sidecar =
-        include_str!("../examples/rust-iter-references/sum.click").replace("sum.rs", "borrow.rs");
+        include_str!("../design/charon-trial/iterator-proof/rust-iter-references/frozen.click")
+            .replace("sum.rs", "borrow.rs");
     // Shared references from both the implicit slice iterator and .iter()
     // have the same checked address and dereference semantics.
     for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
@@ -3267,7 +3268,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
 #[test]
 fn rust_chunks_exact_loops_cover_input_and_preserve_bytes() {
     let source = include_str!("../examples/rust-chunks-exact/chunks.rs");
-    let sidecar = include_str!("../examples/rust-chunks-exact/chunks.click")
+    let sidecar = include_str!("../design/charon-trial/chunk-proof/frozen.click")
         .replace("chunks.rs", "borrow.rs");
     for source in [
         source.to_string(),
@@ -3634,3 +3635,18 @@ mod parity;
 mod array_lengths;
 #[path = "rust_import/array_values.rs"]
 mod array_values;
+
+#[path = "rust_import/loop_headers.rs"]
+mod loop_headers;
+
+#[path = "rust_import/slice_into_iteration.rs"]
+mod slice_into_iteration;
+
+#[path = "rust_import/split_slices.rs"]
+mod split_slices;
+
+#[path = "rust_import/chunk_proof.rs"]
+mod chunk_proof;
+
+#[path = "rust_import/iterator_proof.rs"]
+mod iterator_proof;

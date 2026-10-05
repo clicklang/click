@@ -546,15 +546,26 @@ must retain their diagnostic; any changed outcome fails the gate so the
 inventory is revised with the implementation. This is fixture-level parity,
 not a percentage of the Rust language.
 
-Current result: **10 of 16 legacy fixtures verify unchanged** (62.5%), four
-reject during normalization, and two import but have proof gaps. Thus 12/16
-fixtures import (75%). Loop headers block `rust-byte-sum` and `rust-loops`;
-owned iterator resolution blocks `rust-iterators`; tuple/slice return types
-block `rust-split-at`. The two proof gaps are legacy iterator ghost names in
-`rust-chunks-exact` and `rust-iter-references`. Resolve these observations in
-the adapter/proof interface without restoring a generated processed count or
-rewriting Rust bodies. The default switch and legacy retirement remain later
-migration gates; fixture parity is not a Rust-language completeness metric.
+Current result: **11 of 16 legacy fixtures verify unchanged** (68.75%). All
+**16/16 fixtures import (100%)**; five have proof gaps. The shared byte
+`split_at` model now verifies the original `rust-split-at` source and all four
+frozen contracts/proofs. Remaining proof gaps are legacy iterator ghost names
+in `rust-iterators`, `rust-chunks-exact`, and `rust-iter-references`, and numeric
+statement frontiers in `rust-loops` and `rust-byte-sum`. Resolve these
+observations in the adapter/proof interface without restoring a generated
+processed count or rewriting Rust bodies. The default switch and legacy
+retirement remain later migration gates; fixture parity is not a Rust-language
+completeness metric.
+
+The optional `migrated_sidecar` field records a separate proof port for an
+unchanged source and contract. `rust-loops`, `rust-byte-sum`, `rust-chunks-exact`,
+`rust-iterators`, and `rust-iter-references` now pass with these sidecars, so
+source-and-contract coverage with migrated proofs is **16/16 (100%)**. A regression compares their parsed contracts and specification
+functions with the frozen originals, and the live sweep verifies each port
+against freshly extracted original source. It still checks the original
+sidecar and its recorded outcome separately; frozen-sidecar parity remains
+11/16. Five digest-pinned archived sidecars retain their proof-interface gaps;
+canonical adoption uses their verified ports with unchanged source/contracts.
 
 The gate also runs all existing live compiler/borrow-checker rejection tests.
 Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
@@ -616,3 +627,172 @@ processed count is introduced.
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly
 rather than traversing the logical array extent.
+
+## Split loop headers
+
+The [loop-header checkpoint](loop-headers/README.md) imports unchanged
+`rust-loops` and `rust-byte-sum` through single-entry linear ULLBC header chains.
+Guard reconstruction follows pure scalar copies, comparisons, and paired
+shared-slice metadata in order across blocks. Header statements execute on
+every test, including the final false test. Calls, memory reads, arithmetic,
+shared entries, and extra exits remain outside this guard model.
+
+The unchanged three Rust loop bodies verify with loop selectors in a separate
+sidecar. The original numeric-selector sidecars remain frozen and counted as
+proof gaps. `split-shared-slice-while-header-v1` versions the interpretation;
+checkpoint locks are refreshed without changing prior ULLBC bytes or compiler
+pins. Deterministic scaling checks cover header work and emitted code size.
+
+The shared proof interface now also accepts
+`execute_until(assignment(local, N))`, selecting a named ordinary store, local compound update, or
+call-result assignment by zero-based static occurrence. The loop checkpoint
+proves source-local initialization through this selector, including live
+re-extraction with an unrelated compiler local. Indexed selection avoids
+counting unrelated helper statements; it preserves checked forward execution.
+Selecting a final store does not move before right-hand-side helpers. This
+adds a stable observation mechanism without changing frozen numeric-selector
+sidecars, Rust interpretation pins, locks, or parity percentages.
+
+`execute_until(read(N))` additionally selects the Nth statement containing an
+explicit scalar load, before the statement executes. The complete unchanged
+byte-sum source and original prefix-sum contract now verify using loop, read,
+and named assignment frontiers. The load, overflow checks, index update,
+invariant preservation, and termination are checked through ordinary steps;
+the proof uses neither compiler temporary names nor generated iterator state.
+Both executable layout paths index read frontiers once with deterministic
+linear scaling checks and constant-work lookups.
+
+## Shared slice IntoIterator
+
+[into-slices](into-slices/README.md) imports the unchanged `rust-iterators`
+source through the compiler-resolved `IntoIterator for &[T]` implementation.
+The named model checks the core trait, implementation path, method linkage,
+signatures, concrete scalar element and shared mutability before constructing
+ordinary typed iterator state. Shared i32/u32 slice parameters and source calls
+carry paired pointer/usize length values; reborrows require metadata from the
+same pointer origin. Actual loads still need checked views and the iterator
+retains its signed-word memory-model extent bound.
+
+`shared-scalar-slice-into-iteration-v1` versions this added interpretation.
+Existing ULLBC bytes and extraction/compiler pins are unchanged; checkpoint
+locks are deliberately updated. The frozen parity sweep records the newly
+importing sum as a proof gap, not a verified fixture. Import coverage increases
+to 15/16 (93.75%); frozen proof parity stays 10/16 (62.5%), and coverage with the
+two previously migrated sidecars stays 12/16 (75%).
+
+
+### Shared byte split_at and tuple component storage
+
+[split-slices](split-slices/) locks genuine ULLBC for the unchanged
+`rust-split-at` source and sidecar. The adapter resolves `core::slice::split_at`
+by declaration path, shared receiver, byte instantiation, safe Rust signature,
+and builtin two-element tuple result. Two explicit shared slice component
+slots preserve the compiler value; projections, complete copies/moves,
+replacement results, and storage ends use these slots. Component names reserve
+both pointer and length identities against source locals. General tuple
+construction, tuple parameters/returns, borrowed tuples, mutable split results,
+and non-byte splits remain unsupported.
+
+The CFG path reuses the existing checked split operation. It captures receiver
+pointer/length before evaluating the midpoint, checks `mid <= len` and the
+signed memory-model offset bound, then writes `(pointer, mid)` and
+`(pointer + mid, len - mid)`. Both lengths retain full usize width; reads retain
+ordinary range and view authority checks. No byte buffers are copied and no
+proof-only processed count is introduced.
+
+The checkpoint verifies all four frozen contracts/proofs, empty input, both
+endpoint splits, and stored tuple copying/replacement. Tests reject missing
+bounds, missing read authority, false byte/length claims, forged method/type/
+projection metadata, and live mutable/non-byte/function-boundary shapes;
+failed refresh preserves the previous artifact and lock. Verify, profile,
+audit, and expansion agree. Deterministic work tests at extents 8/128/1024
+ensure byte reads do not enumerate a slice. The semantic profile versions
+`shared-byte-split-at-pair-v1` and updates checkpoint lock identities without
+changing earlier ULLBC artifacts.
+
+This increment changes imports from 15/16 to 16/16 (93.75% to 100%), strict
+frozen proof parity from 10/16 to 11/16 (62.5% to 68.75%), and original
+source/contract coverage including the two existing proof ports from 12/16 to
+13/16 (75% to 81.25%). These are fixed fixture-baseline metrics, not a claim
+that the migration or Rust-language support is complete.
+
+## Original chunks proof port
+
+[chunk-proof](chunk-proof/README.md) verifies the byte-identical original
+`rust-chunks-exact` source and unchanged contract with a migrated proof. It uses
+the imported iterator's cursor, remaining length, and remainder directly.
+`execute_until(back_edge())` checks the rest of a loop preservation region
+without counting compiler cleanup statements. `close_invariants()` still
+checks every invariant and the decreasing measure separately.
+
+This advances original-source/contract coverage with proof ports from 13/16
+(81.25%) to **14/16 (87.5%)**. Frozen sidecars remain 11/16 (68.75%), imports
+remain 16/16 (100%), and the default switch and legacy retirement remain open.
+
+## Original implicit byte iteration proof port
+
+[iterator-proof](iterator-proof/README.md) verifies the byte-identical original
+`rust-iterators` source and unchanged mathematical sum contract. The proof uses
+the real iterator cursor/remaining length and the source `byte` and `total`
+locals. Named snapshots and loop/read/assignment/back-edge selectors replace
+legacy ghost names and compiler statement counts. Every overflow, memory read,
+invariant, and decreasing measure remains checked.
+
+This advances original-source/contract coverage with proof ports from 14/16
+(87.5%) to **15/16 (93.75%)**. `rust-iter-references` is the remaining proof-port
+gap. Frozen sidecars remain 11/16 (68.75%), imports remain 16/16 (100%), and
+default switching and legacy retirement remain separate gates.
+
+## Original reference byte iteration proof
+
+The [iterator-proof](iterator-proof/README.md) checkpoint now verifies the
+unchanged `rust-iter-references` source and its full mathematical sum contract.
+`let loaded_byte = step();` binds the value of the checked scalar read,
+following the existing checked call-result binding model. The proof uses actual
+iterator cursor/remaining state, readable source frontiers, and named snapshots;
+it contains no MIR IDs, compiler statement indices, or synthetic processed
+count. Ordinary read permissions, signed overflow, and decreases are checked.
+
+Original source-and-contract coverage reaches **16/16 (100%)**, up from
+15/16 (93.75%). Imports stay **16/16 (100%)**, and frozen sidecars stay
+**11/16 (68.75%)**. This completes the fixed baseline's proof ports; it does
+not complete default switching, frozen-proof compatibility work, or legacy
+importer retirement.
+
+## Canonical native example adoption
+
+Eleven canonical examples now use schema-3 `charon-trial` configurations,
+native ULLBC artifacts, and fresh import locks. Their Rust source and Click
+sidecars are unchanged, and legacy JSON outputs are no longer needed.
+Ordinary example verification checks those locked native inputs offline;
+the required live gate still re-extracts all 16 original Rust fixtures and
+checks their frozen outcomes and proof ports. Archive consumers need no
+Charon compiler installation.
+
+Canonical-example adoption is **11/16 (68.75%)**, up from 0/16. This is a
+rollout measure using the same fixed fixture inventory, separate from imports
+and original source/contract proof coverage (both **16/16, 100%**) and frozen
+sidecar compatibility (**11/16, 68.75%**). The remaining five canonical examples
+still use the legacy exporter until their completed proof ports are adopted.
+The implicit backend default and legacy exporter retirement remain open.
+
+## Complete canonical proof-port adoption
+
+All **16/16 canonical Rust examples (100%)** now use native Charon imports,
+up from 11/16 (68.75%). The five remaining examples adopt their verified proof
+ports with unchanged Rust source, signatures, specification functions,
+preconditions, and postconditions. Their fresh native artifacts and locks are
+checked in for offline example verification.
+
+`parity.json` records each replaced original sidecar's archived path and SHA-256
+digest. The live gate checks every current canonical proof after fresh
+extraction, then independently checks archived frozen outcomes. Contract
+regressions compare the adopted canonical sidecars directly with the archives;
+legacy-backend regressions also explicitly use archived legacy proofs.
+No historical frozen failure is relabeled as a success.
+
+Imports, original source/contract proof coverage, and canonical adoption are
+all **16/16 (100%)**. Literal frozen-sidecar compatibility remains **11/16
+(68.75%)**, a historical compatibility measure rather than a promise to retain
+legacy generated names. The implicit backend default and legacy extractor
+retirement remain open migration gates.

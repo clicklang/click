@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 36;
+pub(crate) const EXPORT_SCHEMA: u32 = 38;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -2245,11 +2245,11 @@ impl CppExpression {
             }
             Self::Binary {
                 operator:
-                    CppBinaryOperator::Add
+                    operator @ (CppBinaryOperator::Add
                     | CppBinaryOperator::Subtract
                     | CppBinaryOperator::Multiply
                     | CppBinaryOperator::Divide
-                    | CppBinaryOperator::Remainder,
+                    | CppBinaryOperator::Remainder),
                 left,
                 right,
                 value_type,
@@ -2257,6 +2257,14 @@ impl CppExpression {
                 ..
             } => {
                 require_scalar_integer(value_type, "binary result type")?;
+                let kind = Scalar::mutable_kind(value_type).unwrap();
+                if kind.is_wide()
+                    && !(*operator == CppBinaryOperator::Multiply && kind == ScalarKind::Int128)
+                {
+                    return Err(
+                        "C++ wide arithmetic supports checked signed multiplication only".into(),
+                    );
+                }
                 span.validate(logical_source)?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
@@ -2284,6 +2292,9 @@ impl CppExpression {
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
                 require_scalar_integer(left.value_type(), "comparison operand")?;
+                if Scalar::mutable_kind(left.value_type()).unwrap().is_wide() {
+                    return Err("C++ wide comparisons are not supported".into());
+                }
                 if !same_scalar_type(left.value_type(), right.value_type()) {
                     return Err("C++ equality requires matching widths and signedness".into());
                 }
@@ -3480,7 +3491,7 @@ fn require_scalar_integer(value: &CppType, label: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{label} requires a mutable signed or unsigned 32/64-bit integer"
+            "{label} requires a mutable signed or unsigned 32/64/128-bit integer"
         ))
     }
 }
@@ -4538,6 +4549,9 @@ mod tests {
             (64, "18446744073709551615", true),
             (64, "18446744073709551616", false),
             (64, "-1", false),
+            (128, "340282366920938463463374607431768211455", true),
+            (128, "340282366920938463463374607431768211456", false),
+            (128, "-1", false),
         ] {
             let constant = CppExpression::CompilerConstant {
                 value: value.into(),
@@ -4555,6 +4569,108 @@ mod tests {
                     .is_ok(),
                 valid
             );
+        }
+    }
+
+    #[test]
+    fn wide_artifact_function_boundaries_require_matching_types() {
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        let mut function = CppFunction {
+            declaration_id: "root".into(),
+            name: "root".into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(64, false),
+            parameters: vec![],
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body: vec![CppStatement::Return {
+                value: CppExpression::IntegerLiteral {
+                    value: "1".into(),
+                    value_type: signed_integer(64, false),
+                    span: cleanup_span(),
+                },
+                cleanups: vec![],
+                span: cleanup_span(),
+            }],
+        };
+        let validate = |function: &CppFunction| {
+            function.validate(
+                "fixture.cpp",
+                &sources,
+                &BTreeMap::new(),
+                false,
+                CppExceptionBehavior::NormalOnly,
+            )
+        };
+        validate(&function).unwrap();
+        function.return_type = signed_integer(128, false);
+        assert!(validate(&function).unwrap_err().contains("return"));
+        function.return_type = signed_integer(64, false);
+        function.parameters.push(CppPlace {
+            declaration_id: "input".into(),
+            name: "input".into(),
+            value_type: signed_integer(128, false),
+            span: cleanup_span(),
+        });
+        validate(&function).unwrap();
+    }
+
+    #[test]
+    fn wide_artifacts_refuse_unsupported_arithmetic_and_comparisons() {
+        for signed in [false, true] {
+            let ty = CppType::Integer {
+                bits: 128,
+                signed,
+                is_const: false,
+                source_aliases: vec![],
+            };
+            let literal = CppExpression::IntegerLiteral {
+                value: "1".into(),
+                value_type: ty.clone(),
+                span: cleanup_span(),
+            };
+            for operator in [
+                CppBinaryOperator::Add,
+                CppBinaryOperator::Subtract,
+                CppBinaryOperator::Multiply,
+                CppBinaryOperator::Divide,
+                CppBinaryOperator::Remainder,
+                CppBinaryOperator::Equal,
+                CppBinaryOperator::LessThan,
+                CppBinaryOperator::GreaterThan,
+                CppBinaryOperator::LessEqual,
+                CppBinaryOperator::GreaterEqual,
+            ] {
+                let comparison = matches!(
+                    operator,
+                    CppBinaryOperator::Equal
+                        | CppBinaryOperator::LessThan
+                        | CppBinaryOperator::GreaterThan
+                        | CppBinaryOperator::LessEqual
+                        | CppBinaryOperator::GreaterEqual
+                );
+                let expression = CppExpression::Binary {
+                    operator,
+                    left: Box::new(literal.clone()),
+                    right: Box::new(literal.clone()),
+                    value_type: if comparison {
+                        CppType::Boolean {
+                            bits: 8,
+                            is_const: false,
+                        }
+                    } else {
+                        ty.clone()
+                    },
+                    span: cleanup_span(),
+                };
+                assert_eq!(
+                    expression
+                        .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                        .is_ok(),
+                    signed && operator == CppBinaryOperator::Multiply,
+                    "{signed}: {operator:?}"
+                );
+            }
         }
     }
 

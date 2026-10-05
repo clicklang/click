@@ -23,18 +23,14 @@ int32 advance_memory_interface(int32* p, int32 x) {
     owns p[0..1];
 
     ensures result > 0 by {
-        branch {
-            ensuring {
-                fact p[0] >= 0;
-                fact p[0] < 2147483647;
-                owns p[0..1];
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact p[0] >= 0;
+            fact p[0] < 2147483647;
+            owns p[0..1];
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         step();

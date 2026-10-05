@@ -644,8 +644,8 @@ pub(super) fn describe_multiple_statement_successors_guidance(
     r#"
 `step()` cannot choose between the two successors of this call. Use `outcomes` at this point:
 outcomes {
-    returned { step(); }
-    threw { step(); }
+    returned => { step(); }
+    threw => { step(); }
 }
 The `step()` in each arm advances the selected path; add the remaining
 `step()`, `execute()`, and `simp()` tactics inside that arm until all
@@ -1929,6 +1929,8 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt16 => "an unsigned two-byte integer",
         LoadKind::Bits32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Int128 => "a signed sixteen-byte integer",
+        LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",
         LoadKind::Float64 => "a `float64`",
     }
@@ -3358,6 +3360,10 @@ fn scalar_element_width(c_type: C0Type) -> Option<i64> {
         | C0Type::UInt64Array(_)
         | C0Type::Float64Pointer
         | C0Type::Float64Array(_) => Some(8),
+        C0Type::Int128Pointer
+        | C0Type::UInt128Pointer
+        | C0Type::Int128Array(_)
+        | C0Type::UInt128Array(_) => Some(16),
         _ => None,
     }
 }
@@ -3662,6 +3668,7 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         return width;
     }
     match parameter.c_type() {
+        C0Type::Int128 | C0Type::UInt128 | C0Type::Int128Array(_) | C0Type::UInt128Array(_) => 16,
         C0Type::Void => 0,
         C0Type::Bool => 1,
         C0Type::VoidPointer | C0Type::VoidPointerPointer => 8,
@@ -3685,7 +3692,9 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         C0Type::Int8Pointer | C0Type::Int8PointerPointer => 8,
         C0Type::Int16Pointer
         | C0Type::UInt16Pointer
+        | C0Type::Int128Pointer
         | C0Type::Int64Pointer
+        | C0Type::UInt128Pointer
         | C0Type::UInt64Pointer
         | C0Type::Int16PointerPointer
         | C0Type::UInt16PointerPointer
@@ -3693,7 +3702,9 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
         | C0Type::CharPointerPointer
         | C0Type::UInt8PointerPointer
         | C0Type::UInt32PointerPointer
+        | C0Type::Int128PointerPointer
         | C0Type::Int64PointerPointer
+        | C0Type::UInt128PointerPointer
         | C0Type::UInt64PointerPointer
         | C0Type::Float32Pointer
         | C0Type::Float64Pointer
@@ -3817,6 +3828,14 @@ pub(super) fn describe_c_value(
 ) -> String {
     match value {
         CValue::Void => "void".to_string(),
+        CValue::Int128(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i128",
+        ),
+        CValue::UInt128(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u128",
+        ),
         CValue::Bool(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameters, arguments),
             "bool",
@@ -4005,6 +4024,8 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             ..
         } => {
             let name = match value_type {
+                CType::Int128 => "load_int128",
+                CType::UInt128 => "load_uint128",
                 CType::Void => "load_void",
                 CType::Bool => "load_bool",
                 CType::VoidPointer => "load_void_pointer",
@@ -4026,7 +4047,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 CType::UInt8Pointer => "load_uint8_pointer",
                 CType::UInt32Pointer => "load_uint32_pointer",
                 CType::Int64Pointer => "load_int64_pointer",
+                CType::Int128Pointer => "load_int128_pointer",
                 CType::UInt64Pointer => "load_uint64_pointer",
+                CType::UInt128Pointer => "load_uint128_pointer",
                 CType::Int8PointerPointer => "load_int8_pointer_pointer",
                 CType::Int16PointerPointer => "load_int16_pointer_pointer",
                 CType::UInt16PointerPointer => "load_uint16_pointer_pointer",
@@ -4034,7 +4057,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 CType::UInt8PointerPointer => "load_uint8_pointer_pointer",
                 CType::UInt32PointerPointer => "load_uint32_pointer_pointer",
                 CType::Int64PointerPointer => "load_int64_pointer_pointer",
+                CType::Int128PointerPointer => "load_int128_pointer_pointer",
                 CType::UInt64PointerPointer => "load_uint64_pointer_pointer",
+                CType::UInt128PointerPointer => "load_uint128_pointer_pointer",
                 CType::Float32Pointer => "load_float_pointer",
                 CType::Float64Pointer => "load_double_pointer",
                 CType::Float32PointerPointer => "load_float_pointer_pointer",
@@ -4048,7 +4073,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 | CType::Int16Array(_)
                 | CType::UInt16Array(_)
                 | CType::UInt32Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_)
                 | CType::Float32Array(_)
                 | CType::Float64Array(_) => {
@@ -4890,8 +4917,13 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
     match region {
         CodeRegionRef::Function => "function".to_string(),
         CodeRegionRef::Loop(index) => format!("loop({index})"),
+        CodeRegionRef::Read(index) => format!("read({index})"),
+        CodeRegionRef::BackEdge => "back_edge()".into(),
         CodeRegionRef::Statement(index) => format!("statement({index})"),
         CodeRegionRef::Label(name) => name.clone(),
+        CodeRegionRef::Assignment { local, occurrence } => {
+            format!("assignment({local}, {occurrence})")
+        }
     }
 }
 
@@ -4921,9 +4953,20 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
+        Bitvector32Term::MachineIntegerCast {
+            source,
+            destination,
+            ..
+        } => format!("machine-cast({source:?}->{destination:?})"),
+
         Bitvector32Term::Constant(value) => format!("{}", *value as i32),
         Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
         Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),
+        Bitvector32Term::MachineIntegerConstant(value) => format!(
+            "{}{}128",
+            value.to_integer(),
+            if value.format().is_signed() { "i" } else { "u" }
+        ),
         // A diagnostic prints the load represented by a load variable,
         // never the kernel variable's id.
         Bitvector32Term::Variable(variable)

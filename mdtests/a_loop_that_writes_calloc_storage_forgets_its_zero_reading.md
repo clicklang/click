@@ -39,16 +39,12 @@ int32 f() {
     step();
     step();
     step();
-    branch {
-        ensuring {
-            fact 1 == 1;
-        }
-        then {
-            step();
-            simp();
-        }
-        else {
-        }
+    branch ensuring {
+        fact 1 == 1;
+    } then {
+        step();
+        simp();
+    } else {
     }
     step();
     loop {

@@ -1,7 +1,8 @@
 //! Scalar interpretation for the pinned C++ target. Clang retains promotions as
 //! explicit typed casts; this module does not infer C++ types from syntax.
 use super::CppType;
-use crate::kernel::{self, CExpression, CType};
+use crate::kernel;
+use crate::kernel::{CExpression, CType, MachineIntegerConstant, MachineIntegerType};
 use crate::languages::c::syntax::C0Type;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -11,6 +12,8 @@ pub(super) enum ScalarKind {
     Int64,
     UInt32,
     UInt64,
+    Int128,
+    UInt128,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,6 +37,8 @@ impl Scalar {
                     (64, true) => ScalarKind::Int64,
                     (32, false) => ScalarKind::UInt32,
                     (64, false) => ScalarKind::UInt64,
+                    (128, true) => ScalarKind::Int128,
+                    (128, false) => ScalarKind::UInt128,
                     _ => return None,
                 },
                 *is_const,
@@ -59,6 +64,10 @@ impl ScalarKind {
         self != Self::Bool
     }
 
+    pub fn is_wide(self) -> bool {
+        matches!(self, Self::Int128 | Self::UInt128)
+    }
+
     pub fn kernel_type(self) -> CType {
         match self {
             Self::Bool => CType::Bool,
@@ -66,6 +75,8 @@ impl ScalarKind {
             Self::Int64 => CType::Int64,
             Self::UInt32 => CType::UInt32,
             Self::UInt64 => CType::UInt64,
+            Self::Int128 => CType::Int128,
+            Self::UInt128 => CType::UInt128,
         }
     }
 
@@ -76,49 +87,41 @@ impl ScalarKind {
             Self::Int64 => C0Type::Int64,
             Self::UInt32 => C0Type::UInt32,
             Self::UInt64 => C0Type::UInt64,
+            Self::Int128 => C0Type::Int128,
+            Self::UInt128 => C0Type::UInt128,
         }
     }
 
     pub fn parse_literal(self, value: &str) -> Option<ScalarLiteral> {
-        match self {
-            Self::Int32 => value.parse().ok().map(ScalarLiteral::Int32),
-            Self::Int64 => value.parse().ok().map(ScalarLiteral::Int64),
-            Self::UInt32 => value.parse().ok().map(ScalarLiteral::UInt32),
-            Self::UInt64 => value.parse().ok().map(ScalarLiteral::UInt64),
-            Self::Bool => None, // Boolean constants use the retained integral cast.
-        }
+        let ty = MachineIntegerType::from_c_type(self.kernel_type())?;
+        let value = MachineIntegerConstant::parse_decimal(ty.format(), value)?;
+        Some(ScalarLiteral { ty, value })
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ScalarLiteral {
-    Int32(i32),
-    Int64(i64),
-    UInt32(u32),
-    UInt64(u64),
+pub(super) struct ScalarLiteral {
+    ty: MachineIntegerType,
+    value: MachineIntegerConstant,
 }
 
 impl ScalarLiteral {
     pub fn kernel_expression(self) -> CExpression {
-        match self {
-            Self::Int32(value) => kernel::c_int32_literal(value as u32),
-            Self::Int64(value) => kernel::c_int64_literal(value),
-            Self::UInt32(value) => kernel::c_uint32_literal(value),
-            Self::UInt64(value) => kernel::c_uint64_literal(value),
-        }
+        CExpression::Value(
+            self.ty
+                .constant_value(self.value)
+                .expect("a scalar literal's checked format must match its runtime type"),
+        )
     }
 }
 
-/// C++20 signed conversions are congruent modulo the destination width.
-/// Shared C casts handle Boolean, unsigned, widening, and same-width int32
-/// conversions. These two cases explicitly retain bits for signed results.
+/// Clang has already resolved both integer types. C++20 selects the shared
+/// modulo policy explicitly; Boolean conversions retain their separate rules.
 pub(super) fn convert(value: CExpression, source: ScalarKind, target: ScalarKind) -> CExpression {
-    match (source, target) {
-        (ScalarKind::UInt64, ScalarKind::Int64) => kernel::c_uint64_bits_to_int64(value),
-        (ScalarKind::Int64 | ScalarKind::UInt64, ScalarKind::Int32) => {
-            kernel::c_cast(kernel::c_cast(value, CType::UInt32), CType::Int32)
-        }
-        _ => kernel::c_cast(value, target.kernel_type()),
+    if source.is_integer() && target.is_integer() {
+        kernel::c_integer_cast_modulo(value, target.kernel_type())
+    } else {
+        kernel::c_cast(value, target.kernel_type())
     }
 }
 
@@ -186,10 +189,10 @@ mod tests {
                         source_aliases: vec![],
                     };
                     let scalar = Scalar::of(&ty);
-                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64));
+                    assert_eq!(scalar.is_some(), matches!(bits, 32 | 64 | 128));
                     assert_eq!(
                         Scalar::mutable_kind(&ty).is_some(),
-                        matches!(bits, 32 | 64) && !is_const
+                        matches!(bits, 32 | 64 | 128) && !is_const
                     );
                     if let Some(scalar) = scalar {
                         assert_eq!(scalar.is_const, is_const);
@@ -237,6 +240,27 @@ mod tests {
                 vec!["-9223372036854775809", "9223372036854775808"],
             ),
             (
+                ScalarKind::Int128,
+                vec![
+                    "-170141183460469231731687303715884105728",
+                    "170141183460469231731687303715884105727",
+                    "0",
+                ],
+                vec![
+                    "-170141183460469231731687303715884105729",
+                    "170141183460469231731687303715884105728",
+                ],
+            ),
+            (
+                ScalarKind::UInt128,
+                vec![
+                    "0",
+                    "18446744073709551616",
+                    "340282366920938463463374607431768211455",
+                ],
+                vec!["-1", "340282366920938463463374607431768211456"],
+            ),
+            (
                 ScalarKind::UInt32,
                 vec!["0", "4294967295"],
                 vec!["-1", "4294967296"],
@@ -257,5 +281,72 @@ mod tests {
             }
         }
         assert!(ScalarKind::Bool.parse_literal("1").is_none());
+    }
+
+    #[test]
+    fn cpp20_constant_conversions_use_modulo_policy_and_preserve_target_type() {
+        for (source, literal, target, expected) in [
+            (
+                ScalarKind::UInt64,
+                "18446744073709551615",
+                ScalarKind::Int64,
+                "-1",
+            ),
+            (
+                ScalarKind::Int64,
+                "-9223372036854775808",
+                ScalarKind::Int32,
+                "0",
+            ),
+            (
+                ScalarKind::Int64,
+                "9223372036854775807",
+                ScalarKind::Int32,
+                "-1",
+            ),
+            (
+                ScalarKind::Int32,
+                "-1",
+                ScalarKind::UInt64,
+                "18446744073709551615",
+            ),
+            (
+                ScalarKind::UInt32,
+                "4294967295",
+                ScalarKind::Int64,
+                "4294967295",
+            ),
+            (ScalarKind::Int64, "-1", ScalarKind::UInt32, "4294967295"),
+            (ScalarKind::UInt32, "4294967295", ScalarKind::Int32, "-1"),
+        ] {
+            let converted = convert(
+                source.parse_literal(literal).unwrap().kernel_expression(),
+                source,
+                target,
+            );
+            let actual =
+                kernel::prove_c_expression_evaluation(kernel::CState::new(), converted).unwrap();
+            let expected = kernel::prove_c_expression_evaluation(
+                kernel::CState::new(),
+                target.parse_literal(expected).unwrap().kernel_expression(),
+            )
+            .unwrap();
+            let outcome = |theorem: &kernel::Theorem| {
+                let kernel::Proposition::CExpressionEvaluates { outcome, .. } =
+                    theorem.proposition()
+                else {
+                    panic!("expected expression evaluation");
+                };
+                outcome.clone()
+            };
+            assert_eq!(outcome(&actual), outcome(&expected));
+        }
+        // Nonconstant casts retain the checked runtime operation and its
+        // language-specific policy; constant folding does not erase operands.
+        let variable = crate::kernel::c_variable("wide");
+        assert_eq!(
+            convert(variable.clone(), ScalarKind::UInt64, ScalarKind::Int64),
+            kernel::c_integer_cast_modulo(variable, CType::Int64)
+        );
     }
 }

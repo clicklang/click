@@ -624,7 +624,7 @@ impl ExecutionProofState {
             .get(path_index)
             .cloned()
             .unwrap_or_else(|| OutcomeProvenance {
-                call_returned: None,
+                call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
@@ -831,10 +831,11 @@ impl ProofExecutionView<'_> {
 
 #[derive(Clone)]
 struct OutcomeProvenance {
-    /// The checked call edge selected on this terminal path. A surrounding
-    /// branch can add paths that never visited that call, so this belongs to
-    /// each outcome rather than to the joined frontier as one flat vector.
-    call_returned: Option<bool>,
+    /// The checked call edges selected on this terminal path, outermost
+    /// `outcomes` first; `true` is `returned`. A surrounding branch can add
+    /// paths that never visited a call, so this belongs to each outcome
+    /// rather than to the joined frontier as one flat vector.
+    call_routes: Vec<bool>,
     branch_decisions: PersistentSequence<ExecutionBranchDecision>,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
@@ -868,6 +869,8 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => match term {
             Bitvector32Term::Variable(variable) => Some(*variable),
@@ -1074,6 +1077,23 @@ impl Proof<'_> {
                 claim,
                 path_index,
                 true,
+                trace_path_lineage(&self.node, self.focused_branch_id()),
+                Box::new(self.node.clone()),
+            );
+        }
+    }
+
+    /// Retain the checked prefix of a written loop-phase arm that ran out
+    /// of tactics. It can answer failure trace targets, but is not accepted.
+    pub(in crate::surface::proof) fn record_unfinished_trace(
+        &self,
+        claim: &str,
+        path_index: usize,
+    ) {
+        if crate::surface::proof_trace::enabled_for(claim) {
+            crate::surface::proof_trace::record_unfinished_path(
+                claim,
+                path_index,
                 trace_path_lineage(&self.node, self.focused_branch_id()),
                 Box::new(self.node.clone()),
             );
@@ -1373,9 +1393,9 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     pub(in crate::surface::proof) requirement_surfaces:
         Arc<PersistentMap<Proposition, ClickProposition>>,
     branch_decisions: PersistentSequence<ExecutionBranchDecision>,
-    /// The checked edge of a single supported call inside an int32 handler.
-    /// `true` is `returned`; `false` is `threw` and entered the handler.
-    pub(in crate::surface::proof) call_returned: Option<bool>,
+    /// The checked call edges this outcome took, outermost `outcomes`
+    /// first. `true` is `returned`; `false` is `threw`.
+    pub(in crate::surface::proof) call_routes: Vec<bool>,
 }
 
 pub(in crate::surface::proof) type OutcomeProofData =
@@ -2449,7 +2469,10 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Left => "left()",
         ProofStep::Right => "right()",
         ProofStep::Enumerate => "enumerate()",
-        ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_) => "step",
+        ProofStep::Step
+        | ProofStep::StepBind(_)
+        | ProofStep::StepContract(_)
+        | ProofStep::StepCall(_) => "step",
         ProofStep::UserTactic(_) => "tactic application",
         ProofStep::ApplyTheoremUsing { .. } => "apply",
         ProofStep::ApplyInduction { .. } => "apply",
@@ -2468,7 +2491,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Extract(_) => "extract",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
-        ProofStep::LetSatisfy(_) => "let satisfy",
+        ProofStep::LetSatisfy(_) => "obtain",
         ProofStep::Choose(_) => "choose",
         ProofStep::UnfoldPredicate(_)
         | ProofStep::UnfoldFunction(_)

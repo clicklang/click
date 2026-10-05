@@ -29,17 +29,14 @@ function classified(x: int32) -> int32 {
 int classify(int x) {
     ensures result == classified(x);
 } by {
-    branch {
-        then {
-            step();
-            have result == classified(x) by {
-                unfold(classified(x));
-                normalize() using { x == 0; }
-            }
-            simp();
+    branch then {
+        step();
+        have result == classified(x) by {
+            unfold(classified(x));
+            normalize() using { x == 0; }
         }
-        else {}
-    }
+        simp();
+    } else {}
     step();
     have result == classified(x) by {
         unfold(classified(x));

@@ -252,6 +252,12 @@ pub struct MirBlock {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirStatement {
+    SliceSplit {
+        slice: Expression,
+        midpoint: Expression,
+        left: String,
+        right: String,
+    },
     SharedArrayInitialize {
         target: String,
         source: Expression,

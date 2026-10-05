@@ -1139,3 +1139,20 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
+
+#[test]
+fn truncating_integer_read_collection_is_linear_in_shared_nodes() {
+    use crate::kernel::{IntegerTerm, SharedIntegerTerm, Variable};
+    for depth in [2usize, 8, 32, 128] {
+        let mut term: SharedIntegerTerm = IntegerTerm::var(Variable(91004)).into();
+        for _ in 0..depth {
+            term = IntegerTerm::TruncatingQuotient(term.clone(), term).into();
+        }
+        let mut reads = Vec::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::collect_integer_reads(&term, &mut reads);
+        });
+        assert!(reads.is_empty());
+        assert!(work <= depth + 2, "depth={depth}, work={work}");
+    }
+}

@@ -1363,25 +1363,51 @@ fn collect_integer_reads(term: &SharedIntegerTerm, reads: &mut Vec<ResourceRead>
 }
 
 fn collect_integer_term_reads(term: &IntegerTerm, reads: &mut Vec<ResourceRead>) {
+    collect_integer_node_reads(term, reads, &mut std::collections::BTreeSet::new());
+}
+
+fn collect_shared_integer_reads(
+    term: &SharedIntegerTerm,
+    reads: &mut Vec<ResourceRead>,
+    seen: &mut std::collections::BTreeSet<u64>,
+) {
+    if seen.insert(term.id()) {
+        collect_integer_node_reads(term.as_ref(), reads, seen);
+    }
+}
+
+fn collect_integer_node_reads(
+    term: &IntegerTerm,
+    reads: &mut Vec<ResourceRead>,
+    seen: &mut std::collections::BTreeSet<u64>,
+) {
+    crate::instrumentation::record_deterministic_work(1);
     match term {
         IntegerTerm::Machine(machine) => {
             collect_bitvector_reads(machine.value(), reads);
         }
-        IntegerTerm::Negate(inner) => collect_integer_reads(inner, reads),
+        IntegerTerm::Negate(inner) => collect_shared_integer_reads(inner, reads, seen),
         IntegerTerm::Add(left, right)
         | IntegerTerm::Subtract(left, right)
-        | IntegerTerm::Multiply(left, right) => {
-            collect_integer_reads(left, reads);
-            collect_integer_reads(right, reads);
+        | IntegerTerm::Multiply(left, right)
+        | IntegerTerm::TruncatingQuotient(left, right)
+        | IntegerTerm::TruncatingRemainder(left, right) => {
+            collect_shared_integer_reads(left, reads, seen);
+            collect_shared_integer_reads(right, reads, seen);
         }
         IntegerTerm::PureFunctionApplication(application) => {
             for argument in application.arguments() {
-                collect_argument_reads(argument, reads);
+                match argument {
+                    PureFunctionArgument::Integer(term) => {
+                        collect_shared_integer_reads(term, reads, seen)
+                    }
+                    _ => collect_argument_reads(argument, reads),
+                }
             }
         }
         IntegerTerm::RangeFold { initial, body, .. } => {
-            collect_integer_reads(initial, reads);
-            collect_integer_reads(body, reads);
+            collect_shared_integer_reads(initial, reads, seen);
+            collect_shared_integer_reads(body, reads, seen);
         }
         IntegerTerm::Constant(_)
         | IntegerTerm::Variable(_)
@@ -1457,6 +1483,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
         }
         Bitvector32Term::BitwiseNot(inner)
         | Bitvector32Term::Int64From32(inner)
+        | Bitvector32Term::MachineIntegerCast { value: inner, .. }
         | Bitvector32Term::UInt64From32(inner)
         | Bitvector32Term::UInt32From64(inner)
         | Bitvector32Term::Int64FromUInt32(inner)

@@ -44,10 +44,7 @@ uint32 run(struct counter* p) {
     let state = fold(counter_state(p), { retained: 1 });
     let hidden = fold(counter_state(p), { retained: 1 });
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
-    branch {
-        then { unfold(state); unfold(3 of member(p)); step(); simp(); }
-        else {}
-    }
+    branch then { unfold(state); unfold(3 of member(p)); step(); simp(); } else {}
     step();
     step();
     step();

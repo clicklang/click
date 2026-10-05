@@ -539,8 +539,8 @@ records so issue closure does not erase the supported boundaries.
 The [live parity inventory](../design/charon-trial/parity.json) now enumerates
 all legacy Rust example configs. CI re-extracts their unchanged source bodies
 and checks unchanged sidecars, recording complete successes and explicit
-extraction/proof gaps. Ten of 16 fixtures verify unchanged (62.5%); twelve import (75%). Four have
-normalization gaps and two have legacy iterator proof-observation gaps. The required `test` gate also requires the existing live
+extraction/proof gaps. Eleven of 16 fixtures verify unchanged (68.75%); all sixteen import (100%).
+Five have proof-observation gaps. The required `test` gate also requires the existing live
 Charon compiler and borrow-rejection suite. Locked checkpoints alone no longer
 establish compiler compatibility.
 
@@ -562,9 +562,53 @@ cells. Heap/union storage and general symbolic pointer expressions remain
 outside the compact path, and genuine by-value array parameters and aggregate
 returns remain separate adapter gaps. Empty, signed, and million-element
 length checks stay bounded and require no byte read authority. External Charon
-locks need an explicit refresh. Next close loop-header normalization against
-`rust-byte-sum` and `rust-loops`, then iterator resolution, return shapes, and
-stable iterator proof observations without generated processed counts.
+locks need an explicit refresh. `split-shared-slice-while-header-v1` now imports
+unchanged `rust-byte-sum` and `rust-loops`, preserving ordered header execution
+on both true and final false tests. Single-entry header chains use pure scalar
+copies, comparisons, and paired shared-slice metadata; calls, memory reads,
+arithmetic, shared entries, and extra exits remain rejected. Header work and
+emitted code have deterministic linear scaling coverage. All three unchanged
+Rust loop bodies verify with loop selectors in a separate proof sidecar, but
+the frozen numeric statement selectors still fail. Next provide stable proof
+observations for these frontiers and legacy iterator state without generated
+processed counts; also close tuple/slice return
+shapes. Proof-adapted sidecars do not count as unchanged fixture parity.
+The shared proof layout now indexes named ordinary assignments, local compound updates, and call-result
+assignments for `execute_until(assignment(local, N))`. Source-local initialization
+proofs survive unrelated compiler locals without counting helper statements.
+Both syntax and typed-kernel paths retain checked forward execution, static
+occurrence ordering, immutable sharing, and deterministic scaling regressions.
+`loop(N)` still selects loop entry; `mark` names reached states. A final-store
+selector does not precede its earlier right-hand-side helpers, and assignment
+selectors are not snapshot expressions. This mechanism adds no generated ghost
+state and does not close frozen numeric-selector or iterator-observation gaps;
+fixture parity remains 10/16 (62.5%) and imports 15/16 (93.75%).
+The layout also indexes `execute_until(read(N))`: the Nth statement containing
+an explicit scalar memory load, before its checked execution. It excludes
+address-only operations and implicit callee/aggregate reads, introduces no
+permission or ghost state, and has linear construction and indexed-lookup
+regressions in both layout paths. The full unchanged byte-sum source and
+original prefix-sum contract now verify with loop, read, and assignment
+selectors, including overflow, invariant preservation and termination.
+The inventory records migrated proof sidecars separately and the live gate
+verifies them after fresh extraction. AST comparisons preserve the original
+contracts and pure specification definitions. Source-and-contract coverage
+with these proof ports is 12/16 (75%); strict frozen-sidecar parity remains
+10/16 (62.5%) and imports remain 15/16 (93.75%). Remaining proof work is stable
+iterator observations and frozen numeric-selector compatibility; normalization
+still needs tuple/slice returns in the fixed baseline, plus broader owned iterators.
+The compiler-resolved `IntoIterator for &[T]` model now imports the original
+`rust-iterators` body. It verifies trait/implementation identity, method linkage,
+generic instantiation, scalar type and shared mutability; incoming i32/u32
+slice parameters, ordinary source calls and reborrows preserve paired metadata.
+Typed-read proofs cover empty/nonempty slices and forwarded metadata, with
+false-claim, missing-view, forged declaration and metadata rejection coverage.
+No processed count is generated. The frozen checksum proof still fails on its
+legacy iterator observation name, so only import coverage increases this time:
+14/16 to 15/16 (87.5% to 93.75%). Strict proof parity remains 10/16, and original
+source/contract coverage with migrated proofs remains 12/16. `rust-split-at` is
+the sole remaining baseline normalization gap; broader owned iterator support
+and stable iterator proof observations remain later work.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate
@@ -573,3 +617,143 @@ imports; the current flat-name subset still rejects those shapes.
 Compact external writes require a whole-footprint decision for existing possibly
 aliasing runs. If separation cannot be checked compactly, they refuse promptly
 rather than traversing the logical array extent.
+
+
+### Charon shared byte split_at checkpoint
+
+The adapter now imports the last rejected baseline fixture, `rust-split-at`,
+and verifies its unchanged Rust source and all four frozen contracts/proofs.
+Compiler-resolved shared byte splits retain the builtin tuple's two slice
+values as explicit pointer/usize-length components, including projections,
+complete copies/moves, replacement assignments, and storage ends. The existing
+checked split semantics enforce panic bounds, memory-model offsets, and view
+checks on byte reads. Empty input, endpoint splits, tuple copying/replacement,
+forged declarations/projections, missing authority, false claims, tool
+agreement, live re-extraction, and 8/128/1024 extent scaling are covered.
+
+The fixed baseline now measures **16/16 imports (100%)**, **11/16 frozen
+sidecars verified (68.75%)**, and **13/16 original sources/contracts verified
+with the two existing proof ports (81.25%)**. Earlier checkpoint numbers above
+are historical. Five frozen sidecars still need proof-interface migration;
+three are iterator state observations and two have existing stable-frontier
+proof ports. General tuple construction/boundaries, mutable/non-byte splits,
+and the default switch/legacy retirement remain separate gates. Full fixture
+import coverage does not mean the overall Charon migration is complete.
+
+### Original chunks contract through Charon
+
+The `design/charon-trial/chunk-proof` checkpoint now ports the original
+`rust-chunks-exact` proof while retaining its Rust source and every contract
+clause. It proves the remainder length and preservation of all input bytes
+using actual imported iterator storage, without a generated processed count.
+The preservation-only `execute_until(back_edge())` checks each crossed step
+and rejects loop/function exits; invariant and ranking closure remain checked
+separately. This removes cleanup statement counts from the migrated proof.
+
+The fixed 16-fixture baseline is now 16/16 imports (100%), 11/16 frozen
+proofs (68.75%), and 14/16 original sources/contracts with migrated proofs
+(87.5%, up from 81.25%). The remaining two proof-port gaps are
+`rust-iterators` and `rust-iter-references`. Frozen-sidecar compatibility,
+default switching, and legacy retirement remain migration work.
+
+### Original implicit byte iteration contract through Charon
+
+The `design/charon-trial/iterator-proof/rust-iterators` checkpoint ports the
+original `for &byte in bytes` sum proof with byte-identical Rust and the
+unchanged mathematical sum contract. It observes real iterator cursor/remaining
+state and source locals, uses named snapshots for preservation, and selects
+loop entry, scalar read, total assignment, and back edge without MIR IDs or
+numeric compiler statement counts. Signed addition overflow and iterator
+termination remain checked; no generated processed count is restored.
+
+The fixed baseline advances to 15/16 original sources/contracts verified with
+four proof ports (93.75%, up from 87.5%). Imports remain 16/16 (100%) and frozen
+sidecars remain 11/16 (68.75%). The remaining proof-port gap is
+`rust-iter-references`; frozen-proof compatibility, the default switch, and
+legacy retirement remain open.
+
+### Original reference byte iteration contract through Charon
+
+The `design/charon-trial/iterator-proof/rust-iter-references` checkpoint ports
+the final original sum proof with byte-identical Rust and unchanged contract.
+`let loaded_byte = step();` names the checked scalar assignment value, so
+unnamed compiler temporaries require no MIR identifiers in the sidecar.
+Bindings retain their checked value after the source local is overwritten or
+leaves scope. The real cursor/remaining state, read access, signed addition,
+mathematical prefix sum, and termination all remain checked. No generated
+processed count or additional precondition is introduced.
+
+The fixed baseline reaches 16/16 original sources/contracts verified with
+five proof ports (100%, up from 93.75%). Imports remain 16/16 (100%); frozen
+sidecars remain 11/16 (68.75%). No proof-port gaps remain in this baseline.
+Default switching, frozen-sidecar compatibility policy, and retirement of the
+legacy importer are still open migration gates, so this is not a claim that
+the entire Charon migration is complete.
+
+### Canonical native examples
+
+The 11 canonical Rust examples whose frozen sidecars already verify under
+Charon now select native extraction in their normal import configurations.
+Rust source and proof text are unchanged; native ULLBC artifacts and genuine
+refresh locks replace their locally generated legacy JSON inputs. The ordinary example
+gate checks locked native inputs offline, and the required live gate continues
+to freshly extract all 16 original sources and check contracts. CI archive
+consumers therefore need no Charon compiler merely to verify an example.
+
+Canonical adoption reaches 11/16 (68.75%), up from 0/16, using the same fixed
+inventory. Imports and original source/contract proof coverage stay 16/16
+(100%); frozen-sidecar compatibility stays 11/16 (68.75%). Next adopt the five
+completed proof ports in the remaining canonical examples, then switch the
+implicit backend default and retire legacy extraction. No claim of full
+migration completion is made by this rollout measure.
+
+### Complete canonical proof-port adoption
+
+The remaining five canonical examples now select native Charon extraction and
+their verified proof ports. Rust source and original contracts are unchanged.
+Fresh ULLBC artifacts and locks support offline verification for all 16
+examples. The archived original sidecars are pinned by SHA-256 in the parity
+inventory, and legacy-backend regressions use those explicit archives.
+
+The live gate independently checks all current canonical proofs and original
+frozen outcomes after fresh extraction. Contract regressions compare canonical
+ports with archived originals. Canonical adoption advances from 11/16 (68.75%)
+to 16/16 (100%); imports and source/contract proof coverage remain 16/16 (100%).
+Frozen-sidecar compatibility stays 11/16 (68.75%); the five literal old proofs
+retain their recorded interface gaps rather than restoring generated names.
+The implicit default switch and retirement of legacy extraction remain open.
+
+
+### Retirement attempt: reproduced blockers
+
+Canonical adoption remains 16/16 (100%), and the adoption PR has merged.
+Switching the implicit default and deleting the legacy extractor requires
+moving the remaining compiler-backed regressions onto native Charon inputs.
+An attempted run of all 72 original `rust_*` integration tests through Charon
+passed 48 and failed 24. Many failures are stale legacy artifact assertions,
+frontier names, diagnostics, or old unsupported-feature expectations; they
+must be ported with unchanged source/contracts and meaningful negative cases.
+This run is diagnostic evidence, not a completed migration gate.
+
+Two failures were independently reproduced through the ordinary native CLI:
+
+- Deferred expansion used a dead compiler local. Automatic case selectors now
+  retain their checked statement-entry snapshot, preserving existing `at` and
+  `old` references and checking that the anchored condition has the same meaning.
+  Nested case decisions are retained in outermost-first order. The unchanged
+  native fixture passes isolated prepared expansion, retained-session audit,
+  and whole-claim expansion; regressions also cover changed parameters and
+  nested computed guards.
+- Whole-array copy accepted an incomplete source view; this authority defect is
+  now fixed with full physical-range checks for both source and destination.
+  Kernel regressions cover partial permissions and compact work through one
+  million elements. Locked native and freshly extracted unchanged Rust fixtures
+  reject short source views, read-only destinations, and short destination owns.
+
+Both independently reproduced blockers are now fixed. The attempted default,
+extractor, and CI changes were restored to the previously green checkpoint;
+no failing production switch is delivered. Port the original regressions and
+only then remove the legacy build/runtime and implicit backend.
+The remaining supported identity `From` case and test assumptions also need
+review during that port; importing all 16 canonical fixtures alone does not
+establish complete regression parity.

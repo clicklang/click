@@ -3909,6 +3909,8 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
         | CValue::UInt8(bits)
         | CValue::Int64(bits)
         | CValue::UInt64(bits)
+        | CValue::Int128(bits)
+        | CValue::UInt128(bits)
         | CValue::Float32(bits)
         | CValue::Float64(bits) => bits,
         // A pointer cell is a materialization when it holds the pointer a

@@ -21,13 +21,19 @@
   },
   {
     "config": "examples/rust-byte-sum/sum.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "MIR loop requires a conditional while header"
+    "outcome": "proof-gap",
+    "diagnostic": "local `i` has no value at this frontier",
+    "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
+    "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
+    "frozen_sha256": "f73abd0ce92840d55d5071e26b2ae851645e6087964ad25cd1b4f9004ec804eb"
   },
   {
     "config": "examples/rust-chunks-exact/chunks.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "local `chunks_remaining` has no value at this frontier"
+    "diagnostic": "local `chunks_remaining` has no value at this frontier",
+    "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
+    "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
+    "frozen_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {
     "config": "examples/rust-field-borrow/guard.click.import.json",
@@ -42,17 +48,26 @@
   {
     "config": "examples/rust-iter-references/sum.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`"
+    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
+    "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
+    "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
+    "frozen_sha256": "645200b80536e553febac28917d8dfeedd7967b3709ec57c5deb6c4f32d340c1"
   },
   {
     "config": "examples/rust-iterators/sum.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "Charon trial does not support shared iterator implementation path"
+    "outcome": "proof-gap",
+    "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
+    "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
+    "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
+    "frozen_sha256": "645200b80536e553febac28917d8dfeedd7967b3709ec57c5deb6c4f32d340c1"
   },
   {
     "config": "examples/rust-loops/loops.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "MIR loop requires a conditional while header"
+    "outcome": "proof-gap",
+    "diagnostic": "requires the execution frontier to be at a loop",
+    "migrated_sidecar": "design/charon-trial/loop-headers/loops-assignments.click",
+    "frozen_sidecar": "design/charon-trial/loop-headers/loops.click",
+    "frozen_sha256": "09bdc6efadf71d1e4e94ce4c5aed012bd04a3a8271362466ae5dddcc4d787cae"
   },
   {
     "config": "examples/rust-move-drop/guard.click.import.json",
@@ -66,8 +81,8 @@
   },
   {
     "config": "examples/rust-split-at/split.click.import.json",
-    "outcome": "rejected",
-    "diagnostic": "Charon trial does not support type (raw pointers and general generics remain later work)"
+    "outcome": "verified",
+    "diagnostic": ""
   },
   {
     "config": "examples/rust-unsigned/arithmetic.click.import.json",

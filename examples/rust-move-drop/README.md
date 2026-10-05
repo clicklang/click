@@ -9,7 +9,7 @@ Both the normal and early return capture the current integer before cleanup.
 actual cleanup edges; Click verifies the destructor contract and checked
 whole-value liveness transitions.
 
-Build the pinned exporter with `scripts/build-rust-exporter.sh`, then run:
+Build the pinned Charon with `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-move-drop/guard.click

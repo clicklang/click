@@ -367,6 +367,8 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
                     | CValue::UInt32(local)
                     | CValue::Int64(local)
                     | CValue::UInt64(local)
+                    | CValue::Int128(local)
+                    | CValue::UInt128(local)
                     if local == term
             )
         })?;
@@ -544,6 +546,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value)
             | Bitvector32Term::Int64From32(value)
+            | Bitvector32Term::MachineIntegerCast { value, .. }
             | Bitvector32Term::Int64FromUInt32(value)
             | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt32From64(value)
@@ -596,6 +599,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => {}
         }
     }
@@ -2493,6 +2497,8 @@ fn synthesize_surface_bitvector(
                 | CValue::UInt32(local)
                 | CValue::Int64(local)
                 | CValue::UInt64(local)
+                | CValue::Int128(local)
+                | CValue::UInt128(local)
                 if local == term
         )
     }) {
@@ -2558,6 +2564,9 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
+        Bitvector32Term::MachineIntegerCast { .. } => None,
+
+        Bitvector32Term::MachineIntegerConstant(_) => None,
         Bitvector32Term::Constant(_) => unreachable!("constants returned above"),
         Bitvector32Term::Add(left, right) => {
             let (left, right) = binary(left, right)?;
@@ -2785,6 +2794,8 @@ fn synthesize_surface_bitvector(
                         | CValue::UInt32(held)
                         | CValue::Int64(held)
                         | CValue::UInt64(held)
+                        | CValue::Int128(held)
+                        | CValue::UInt128(held)
                         if held == term
                 )
             }) {
@@ -3136,7 +3147,9 @@ fn synthesize_local_struct_pointer_field(
                 | CValue::UInt16(value)
                 | CValue::UInt32(value)
                 | CValue::Int64(value)
-                | CValue::UInt64(value) => value,
+                | CValue::UInt64(value)
+                | CValue::Int128(value)
+                | CValue::UInt128(value) => value,
                 CValue::Pointer(_) | CValue::Void | CValue::Float32(_) | CValue::Float64(_) => {
                     continue;
                 }
@@ -3206,7 +3219,9 @@ fn synthesize_local_aggregate_field(
                         | CValue::UInt16(value)
                         | CValue::UInt32(value)
                         | CValue::Int64(value)
-                        | CValue::UInt64(value) => value,
+                        | CValue::UInt64(value)
+                        | CValue::Int128(value)
+                        | CValue::UInt128(value) => value,
                         CValue::Pointer(_)
                         | CValue::Void
                         | CValue::Float32(_)
@@ -3289,6 +3304,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
             | Bitvector32Term::Variable(_) => {}
             Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
@@ -3338,6 +3354,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             | Bitvector32Term::Int64BitwiseNot(value)
             | Bitvector32Term::UInt64BitwiseNot(value)
             | Bitvector32Term::Int64From32(value)
+            | Bitvector32Term::MachineIntegerCast { value, .. }
             | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt32From64(value)
             | Bitvector32Term::Int64FromUInt32(value)

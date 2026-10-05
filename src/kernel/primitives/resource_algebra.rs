@@ -730,11 +730,10 @@ fn memory_derivation_affects_footprint(
     )
 }
 
-/// The widest scalar access the kernel performs. `int64`, `uint64`, `double`
-/// and every LP64 object pointer are eight bytes; no `CValue` is wider, so a
-/// caller that cannot name its own access width may stand in this one and
-/// still bound the bytes touched.
-pub(in crate::kernel) const MAX_SCALAR_ACCESS_BYTES: i64 = 8;
+/// The widest scalar access the kernel performs. Signed and unsigned
+/// 128-bit cells are sixteen bytes. A caller that cannot name its own access
+/// width must stand in this one to bound every byte possibly touched.
+pub(in crate::kernel) const MAX_SCALAR_ACCESS_BYTES: i64 = 16;
 
 /// Whether the byte intervals `[left_start, left_start + left_bytes)` and
 /// `[right_start, right_start + right_bytes)` are disjoint.
@@ -1045,6 +1044,7 @@ fn collect_memory_load_work<'a>(
                     | Bitvector32Term::Float32Negate(value)
                     | Bitvector32Term::Float64Negate(value)
                     | Bitvector32Term::Int64From32(value)
+                    | Bitvector32Term::MachineIntegerCast { value, .. }
                     | Bitvector32Term::Int64FromUInt32(value)
                     | Bitvector32Term::UInt64From32(value)
                     | Bitvector32Term::UInt32From64(value)
@@ -1057,6 +1057,7 @@ fn collect_memory_load_work<'a>(
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Int64Constant(_)
                     | Bitvector32Term::UInt64Constant(_)
+                    | Bitvector32Term::MachineIntegerConstant(_)
                     | Bitvector32Term::Variable(_) => {}
                     // These forms can hide load-bearing children behind a
                     // separate semantic object. Until checked read evidence
@@ -5042,6 +5043,36 @@ impl ResourceContext {
                 }
             }
             return false;
+        }
+        false
+    }
+
+    /// A bulk read covers physical bytes, even when its width happens
+    /// to equal the ABI pointer width. Scalar pointer-cell conventions do
+    /// not shorten an array copy's footprint.
+    pub(in crate::kernel) fn permits_storage_read(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let Some(mut entries) = self.read_access_entries(pointer, bytes, assumptions) else {
+            return false;
+        };
+        while let Some(entry) = entries.next() {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(address) = entries.address(entry) else {
+                continue;
+            };
+            let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                address,
+                0u32.into(),
+                bytes.into(),
+                1,
+            ));
+            if resource_fact_entails(self.fact(entry), &required, assumptions) {
+                return true;
+            }
         }
         false
     }

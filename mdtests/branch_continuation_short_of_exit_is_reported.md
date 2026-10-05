@@ -23,13 +23,10 @@ verifying "branch_continuation_short_of_exit.c";
 int32 clamp(int32 x) {
     ensures 0 <= result;
 } by {
-    branch {
-        then {
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        simp();
+    } else {}
 }
 ```
 

@@ -166,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 36 and earlier locks require
+needs separate support. Artifact schema is now 38 and earlier locks require
 an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
 
 ## Required invariant
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 36. `__int128` remains a feature prerequisite for the
+artifact schema is now 38. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 36
+arrangement restrictions remain semantic-profile limitations. Artifact schema 38
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -265,8 +265,8 @@ serialized nesting budget bounds recursive input. Local semantic validators
 reuse the metadata helpers when checked in isolation. Regressions mutate every
 span and identity in a corpus covering all recursive variants, distinguish
 malformed metadata from unsupported nested lifetimes, and measure growing
-syntax/alias work without cloning lexical environments. Artifact schema remains
-36 and existing supported-source proofs remain unchanged.
+syntax/alias work without cloning lexical environments. Artifact schema is now
+38 and existing supported-source proofs remain unchanged.
 
 Next extend the shared scalar and kernel design for the fee arithmetic milestone.
 
@@ -330,10 +330,123 @@ large constants, deterministic scaling, expansion/reverification, profiling,
 and retained audit have coverage. This is shared proof arithmetic available to
 C, Rust, and C++; it does not yet execute native `__int128`.
 
-Next add native wide scalars through the shared typed machine model: signed
-and unsigned width, storage/layout, literal range, conversions, checked
-multiplication, and definedness must retain the source's resolved machine
-semantics. Then cover wide truncating division/remainder and checked narrowing
+The shared fixed-width constant and conversion layer is delivered. Formats
+record signedness and 8–128-bit width; private checked payloads preserve the
+full signed and unsigned 128-bit ranges. Checked numeric conversion and explicit
+modulo conversion have distinct APIs, with exhaustive small-value and exact
+wide-endpoint oracle tests. Existing machine bounds, Integer observations and
+reverse conversions, rewrite normalization, and C++ literals/constant casts
+use this layer. Runtime bridges require an exact format match. General
+source-level `__int128` execution is limited to the bounded intermediate
+profile below; the shared kernel also provides the listed internal operations.
+
+The shared runtime now has an explicit modulo cast boundary for existing
+8–64-bit integer values. C++20 and Rust select the same symbolic conversion
+policy; constant conversions use the shared checked payloads. Width,
+signedness, and operand definedness remain explicit. Narrow signed carriers
+are sign-extended, and cast construction stays local to the operand root.
+Ordinary C narrowing and checked Integer conversions retain their separate
+rules. This removes frontend mask/cast sequences before extending widths.
+
+The bounded shared wide scalar runtime is delivered: typed 128-bit literals
+and variables, scalar locals and function parameters/results, substitution,
+16-byte scalar size/alignment under the pinned profile, and exact Integer
+observations. Reverse Integer conversions retain both wide range obligations;
+truthiness observes all bits. Legacy arithmetic carriers are refused;
+native arithmetic and typed memory access are admitted only in the slices below.
+C0 identities carry the kernel types without adding source parser admission.
+
+Symbolic wide widening, narrowing, and signedness changes are delivered at
+the shared explicit modulo boundary. Cast terms retain both machine types;
+constant substitution preserves every bit and sign extension. Ordinary C
+wide signed conversions retain representability obligations. Exact Integer
+observation preserves numeric widening, while value-changing casts remain
+typed machine observations. Root construction and validation stay bounded,
+including large operands; source admission remains open.
+
+Checked signed 128-bit multiplication is delivered. Exact operand observations
+feed a shared Integer product; both native range guards must hold before the
+shared checked machine conversion produces the typed result. Unknown bounds
+retain both signed-overflow paths. Existing 64-by-32 product-bounds certificates
+discharge the guards without admitting unproved native definedness. Boundary
+oracles, earlier operand undefined behavior, narrow operand promotion, function
+results, specification capture, and indexed work scaling are covered.
+Unsigned wrapping multiplication and other native wide operations remain open.
+
+Exact typed 16-byte memory cells are delivered through the shared typed-load
+and typed-store operations. Signed and unsigned load kinds preserve their
+checked formats; symbolic reads retain snapshot identity and certified defining
+facts. Full-width extents, initialization, and resource authority remain
+required. Framing and store invalidation include the high eight bytes, and the
+conservative unknown-width bound is sixteen. Generated store sequences include
+wide cells and compare indexed gap skipping with the complete reference path;
+load/validation work is tested over multiple unrelated-memory sizes.
+Byte reinterpretation and source admission remain open.
+
+Shared wide object pointers, pointer slots, fixed scalar arrays, and arrays of
+wide pointers are delivered, with exact internal C0 type identities. Element
+strides and scalar alignment are sixteen bytes; pointer objects and slots
+remain eight bytes under LP64. Address-of, indexing, and local declarations use
+the shared paths. Regression coverage includes full-width payloads, one-past
+and uninitialized reads, separate slot/pointee authority, startup versus
+ordinary-entry initializer authority, and symbolic storage scaling through one
+million elements. Compact narrow-array copies reject overlapping wide cells.
+Source pointers/arrays, wide byte reinterpretation, and wide callbacks remain open.
+
+C++ frontend admission now covers signed/unsigned `__int128` intermediates:
+mutable locals, full-width compiler constants, C++20 integral casts, Boolean
+conversion of all bits, and checked signed multiplication. The existing scalar
+interpretation maps directly to shared formats and kernel types; no C++ numeric
+carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
+Exporter and schema both reject unsupported wide operations. Schema 38
+requires refreshing older artifacts. High-bit products and modulo casts verify
+through execute/simp, expansion, and retained audit; narrow and wide overflow
+remain obligations even under a trivial postcondition. Shared wide-to-Boolean
+conversion and safe nested modulo cast normalization are now covered directly;
+known narrow 64-bit operands use indexed equalities with signedness retained.
+Oracle checks cover all signedness combinations and both narrowing and widening,
+and deterministic multi-size tests keep unrelated fact populations out of the
+wide product lookup.
+
+Wide scalar parameters/results and proof contracts are delivered. The exporter
+and schema accept matching-width calls and captures; source entry uses the
+shared typed symbolic values. Contracts spell `int128` / `uint128`, observe
+all bits with `to_integer`, and use checked `to_int128` / `to_uint128` with
+both destination bounds. Negative full-range literals retain their Integer
+context through reverse conversions. Regressions cover extrema, hostile
+high-bit claims, cast round trips, modular calls with framed narrow memory,
+expansion/reverification, audit, and deterministic signature scaling at
+2/8/32/128 parameters. Schema 38 requires refreshing earlier locks.
+
+The nested-call regression records a bounded search limitation: `simp` closes
+a direct observer equality but does not chain two Integer equalities. Keep
+that proof-composition follow-up explicit; do not accept pending goals or
+retag wide values as narrow integers. Native wide arithmetic comparisons and
+wide source memory/aggregate admission remain separate work.
+
+Shared truncating constant division is delivered as the next foundation.
+The checked machine-format operation returns both quotient and remainder with
+signedness and width preserved, rejects mismatched formats and zero divisors,
+and refuses signed MIN/-1 for either operation. Existing 32/64-bit folding
+and recursive constant observations use it. Exact-oracle coverage includes
+all 8–128-bit formats, full signed/unsigned extrema, every byte pair, and
+linear work over 2/8/32/128 explicit operations. This is representation
+semantics; frontend promotions and language UB/panic policies remain separate.
+No wide source division admission is claimed. Artifact schema remains 38.
+
+The shared symbolic truncating quotient/remainder representation is delivered.
+It uses distinct interned Integer DAG nodes, exact nonzero constant folding,
+conservative affine refusal, and shared-node-aware traversal, substitution,
+alpha keys, framing, and diagnostics. Zero divisors remain opaque, and no
+unguarded cancellation or native definedness claim is introduced. Multi-size
+regressions cover shared DAGs and numeric bit-length work. Arithmetic-spine
+proposition substitution now memoizes shared children instead of revisiting
+them along every path.
+
+Next add native wide division/remainder execution with zero and signed MIN/-1
+overflow guards, plus full-width contract observations and proof spellings;
+then admit
+wide C++ division/remainder and cover checked narrowing
 for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before

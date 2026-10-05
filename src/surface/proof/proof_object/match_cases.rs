@@ -137,6 +137,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn plan_execution_match(
         &self,
         source: &ProofMatch,
+        arm_source_index: impl Fn(usize) -> usize,
     ) -> Result<ExecutionMatchPlan, ClickError> {
         let equation = ClickProposition::Comparison {
             left: source.scrutinee.clone(),
@@ -322,11 +323,20 @@ impl<'a> Proof<'a> {
         };
         for (index, arm) in source.arms.iter().enumerate() {
             if let [ProofTactic::Contradiction(surface)] = arm.tactics.as_slice() {
-                let scoped = self.enter_execution_match_arm(&plan, index)?;
+                // The single-tactic arm is checked during planning, before
+                // the ordinary indexed arm driver runs. Attribute its refusal
+                // to that written tactic rather than the enclosing frontier.
+                let scoped = self
+                    .enter_execution_match_arm(&plan, index)?
+                    .at_source_tactic(arm_source_index(index));
                 let fact =
                     scoped.lower_surface_proposition(surface, "constructor-arm contradiction")?;
                 plan.partition = plan.partition.excluding_constructor_case(plan.case_indices[index], fact)
-                    .ok_or_else(|| self.step_error("constructor-arm `contradiction` requires an exact fact and its negation in that arm"))?;
+                    .ok_or_else(|| scoped.step_error(format!(
+                        "in match arm `{}::{}`: constructor-arm `contradiction` requires an exact fact and its negation in that arm; refused `contradiction({})`",
+                        arm.type_name, arm.variant,
+                        crate::surface::diagnostics::describe_click_proposition(surface),
+                    )))?;
                 plan.excluded[index] = Some(ProofCertificate::from_steps(vec![
                     ProofStep::Contradiction(surface.clone()),
                 ])?);
@@ -363,7 +373,9 @@ impl<'a> Proof<'a> {
             .excluding_constructor_case_in(plan.case_indices[index], self.facts(), fact)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "constructor-arm `contradiction({})` requires an exact fact and its negation in that arm",
+                    "in match arm `{}::{}`: constructor-arm `contradiction({})` requires an exact fact and its negation in that arm",
+                    plan.source.arms[index].type_name,
+                    plan.source.arms[index].variant,
                     crate::surface::diagnostics::describe_click_proposition(surface)
                 ))
             })?;

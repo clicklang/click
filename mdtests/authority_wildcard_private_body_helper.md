@@ -28,7 +28,7 @@ int32 update(int32* pool, int32* p) {
 } by { open(slot(pool, p)) { step(); } execute(); simp(); }
 int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step(); step();
     fold(authority(slot(&pool, _)));
     fold(slot(&pool, p));

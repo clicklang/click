@@ -555,70 +555,61 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
         },
         HeapTree::Node(node, value, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
-            branch {
-                then { step(); simp(); }
-                else {}
-            }
-            branch {
-                then {
-                    step();
-                    let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-                    have node == target by {
-                        rewrite(node == root);
-                        normalize() using { root == target; }
-                    }
-                    have result == heap_member(old(t.model), target) by {
-                        rewrite(old(t.model)
-                            == HeapTree::Node(node, value, left_model, right_model));
-                        unfold(heap_member(
-                            HeapTree::Node(node, value, left_model, right_model), target));
-                        normalize() using { node == target; }
-                    }
-                    simp();
+            branch then { step(); simp(); } else {}
+            branch then {
+                step();
+                let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+                have node == target by {
+                    rewrite(node == root);
+                    normalize() using { root == target; }
                 }
-                else {}
-            }
+                have result == heap_member(old(t.model), target) by {
+                    rewrite(old(t.model)
+                        == HeapTree::Node(node, value, left_model, right_model));
+                    unfold(heap_member(
+                        HeapTree::Node(node, value, left_model, right_model), target));
+                    normalize() using { node == target; }
+                }
+                simp();
+            } else {}
             have not(node == target) by {
                 rewrite(node == root);
                 normalize() using { not(root == target); }
             }
             let found_left = step(tree_contains(root->left, target), { t: l });
-            branch {
-                then {
-                    step();
-                    have heap_member(left_model, target) == 1 by {
-                        have heap_member(left_model, target) != 0 by {
-                            simp() using {
-                                found_left != 0;
-                                found_left == heap_member(left_model, target);
-                            }
+            branch then {
+                step();
+                have heap_member(left_model, target) == 1 by {
+                    have heap_member(left_model, target) != 0 by {
+                        simp() using {
+                            found_left != 0;
+                            found_left == heap_member(left_model, target);
                         }
-                        have left_model == l.model by {
-                            rewrite(l.model == left_model);
-                            normalize();
-                        }
-                        have heap_member(l.model, target) != 0 by {
-                            rewrite(l.model == left_model);
-                            assumption();
-                        }
-                        apply(heap_member_nonzero_is_one(l.model, target));
-                        extract(heap_member(l.model, target) == 1);
-                        rewrite(left_model == l.model);
+                    }
+                    have left_model == l.model by {
+                        rewrite(l.model == left_model);
+                        normalize();
+                    }
+                    have heap_member(l.model, target) != 0 by {
+                        rewrite(l.model == left_model);
                         assumption();
                     }
-                    let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
-                    have result == heap_member(old(t.model), target) by {
-                        rewrite(old(t.model)
-                            == HeapTree::Node(node, value, left_model, right_model));
-                        unfold(heap_member(
-                            HeapTree::Node(node, value, left_model, right_model), target));
-                        rewrite(heap_member(left_model, target) == 1);
-                        normalize() using { not(node == target); }
-                    }
-                    simp();
+                    apply(heap_member_nonzero_is_one(l.model, target));
+                    extract(heap_member(l.model, target) == 1);
+                    rewrite(left_model == l.model);
+                    assumption();
                 }
-                else {}
-            }
+                let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+                have result == heap_member(old(t.model), target) by {
+                    rewrite(old(t.model)
+                        == HeapTree::Node(node, value, left_model, right_model));
+                    unfold(heap_member(
+                        HeapTree::Node(node, value, left_model, right_model), target));
+                    rewrite(heap_member(left_model, target) == 1);
+                    normalize() using { not(node == target); }
+                }
+                simp();
+            } else {}
             have heap_member(left_model, target) == 0 by {
                 simp() using {
                     found_left == 0;

@@ -29,6 +29,10 @@ pub(crate) use contracts::{
     stated_separation_extent_guards,
 };
 mod integer;
+mod machine_integer;
+pub use machine_integer::{
+    MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
+};
 mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
@@ -220,7 +224,10 @@ pub enum Sort {
 /// in the term and let the `CValue` wrapper choose the interpretation, so a
 /// signed and an unsigned read of that width are one kind (`Bits32`,
 /// `Bits64`). Narrower reads store the extended value, which signedness
-/// changes, so they keep it. Floating-point reads are kinds of their own.
+/// changes, so they keep it. Wide 128-bit reads also keep signedness: their
+/// checked constant payloads retain the exact machine format. This profile
+/// supports exact typed cells, not signed/unsigned memory reinterpretation.
+/// Floating-point reads are kinds of their own.
 ///
 /// A pointer read is a `Bits32` read: Click names a pointer value by the
 /// four-byte word at its address (`Pointer::loaded` scales that word), which
@@ -235,6 +242,9 @@ pub enum LoadKind {
     UInt16,
     Bits32,
     Bits64,
+    /// Wide loads retain signedness because their constant payloads are typed.
+    Int128,
+    UInt128,
     Float32,
     Float64,
 }
@@ -250,6 +260,8 @@ impl LoadKind {
             CType::UInt16 => Self::UInt16,
             CType::Int32 | CType::UInt32 => Self::Bits32,
             CType::Int64 | CType::UInt64 => Self::Bits64,
+            CType::Int128 => Self::Int128,
+            CType::UInt128 => Self::UInt128,
             CType::Float32 => Self::Float32,
             CType::Float64 => Self::Float64,
             CType::Void
@@ -259,7 +271,9 @@ impl LoadKind {
             | CType::UInt8Array(_)
             | CType::UInt16Array(_)
             | CType::UInt32Array(_)
+            | CType::Int128Array(_)
             | CType::Int64Array(_)
+            | CType::UInt128Array(_)
             | CType::UInt64Array(_)
             | CType::Float32Array(_)
             | CType::Float64Array(_)
@@ -280,6 +294,8 @@ impl LoadKind {
             CValue::UInt16(_) => Self::UInt16,
             CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
             CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
+            CValue::Int128(_) => Self::Int128,
+            CValue::UInt128(_) => Self::UInt128,
             CValue::Float32(_) => Self::Float32,
             CValue::Float64(_) => Self::Float64,
             CValue::Pointer(_) => Self::Bits32,
@@ -293,6 +309,17 @@ impl LoadKind {
         Self::of_value(value) == Some(self)
     }
 
+    /// Width when the kind is known but no typed producer recorded an access.
+    /// Bits32 can also name an LP64 pointer word, so keep its eight-byte ABI
+    /// footprint. A fully unknown access uses MAX_SCALAR_ACCESS_BYTES instead.
+    pub(crate) fn unrecorded_access_byte_width(self) -> u32 {
+        if self == Self::Bits32 {
+            crate::kernel::C_POINTER_BYTE_WIDTH
+        } else {
+            self.byte_width()
+        }
+    }
+
     /// How many bytes a read of this kind returns.
     pub fn byte_width(self) -> u32 {
         match self {
@@ -300,6 +327,7 @@ impl LoadKind {
             Self::Int16 | Self::UInt16 => 2,
             Self::Bits32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
+            Self::Int128 | Self::UInt128 => 16,
         }
     }
 }
@@ -314,6 +342,8 @@ pub enum Bitvector32Term {
     /// Unsigned 64-bit constants retain all 64 bits; interpreting these as a
     /// signed value would lose the distinction above `i64::MAX`.
     UInt64Constant(u64),
+    /// Checked wide payload; never truncated into the legacy 32/64-bit carriers.
+    MachineIntegerConstant(MachineIntegerConstant),
     Variable(Variable),
     Add(Box<Bitvector32Term>, Box<Bitvector32Term>),
     Subtract(Box<Bitvector32Term>, Box<Bitvector32Term>),
@@ -377,6 +407,13 @@ pub enum Bitvector32Term {
     PointerAddress(Box<Pointer>),
     IntegerToMachine {
         value: SharedIntegerTerm,
+        destination: MachineIntegerType,
+    },
+    /// Explicit integral conversion modulo the destination width. Wide casts
+    /// retain the operand's format instead of reusing a legacy word cast.
+    MachineIntegerCast {
+        value: Box<Bitvector32Term>,
+        source: MachineIntegerType,
         destination: MachineIntegerType,
     },
     Int64From32(Box<Bitvector32Term>),
@@ -943,6 +980,8 @@ pub enum CValue {
     UInt32(Bitvector32Term),
     Int64(Bitvector32Term),
     UInt64(Bitvector32Term),
+    Int128(Bitvector32Term),
+    UInt128(Bitvector32Term),
     /// IEEE-754 binary32 payload represented in the shared checked term arena.
     Float32(Bitvector32Term),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
@@ -969,6 +1008,8 @@ pub enum CType {
     UInt32,
     Int64,
     UInt64,
+    Int128,
+    UInt128,
     Float32,
     Float64,
     Int8Pointer,
@@ -978,7 +1019,9 @@ pub enum CType {
     UInt8Pointer,
     UInt32Pointer,
     Int64Pointer,
+    Int128Pointer,
     UInt64Pointer,
+    UInt128Pointer,
     Float32Pointer,
     Float64Pointer,
     Int8PointerPointer,
@@ -988,7 +1031,9 @@ pub enum CType {
     UInt8PointerPointer,
     UInt32PointerPointer,
     Int64PointerPointer,
+    Int128PointerPointer,
     UInt64PointerPointer,
+    UInt128PointerPointer,
     Float32PointerPointer,
     Float64PointerPointer,
     FunctionPointer(CallbackSignature),
@@ -999,7 +1044,9 @@ pub enum CType {
     UInt16Array(u32),
     UInt32Array(u32),
     Int64Array(u32),
+    Int128Array(u32),
     UInt64Array(u32),
+    UInt128Array(u32),
     Float32Array(u32),
     Float64Array(u32),
     /// Fixed array of object-pointer cells. The element kind remains typed;
@@ -1019,7 +1066,9 @@ pub enum CPointerArrayElement {
     UInt16,
     UInt32,
     Int64,
+    Int128,
     UInt64,
+    UInt128,
     Float32,
     Float64,
 }
@@ -1035,7 +1084,9 @@ impl CPointerArrayElement {
             CType::UInt16Pointer => Self::UInt16,
             CType::UInt32Pointer => Self::UInt32,
             CType::Int64Pointer => Self::Int64,
+            CType::Int128Pointer => Self::Int128,
             CType::UInt64Pointer => Self::UInt64,
+            CType::UInt128Pointer => Self::UInt128,
             CType::Float32Pointer => Self::Float32,
             CType::Float64Pointer => Self::Float64,
             _ => return None,
@@ -1053,7 +1104,9 @@ impl CPointerArrayElement {
             Self::UInt16 => CType::UInt16Pointer,
             Self::UInt32 => CType::UInt32Pointer,
             Self::Int64 => CType::Int64Pointer,
+            Self::Int128 => CType::Int128Pointer,
             Self::UInt64 => CType::UInt64Pointer,
+            Self::UInt128 => CType::UInt128Pointer,
             Self::Float32 => CType::Float32Pointer,
             Self::Float64 => CType::Float64Pointer,
         }
@@ -1069,7 +1122,9 @@ impl CPointerArrayElement {
             Self::UInt16 => "uint16**",
             Self::UInt32 => "uint32**",
             Self::Int64 => "int64**",
+            Self::Int128 => "int128**",
             Self::UInt64 => "uint64**",
+            Self::UInt128 => "uint128**",
             Self::Float32 => "float32**",
             Self::Float64 => "float64**",
         }
@@ -1153,7 +1208,10 @@ pub(super) enum CLValueStorage {
 pub enum CIntegerCastMode {
     #[default]
     Standard,
-    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    /// Preserve the numeric value modulo the destination width. Used by
+    /// Rust integer casts and C++20 integer conversions; never implicit in C.
+    Modulo,
+    /// Legacy exact uint64-to-int64 boundary.
     UInt64BitsToInt64,
 }
 
@@ -1679,7 +1737,9 @@ impl ResourceFieldSchema {
                         | CType::UInt8Array(_)
                         | CType::UInt16Array(_)
                         | CType::UInt32Array(_)
+                        | CType::Int128Array(_)
                         | CType::Int64Array(_)
+                        | CType::UInt128Array(_)
                         | CType::UInt64Array(_)
                         | CType::Float32Array(_)
                         | CType::Float64Array(_)
@@ -1893,6 +1953,8 @@ impl AlgebraicTerm {
                     | CValue::UInt32(v)
                     | CValue::Int64(v)
                     | CValue::UInt64(v)
+                    | CValue::Int128(v)
+                    | CValue::UInt128(v)
                     | CValue::Float32(v)
                     | CValue::Float64(v) => visit(v),
                 },
@@ -7925,6 +7987,20 @@ impl Hash for Proposition {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static PROPOSITION_CLONE_NODES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+#[cfg(test)]
+pub(crate) fn count_proposition_clone_nodes<T>(body: impl FnOnce() -> T) -> (T, usize) {
+    let before = PROPOSITION_CLONE_NODES.with(std::cell::Cell::get);
+    let value = body();
+    (
+        value,
+        PROPOSITION_CLONE_NODES.with(std::cell::Cell::get) - before,
+    )
+}
+
 /// Clones the logical tree without recursing through a long connective chain.
 /// This is also `Proposition::clone`, so callers cannot accidentally restore
 /// recursive cloning by using the trait method on a deep implication.
@@ -7949,6 +8025,10 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
     let mut frames = vec![Frame::Visit(proposition)];
     let mut values = Vec::new();
     while let Some(frame) = frames.pop() {
+        #[cfg(test)]
+        if matches!(frame, Frame::Visit(_)) {
+            PROPOSITION_CLONE_NODES.with(|count| count.set(count.get() + 1));
+        }
         match frame {
             Frame::Visit(proposition) => match proposition {
                 Proposition::And(left, right) => {
@@ -8686,8 +8766,103 @@ pub struct AlgebraicVariantEvidence {
     pub variant: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) enum AtomicConnectionKey {
+    Variable(Variable),
+    Block(PointerBlock),
+}
+
+/// One immutable fact shared by every dependency bucket that names it.
+#[derive(Clone, Debug)]
+pub(crate) struct SharedIndexFact<T>(std::sync::Arc<T>);
+
+impl<T> SharedIndexFact<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self(std::sync::Arc::new(value))
+    }
+}
+impl<T> AsRef<T> for SharedIndexFact<T> {
+    fn as_ref(&self) -> &T {
+        &self.0
+    }
+}
+impl<T> std::borrow::Borrow<T> for SharedIndexFact<T> {
+    fn borrow(&self) -> &T {
+        self.as_ref()
+    }
+}
+impl<T: Ord> PartialEq for SharedIndexFact<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+impl<T: Ord> Eq for SharedIndexFact<T> {}
+impl<T: Ord> PartialOrd for SharedIndexFact<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<T: Ord> Ord for SharedIndexFact<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if std::sync::Arc::ptr_eq(&self.0, &other.0) {
+            std::cmp::Ordering::Equal
+        } else {
+            self.as_ref().cmp(other.as_ref())
+        }
+    }
+}
+
+/// Borrowed adjacency entries let selection deduplicate before cloning syntax.
+pub(crate) enum AtomicConnectedFact<'a> {
+    Condition(&'a ConditionTerm, bool),
+    Proposition(&'a Proposition),
+}
+impl AtomicConnectedFact<'_> {
+    pub(crate) fn identity(&self) -> (u8, usize) {
+        match self {
+            Self::Condition(condition, _) => (0, *condition as *const ConditionTerm as usize),
+            Self::Proposition(proposition) => (1, *proposition as *const Proposition as usize),
+        }
+    }
+    pub(crate) fn is_condition(&self) -> bool {
+        matches!(
+            self,
+            Self::Condition(..) | Self::Proposition(Proposition::ConditionIs(..))
+        )
+    }
+    pub(crate) fn matches(&self, goal: &Proposition) -> bool {
+        match self {
+            Self::Condition(condition, value) => {
+                matches!(goal, Proposition::ConditionIs(c,v) if c == *condition && v == value)
+            }
+            Self::Proposition(proposition) => *proposition == goal,
+        }
+    }
+    pub(crate) fn to_proposition(&self) -> Proposition {
+        match self {
+            Self::Condition(condition, value) => {
+                Proposition::ConditionIs((*condition).clone(), *value)
+            }
+            Self::Proposition(proposition) => (*proposition).clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct AtomicConnectionFacts {
+    pub conditions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub propositions: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PureFactContext {
+    /// Persistent syntax adjacency for atomic certificate planning. Unlike
+    /// free-variable indexes, this never scans snapshot contents.
+    pub(super) atomic_connection_facts:
+        crate::persistent::PersistentMap<AtomicConnectionKey, AtomicConnectionFacts>,
+    pub(super) atomic_ground_facts: crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
+    pub(super) atomic_quantified_facts:
+        crate::persistent::PersistentSet<SharedIndexFact<Proposition>>,
     /// True 64-bit equalities as an undirected adjacency map, derived
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
@@ -8696,6 +8871,28 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
     >,
     pub(super) condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
+    /// Incremental adjacency for conditions whose variables can be read
+    /// without inspecting a snapshot.
+    pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+    >,
+    /// Snapshot-dependent conditions use the complete collector only when
+    /// smart premise selection asks for them. Scalar updates share the cache.
+    pub(super) snapshot_condition_variable_base: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+    >,
+    pub(super) snapshot_condition_variable_changes:
+        crate::persistent::PersistentMap<ConditionTerm, Option<bool>>,
+    pub(super) snapshot_condition_variables: std::sync::Arc<
+        std::sync::OnceLock<
+            crate::persistent::PersistentMap<
+                Variable,
+                crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
+            >,
+        >,
+    >,
     /// The condition facts `condition_matches` can relate to a query spelled
     /// differently, keyed by their kind and the canonical forms of their two
     /// sides (`condition_match_key`): an equality under its unordered pair of

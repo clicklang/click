@@ -38,7 +38,7 @@ fn parses_grouped_function_proof() {
 }
 
 #[test]
-fn rejects_mixed_grouped_and_individual_claim_proofs() {
+fn rejects_a_grouped_proof_that_proves_no_claim() {
     let source = r#"
             verifying "identity.c";
 
@@ -49,13 +49,36 @@ fn rejects_mixed_grouped_and_individual_claim_proofs() {
                 simp();
             }
         "#;
-    let error = parse(source).expect_err("proof styles must not be mixed");
+    let error = parse(source).expect_err("a grouped proof must prove some claim");
 
     assert!(
         error
             .message()
-            .contains("a grouped function proof cannot be combined with individual claim proofs")
+            .contains("this grouped function proof proves no claim")
     );
+}
+
+#[test]
+fn a_grouped_proof_covers_only_claims_without_their_own_proof() {
+    let source = r#"
+            verifying "identity.c";
+
+            int32 identity(int32 value) {
+                ensures result == value by auto;
+                ensures result >= value;
+                ensures result <= value;
+            }
+        "#;
+    let file = parse(source).expect("omitted and written claim proofs should parse");
+    let function = &file.function_blocks()[0];
+
+    assert_eq!(function.grouped_proof(), None);
+    assert_eq!(
+        function.covering_proof(),
+        Some(&SourceProof::Tactic(SmartTactic::Auto))
+    );
+    assert!(!function.covers_claim_proof(function.ensures()[0].proof()));
+    assert!(function.covers_claim_proof(function.ensures()[1].proof()));
 }
 
 #[test]

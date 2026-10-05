@@ -1172,3 +1172,25 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
         }
     }
 }
+
+#[test]
+fn truncating_integer_terms_require_native_guards_before_fold_admission() {
+    let checker = BodyChecker {
+        parameters: &[],
+        array_name: "v",
+        element_type: CType::Int32,
+        accumulator: ACCUMULATOR,
+        item: ITEM,
+    };
+    let a: SharedIntegerTerm = IntegerTerm::var(ACCUMULATOR).into();
+    let b: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    for term in [
+        IntegerTerm::TruncatingQuotient(a.clone(), b.clone()),
+        IntegerTerm::TruncatingRemainder(a, b),
+    ] {
+        assert!(matches!(
+            checker.integer_term(&term, Scope::Body),
+            Err(FoldReadDecline::UnsupportedConstruct(_))
+        ));
+    }
+}

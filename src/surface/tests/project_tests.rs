@@ -1866,3 +1866,228 @@ fn verifications_on_one_thread_are_independent() {
             .unwrap_or_else(|error| panic!("`{project}` failed: {error:?}"));
     }
 }
+
+#[test]
+fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
+    let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
+    let proof = r#"verifying "assignment.c";
+int32 f() {ensures result==4;} by {
+    execute_until(assignment(x, 0)); step();
+    have x==3 by {simp();}
+    execute_until(assignment(x, 1));
+    have x==3 by {simp();}
+    step(); have x==4 by {simp();}
+    execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    for (from, to, diagnostic) in [
+        (
+            "assignment(x, 0)",
+            "assignment(absent, 0)",
+            "cannot resolve assignment(absent, 0)",
+        ),
+        (
+            "assignment(x, 1)",
+            "assignment(x, 2)",
+            "cannot resolve assignment(x, 2)",
+        ),
+        ("assignment(x, 1)", "assignment(x, 0)", "backward"),
+        ("have x==3", "have x==4", "x"),
+    ] {
+        let error =
+            verify_c0_sources(&proof.replace(from, to), &[("assignment.c", source)]).unwrap_err();
+        assert!(error.message().contains(diagnostic), "{error:?}");
+    }
+}
+
+#[test]
+fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
+    let source = "int32 id(int32 n) {return n;} int32 f() {int32 x; int32 other; x=id(3); other=8; x=id(4); return x;}";
+    let proof = r#"verifying "assignment.c";
+int32 id(int32 n) {ensures result==n;} by {execute(); simp();}
+int32 f() {ensures result==4;} by {
+    execute_until(assignment(x, 0)); step(); have x==3 by {simp();}
+    execute_until(assignment(x, 1)); have x==3 by {simp();}
+    step(); execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("assignment.c", source)]).unwrap();
+    let exited = proof.replace(
+        "step(); execute(); simp();",
+        "step(); execute(); execute_until(assignment(x, 1)); simp();",
+    );
+    let error = verify_c0_sources(&exited, &[("assignment.c", source)]).unwrap_err();
+    assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
+    assert!(error.message().contains("function exit"), "{error:?}");
+    for source in [
+        "int32 f(int32 n) {int32 x; if(n==0) {x=1;} else {x=2;} return x;}",
+        "int32 f(int32 n) {int32 x; if(0==1) {x=1;} else {x=2;} return x;}",
+    ] {
+        let proof = r#"verifying "assignment.c";
+int32 f(int32 n) {ensures result==1;} by {execute_until(assignment(x, 0)); step(); execute(); simp();}"#;
+        assert!(verify_c0_sources(proof, &[("assignment.c", source)]).is_err());
+    }
+    let snapshots = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
+    assert!(verify_c0_sources(&snapshots, &[("assignment.c", source)]).is_err());
+}
+
+#[test]
+fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
+    let source =
+        "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
+    let proof = r#"verifying "read.c";
+int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
+    execute_until(read(0)); step(); have 0<=x and x<=255 by {simp();} execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    for (from, to) in [
+        ("views p[0..1];", ""),
+        ("read(0)", "read(1)"),
+        ("have 0<=x and x<=255", "have x==256"),
+    ] {
+        assert!(verify_c0_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
+    }
+    let backwards = proof.replace("step(); have", "step(); execute_until(read(0)); have");
+    assert!(
+        verify_c0_sources(&backwards, &[("read.c", source)])
+            .unwrap_err()
+            .message()
+            .contains("backward")
+    );
+}
+
+#[test]
+fn step_result_binding_names_checked_values_and_survives_overwrite() {
+    let source = "int32 f(const uint8* p) {uint8 x; x=*p; x=(uint8)0; return (int32)x;}";
+    let proof = r#"verifying "read.c";
+int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
+    execute_until(read(0));
+    let value = step();
+    mark loaded;
+    have 0<=(int32)value and 255>=(int32)value by {simp();}
+    have value==load_uint8(p) by {simp();}
+    step();
+    have x==0 by {simp();}
+    have value==at(loaded, x) by {simp();}
+    have 0<=(int32)value and 255>=(int32)value by {simp();}
+    execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    for invalid in [
+        proof.replace("views p[0..1];", ""),
+        proof.replace("255>=(int32)value", "256==(int32)value"),
+        proof.replace("value==at(loaded, x)", "value==x"),
+        proof.replace("let value = step();", "let x = step();"),
+        proof.replace(
+            "let value = step();",
+            "let value = step(); let value = step();",
+        ),
+        proof.replace(
+            "execute_until(read(0));",
+            "execute_until(read(0)); step(); step();",
+        ),
+    ] {
+        assert!(verify_c0_sources(&invalid, &[("read.c", source)]).is_err());
+    }
+}
+
+#[test]
+fn step_result_binding_work_scales_with_assigned_values() {
+    let mut previous = None;
+    for count in [8, 16, 32, 64] {
+        let mut source = String::from("int32 f() {int32 x;");
+        let mut proof = format!(
+            "verifying \"assign.c\"; int32 f() {{ensures result=={};}} by {{step();",
+            count - 1
+        );
+        for index in 0..count {
+            source.push_str(&format!("x={index};"));
+            proof.push_str(&format!("let value_{index} = step();"));
+        }
+        source.push_str("return x;}");
+        proof.push_str("have value_0==0 by {simp();} step(); simp();}");
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&proof, &[("assign.c", source.as_str())])
+        });
+        result.unwrap();
+        assert!(work > 0);
+        if let Some(previous) = previous {
+            assert!(
+                work <= 3 * previous,
+                "{count} bindings: {work} work after {previous}"
+            );
+        }
+        previous = Some(work);
+    }
+}
+
+#[test]
+fn charon_migrated_sidecars_preserve_original_source_contracts() {
+    for (original, migrated) in [
+        (
+            include_str!(
+                "../../../design/charon-trial/iterator-proof/rust-iter-references/frozen.click"
+            ),
+            include_str!("../../../examples/rust-iter-references/sum.click"),
+        ),
+        (
+            include_str!("../../../design/charon-trial/iterator-proof/rust-iterators/frozen.click"),
+            include_str!("../../../examples/rust-iterators/sum.click"),
+        ),
+        (
+            include_str!("../../../design/charon-trial/chunk-proof/frozen.click"),
+            include_str!("../../../examples/rust-chunks-exact/chunks.click"),
+        ),
+        (
+            include_str!("../../../design/charon-trial/loop-headers/loops.click"),
+            include_str!("../../../examples/rust-loops/loops.click"),
+        ),
+        (
+            include_str!("../../../design/charon-trial/loop-headers/sum.click"),
+            include_str!("../../../examples/rust-byte-sum/sum.click"),
+        ),
+    ] {
+        let original = parse(original).unwrap();
+        let migrated = parse(migrated).unwrap();
+        assert_eq!(original.verifying_sources(), migrated.verifying_sources());
+        assert_eq!(original.imports(), migrated.imports());
+        assert_eq!(
+            original.click_function_definitions(),
+            migrated.click_function_definitions()
+        );
+        assert_eq!(
+            original.predicate_definitions(),
+            migrated.predicate_definitions()
+        );
+        assert_eq!(
+            original.resource_definitions(),
+            migrated.resource_definitions()
+        );
+        assert_eq!(
+            original.function_blocks().len(),
+            migrated.function_blocks().len()
+        );
+        for (a, b) in original
+            .function_blocks()
+            .iter()
+            .zip(migrated.function_blocks())
+        {
+            assert_eq!(a.signature(), b.signature());
+            assert_eq!(a.is_external(), b.is_external());
+            assert_eq!(a.requires(), b.requires());
+            assert_eq!(a.decreases(), b.decreases());
+            assert_eq!(a.constructs(), b.constructs());
+            assert_eq!(a.parameter_struct_casts(), b.parameter_struct_casts());
+            assert!(a.structural_clauses().is_empty());
+            assert!(b.structural_clauses().is_empty());
+            assert_eq!(a.ensures().len(), b.ensures().len());
+            for (a, b) in a.ensures().iter().zip(b.ensures()) {
+                assert_eq!(a.ensure(), b.ensure());
+                assert_eq!(a.borrowed(), b.borrowed());
+                assert_eq!(a.condition(), b.condition());
+                assert_eq!(a.name(), b.name());
+            }
+            assert!(a.exceptional_ensures().is_empty());
+            assert!(b.exceptional_ensures().is_empty());
+        }
+    }
+}

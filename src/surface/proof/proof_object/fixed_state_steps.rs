@@ -726,6 +726,8 @@ impl<'a> Proof<'a> {
             _ => return Err(self.step_error("unsupported existential choice sort")),
         };
         let chosen_fact = match &chosen {
+            CValue::Int128(_) | CValue::UInt128(_) => unreachable!("unsupported choice sort above"),
+
             CValue::Int32(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
@@ -790,7 +792,7 @@ impl<'a> Proof<'a> {
         binding: &ProofLetSatisfy,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if binding.bindings.is_empty() {
-            return Err(self.step_error("`let (...) satisfy` needs at least one binding"));
+            return Err(self.step_error("`obtain (...)` needs at least one binding"));
         }
         for (name, _) in &binding.bindings {
             if name == "result"
@@ -839,10 +841,10 @@ impl<'a> Proof<'a> {
                         crate::surface::printing::source_click_proposition(&binding.proposition),
                     ),
                 PropositionCloseError::IntegerChoiceWrongSort => self.step_error(
-                    "`let (...) satisfy` has more binders than the available existential, or an unsupported binder type",
+                    "`obtain (...)` has more binders than the available existential, or an unsupported binder type",
                 ),
                 PropositionCloseError::IntegerChoiceFresheningExhausted => {
-                    self.step_error("`let (...) satisfy` could not allocate fresh bindings")
+                    self.step_error("`obtain (...)` could not allocate fresh bindings")
                 }
                 _ => self.step_error("could not open the stated existential"),
             })?;
@@ -1432,6 +1434,10 @@ impl<'a> Proof<'a> {
                     sort: Sort::Algebraic(_),
                     ..
                 } => self.apply_pure_algebraic_witness(witness),
+                Proposition::Exists {
+                    sort: Sort::CInt32 | Sort::CPointer(_),
+                    ..
+                } => self.apply_pure_machine_witness(witness),
                 _ => self.apply_pure_integer_witness(witness),
             };
         }
@@ -1465,10 +1471,10 @@ impl<'a> Proof<'a> {
             .map_err(|error| self.step_error(error.message))?;
         let array_refs = array_refs_for_parameters(view.parameters, &values, view.state.memory());
         let (values, array_refs) = contract_environment_at_state(&values, &array_refs, view.state);
-        let checked_witness = ProofWitness {
-            name: witness.name.clone(),
-            value: self.substitute_fixed_state_locals_in_expression(&witness.value)?,
-        };
+        let checked_witness = ProofWitness::single(
+            witness.name().to_string(),
+            self.substitute_fixed_state_locals_in_expression(witness.value())?,
+        );
         if let Proposition::Exists {
             name,
             var,
@@ -1476,13 +1482,13 @@ impl<'a> Proof<'a> {
             body,
         } = &goal
         {
-            if name != &witness.name {
+            if name != witness.name() {
                 return Err(self.step_error(format!(
                     "`witness` binds `{name}`, but proof provided `{}`",
-                    witness.name
+                    witness.name()
                 )));
             }
-            let names = contract_expression_referenced_names(&checked_witness.value);
+            let names = contract_expression_referenced_names(checked_witness.value());
             let algebraic_values = names
                 .into_iter()
                 .filter_map(|name| {
@@ -1493,7 +1499,7 @@ impl<'a> Proof<'a> {
                 })
                 .collect();
             let value = capture_fixed_state_algebraic_value(
-                &checked_witness.value,
+                checked_witness.value(),
                 self.facts().assumptions(),
                 &values,
                 &array_refs,
@@ -1520,8 +1526,8 @@ impl<'a> Proof<'a> {
                     written_name,
                     body,
                     ..
-                }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                    let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+                }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                    let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
                             self.step_error(format!(
@@ -1569,8 +1575,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1585,8 +1591,8 @@ impl<'a> Proof<'a> {
                 item,
                 written_item,
                 body,
-            }) if written_item.as_ref().unwrap_or(item) == &witness.name => {
-                let substitutions = BTreeMap::from([(item.clone(), witness.value.clone())]);
+            }) if written_item.as_ref().unwrap_or(item) == witness.name() => {
+                let substitutions = BTreeMap::from([(item.clone(), witness.value().clone())]);
                 let start =
                     substitute_contract_expression(start, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1599,7 +1605,7 @@ impl<'a> Proof<'a> {
                             "could not instantiate Surface range end: {message}"
                         ))
                     })?;
-                let value = substitute_contract_expression(&witness.value, &substitutions)
+                let value = substitute_contract_expression(witness.value(), &substitutions)
                     .map_err(|message| {
                         self.step_error(format!(
                             "could not instantiate Surface range witness: {message}"
@@ -1638,6 +1644,150 @@ impl<'a> Proof<'a> {
         ))
     }
 
+    fn apply_pure_machine_witness(
+        &self,
+        witness: &ProofWitness,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Pure(context) = self.context.as_ref() else {
+            unreachable!()
+        };
+        let goal = self
+            .proposition_goal("`witness` requires a proposition goal")?
+            .clone();
+        let checked_witness = ProofWitness::single(
+            witness.name().to_owned(),
+            self.substitute_fixed_state_locals_in_expression(witness.value())?,
+        );
+        let non_machine_type = match checked_witness.value() {
+            ContractExpression::Binding(name)
+                if context.theorem_context.integer_values.get(name).is_some()
+                    || self.local_integer_values().get(name).is_some() =>
+            {
+                Some("Integer".to_owned())
+            }
+            ContractExpression::AlgebraicVariable { algebraic_type, .. }
+            | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+                Some(crate::surface::validation::describe_click_type(
+                    &ClickType::Algebraic(algebraic_type.clone()),
+                ))
+            }
+            _ => None,
+        };
+        if let Some(actual) = non_machine_type {
+            let expected = match &goal {
+                Proposition::Exists {
+                    sort: Sort::CInt32, ..
+                } => CType::Int32,
+                Proposition::Exists {
+                    sort: Sort::CPointer(c_type),
+                    ..
+                } => *c_type,
+                _ => unreachable!("pure machine witness dispatch requires a C binder"),
+            };
+            return Err(self.step_error(format!(
+                "witness `{}` has the wrong type: expected {}, got {actual}",
+                witness.name(),
+                describe_c0_type(crate::surface::generics::c0_type_from_kernel(expected)),
+            )));
+        }
+        // Capture only the written value using the theorem's retained memory
+        // and lexical bindings, then use the same typed instantiation as a
+        // fixed-state witness. No assumption or proof of the body is added.
+        let names = contract_expression_referenced_names(checked_witness.value());
+        let values = names
+            .iter()
+            .filter_map(|name| {
+                context
+                    .theorem_context
+                    .values
+                    .get(name)
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect();
+        let arrays = names
+            .iter()
+            .filter_map(|name| {
+                context
+                    .theorem_context
+                    .array_refs
+                    .get(name)
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect();
+        let algebraic_values = names
+            .iter()
+            .filter_map(|name| {
+                self.local_algebraic_values()
+                    .get(name)
+                    .cloned()
+                    .or_else(|| {
+                        context
+                            .structural_induction_setup
+                            .as_ref()?
+                            .algebraic_values
+                            .get(name)
+                            .cloned()
+                    })
+                    .map(|value| (name.clone(), value))
+            })
+            .collect();
+        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let value = evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
+            checked_witness.value(),
+            self.facts().assumptions(),
+            &values,
+            &arrays,
+            algebraic_values,
+            &state,
+            &state,
+            None,
+            &RecordedSnapshots::new(),
+            context.predicate_environment,
+            context.click_function_environment,
+            &BTreeSet::new(),
+        )
+        .map_err(|message| {
+            self.step_error(format!(
+                "could not evaluate witness `{}`: {message}",
+                witness.name(),
+            ))
+        })?;
+        let proposition = apply_witness_tactic(
+            &checked_witness,
+            value,
+            goal,
+            self.claim_label(),
+            0,
+            self.certificate().steps().len(),
+        )
+        .map_err(|error| self.attach_step_diagnostic(error))?;
+        let surface_goal = match self.surface_goal() {
+            Some(ClickProposition::Exists {
+                name,
+                written_name,
+                body,
+                ..
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
+                Some(
+                    substitute_click_proposition(body, &substitutions).map_err(|message| {
+                        self.step_error(format!(
+                            "could not instantiate machine witness goal: {message}"
+                        ))
+                    })?,
+                )
+            }
+            _ => None,
+        };
+        let branch = self.refined_branch_state(self.facts().clone());
+        Ok(CheckedFocusedTransition::replacing(
+            self.state().locals().clone(),
+            Some(self.refined_proposition(branch, proposition, surface_goal, true)),
+            Vec::new(),
+            Vec::new(),
+        ))
+    }
+
     fn apply_pure_integer_witness(
         &self,
         witness: &ProofWitness,
@@ -1656,13 +1806,13 @@ impl<'a> Proof<'a> {
                 "pure `witness` currently requires an Integer existential proposition",
             ));
         };
-        if name != witness.name {
+        if name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name
+                witness.name()
             )));
         }
-        let value = self.capture_pure_integer_witness(&witness.value)?;
+        let value = self.capture_pure_integer_witness(witness.value())?;
         let proposition =
             crate::kernel::substitute_integer_variable_in_pure_proposition(&body, var, &value)
                 .map_err(|error| {
@@ -1674,8 +1824,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -1713,13 +1863,13 @@ impl<'a> Proof<'a> {
                 "pure algebraic `witness` requires an algebraic existential proposition",
             ));
         };
-        if name != witness.name {
+        if name != witness.name() {
             return Err(self.step_error(format!(
                 "`witness` binds `{name}`, but proof provided `{}`",
-                witness.name
+                witness.name()
             )));
         }
-        let value = self.capture_pure_algebraic_witness(&witness.value)?;
+        let value = self.capture_pure_algebraic_witness(witness.value())?;
         if value.algebraic_type != algebraic_type {
             return Err(self.step_error("algebraic witness has the wrong datatype"));
         }
@@ -1732,8 +1882,8 @@ impl<'a> Proof<'a> {
                 written_name,
                 body,
                 ..
-            }) if written_name.as_ref().unwrap_or(name) == &witness.name => {
-                let substitutions = BTreeMap::from([(name.clone(), witness.value.clone())]);
+            }) if written_name.as_ref().unwrap_or(name) == witness.name() => {
+                let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
                         self.step_error(format!(
@@ -2616,12 +2766,16 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Selects the edge of the one supported checked call/handler split.
-    /// The label was derived from the exact source shape and checked outcome
-    /// when the outcome goal was created, not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_returned(&self) -> Result<bool, ClickError> {
+    /// Selects the edge of the checked call split `depth` nested `outcomes`
+    /// inside the outermost one. The labels were derived from the exact
+    /// source shape and checked outcome when the outcome goal was created,
+    /// not from a user assertion.
+    pub(in crate::surface::proof) fn checked_call_returned(
+        &self,
+        depth: usize,
+    ) -> Result<bool, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_returned)
+            .and_then(|data| data.call_routes.get(depth).copied())
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })
@@ -3586,7 +3740,7 @@ mod outcome_case_tests {
                 &root,
                 &mut facts,
                 OutcomeProvenance {
-                    call_returned: None,
+                    call_routes: Vec::new(),
                     branch_decisions: PersistentSequence::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),

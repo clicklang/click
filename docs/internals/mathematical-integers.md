@@ -25,7 +25,8 @@ obligations. In particular, `to_integer(x + 1)` does not discharge an
 overflow obligation for `x + 1`.
 
 Reverse conversions are destination-specific: `to_int8`, `to_int16`, `to_int32`,
-`to_uint8`, `to_uint16`, `to_uint32`, `to_int64`, and `to_uint64`. A conversion
+`to_uint8`, `to_uint16`, `to_uint32`, `to_int64`, `to_uint64`, `to_int128`,
+and `to_uint128`. A conversion
 requires proof that the Integer lies in the destination's exact range. It does
 not truncate, wrap, saturate, or insert an unchecked assumption. A symbolic
 conversion requires both bounds, even in a reflexive proposition.
@@ -219,6 +220,162 @@ it exact, so it needs no ordering or definedness side condition. The body
 remains exact, so a fold over a written array is never equated with the same
 fold over the snapshot before the write.
 
+## Shared machine constants
+
+`MachineIntegerFormat` records signedness and one of the fixed widths 8, 16,
+32, 64, or 128. `MachineIntegerConstant` pairs that format with a checked
+two's-complement payload; its private fields prevent oversized payloads from
+entering a consumer. The inclusive bounds, literal checking, numeric observation,
+and conversion policies share this representation. Boolean values remain a
+separate source type. Width gives the number of value bytes, not ABI alignment
+or a promise that a frontend supports that width.
+
+Checked conversion preserves the numeric value or refuses it. Modulo conversion
+is a separately requested operation: it sign-extends a signed source, retains
+an unsigned source's value, and reduces modulo the destination width. This
+implements the constant policy of C++20 integral conversions and Rust integer
+`as`; a C importer must still select its target's signed narrowing policy.
+The ordinary reverse conversion from Integer always uses the checked operation.
+
+The runtime machine types use the shared format for their bounds,
+constant observations, Integer conversions, and constant rewrite normalization.
+C++ literals use it as well. The runtime bridge requires an exact format match,
+including signedness; narrow signed constants retain the
+existing sign-extended 32-bit carrier. An arbitrary Integer larger than the
+format is refused from its cached bit length before inspecting its limbs.
+Parsing work scales with the explicitly written decimal spelling, and numeric
+allocation is charged before constructing bounded exact values.
+
+Signed and unsigned 128-bit constants, their full endpoint ranges, widening,
+and narrowing are represented and tested against independent exact arithmetic.
+The kernel also has a bounded wide scalar profile, described below. Contracts
+use `int128` / `uint128` for full-width scalar values. C++ admits the bounded
+`__int128` source profile described in the import reference; ordinary C and
+Rust source admission remain separate. Reverse conversion arguments supply
+Integer context even to negative literals beyond the 64-bit range.
+
+## Truncating machine constant division
+
+`MachineIntegerConstant::truncating_div_rem` computes a quotient and remainder
+in one already-resolved signed/unsigned 8–128-bit format. It rounds the
+quotient toward zero; a nonzero remainder has the dividend's sign, with
+`a == b*q + r` and `abs(r) < abs(b)`. This is machine arithmetic, separate
+from the planned Euclidean division of mathematical Integer values.
+
+Both results retain the input format. Format mismatch, division by zero, and
+signed `MIN / -1` overflow are distinct failures. The overflow also refuses
+`MIN % -1`, even though its mathematical remainder is zero. Language
+promotions happen before this representation operation; it does not decide
+C/C++ undefined behavior or Rust panic policy. Existing signed/unsigned
+32/64-bit term construction and recursive constant observations use it while
+retaining their execution guards and symbolic nodes. Exact-oracle checks cover
+all formats and exhaustive byte pairs; operation batches have deterministic
+linear work checks. The symbolic representation is described below; guarded
+wide execution and C++ frontend admission remain the next slice. Artifact
+schema remains 38.
+
+## Explicit machine modulo casts
+
+The shared kernel `c_integer_cast_modulo` boundary implements Rust integer `as`
+and C++20 integral conversions for the admitted 8–64-bit runtime types. It
+checks the evaluated source and destination types, folds root constants through
+`MachineIntegerConstant`, and retains symbolic operands in the common term
+arena. Narrow signed results keep the existing sign-extended 32-bit carrier;
+unsigned results retain the low destination bits. Widening uses source
+signedness before the destination interpretation. Conversion construction
+inspects only a bounded number of root nodes.
+
+Boolean sources observe their normalized zero-or-one numeric value. Boolean
+results, floats, pointers, arrays, and unsupported widths are refused at this
+integer boundary; their ordinary conversions use their own rules. Evaluation
+of the operand still carries its definedness obligations, including overflow.
+This explicit policy does not relax ordinary C casts or checked Integer
+conversions. Casts involving 128-bit values use `MachineIntegerCast`, retaining
+both source and destination types. Constants fold through the same exact
+format policy, and symbolic operands remain typed through substitution and
+proof rewriting. The existing 8–64-bit casts keep their current carriers.
+
+Wide integral widening and narrowing, including signedness changes, are
+supported at the kernel's explicit modulo boundary. Ordinary C conversions
+involving wide values retain the representable-range policy for signed
+destinations: both lower and upper bounds must be established unless the
+whole source range fits. Unsigned destinations use modulo conversion.
+Neither route loses the operand's definedness obligations.
+
+Exact Integer observation removes a widening cast only when every value of
+the source type fits the destination. Narrowing and signedness changes that
+can change the numeric value stay machine observations of the converted
+value; they are not equated with the source's mathematical Integer.
+
+## Wide runtime scalars
+
+The shared kernel has `CType::Int128` / `UInt128` and corresponding `CValue`
+wrappers in the existing machine-term arena. `c_int128_literal` and
+`c_uint128_literal` retain all 128 bits in `MachineIntegerConstant` payloads.
+Symbolic variables, scalar locals, assignment, function parameters/results,
+and substitution preserve the wide type. The pinned x86_64 Linux profile gives
+these scalar objects 16 bytes and alignment 16; value width alone does not
+choose an arbitrary target's ABI alignment.
+
+Exact Integer observation retains the source's wide machine type and numeric
+interpretation. Reverse Integer conversions use the full signed/unsigned
+bounds and retain both obligations for symbolic inputs. Truthiness compares
+that exact observation with zero, including high bits above bit 63. These
+observations do not turn native arithmetic into unbounded Integer arithmetic.
+
+A wide runtime wrapper accepts only a matching wide constant, a symbolic
+variable, a matching typed memory load, the shared checked Integer-to-machine
+node, or a typed machine cast for that destination.
+Legacy word constants and arithmetic nodes cannot acquire 128-bit semantics
+by retagging their wrapper. Validation examines the root and any strictly
+widening conversion chain (bounded by the five machine widths); substitutions,
+alpha keys, snapshot identities, and bounded walks keep the full payload.
+
+Signed native 128-bit multiplication observes each integral operand exactly,
+computes its Integer product, and checks both signed 128-bit bounds. Unknown
+bounds retain separate normal and signed-overflow paths; known failed bounds
+produce signed overflow. The normal symbolic result uses the shared checked
+Integer-to-machine node, retaining its machine type rather than erasing it to
+an Integer. Existing product-bounds certificates can discharge these guards.
+At least one operand must already be signed 128-bit; a later widening cast
+cannot rescue overflow in an earlier narrow multiplication. Operand undefined
+behavior and proof obligations remain attached to the result.
+
+Exact typed 16-byte cells support signed and unsigned wide stores and loads
+through the existing typed-lvalue operations. Symbolic loads use the shared
+snapshot/address/kind identity and certified defining facts. Their kinds retain
+signedness to match the checked constant format; cross-type reinterpretation
+and byte views remain unsupported. A wide read or write requires the full
+16-byte extent and resource authority, and retains initialization obligations.
+Framing and store invalidation account for every byte, including bytes 8–15.
+The conservative fallback width for an access of unknown type is now 16;
+indexed store-gap decisions use the same bound. Known load kinds, pointer
+reads, and retained typed cells use their own access widths; a wider unknown
+fallback must not erase precise separation evidence.
+
+The shared runtime and internal C0 type identities also model signed and
+unsigned wide object pointers, pointer slots, fixed scalar arrays, and arrays
+of those pointers. Scalar array elements and pointer arithmetic use a 16-byte
+stride; pointer objects and pointer-array slots retain the LP64 8-byte width.
+Address-of preserves the exact pointee type. Automatic array elements retain
+initialization requirements, one-past pointers cannot be dereferenced, and
+pointer-slot authority does not grant authority over the pointee. Static array
+startup preserves full-width initializers; ordinary function entry supplies
+symbolic storage without restoring those initializers or granting resources.
+Symbolic arrays use the shared lazy storage runs, so entry and a selected read
+do not visit unrelated elements. Compact scalar-copy checks include a wide
+cell overlapping the region's prefix.
+
+Other native wide arithmetic, including unsigned wrapping multiplication,
+source aggregate layouts, byte views of wide cells, and callbacks remain
+unsupported. C++ now admits wide scalar locals, parameters, results,
+matching-width call captures, modulo integral casts, Boolean conversions, and
+checked signed multiplication. Contracts observe these values through
+`to_integer` and use checked reverse conversions; native wide comparisons are
+not admitted. Wide source pointers, references, arrays, and record fields
+remain unsupported, as do ordinary C and Rust wide source spellings. Internal
+C0 identities model the wider memory profile without granting source admission.
+
 ## Work budgets and certificate scaling
 
 Numeric work has two independent costs: reachable expression visits and
@@ -251,3 +408,28 @@ to make an Integer proof succeed.
 - [Intermediate-overflow regression](https://github.com/clicklang/click/blob/master/mdtests/integer_sum_range_fold_intermediate_overflow.md)
 - [Endpoint congruence regression](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_rewrite_under_equality.md)
 - [Endpoint congruence refusal](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_reject_a_different_body.md)
+
+## Symbolic truncating quotient and remainder
+
+The shared Integer DAG has explicit `TruncatingQuotient` and
+`TruncatingRemainder` nodes for the native machine arithmetic foundation.
+These internal nodes are distinct from the planned Euclidean Integer `/` and
+`%` surface operators. Nonzero root constants fold exactly, with a quotient
+truncated toward zero and a remainder carrying the dividend's sign. The
+representation is unbounded, so signed machine MIN/-1 overflow belongs to the
+native execution guard, rather than the mathematical term constructor.
+
+A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
+these nodes do not certify a native division's definedness. Native execution
+must establish nonzero divisors and the signed overflow exclusion before
+producing results. Wide source division and its contract spellings remain
+closed until that guarded execution and observation path is implemented.
+
+Interning, alpha keys, variable collectors, binder-aware rewriting, fold
+framing, and diagnostics preserve the distinct operators. The affine solver
+conservatively refuses symbolic truncation. Arithmetic-spine proposition
+substitution memoizes shared nodes and rebuilds both operands; substituting
+nonzero constants folds, while substituting a zero divisor stays opaque.
+Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
+2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
+Artifact schema remains 38 because no source operation is newly admitted.

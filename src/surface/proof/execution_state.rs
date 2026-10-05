@@ -854,6 +854,15 @@ pub(super) fn append_surface_tactics_by_leaf(
         {
             append(then_proof.steps_mut(), path_steps, next_path);
             append(else_proof.steps_mut(), path_steps, next_path);
+        } else if let Some(ProofStep::CallOutcomes {
+            returned_proof,
+            threw_proof,
+        }) = steps.last_mut()
+        {
+            // A call fork joins its returned arm's paths before its threw
+            // arm's, as a C `if` joins then before else.
+            append(returned_proof.steps_mut(), path_steps, next_path);
+            append(threw_proof.steps_mut(), path_steps, next_path);
         } else if let Some(suffix) = path_steps.get(*next_path) {
             steps.extend(suffix.iter().cloned());
             *next_path += 1;
@@ -1495,7 +1504,7 @@ pub(super) fn post_execution_tactic_timing(
         PostExecutionTactic::UnfoldFunction { .. } => ("unfold", "simple"),
         PostExecutionTactic::ApplyUsing { .. } => ("apply", "simple"),
         PostExecutionTactic::Choose(_) => ("choose", "simple"),
-        PostExecutionTactic::LetSatisfy(_) => ("let satisfy", "simple"),
+        PostExecutionTactic::LetSatisfy(_) => ("obtain", "simple"),
         PostExecutionTactic::Witness(_) => ("witness", "simple"),
         PostExecutionTactic::Intro => ("intro", "simple"),
         PostExecutionTactic::Assumption => ("assumption", "simple"),

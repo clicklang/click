@@ -20,16 +20,12 @@ verifying "proof_mark_survives_branch_join.c";
 int32 choose(int32 x, int32 flag) {
     ensures at(function_start, x) == old(x) by {
         mark function_start;
-        branch {
-            ensuring {
-                fact at(function_start, x) == old(x);
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact at(function_start, x) == old(x);
+        } then {
+            step();
+        } else {
+            step();
         }
         execute();
         simp();

@@ -6,6 +6,11 @@ mod assignment_operators;
 mod chunks;
 mod protocol;
 mod shared_arrays;
+#[cfg(test)]
+mod slice_into_iteration_tests;
+mod split_slices;
+#[cfg(test)]
+mod split_slices_tests;
 
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
@@ -293,12 +298,16 @@ struct BodyAdapter<'a, 'b> {
     adapter: &'a Adapter<'b>,
     body: &'a u::ExprBody,
     names: BTreeMap<a::LocalId, String>,
+    slice_pairs: BTreeMap<a::LocalId, [String; 2]>,
     iterator_refs: BTreeMap<a::LocalId, a::LocalId>,
     iterator_discriminants: BTreeMap<a::LocalId, a::LocalId>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
     fn modeled_call(&self, t: &u::Terminator) -> Result<Option<S>, String> {
+        if let Some(statement) = self.split_slice_call(t)? {
+            return Ok(Some(statement));
+        }
         if let Some(statement) = self.shared_array_call(t)? {
             return Ok(Some(statement));
         }
@@ -441,23 +450,36 @@ impl BodyAdapter<'_, '_> {
             .ok_or_else(|| unsupported("unknown local identity"))
     }
     fn place(&self, p: &a::Place) -> Result<E, String> {
+        if let Some(value) = self.slice_pair_projection(p)? {
+            return Ok(value);
+        }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);
         }
         Ok(match &p.kind {
+            a::PlaceKind::Local(id) if self.slice_pairs.contains_key(id) => {
+                return Err(unsupported(
+                    "shared slice pair outside component projection/copy",
+                ));
+            }
             a::PlaceKind::Local(id) => E::Local {
                 name: self.local(*id)?,
             },
             a::PlaceKind::Projection(base, a::ProjectionElem::PtrMetadata)
-                if matches!(self.adapter.ty(&base.ty)?, Type::ByteSlice { .. })
-                    && self.adapter.ty(&p.ty)? == Type::Usize =>
+                if matches!(
+                    self.adapter.ty(&base.ty)?,
+                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                ) && self.adapter.ty(&p.ty)? == Type::Usize =>
             {
                 E::SliceLength {
                     slice: Box::new(self.place(base)?),
                 }
             }
             a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
-                if matches!(self.adapter.ty(&base.ty)?, Type::ByteSlice { .. }) =>
+                if matches!(
+                    self.adapter.ty(&base.ty)?,
+                    Type::ByteSlice { .. } | Type::SharedScalarSlice { .. }
+                ) =>
             {
                 self.place(base)?
             }
@@ -539,9 +561,14 @@ impl BodyAdapter<'_, '_> {
     fn rvalue(&self, v: &a::Rvalue, ty: &a::Ty) -> Result<E, String> {
         Ok(match v {
             a::Rvalue::Use(op, _) => self.operand(op)?,
-            a::Rvalue::Len(place, _, _) if byte_slice(&place.ty) => E::SliceLength {
-                slice: Box::new(self.place(place)?),
-            },
+            a::Rvalue::Len(place, _, _)
+                if matches!(place.ty.kind(), a::TyKind::Slice(..))
+                    && self.adapter.ty(ty)? == Type::Usize =>
+            {
+                E::SliceLength {
+                    slice: Box::new(self.place(place)?),
+                }
+            }
             a::Rvalue::Repeat(value, _, length, _) => E::Repeat {
                 value: Box::new(self.operand(value)?),
                 length: length
@@ -559,18 +586,33 @@ impl BodyAdapter<'_, '_> {
                 place,
                 kind,
                 ptr_metadata,
-            } if byte_slice(&place.ty) => {
+            } if matches!(place.ty.kind(), a::TyKind::Slice(..)) => {
                 let a::PlaceKind::Projection(base, a::ProjectionElem::Deref) = &place.kind else {
                     return Err(unsupported("slice reborrow place"));
                 };
                 let source = self.adapter.ty(&base.ty)?;
                 let destination = self.adapter.ty(ty)?;
                 let mutable = matches!(kind, a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut);
+                let compatible = match (&source, &destination) {
+                    (
+                        Type::ByteSlice { mutable: source },
+                        Type::ByteSlice {
+                            mutable: destination,
+                        },
+                    ) => *destination == mutable && (!mutable || *source),
+                    (
+                        Type::SharedScalarSlice { element: source },
+                        Type::SharedScalarSlice {
+                            element: destination,
+                        },
+                    ) => !mutable && source == destination,
+                    _ => false,
+                };
                 if !matches!(
                     kind,
                     a::BorrowKind::Shared | a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut
-                ) || destination != (Type::ByteSlice { mutable })
-                    || !matches!(source, Type::ByteSlice { mutable: source } if !mutable || source)
+                ) || !compatible
+                    || !matches!(base.ty.kind(), a::TyKind::Ref(_, pointee, _) if pointee == &place.ty)
                     || !matches!(ptr_metadata, a::Operand::Copy(p) | a::Operand::Move(p)
                         if matches!(&p.kind, a::PlaceKind::Projection(metadata_base, a::ProjectionElem::PtrMetadata) if metadata_base == base)
                             && self.adapter.ty(&p.ty)? == Type::Usize)
@@ -1086,6 +1128,7 @@ pub(super) fn decode(
         };
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
         let mut names = BTreeMap::new();
+        let mut slice_pairs = BTreeMap::new();
         let mut parameters = Vec::new();
         let mut locals = Vec::new();
         let mut local_names = BTreeSet::new();
@@ -1123,6 +1166,32 @@ pub(super) fn decode(
                 return Err(unsupported("local identity collision"));
             }
             names.insert(local.index, n.clone());
+            if adapter.shared_slice_pair(&local.ty, false) {
+                if param || local.index.index() == 0 {
+                    return Err(unsupported("shared slice pair function boundary"));
+                }
+                let mut components = Vec::new();
+                for index in 0..2 {
+                    let mut component = format!("{n}_slice_{index}");
+                    while reserved.contains(&format!("{component}_len"))
+                        || reserved.contains(&component)
+                        || local_names.contains(&component)
+                    {
+                        component.push('_');
+                    }
+                    reserved.insert(component.clone());
+                    reserved.insert(format!("{component}_len"));
+                    local_names.insert(component.clone());
+                    locals.push(out::Place {
+                        name: component.clone(),
+                        value_type: Type::ByteSlice { mutable: false },
+                        span: span(local.span),
+                    });
+                    components.push(component);
+                }
+                slice_pairs.insert(local.index, components.try_into().unwrap());
+                continue;
+            }
             let place = out::Place {
                 name: n,
                 value_type: if iterator_discriminants.contains_key(&local.index) {
@@ -1142,6 +1211,7 @@ pub(super) fn decode(
             adapter: &adapter,
             body,
             names,
+            slice_pairs,
             iterator_refs,
             iterator_discriminants,
         };
@@ -1151,7 +1221,11 @@ pub(super) fn decode(
                 .statements
                 .iter()
                 .map(|s| {
+                    if let Some(statements) = b.slice_pair_statement(s)? {
+                        return Ok(statements);
+                    }
                     b.statement(s)
+                        .map(|s| s.into_iter().collect::<Vec<_>>())
                         .map_err(|e| format!("{source}:{} in {name}: {e}", s.span.data().beg.line))
                 })
                 .collect::<Result<Vec<_>, _>>()?

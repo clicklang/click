@@ -499,6 +499,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             CValue::UInt32(term) => CValue::UInt32(rewrite_term(term)),
             CValue::Int64(term) => CValue::Int64(rewrite_term(term)),
             CValue::UInt64(term) => CValue::UInt64(rewrite_term(term)),
+            CValue::Int128(term) => CValue::Int128(rewrite_term(term)),
+            CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
             CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
             CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
             CValue::Pointer(pointer) => {
@@ -670,6 +672,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
+                Bitvector32Term::MachineIntegerCast {
+                    value,
+                    source,
+                    destination,
+                } => Bitvector32Term::machine_integer_cast(
+                    *source,
+                    *destination,
+                    rewrite_term_offset(value, left, right),
+                ),
+
                 Bitvector32Term::Add(left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
                     Bitvector32Term::Add(left, right)
@@ -879,7 +891,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Bitvector32Term::IntegerToMachine { .. }
                 | Bitvector32Term::Constant(_)
                 | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_) => term.clone(),
+                | Bitvector32Term::UInt64Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
             }
         }
         fn rewrite_resource_offset(
@@ -1324,6 +1337,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // it is deterministic arithmetic on the rewritten node only, so the
         // rewritten goal states the value the substitution denotes.
         match term {
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } => Bitvector32Term::machine_integer_cast(
+                *source,
+                *destination,
+                rewrite_term(value, from, to),
+            ),
+
             Bitvector32Term::Add(left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
@@ -1578,7 +1601,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_) => term.clone(),
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
         }
     }
 

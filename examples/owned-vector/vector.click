@@ -567,10 +567,13 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             step();
             unfold(allocated_vector(owner));
             have c(grown) == 1 by {
-                cases (c(grown) == 0 or c(grown) == 1) {
-                    contradiction(c(grown) == 0);
-                } {
-                    assumption();
+                cases {
+                    c(grown) == 0 => {
+                        contradiction(c(grown) == 0);
+                    }
+                    c(grown) == 1 => {
+                        assumption();
+                    }
                 }
             }
             have owner->len == old(owner->len) by {
@@ -1069,44 +1072,41 @@ int32 vector_replace_if(
     have replace == replace by {
         normalize();
     }
-    branch {
-        then {
-            step();
-            have replace != 0 implies selected == replacement by {
-                rewrite(selected == replacement);
-                intro();
-                normalize();
-            }
-            have not replace != 0 implies selected == original by {
-                intro();
-                contradiction(replace != 0);
-            }
-            have index < (index + 1) by {
-                apply(int32_increment_strictly_increases(at(statement(4).entry, index), at(statement(4).entry, owner->len))) using {
-                    at(statement(4).entry, index) < at(statement(4).entry, owner->len);
-                }
-                assumption();
-            }
+    branch then {
+        step();
+        have replace != 0 implies selected == replacement by {
+            rewrite(selected == replacement);
+            intro();
+            normalize();
         }
-        else {
-            step();
-            have replace != 0 implies selected == replacement by {
-                have not replace != 0 by {
-                    assumption();
-                }
-                intro();
-                contradiction(not replace != 0);
+        have not replace != 0 implies selected == original by {
+            intro();
+            contradiction(replace != 0);
+        }
+        have index < (index + 1) by {
+            apply(int32_increment_strictly_increases(at(statement(4).entry, index), at(statement(4).entry, owner->len))) using {
+                at(statement(4).entry, index) < at(statement(4).entry, owner->len);
             }
-            have not replace != 0 implies selected == original by {
-                intro();
+            assumption();
+        }
+    } else {
+        step();
+        have replace != 0 implies selected == replacement by {
+            have not replace != 0 by {
                 assumption();
             }
-            have index < (index + 1) by {
-                apply(int32_increment_strictly_increases(at(statement(5).entry, index), at(statement(5).entry, owner->len))) using {
-                    at(statement(5).entry, index) < at(statement(5).entry, owner->len);
-                }
-                assumption();
+            intro();
+            contradiction(not replace != 0);
+        }
+        have not replace != 0 implies selected == original by {
+            intro();
+            assumption();
+        }
+        have index < (index + 1) by {
+            apply(int32_increment_strictly_increases(at(statement(5).entry, index), at(statement(5).entry, owner->len))) using {
+                at(statement(5).entry, index) < at(statement(5).entry, owner->len);
             }
+            assumption();
         }
     }
     step();

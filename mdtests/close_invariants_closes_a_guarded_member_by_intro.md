@@ -54,10 +54,7 @@ int32 count_run(int32 n) {
         preserve by {
             mark iteration;
             if i < 2 {
-                branch {
-                    then { step(); }
-                    else { contradiction(not (i < 2)); }
-                }
+                branch then { step(); } else { contradiction(not (i < 2)); }
                 step();
                 have 0 <= i and i <= n by { simp(); }
                 have 0 <= run and run <= i by { simp(); }
@@ -83,22 +80,25 @@ int32 count_run(int32 n) {
             } else {
                 have 2 <= i by { arithmetic() using { not (i < 2); } }
                 have 2 + run == i by {
-                    cases((i <= 2 and run == 0) or (2 <= i and 2 + run == i)) {
-                        extract(i <= 2);
-                        extract(run == 0);
-                        have i == 2 by {
-                            apply(int32_le_and_not_lt_implies_eq(i, 2)) using {
-                                i <= 2;
-                                not (i < 2);
+                    cases {
+                        (i <= 2 and run == 0) => {
+                            extract(i <= 2);
+                            extract(run == 0);
+                            have i == 2 by {
+                                apply(int32_le_and_not_lt_implies_eq(i, 2)) using {
+                                    i <= 2;
+                                    not (i < 2);
+                                }
+                                assumption();
                             }
+                            rewrite(run == 0);
+                            rewrite(i == 2);
+                            normalize() using { i <= 2; };
+                        }
+                        (2 <= i and 2 + run == i) => {
+                            extract(2 + run == i);
                             assumption();
                         }
-                        rewrite(run == 0);
-                        rewrite(i == 2);
-                        normalize() using { i <= 2; };
-                    } {
-                        extract(2 + run == i);
-                        assumption();
                     }
                 }
                 have run < n by {
@@ -107,10 +107,7 @@ int32 count_run(int32 n) {
                         i < n;
                     }
                 }
-                branch {
-                    then { contradiction(i < 2); }
-                    else { step(); }
-                }
+                branch then { contradiction(i < 2); } else { step(); }
                 step();
                 have 0 <= i and i <= n by { simp(); }
                 have 0 <= run and run <= i by { simp(); }

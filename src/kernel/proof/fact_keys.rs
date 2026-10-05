@@ -816,6 +816,7 @@ enum AlphaBitvectorKey {
     Constant(u32),
     Int64Constant(i64),
     UInt64Constant(u64),
+    MachineIntegerConstant(crate::kernel::MachineIntegerConstant),
     Variable(AlphaVariableKey),
     Binary(AlphaBitvectorBinaryOp, Box<Self>, Box<Self>),
     BitwiseNot(Box<Self>),
@@ -846,6 +847,7 @@ enum AlphaBitvectorKey {
     RegisteredLoad(AlphaRegisteredLoadId),
     Address(Box<AlphaPointerKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
+    MachineIntegerCast(MachineIntegerType, MachineIntegerType, Box<Self>),
     Int64From32(Box<Self>),
     UInt64From32(Box<Self>),
     UInt32From64(Box<Self>),
@@ -1294,6 +1296,8 @@ enum IntegerTermBinaryOp {
     Add,
     Subtract,
     Multiply,
+    TruncatingQuotient,
+    TruncatingRemainder,
 }
 
 fn alpha_integer_key(
@@ -1519,6 +1523,16 @@ fn alpha_integer_node(
         },
         IntegerTerm::Multiply(left, right) => AlphaIntegerNode::Binary {
             operator: IntegerTermBinaryOp::Multiply,
+            left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
+            right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
+        },
+        IntegerTerm::TruncatingQuotient(left, right) => AlphaIntegerNode::Binary {
+            operator: IntegerTermBinaryOp::TruncatingQuotient,
+            left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
+            right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
+        },
+        IntegerTerm::TruncatingRemainder(left, right) => AlphaIntegerNode::Binary {
+            operator: IntegerTermBinaryOp::TruncatingRemainder,
             left: alpha_integer_node(left, bindings, memo, nodes, next_binder)?,
             right: alpha_integer_node(right, bindings, memo, nodes, next_binder)?,
         },
@@ -1846,6 +1860,9 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
         },
         other => {
             let (ty, term) = match other {
+                CValue::Int128(term) => (CType::Int128, term),
+                CValue::UInt128(term) => (CType::UInt128, term),
+
                 CValue::Bool(term) => (CType::Bool, term),
                 CValue::Int8(term) => (CType::Int8, term),
                 CValue::Int16(term) => (CType::Int16, term),
@@ -1980,6 +1997,24 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             ))
         };
     Some(match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => AlphaBitvectorKey::MachineIntegerCast(
+            *source,
+            *destination,
+            Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                value,
+                bindings,
+                next_binder,
+            )?),
+        ),
+
+        Bitvector32Term::MachineIntegerConstant(value) => {
+            AlphaBitvectorKey::MachineIntegerConstant(*value)
+        }
+
         Bitvector32Term::Constant(value) => AlphaBitvectorKey::Constant(*value),
         Bitvector32Term::Int64Constant(value) => AlphaBitvectorKey::Int64Constant(*value),
         Bitvector32Term::UInt64Constant(value) => AlphaBitvectorKey::UInt64Constant(*value),
@@ -3493,6 +3528,42 @@ mod integer_alpha_scaling_tests {
     }
 
     #[test]
+    fn truncating_integer_alpha_keys_preserve_operator_and_shared_binders() {
+        for depth in [2usize, 8, 32, 128] {
+            let build = |variable, remainder| {
+                let mut term = IntegerTerm::var(Variable(variable));
+                for _ in 0..depth {
+                    let child: SharedIntegerTerm = term.into();
+                    term = if remainder {
+                        IntegerTerm::TruncatingRemainder(child.clone(), child)
+                    } else {
+                        IntegerTerm::TruncatingQuotient(child.clone(), child)
+                    };
+                }
+                term
+            };
+            let key = |variable, remainder| {
+                alpha_integer_key(
+                    &build(variable, remainder),
+                    &mut BTreeMap::from([(Variable(variable), 0)]),
+                )
+                .unwrap()
+            };
+            let (left, work) =
+                crate::instrumentation::measure_deterministic_work(|| key(91001, false));
+            let right = key(91002, false);
+            assert_eq!(left, right);
+            assert!(work <= 8 * depth + 16, "depth={depth}, work={work}");
+            assert_ne!(left, key(91001, true));
+            let mut a = DefaultHasher::new();
+            let mut b = DefaultHasher::new();
+            left.hash(&mut a);
+            right.hash(&mut b);
+            assert_eq!(a.finish(), b.finish());
+        }
+    }
+
+    #[test]
     fn alpha_integer_to_machine_keys_rename_math_binders_and_include_destination() {
         let make = |variable, destination| Bitvector32Term::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(variable)),
@@ -3511,6 +3582,54 @@ mod integer_alpha_scaling_tests {
                 &make(Variable(882), MachineIntegerType::UInt32),
                 &mut BTreeMap::from([(Variable(882), 0)]),
                 &mut 1,
+            )
+        );
+    }
+
+    #[test]
+    fn wide_cast_alpha_keys_include_source_and_destination_and_rename_operands() {
+        let make = |variable, source, destination| {
+            Bitvector32Term::machine_integer_cast(
+                source,
+                destination,
+                Bitvector32Term::Variable(variable),
+            )
+        };
+        let key = |variable, source, destination| {
+            alpha_bitvector_key::<false>(
+                &make(variable, source, destination),
+                &mut BTreeMap::from([(variable, 0)]),
+                &mut 1,
+            )
+            .unwrap()
+        };
+        let left = key(
+            Variable(149_007),
+            MachineIntegerType::Int64,
+            MachineIntegerType::Int128,
+        );
+        assert_eq!(
+            left,
+            key(
+                Variable(149_008),
+                MachineIntegerType::Int64,
+                MachineIntegerType::Int128
+            )
+        );
+        assert_ne!(
+            left,
+            key(
+                Variable(149_007),
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int128
+            )
+        );
+        assert_ne!(
+            left,
+            key(
+                Variable(149_007),
+                MachineIntegerType::Int64,
+                MachineIntegerType::UInt128
             )
         );
     }

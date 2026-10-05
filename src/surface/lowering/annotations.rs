@@ -4190,7 +4190,9 @@ impl AnnotationLowerer<'_> {
                     | CValue::UInt16(bits)
                     | CValue::UInt32(bits)
                     | CValue::Int64(bits)
-                    | CValue::UInt64(bits)) = value
+                    | CValue::UInt64(bits)
+                    | CValue::Int128(bits)
+                    | CValue::UInt128(bits)) = value
                     else {
                         return Err(
                             "to_integer expects a signed or unsigned machine integer".into()
@@ -4379,7 +4381,9 @@ impl AnnotationLowerer<'_> {
                     CType::Int32Array(_)
                     | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_),
                 ..
             } => Ok(pointer),
@@ -5836,6 +5840,8 @@ impl AnnotationLowerer<'_> {
 
     fn resolve_code_region_ref(&self, region_ref: &CodeRegionRef) -> Result<CodeRegion, String> {
         match region_ref {
+            CodeRegionRef::BackEdge => Err("back_edge regions are supported only by `execute_until`; use `mark` to name the reached state".into()),
+            CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err("assignment and read regions are supported only by `execute_until`; use `mark` to name the reached state".into()),
             CodeRegionRef::Function => Ok(CodeRegion::Function),
             CodeRegionRef::Loop(index) => Ok(CodeRegion::Loop(*index)),
             CodeRegionRef::Statement(index) => Ok(CodeRegion::Statement(*index)),
@@ -6038,7 +6044,9 @@ impl AnnotationLowerer<'_> {
                     CType::Int32Array(_)
                     | CType::UInt32Array(_)
                     | CType::UInt8Array(_)
+                    | CType::Int128Array(_)
                     | CType::Int64Array(_)
+                    | CType::UInt128Array(_)
                     | CType::UInt64Array(_),
                 ..
             } => self.lower_c_fragment_to_spec(pointer, environment),
@@ -6404,7 +6412,9 @@ impl AnnotationLowerer<'_> {
                 CType::Int32Array(_) => Some(CType::Int32),
                 CType::UInt32Array(_) => Some(CType::UInt32),
                 CType::Int64Array(_) => Some(CType::Int64),
+                CType::Int128Array(_) => Some(CType::Int128),
                 CType::UInt64Array(_) => Some(CType::UInt64),
+                CType::UInt128Array(_) => Some(CType::UInt128),
                 CType::UInt8Array(_) => Some(CType::UInt8),
                 value_type => value_type.pointee_type(),
             },
@@ -6468,6 +6478,7 @@ impl AnnotationLowerer<'_> {
             CExpression::TypedLoad { value_type, .. } => match value_type {
                 CType::Int32Array(_) => Some(4),
                 CType::Int64Array(_) | CType::UInt64Array(_) => Some(8),
+                CType::Int128Array(_) | CType::UInt128Array(_) => Some(16),
                 CType::UInt8Array(_) => Some(1),
                 value_type => value_type.pointee_type().map(CType::byte_width),
             },
@@ -6536,7 +6547,9 @@ fn aggregate_projection_root(expression: &CExpression) -> Option<&str> {
                 CType::Int32Array(_)
                 | CType::UInt32Array(_)
                 | CType::UInt8Array(_)
+                | CType::Int128Array(_)
                 | CType::Int64Array(_)
+                | CType::UInt128Array(_)
                 | CType::UInt64Array(_),
             ..
         } => aggregate_projection_root(pointer),

@@ -3688,6 +3688,8 @@ fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
         | CValue::UInt32(term)
         | CValue::Int64(term)
         | CValue::UInt64(term)
+        | CValue::Int128(term)
+        | CValue::UInt128(term)
         | CValue::Float32(term)
         | CValue::Float64(term) => Some(term),
         CValue::Void | CValue::Pointer(_) => None,
@@ -4172,7 +4174,9 @@ fn fresh_loop_local_value(
         | CType::Int16Array(_)
         | CType::UInt16Array(_)
         | CType::UInt32Array(_)
+        | CType::Int128Array(_)
         | CType::Int64Array(_)
+        | CType::UInt128Array(_)
         | CType::UInt64Array(_)
         | CType::Float32Array(_)
         | CType::Float64Array(_) => return Ok(None),

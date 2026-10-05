@@ -304,16 +304,9 @@ fn collect_structural_induction_arguments(
                 collect_structural_induction_arguments(&both.right_tactics, hypothesis, collected);
             }
             ProofTactic::Cases(proof_cases) => {
-                collect_structural_induction_arguments(
-                    &proof_cases.left_tactics,
-                    hypothesis,
-                    collected,
-                );
-                collect_structural_induction_arguments(
-                    &proof_cases.right_tactics,
-                    hypothesis,
-                    collected,
-                );
+                for arm in proof_cases.arms() {
+                    collect_structural_induction_arguments(arm.tactics(), hypothesis, collected);
+                }
             }
             _ => {}
         }
@@ -485,11 +478,9 @@ fn prepare_pure_induction_tactics(
                     left_tactics: transform(&both.left_tactics, hypothesis)?,
                     right_tactics: transform(&both.right_tactics, hypothesis)?,
                 })),
-                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                    disjunction: proof_cases.disjunction.clone(),
-                    left_tactics: transform(&proof_cases.left_tactics, hypothesis)?,
-                    right_tactics: transform(&proof_cases.right_tactics, hypothesis)?,
-                })),
+                ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(
+                    proof_cases.try_map_tactics(|tactics| transform(tactics, hypothesis))?,
+                )),
                 ProofTactic::ApplyInduction { .. } | ProofTactic::ApplyInductionUsing { .. } => {
                     Err(ClickError::new(
                         "internal induction-application syntax is not accepted directly",
@@ -531,6 +522,8 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt32 => C0Type::UInt32,
             CType::Int64 => C0Type::Int64,
             CType::UInt64 => C0Type::UInt64,
+            CType::Int128 => C0Type::Int128,
+            CType::UInt128 => C0Type::UInt128,
             CType::Float32 => C0Type::Float32,
             CType::Float64 => C0Type::Float64,
             CType::Int8Pointer => C0Type::Int8Pointer,
@@ -540,7 +533,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt8Pointer => C0Type::UInt8Pointer,
             CType::UInt32Pointer => C0Type::UInt32Pointer,
             CType::Int64Pointer => C0Type::Int64Pointer,
+            CType::Int128Pointer => C0Type::Int128Pointer,
             CType::UInt64Pointer => C0Type::UInt64Pointer,
+            CType::UInt128Pointer => C0Type::UInt128Pointer,
             CType::Float32Pointer => C0Type::Float32Pointer,
             CType::Float64Pointer => C0Type::Float64Pointer,
             CType::Int8PointerPointer => C0Type::Int8PointerPointer,
@@ -550,7 +545,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
             CType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
             CType::Int64PointerPointer => C0Type::Int64PointerPointer,
+            CType::Int128PointerPointer => C0Type::Int128PointerPointer,
             CType::UInt64PointerPointer => C0Type::UInt64PointerPointer,
+            CType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
             CType::Float32PointerPointer => C0Type::Float32PointerPointer,
             CType::Float64PointerPointer => C0Type::Float64PointerPointer,
             CType::FunctionPointer(signature) => C0Type::FunctionPointer(*signature),
@@ -562,7 +559,9 @@ pub(super) fn click_type_from_algebraic_value_type(
             CType::UInt32Array(length) => C0Type::UInt32Array(*length),
             CType::PointerArray(element, length) => C0Type::PointerArray(*element, *length),
             CType::Int64Array(length) => C0Type::Int64Array(*length),
+            CType::Int128Array(length) => C0Type::Int128Array(*length),
             CType::UInt64Array(length) => C0Type::UInt64Array(*length),
+            CType::UInt128Array(length) => C0Type::UInt128Array(*length),
             CType::Float32Array(length) => C0Type::Float32Array(*length),
             CType::Float64Array(length) => C0Type::Float64Array(*length),
         }),
@@ -643,19 +642,11 @@ fn prepare_structural_induction_arm_tactics(
                     bindings,
                 )?,
             })),
-            ProofTactic::Cases(proof_cases) => Ok(ProofTactic::Cases(ProofCases {
-                disjunction: proof_cases.disjunction.clone(),
-                left_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.left_tactics,
-                    setup,
-                    bindings,
-                )?,
-                right_tactics: prepare_structural_induction_arm_tactics(
-                    &proof_cases.right_tactics,
-                    setup,
-                    bindings,
-                )?,
-            })),
+            ProofTactic::Cases(proof_cases) => {
+                Ok(ProofTactic::Cases(proof_cases.try_map_tactics(
+                    |tactics| prepare_structural_induction_arm_tactics(tactics, setup, bindings),
+                )?))
+            }
             ProofTactic::StructuralInduct { .. } | ProofTactic::Induct { .. } => Err(
                 ClickError::new("nested induction is not supported in a structural induction arm"),
             ),
@@ -842,7 +833,9 @@ fn check_pure_structural_induction(
                             | CType::Int32Array(_)
                             | CType::UInt8Array(_)
                             | CType::UInt32Array(_)
+                            | CType::Int128Array(_)
                             | CType::Int64Array(_)
+                            | CType::UInt128Array(_)
                             | CType::UInt64Array(_)
                             | CType::Float32Array(_)
                             | CType::Float64Array(_)
@@ -1305,6 +1298,10 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
         .filter_map(|(index, parameter)| {
             let c_type = parameter.click_type().c_type()?;
             let value = match c_type {
+                C0Type::Int128 => CValue::Int128(Bitvector32Term::Variable(Variable(index as u64))),
+                C0Type::UInt128 => {
+                    CValue::UInt128(Bitvector32Term::Variable(Variable(index as u64)))
+                }
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 C0Type::Bool => {
                     crate::kernel::bool_value(Bitvector32Term::Variable(Variable(index as u64)))
@@ -1423,6 +1420,18 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     },
                     CType::Int64Pointer,
                 ),
+                C0Type::Int128Pointer | C0Type::Int128Array(_) => CValue::typed_pointer(
+                    Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: scale_int32_offset(
+                            Bitvector32Term::Variable(Variable(
+                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            )),
+                            16,
+                        ),
+                    },
+                    CType::Int128Pointer,
+                ),
                 C0Type::UInt64Pointer | C0Type::UInt64Array(_) => CValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
@@ -1434,6 +1443,18 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                         ),
                     },
                     CType::UInt64Pointer,
+                ),
+                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => CValue::typed_pointer(
+                    Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: scale_int32_offset(
+                            Bitvector32Term::Variable(Variable(
+                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                            )),
+                            16,
+                        ),
+                    },
+                    CType::UInt128Pointer,
                 ),
                 C0Type::Float32Pointer | C0Type::Float32Array(_) => CValue::typed_pointer(
                     Pointer {
@@ -1484,7 +1505,9 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                 | C0Type::Int16PointerPointer
                 | C0Type::UInt16PointerPointer
                 | C0Type::UInt32PointerPointer
+                | C0Type::Int128PointerPointer
                 | C0Type::Int64PointerPointer
+                | C0Type::UInt128PointerPointer
                 | C0Type::UInt64PointerPointer
                 | C0Type::Float32PointerPointer
                 | C0Type::Float64PointerPointer => {
@@ -3477,8 +3500,12 @@ mod tests {
             }
         "#;
         let cases = source
-            .replace("if x == 0", "cases (x == 0 or x != 0)")
-            .replace("} else {", "} {");
+            .replace("if x == 0 {", "cases {\n x == 0 => {")
+            .replace("} else {", "}\n x != 0 => {")
+            .replace(
+                "using {}\n                    }\n                    assumption();",
+                "using {}\n                    }\n }\n                    assumption();",
+            );
         for source in [source, cases.as_str()] {
             let verified = verify_instantiation_theorem(source).unwrap();
             assert!(verified.kernel_authority.is_some());

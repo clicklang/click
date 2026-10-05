@@ -31,7 +31,7 @@ int32 read_terminator(uint8 bytes[], int32 known_len) {
                 } and
                 bytes[len] == '\0'
         } by {
-            witness(len = known_len);
+            witness { len: known_len };
             both {
                 simp();
             } and {

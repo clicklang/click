@@ -980,6 +980,14 @@ fn evaluate_c_memory_load_case(
             CType::UInt32 => CValue::UInt32(Bitvector32Term::Constant(0)),
             CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
             CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            CType::Int128 => match crate::kernel::c_int128_literal(0) {
+                CExpression::Value(value) => value,
+                _ => unreachable!("wide literal is a value"),
+            },
+            CType::UInt128 => match crate::kernel::c_uint128_literal(0) {
+                CExpression::Value(value) => value,
+                _ => unreachable!("wide literal is a value"),
+            },
             CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
             CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
             _ if value_type.is_pointer() => CValue::typed_pointer(Pointer::null(), value_type),
@@ -1427,6 +1435,14 @@ fn canonicalized_symbolic_load_value_with_identity(
         CValue::UInt64(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
             return Some(CValue::UInt64(Bitvector32Term::Variable(fresh)));
+        }
+        CValue::Int128(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::Int128(Bitvector32Term::Variable(fresh)));
+        }
+        CValue::UInt128(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::UInt128(Bitvector32Term::Variable(fresh)));
         }
         _ => {}
     }
@@ -2078,7 +2094,9 @@ pub(crate) fn load_term_access_width(
     pointer: &Pointer,
     kind: LoadKind,
 ) -> u32 {
-    load_access_width_or_widest(memory, pointer).max(kind.byte_width())
+    recorded_load_access_width(memory, pointer)
+        .unwrap_or_else(|| kind.unrecorded_access_byte_width())
+        .max(kind.byte_width())
 }
 
 /// The widest C load recorded at this address in any snapshot, or the widest
@@ -2616,6 +2634,7 @@ fn substitute_load_variables(
         VisitOffset(&'a PointerOffsetTerm),
         RebuildBinary(BinaryConstructor),
         RebuildUnary(UnaryConstructor),
+        RebuildMachineCast(MachineIntegerType, MachineIntegerType),
         RebuildFloatUnary(bool),
         RebuildFloatBinary {
             is_float64: bool,
@@ -2676,10 +2695,20 @@ fn substitute_load_variables(
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } => {
+                        tasks.push(Task::RebuildMachineCast(*source, *destination));
+                        tasks.push(Task::VisitTerm(value));
+                    }
+
                     Bitvector32Term::Constant(_)
                     | Bitvector32Term::Variable(_)
                     | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_) => term_results.push(term.clone()),
+                    | Bitvector32Term::UInt64Constant(_)
+                    | Bitvector32Term::MachineIntegerConstant(_) => term_results.push(term.clone()),
                     Bitvector32Term::MemoryLoad(_, _, _) => match load_variable_for_term(term) {
                         Some((variable, load)) => {
                             if let Some(facts) = facts.as_deref_mut() {
@@ -3150,6 +3179,14 @@ fn substitute_load_variables(
                 let left = term_results.pop().expect("visited left term");
                 term_results.push(constructor(Box::new(left), Box::new(right)));
             }
+            Task::RebuildMachineCast(source, destination) => {
+                let value = term_results.pop().expect("visited machine cast operand");
+                term_results.push(Bitvector32Term::machine_integer_cast(
+                    source,
+                    destination,
+                    value,
+                ));
+            }
             Task::RebuildUnary(constructor) => {
                 let value = term_results.pop().expect("visited unary term");
                 term_results.push(constructor(Box::new(value)));
@@ -3306,7 +3343,8 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_) => false,
+        | Bitvector32Term::UInt64Constant(_)
+        | Bitvector32Term::MachineIntegerConstant(_) => false,
         Bitvector32Term::MemoryLoad(_, _, _) => true,
         Bitvector32Term::PointerAddress(pointer) => pointer
             .offset
@@ -3333,6 +3371,7 @@ fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
             term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
         }
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
@@ -3477,7 +3516,9 @@ pub(crate) fn load_variable_for_cell(
         memory,
         pointer,
         kind,
-        load_access_width_or_widest(memory, pointer).max(kind.byte_width()),
+        recorded_load_access_width(memory, pointer)
+            .unwrap_or_else(|| kind.unrecorded_access_byte_width())
+            .max(kind.byte_width()),
         memory,
     )
 }
@@ -3674,7 +3715,7 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
                 // other side knows exactly.
                 recorded_load_access_width(origin, pointer)
                     .or_else(|| recorded_load_access_width(memory, pointer))
-                    .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes),
+                    .unwrap_or_else(|| kind.unrecorded_access_byte_width()),
                 origin,
             ),
             canonical.clone(),
@@ -3843,6 +3884,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     value_type: CType,
 ) -> Option<CValue> {
     match value_type {
+        CType::Int128 | CType::UInt128 => {
+            memory.symbolic_wide_integer_load(pointer, MachineIntegerType::from_c_type(value_type)?)
+        }
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
             let load = Bitvector32Term::MemoryLoad(
@@ -3877,14 +3921,18 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Int32Pointer
         | CType::UInt8Pointer
         | CType::UInt32Pointer
+        | CType::Int128Pointer
         | CType::Int64Pointer
+        | CType::UInt128Pointer
         | CType::UInt64Pointer
         | CType::Int16PointerPointer
         | CType::UInt16PointerPointer
         | CType::Int32PointerPointer
         | CType::UInt8PointerPointer
         | CType::UInt32PointerPointer
+        | CType::Int128PointerPointer
         | CType::Int64PointerPointer
+        | CType::UInt128PointerPointer
         | CType::UInt64PointerPointer => Some(memory.symbolic_pointer_load(
             pointer,
             value_type.pointee_type()?.byte_width(),
@@ -3916,7 +3964,9 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Int16Array(_)
         | CType::UInt16Array(_)
         | CType::UInt32Array(_)
+        | CType::Int128Array(_)
         | CType::Int64Array(_)
+        | CType::UInt128Array(_)
         | CType::UInt64Array(_)
         | CType::Float32Array(_)
         | CType::Float64Array(_) => None,
@@ -3977,6 +4027,8 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         CValue::UInt32(bits) => CValue::UInt32(canonical_term(&bits)),
         CValue::Int64(bits) => CValue::Int64(canonical_term(&bits)),
         CValue::UInt64(bits) => CValue::UInt64(canonical_term(&bits)),
+        CValue::Int128(bits) => CValue::Int128(canonical_term(&bits)),
+        CValue::UInt128(bits) => CValue::UInt128(canonical_term(&bits)),
         other => other,
     })
 }

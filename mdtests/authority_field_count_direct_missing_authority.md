@@ -32,7 +32,7 @@ extern int32 read_cell(int32* p) {
 
 int32 run() { ensures result == 0; } by {
     step(); step();
-    branch { then { execute(); simp(); } else {} }
+    branch then { execute(); simp(); } else {}
     step();
     fold(authority(cell(p)));
     let first = fold(cell(p), { model: List<int32>::Cons(7, List<int32>::Nil) });

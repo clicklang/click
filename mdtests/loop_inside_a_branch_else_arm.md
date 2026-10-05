@@ -26,16 +26,12 @@ int32 count_down(int32 n) {
 } by {
     step();
     step();
-    branch {
-        ensuring {
-            fact i >= 0;
-        }
-        then {}
-        else {
-            loop {
-                decreases n - i;
-                invariant i >= 0;
-            }
+    branch ensuring {
+        fact i >= 0;
+    } then {} else {
+        loop {
+            decreases n - i;
+            invariant i >= 0;
         }
     }
     step();

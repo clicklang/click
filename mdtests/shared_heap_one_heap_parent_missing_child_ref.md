@@ -164,14 +164,11 @@ int32 caller(struct child* kid) {
 } by {
     step();
     step();
-    branch {
-        then {
-            step(child_release(kid), {});
-            step();
-            simp();
-        }
-        else {}
-    }
+    branch then {
+        step(child_release(kid), {});
+        step();
+        simp();
+    } else {}
     let { link: link } = step(parent_attach(p, kid), {});
     have count(child_ref(kid)) == 2 by { simp(); }
     have kid->refs == count(child_ref(kid)) by { simp(); }

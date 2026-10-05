@@ -18,16 +18,12 @@ verifying "advance_missing_fact.c";
 int32 advance_missing_fact(int32 x) {
     ensures result == result by {
         step();
-        branch {
-            ensuring {
-                fact y == x;
-            }
-            then {
-                step();
-            }
-            else {
-                step();
-            }
+        branch ensuring {
+            fact y == x;
+        } then {
+            step();
+        } else {
+            step();
         }
         step();
         simp();

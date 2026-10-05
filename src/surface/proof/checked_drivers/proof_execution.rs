@@ -93,6 +93,7 @@ fn arm_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
+        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
         tactic => linear_execution_proof_step(tactic),
     }
@@ -121,6 +122,7 @@ fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
         ProofTactic::Step => Some(ProofStep::Step),
         ProofTactic::StepContract(name) => Some(ProofStep::StepContract(name.clone())),
+        ProofTactic::StepBind(name) => Some(ProofStep::StepBind(name.clone())),
         ProofTactic::StepCall(transport) => Some(ProofStep::StepCall(transport.clone())),
         ProofTactic::UserTactic(application) => Some(ProofStep::UserTactic(application.clone())),
         ProofTactic::TransportUsing {
@@ -277,6 +279,7 @@ fn checked_execution_arm_tactics_end(
             indexed.tactic,
             ProofTactic::Step
                 | ProofTactic::StepContract(_)
+                | ProofTactic::StepBind(_)
                 | ProofTactic::StepCall(_)
                 | ProofTactic::Loop(_)
         ) {
@@ -607,6 +610,12 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             premises: premises.clone(),
         }),
         ProofTactic::Have(have) => Some(PostExecutionTactic::Have(have.clone())),
+        // After execution, `extract(P)` adds `P` to every path exactly as
+        // `have P by { extract(P); }` does, through the same checked scope.
+        ProofTactic::Extract(proposition) => Some(PostExecutionTactic::Have(ProofHave {
+            proposition: proposition.clone(),
+            proof: SourceProof::Script(vec![ProofTactic::Extract(proposition.clone())]),
+        })),
         ProofTactic::Both(both) => Some(PostExecutionTactic::Both(both.clone())),
         ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
             source: source.clone(),
@@ -1731,7 +1740,10 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
-            let plan = proof.plan_execution_match(proof_match)?;
+            let plan = proof.plan_execution_match(proof_match, |index| {
+                execution_region_leading_tactic(&arms[index])
+                    .map_or(usize::MAX, |tactic| tactic.source_index)
+            })?;
             // Every arm continues into the region's own continuation: a
             // preservation path never rejoins across the back edge, so each
             // arm closes the invariants and reaches the loop's boundary on
@@ -2124,12 +2136,18 @@ impl UnfinishedPreservationPath<'_> {
         claim_label: &str,
         leaves: &[Proof<'_>],
     ) -> ClickError {
-        match describe_unfinished_preservation(claim_label, &self.proof, leaves, self.last_tactic) {
+        let error = match describe_unfinished_preservation(
+            claim_label,
+            &self.proof,
+            leaves,
+            self.last_tactic,
+        ) {
             Some(frontier) => ClickError::new(frontier),
             None => ClickError::new(format!(
                 "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
             )),
-        }
+        };
+        self.proof.attach_step_diagnostic(error)
     }
 }
 
@@ -2609,7 +2627,10 @@ fn advance_execution_match<'a>(
     }
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
-    let mut plan = proof.plan_execution_match(source)?;
+    let mut plan = proof.plan_execution_match(source, |index| {
+        execution_region_leading_tactic(&arms[index])
+            .map_or(usize::MAX, |tactic| tactic.source_index)
+    })?;
     // An arm that only bridges facts and then refutes itself owes no C
     // outcome either. Its bridge (`have`s, unfolds, theorem applications, no
     // C step) runs in the arm, and its `contradiction` excludes the
@@ -4082,6 +4103,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
     let name = match tactic {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
+        ProofTactic::StepBind(name) => format!("let {name} = step()"),
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "execute()".to_string(),
@@ -4099,14 +4121,14 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
 /// The diagnostic for a function-exit tactic written before execution
 /// reached function exit.
 fn pre_exit_outcome_tactic_error(tactic: &ProofTactic) -> Option<String> {
-    let name = match tactic {
-        ProofTactic::Witness(_) => "witness",
-        ProofTactic::Choose(_) => "choose",
-        ProofTactic::Simp => "simp",
+    let (name, alternative) = match tactic {
+        ProofTactic::Witness(_) => ("witness", ""),
+        ProofTactic::Choose(_) => ("choose", ""),
+        ProofTactic::Simp => ("simp", ", or prove the claim `by auto;`"),
         _ => return None,
     };
     Some(format!(
-        "`{name}` requires execution to reach function exit first"
+        "`{name}` requires execution to reach function exit first; write `execute();` before it{alternative}"
     ))
 }
 

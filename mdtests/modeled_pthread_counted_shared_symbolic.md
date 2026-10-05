@@ -38,20 +38,14 @@ int32 run(void* p, void* q, int32 n) {
     step();
     step();
     step();
-    branch {
-        then { have count(ticket(p)) == n by { simp(); } step(); simp(); }
-        else {}
-    }
+    branch then { have count(ticket(p)) == n by { simp(); } step(); simp(); } else {}
     step();
-    branch {
-        then {
-            step();
-            have count(ticket(p)) == n - 1 by { simp(); }
-            have count(ticket(q)) == 1 by { simp(); }
-            step(); simp();
-        }
-        else {}
-    }
+    branch then {
+        step();
+        have count(ticket(p)) == n - 1 by { simp(); }
+        have count(ticket(q)) == 1 by { simp(); }
+        step(); simp();
+    } else {}
     step();
     have count(ticket(q)) == 1 by { simp(); }
     step();

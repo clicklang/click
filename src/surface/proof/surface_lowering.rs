@@ -735,6 +735,14 @@ impl<'a> Proof<'a> {
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
+        // On a throw outcome the outcome value is the thrown one, which an
+        // `exceptional ensures` clause names `exception`.
+        let exception = self
+            .focused_outcome_data()
+            .filter(|data| data.core.is_exceptional)
+            .map(|data| {
+                ContractExpression::CFragment(CExpression::Value((*data.core.result).clone()))
+            });
         names
             .into_iter()
             .filter_map(|name| {
@@ -742,6 +750,7 @@ impl<'a> Proof<'a> {
                     .and_then(|bindings| bindings.get(&name))
                     .or_else(|| self.local_binding(&name))
                     .cloned()
+                    .or_else(|| (name == "exception").then(|| exception.clone()).flatten())
                     .map(|value| (name, value))
             })
             .collect()

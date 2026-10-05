@@ -7,7 +7,7 @@ order and that repeats evaluate their operand once, including zero repeats.
 The copy contracts require authority over every source and destination element.
 
 ```sh
-scripts/build-rust-exporter.sh
+scripts/build-charon.sh --install-toolchain
 cargo run --bin click -- import lock examples/rust-array-values/arrays.click
 cargo run --bin click -- verify examples/rust-array-values/arrays.click
 cargo run --bin click -- audit examples/rust-array-values/arrays.click

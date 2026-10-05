@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 55;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 56;
 
 pub(crate) mod assumptions;
 mod equality_graph;
@@ -229,9 +229,8 @@ mod prelude {
 pub(crate) mod planning_api {
     pub(crate) use super::assumptions::proposition_reasoning::forall_loadable_range_parts;
     pub(crate) use super::assumptions::{
-        algebraic_constructor_field_equalities, atomic_premise_minimization_disabled,
-        collect_proposition_conjuncts, proposition_derivation, reasoning_interrupted,
-        simp_reasoning_interrupted, unsalted_assumptions_memo_id,
+        algebraic_constructor_field_equalities, collect_proposition_conjuncts,
+        proposition_derivation, reasoning_interrupted, simp_reasoning_interrupted,
     };
     pub(crate) use super::reasoning::order_reasoning::{
         FiniteForAllRange, collect_forall_chain, collect_or_cases, finite_forall_ranges,
@@ -239,9 +238,11 @@ pub(crate) mod planning_api {
     };
     pub(crate) use super::reasoning::path_facts::solve_builtin_prop;
     pub(crate) use super::reasoning::substitute_bitvector_variable_in_proposition;
+    #[cfg(test)]
+    pub(crate) use super::reasoning::variable_collection::collect_condition_bitvector_variables;
     pub(crate) use super::reasoning::variable_collection::{
-        collect_proposition_bitvector_variables, collect_proposition_connection_variables,
-        collect_proposition_frame_variables,
+        collect_atomic_connection_keys, collect_proposition_bitvector_variables,
+        collect_proposition_connection_variables, collect_proposition_frame_variables,
     };
 }
 

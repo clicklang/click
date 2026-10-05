@@ -232,7 +232,9 @@ impl PureFactContext {
             | CValue::UInt16(value)
             | CValue::UInt32(value)
             | CValue::Int64(value)
-            | CValue::UInt64(value) => value,
+            | CValue::UInt64(value)
+            | CValue::Int128(value)
+            | CValue::UInt128(value) => value,
             CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => {
                 return None;
             }
@@ -377,6 +379,12 @@ impl PureFactContext {
             LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
             LoadKind::Bits32 => Some(memory.symbolic_int32_load(pointer)),
             LoadKind::Bits64 => Some(memory.symbolic_int64_load(pointer)),
+            LoadKind::Int128 => {
+                memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)
+            }
+            LoadKind::UInt128 => {
+                memory.symbolic_wide_integer_load(pointer, MachineIntegerType::UInt128)
+            }
             LoadKind::Float32 | LoadKind::Float64 => None,
         }
     }

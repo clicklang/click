@@ -16,7 +16,7 @@ General tuples, discarded tuple elements, direct array receivers, mutable
 receivers, and `split_at_mut` remain outside the subset. It does not verify
 the pinned checksum libraries.
 
-Build the pinned exporter with `scripts/build-rust-exporter.sh`, then run:
+Build the pinned Charon with `scripts/build-charon.sh --install-toolchain`, then run:
 
 ```sh
 cargo run --bin click -- import lock examples/rust-split-at/split.click
