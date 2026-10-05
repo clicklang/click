@@ -455,8 +455,24 @@ before publishing a wrapped count. The original numeric caller verifies
 independently with its exact `3 + 4 == 7` total. Companion fixtures admit a
 single large symbolic birth and a numeric total exactly at `2147483647`, and
 reject a further numerical birth. All twelve positive expansion sites audit.
-Repeated symbolic births remain unsupported even when their sum is bounded;
+Repeated births without an exact numeric quantity remain unsupported,
+even when their sum is bounded;
 this migrates the overflow refusal, not that broader ledger capability.
+
+**Exactly known batch slice:** A symbolic quantity pinned by a recorded exact
+integer equality now uses the numeric birth ledger. The original repeated-birth
+C verifies with `k == 1000000000` and an exact total of two billion, while the
+original two-billion overflow caller remains rejected at its second call.
+Exact quantities also select numerical fragments for ordinary helper transfer
+and consumption, leaving the other batch framed. Missing authority, invented
+totals, and overconsumption remain rejected. Bounds alone do not normalize a
+quantity, and genuinely symbolic entry custody keeps its representation on
+spend. The lookup uses the existing indexed exact-equality map; kernel scaling
+coverage checks 16/64/256 unrelated facts and populations. A numeric birth beyond the signed count limit now reports
+`PopulationCountOverflow`, rather than missing member custody; the existing
+symbolic-increment overflow control retains its C and second-call refusal.
+This does not add
+general repeated symbolic births or symbolic batch splitting.
 
 **Global-count decision resolved:** Remove the two obsolete fixtures that
 counted across all independently anchored populations or used integer-only

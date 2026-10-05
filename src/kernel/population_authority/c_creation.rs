@@ -37,21 +37,28 @@ fn same_quantity(
         )
 }
 
-/// Interpret a field-valued request as the sender's complete numerical batch
-/// only with a recorded equality. The number comes from checked custody;
+/// Resolve a numerical request from its literal or exact recorded value, or
+/// an equality with the sender's complete batch. The caller checks custody;
 /// neither a global count nor a bound can supply missing member rights.
 fn numerical_batch_quantity(
     quantity: &Bitvector32Term,
     held: u32,
     assumptions: &PureFactContext,
 ) -> Option<u32> {
-    quantity.as_const().or_else(|| {
-        (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
-            quantity.clone(),
-            Bitvector32Term::Constant(held),
-        )) == Some(true))
-        .then_some(held)
-    })
+    quantity
+        .as_const()
+        .or_else(|| {
+            crate::kernel::assumptions::exact_signed_constant(quantity, assumptions)
+                .filter(|value| (0..=i64::from(i32::MAX)).contains(value))
+                .map(|value| value as u32)
+        })
+        .or_else(|| {
+            (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+                quantity.clone(),
+                Bitvector32Term::Constant(held),
+            )) == Some(true))
+            .then_some(held)
+        })
 }
 
 /// Quantities and named occurrences use the same conservation ledger, but
@@ -210,6 +217,7 @@ pub(in crate::kernel) enum CreationRefusal {
     MissingMembers,
     InvalidMember,
     InvalidQuantity,
+    PopulationCountOverflow,
     OutstandingMembers,
     OutstandingAuthority,
     OutstandingOwnership,
@@ -1785,6 +1793,15 @@ impl CreationEvents {
             // quantity that can be produced without those owned instances.
             return Err(CreationRefusal::InvalidMember);
         }
+        // A birth with an authenticated exact numeric value uses the numeric
+        // ledger. Bounds alone cannot choose a member quantity, and existing
+        // symbolic input custody keeps its original representation on spend.
+        let exact_numeric = produce
+            .then(|| crate::kernel::assumptions::exact_signed_constant(quantity, assumptions))
+            .flatten()
+            .filter(|value| (0..=i64::from(i32::MAX)).contains(value))
+            .map(|value| Bitvector32Term::Constant(value as u32));
+        let quantity = exact_numeric.as_ref().unwrap_or(quantity);
         // A helper may select the complete numerical batch by an entry field
         // rather than a literal. Keep the symbolic-batch path unchanged.
         let numerical = (!produce && quantity.as_const().is_none())
@@ -2296,7 +2313,11 @@ impl CreationEvents {
             } else {
                 import.owned_members.checked_sub(amount)
             }
-            .ok_or(CreationRefusal::MissingMembers)?;
+            .ok_or(if produce {
+                CreationRefusal::PopulationCountOverflow
+            } else {
+                CreationRefusal::MissingMembers
+            })?;
             let mut private_members = import.private_members.clone();
             let private_birth_generation = if private_exchange && produce {
                 import

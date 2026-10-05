@@ -24,5 +24,5 @@ void increment(int32* o, int32 n) {
 ```
 
 ```expect
-fail: missing prerequisite
+fail: PopulationCountOverflow
 ```

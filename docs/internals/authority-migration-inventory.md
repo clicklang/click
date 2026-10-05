@@ -287,11 +287,27 @@ original C while independently verifying the numeric caller's exact total of
 seven. `authority_large_symbolic_population_total.md` admits the first large
 symbolic birth; the numeric maximum/overflow pair admits the exact signed
 maximum and rejects a further birth. These use the existing checked engine.
-Repeated symbolic births remain unsupported even for bounded totals, so the
+Repeated births without an exact numeric quantity remain unsupported even for
+bounded totals, so the
 overflow negative is not evidence of that capability. Only the two scalar
 logical callback controls in the sequential inventory still use legacy mode;
 named body-opening/lifecycle effects and recovered-prototype review remain
 unfinished.
+
+`authority_exact_symbolic_population_total.md` retains the original C and
+verifies two births whose variable quantity is exactly one billion. The checked
+ledger resolves that recorded equality through an indexed lookup and accounts
+for both births numerically; a range alone cannot select a quantity. Its
+missing-authority and wrong-total companions remain negative.
+`authority_exact_symbolic_batch_partial_spend.md` transfers and consumes one
+exactly known numerical batch while retaining the other; its overconsumption
+companion rejects a third spend. Imported genuinely symbolic custody keeps its
+representation, and general repeated symbolic births remain unsupported.
+Kernel regressions check custody, overflow, negative quantities, the range-only
+boundary, and lookup work beside 16/64/256 unrelated facts and populations.
+The existing maximum-count increment negative now reports
+`PopulationCountOverflow` at its unchanged second call, rather than a missing
+member or prerequisite diagnostic.
 
 `population_count_states_its_transition.md` and
 `population_count_across_a_produces_transition.md` now select authority semantics

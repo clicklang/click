@@ -4760,3 +4760,189 @@ fn check_named_authority_import(arity: Option<usize>) {
             .is_err()
     );
 }
+
+#[test]
+fn exact_symbolic_births_use_numeric_custody_and_scale() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(990_001));
+    let samples = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("exact-unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(991_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(Bitvector32Term::Constant(0)),
+                None,
+                None,
+            )
+            .unwrap();
+        facts = facts.assume_condition(
+            ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(1_000_000_000)),
+            true,
+        );
+        PureFactContext::reset_exact_constant_fact_visits();
+        let (born, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let first = entry
+                .checked_member_exchange_quantity(&block, &description, true, &quantity, &facts)
+                .unwrap()
+                .0;
+            first
+                .checked_member_exchange_quantity(&block, &description, true, &quantity, &facts)
+                .unwrap()
+                .0
+        });
+        assert_eq!(PureFactContext::exact_constant_fact_visits(), 2);
+        assert_eq!(
+            born.observe_symbolic(&description).unwrap().delta,
+            2_000_000_000
+        );
+        assert!(
+            born.0
+                .opaque_imports
+                .get(&description)
+                .unwrap()
+                .symbolic_delta
+                .is_none()
+        );
+        assert!(
+            born.checked_member_exchange_quantity(&block, &description, true, &quantity, &facts,)
+                .is_err(),
+            "a third billion must not wrap the population"
+        );
+        let child = born.enter_call();
+        let sent = child
+            .transfer_call_fact(&born, &child, &description, true)
+            .unwrap()
+            .transfer_call_fact_quantity(&born, &child, &description, false, &quantity, &facts)
+            .unwrap();
+        let spent = sent
+            .checked_member_exchange_quantity(&block, &description, false, &quantity, &facts)
+            .unwrap()
+            .0;
+        let returned = spent
+            .transfer_call_fact(&child, &born, &description, true)
+            .unwrap()
+            .finish_call(&born)
+            .unwrap();
+        assert_eq!(
+            returned.observe_symbolic(&description).unwrap().delta,
+            1_000_000_000
+        );
+        assert!(returned.owns_population_member(&description));
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let quantity = Bitvector32Term::Variable(Variable(990_002));
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(0)),
+            None,
+            None,
+        )
+        .unwrap();
+    let bounds = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(Bitvector32Term::Constant(10), quantity.clone()),
+            true,
+        );
+    let first = entry
+        .checked_member_exchange_quantity(&block, &description, true, &quantity, &bounds)
+        .unwrap()
+        .0;
+    assert!(
+        first
+            .0
+            .opaque_imports
+            .get(&description)
+            .unwrap()
+            .symbolic_delta
+            .is_some()
+    );
+    assert_eq!(
+        first
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &bounds,)
+            .unwrap_err(),
+        CreationRefusal::InvalidQuantity
+    );
+    let negative = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(u32::MAX)),
+        true,
+    );
+    assert!(
+        entry
+            .checked_member_exchange_quantity(&block, &description, true, &quantity, &negative,)
+            .is_err()
+    );
+}
+
+#[test]
+fn numeric_member_birth_overflow_is_not_missing_custody() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let full = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            i32::MAX as u32,
+            Some(Bitvector32Term::Constant(i32::MAX as u32)),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        full.checked_member_exchange_quantity(
+            &block,
+            &description,
+            true,
+            &Bitvector32Term::Constant(1),
+            &PureFactContext::new(),
+        )
+        .unwrap_err(),
+        CreationRefusal::PopulationCountOverflow
+    );
+    assert!(full.owns_population_member(&description));
+    assert_eq!(
+        full.observe_symbolic(&description).unwrap().entry_count,
+        Bitvector32Term::Constant(i32::MAX as u32)
+    );
+}

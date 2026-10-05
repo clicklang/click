@@ -1,0 +1,56 @@
+# Exact symbolic births do not invent a different total
+
+All original C is retained. The exact numeric value for `k` supplies neither
+a different total nor missing authority.
+
+```c filename=a_population_count_is_not_a_wrapped_total.c
+void mint_n(int32* o, int32 n) {
+}
+
+void wraps_its_population(int32* o, int32 k) {
+    mint_n(o, k);
+    mint_n(o, k);
+}
+
+void counts_a_total_it_can_state(int32* o) {
+    mint_n(o, 3);
+    mint_n(o, 4);
+}
+```
+
+```click resource_semantics=authority
+resource tok(o: int32*) {
+}
+
+verifying "a_population_count_is_not_a_wrapped_total.c";
+
+void mint_n(int32* o, int32 n) {
+    owns authority(tok(o));
+    requires 0 < n;
+    requires defined(count(tok(o)) + n);
+    produces n of tok(o);
+    ensures count(tok(o)) == old(count(tok(o))) + n;
+} by {
+    fold(n of tok(o));
+    execute();
+    simp();
+}
+
+void wraps_its_population(int32* o, int32 k) {
+    owns authority(tok(o));
+    requires count(tok(o)) == 0;
+    requires k == 1000000000;
+    produces k of tok(o);
+    produces k of tok(o);
+
+    ensures count(tok(o)) == 2000000001;
+} by {
+    execute();
+    simp();
+}
+
+```
+
+```expect
+fail: unclosed goal
+```
