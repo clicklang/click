@@ -361,31 +361,123 @@ fn wide_division_unknown_guards_cannot_produce_an_unconditional_theorem() {
     }
 }
 
+fn inequality_guards(ty: MachineIntegerType) -> (ConditionTerm, Proposition) {
+    let a = IntegerTerm::from_machine(ty, Bitvector32Term::Variable(LEFT)).unwrap();
+    let b = IntegerTerm::from_machine(ty, Bitvector32Term::Variable(RIGHT)).unwrap();
+    let nonzero = ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0));
+    let safe = Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::integer_not_equal(a, IntegerTerm::constant(i128::MIN.into())),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::integer_not_equal(b, IntegerTerm::constant_i64(-1)),
+            true,
+        )),
+    );
+    (nonzero, safe)
+}
+
+#[test]
+fn wide_division_accepts_inequality_guards_without_erasing_native_failures() {
+    for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+        for remainder in [false, true] {
+            let (nonzero, safe) = inequality_guards(ty);
+            let zero = PureFactContext::new().assume_condition(nonzero.clone(), false);
+            let output = paths(ty, remainder, &zero);
+            assert_eq!(output.len(), 1);
+            assert_eq!(
+                output[0].outcome,
+                CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero)
+            );
+            let context = PureFactContext::new().assume_condition(nonzero, true);
+            if ty == MachineIntegerType::Int128 {
+                assert!(
+                    paths(ty, remainder, &context)
+                        .iter()
+                        .any(|path| path.outcome
+                            == CExpressionOutcome::UndefinedBehavior(
+                                CUndefinedBehavior::SignedOverflow
+                            ))
+                );
+                let Proposition::Or(a, b) = safe.clone() else {
+                    unreachable!()
+                };
+                for guard in [safe, *a.clone(), *b.clone()] {
+                    let output = paths(ty, remainder, &context.clone().assume_proposition(guard));
+                    assert_eq!(output.len(), 1);
+                    assert!(matches!(output[0].outcome, CExpressionOutcome::Value(_)));
+                }
+                let context = [*a, *b].into_iter().fold(context, |context, guard| {
+                    let Proposition::ConditionIs(condition, _) = guard else {
+                        unreachable!()
+                    };
+                    context.assume_condition(condition, false)
+                });
+                assert_eq!(
+                    paths(ty, remainder, &context)[0].outcome,
+                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+                );
+            } else {
+                assert_eq!(paths(ty, remainder, &context).len(), 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn wide_division_full_disjunction_survives_known_endpoint_simplification() {
+    for remainder in [false, true] {
+        let (zero, min, minus_one, equality_safe) = guards(MachineIntegerType::Int128);
+        let (_, inequality_safe) = inequality_guards(MachineIntegerType::Int128);
+        for safe in [equality_safe, inequality_safe] {
+            for known in [min.clone(), minus_one.clone()] {
+                let context = PureFactContext::new()
+                    .assume_condition(zero.clone(), false)
+                    .assume_condition(known, true)
+                    .assume_proposition(safe.clone());
+                let output = paths(MachineIntegerType::Int128, remainder, &context);
+                assert_eq!(output.len(), 1);
+                assert!(matches!(output[0].outcome, CExpressionOutcome::Value(_)));
+            }
+        }
+    }
+}
+
 #[test]
 fn wide_division_guard_queries_do_not_scan_unrelated_ambient_facts() {
     for remainder in [false, true] {
-        let (zero, _, _, safe) = guards(MachineIntegerType::Int128);
-        let mut samples = Vec::new();
-        for size in [16, 64, 256, 1024] {
-            let mut context = PureFactContext::new();
-            for i in 0..size {
-                context =
-                    context.assume_condition(ConditionTerm::Variable(Variable(156_000 + i)), true);
+        for inequalities in [false, true] {
+            let (zero, _, _, safe) = guards(MachineIntegerType::Int128);
+            let (nonzero, inequality_safe) = inequality_guards(MachineIntegerType::Int128);
+            let mut samples = Vec::new();
+            for size in [16, 64, 256, 1024] {
+                let mut context = PureFactContext::new();
+                for i in 0..size {
+                    context = context
+                        .assume_condition(ConditionTerm::Variable(Variable(156_000 + i)), true);
+                }
+                context = if inequalities {
+                    context
+                        .assume_condition(nonzero.clone(), true)
+                        .assume_proposition(inequality_safe.clone())
+                } else {
+                    context
+                        .assume_condition(zero.clone(), false)
+                        .assume_proposition(safe.clone())
+                };
+                let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    paths(MachineIntegerType::Int128, remainder, &context)
+                });
+                assert_eq!(output.len(), 1);
+                assert!(work < 4096, "{size}: {work}");
+                samples.push(work);
             }
-            context = context
-                .assume_condition(zero.clone(), false)
-                .assume_proposition(safe.clone());
-            let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
-                paths(MachineIntegerType::Int128, remainder, &context)
-            });
-            assert_eq!(output.len(), 1);
-            assert!(work < 4096, "{size}: {work}");
-            samples.push(work);
+            assert!(
+                samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 64,
+                "{samples:?}"
+            );
         }
-        assert!(
-            samples.iter().max().unwrap() - samples.iter().min().unwrap() <= 64,
-            "{samples:?}"
-        );
     }
 }
 

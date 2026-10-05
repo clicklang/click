@@ -955,6 +955,29 @@ fn apply_c_int128_multiply(
     paths
 }
 
+/// Integer equality and inequality have separate representation nodes. Both
+/// spellings denote the same native guard; query each by exact indexed lookup.
+fn decide_wide_integer_equality(
+    assumptions: &PureFactContext,
+    facts: &[ExecutionPureFact],
+    left: IntegerTerm,
+    right: IntegerTerm,
+) -> Option<bool> {
+    decide_with_facts(
+        assumptions,
+        facts,
+        &ConditionTerm::integer_equal(left.clone(), right.clone()),
+    )
+    .or_else(|| {
+        decide_with_facts(
+            assumptions,
+            facts,
+            &ConditionTerm::integer_not_equal(left, right),
+        )
+        .map(|value| !value)
+    })
+}
+
 /// Division on already-resolved wide formats. Promotions belong to the
 /// caller; the native guards precede construction of the mathematical term.
 fn apply_c_int128_division_like(
@@ -978,7 +1001,12 @@ fn apply_c_int128_division_like(
     };
     let mut paths = Vec::new();
     let zero = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0));
-    match decide_with_facts(assumptions, &facts, &zero) {
+    match decide_wide_integer_equality(
+        assumptions,
+        &facts,
+        right.clone(),
+        IntegerTerm::constant_i64(0),
+    ) {
         Some(true) => {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
@@ -1004,8 +1032,18 @@ fn apply_c_int128_division_like(
         let min =
             ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
         let minus_one = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
-        let a = decide_with_facts(assumptions, &facts, &min);
-        let b = decide_with_facts(assumptions, &facts, &minus_one);
+        let a = decide_wide_integer_equality(
+            assumptions,
+            &facts,
+            left.clone(),
+            IntegerTerm::constant(i128::MIN.into()),
+        );
+        let b = decide_wide_integer_equality(
+            assumptions,
+            &facts,
+            right.clone(),
+            IntegerTerm::constant_i64(-1),
+        );
         let (safe, overflow, known) = match (a, b) {
             (Some(false), _) | (_, Some(false)) => (None, None, Some(false)),
             (Some(true), Some(true)) => (None, None, Some(true)),
@@ -1033,7 +1071,43 @@ fn apply_c_int128_division_like(
         };
         let known = known.or_else(|| {
             let safe = safe.as_ref()?;
-            if assumptions.proves_exact(safe) || facts.iter().any(|f| f.proposition() == safe) {
+            // Keep the complete contract guard available even when a known
+            // operand simplified the path guard to a single condition.
+            let equality_safe = Proposition::Or(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(
+                        left.clone(),
+                        IntegerTerm::constant(i128::MIN.into()),
+                    ),
+                    false,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
+                    false,
+                )),
+            );
+            let inequality_safe = Proposition::Or(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_not_equal(
+                        left.clone(),
+                        IntegerTerm::constant(i128::MIN.into()),
+                    ),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(-1)),
+                    true,
+                )),
+            );
+            if assumptions.proves_exact(safe)
+                || assumptions.proves_exact(&equality_safe)
+                || assumptions.proves_exact(&inequality_safe)
+                || facts.iter().any(|f| {
+                    f.proposition() == safe
+                        || f.proposition() == &equality_safe
+                        || f.proposition() == &inequality_safe
+                })
+            {
                 Some(false)
             } else {
                 None

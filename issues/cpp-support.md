@@ -166,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 38 and earlier locks require
+needs separate support. Artifact schema is now 39 and earlier locks require
 an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
 
 ## Required invariant
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 38. The full `__int128` path remains a prerequisite for the
+artifact schema is now 39. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Artifact schema 38
+arrangement restrictions remain semantic-profile limitations. Current schema 39
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -398,7 +398,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Schema 38
+Exporter and schema both reject unsupported wide operations. Current schema 39
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -416,7 +416,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Schema 38 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 39 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -432,7 +432,7 @@ and recursive constant observations use it. Exact-oracle coverage includes
 all 8–128-bit formats, full signed/unsigned extrema, every byte pair, and
 linear work over 2/8/32/128 explicit operations. This is representation
 semantics; frontend promotions and language UB/panic policies remain separate.
-No wide source division admission is claimed. Artifact schema remains 38.
+This constant foundation did not admit wide source division; its artifact schema was 38.
 
 The shared symbolic truncating quotient/remainder representation is delivered.
 It uses distinct interned Integer DAG nodes, exact nonzero constant folding,
@@ -450,7 +450,7 @@ paths; the normal path retains exact certified Integer observations of its
 quotient/remainder. Signed overflow uses the existing logical proposition
 model (`left != MIN || right != -1`). Rechecking and deterministic scaling
 regressions cover native execution and exact guard lookup. Promotions remain
-explicit, and artifact schema stays 38 with source admission closed.
+explicit; this native foundation used schema 38 before the source admission below.
 
 Full-width quotient/remainder proof spellings and expansion are delivered.
 `truncating_quotient` and `truncating_remainder` operate on mathematical
@@ -461,8 +461,19 @@ signs/extrema, hostile claims, missing guards, expansion/reverification, shared
 pure aliases, and indexed guard lookup. Deferred expressions remain excluded
 from obligation-free arguments and total fold summaries.
 
-Next admit wide C++ division/remainder and cover checked narrowing
-for the unchanged `FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
+Wide C++ signed/unsigned division and remainder are delivered in schema 39.
+The exporter retains Clang's explicit arithmetic conversions and the offline
+validator rejects mismatched operand widths or signedness. Native guards accept
+both equality-as-false and inequality-as-true contract spellings using indexed
+lookup. Synthetic source regressions cover exact full-width constants and
+symbolic results, signed MIN/-1 and zero rejection despite trivial posts,
+modular calls with framed narrow memory, promotions, offline loading,
+expansion/reverification, and retained audit. This is prerequisite support,
+not a proof of unchanged upstream fee arithmetic.
+
+Next cover checked narrowing and the remaining wide rounding operations
+(comparisons, addition/subtraction, and negation as needed) for the unchanged
+`FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
 separate, especially its planned Euclidean division. The library `Assume`
 annotation remains an explicit contract/assumption boundary to resolve before
 the upstream fee proof.

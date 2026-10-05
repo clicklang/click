@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 38;
+its documented application invariant. The typed artifact schema is now 39;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -560,8 +560,8 @@ negative dividends, exact division, zero, signed extrema, and the largest
 positive int32 divisor, together with expansion and retained audit sessions.
 These are concrete rounding cases, not a general rounding theorem. General
 quotient/remainder contracts and a modular caller with unrelated memory also
-verify. Bitcoin's actual rounding helper still requires wide division and
-remainder, which remain unsupported.
+verify. Bitcoin's actual rounding helper still requires the remaining wide rounding
+operations and conversion bounds described below.
 
 The `wide-intermediates` fixture admits signed and unsigned `__int128` locals,
 compiler constants, and Clang-resolved integral casts inside functions with the
@@ -582,11 +582,25 @@ narrow memory, expansion, and retained audit have regression coverage.
 Bounded `simp` recognizes direct observer equalities; it does not currently
 chain two Integer observer equalities through nested calls.
 
-Wide pointers, references, record fields, arrays,
-comparisons, negation, addition, subtraction, unsigned multiplication, division,
-and remainder remain unsupported. Both the live exporter and serialized artifact
-validator reject these operations. Schema 38 requires refreshing older locks.
-This slice does not yet verify the unchanged Bitcoin fee arithmetic helpers.
+The `wide-division` fixture adds signed and unsigned 128-bit `/` and `%`.
+Clang-resolved promotions remain explicit, including modulo conversion of a
+negative narrow operand to unsigned 128 bits. Division truncates toward zero;
+a nonzero remainder has the dividend's sign. Both operations require a nonzero
+divisor. Signed operations additionally exclude `MIN / -1` and `MIN % -1`.
+Contracts use `truncating_quotient(to_integer(a), to_integer(b))` or
+`truncating_remainder(to_integer(a), to_integer(b))` for exact full-width
+results. A signed contract can state the overflow exclusion as
+`to_integer(a) != MIN or to_integer(b) != -1`, with the full Integer literal
+for MIN. Missing guards and false results are refused, including for trivial
+postconditions. Symbolic contracts, constants above 64 bits, modular caller
+framing, offline verification, expansion, and retained audit have coverage.
+
+Wide pointers, references, record fields, arrays, comparisons, negation,
+addition, subtraction, and unsigned multiplication remain unsupported. Both
+the live exporter and serialized artifact validator reject these operations.
+Schema 39 requires refreshing older locks. The unchanged Bitcoin fee arithmetic
+helpers still need wide rounding operations, checked narrowing bounds, and an
+explicit treatment of the library `Assume` boundary.
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
 same-type arithmetic/comparisons now use the common unsigned kernel types.

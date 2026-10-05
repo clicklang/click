@@ -271,8 +271,8 @@ C/C++ undefined behavior or Rust panic policy. Existing signed/unsigned
 retaining their execution guards and symbolic nodes. Exact-oracle checks cover
 all formats and exhaustive byte pairs; operation batches have deterministic
 linear work checks. The symbolic representation is described below; guarded
-wide execution and C++ frontend admission remain the next slice. Artifact
-schema remains 38.
+wide execution and C++ frontend admission are described below. This constant
+foundation used artifact schema 38.
 
 ## Explicit machine modulo casts
 
@@ -422,8 +422,8 @@ native execution guard, rather than the mathematical term constructor.
 A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
 these nodes do not certify a native division's definedness. Native execution
 must establish nonzero divisors and the signed overflow exclusion before
-producing results. Wide source division and its contract spellings remain
-closed until proof spellings and expansion support are implemented.
+producing results. Proof spellings and C++ source admission build on this
+representation as described below.
 
 Interning, alpha keys, variable collectors, binder-aware rewriting, fold
 framing, and diagnostics preserve the distinct operators. The affine solver
@@ -432,7 +432,7 @@ substitution memoizes shared nodes and rebuilds both operands; substituting
 nonzero constants folds, while substituting a zero divisor stays opaque.
 Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
 2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
-Artifact schema remains 38 because no source operation is newly admitted.
+This representation foundation used schema 38 without admitting new source operations.
 
 ## Guarded wide native division
 
@@ -456,7 +456,10 @@ execution obligations are preserved before either operation.
 Exact guard lookup does not scan unrelated ambient facts. Regressions cover
 signed/unsigned extrema, quotient and remainder signs, zero and MIN/-1,
 missing guards, explicit promotions, checked function artifact rechecking, and
-2/8/32/128-operation work scaling. C++ source admission and wide source memory remain separate work; schema remains 38.
+2/8/32/128-operation work scaling. Equality-as-false and inequality-as-true
+guards use exact indexed lookup, including the signed overflow disjunction.
+C++ source division/remainder is admitted in schema 39; wide source memory
+remains separate work. See the [C++ import profile](../reference/cli/import.md).
 
 
 ## Explicit truncation in proofs
@@ -489,5 +492,6 @@ can use the shared Integer DAG directly. Deferred truncation is not treated
 as an obligation-free argument or a total fold summary. Expansion preserves
 the spellings and verifies again; regressions check hostile constants, erased
 guards, full-width signs, native operand obligations, shared aliases, and
-lookup with unrelated facts. This adds proof notation, not C++ source
-operation admission; artifact schema remains 38.
+lookup with unrelated facts. The proof notation has mathematical Integer
+semantics; C++ source division/remainder separately retains native guards and
+uses artifact schema 39.

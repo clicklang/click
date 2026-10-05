@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 38);
+    assert_eq!(prepared.export().schema, 39);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1743,7 +1743,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1858,7 +1858,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1969,7 +1969,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2030,7 +2030,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2076,7 +2076,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2704,7 +2704,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2782,7 +2782,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2900,7 +2900,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3038,7 +3038,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3140,7 +3140,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3240,7 +3240,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3379,7 +3379,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3529,7 +3529,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let destructor = import
         .export()
         .reachable_functions
@@ -3715,7 +3715,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3818,7 +3818,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 38);
+    assert_eq!(import.export().schema, 39);
     let destructor = import
         .export()
         .reachable_functions
@@ -5366,15 +5366,15 @@ fn subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_
 }
 
 #[test]
-fn arithmetic_profile_rejects_narrow_and_wide_integer_semantics() {
+fn arithmetic_profile_rejects_narrow_and_unsupported_wide_integer_semantics() {
     for source in [
-        "__int128 wide(__int128 n) noexcept { return n / 3; }",
+        "__int128 wide(__int128 n) noexcept { return n + 3; }",
         "unsigned short wide(unsigned short n) noexcept { return n / 3; }",
     ] {
         let project = Project::with_fixture("arithmetic.cpp", "wide", source);
         let error = refresh_import(&project.config()).unwrap_err();
         assert!(
-            error.contains("wide arithmetic supports checked signed multiplication only")
+            error.contains("wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only")
                 || error.contains("signed/unsigned 32/64/128-bit integers"),
             "{error}"
         );
@@ -8127,8 +8127,6 @@ fn wide_intermediates_refuse_unimplemented_source_operations() {
     for expression in [
         "a + b",
         "a - b",
-        "a / b",
-        "a % b",
         "a == b",
         "a < b",
         "-a",
@@ -8439,5 +8437,205 @@ fn wide_contracts_parameter_preparation_scales_with_the_signature() {
             pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) + 128,
             "{samples:?}"
         );
+    }
+}
+
+const WIDE_DIVISION_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/wide-division/division.cpp");
+const WIDE_SIGNED_DOMAIN: &str = "requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1;";
+
+#[test]
+fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
+    for (name, ty, helper, domain) in [
+        (
+            "signed_quotient",
+            "int128",
+            "truncating_quotient",
+            WIDE_SIGNED_DOMAIN,
+        ),
+        (
+            "signed_remainder",
+            "int128",
+            "truncating_remainder",
+            WIDE_SIGNED_DOMAIN,
+        ),
+        (
+            "unsigned_quotient",
+            "uint128",
+            "truncating_quotient",
+            "requires to_integer(b) != 0;",
+        ),
+        (
+            "unsigned_remainder",
+            "uint128",
+            "truncating_remainder",
+            "requires to_integer(b) != 0;",
+        ),
+    ] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_DIVISION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert_eq!(import.export().schema, 39);
+        let source = format!(
+            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+        let hostile = source.replace("requires to_integer(b) != 0;", "");
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        if ty == "int128" {
+            for endpoint in [
+                "requires to_integer(a) == -170141183460469231731687303715884105728;",
+                "requires to_integer(b) == -1;",
+            ] {
+                let specialized = source.replace(domain, &format!("{domain} {endpoint}"));
+                check_arithmetic_sidecar(&project, &import, &specialized);
+            }
+            let unsafe_source = source.replace("requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1;", "");
+            let path = project.directory.join("overflow.click");
+            fs::write(&path, &unsafe_source).unwrap();
+            let parsed = read_click_project(&path, &unsafe_source).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+        let false_source = source.replace(
+            &format!("== {helper}(to_integer(a), to_integer(b))"),
+            &format!("== {helper}(to_integer(a), to_integer(b)) + 1"),
+        );
+        let path = project.directory.join("false.click");
+        fs::write(&path, &false_source).unwrap();
+        let parsed = read_click_project(&path, &false_source).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn wide_division_full_width_constant_results_keep_all_bits() {
+    for (name, ty, expected) in [
+        ("constant_signed", "int128", "-1"),
+        (
+            "constant_unsigned",
+            "uint128",
+            "113427455640312821154458202477256070485",
+        ),
+    ] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_DIVISION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"wide.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn wide_division_modular_calls_frame_narrow_memory() {
+    let project = Project::with_fixture("wide.cpp", "signed_relay", WIDE_DIVISION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = format!(
+        r#"verifying "wide.cpp";
+int128 signed_quotient(int128 a, int128 b) {{
+    {WIDE_SIGNED_DOMAIN}
+    ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b));
+}} by {{ execute(); simp(); }}
+int128 signed_relay(int128 a, int128 b, int32* untouched) {{
+    {WIDE_SIGNED_DOMAIN}
+    owns untouched[0..1];
+    ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b));
+    ensures untouched[0] == old(untouched[0]);
+}} by {{ execute(); simp(); }}
+"#
+    );
+    check_return_call_sidecar(&project, &import, &source);
+}
+
+#[test]
+fn wide_division_preserves_clang_promotions_and_concrete_modulo_casts() {
+    for (name, signed) in [("mixed_quotient", false), ("narrow_divisor", true)] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_DIVISION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let [
+            CppStatement::Return {
+                value:
+                    CppExpression::Binary {
+                        left,
+                        right,
+                        value_type,
+                        ..
+                    },
+                ..
+            },
+        ] = import.export().function.body.as_slice()
+        else {
+            panic!("division must retain its explicit expression");
+        };
+        assert!(
+            matches!(value_type, CppType::Integer { bits: 128, signed: value_signed, .. } if *value_signed == signed)
+        );
+        assert!(
+            matches!(if signed { right.as_ref() } else { left.as_ref() }, CppExpression::IntegralCast { value_type: CppType::Integer { bits: 128, signed: value_signed, .. }, .. } if *value_signed == signed)
+        );
+        lower_import(&import).unwrap();
+        if signed {
+            let proof = format!(
+                "verifying \"wide.cpp\"; int128 narrow_divisor(int128 a, int64 b) {{ {WIDE_SIGNED_DOMAIN} ensures to_integer(result) == truncating_quotient(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+    }
+    let project = Project::with_fixture("wide.cpp", "mixed_constant", WIDE_DIVISION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"wide.cpp\"; uint128 mixed_constant() { ensures to_integer(result) == 113427455640312821154458202477256070485; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn wide_division_native_undefined_behavior_cannot_be_hidden_by_trivial_posts() {
+    for (name, ty, domain, diagnostic) in [
+        (
+            "signed_quotient",
+            "int128",
+            "requires to_integer(b) == 0;",
+            "division by zero",
+        ),
+        (
+            "unsigned_remainder",
+            "uint128",
+            "requires to_integer(b) == 0;",
+            "division by zero",
+        ),
+        (
+            "signed_quotient",
+            "int128",
+            "requires to_integer(b) != 0; requires to_integer(a) == -170141183460469231731687303715884105728; requires to_integer(b) == -1;",
+            "overflow",
+        ),
+        (
+            "signed_remainder",
+            "int128",
+            "requires to_integer(b) != 0; requires to_integer(a) == -170141183460469231731687303715884105728; requires to_integer(b) == -1;",
+            "overflow",
+        ),
+    ] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_DIVISION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = format!(
+            "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures 0 == 0; }} by {{ execute(); simp(); }}"
+        );
+        let path = project.directory.join("unsafe.click");
+        fs::write(&path, &proof).unwrap();
+        let parsed = read_click_project(&path, &proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(error.message().contains(diagnostic), "{}", error.message());
     }
 }
