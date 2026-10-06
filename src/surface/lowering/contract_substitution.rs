@@ -1452,6 +1452,27 @@ fn rewrite_contract_expression_exact(
                 changed,
             )
         }
+        ContractExpression::CFragment(
+            lowered @ CExpression::Cast {
+                expression: operand,
+                ..
+            },
+        ) => {
+            let (operand, changed) = unary(&ContractExpression::CFragment((**operand).clone()));
+            if !changed {
+                return (expression.clone(), false);
+            }
+            let Some(fragment) = contract_expression_as_c_fragment(&operand) else {
+                return (expression.clone(), false);
+            };
+            (
+                ContractExpression::CUnary {
+                    operand: Box::new(operand),
+                    lowered: c_unary_with_operand(lowered, fragment),
+                },
+                changed,
+            )
+        }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CFragment(_)
         | ContractExpression::Field { .. }

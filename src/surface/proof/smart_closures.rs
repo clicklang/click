@@ -3560,6 +3560,40 @@ impl<'a> Proof<'a> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        let surface = self.available_surface_fact_raw(surface_facts, premise_anchor, kernel)?;
+        let Some(view) = self.premise_fixed_state_view() else {
+            return Some(surface);
+        };
+        let Some(result @ CValue::Pointer(_)) = view.result else {
+            return Some(surface);
+        };
+        // Resource witnesses may have no written name but coincide with the
+        // checked return value. Name that exact value, then re-lower the
+        // candidate so presentation cannot change the cited premise.
+        let equality = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Value(result.clone())),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::Binding("result".to_string()),
+        };
+        let Some(named) =
+            crate::surface::rewrite_click_proposition_by_surface_equality(&surface, &equality)
+        else {
+            return Some(surface);
+        };
+        self.lower_surface_proposition_direct(&named, "returned pointer premise form")
+            .is_ok_and(|lowered| {
+                lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
+            })
+            .then_some(named)
+            .or(Some(surface))
+    }
+
+    fn available_surface_fact_raw(
+        &self,
+        surface_facts: &SurfacePropositionMap,
+        premise_anchor: Option<&ProgramPointRef>,
+        kernel: &Proposition,
+    ) -> Option<ClickProposition> {
         let _qualified_sources =
             super::surface_synthesis::QualifiedSynthesisScope::enter(surface_facts);
         // A refold moves a constructor equation: a proof `match` arm's case

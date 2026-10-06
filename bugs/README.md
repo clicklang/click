@@ -11,9 +11,7 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Symbolic writes walk every element of compact local arrays](compact-array-symbolic-write-walks-every-element.md)
 - [Signature diagnostics omit pointer constness](signature-diagnostic-omits-pointer-constness.md)
 
-- [Expansion refuses a witness that has no surface spelling](expansion-needs-unspellable-resource-witness.md)
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
-- [Expanded proof no longer certifies a `produces` claim](expansion-loses-produced-resource-claim.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)

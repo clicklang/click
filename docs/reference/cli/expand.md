@@ -12,6 +12,10 @@ smart hotspot should become approximately as cheap as that explicit checked
 proof permits. A slow emitted simple operation is a verifier defect rather than
 another expansion candidate.
 
+An unnamed resource witness can be rendered as `result` when it is exactly
+the checked return pointer. Expansion rechecks that this spelling denotes
+the same premise, including inside address casts and snapshot expressions.
+
 ## Synopsis
 
 ```text
