@@ -4272,6 +4272,10 @@ pub struct ExecutionBudget {
     pub(super) statement_steps: usize,
     pub(super) function_calls: usize,
     pub(super) loop_unrolls: usize,
+    /// Dynamic call-site context of a contract-less inline body. Its loops
+    /// may unroll only while their guards are decided by the current facts;
+    /// a symbolic guard needs the helper's own checked loop contract.
+    pub(super) inline_call_name: Option<String>,
     pub(super) paths: usize,
     pub(super) next_opaque_call: u64,
     pub(super) next_kernel_variable: u64,

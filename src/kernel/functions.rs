@@ -4129,14 +4129,17 @@ pub(super) fn execute_c_function_call_paths(
             // clauses lend nothing, and any call it makes plans from and
             // recovers to the caller's ledger, whose evidence the path keeps.
             let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
-            for body_path in execute_c_function_body_paths(
+            let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
+            let body_paths = execute_c_function_body_paths(
                 &callee_state,
                 function,
                 &body_assumptions,
                 environment,
                 execution_semantics,
                 budget,
-            )? {
+            );
+            budget.inline_call_name = previous_inline_call;
+            for body_path in body_paths? {
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &arguments_path.facts,
                     &argument_obligations,
@@ -35239,5 +35242,86 @@ mod verified_read_normalization_tests {
                 assert!(facts.is_empty());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod inline_loop_boundary_tests {
+    use super::*;
+
+    fn helper() -> CFunction {
+        c_function(
+            CType::Int32,
+            "drain_to_zero",
+            vec![c_parameter("n", CType::Int32)],
+            c_seq(
+                c_while(
+                    c_greater_than(c_variable("n"), c_int32_literal(0)),
+                    vec![],
+                    c_assign("n", c_subtract(c_variable("n"), c_int32_literal(1))),
+                ),
+                c_return(c_variable("n")),
+            ),
+        )
+        .with_inline_body()
+    }
+
+    fn call(value: CValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<CFunctionPath>> {
+        let function = helper();
+        execute_c_function_call_paths(
+            &CState::new(),
+            &function,
+            &[CExpression::Value(value)],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new().with_function(function.clone()),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            budget,
+        )
+    }
+
+    #[test]
+    fn symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut samples = Vec::new();
+        for limit in [4usize, 64, 1024] {
+            let mut budget = ExecutionBudget::new();
+            budget.loop_unrolls = limit;
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                call(int32(Bitvector32Term::Variable(Variable(7))), &mut budget)
+            });
+            let paths = result.unwrap();
+            assert!(matches!(paths.as_slice(), [CFunctionPath {
+                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)), ..
+            }] if message.contains("drain_to_zero") && message.contains("loop guard cannot be decided at the call site")));
+            assert_eq!(budget.loop_unrolls, limit - 1);
+            assert!(budget.inline_call_name.is_none());
+            samples.push(work);
+        }
+        assert!(
+            samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        eprintln!("symbolic inline-loop work at 4/64/1024 unrolls: {samples:?}");
+    }
+
+    #[test]
+    fn concrete_inline_loops_still_unroll_and_restore_the_call_context_on_error() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for count in [0, 4, 16, 64] {
+            let mut budget = ExecutionBudget::new();
+            let paths = call(int32(count), &mut budget).unwrap();
+            assert!(matches!(paths.as_slice(), [CFunctionPath {
+                outcome: CFunctionOutcome::Return { value: CValue::Int32(value), .. }, ..
+            }] if value.as_const() == Some(0)));
+            assert!(budget.inline_call_name.is_none());
+        }
+        let mut budget = ExecutionBudget::new();
+        budget.loop_unrolls = 0;
+        budget.inline_call_name = Some("outer".into());
+        assert_eq!(
+            call(int32(4), &mut budget),
+            Err(ExecutionLimit::LoopUnrolls)
+        );
+        assert_eq!(budget.inline_call_name.as_deref(), Some("outer"));
     }
 }

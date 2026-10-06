@@ -13,6 +13,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
-- [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)

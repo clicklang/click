@@ -1347,6 +1347,7 @@ impl ExecutionBudget {
             statement_steps: 10_000,
             function_calls: 1_000,
             loop_unrolls: 256,
+            inline_call_name: None,
             paths: 10_000,
             next_opaque_call: 0,
             next_kernel_variable,
