@@ -1,13 +1,13 @@
-# End-to-end Charon adapter trial
+# Native Charon Rust adapter
 
-This opt-in trial imports unchanged `trial.rs` through Charon and checks its
+The native adapter imports unchanged `trial.rs` through Charon and checks its
 three contracts with Click's existing execution, memory, and certificate rules.
 The scalar increment and the increment inside an owned guard both use ULLBC
 control flow. The latter restores the caller's value on early return and after
 a whole-value move followed by explicit drop. It has no whole-function HIR/MIR
 coverage switch and no generated processed count.
 
-The trial is narrower than the existing frontend. It accepts `i32`, `u8`, `u16`,
+The supported subset accepts `i32`, `u8`, `u16`,
 `u32`, bools, scalar/reference locals and fields, flat structs, direct local
 calls, scalar casts, comparisons, checked addition/subtraction/multiplication,
 unsigned division/remainder, shifts and bitwise operations,
@@ -17,15 +17,48 @@ General traits/generics, nested owned fields, and returned references are not
 enabled by this adapter yet. Extraction coverage in the
 [assessment](../rust-charon-assessment.md) is broader than checked coverage here.
 
+## Migration completion
+
+Charon is the default and sole Rust extraction backend. Schema-3 configs may
+omit `backend`; `charon` and the historical `charon-trial` alias select the same
+path. Schema 2 is rejected before extraction or output mutation. The old
+repository-owned exporter, compiler pin, build script, and CI runtime have been
+removed. No function or artifact can fall back to legacy extraction.
+
+All 16 canonical examples use the implicit native backend with their original
+Rust bodies and contracts. The 72 original regression responsibilities are
+retained: compiler-backed checks run against actual native artifacts, and serialized move/drop
+corruption coverage now calls the lowering/kernel directly instead of forging
+legacy JSON into a ULLBC file. Newly supported source patterns have positive
+proofs and false-claim or authority negatives. Native iterator-state assertions
+replace old JSON shapes and generated processed counts; loop proofs use semantic
+frontiers. Standard unsigned identity `From<T>` calls are checked against their
+resolved generic signature (`unsigned-from-v2`), with forged-signature negatives.
+Borrowed iterator forwarding validates the resolved standard trait, implementation,
+and associated-item signature, then keeps the concrete iterator's single state.
+This preserves `for chunk in &mut chunks` and subsequent remainder access.
+Extraction normalizes temporary output metadata so repeated refreshes, including
+configs sharing an artifact, produce stable bytes and valid locks.
+All 52 native configurations were refreshed through the pinned extractor.
+Validation includes the original compiler-backed regression responsibilities,
+native adapter/lowering and proof-tool checks, 20 live extraction tests, the
+quality/setup gate, and 31 documentation checks.
+
+CI builds and archives Charon and its driver once, restores the profile-derived
+compiler runtime for archive consumers, and runs the live extraction gate. The
+sections below retain checkpoint history; percentages and remaining gates in
+those historical checkpoints describe their state when recorded. Completion
+of the backend migration does not imply support for all Rust or whole crates.
+
 ## Build and reproduce
 
-Click uses its normal stable compiler. The optional external Charon driver
+Click uses its normal stable compiler. The external Charon driver
 needs `nightly-2026-09-17`, compiler commit
 `923c95cdf5ba65cea505aa2ea829f578e1506ed8`, with `rustc-dev` and `rust-src`.
 The build script downloads the pinned, unmodified Charon revision
 `5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb` into `target/charon-source` and builds
 the wrapper and driver in `target/charon`. It does not change Click's default
-toolchain or the legacy exporter's pin.
+toolchain.
 
 ```sh
 rustup toolchain install nightly-2026-09-17 --profile minimal --component rustc-dev --component rust-src
@@ -51,7 +84,7 @@ invoked live compiler regression refreshes through the real extractor and checks
 E0506/E0382 rejection without publishing an artifact:
 
 ```sh
-export CLICK_RUST_EXPORTER="$(scripts/build-rust-exporter.sh)"
+export CLICK_CHARON="$(scripts/build-charon.sh)"
 cargo nextest run --test rust_import --run-ignored only -E 'test(charon_trial_live_refresh_and_compiler_rejections)'
 ```
 
@@ -568,7 +601,7 @@ sidecar and its recorded outcome separately; frozen-sidecar parity remains
 canonical adoption uses their verified ports with unchanged source/contracts.
 
 The gate also runs all existing live compiler/borrow-checker rejection tests.
-Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
+Locally use `scripts/check.sh --charon-live`, which builds pinned Charon.
 CI builds pinned Charon, reuses the prepared Click test archive, and requires
 this separate gate in its final `test` check. Locked-artifact tests remain in
 the ordinary partitions.

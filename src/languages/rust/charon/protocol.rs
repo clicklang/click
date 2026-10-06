@@ -1,5 +1,7 @@
 //! Shared iterator reference origins, typed Option dispatch and checked CFG splitting.
 use super::*;
+mod borrowing;
+pub(super) use borrowing::BorrowedProtocolCall;
 pub(super) fn path(name: &a::Name, expected: &[&str]) -> bool {
     name.name.len() == expected.len()
         && name.name.iter().zip(expected).all(|(part, expected)| matches!(part, a::PathElem::Ident(actual, d) if actual == expected && *d == a::Disambiguator::ZERO))
@@ -10,7 +12,11 @@ pub(super) fn variable(ty: &a::Ty) -> bool {
 impl Adapter<'_> {
     fn protocol_reference(&self, ty: &a::Ty) -> Option<bool> {
         match ty.kind() {
-            a::TyKind::Ref(_, p, kind) if self.protocol_type(p) => Some(*kind == a::RefKind::Mut),
+            a::TyKind::Ref(_, p, kind)
+                if self.protocol_type(p) || self.protocol_reference(p).is_some() =>
+            {
+                Some(*kind == a::RefKind::Mut)
+            }
             _ => None,
         }
     }
@@ -41,34 +47,56 @@ pub(super) fn bindings(
             let a::PlaceKind::Local(target) = target.kind else {
                 return Err(unsupported("partial iterator reference"));
             };
-            let a::Rvalue::Ref {
-                place,
-                kind,
-                ptr_metadata,
-            } = value
-            else {
-                return Err(unsupported("iterator reference assignment"));
-            };
-            if !ptr_metadata.ty().is_unit()
-                || !matches!(
+            let source = match value {
+                a::Rvalue::Ref {
+                    place,
                     kind,
-                    a::BorrowKind::Shared | a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut
-                )
-                || mutable != matches!(kind, a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut)
-            {
-                return Err(unsupported("iterator reference mutability/metadata"));
-            }
-            let source = match &place.kind {
-                a::PlaceKind::Local(id) if adapter.protocol_type(&place.ty) => *id,
-                a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
-                    if adapter.protocol_type(&place.ty)
-                        && adapter
-                            .protocol_reference(&base.ty)
-                            .is_some_and(|source| !mutable || source) =>
-                {
-                    local(base)?
+                    ptr_metadata,
+                } => {
+                    let a::TyKind::Ref(_, pointee, _) = body.locals.locals[target].ty.kind() else {
+                        unreachable!()
+                    };
+                    if adapter.ty(pointee)? != adapter.ty(&place.ty)? {
+                        return Err(unsupported("iterator reference pointee type"));
+                    }
+                    if !ptr_metadata.ty().is_unit()
+                        || !matches!(
+                            kind,
+                            a::BorrowKind::Shared | a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut
+                        )
+                        || mutable
+                            != matches!(kind, a::BorrowKind::Mut | a::BorrowKind::TwoPhaseMut)
+                    {
+                        return Err(unsupported("iterator reference mutability/metadata"));
+                    }
+                    match &place.kind {
+                        a::PlaceKind::Local(id)
+                            if adapter.protocol_type(&place.ty)
+                                || adapter.protocol_reference(&place.ty).is_some() =>
+                        {
+                            *id
+                        }
+                        a::PlaceKind::Projection(base, a::ProjectionElem::Deref)
+                            if (adapter.protocol_type(&place.ty)
+                                || adapter.protocol_reference(&place.ty).is_some())
+                                && adapter
+                                    .protocol_reference(&base.ty)
+                                    .is_some_and(|source| !mutable || source) =>
+                        {
+                            local(base)?
+                        }
+                        _ => return Err(unsupported("iterator reference origin")),
+                    }
                 }
-                _ => return Err(unsupported("iterator reference origin")),
+                a::Rvalue::Use(operand @ (a::Operand::Move(_) | a::Operand::Copy(_)), _)
+                    if (!mutable || matches!(operand, a::Operand::Move(_)))
+                        && adapter.protocol_reference(operand.ty()) == Some(mutable)
+                        && adapter.ty(operand.ty())?
+                            == adapter.ty(&body.locals.locals[target].ty)? =>
+                {
+                    local(operand_place(operand)?)?
+                }
+                _ => return Err(unsupported("iterator reference assignment")),
             };
             if references.insert(target, source).is_some() {
                 return Err(unsupported("reassigned iterator reference"));
@@ -89,6 +117,14 @@ pub(super) fn bindings(
             {
                 return Err(unsupported("reassigned iterator discriminant"));
             }
+        }
+    }
+    for block in &body.body {
+        if let Some(BorrowedProtocolCall::Into { target, source }) =
+            adapter.borrowed_protocol_call(&block.terminator)?
+            && references.insert(target, source).is_some()
+        {
+            return Err(unsupported("reassigned iterator reference"));
         }
     }
     // Resolve each alias path once. Subsequent method calls use its root

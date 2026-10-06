@@ -8796,3 +8796,148 @@ fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
         check_arithmetic_sidecar(&project, &import, &proof);
     }
 }
+
+const WIDE_NARROWING_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/wide-narrowing/narrow.cpp");
+
+fn cast_identity_certificate(original: &str, lo: &str, hi: &str) -> String {
+    format!(
+        r#"arithmetic_certificate special {{
+        premise 0: {lo} <= {original} => {lo} <= {original};
+        premise 1: {original} <= {hi} => {original} <= {hi};
+        integer_cast_identity bounds [0, 1] => to_integer(result) == {original};
+        conclusion 0;
+    }}"#
+    )
+}
+
+#[test]
+fn wide_narrowing_preserves_symbolic_values_only_with_checked_destination_bounds() {
+    for (name, source, result, lo, hi) in [
+        (
+            "ss64",
+            "int128",
+            "int64",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        ("ss32", "int128", "int32", "-2147483648", "2147483647"),
+        ("su64", "int128", "uint64", "0", "18446744073709551615"),
+        ("su32", "int128", "uint32", "0", "4294967295"),
+        ("us64", "uint128", "int64", "0", "9223372036854775807"),
+        ("us32", "uint128", "int32", "0", "2147483647"),
+        ("uu64", "uint128", "uint64", "0", "18446744073709551615"),
+        ("uu32", "uint128", "uint32", "0", "4294967295"),
+    ] {
+        let project = Project::with_fixture("narrow.cpp", name, WIDE_NARROWING_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let cert = cast_identity_certificate("to_integer(a)", lo, hi);
+        let proof = format!(
+            "verifying \"narrow.cpp\"; {result} {name}({source} a) {{ requires {lo} <= to_integer(a); requires to_integer(a) <= {hi}; ensures to_integer(result) == to_integer(a); }} by {{ execute(); have to_integer(result) == to_integer(a) by {{ {cert} }} simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
+        for missing in [
+            format!("requires {lo} <= to_integer(a);"),
+            format!("requires to_integer(a) <= {hi};"),
+        ] {
+            let false_proof = proof.replace(&missing, "");
+            let path = project.directory.join("missing.click");
+            fs::write(&path, &false_proof).unwrap();
+            let parsed = read_click_project(&path, &false_proof).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn wide_narrowing_quotient_and_remainder_keep_native_definedness_and_range_bounds() {
+    for (name, result, op, lo, hi) in [
+        (
+            "quotient",
+            "int64",
+            "/",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        ("remainder", "int32", "%", "-2147483648", "2147483647"),
+    ] {
+        let project = Project::with_fixture("narrow.cpp", name, WIDE_NARROWING_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let observed = format!("to_integer(a {op} b)");
+        let cert = cast_identity_certificate(&observed, lo, hi);
+        let proof = format!(
+            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ requires to_integer(b) != 0; requires to_integer(a) != -170141183460469231731687303715884105728 or to_integer(b) != -1; requires {lo} <= {observed}; requires {observed} <= {hi}; ensures to_integer(result) == {observed}; }} by {{ execute(); have to_integer(result) == {observed} by {{ {cert} }} simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
+        let unsafe_proof = format!(
+            "verifying \"narrow.cpp\"; {result} {name}(int128 a, int128 b) {{ ensures 0 == 0; }} by {{ execute(); simp(); }}"
+        );
+        let path = project.directory.join("unsafe.click");
+        fs::write(&path, &unsafe_proof).unwrap();
+        let parsed = read_click_project(&path, &unsafe_proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("undefined behavior"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn wide_narrowing_still_wraps_outside_the_destination_range() {
+    for (name, ty, expected) in [
+        ("wrap_high", "int64", "0"),
+        ("wrap_negative", "uint64", "18446744073709551615"),
+        ("wrap_unsigned_max", "int64", "-1"),
+    ] {
+        let project = Project::with_fixture("narrow.cpp", name, WIDE_NARROWING_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = format!(
+            "verifying \"narrow.cpp\"; {ty} {name}() {{ ensures to_integer(result) == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
+        let false_proof = proof.replace(
+            expected,
+            if expected == "0" {
+                "18446744073709551616"
+            } else {
+                "0"
+            },
+        );
+        let path = project.directory.join("false.click");
+        fs::write(&path, &false_proof).unwrap();
+        let parsed = read_click_project(&path, &false_proof).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+}
+
+#[test]
+fn wide_narrowing_modular_contract_preserves_framed_narrow_memory() {
+    let project = Project::with_fixture("narrow.cpp", "relay", WIDE_NARROWING_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let lo = "-9223372036854775808";
+    let hi = "9223372036854775807";
+    let cert = cast_identity_certificate("to_integer(a)", lo, hi);
+    let proof = format!(
+        r#"verifying "narrow.cpp";
+int64 ss64(int128 a) {{
+    requires {lo} <= to_integer(a);
+    requires to_integer(a) <= {hi};
+    ensures to_integer(result) == to_integer(a);
+}} by {{ execute(); have to_integer(result) == to_integer(a) by {{ {cert} }} simp(); }}
+int64 relay(int128 a, int32* untouched) {{
+    requires {lo} <= to_integer(a);
+    requires to_integer(a) <= {hi};
+    owns untouched[0..1];
+    ensures to_integer(result) == to_integer(a);
+    ensures untouched[0] == old(untouched[0]);
+}} by {{ execute(); simp(); }}"#
+    );
+    check_return_call_sidecar(&project, &import, &proof);
+}

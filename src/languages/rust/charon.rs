@@ -1,4 +1,4 @@
-//! Opt-in, deliberately narrow ULLBC adapter. All bodies use the same CFG path.
+//! Native Rust ULLBC adapter for the supported subset. All bodies use the same CFG path.
 //! Charon owns Rust normalization; Click owns execution and checked authority.
 #[cfg(test)]
 mod array_lengths_tests;
@@ -129,7 +129,11 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
         return Err("Charon trial artifact exceeds its file bound".into());
     }
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
-    let data = serde_json::from_slice(&bytes).map_err(|e| format!("Charon output: {e}"))?;
+    let mut data: charon_lib::export::CrateData =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Charon output: {e}"))?;
+    // Temporary output paths are extraction metadata, not Rust semantics.
+    // Keep artifacts reproducible, including configs that share one output.
+    data.translated.options.dest_file = Some("trial.ullbc".into());
     serde_json::to_vec(&TrialArtifact {
         extractor_revision: profile::get().extractor_revision.clone(),
         compiler_commit: profile::get().compiler_commit.clone(),
@@ -305,6 +309,22 @@ struct BodyAdapter<'a, 'b> {
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
     fn modeled_call(&self, t: &u::Terminator) -> Result<Option<S>, String> {
+        if let Some(protocol::BorrowedProtocolCall::Next {
+            source,
+            option,
+            shared,
+        }) = self.adapter.borrowed_protocol_call(t)?
+        {
+            let source = self.body.locals.locals[source].index;
+            let root = self.iterator_refs.get(&source).copied().unwrap_or(source);
+            let iterator = self.local(root)?;
+            let option = self.local(option)?;
+            return Ok(Some(if shared {
+                S::SharedArrayNext { iterator, option }
+            } else {
+                S::ChunkNext { iterator, option }
+            }));
+        }
         if let Some(statement) = self.split_slice_call(t)? {
             return Ok(Some(statement));
         }
@@ -405,12 +425,42 @@ impl BodyAdapter<'_, '_> {
         };
         let source = self.adapter.ty(argument.ty())?;
         let destination = self.adapter.ty(&call.dest.ty)?;
+        let generic_identity = source == destination
+            && callee.generics.types.len() == 1
+            && imp.generics.types.len() == 1
+            && ptr.generics.types.len() == 1
+            && ptr.generics.types.iter().next() == Some(&call.dest.ty)
+            && imp.impl_trait.generics.types.len() == 2
+            && imp.impl_trait.generics.types.iter().all(|ty| {
+                matches!(ty.kind(), a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, id))
+                    if depth.index == 0 && id.index() == 0)
+            })
+            && callee.signature.inputs.len() == 1
+            && callee.signature.inputs[0] == callee.signature.output
+            && matches!(callee.signature.output.kind(),
+                a::TyKind::TypeVar(a::DeBruijnVar::Bound(depth, id))
+                    if depth.index == 0 && id.index() == 0);
+        let concrete_conversion = callee.generics.types.is_empty()
+            && imp.generics.types.is_empty()
+            && ptr.generics.types.is_empty()
+            && imp.impl_trait.generics.types.len() == 2
+            && imp
+                .impl_trait
+                .generics
+                .types
+                .iter()
+                .eq([&call.dest.ty, argument.ty()])
+            && callee.signature.inputs.as_slice() == [argument.ty().clone()]
+            && callee.signature.output == call.dest.ty;
         if callee.item_meta.is_local
             || imp.item_meta.is_local
             || tr.item_meta.is_local
             || call.safety == a::CallSafety::Unsafe
             || callee.signature.is_unsafe
-            || !ptr.generics.types.is_empty()
+            || callee.signature.is_variadic
+            || callee.signature.abi != a::Abi::Rust
+            || !callee.generics.const_generics.is_empty()
+            || !imp.generics.const_generics.is_empty()
             || !ptr.generics.const_generics.is_empty()
             || tr
                 .methods
@@ -421,15 +471,7 @@ impl BodyAdapter<'_, '_> {
                 .methods
                 .get(*item_id)
                 .is_none_or(|method| method.skip_binder.id != id)
-            || imp.impl_trait.generics.types.len() != 2
-            || imp
-                .impl_trait
-                .generics
-                .types
-                .iter()
-                .ne([&call.dest.ty, argument.ty()])
-            || callee.signature.inputs.as_slice() != [argument.ty().clone()]
-            || callee.signature.output != call.dest.ty
+            || !(concrete_conversion || generic_identity)
             || !matches!((width(&source), width(&destination)), (Some(a), Some(b)) if a <= b)
         {
             return Err(unsupported("integer From implementation/type mismatch"));
@@ -1232,8 +1274,26 @@ pub(super) fn decode(
                 .into_iter()
                 .flatten()
                 .collect();
-            let conversion = b.modeled_call(&block.terminator)?;
-            let terminator = if let Some(conversion) = conversion {
+            let conversion = if matches!(
+                b.adapter.borrowed_protocol_call(&block.terminator)?,
+                Some(protocol::BorrowedProtocolCall::Into { .. })
+            ) {
+                None
+            } else {
+                b.modeled_call(&block.terminator)?
+            };
+            let forwarding = matches!(
+                b.adapter.borrowed_protocol_call(&block.terminator)?,
+                Some(protocol::BorrowedProtocolCall::Into { .. })
+            );
+            let terminator = if forwarding {
+                let u::TerminatorKind::Call { target, .. } = &block.terminator.kind else {
+                    unreachable!()
+                };
+                Ok(T::Goto {
+                    target: target.index(),
+                })
+            } else if let Some(conversion) = conversion {
                 statements.push(conversion);
                 let u::TerminatorKind::Call { target, .. } = &block.terminator.kind else {
                     unreachable!();
@@ -2640,6 +2700,165 @@ mod tests {
     }
 
     #[test]
+    fn charon_identity_from_requires_the_resolved_generic_signature() {
+        const ARTIFACT: &[u8] =
+            include_bytes!("../../../design/charon-trial/identity-from/identity.ullbc");
+        const SOURCE: &[u8] =
+            include_bytes!("../../../design/charon-trial/identity-from/identity.rs");
+        let export = decode(ARTIFACT, "identity.rs", SOURCE).unwrap();
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        C0VerificationSession::new_program_prepared(
+            include_str!("../../../design/charon-trial/identity-from/identity.click"),
+            &prepared,
+        )
+        .unwrap();
+        for mutation in 0..6 {
+            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let trait_id = artifact
+                .data
+                .translated
+                .trait_decls
+                .iter()
+                .find(|tr| tr.item_meta.diagnostic_item.as_deref() == Some("From"))
+                .unwrap()
+                .def_id;
+            let concrete = artifact
+                .data
+                .translated
+                .fun_decls
+                .iter()
+                .find(|f| f.item_meta.is_local)
+                .unwrap()
+                .signature
+                .inputs[0]
+                .clone();
+            let callee = artifact.data.translated.fun_decls.iter_mut()
+                .find(|f| matches!(&f.src, a::FunSource::TraitImpl {trait_ref, ..} if trait_ref.id == trait_id)).unwrap();
+            match mutation {
+                0 => callee.signature.output = concrete,
+                1 => callee.signature.inputs[0] = concrete,
+                2 => callee.signature.is_unsafe = true,
+                3 => callee.item_meta.is_local = true,
+                4 => callee.generics.types.clear(),
+                5 => callee.signature.is_variadic = true,
+                _ => unreachable!(),
+            }
+            assert!(
+                decode(
+                    &serde_json::to_vec(&artifact).unwrap(),
+                    "identity.rs",
+                    SOURCE
+                )
+                .is_err(),
+                "mutation {mutation}"
+            );
+        }
+    }
+
+    #[test]
+    fn charon_borrowed_iterator_forwarding_keeps_one_state_and_checks_declarations() {
+        const ARTIFACT: &[u8] =
+            include_bytes!("../../../design/charon-trial/borrowed-chunks/chunks.ullbc");
+        const SOURCE: &[u8] =
+            include_bytes!("../../../design/charon-trial/borrowed-chunks/chunks.rs");
+        let export = decode(ARTIFACT, "chunks.rs", SOURCE).unwrap();
+        let mir = export
+            .functions
+            .iter()
+            .find(|f| f.name == "cover")
+            .unwrap()
+            .mir
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            mir.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .filter(|s| matches!(s, S::ChunkInitialize { .. }))
+                .count(),
+            1
+        );
+        assert!(
+            !mir.blocks
+                .iter()
+                .flat_map(|b| &b.statements)
+                .any(|s| matches!(s, S::ChunkMove { .. }))
+        );
+        let next_states: Vec<_> = mir
+            .blocks
+            .iter()
+            .flat_map(|b| &b.statements)
+            .filter_map(|s| match s {
+                S::ChunkNext { iterator, .. } => Some(iterator),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(next_states.len(), 2);
+        assert!(next_states.iter().all(|name| *name == "chunks"));
+        for mutation in 0..6 {
+            let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+            let wrapper = artifact.data.translated.fun_decls.iter_mut().find(|f| {
+                f.item_meta.name.name.last().is_some_and(|p| matches!(p, a::PathElem::Ident(name, _) if name == "next"))
+                    && matches!(f.signature.inputs.as_slice(), [input] if matches!(input.kind(), a::TyKind::Ref(_, p, _) if matches!(p.kind(), a::TyKind::Ref(..))))
+            }).unwrap();
+            let a::FunSource::TraitImpl {
+                trait_ref,
+                impl_ref,
+                ..
+            } = &wrapper.src
+            else {
+                unreachable!()
+            };
+            let trait_id = trait_ref.id;
+            let impl_id = impl_ref.id;
+            match mutation {
+                0 => wrapper.signature.is_unsafe = true,
+                1 => wrapper.signature.is_variadic = true,
+                2 => wrapper.signature.output = wrapper.signature.inputs[0].clone(),
+                3 => {
+                    artifact.data.translated.trait_decls[trait_id]
+                        .item_meta
+                        .diagnostic_item = Some("Lookalike".into())
+                }
+                4 => artifact.data.translated.trait_impls[impl_id].is_negative = true,
+                5 => wrapper.item_meta.is_local = true,
+                _ => unreachable!(),
+            }
+            assert!(
+                decode(&serde_json::to_vec(&artifact).unwrap(), "chunks.rs", SOURCE).is_err(),
+                "mutation {mutation}"
+            );
+        }
+        let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
+        let function = artifact
+            .data
+            .translated
+            .fun_decls
+            .iter_mut()
+            .find(|f| f.item_meta.is_local)
+            .unwrap();
+        let a::Body::Unstructured(body) = &mut function.body else {
+            unreachable!()
+        };
+        let mut changed = false;
+        for statement in body.body.iter_mut().flat_map(|b| &mut b.statements) {
+            if let u::StatementKind::Assign(target, a::Rvalue::Use(operand, _)) =
+                &mut statement.kind
+                && matches!(target.ty.kind(), a::TyKind::Ref(_, _, a::RefKind::Mut))
+                && let a::Operand::Move(place) = operand
+            {
+                *operand = a::Operand::Copy(place.clone());
+                changed = true;
+                break;
+            }
+        }
+        assert!(changed, "fixture must exercise a mutable-reference move");
+        let error =
+            decode(&serde_json::to_vec(&artifact).unwrap(), "chunks.rs", SOURCE).unwrap_err();
+        assert!(error.contains("iterator reference assignment"), "{error}");
+    }
+
+    #[test]
     fn charon_array_index_bounds_remain_checked_after_normalization() {
         let mut export = decode(ARRAY_ARTIFACT, "arrays.rs", ARRAY_SOURCE).unwrap();
         let mir = export
@@ -2821,7 +3040,7 @@ mod tests {
     fn charon_trial_rejects_partial_or_incompatible_extraction() {
         let mutations: [fn(&mut TrialArtifact); 5] = [
             |a| a.data.has_errors = true,
-            |a| a.compiler_commit = out::COMPILER_COMMIT.into(),
+            |a| a.compiler_commit = "untrusted-compiler".into(),
             |a| a.flags[3] = "-Coverflow-checks=off".into(),
             |a| a.data.translated.options.skip_borrowck = true,
             |a| a.data.translated.options.mir = Some(charon_lib::options::MirLevel::Elaborated),

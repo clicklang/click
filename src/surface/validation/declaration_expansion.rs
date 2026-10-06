@@ -833,6 +833,12 @@ fn expand_declared_resource_certificate(
                 .into_iter()
                 .map(|node| {
                     Ok(match node {
+                        SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
+                            SpecialArithmeticNode::IntegerCastIdentity {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
                             SpecialArithmeticNode::IntegerProductBounds {
                                 bounds,

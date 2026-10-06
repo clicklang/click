@@ -95,18 +95,18 @@ jobs:
         with:
           path: ~/.cache/click/llvm
           key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
-      - name: Locate pinned Rust exporter runtime
+      - name: Locate pinned Charon compiler runtime
         id: rust_runtime
         run: |
-          source scripts/rust-exporter-toolchain.sh
-          echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
-          echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
+          source scripts/charon-toolchain.sh
+          echo "path=$CHARON_SYSROOT" >> "$GITHUB_OUTPUT"
+          echo "update_hash=$CHARON_UPDATE_HASH" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: |
             ${{ steps.rust_runtime.outputs.path }}
             ${{ steps.rust_runtime.outputs.update_hash }}
-          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/charon-toolchain.sh', 'src/languages/rust/charon-profile.json') }}
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       # Save a new snapshot per revision, restoring the latest compatible
@@ -119,10 +119,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/debug
-            target/rust-exporter
-          key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/rust-exporter-toolchain.sh', 'scripts/build-rust-exporter.sh') }}-${{ github.sha }}
+            target/charon
+          key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/rust-exporter-toolchain.sh', 'scripts/build-rust-exporter.sh') }}-
+            ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-
       # Build every selected test binary and the C++ exporter once. All test
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
@@ -164,8 +164,8 @@ jobs:
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
-      - name: Restore pinned Rust exporter runtime from the build artifact
-        run: scripts/rust-exporter-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
+      - name: Restore pinned Charon runtime from the build artifact
+        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
       - name: Set up test runner
         run: scripts/setup-environment.sh --test-runner
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
@@ -192,25 +192,10 @@ jobs:
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
-      - name: Restore pinned Rust exporter runtime from the build artifact
-        run: scripts/rust-exporter-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
+      - name: Restore pinned Charon runtime from the build artifact
+        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
       - name: Set up test runner
         run: scripts/setup-environment.sh --test-runner
-      - name: Locate Charon toolchain cache
-        id: charon_runtime
-        run: |
-          echo "toolchain=$(python3 -c 'import json; print(json.load(open("src/languages/rust/charon-profile.json"))["toolchain"])')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.rustup/toolchains/${{ steps.charon_runtime.outputs.toolchain }}-x86_64-unknown-linux-gnu
-            target/charon-source
-            target/charon
-          key: ${{ runner.os }}-${{ runner.arch }}-click-charon-${{ hashFiles('src/languages/rust/charon-profile.json', 'scripts/build-charon.sh') }}
-      - name: Build pinned Charon and compiler runtime
-        run: scripts/build-charon.sh --install-toolchain
       - name: Re-extract and check Rust fixtures
         run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" charon-live
 
