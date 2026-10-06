@@ -59,5 +59,5 @@ void give(int32* p, int32* q, int32 flag) {
 ```
 
 ```expect
-fail: so they have no common successor: memory, resource ownership
+fail: so they have no common successor: resource ownership
 ```
