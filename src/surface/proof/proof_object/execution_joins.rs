@@ -2099,6 +2099,217 @@ impl<'a> Proof<'a> {
         )
     }
 
+    /// Rejoins the two arms of a proof-level execution `if` so the proof
+    /// continues once, from one state, with the facts both arms established.
+    ///
+    /// `None` when the arms cannot be rejoined here: one of them reached
+    /// function exit, they ended at different program points or in different
+    /// states, or one proved a loop. The caller then keeps the cases separate.
+    pub(in crate::surface::proof) fn try_join_focused_execution_if(
+        &self,
+        record: &ExecutionProofCaseSplit<'a>,
+    ) -> Result<Option<Self>, ClickError> {
+        let [then_steps, else_steps] =
+            self.partition_steps_since(&record.marker, record.split, record.arm_branches)?;
+        let then_view = self.sibling_execution_arm_view_from_bases(
+            "then",
+            record.split,
+            record.arm_branches[0],
+            then_steps,
+            &record.base_facts[0],
+            &record.common_facts,
+            &record.base_executions[0],
+            None,
+        )?;
+        let else_view = self.sibling_execution_arm_view_from_bases(
+            "else",
+            record.split,
+            record.arm_branches[1],
+            else_steps,
+            &record.base_facts[1],
+            &record.common_facts,
+            &record.base_executions[1],
+            None,
+        )?;
+        let Some(parts) = self.merge_case_execution_join(
+            &record.common_facts,
+            &record.parent_unfolds,
+            &record.parent_execution,
+            record.surface_condition.clone(),
+            [then_view, else_view],
+        )?
+        else {
+            return Ok(None);
+        };
+        self.resume_parent_after_sibling_join_from_marker(
+            &record.marker,
+            record.split,
+            record.arm_branches,
+            parts,
+        )
+        .map(Some)
+    }
+
+    /// The merge law for a logical two-arm join. The kernel checks the arms
+    /// against the partition they entered, that they end at one program
+    /// point in one state, and decides which facts survive. Arms that ran C
+    /// ran the same statements from the same state, so the frontier, the
+    /// state, and the effect facts are either arm's.
+    fn merge_case_execution_join(
+        &self,
+        parent_facts: &ProofFacts,
+        parent_unfolds: &PersistentOrderedSet<String>,
+        parent_execution: &ExecutionProofState,
+        surface_condition: ClickProposition,
+        arms: [CheckedExecutionJoinArm<'_>; 2],
+    ) -> Result<Option<CheckedExecutionJoinParts>, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            unreachable!("an execution `if` retained a non-execution context")
+        };
+        if arms.iter().any(|arm| {
+            arm.execution.core.frontier.is_at_function_exit()
+                || !arm.introduced_derivations.is_empty()
+                || !arm.introduced_loop_clauses.is_empty()
+                || !arm.introduced_loop_rules.is_empty()
+                || arm
+                    .execution
+                    .presentation
+                    .planned_statement_transitions
+                    .len()
+                    != parent_execution
+                        .presentation
+                        .planned_statement_transitions
+                        .len()
+        }) {
+            return Ok(None);
+        }
+        if !arms[0]
+            .execution
+            .core
+            .frontier
+            .at_same_program_point(&arms[1].execution.core.frontier)
+            || *arms[0].execution.core.state != *arms[1].execution.core.state
+            || arms[0].introduced_effect_facts != arms[1].introduced_effect_facts
+        {
+            return Ok(None);
+        }
+        let mut execution = parent_execution.clone();
+        let Ok((joined_facts, changed_execution)) = execution.core.record_proof_case_join(
+            &parent_execution.core,
+            &[
+                Some((&arms[0].execution.core, arms[0].facts)),
+                Some((&arms[1].execution.core, arms[1].facts)),
+            ],
+            context.function,
+            context.arguments,
+        ) else {
+            return Ok(None);
+        };
+        if changed_execution {
+            // The arms ran the same statements, so the points they recorded
+            // on the way are common to both; a point only one arm named is
+            // not carried.
+            let Some(snapshots) = arms[0]
+                .execution
+                .presentation
+                .recorded_snapshots
+                .common_descendant(
+                    &arms[1].execution.presentation.recorded_snapshots,
+                    &parent_execution.presentation.recorded_snapshots,
+                )
+            else {
+                return Ok(None);
+            };
+            let Ok(loan_evidence) = join_arm_loan_evidence(
+                parent_execution,
+                [arms[0].execution, arms[1].execution],
+                "proof `if` join",
+            ) else {
+                return Ok(None);
+            };
+            execution.presentation.recorded_snapshots = snapshots;
+            execution.core.loan_evidence = loan_evidence;
+            execution.core.state = arms[0].execution.core.state.clone();
+            execution.core.frontier = arms[0].execution.core.frontier.clone();
+            execution.core.has_empty_execution_branch_leaf |= arms
+                .iter()
+                .any(|arm| arm.execution.core.has_empty_execution_branch_leaf);
+            execution.core.has_structured_branch_history |= arms
+                .iter()
+                .any(|arm| arm.execution.core.has_structured_branch_history);
+            append_execution_effect_facts(
+                &mut execution.core.effect_facts,
+                &arms[0].introduced_effect_facts,
+            );
+            execution.presentation.resource_unfolded =
+                arms[0].execution.presentation.resource_unfolded
+                    && arms[1].execution.presentation.resource_unfolded;
+        }
+        self.merge_branch_surface_facts(
+            &mut execution,
+            parent_execution,
+            [arms[0].execution, arms[1].execution],
+            false,
+        )?;
+        execution.core.next_opaque_call = arms[0]
+            .execution
+            .core
+            .next_opaque_call
+            .max(arms[1].execution.core.next_opaque_call);
+        advance_joined_kernel_variable_mark(&mut execution, &arms)
+            .map_err(|message| self.step_error(message))?;
+        migrate_arm_metadata(&mut execution, &arms, true);
+
+        // The kernel decided which facts hold after the join. They are added
+        // to the parent's own fact set in the order the then arm found them.
+        let mut facts = parent_facts.clone();
+        let mut common_added_facts = Vec::new();
+        for fact in &arms[0].introduced_facts {
+            if !joined_facts.contains(fact) || facts.contains(fact) {
+                continue;
+            }
+            facts = facts.with_kernel_checked_fact(fact.clone());
+            common_added_facts.push(fact.clone());
+            for surface in arms[0]
+                .execution
+                .presentation
+                .surface_propositions
+                .surfaces(fact)
+            {
+                if arms[1]
+                    .execution
+                    .presentation
+                    .surface_propositions
+                    .surfaces(fact)
+                    .any(|candidate| candidate == surface)
+                {
+                    execution
+                        .presentation
+                        .surface_propositions
+                        .record_lowering(surface, fact)?;
+                }
+            }
+        }
+        let mut unfolded_predicates = parent_unfolds.clone();
+        for name in &arms[0].introduced_unfolds {
+            if arms[1].introduced_unfolds.contains(name) {
+                unfolded_predicates.insert(name.clone());
+            }
+        }
+        let [then_arm, else_arm] = arms;
+        Ok(Some(CheckedExecutionJoinParts {
+            execution,
+            facts,
+            common_added_facts,
+            unfolded_predicates,
+            step: ProofStep::If {
+                condition: surface_condition,
+                then_proof: Box::new(then_arm.certificate),
+                else_proof: Box::new(else_arm.certificate),
+            },
+        }))
+    }
+
     /// Reduces the two sibling arms of an in-`Proof` execution split to the
     /// shared per-arm join view: both recorded goals must be open execution
     /// frontiers, the steps since the split marker partition by recorded
