@@ -436,10 +436,18 @@ impl LoweringContext<'_> {
             } => Ok(crate::kernel::c_labeled_assert(
                 self.lower_expression(condition)?,
                 format!(
-                    "C++ assumed library contract `{}` [{} sha256:{}] at {}:{}:{}",
+                    "C++ assumed library contract `{}` [{} sha256:{}]{} at {}:{}:{}",
                     contract.function,
                     contract.header,
                     contract.sha256,
+                    contract
+                        .literal_constructor
+                        .as_ref()
+                        .map(|pin| format!(
+                            "; literal constructor `{}` [{} sha256:{}]",
+                            pin.function, pin.header, pin.sha256
+                        ))
+                        .unwrap_or_default(),
                     span.file,
                     span.start_line,
                     span.start_column

@@ -204,7 +204,7 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         &config.logical_source,
     )?;
     check_inputs()?;
-    let export = decode_artifact(&artifact, &config)?;
+    let export = decode_artifact(&artifact, &config, &dependencies)?;
     let preprocessor_files_before = read_preprocessor_files(&export.preprocessor_files)?;
     validate_library_headers(&config, &dependencies, &preprocessor_files_before)?;
     let repeated = run_cpp_exporter(
@@ -365,7 +365,7 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     if lock.artifact_bytes != artifact.len() || lock.artifact_sha256 != hex_digest(&artifact) {
         return Err("C++ semantic artifact differs from the import lock; refresh it".into());
     }
-    let export = decode_artifact(&artifact, &config)?;
+    let export = decode_artifact(&artifact, &config, &dependencies)?;
     if lock.profile != export.profile {
         return Err("C++ semantic artifact profile differs from the import lock".into());
     }
@@ -400,7 +400,11 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     })
 }
 
-fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
+fn decode_artifact(
+    bytes: &[u8],
+    config: &Config,
+    dependencies: &[(String, PathBuf)],
+) -> Result<CppExport, String> {
     super::budget::check_serialized(bytes)?;
     let export: CppExport = serde_json::from_slice(bytes)
         .map_err(|error| format!("parse C++ semantic artifact: {error}"))?;
@@ -423,6 +427,10 @@ fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
         .iter()
         .map(|file| file.canonical_path.as_str())
         .collect();
+    let dependency_files: BTreeMap<_, _> = dependencies
+        .iter()
+        .map(|(header, path)| (header.as_str(), path.to_string_lossy()))
+        .collect();
     let mut pending = vec![export.function.body.as_slice()];
     pending.extend(
         export
@@ -441,8 +449,16 @@ fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
                         return Err("C++ artifact library assertion differs from its configured assumed contract".into());
                     }
                     for argument in metadata {
-                        if !metadata_files.contains(argument.declaration_file.as_str()) {
-                            return Err("C++ consteval metadata declaration must belong to the locked preprocessor closure".into());
+                        if let super::schema::CppLibraryMetadata::Literal(literal) = argument
+                            && dependency_files
+                                .get(literal.constructor.header.as_str())
+                                .map(|path| path.as_ref())
+                                != Some(literal.declaration_file.as_str())
+                        {
+                            return Err("C++ literal metadata declaration differs from its pinned constructor header".into());
+                        }
+                        if !metadata_files.contains(argument.declaration_file()) {
+                            return Err("C++ library metadata declaration must belong to the locked preprocessor closure".into());
                         }
                     }
                 }
@@ -473,17 +489,19 @@ fn validate_library_pins(
     dependencies: &BTreeMap<String, Vec<u8>>,
 ) -> Result<(), String> {
     let mut digests = BTreeMap::new();
-    for contract in &config.library_assertions {
+    for (function, header, sha256) in config
+        .library_assertions
+        .iter()
+        .flat_map(CppLibraryAssertion::pins)
+    {
         let bytes = dependencies
-            .get(&contract.header)
+            .get(header)
             .ok_or("C++ assumed library assertion header is missing from dependencies")?;
-        let digest = digests
-            .entry(contract.header.as_str())
-            .or_insert_with(|| hex_digest(bytes));
-        if *digest != contract.sha256 {
+        let digest = digests.entry(header).or_insert_with(|| hex_digest(bytes));
+        if digest.as_str() != sha256 {
             return Err(format!(
                 "C++ assumed library contract `{}` header hash differs from its explicit pin",
-                contract.function
+                function
             ));
         }
     }
@@ -506,9 +524,13 @@ fn validate_library_headers(
         .values()
         .map(|file| (file.canonical_path.as_str(), file.sha256.as_str()))
         .collect();
-    for contract in &config.library_assertions {
-        let path = dependencies[contract.header.as_str()].to_string_lossy();
-        if observed.get(path.as_ref()).copied() != Some(contract.sha256.as_str()) {
+    for (_, header, sha256) in config
+        .library_assertions
+        .iter()
+        .flat_map(CppLibraryAssertion::pins)
+    {
+        let path = dependencies[header].to_string_lossy();
+        if observed.get(path.as_ref()).copied() != Some(sha256) {
             return Err(
                 "C++ assumed library contract header must be in the locked preprocessor closure"
                     .into(),
@@ -613,7 +635,12 @@ fn validate_config(config: &Config) -> Result<(), String> {
                 "C++ assumed library assertions must have unique sorted function names".into(),
             );
         }
-        if config.dependencies.binary_search(&contract.header).is_err() {
+        if contract.pins().any(|(_, header, _)| {
+            config
+                .dependencies
+                .binary_search_by(|name| name.as_str().cmp(header))
+                .is_err()
+        }) {
             return Err(
                 "C++ assumed library assertion header must be an explicit dependency".into(),
             );

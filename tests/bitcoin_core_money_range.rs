@@ -85,7 +85,7 @@ fn check_upstream_cpp(
         "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
-    if name == "FeeFracDivConstevalRefused" {
+    if matches!(name, "FeeFracDivConstevalRefused" | "FeeFracDivImported") {
         const CHECK_HASH: &str = "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7";
         let header = "bitcoin-src/src/util/check.h";
         assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), CHECK_HASH);
@@ -99,12 +99,34 @@ fn check_upstream_cpp(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
+    if name == "FeeFracDivImported" {
+        const STRING_VIEW_HASH: &str =
+            "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
+        let header = "sysroot/usr/include/c++/12/string_view";
+        assert_eq!(
+            sha256(&fs::read(root.join(header)).unwrap()),
+            STRING_VIEW_HASH
+        );
+        config["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(header.into());
+        config["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+        config["library_assertions"][0]["kind"] =
+            "checked_boolean_statement_with_literal_metadata".into();
+        config["library_assertions"][0]["literal_constructor"] = serde_json::json!({
+            "function": "std::basic_string_view::basic_string_view", "header": header, "sha256": STRING_VIEW_HASH
+        });
+    }
     let config_path = root.join(format!("{name}.click.import.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
-    if selected == "FeeFrac::Div" {
+    if selected == "FeeFrac::Div" && name != "FeeFracDivImported" {
         let error = refreshed.expect_err("the library Assume boundary must remain explicit");
         assert!(error.contains("export C++ source"), "{error}");
         if name == "FeeFracDivConstevalRefused" {
@@ -122,6 +144,42 @@ fn check_upstream_cpp(
     let import = load_import(&config_path).unwrap();
     assert_eq!(import.export().preprocessor_files.len(), 320);
     assert!(import.export().reachable_functions.is_empty());
+    if selected == "FeeFrac::Div" {
+        use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
+        let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
+            panic!("retained upstream annotation")
+        };
+        assert!(matches!(metadata[0], CppLibraryMetadata::Consteval(_)));
+        let CppLibraryMetadata::Literal(literal) = &metadata[1] else {
+            panic!("retained runtime literal")
+        };
+        assert_eq!(literal.literal, "d > 0");
+        assert_eq!(literal.record, "std::basic_string_view");
+        assert!(literal.record_type.contains("std::basic_string_view<char>"));
+        assert_eq!(literal.binding, CppLiteralMetadataBinding::Value);
+        click::languages::cpp::lower_import(&import).unwrap();
+        for (premises, diagnostic) in [
+            ("", "assumed library contract"),
+            ("requires d > 0;", "division by zero"),
+            (
+                "requires d > 0; requires to_integer(n) == 0; requires to_integer(d) != 0; requires to_integer(d) != -1;",
+                "signed overflow",
+            ),
+        ] {
+            let proof = format!(
+                "verifying \"bitcoin-src/src/util/feefrac.h\"; int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {{ {premises} ensures 0 == 0; }} by {{ execute(); simp(); }}"
+            );
+            let parsed = read_click_project(&sidecar, &proof).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().contains(diagnostic), "{}", error.message());
+            assert!(error.message().len() < 8000);
+            if premises.is_empty() {
+                assert!(error.message().contains("literal constructor"));
+            }
+        }
+        fs::remove_dir_all(root).unwrap();
+        return;
+    }
     let project = read_click_project(&sidecar, source).unwrap();
     verify_program_prepared_project(&project, &import)
         .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
@@ -207,6 +265,11 @@ fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
         "FeeFracMul",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click"),
     );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_div_imports_and_retains_native_proof_obligations() {
+    check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivImported", "");
 }
 
 #[test]

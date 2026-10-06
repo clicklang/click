@@ -20,6 +20,7 @@ pub use schema::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppConstant, CppConstantReference,
     CppConstevalMetadata, CppExceptionBehavior, CppExport, CppExpression, CppField,
     CppFieldInitializer, CppFieldReference, CppFunction, CppFunctionKind, CppFunctionReference,
-    CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind, CppPlace, CppPlaceReference,
-    CppProfile, CppRecord, CppSpan, CppStatement, CppType, CppTypeAlias,
+    CppInitializer, CppLibraryAssertion, CppLibraryAssertionKind, CppLibraryMetadata,
+    CppLiteralConstructor, CppLiteralMetadata, CppLiteralMetadataBinding, CppPlace,
+    CppPlaceReference, CppProfile, CppRecord, CppSpan, CppStatement, CppType, CppTypeAlias,
 };
