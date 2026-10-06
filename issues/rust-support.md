@@ -784,3 +784,22 @@ Backend migration is complete (100% of the extraction, canonical adoption,
 regression-port, default-switch, and legacy-retirement gates). General Rust
 support and unchanged checksum-crate extraction remain separate feature work;
 this issue stays open for those supported-subset and crate-boundary goals.
+
+### Unchanged adler2 crate adapter trial
+
+The [2026-10-06 trial](../design/charon-trial/adler2/README.md) preserves both
+pinned adler2 2.0.1 source files byte-for-byte. Selected extraction with edition
+2021, `std`, and the native optimized-MIR transforms succeeds: 15 bodies
+including glue, with 94 blocks in `compute`. Production refresh stops before
+checked lowering with `requires exactly one locked source file`; it publishes
+neither artifact nor lock. A live regression records that boundary. This is
+not a verified checksum or a successful crate import.
+
+The next increment is a locked crate configuration and source closure, including
+edition, features, and selected roots. Do not discover target files by crate
+name alone: the extraction contains a different standard-library dependency
+also named `adler2`. Preserve qualified declaration identities for modules,
+inherent methods, and concrete trait implementations next; verify reachable
+constructor and operator bodies rather than summarizing the checksum result.
+Only after that adapter boundary passes should the unchanged implementation
+be proved against the shared Adler-32 specification.

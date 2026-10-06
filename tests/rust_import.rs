@@ -3636,3 +3636,6 @@ mod iterator_proof;
 
 #[path = "rust_import/retirement.rs"]
 mod retirement;
+
+#[path = "rust_import/adler2_trial.rs"]
+mod adler2_trial;
