@@ -25,3 +25,9 @@ slow-timeout = { period = "10s", terminate-after = 90 }
 [[profile.default.overrides]]
 filter = "binary(mdtests) | binary(examples)"
 slow-timeout = { period = "60s", terminate-after = 20 }
+
+# The nightly gate (`scripts/check.sh --nightly`) runs what the budgeted gate
+# leaves out, including tests marked `#[ignore = "nightly: ..."]`. It has no
+# time budget; this is hang containment only.
+[profile.nightly]
+slow-timeout = { period = "60s", terminate-after = 120 }

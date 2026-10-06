@@ -118,6 +118,12 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         premise 1: to_integer(n % (int128)d) == truncating_remainder(to_integer(n), to_integer(d)) => to_integer(n % (int128)d) == truncating_remainder(to_integer(n), to_integer(d));
         integer_relation_transport bounds [0, 1] => to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)); conclusion 0;
     } }
+    have to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod) by {
+        rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
+        rewrite(to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)));
+        simp();
+    }
+
     have defined(quot + 0i64) by simp;
     have defined(quot + 1i64) by simp;
     have defined(quot + -1i64) by simp;

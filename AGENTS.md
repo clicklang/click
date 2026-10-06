@@ -10,6 +10,19 @@ is ready to merge. Do not push development branches or changes directly to the
 upstream repository, even with write or admin access. Maintainers integrate
 reviewed changes through pull requests.
 
+One exception applies to agent sessions that cannot push to a fork, such as
+hosted sandboxes whose credentials cover only `clicklang/click`. Such a session
+may push its task branch to `clicklang/click` instead, within these limits:
+
+- push only a branch that the session created for its task, never `master` or
+  another contributor's branch;
+- keep at most one such branch per task thread, carrying that thread's one
+  open pull request;
+- delete the branch as soon as its pull request merges or closes; and
+- before starting new work, delete any upstream branch the thread left behind.
+
+Local agents and humans keep using forks.
+
 Each task thread, whether a human working session or one agent, has at most
 one open pull request at a time. While it is open, add each further coherent
 green increment to that same branch and pull request, even when the increment
@@ -130,6 +143,18 @@ this is how a broken mdtest survived 54 commits undetected. Piping is fine for
 reading output, but the verdict comes from an unpiped run. The default `cargo
 test --lib` is also not the gate: it passes while both proof-fixture gates
 fail.
+
+## The gate has a ten-minute budget
+
+`scripts/check.sh` and a CI run each finish in under ten minutes. A test that
+takes more than about ten seconds does not go in the gate: mark it
+`#[ignore = "nightly: <measurement>"]`, or list a slow example in `NIGHTLY`
+in `tests/examples.rs`. `scripts/check.sh --nightly` and the nightly workflow
+run those with no budget. Do not add `click audit` or whole-example tool
+rechecks to gate tests; one `audit` costs tens of seconds where `verify`
+costs under one. The script prints its elapsed time: when your change pushes
+it past ten minutes, move tests to nightly in the same change. See
+`docs/internals/testing.md`.
 
 ## File bugs freely; create issues only when the user explicitly asks
 

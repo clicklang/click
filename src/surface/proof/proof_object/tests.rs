@@ -14125,3 +14125,96 @@ fn a_generated_tactic_is_not_addressed_as_a_source_tactic() {
     assert_eq!(generated.path(), None);
     assert_eq!(generated.source_tactic_path(), None);
 }
+
+#[test]
+fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let x = IntegerTerm::var(Variable(9_103_000));
+    let y = IntegerTerm::var(Variable(9_103_001));
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
+        true,
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(
+            IntegerTerm::multiply(x.clone(), x.clone()).into(),
+            y.clone().into(),
+        ),
+        true,
+    );
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::Binding("x".into()),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::Binding("y".into()),
+    };
+    let mut baseline = None;
+    for size in [4usize, 16, 64, 256] {
+        let context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
+            integer_values: crate::persistent::PersistentMap::default(),
+            memory: CMemory::new(),
+            array_refs: BTreeMap::new(),
+            requires: vec![equality.clone()],
+            surface_requirements: SurfacePropositionMap::default(),
+            values: (0..size)
+                .map(|i| (format!("unused_{i}"), int32(i as u32)))
+                .collect(),
+        };
+        let root = Proof::for_pure_goal(
+            "Integer rewrite names",
+            &context.requires,
+            goal.clone(),
+            &context,
+            &predicates,
+            &functions,
+            &theorems,
+        );
+        let calls = std::cell::Cell::new(0);
+        let name = || {
+            calls.set(calls.get() + 1);
+            crate::surface::diagnostics::value_naming_tables(&context.values)
+        };
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.finish_rewrite(
+                Box::new(goal.clone()),
+                Box::new(equality.clone()),
+                &surface,
+                name,
+            )
+        });
+        checked.expect("checked Integer rewrite should refine its goal");
+        assert_eq!(
+            calls.get(),
+            0,
+            "size {size}: successful rewrite scanned diagnostic names"
+        );
+        assert_eq!(
+            work,
+            *baseline.get_or_insert(work),
+            "size {size}: unrelated locals changed rewrite work"
+        );
+        let empty = Proof::for_pure_goal(
+            "Integer rewrite refusal names",
+            &[],
+            goal.clone(),
+            &context,
+            &predicates,
+            &functions,
+            &theorems,
+        );
+        let error = empty
+            .finish_rewrite(
+                Box::new(goal.clone()),
+                Box::new(equality.clone()),
+                &surface,
+                name,
+            )
+            .err()
+            .expect("missing evidence should be refused");
+        assert_eq!(calls.get(), 1);
+        assert!(error.message().contains("exact available fact"));
+        assert!(error.message().len() < 8000);
+    }
+}

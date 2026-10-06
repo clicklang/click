@@ -10,6 +10,13 @@ a draft pull request if more work is expected before it is ready to merge. This
 also applies to maintainers with write or admin access: push development
 branches to the fork, and integrate reviewed changes through pull requests.
 
+The one exception is an agent session that cannot push to a fork, such as a
+hosted sandbox whose credentials cover only `clicklang/click`. It may push its
+own task branch to `clicklang/click`, never `master` or another contributor's
+branch. It keeps at most one such branch per task thread, deletes it when the
+pull request merges or closes, and removes any branch it left behind before
+starting new work. Local agents and humans keep using forks.
+
 For follow-on work on the same effort, keep adding coherent, green increments
 to the existing open pull request and branch. Do not open a duplicate pull
 request for that effort. Once the pull request merges, start later work from

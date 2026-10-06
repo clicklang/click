@@ -1411,6 +1411,7 @@ fn ranked_loops_without_invariants_audit_every_site() {
 /// Caller requirements that read seeded arrays must survive both unchanged
 /// retained checks and audit's expanded rewrites, at every tactic site.
 #[test]
+#[ignore = "nightly: 31 s, over the gate's per-test budget (2026-10-06)"]
 fn callers_with_seeded_array_requirements_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for relative in [
@@ -1592,6 +1593,7 @@ fn rewrites_of_the_same_text_do_not_combine() {
 /// Verifying a claim's rewrites together runs the claim once, so it costs
 /// about one site's verification rather than one per site.
 #[test]
+#[ignore = "nightly: 73 s, over the gate's per-test budget (2026-10-06)"]
 fn a_claims_rewrites_are_verified_in_one_run() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
     let sources = audit_targets(&path).unwrap();

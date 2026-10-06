@@ -737,3 +737,38 @@ C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
 32/64-bit values, explicit casts and implicit returns, guarded native quotient
 and remainder narrowing, modular caller framing, offline artifacts, expansion,
 and retained audit. The source profile remains unchanged; the current artifact schema is 43.
+
+## Checked equality rewriting
+
+`rewrite(a == b)` accepts mathematical Integer equality alongside native,
+pointer and algebraic equalities. Its equality must be an exact available fact,
+in either orientation. The kernel refines the selected goal by substituting
+exact occurrences of `a` with `b`; the remaining goal still needs a proof.
+Products and sums therefore need no nonlinear arithmetic search just to replace
+one proved-equal operand. Truncating quotient/remainder terms, negations,
+differences, pure-function arguments and explicit machine conversion payloads
+use the same sort-preserving walker.
+
+The walker memoizes shared Integer nodes, preserves machine widths and load
+snapshots, and never recursively rewrites its replacement. Work follows the
+selected logical DAG rather than its expanded paths or ambient facts. Successful
+rewrites do not build diagnostic naming tables or scan unrelated locals; refusal
+constructs names for the selected proof state. Logical quantifiers are traversed only when neither side of the equality mentions their
+binder. Entering an internal fold or match binder is currently refused; replacing
+an exact whole fold does not enter that binder and remains supported.
+
+<!-- verified-example: mdtests/integer_equality_rewrite.md -->
+```click
+theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
+    requires a == b;
+    ensures a * d + a == b * d + b by {
+        rewrite(a == b);
+        simp();
+    }
+}
+```
+
+The unchanged Bitcoin fee-division proof uses this rule twice to establish
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after
+checking both narrowing casts. This reconstruction equation is a foundation
+for the remaining exact rounding contract.
