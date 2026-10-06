@@ -7395,6 +7395,7 @@ impl ExecutionPureFact {
             proposition,
             public: true,
             certified: false,
+            join_summary: false,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -7407,6 +7408,7 @@ impl ExecutionPureFact {
             proposition,
             public: false,
             certified: false,
+            join_summary: false,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -7414,11 +7416,31 @@ impl ExecutionPureFact {
         }
     }
 
+    /// The memory summary of a checked interface join: what the arms'
+    /// effects, each already checked against its own chain, may have
+    /// written between the split and the joined memory.
+    ///
+    /// A join's memory is its arms' abstraction, which also forgets values
+    /// no arm wrote, so the summary cannot be derived again from its two
+    /// endpoints the way a store's or a call's can. An enclosing join takes
+    /// it as the checked fact it is.
+    pub(super) fn certified_join_summary(proposition: Proposition) -> Self {
+        Self {
+            join_summary: true,
+            ..Self::certified(proposition)
+        }
+    }
+
+    pub(crate) fn is_join_summary(&self) -> bool {
+        self.certified && self.join_summary
+    }
+
     pub(super) fn certified(proposition: Proposition) -> Self {
         Self {
             proposition,
             public: true,
             certified: true,
+            join_summary: false,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -7441,6 +7463,7 @@ impl ExecutionPureFact {
             },
             public: false,
             certified: true,
+            join_summary: false,
             certified_store: Some(Box::new(CertifiedMemoryStore {
                 before,
                 after,
@@ -7502,6 +7525,7 @@ impl ExecutionPureFact {
             proposition: target,
             public: false,
             certified: true,
+            join_summary: false,
             certified_store: None,
             transport: Some(Box::new(CertifiedExecutionFactTransport {
                 source,

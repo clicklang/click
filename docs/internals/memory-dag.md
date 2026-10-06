@@ -45,7 +45,9 @@ them. An entry outside the ranges is in a block proven distinct from the
 access, so each of those rules already kept it (or answered `false` for it)
 on the first rung of its ladder, and restricting the visit changes no answer.
 Loop havoc and the interface join stay whole-memory: their write set is every
-reachable cell.
+reachable cell. The join then keeps a cell, or a whole run, that every arm
+holds with the same value. The lookup is one per arm for each value visited,
+so the visit is no wider than before.
 
 Interning looks up the caller's storage roots first, then the content. A
 structural hit registers the caller's roots too, and the arena pins them so

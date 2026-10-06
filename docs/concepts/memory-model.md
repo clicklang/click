@@ -117,9 +117,14 @@ Initialization is recorded apart from values. Fresh heap bytes and automatic
 storage start uninitialized; a store initializes its bytes, and nothing but
 the end of the object's lifetime makes them uninitialized again. A store the
 facts cannot place (`a[u] = 7` where `u` may name several elements), a call or
-loop havoc, or a branch join forgets cached values, but the bytes those values
+loop havoc, or a join forgets cached values, but the bytes those values
 occupied stay initialized, so a later read of them is an initialized value the
-facts may leave unknown rather than a read of uninitialized storage. A join
+facts may leave unknown rather than a read of uninitialized storage. A join,
+of a C `if` or of a proof `if` or `match`, keeps a value every incoming path
+holds for the same cell, since that is the cell's value whichever path was
+taken, and forgets the rest
+(`mdtests/a_join_keeps_a_cell_both_arms_agree_on.md`,
+`mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md`). It
 keeps a byte initialized only when every incoming path initialized it, and a
 read at an element index the facts bound (`0 <= i < n`) is initialized when
 every element the index may name is. A declaration with an initializer

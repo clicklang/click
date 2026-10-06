@@ -3041,7 +3041,7 @@ impl CMemory {
         // initialize more, so every automatic value that goes stays
         // initialized at the head and after the loop.
         let base = Some(intern_derivation_base(&mut self));
-        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        self.forget_loan_unprotected_values(preserved_blocks, ledger, &[]);
         // The body may also have written bytes no value was cached for, and
         // a zero reading answers for exactly those.
         match mutable_ranges {
@@ -3073,12 +3073,24 @@ impl CMemory {
     /// and typed union views alike. Whole-map by design, unlike the
     /// per-access rules that visit only `AliasCandidates`: the work is the
     /// values dropped plus the ones something keeps.
+    ///
+    /// `agreeing` are the arms of a join, and empty at a loop head. A cell
+    /// every arm caches with the same value is a reading each arm's memory
+    /// already gives, so it is a reading of their join and stays; so does a
+    /// run every arm holds unchanged. Only plain cells stay this way: a typed
+    /// union view, and a cell a union overlays, go by the loan rule alone.
+    /// The work is unchanged: one lookup per arm for each value visited.
     fn forget_loan_unprotected_values(
         &mut self,
         preserved_blocks: &BTreeSet<PointerBlock>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
+        agreeing: &[&CMemory],
     ) {
         let union_widths = union_overlay_widths(self);
+        let arm_overlays = agreeing
+            .iter()
+            .map(|memory| union_overlay_widths(memory))
+            .collect::<Vec<_>>();
         self.forget_cached_values(
             ForgetScope::Everywhere,
             |pointer, value| {
@@ -3089,6 +3101,18 @@ impl CMemory {
                     CachedValue::Cell(_) => union_widths.get(pointer).copied().unwrap_or(0),
                     CachedValue::UnionView(..) => 0,
                 };
+                if let CachedValue::Cell(cell) = value
+                    && !agreeing.is_empty()
+                    && agreeing
+                        .iter()
+                        .zip(&arm_overlays)
+                        .all(|(memory, overlays)| {
+                            !overlays.contains_key(pointer)
+                                && memory.cells.concrete().get(pointer) == Some(cell)
+                        })
+                {
+                    return CachedValueFate::Kept;
+                }
                 if loan_preserving_havoc_keeps_cell(
                     pointer,
                     value.byte_width().max(width),
@@ -3100,7 +3124,17 @@ impl CMemory {
                     CachedValueFate::Forgotten
                 }
             },
-            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
+            |run| {
+                // A run every arm holds, holes and all, answers the same
+                // reads in each of them, so the join keeps it whole. This
+                // keeps more than the per-cell rule above, which looks only
+                // at concrete cells so that it never spreads a run out.
+                if !agreeing.is_empty() && agreeing.iter().all(|memory| memory.cells.holds_run(run))
+                {
+                    return (SlotSet::All, crate::kernel::primitives::RuleAnswer::Sound);
+                }
+                loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger)
+            },
         );
     }
 
@@ -3128,7 +3162,9 @@ impl CMemory {
     /// union of potential live allocations, so making the transition look like
     /// a loop havoc would record a false memory-DAG derivation. The resulting
     /// snapshot is a provenance barrier instead: no load from before the
-    /// branch may be transported across it without explicit interface facts.
+    /// branch is transported across it. What survives is a value every arm
+    /// still caches for the same cell, kept as a cell of the joined snapshot,
+    /// and whatever the interface states as a fact.
     #[allow(dead_code)]
     pub(in crate::kernel) fn with_interface_memory_havoc(
         self,
@@ -3298,11 +3334,11 @@ impl CMemory {
         }
 
         // Whole-memory by design: a join merges every sibling's blocks and
-        // heap collections above, and forgets every cached value nothing
-        // preserves, cells and union views alike, exactly as the loop havoc
-        // does. The heap it records along the way is replaced below by the
-        // arms' join, which is the one that decides initialization.
-        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        // heap collections above, and forgets every cached value that
+        // nothing preserves and the arms do not agree on, cells and union
+        // views alike. The heap it records along the way is replaced below
+        // by the arms' join, which is the one that decides initialization.
+        self.forget_loan_unprotected_values(preserved_blocks, ledger, sibling_memories);
         // A zero reading is kept only where every arm has it, but an arm can
         // have it beside a value it wrote over the zeros, and that value is
         // forgotten here. So a reading goes wherever *any* arm caches a value
@@ -5490,6 +5526,15 @@ impl CMemory {
                 .blocks
                 .keys()
                 .any(|block| !block.starts_with("local:") && !block.starts_with("havoc:"))
+    }
+
+    pub(in crate::kernel) fn is_ended_local_block(&self, block: &PointerBlock) -> bool {
+        self.forgotten.ended_local_blocks.contains(block)
+    }
+
+    /// The automatic objects whose lifetimes this memory records as ended.
+    pub(in crate::kernel) fn ended_local_blocks(&self) -> impl Iterator<Item = &PointerBlock> {
+        self.forgotten.ended_local_blocks.iter()
     }
 
     pub(in crate::kernel) fn is_ended_local_address(&self, pointer: &Pointer) -> bool {

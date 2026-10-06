@@ -658,20 +658,24 @@ impl<'a> Proof<'a> {
             let ProofAssertion::Resource(resource) = assertion else {
                 continue;
             };
-            let then_expected = lower_resource_clause_at_state(
+            let then_expected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &arms[0].execution.core.state,
+                None,
+                arms[0].facts.assumptions(),
             )?;
             if !then_expected.is_own() {
                 continue;
             }
-            let else_expected = lower_resource_clause_at_state(
+            let else_expected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &arms[1].execution.core.state,
+                None,
+                arms[1].facts.assumptions(),
             )?;
             then_residual = then_residual
                 .without_fact_incrementally(&then_expected, arms[0].facts.assumptions())
@@ -1072,7 +1076,10 @@ impl<'a> Proof<'a> {
         execution.core.has_structured_branch_history = true;
         execution.core.execution_abstraction = true;
         execution.core.unfolded_predicates.clear();
-        execution.presentation.case_assumptions.clear();
+        // The joined path is still on the cases the proof took before this
+        // split. Its own two cases are the ones that end here.
+        execution.presentation.case_assumptions =
+            parent_execution.presentation.case_assumptions.clone();
         execution.core.next_opaque_call = then_abstract
             .core
             .next_opaque_call

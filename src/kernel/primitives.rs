@@ -9366,6 +9366,10 @@ pub struct ExecutionPureFact {
     pub(super) proposition: Proposition,
     pub(super) public: bool,
     pub(super) certified: bool,
+    /// Set on the memory summary a checked interface join produced from its
+    /// arms' own checked effects. See
+    /// [`ExecutionPureFact::certified_join_summary`].
+    pub(super) join_summary: bool,
     pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is

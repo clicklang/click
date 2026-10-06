@@ -700,13 +700,34 @@ fn memory_cells_definitionally_contained(
         .iter()
         .filter(|(pointer, _)| !local_block_no_pointer_can_reach(&pointer.block))
     {
-        let matching = target.cells.iter().find(|(target_pointer, _)| {
-            pointers_proven_equal_for_memory_resolution(source_pointer, target_pointer, assumptions)
-        });
-        let equal = if let Some((_, target_value)) = matching {
-            c_values_proven_equal_for_memory_resolution(source_value, target_value, assumptions)
+        // A cell the target holds under the same spelling is the match. One
+        // it does not hold is most often a read of the target that only the
+        // source has cached, which is the target's own value there whatever
+        // else the target caches. Only then is the cell looked for under
+        // another spelling, which asks an equality of every target cell.
+        let equal = if let Some(target_value) = target.cells.get(source_pointer) {
+            c_values_proven_equal_for_memory_resolution(source_value, &target_value, assumptions)
+        } else if materialized_load_is_unchanged(source_value, target, source_pointer, assumptions)
+        {
+            true
         } else {
-            materialized_load_is_unchanged(source_value, target, source_pointer, assumptions)
+            target
+                .cells
+                .iter()
+                .find(|(target_pointer, _)| {
+                    pointers_proven_equal_for_memory_resolution(
+                        source_pointer,
+                        target_pointer,
+                        assumptions,
+                    )
+                })
+                .is_some_and(|(_, target_value)| {
+                    c_values_proven_equal_for_memory_resolution(
+                        source_value,
+                        target_value,
+                        assumptions,
+                    )
+                })
         };
         if !equal {
             return false;
