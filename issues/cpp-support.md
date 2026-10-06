@@ -633,6 +633,15 @@ unchanged Bitcoin and synthetic proofs now establish
 checked narrowing identities. Internal fold/match binders remain an explicit
 shared rewrite boundary; exact whole-fold replacement is supported.
 
+Shared Integer rewriting now preserves the syntax of unrelated native
+observations: exact Integer congruence does not fold native casts or known
+conditionals merely while visiting them. Kernel regressions cover those opaque
+identities and actual Integer payload substitution. The unchanged synthetic and
+Bitcoin sidecars also prove the exact mathematical values of `quot + 1i64` and
+`quot + -1i64` by rewriting the checked addition identity before substituting the
+observed quotient. False correction offsets are refused; ordinary verification,
+expansion/reverification, and retained audit exercise the proof sequence.
+
 Next combine
 the reconstruction, remainder signs and native short-circuit correction into a
 functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
