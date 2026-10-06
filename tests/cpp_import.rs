@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 42);
+    assert_eq!(prepared.export().schema, 43);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1743,7 +1743,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1860,7 +1860,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1971,7 +1971,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2032,7 +2032,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2078,7 +2078,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2706,7 +2706,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2784,7 +2784,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2902,7 +2902,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3040,7 +3040,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3142,7 +3142,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3242,7 +3242,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3381,7 +3381,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3531,7 +3531,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let destructor = import
         .export()
         .reachable_functions
@@ -3717,7 +3717,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3820,7 +3820,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 42);
+    assert_eq!(import.export().schema, 43);
     let destructor = import
         .export()
         .reachable_functions
@@ -8476,7 +8476,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 42);
+        assert_eq!(import.export().schema, 43);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -8659,7 +8659,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 42);
+            assert_eq!(import.export().schema, 43);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -9435,10 +9435,16 @@ fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() 
         panic!("explicit library statement")
     };
     assert_eq!(metadata.len(), 2);
-    assert_eq!(metadata[0].function, "library::location");
-    assert_eq!(metadata[1].function, "library::number");
+    let click::languages::cpp::CppLibraryMetadata::Consteval(location) = &metadata[0] else {
+        panic!("consteval location")
+    };
+    let click::languages::cpp::CppLibraryMetadata::Consteval(number) = &metadata[1] else {
+        panic!("consteval number")
+    };
+    assert_eq!(location.function, "library::location");
+    assert_eq!(number.function, "library::number");
     assert_eq!(
-        metadata[0].declaration_file,
+        location.declaration_file,
         project
             .directory
             .join("gate.h")
@@ -9591,4 +9597,305 @@ fn consteval_library_metadata_scales_with_explicit_statement_count() {
         lowered.unwrap();
         assert!(work <= 32 * size + 128, "{size}: {work}");
     }
+}
+
+const LITERAL_TEXT_HEADER: &str = "namespace library { struct Text { const char* pointer; Text(const char* value) noexcept : pointer(value) {} }; }\n";
+const LITERAL_LIBRARY_HEADER: &str = r#"
+#include "text.h"
+namespace library {
+struct Location { int line; };
+consteval Location location() { return {3}; }
+template<bool Debug, class T> T&& check(T&& condition, const Location&, Text) {
+    if (Debug && !condition) __builtin_trap();
+    return static_cast<T&&>(condition);
+}
+}
+#define Gate(value) library::check<false>(value, library::location(), #value)
+"#;
+
+fn literal_library_fixture(text: &str, header: &str, cpp: &str) -> Project {
+    use sha2::{Digest, Sha256};
+    let project = consteval_library_fixture(header, cpp);
+    fs::write(project.directory.join("text.h"), text).unwrap();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["dependencies"] = serde_json::json!(["gate.h", "text.h"]);
+    config["library_assertions"][0]["kind"] =
+        "checked_boolean_statement_with_literal_metadata".into();
+    config["library_assertions"][0]["literal_constructor"] = serde_json::json!({
+        "function": "library::Text::Text", "header": "text.h",
+        "sha256": format!("{:x}", Sha256::digest(text.as_bytes()))
+    });
+    fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    project
+}
+
+#[test]
+fn literal_library_metadata_proves_conditions_and_retains_both_assumptions() {
+    use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding};
+    for (header, binding) in [
+        (
+            LITERAL_LIBRARY_HEADER.to_string(),
+            CppLiteralMetadataBinding::Value,
+        ),
+        (
+            LITERAL_LIBRARY_HEADER.replace("&, Text)", "&, const Text&)"),
+            CppLiteralMetadataBinding::ConstReference,
+        ),
+    ] {
+        let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+        let project = literal_library_fixture(LITERAL_TEXT_HEADER, &header, cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let CppStatement::LibraryAssert {
+            metadata, contract, ..
+        } = &import.export().function.body[0]
+        else {
+            panic!("library statement")
+        };
+        assert!(matches!(metadata[0], CppLibraryMetadata::Consteval(_)));
+        let CppLibraryMetadata::Literal(literal) = &metadata[1] else {
+            panic!("literal metadata")
+        };
+        assert_eq!(literal.literal, "n > 0");
+        assert_eq!(literal.record, "library::Text");
+        assert_eq!(literal.binding, binding);
+        assert_eq!(
+            Some(&literal.constructor),
+            contract.literal_constructor.as_ref()
+        );
+        assert_eq!(
+            literal.declaration_file,
+            project
+                .directory
+                .join("text.h")
+                .canonicalize()
+                .unwrap()
+                .to_str()
+                .unwrap()
+        );
+        assert!(import.export().records.is_empty());
+        assert!(import.export().reachable_functions.is_empty());
+        let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+        check_return_call_sidecar(&project, &import, proof);
+        for hostile in [
+            proof.replace("requires n > 0;", ""),
+            proof.replace("requires n > 0;", "requires n == 0;"),
+            proof.replace("ensures result == n;", "ensures result == n + 1;"),
+        ] {
+            let path = project.directory.join("hostile.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            if !hostile.contains("n + 1") {
+                assert!(
+                    error.message().contains("literal constructor"),
+                    "{}",
+                    error.message()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn literal_library_metadata_rejects_runtime_arguments_and_nontrivial_lifetimes() {
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    for (text, body) in [
+        (LITERAL_TEXT_HEADER.replace("};", "~Text() {} };"), cpp.to_string()),
+        (LITERAL_TEXT_HEADER.replace("};", "Text(const Text& other) : pointer(other.pointer) {} };"), cpp.to_string()),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("int n)", "int n, const char* message)").replace("Gate(n > 0)", "library::check<false>(n > 0, library::location(), message)")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", "library::check<false>(n > 0, library::location(), static_cast<const char*>(nullptr))")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", "library::check<false>(n > 0, library::location(), \"a\\0b\")")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", "library::check<false>(n > 0, library::location(), \"é\")")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", "Gate(++n > 0)")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0); return n;", "return Gate(n > 0);")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", "library::check<false>(n > 0, library::location(), (n++, \"message\"))")),
+        (LITERAL_TEXT_HEADER.to_string(), cpp.replace("Gate(n > 0)", &format!("library::check<false>(n > 0, library::location(), \"{}\")", "a".repeat(4097)))),
+    ] {
+        let project = literal_library_fixture(&text, LITERAL_LIBRARY_HEADER, &body);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "bounded rejection");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn literal_library_metadata_requires_explicit_constructor_authority() {
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    for change in [
+        "kind",
+        "missing",
+        "hash",
+        "function",
+        "header",
+        "dependency",
+    ] {
+        let project = literal_library_fixture(LITERAL_TEXT_HEADER, LITERAL_LIBRARY_HEADER, cpp);
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+        match change {
+            "kind" => {
+                config["library_assertions"][0]["kind"] =
+                    "checked_boolean_statement_with_consteval_metadata".into()
+            }
+            "missing" => {
+                config["library_assertions"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("literal_constructor");
+            }
+            "hash" => {
+                config["library_assertions"][0]["literal_constructor"]["sha256"] =
+                    "0".repeat(64).into()
+            }
+            "function" => {
+                config["library_assertions"][0]["literal_constructor"]["function"] =
+                    "library::Other::Other".into()
+            }
+            "header" => {
+                config["library_assertions"][0]["literal_constructor"]["header"] = "gate.h".into();
+                config["library_assertions"][0]["literal_constructor"]["sha256"] =
+                    config["library_assertions"][0]["sha256"].clone();
+            }
+            "dependency" => config["dependencies"] = serde_json::json!(["gate.h"]),
+            _ => unreachable!(),
+        }
+        fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+        refresh_import(&project.config()).unwrap_err();
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn literal_library_metadata_offline_checker_rejects_forged_constructor_and_literal() {
+    use sha2::{Digest, Sha256};
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    for change in [
+        "header", "hash", "file", "record", "literal", "binding", "kind",
+    ] {
+        let project = literal_library_fixture(LITERAL_TEXT_HEADER, LITERAL_LIBRARY_HEADER, cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let literal = &mut artifact["function"]["body"][0]["metadata"][1];
+        match change {
+            "header" => literal["constructor"]["header"] = "gate.h".into(),
+            "hash" => literal["constructor"]["sha256"] = "0".repeat(64).into(),
+            "file" => {
+                literal["declaration_file"] = project
+                    .directory
+                    .join("gate.h")
+                    .canonicalize()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .into()
+            }
+            "record" => literal["record"] = "library::Other".into(),
+            "literal" => literal["literal"] = "a\0b".into(),
+            "binding" => literal["binding"] = "mutable_reference".into(),
+            "kind" => literal["kind"] = "consteval".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("metadata") || error.contains("semantic artifact"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+fn literal_library_metadata_scales_with_explicit_statement_count() {
+    for size in [4usize, 16, 64, 256] {
+        let cpp = format!(
+            "#include \"gate.h\"\nint guarded(int n) noexcept {{ {} return n; }}",
+            "Gate(n > 0);\n".repeat(size)
+        );
+        let project = literal_library_fixture(LITERAL_TEXT_HEADER, LITERAL_LIBRARY_HEADER, &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 64 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work <= 32 * size + 128, "{size}: {work}");
+    }
+}
+
+#[test]
+fn literal_library_metadata_preserves_cleanup_and_modular_memory_framing() {
+    let cpp = r#"#include "gate.h"
+struct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };
+int checked(int n) noexcept { Guard guard(n); Gate(n > 0); return n; }
+int guarded(int& value, int* untouched) noexcept { int n = value; int result = checked(n); value = result; return result; }
+"#;
+    let project = literal_library_fixture(LITERAL_TEXT_HEADER, LITERAL_LIBRARY_HEADER, cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "library.cpp";
+void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
+int32 guarded(int32* value, int32* untouched) {
+    owns value[0..1]; owns untouched[0..1]; requires value[0] > 0; requires untouched[0] == 7;
+    ensures result == old(value[0]); ensures value[0] == old(value[0]); ensures untouched[0] == 7;
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, proof);
+}
+
+#[test]
+fn literal_library_metadata_const_reference_does_not_execute_a_nontrivial_copy() {
+    let text = LITERAL_TEXT_HEADER.replace(
+        "};",
+        "Text(const Text& other) : pointer(other.pointer) { __builtin_trap(); } };",
+    );
+    let header = LITERAL_LIBRARY_HEADER.replace("&, Text)", "&, const Text&)");
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    let project = literal_library_fixture(&text, &header, cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    fs::write(
+        project.directory.join("text.h"),
+        format!("{text}\n// changed pin\n"),
+    )
+    .unwrap();
+    assert!(
+        load_import(&project.config())
+            .unwrap_err()
+            .contains("explicit pin")
+    );
+}
+
+#[test]
+fn literal_library_metadata_cannot_bypass_selected_source_constructor_verification() {
+    let text = "namespace library { struct Text { const char* pointer; Text(const char* value) noexcept; }; }\n";
+    let cpp = "#include \"gate.h\"\nlibrary::Text::Text(const char* value) noexcept : pointer(value) {}\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    let project = literal_library_fixture(text, LITERAL_LIBRARY_HEADER, cpp);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("pinned external header"), "{error}");
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
 }

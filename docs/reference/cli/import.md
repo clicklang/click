@@ -1196,13 +1196,56 @@ functions are pure at runtime.
 The artifact retains the resolved specialization and each metadata factory's
 qualified name and canonical declaration file. Offline validation checks the
 contract kind, bounded metadata inventory, and declaration-file membership in
-the locked preprocessor closure. Artifact schema 42 requires an explicit refresh
+the locked preprocessor closure. Artifact schema 43 requires an explicit refresh
 of earlier locks.
 
-Bitcoin's unchanged `inline_assertion_check<false>` now reaches its third
-argument under this opt-in contract: its Boolean temporary and forced
-`std::source_location::current()` are accepted. The runtime string-view
-construction remains rejected. The pinned integration tests retain both the
-missing-contract refusal and this exact remaining boundary; `FeeFrac::Div` is
-not yet admitted or proved. This evaluated library call is separate from Clang's
-unevaluated `__builtin_assume`.
+The separate `checked_boolean_statement_with_literal_metadata` kind adds a
+single, independently pinned `literal_constructor` contract, for example:
+
+```json
+{
+  "kind": "checked_boolean_statement_with_literal_metadata",
+  "function": "library::check",
+  "header": "gate.h",
+  "sha256": "<SHA-256 of gate.h>",
+  "literal_constructor": {
+    "function": "library::Text::Text",
+    "header": "text.h",
+    "sha256": "<SHA-256 of text.h>"
+  }
+}
+```
+
+Both headers must be explicit dependencies and belong to the locked preprocessor
+closure. The constructor contract separately assumes that construction from an
+admitted literal returns normally with defined behavior and no caller-visible
+memory effects. Its implementation is not verified. The qualified constructor
+family names the class and constructor, without template arguments; the assumption
+covers every admitted specialization, whose resolved record type remains in the
+artifact. Selected-source constructor definitions cannot use this boundary.
+
+Each runtime metadata construction must initialize the exact record parameter
+type from one direct narrow string literal, via a single `const char*` parameter.
+The literal is limited to 4,096 ASCII bytes without embedded NULs; its compiler
+provided terminating NUL and static lifetime remain available during the call.
+Runtime pointers, conversions, default arguments, additional constructor
+arguments, and argument effects are rejected. A record binds by value or const
+reference, requires trivial destruction, and by-value parameters additionally
+require a trivial copy constructor. C++20 direct initialization from a prvalue
+constructs the parameter without executing a user-defined copy or move. The
+exporter checks the actual constructor and harmless materialization; it does not
+treat a runtime `constexpr` constructor as a forced compile-time operation.
+
+The artifact distinguishes `consteval` and `literal` metadata and retains the
+literal bytes, resolved record type, binding, constructor pin, and canonical
+declaration file. Offline validation binds that file to the exact pinned
+constructor dependency as well as the preprocessor closure. Proof diagnostics
+expose both the assertion and constructor assumptions. Metadata supplies no
+proof facts; all calls still require the same proven Boolean condition.
+
+Bitcoin's unchanged annotation has separate missing-contract and consteval-only
+refusal regressions, plus a new opt-in contract that pins the standard-library
+string-view constructor. This imports and lowers the complete unchanged
+`FeeFrac::Div`; missing condition, wide arithmetic guards, and narrow correction
+bounds still fail verification. Its general division/rounding theorem remains
+open.

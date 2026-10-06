@@ -107,7 +107,8 @@ std::optional<Options> parse_options(int argc, const char **argv) {
         if (!object || !object->getString("function") ||
             !object->getString("header") || !object->getString("sha256") ||
             (object->getString("kind") != "checked_boolean_statement" &&
-             object->getString("kind") != "checked_boolean_statement_with_consteval_metadata") ||
+             object->getString("kind") != "checked_boolean_statement_with_consteval_metadata" &&
+             object->getString("kind") != "checked_boolean_statement_with_literal_metadata") ||
             !result.library_assertions.emplace(object->getString("function")->str(), std::move(entry)).second) {
           llvm::errs() << "error: invalid or duplicate library assertion contract\n";
           return std::nullopt;
@@ -266,7 +267,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 42;
+    artifact["schema"] = 43;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -734,8 +735,66 @@ private:
       return std::nullopt;
     }
     llvm::json::Object result;
+    result["kind"] = "consteval";
     result["function"] = callee->getQualifiedNameAsString();
     result["declaration_file"] = file.generic_string();
+    return Json(std::move(result));
+  }
+
+  std::optional<Json> literal_metadata(const clang::CXXConstructExpr *expression,
+                                       clang::QualType parameter_type,
+                                       const llvm::json::Object &contract,
+                                       unsigned index) {
+    const auto *pin = contract.getObject("literal_constructor");
+    const auto *constructor = expression->getConstructor();
+    const auto *record = constructor->getParent();
+    const clang::QualType value_type = parameter_type.getNonReferenceType();
+    const bool by_value = !parameter_type->isReferenceType();
+    const bool const_reference = parameter_type->isLValueReferenceType() && value_type.isConstQualified();
+    const clang::QualType pointer_type = constructor->getNumParams() == 1 ? constructor->getParamDecl(0)->getType() : clang::QualType{};
+    const bool literal_signature = !pointer_type.isNull() && pointer_type->isPointerType() &&
+        pointer_type->getPointeeType().isConstQualified() &&
+        !pointer_type->getPointeeType().isVolatileQualified() &&
+        context_.hasSameUnqualifiedType(pointer_type->getPointeeType(), context_.CharTy);
+    const auto *decay = expression->getNumArgs() == 1 ? llvm::dyn_cast<clang::ImplicitCastExpr>(expression->getArg(0)->IgnoreParens()) : nullptr;
+    const auto *literal = decay && decay->getCastKind() == clang::CK_ArrayToPointerDecay ? llvm::dyn_cast<clang::StringLiteral>(decay->getSubExpr()->IgnoreParens()) : nullptr;
+    const bool safe_literal = literal && literal->isOrdinary() && literal->getBytes().size() <= 4096 &&
+        std::all_of(literal->getBytes().begin(), literal->getBytes().end(), [](unsigned char byte) { return byte > 0 && byte < 128; });
+    if (!pin || !pin->getString("function") || !pin->getString("header") || !pin->getString("sha256") ||
+        record->getQualifiedNameAsString() + "::" + record->getNameAsString() != pin->getString("function") ||
+        constructor->isVariadic() || pointer_type.isVolatileQualified() || !literal_signature || !safe_literal ||
+        !expression->isPRValue() || !context_.hasSameUnqualifiedType(expression->getType(), value_type) ||
+        value_type.isVolatileQualified() || !(by_value || const_reference) ||
+        !record->hasTrivialDestructor() || (by_value && !record->hasTrivialCopyConstructor())) {
+      fail(expression->getExprLoc(), "C++ library metadata argument " + std::to_string(index) + " requires an explicitly pinned narrow-literal constructor, exact record type, and trivial initialization/cleanup");
+      return std::nullopt;
+    }
+    const std::string header = pin->getString("header")->str();
+    auto declaration_header = dependency_source(constructor->getLocation());
+    const auto *definition = constructor->getDefinition();
+    if ((definition && is_in_logical_source(definition->getLocation())) ||
+        !declaration_header || *declaration_header != header ||
+        (definition && dependency_source(definition->getLocation()) != declaration_header)) {
+      fail(expression->getExprLoc(), "C++ literal metadata constructor differs from its pinned external header");
+      return std::nullopt;
+    }
+    std::filesystem::path file(source_manager_.getFilename(source_manager_.getSpellingLoc(constructor->getLocation())).str());
+    if (file.is_relative()) file = std::filesystem::path(compilation_directory_) / file;
+    std::error_code error;
+    file = std::filesystem::canonical(file, error);
+    if (error) {
+      fail(expression->getExprLoc(), "could not resolve C++ literal metadata constructor declaration");
+      return std::nullopt;
+    }
+    dependency_sources_.insert(header);
+    llvm::json::Object result;
+    result["kind"] = "literal";
+    result["constructor"] = Json(llvm::json::Object(*pin));
+    result["declaration_file"] = file.generic_string();
+    result["record"] = record->getQualifiedNameAsString();
+    result["record_type"] = value_type.getCanonicalType().getUnqualifiedType().getAsString();
+    result["literal"] = literal->getBytes().str();
+    result["binding"] = by_value ? "value" : "const_reference";
     return Json(std::move(result));
   }
 
@@ -755,7 +814,7 @@ private:
       fail(call->getExprLoc(), "C++ assumed library assertion declaration differs from its pinned header");
       return std::nullopt;
     }
-    const bool forwarding = object->getString("kind") == "checked_boolean_statement_with_consteval_metadata";
+    const bool forwarding = object->getString("kind") != "checked_boolean_statement";
     const clang::QualType parameter = callee->getNumParams() == 0 ? clang::QualType{} : callee->getParamDecl(0)->getType();
     const clang::QualType returned = callee->getReturnType();
     const clang::Expr *argument = call->getNumArgs() == 0 ? nullptr : library_argument_value(call->getArg(0));
@@ -775,7 +834,14 @@ private:
     }
     llvm::json::Array metadata;
     for (unsigned index = 1; index < call->getNumArgs(); ++index) {
-      auto value = consteval_metadata(call->getArg(index), callee->getParamDecl(index)->getType(), index);
+      const clang::Expr *metadata_argument = library_argument_value(call->getArg(index));
+      if (const auto *conversion = llvm::dyn_cast<clang::ImplicitCastExpr>(metadata_argument)) {
+        if (conversion->getCastKind() == clang::CK_ConstructorConversion) metadata_argument = conversion->getSubExpr()->IgnoreParens();
+      }
+      const auto *construction = llvm::dyn_cast<clang::CXXConstructExpr>(metadata_argument);
+      auto value = construction && object->getString("kind") == "checked_boolean_statement_with_literal_metadata"
+          ? literal_metadata(construction, callee->getParamDecl(index)->getType(), *object, index)
+          : consteval_metadata(call->getArg(index), callee->getParamDecl(index)->getType(), index);
       if (!value) return std::nullopt;
       metadata.push_back(std::move(*value));
     }
@@ -804,7 +870,7 @@ private:
       if (callee) {
         auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
         if (contract != library_assertions_.end() &&
-            contract->second.getAsObject()->getString("kind") == "checked_boolean_statement_with_consteval_metadata") {
+            contract->second.getAsObject()->getString("kind") != "checked_boolean_statement") {
           if (cleanups->cleanupsHaveSideEffects()) {
             fail(cleanups->getExprLoc(), "C++ library assertion cannot erase temporary cleanup effects");
             return std::nullopt;

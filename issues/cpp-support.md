@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Current schema 42
+arrangement restrictions remain semantic-profile limitations. Current schema 43
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -398,7 +398,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Current schema 42
+Exporter and schema both reject unsupported wide operations. Current schema 43
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -416,7 +416,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Current schema 42 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 43 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -522,24 +522,37 @@ binds their provenance to the pinned preprocessor closure. Pure runtime
 eligibility. Cleanup, modular framing, hostile arguments and provenance, and
 4/16/64/256-statement scaling have coverage.
 
-The unchanged `FeeFrac::Div` opt-in regression now admits the real annotation's
-template, Boolean temporary, discarded reference, and forced
-`std::source_location::current()`. It stops specifically at metadata argument 2:
-the **runtime** literal `string_view` construction. Next model that constructor,
-its value-parameter initialization, and trivial destruction explicitly. Pin and
-expose any standard-library assumptions; do not erase arbitrary constructors,
-conversions, or argument effects by name. The library implementation remains an
-explicit assumed contract, and the selected source's own definitions still
-require ordinary verified contracts.
+The literal-metadata slice now admits runtime construction from a direct narrow
+string literal under a separate, SHA-256-pinned constructor-family contract.
+Both by-value and const-reference bindings require exact record types and
+trivial destruction; by-value parameters also require trivial copying.
+Runtime pointers, argument effects, conversions, additional/default arguments,
+nontrivial initialization/cleanup, and selected-source definitions are refused.
+Tagged metadata retains the literal, resolved record type, binding, constructor
+pin, and canonical declaration file. Offline checks bind that file to the exact
+pinned dependency and closure; diagnostics expose both assumptions. Proofs,
+expansion/reverification, retained audit, cleanup, caller framing, hostile pins
+and artifacts, and 4/16/64/256-statement scaling have coverage. This slice uses
+artifact schema 43; previous locks require an explicit refresh.
 
-The pinned archive and a refusal regression keep its exact source selected:
-it narrows `n / d` to int64 and `n % d` to int32 **before**
-its narrow correction. `Assume` expands to an evaluated
-`inline_assertion_check<false>` call with source-location/string-view arguments
-and a build-dependent abort policy; it must not be recognized by spelling or
-silently treated as the unevaluated compiler builtin. Establish the selected
-library contract/assumptions and their provenance, then prove arithmetic and
-conversion bounds for division and correction. Add wide addition/subtraction
+The unchanged `FeeFrac::Div` now imports and lowers its complete body under the
+explicit assertion and standard-library constructor assumptions. The real
+annotation retains its Boolean temporary, forced source location, and literal
+string-view value initialization. The missing-contract and consteval-only
+refusals remain. Admitted native execution still rejects a missing condition,
+missing wide division guards, and the unbounded narrow correction, even with a
+trivial postcondition. Neither library implementation is verified, and the
+general division/rounding theorem remains open.
+
+Next prove the native division guards and quotient/remainder observations,
+then both narrowing identities and the **narrow** correction bounds. The
+selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
+A positive narrow divisor fact currently does not automatically discharge its
+wide observer guards, and a zero numerator observer alone does not establish
+the narrowed correction's bounds. Use explicit checked certificates and useful
+shared lemmas; do not edit Bitcoin or infer unproved ranges. `Assume` remains
+an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
+compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
 machine observer ranges, general range inference, and the complete rounding

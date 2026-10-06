@@ -159,7 +159,8 @@ match c.model {
 Where the arms end depends on the region. In a function proof each arm runs to
 function exit and the arms are joined there. In a loop's `preserve` body each
 arm runs to the loop's back edge and the arms are not joined at all, because a
-preservation path never joins across it — see
+preservation path never joins across it; tactics written after the `match`
+there are the shared rest of every arm's iteration — see
 [Opening a binder's model inside the body](loops-and-invariants.md#opening-a-binders-model-inside-the-body).
 
 The constructor equation is an entry assumption of the whole function only when
