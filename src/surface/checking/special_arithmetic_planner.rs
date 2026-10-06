@@ -211,6 +211,24 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerDivisionBounds { bounds, .. } => {
+                SpecialArithmeticNode::IntegerDivisionBounds {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
+            KernelNode::IntegerBoundExclusion { bounds, .. } => {
+                SpecialArithmeticNode::IntegerBoundExclusion {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
+            KernelNode::IntegerRelationTransport { bounds, .. } => {
+                SpecialArithmeticNode::IntegerRelationTransport {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::SignedDefined { width, bounds, .. } => {
                 SpecialArithmeticNode::SignedDefined {
                     width: *width,

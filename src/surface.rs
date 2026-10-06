@@ -5373,6 +5373,18 @@ pub enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
+    IntegerDivisionBounds {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
+    IntegerBoundExclusion {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
+    IntegerRelationTransport {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     IntegerCastIdentity {
         bounds: Vec<usize>,
         result: ClickProposition,
