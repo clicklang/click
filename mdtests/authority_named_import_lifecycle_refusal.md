@@ -1,4 +1,4 @@
-# Imported named member lifecycle changes require checked occurrence effects
+# A caller cannot reuse a named member consumed by a checked helper
 
 ```c filename=helper.c
 void preserve(int32* pool) {}
@@ -27,5 +27,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: helper consumption of named population members requires checked authority effects
+fail: which is not held here
 ```

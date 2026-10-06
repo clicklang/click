@@ -809,9 +809,10 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             .collect::<Vec<_>>(),
     );
     if theorem.executes.is_some() {
-        let registry = std::sync::Arc::new(FunctionSourceRegistry::from_function_blocks(
-            &external_and_user_function_blocks,
-        )?);
+        let registry = std::sync::Arc::new(
+            FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
+                .with_resource_semantics_mode(sources.resource_semantics_mode()),
+        );
         let dependencies = standard_library_theorem_definitions()?
             .iter()
             .cloned()
