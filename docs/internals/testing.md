@@ -256,8 +256,10 @@ reuses matching installed versions, including source builds without commit
 metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
 runners restore those files instead of reinstalling Clang. The Rust exporter
 has a separately pinned compiler/runtime identity in
-`scripts/rust-exporter-toolchain.sh`. CI restores that toolchain before setup;
-ordinary archive consumers require its runtime files but do not install a Rust
+`scripts/rust-exporter-toolchain.sh`. The build job bundles its runtime libraries
+with the compiled tests. Consumers restore those libraries before setup and
+check the archive's compiler, target, and toolchain identity. Missing caches do
+not prevent test execution. Ordinary archive consumers do not install a Rust
 compiler or mdBook. The live Charon consumer also installs the separate compiler
 and rustc development components selected by
 `src/languages/rust/charon-profile.json`. That compiled-in profile owns extractor

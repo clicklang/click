@@ -160,24 +160,14 @@ jobs:
         with:
           path: ~/.cache/click/llvm
           key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
-      - name: Locate pinned Rust exporter runtime
-        id: rust_runtime
-        run: |
-          source scripts/rust-exporter-toolchain.sh
-          echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
-          echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.rust_runtime.outputs.path }}
-            ${{ steps.rust_runtime.outputs.update_hash }}
-          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
-      - name: Set up test runner
-        run: scripts/setup-environment.sh --test-runner
       - uses: actions/download-artifact@v4
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
+      - name: Restore pinned Rust exporter runtime from the build artifact
+        run: scripts/rust-exporter-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
+      - name: Set up test runner
+        run: scripts/setup-environment.sh --test-runner
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
         run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" "${{ matrix.suite }}" "${{ matrix.partition }}"
 
@@ -198,24 +188,14 @@ jobs:
         with:
           path: ~/.cache/click/llvm
           key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
-      - name: Locate pinned Rust exporter runtime
-        id: rust_runtime
-        run: |
-          source scripts/rust-exporter-toolchain.sh
-          echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
-          echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.rust_runtime.outputs.path }}
-            ${{ steps.rust_runtime.outputs.update_hash }}
-          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
-      - name: Set up test runner
-        run: scripts/setup-environment.sh --test-runner
       - uses: actions/download-artifact@v4
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
+      - name: Restore pinned Rust exporter runtime from the build artifact
+        run: scripts/rust-exporter-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
+      - name: Set up test runner
+        run: scripts/setup-environment.sh --test-runner
       - name: Locate Charon toolchain cache
         id: charon_runtime
         run: |
