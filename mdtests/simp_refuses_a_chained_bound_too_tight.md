@@ -1,0 +1,44 @@
+# simp refuses a chained bound one too tight
+
+The negative of `mdtests/simp_follows_a_bound_to_another_variable.md`:
+`i < n` and `n <= 100` give `i <= 99`, so `i + 1 <= 100` holds but
+`i + 1 <= 99` does not, and the chained selection does not prove it.
+
+```c filename=simp_refuses_a_chained_bound_too_tight.c
+int32 count_to(int32 n) {
+    int32 i = 0;
+    while (i < n) {
+        i = i + 1;
+    }
+    return i;
+}
+```
+
+```click
+verifying "simp_refuses_a_chained_bound_too_tight.c";
+
+int32 count_to(int32 n) {
+    requires n >= 0 and n <= 100;
+    ensures result == n;
+} by {
+    step();
+    step();
+    loop {
+        decreases n - i;
+        invariant 0 <= i;
+        invariant i <= n;
+        initialize by { simp(); }
+        preserve by {
+            have i + 1 <= 99 by { simp(); }
+            step();
+            close_invariants();
+        }
+    }
+    execute();
+    simp();
+}
+```
+
+```expect
+fail: could not establish `(i + 1) <= 99`
+```

@@ -1,0 +1,208 @@
+{
+  "schema": 1,
+  "date": "2026-10-06",
+  "verdict": "blocked_before_checked_lowering",
+  "source_manifest": "../../rust-checksum-sources.json",
+  "profile": {
+    "schema": 1,
+    "identity": "click-charon-trial-v1",
+    "extractor_revision": "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb",
+    "compiler_commit": "923c95cdf5ba65cea505aa2ea829f578e1506ed8",
+    "toolchain": "nightly-2026-09-17",
+    "extraction": "click-charon-optimized-abort-checked-v1",
+    "flags": [
+      "--edition=2024",
+      "--target=x86_64-unknown-linux-gnu",
+      "-Cpanic=abort",
+      "-Coverflow-checks=on",
+      "-Zmir-opt-level=0"
+    ],
+    "semantics": [
+      "flat-record-drop-v1",
+      "unsigned-from-v2",
+      "compact-uniform-scalar-array-v1",
+      "byte-slice-metadata-v1",
+      "shared-byte-chunks-exact-v1",
+      "nested-natural-while-v1",
+      "byte-array-unsize-v1",
+      "unsigned-checksum-operators-v1",
+      "borrowed-scalar-array-fields-v1",
+      "compact-uniform-array-regions-v1,compact-scalar-array-snapshots-v1",
+      "shared-scalar-array-iteration-v1",
+      "resolved-source-assignment-operators-v1",
+      "shared-scalar-slice-length-v1",
+      "local-scalar-array-reference-assignment-v1",
+      "external-scalar-array-snapshot-v1",
+      "split-shared-slice-while-header-v1",
+      "shared-scalar-slice-into-iteration-v1",
+      "shared-byte-split-at-pair-v1",
+      "borrowed-iterator-forwarding-v1",
+      "stable-extraction-output-metadata-v1"
+    ],
+    "extractor_version": "0.1.279"
+  },
+  "selected_extraction": {
+    "edition": "2021",
+    "features": [
+      "std"
+    ],
+    "roots": [
+      "adler2::adler32_slice"
+    ],
+    "mir": "optimized",
+    "reconstruct_fallible_operations": true,
+    "has_errors": false,
+    "body_shapes": [
+      {
+        "path_components": [
+          "adler2",
+          "adler32_slice"
+        ],
+        "blocks": 7,
+        "statements": 14
+      },
+      {
+        "path_components": [
+          "adler2",
+          "new"
+        ],
+        "blocks": 3,
+        "statements": 1
+      },
+      {
+        "path_components": [
+          "adler2",
+          "write_slice"
+        ],
+        "blocks": 3,
+        "statements": 11
+      },
+      {
+        "path_components": [
+          "adler2",
+          "checksum"
+        ],
+        "blocks": 5,
+        "statements": 15
+      },
+      {
+        "path_components": [
+          "adler2",
+          "default"
+        ],
+        "blocks": 1,
+        "statements": 2
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "compute"
+        ],
+        "blocks": 94,
+        "statements": 424
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "from"
+        ],
+        "blocks": 9,
+        "statements": 37
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "add_assign"
+        ],
+        "blocks": 1,
+        "statements": 51
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "rem_assign"
+        ],
+        "blocks": 1,
+        "statements": 39
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "mul_assign"
+        ],
+        "blocks": 1,
+        "statements": 39
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "compute",
+          "MOD"
+        ],
+        "blocks": 1,
+        "statements": 2
+      },
+      {
+        "path_components": [
+          "adler2",
+          "algo",
+          "compute",
+          "CHUNK_SIZE"
+        ],
+        "blocks": 1,
+        "statements": 4
+      },
+      {
+        "path_components": [],
+        "blocks": 3,
+        "statements": 4
+      },
+      {
+        "path_components": [
+          "core",
+          "ptr",
+          "drop_glue"
+        ],
+        "blocks": 3,
+        "statements": 2
+      },
+      {
+        "path_components": [],
+        "blocks": 8,
+        "statements": 16
+      }
+    ],
+    "crate_name_matched_files": [
+      {
+        "kind": "Local",
+        "path": "lib.rs",
+        "contents_sha256": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+      },
+      {
+        "kind": "Virtual",
+        "path": "/cargo/registry/25cdd57fae9f0462/adler2-2.0.1/src/lib.rs",
+        "contents_sha256": null
+      },
+      {
+        "kind": "Local",
+        "path": "algo.rs",
+        "contents_sha256": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded"
+      }
+    ]
+  },
+  "production_import": {
+    "edition": "2024",
+    "features": [],
+    "roots": "all local items",
+    "error": "click: Charon trial requires exactly one locked source file",
+    "artifact_published": false,
+    "lock_published": false
+  },
+  "checksum_verified": false
+}

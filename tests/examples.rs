@@ -79,9 +79,12 @@ fn canonical_charon_examples_verify_locked_inputs() {
         let config = root.join(entry["config"].as_str().unwrap());
         let metadata: serde_json::Value =
             serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
-        if metadata["backend"] != "charon-trial" {
-            continue;
-        }
+        assert_eq!(metadata["language"], "rust");
+        assert_eq!(metadata["schema"], 3);
+        assert!(
+            metadata.get("backend").is_none(),
+            "canonical Rust examples use the native default"
+        );
         run_example_in_thread(config.parent().unwrap()).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
@@ -339,7 +342,7 @@ fn run_example_project(project: &Path) -> Result<(), String> {
             let metadata: serde_json::Value =
                 serde_json::from_slice(&fs::read(&config).map_err(|error| error.to_string())?)
                     .map_err(|error| error.to_string())?;
-            metadata["language"] == "rust" && metadata["backend"] == "charon-trial"
+            metadata["language"] == "rust"
         } else {
             false
         };

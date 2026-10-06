@@ -3,6 +3,8 @@ use super::schema::{Expression as E, Function, Record, RustExport, Statement as 
 mod array_reference_tests;
 mod arrays;
 mod chunks;
+#[cfg(test)]
+mod move_regressions;
 mod moves;
 mod shared_arrays;
 use crate::kernel::*;

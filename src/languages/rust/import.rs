@@ -1,15 +1,12 @@
 //! Refresh runs the pinned exporter; ordinary loading only checks locked inputs.
-use super::schema::{COMPILER_COMMIT, RustExport, SCHEMA, TARGET};
-use crate::languages::compiler_process::{CompilerLimits, run_compiler};
+use super::schema::{RustExport, SCHEMA, TARGET};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct PreparedRustImport {
@@ -68,32 +65,24 @@ struct Lock {
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
-fn identity(config: &str, source: &str, exporter: &str, artifact: &str) -> String {
-    digest(format!("click-rust-import-v2\n{config}\n{source}\n{exporter}\n{artifact}\n{COMPILER_COMMIT}\n{TARGET}").as_bytes())
-}
 fn import_identity(
-    c: &Config,
     config: &str,
     source: &str,
     exporter: &str,
     artifact: &str,
-    driver: &Option<String>,
+    driver: &str,
 ) -> String {
-    match driver {
-        Some(driver) if c.backend.as_deref() == Some("charon-trial") => {
-            let profile = super::profile::get();
-            digest(
-                format!(
-                    "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
-                    profile.identity,
-                    profile.semantic_identity()
-                )
-                .as_bytes(),
-            )
-        }
-        _ => identity(config, source, exporter, artifact),
-    }
+    let profile = super::profile::get();
+    digest(
+        format!(
+            "{}\n{config}\n{source}\n{exporter}\n{artifact}\n{driver}\n{}",
+            profile.identity,
+            profile.semantic_identity()
+        )
+        .as_bytes(),
+    )
 }
+
 fn read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
     if !fs::symlink_metadata(path)
         .map_err(|e| format!("read `{}`: {e}", path.display()))?
@@ -134,11 +123,11 @@ fn config(path: &Path) -> Result<(Config, Vec<u8>, PathBuf), String> {
     // Configuration version is independent of the typed artifact schema.
     if !matches!(
         (c.schema, c.backend.as_deref()),
-        (2, None) | (3, Some("charon-trial"))
+        (3, None | Some("charon") | Some("charon-trial"))
     ) || c.language != "rust"
         || c.target != TARGET
     {
-        return Err("unsupported Rust import schema/language/target".into());
+        return Err("unsupported Rust import schema/language/target; use schema 3 and native Charon .ullbc artifacts (legacy extraction is retired)".into());
     }
     let absolute = fs::canonicalize(path).map_err(|e| e.to_string())?;
     let root = absolute
@@ -164,24 +153,7 @@ fn lock_path(path: &Path) -> Result<PathBuf, String> {
     Ok(path.with_file_name(format!("{name}.lock")))
 }
 fn decode(bytes: &[u8], c: &Config, source: &[u8]) -> Result<RustExport, String> {
-    if c.backend.as_deref() == Some("charon-trial") {
-        let export = super::charon::decode(bytes, &c.source, source)?;
-        super::lowering::lower(&export)?;
-        return Ok(export);
-    }
-    let export: RustExport =
-        serde_json::from_slice(bytes).map_err(|e| format!("Rust semantic artifact: {e}"))?;
-    if export.schema != SCHEMA
-        || export.compiler_commit != COMPILER_COMMIT
-        || export.target != TARGET
-        || export.edition != "2024"
-        || !export.overflow_checks
-        || export.panic != "abort"
-        || export.mir_opt_level != 0
-        || export.logical_source != c.source
-    {
-        return Err("Rust artifact differs from the supported compiler profile".into());
-    }
+    let export = super::charon::decode(bytes, &c.source, source)?;
     super::lowering::lower(&export)?;
     Ok(export)
 }
@@ -229,33 +201,16 @@ pub fn refresh_import(path: &Path) -> Result<(), String> {
         return Err("Rust exporter must differ from source/config/artifact/lock".into());
     }
     let exporter_bytes = read(&exporter, 128 << 20)?;
-    let mut driver_hash = None;
-    let output_bytes = if c.backend.as_deref() == Some("charon-trial") {
-        let driver = exporter.with_file_name("charon-driver");
-        if driver == artifact_path || driver == lock_output {
-            return Err("Charon driver must differ from artifact/lock outputs".into());
-        }
-        let driver_bytes = read(&driver, 128 << 20)?;
-        driver_hash = Some(digest(&driver_bytes));
-        let output = super::charon::extract(&exporter, &source, &root)?;
-        if driver_bytes != read(&driver, 128 << 20)? {
-            return Err("Charon driver changed during extraction".into());
-        }
-        output
-    } else {
-        run_compiler(
-            &exporter,
-            &[source.to_string_lossy().into_owned(), c.source.clone()],
-            &root,
-            &BTreeMap::new(),
-            CompilerLimits {
-                timeout: Duration::from_secs(30),
-                max_stdout_bytes: 4 << 20,
-                max_stderr_bytes: 64 << 10,
-            },
-        )?
-        .stdout
-    };
+    let driver = exporter.with_file_name("charon-driver");
+    if driver == artifact_path || driver == lock_output {
+        return Err("Charon driver must differ from artifact/lock outputs".into());
+    }
+    let driver_bytes = read(&driver, 128 << 20)?;
+    let driver_hash = digest(&driver_bytes);
+    let output_bytes = super::charon::extract(&exporter, &source, &root)?;
+    if driver_bytes != read(&driver, 128 << 20)? {
+        return Err("Charon driver changed during extraction".into());
+    }
     decode(&output_bytes, &c, &source_bytes)?;
     if bytes != read(path, 1 << 20)?
         || source_bytes != read(&source, 1 << 20)?
@@ -270,14 +225,13 @@ pub fn refresh_import(path: &Path) -> Result<(), String> {
     let lock = Lock {
         schema: SCHEMA,
         identity: import_identity(
-            &c,
             &config_hash,
             &source_hash,
             &exporter_hash,
             &artifact_hash,
             &driver_hash,
         ),
-        charon_driver: driver_hash,
+        charon_driver: Some(driver_hash),
         config: config_hash,
         source: source_hash,
         exporter: exporter_hash,
@@ -299,15 +253,14 @@ pub fn load_import(path: &Path) -> Result<PreparedRustImport, String> {
         || lock.config != digest(&bytes)
         || lock.source != digest(&source)
         || lock.artifact != digest(&artifact)
-        || lock.charon_driver.is_some() != (c.backend.as_deref() == Some("charon-trial"))
+        || lock.charon_driver.is_none()
         || lock.identity
             != import_identity(
-                &c,
                 &lock.config,
                 &lock.source,
                 &lock.exporter,
                 &lock.artifact,
-                &lock.charon_driver,
+                lock.charon_driver.as_deref().unwrap_or_default(),
             )
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
