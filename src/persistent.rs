@@ -299,8 +299,11 @@ impl<T: Ord> PersistentSet<T> {
         }
     }
 
-    pub(crate) fn contains(&self, value: &T) -> bool {
-        self.map.contains_key(value)
+    pub(crate) fn contains<Q: Ord + ?Sized>(&self, value: &Q) -> bool
+    where
+        T: Borrow<Q>,
+    {
+        self.map.get(value).is_some()
     }
 
     pub(crate) fn without_value(&self, value: &T) -> Self {
