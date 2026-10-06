@@ -49,6 +49,8 @@ struct Config {
     artifact: String,
     #[serde(default)]
     backend: Option<String>,
+    #[serde(default, rename = "crate")]
+    crate_config: Option<super::crate_inputs::CrateConfig>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -123,7 +125,7 @@ fn config(path: &Path) -> Result<(Config, Vec<u8>, PathBuf), String> {
     // Configuration version is independent of the typed artifact schema.
     if !matches!(
         (c.schema, c.backend.as_deref()),
-        (3, None | Some("charon") | Some("charon-trial"))
+        (3 | 4, None | Some("charon") | Some("charon-trial"))
     ) || c.language != "rust"
         || c.target != TARGET
     {
@@ -134,7 +136,30 @@ fn config(path: &Path) -> Result<(Config, Vec<u8>, PathBuf), String> {
         .parent()
         .ok_or("Rust config needs a directory")?
         .to_path_buf();
-    local_file(&root, &c.source)?;
+    match (c.schema, &c.crate_config) {
+        (3, None) => {
+            local_file(&root, &c.source)?;
+        }
+        (4, Some(config)) => {
+            config.validate(&c.source)?;
+            for name in &config.files {
+                super::crate_inputs::file(&root, name)?;
+                if name == &c.artifact
+                    || name == absolute.file_name().unwrap().to_string_lossy().as_ref()
+                    || name == &format!("{}.lock", absolute.file_name().unwrap().to_string_lossy())
+                {
+                    return Err(
+                        "Rust crate inputs must differ from config/artifact/lock outputs".into(),
+                    );
+                }
+            }
+        }
+        _ => {
+            return Err(
+                "Rust schema 4 requires a crate configuration; schema 3 is single-file".into(),
+            );
+        }
+    }
     local_file(&root, &c.artifact)?;
     if !c.source.ends_with(".rs")
         || c.source == c.artifact
@@ -152,8 +177,61 @@ fn lock_path(path: &Path) -> Result<PathBuf, String> {
         .ok_or("invalid Rust config name")?;
     Ok(path.with_file_name(format!("{name}.lock")))
 }
-fn decode(bytes: &[u8], c: &Config, source: &[u8]) -> Result<RustExport, String> {
-    let export = super::charon::decode(bytes, &c.source, source)?;
+fn sources(c: &Config, root: &Path) -> Result<super::crate_inputs::SourceFiles, String> {
+    let names = c
+        .crate_config
+        .as_ref()
+        .map_or_else(|| vec![c.source.clone()], |c| c.files.clone());
+    let mut files = std::collections::BTreeMap::new();
+    let mut total = 0;
+    for name in names {
+        let path = if c.crate_config.is_some() {
+            super::crate_inputs::file(root, &name)?
+        } else {
+            local_file(root, &name)?
+        };
+        let bytes = read(&path, 1 << 20)?;
+        total += bytes.len();
+        if total > 4 << 20 {
+            return Err("Rust crate source closure exceeds its byte bound".into());
+        }
+        files.insert(name, bytes);
+    }
+    Ok(files)
+}
+fn source_digest(c: &Config, files: &super::crate_inputs::SourceFiles) -> String {
+    if c.crate_config.is_none() {
+        return digest(&files[&c.source]);
+    }
+    let hashes: Vec<_> = files
+        .iter()
+        .map(|(name, bytes)| (name, digest(bytes)))
+        .collect();
+    digest(
+        format!(
+            "{}\n{}",
+            super::crate_inputs::PROFILE_ID,
+            serde_json::to_string(&hashes).unwrap()
+        )
+        .as_bytes(),
+    )
+}
+fn decode(
+    bytes: &[u8],
+    c: &Config,
+    files: &super::crate_inputs::SourceFiles,
+) -> Result<RustExport, String> {
+    let export = if c.crate_config.is_some() {
+        super::charon::decode_crate(
+            bytes,
+            &c.source,
+            &files[&c.source],
+            c.crate_config.as_ref(),
+            Some(files),
+        )?
+    } else {
+        super::charon::decode(bytes, &c.source, &files[&c.source])?
+    };
     super::lowering::lower(&export)?;
     Ok(export)
 }
@@ -186,8 +264,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 pub fn refresh_import(path: &Path) -> Result<(), String> {
     let (c, bytes, root) = config(path)?;
-    let source = local_file(&root, &c.source)?;
-    let source_bytes = read(&source, 1 << 20)?;
+    let source = if c.crate_config.is_some() {
+        super::crate_inputs::file(&root, &c.source)?
+    } else {
+        local_file(&root, &c.source)?
+    };
+    let source_files = sources(&c, &root)?;
     let exporter =
         fs::canonicalize(root.join(&c.exporter)).map_err(|e| format!("Rust exporter: {e}"))?;
     let artifact_path = local_file(&root, &c.artifact)?;
@@ -207,19 +289,29 @@ pub fn refresh_import(path: &Path) -> Result<(), String> {
     }
     let driver_bytes = read(&driver, 128 << 20)?;
     let driver_hash = digest(&driver_bytes);
-    let output_bytes = super::charon::extract(&exporter, &source, &root)?;
+    let output_bytes = if c.crate_config.is_some() {
+        super::charon::extract_crate(
+            &exporter,
+            &source,
+            &root,
+            c.crate_config.as_ref(),
+            Some(&source_files),
+        )?
+    } else {
+        super::charon::extract(&exporter, &source, &root)?
+    };
     if driver_bytes != read(&driver, 128 << 20)? {
         return Err("Charon driver changed during extraction".into());
     }
-    decode(&output_bytes, &c, &source_bytes)?;
+    decode(&output_bytes, &c, &source_files)?;
     if bytes != read(path, 1 << 20)?
-        || source_bytes != read(&source, 1 << 20)?
+        || source_files != sources(&c, &root)?
         || exporter_bytes != read(&exporter, 128 << 20)?
     {
         return Err("Rust inputs changed during compiler extraction".into());
     }
     let config_hash = digest(&bytes);
-    let source_hash = digest(&source_bytes);
+    let source_hash = source_digest(&c, &source_files);
     let exporter_hash = digest(&exporter_bytes);
     let artifact_hash = digest(&output_bytes);
     let lock = Lock {
@@ -248,10 +340,10 @@ pub fn load_import(path: &Path) -> Result<PreparedRustImport, String> {
     let lock: Lock =
         serde_json::from_slice(&read(&lock_path(path)?, 1 << 20)?).map_err(|e| e.to_string())?;
     let artifact = read(&local_file(&root, &c.artifact)?, 4 << 20)?;
-    let source = read(&local_file(&root, &c.source)?, 1 << 20)?;
+    let source_files = sources(&c, &root)?;
     if lock.schema != SCHEMA
         || lock.config != digest(&bytes)
-        || lock.source != digest(&source)
+        || lock.source != source_digest(&c, &source_files)
         || lock.artifact != digest(&artifact)
         || lock.charon_driver.is_none()
         || lock.identity
@@ -265,7 +357,7 @@ pub fn load_import(path: &Path) -> Result<PreparedRustImport, String> {
     {
         return Err("Rust import lock differs from its inputs; refresh it".into());
     }
-    let export = decode(&artifact, &c, &source)?;
+    let export = decode(&artifact, &c, &source_files)?;
     Ok(PreparedRustImport {
         inner: Arc::new(Inner {
             export,

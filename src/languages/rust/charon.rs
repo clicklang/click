@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod constructors;
 mod protocol;
 mod shared_arrays;
 #[cfg(test)]
@@ -28,10 +29,24 @@ struct TrialArtifact {
     compiler_commit: String,
     profile: String,
     flags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    crate_config: Option<super::crate_inputs::CrateConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    crate_profile: Option<String>,
     data: charon_lib::export::CrateData,
 }
 
 pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<Vec<u8>, String> {
+    extract_crate(executable, source, root, None, None)
+}
+
+pub(super) fn extract_crate(
+    executable: &Path,
+    source: &Path,
+    root: &Path,
+    crate_config: Option<&super::crate_inputs::CrateConfig>,
+    sources: Option<&super::crate_inputs::SourceFiles>,
+) -> Result<Vec<u8>, String> {
     // The wrapper selects its compiled-in rustup toolchain. Keep only runtime
     // selectors; no ambient rustc flags or Charon configuration can enter.
     let environment: BTreeMap<_, _> = [
@@ -86,6 +101,56 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
         return Err("Charon trial requires its pinned compiler commit".into());
     }
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    // Compile a private immutable snapshot, so even include_bytes! inputs cannot
+    // change between dep-info, translation, and the final source recheck.
+    let snapshot = temp.path().join("sources");
+    let mut snapshot_source = None;
+    if let Some(c) = crate_config {
+        let files = sources.ok_or("missing crate source snapshot")?;
+        for name in &c.files {
+            let target = snapshot.join(name);
+            std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+            std::fs::write(
+                &target,
+                files.get(name).ok_or("missing crate snapshot file")?,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        snapshot_source = Some(
+            snapshot.join(
+                source
+                    .strip_prefix(root)
+                    .map_err(|_| "crate root escapes inputs")?,
+            ),
+        );
+    }
+    let root = if crate_config.is_some() {
+        snapshot.as_path()
+    } else {
+        root
+    };
+    let source = snapshot_source.as_deref().unwrap_or(source);
+    let flags = crate_config.map_or_else(|| profile::get().flags.clone(), |c| c.flags());
+    if let Some(c) = crate_config {
+        let dep = temp.path().join("inputs.d");
+        let mut rustc_args = vec![
+            "run".into(),
+            profile::get().toolchain.clone(),
+            "rustc".into(),
+            source.to_string_lossy().into_owned(),
+            "--crate-type=lib".into(),
+            format!("--crate-name={}", c.name),
+            format!("--emit=dep-info={}", dep.display()),
+        ];
+        rustc_args.extend(flags.iter().cloned());
+        run_compiler(&rustup, &rustc_args, root, &environment, limits)?;
+        let observed =
+            super::crate_inputs::dep_files(&std::fs::read(&dep).map_err(|e| e.to_string())?, root)?;
+        let expected = c.files.iter().cloned().collect();
+        if observed != expected {
+            return Err("Rust compiler source closure differs from configured crate files".into());
+        }
+    }
     let artifact = temp.path().join("trial.ullbc");
     let mut args: Vec<String> = [
         "rustc",
@@ -109,17 +174,19 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
     .map(str::to_string)
     .collect();
     args.push(artifact.to_string_lossy().into_owned());
-    args.extend(
-        profile::get()
-            .flags
-            .iter()
-            .map(|flag| format!("--rustc-arg={flag}")),
-    );
+    if let Some(c) = crate_config {
+        for root in &c.roots {
+            args.extend(["--start-from".into(), root.clone()]);
+        }
+    }
+    args.extend(flags.iter().map(|flag| format!("--rustc-arg={flag}")));
     args.extend([
         "--".into(),
         source.to_string_lossy().into_owned(),
         "--crate-name".into(),
-        "click_charon_trial".into(),
+        crate_config
+            .map_or("click_charon_trial", |c| c.name.as_str())
+            .into(),
         "--crate-type".into(),
         "lib".into(),
     ]);
@@ -134,11 +201,32 @@ pub(super) fn extract(executable: &Path, source: &Path, root: &Path) -> Result<V
     // Temporary output paths are extraction metadata, not Rust semantics.
     // Keep artifacts reproducible, including configs that share one output.
     data.translated.options.dest_file = Some("trial.ullbc".into());
+    if let Some(c) = crate_config {
+        for file in &mut data.translated.files {
+            if let a::FileName::Local(path) = &mut file.name {
+                let absolute = if path.is_absolute() {
+                    path.clone()
+                } else {
+                    temp.path().join(&*path)
+                };
+                let Ok(relative) = absolute.strip_prefix(root) else {
+                    continue;
+                };
+                let name = relative.to_str().ok_or("Charon source path is not UTF-8")?;
+                if !c.files.iter().any(|f| f == name) {
+                    return Err("Charon source is outside the compiler source closure".into());
+                }
+                *path = relative.to_path_buf();
+            }
+        }
+    }
     serde_json::to_vec(&TrialArtifact {
         extractor_revision: profile::get().extractor_revision.clone(),
         compiler_commit: profile::get().compiler_commit.clone(),
         profile: profile::get().extraction.clone(),
-        flags: profile::get().flags.clone(),
+        flags,
+        crate_config: crate_config.cloned(),
+        crate_profile: crate_config.map(|_| super::crate_inputs::PROFILE_ID.into()),
         data,
     })
     .map_err(|e| e.to_string())
@@ -163,6 +251,62 @@ fn simple_name(n: &a::Name, krate: &str) -> Result<String, String> {
         _ => Err(unsupported("nested or disambiguated source items")),
     }
 }
+// Length-prefixed, tagged components keep Rust paths injective in C identifiers.
+fn qualified_record_name(name: &a::Name, krate: &str) -> Result<String, String> {
+    let Some(a::PathElem::Ident(root, d)) = name.name.first() else {
+        return Err(unsupported("qualified declaration root"));
+    };
+    if root != krate || !d.is_zero() {
+        return Err(unsupported("qualified declaration crate identity"));
+    }
+    let mut encoded = "__rust_q".to_string();
+    for part in &name.name {
+        let a::PathElem::Ident(n, d) = part else {
+            return Err(unsupported("record path component"));
+        };
+        if !d.is_zero() {
+            return Err(unsupported("disambiguated source declaration"));
+        }
+        encoded.push_str(&format!("_I{}_{n}", n.len()));
+    }
+    Ok(encoded)
+}
+impl Adapter<'_> {
+    fn qualified_function_name(&self, name: &a::Name) -> Result<String, String> {
+        let Some(a::PathElem::Ident(root, d)) = name.name.first() else {
+            return Err(unsupported("qualified function root"));
+        };
+        if root != &self.krate.crate_name || !d.is_zero() {
+            return Err(unsupported("qualified function crate identity"));
+        }
+        let mut encoded = "__rust_q".to_string();
+        for part in &name.name {
+            match part {
+                a::PathElem::Ident(n, d) if d.is_zero() => {
+                    encoded.push_str(&format!("_I{}_{n}", n.len()))
+                }
+                a::PathElem::Impl(a::ImplElem::Ty(binder)) if binder.params.is_empty() => {
+                    let id = self.record_id(&binder.skip_binder)?;
+                    let ty = &self.records[&id];
+                    encoded.push_str(&format!("_T{}_{ty}", ty.len()));
+                }
+                _ => return Err(unsupported("qualified function path component")),
+            }
+        }
+        Ok(encoded)
+    }
+}
+fn local_impl_method_path(name: &a::Name, krate: &str, id: a::TraitImplId, method: &str) -> bool {
+    let n = name.name.len();
+    n >= 3
+        && matches!(&name.name[0], a::PathElem::Ident(root, d) if root == krate && d.is_zero())
+        && name.name[..n - 2]
+            .iter()
+            .all(|p| matches!(p, a::PathElem::Ident(_,d) if d.is_zero()))
+        && matches!(&name.name[n-2], a::PathElem::Impl(a::ImplElem::Trait(found)) if *found == id)
+        && matches!(&name.name[n-1], a::PathElem::Ident(found,d) if found == method && d.is_zero())
+}
+
 fn concrete_size(size: &a::Size) -> Result<u32, String> {
     let Some(expr) = &size.chosen else {
         return Err(unsupported("symbolic layout"));
@@ -181,6 +325,7 @@ fn byte_slice(ty: &a::Ty) -> bool {
 }
 
 struct Adapter<'a> {
+    crate_mode: bool,
     krate: &'a a::TranslatedCrate,
     records: BTreeMap<a::TypeDeclId, String>,
     functions: BTreeMap<a::FunDeclId, String>,
@@ -961,6 +1106,7 @@ impl BodyAdapter<'_, '_> {
                     .get(id)
                     .ok_or_else(|| unsupported("missing call definition"))?;
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
+                self.adapter.default_constructor_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
                     let [a::Operand::Move(p)] = call.args.as_slice() else {
                         return Err(unsupported("mem::drop operand"));
@@ -975,6 +1121,20 @@ impl BodyAdapter<'_, '_> {
                         target: target.index(),
                     }
                 } else {
+                    if self.adapter.crate_mode
+                        && (call.args.len() != callee.signature.inputs.len()
+                            || self.adapter.ty(&call.dest.ty)?
+                                != self.adapter.ty(&callee.signature.output)?)
+                    {
+                        return Err(unsupported("source call signature/destination type"));
+                    }
+                    if self.adapter.crate_mode {
+                        for (arg, ty) in call.args.iter().zip(&callee.signature.inputs) {
+                            if self.adapter.ty(arg.ty())? != self.adapter.ty(ty)? {
+                                return Err(unsupported("source call operand type"));
+                            }
+                        }
+                    }
                     if call.safety == a::CallSafety::Unsafe
                         || callee.signature.is_unsafe
                         || !ptr.generics.types.is_empty()
@@ -1011,12 +1171,26 @@ pub(super) fn decode(
     source: &str,
     source_bytes: &[u8],
 ) -> Result<out::RustExport, String> {
+    decode_crate(bytes, source, source_bytes, None, None)
+}
+
+pub(super) fn decode_crate(
+    bytes: &[u8],
+    source: &str,
+    source_bytes: &[u8],
+    crate_config: Option<&super::crate_inputs::CrateConfig>,
+    sources: Option<&super::crate_inputs::SourceFiles>,
+) -> Result<out::RustExport, String> {
     let artifact: TrialArtifact =
         serde_json::from_slice(bytes).map_err(|e| format!("Charon artifact: {e}"))?;
     if artifact.extractor_revision != profile::get().extractor_revision
         || artifact.compiler_commit != profile::get().compiler_commit
         || artifact.profile != profile::get().extraction
-        || artifact.flags != profile::get().flags
+        || artifact.flags
+            != crate_config.map_or_else(|| profile::get().flags.clone(), |c| c.flags())
+        || artifact.crate_config.as_ref() != crate_config
+        || artifact.crate_profile.as_deref()
+            != crate_config.map(|_| super::crate_inputs::PROFILE_ID)
     {
         return Err("Charon artifact differs from the locked compiler profile".into());
     }
@@ -1035,6 +1209,7 @@ pub(super) fn decode(
         opaque: vec!["core".into(), "alloc".into(), "std".into()],
         error_on_warnings: true,
         dest_file: opts.dest_file.clone(),
+        start_from: crate_config.map_or_else(Vec::new, |c| c.roots.clone()),
         ..Default::default()
     };
     // The driver clears rustc_args after consuming them; the refresh-owned
@@ -1042,15 +1217,66 @@ pub(super) fn decode(
     if opts != &expected {
         return Err("Charon artifact differs from the trial extraction profile".into());
     }
-    let files: Vec<_> = krate
-        .files
-        .iter()
-        .filter(|f| f.crate_name == krate.crate_name)
-        .collect();
-    if files.len() != 1 || files[0].contents.as_deref().map(str::as_bytes) != Some(source_bytes) {
-        return Err("Charon trial requires exactly one locked source file".into());
+    if let Some(c) = crate_config {
+        if krate.crate_name != c.name {
+            return Err("Charon crate identity differs from configuration".into());
+        }
+        let sources = sources.ok_or("missing locked crate sources")?;
+        let mut seen = BTreeSet::new();
+        for file in &krate.files {
+            if let a::FileName::Local(path) = &file.name {
+                if path.is_absolute() {
+                    continue;
+                }
+                let name = path.to_str().ok_or("Charon source path is not UTF-8")?;
+                if !seen.insert(name)
+                    || sources.get(name).map(Vec::as_slice)
+                        != file.contents.as_deref().map(str::as_bytes)
+                {
+                    return Err(format!(
+                        "Charon file `{}` differs from locked crate source closure",
+                        name.chars().take(120).collect::<String>()
+                    ));
+                }
+            }
+        }
+        // External source locations may also be Local (e.g. /rustc/library).
+        // Ownership comes from declarations, never the crate-name spelling.
+        let metadata = krate
+            .type_decls
+            .iter()
+            .map(|d| &d.item_meta)
+            .chain(krate.fun_decls.iter().map(|d| &d.item_meta))
+            .chain(krate.trait_decls.iter().map(|d| &d.item_meta))
+            .chain(krate.trait_impls.iter().map(|d| &d.item_meta));
+        for meta in metadata.filter(|m| m.is_local) {
+            let file = krate
+                .files
+                .get(meta.span.data().file_id)
+                .ok_or("missing local declaration source")?;
+            let a::FileName::Local(path) = &file.name else {
+                return Err("local declaration is outside locked crate sources".into());
+            };
+            if !path.to_str().is_some_and(|name| seen.contains(name)) {
+                return Err("local declaration is outside locked crate sources".into());
+            }
+        }
+        if !seen.contains(source) {
+            return Err("Charon artifact is missing the crate root".into());
+        }
+    } else {
+        let files: Vec<_> = krate
+            .files
+            .iter()
+            .filter(|f| f.crate_name == krate.crate_name)
+            .collect();
+        if files.len() != 1 || files[0].contents.as_deref().map(str::as_bytes) != Some(source_bytes)
+        {
+            return Err("Charon trial requires exactly one locked source file".into());
+        }
     }
     let mut adapter = Adapter {
+        crate_mode: crate_config.is_some(),
         krate: &krate,
         records: BTreeMap::new(),
         functions: BTreeMap::new(),
@@ -1064,9 +1290,14 @@ pub(super) fn decode(
             {
                 return Err(unsupported("generic or generated source record"));
             }
-            adapter
-                .records
-                .insert(id, simple_name(&record.item_meta.name, &krate.crate_name)?);
+            adapter.records.insert(
+                id,
+                if crate_config.is_some() {
+                    qualified_record_name(&record.item_meta.name, &krate.crate_name)?
+                } else {
+                    simple_name(&record.item_meta.name, &krate.crate_name)?
+                },
+            );
         }
     }
     for (id, f) in krate.fun_decls.iter_indexed() {
@@ -1074,7 +1305,13 @@ pub(super) fn decode(
             continue;
         }
         let name = match &f.src {
-            a::FunSource::Normal => simple_name(&f.item_meta.name, &krate.crate_name)?,
+            a::FunSource::Normal => {
+                if crate_config.is_some() {
+                    adapter.qualified_function_name(&f.item_meta.name)?
+                } else {
+                    simple_name(&f.item_meta.name, &krate.crate_name)?
+                }
+            }
             a::FunSource::TraitImpl {
                 trait_ref,
                 impl_ref,
@@ -1088,7 +1325,11 @@ pub(super) fn decode(
                     continue;
                 }
                 if tr.item_meta.lang_item != Some(LangItem::Drop) {
-                    let name = adapter.assignment_operator_name(f)?;
+                    let name = if adapter.is_default_method(f) {
+                        adapter.default_constructor_name(f)?
+                    } else {
+                        adapter.assignment_operator_name(f)?
+                    };
                     adapter.functions.insert(id, name);
                     continue;
                 }
@@ -1110,6 +1351,9 @@ pub(super) fn decode(
             }
             _ => return Err(unsupported("function source")),
         };
+        if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
+            return Err("Rust reference/aggregate returns are not supported".into());
+        }
         if f.signature.is_unsafe
             || f.signature.abi != a::Abi::Rust
             || f.signature.is_variadic
@@ -1168,6 +1412,30 @@ pub(super) fn decode(
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
+        if adapter.crate_mode {
+            let return_local = body
+                .locals
+                .locals
+                .first()
+                .ok_or_else(|| unsupported("missing function return local"))?;
+            if body.locals.arg_count != f.signature.inputs.len()
+                || adapter.ty(&return_local.ty)? != adapter.ty(&f.signature.output)?
+            {
+                return Err(unsupported("function body return/argument signature"));
+            }
+            for (local, ty) in body
+                .locals
+                .locals
+                .iter()
+                .skip(1)
+                .take(body.locals.arg_count)
+                .zip(&f.signature.inputs)
+            {
+                if adapter.ty(&local.ty)? != adapter.ty(ty)? {
+                    return Err(unsupported("function parameter local type"));
+                }
+            }
+        }
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();

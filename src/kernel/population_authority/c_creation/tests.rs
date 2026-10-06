@@ -20,7 +20,7 @@ fn pending_malloc(state: &CState) -> CState {
     else {
         panic!("expected one pending allocation path");
     };
-    pending.clone()
+    *pending.clone()
 }
 
 fn resolved_malloc(pending: &CState, success: bool) -> CState {
@@ -5184,4 +5184,101 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
         samples.iter().all(|work| *work == samples[0]),
         "{samples:?}"
     );
+}
+
+#[test]
+fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
+    let anchor = CValue::pointer(Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let description = ResourceDescription::new(
+        "ticket".into(),
+        vec![anchor.clone().into()].into(),
+        schema.clone(),
+    );
+    let member = |identity| {
+        ResourceInstance::new(
+            Variable(identity),
+            "ticket".into(),
+            vec![anchor.clone().into()].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap()
+    };
+    let left = member(996_001);
+    let right = member(996_002);
+    let work = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated-named-{index}"),
+                description.arguments().to_vec().into(),
+                schema.clone(),
+            );
+            entry = entry.import_observable_named_authority(&unrelated).unwrap();
+        }
+        let entry = entry
+            .import_observable_named_authority(&description)
+            .unwrap();
+        let count = entry.observe_symbolic(&description).unwrap().entry_count;
+        let (_, work) = crate::persistent::measure_persistent_work(|| {
+            assert!(
+                entry
+                    .enter_call()
+                    .checked_imported_instance_consumption(&left)
+                    .is_err(),
+                "an actor without authority cannot record a death"
+            );
+            let one = entry.checked_imported_instance_consumption(&left).unwrap();
+            assert_eq!(
+                one,
+                entry.checked_imported_instance_consumption(&left).unwrap(),
+                "rechecking one checked rewrite has a stable successor identity"
+            );
+            assert_eq!(
+                one.observe_symbolic(&description).unwrap().symbolic_delta,
+                Some((false, Bitvector32Term::Constant(1)))
+            );
+            assert_eq!(
+                one.checked_imported_instance_consumption(&left)
+                    .unwrap_err(),
+                CreationRefusal::MissingMembers
+            );
+            let two = one.checked_imported_instance_consumption(&right).unwrap();
+            let observed = two.observe_symbolic(&description).unwrap();
+            assert_eq!(observed.entry_count, count);
+            assert_eq!(observed.entry_owned_members, 2);
+            assert_eq!(
+                two.0
+                    .opaque_imports
+                    .get(&description)
+                    .unwrap()
+                    .owned_members,
+                0,
+                "a numeric lower bound does not grant member custody"
+            );
+            assert_eq!(
+                observed.symbolic_delta,
+                Some((false, Bitvector32Term::Constant(2)))
+            );
+            assert!(
+                !two.owns_population_member(&description),
+                "named deaths grant no anonymous custody"
+            );
+            assert_eq!(
+                entry.0.opaque_holders.get(&entry.0.opaque_actor),
+                two.0.opaque_holders.get(&two.0.opaque_actor)
+            );
+        });
+        work
+    });
+    assert!(work[0] > 0);
+    for (index, sample) in work.iter().enumerate() {
+        assert!(*sample <= work[0] + 96 * index, "{work:?}");
+    }
 }

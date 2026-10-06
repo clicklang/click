@@ -977,7 +977,7 @@ fn with_tactic_procedures(
 /// at the end of each arm instead.
 fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
-        for arm in &mut proof_match.arms {
+        for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             append_on_every_path(&mut arm.tactics, suffix);
         }
     } else {
@@ -3467,7 +3467,7 @@ fn verify_c0_sources_in_context(
                     |verified| {
                         verification_function_environment
                             .clone()
-                            .with_verified_loop_rules(verified.frontier_loop_rules.clone())
+                            .with_verified_loop_rules(verified.frontier_loop_rules.iter().cloned())
                     },
                 );
                 instrumentation::measure_operation(
@@ -3537,7 +3537,7 @@ fn verify_c0_sources_in_context(
             }
             if let Some(verified) = frontier_loop_artifacts {
                 let mut loop_measures = BTreeMap::new();
-                for clause in &verified.frontier_loop_clauses {
+                for clause in verified.frontier_loop_clauses.iter() {
                     let CodeRegion::Loop(loop_index) = clause.region() else {
                         continue;
                     };
@@ -9230,6 +9230,17 @@ int32 copy_pair(struct pair* s, struct pair* t) {
             "{}",
             error.message()
         );
+    }
+
+    #[test]
+    fn unsigned_array_field_returns_preserve_values_in_c_callers() {
+        let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
+        let proof = r#"verifying "reader.c";
+            struct packet make(uint32 x) { ensures result.words[3] == x; } by { execute(); simp(); }
+            uint32 read(uint32 x) { ensures result == x; } by { execute(); simp(); }
+        "#;
+        verify_sources(proof, source).unwrap();
+        assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
     }
 
     const BORROWING_BOX_PRELUDE: &str = r#"

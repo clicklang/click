@@ -99,9 +99,14 @@ impl Adapter<'_> {
             || f.signature.abi != a::Abi::Rust
             || !f.generics.types.is_empty()
             || !f.generics.const_generics.is_empty()
-            || f.item_meta.name.name.len() != 3
-            || !matches!(f.item_meta.name.name.as_slice(), [a::PathElem::Ident(root, d0), a::PathElem::Impl(a::ImplElem::Trait(id)), a::PathElem::Ident(method, d1)] if root == &self.krate.crate_name && *d0 == a::Disambiguator::ZERO && *id == impl_ref.id && method == method_name && *d1 == a::Disambiguator::ZERO)
-            || f.item_meta.name.name[..2] != imp.item_meta.name.name
+            || (!self.crate_mode && f.item_meta.name.name.len() != 3)
+            || !local_impl_method_path(
+                &f.item_meta.name,
+                &self.krate.crate_name,
+                impl_ref.id,
+                method_name,
+            )
+            || f.item_meta.name.name[..f.item_meta.name.name.len() - 1] != imp.item_meta.name.name
             || !f.signature.output.is_unit()
         {
             return Err(unsupported(

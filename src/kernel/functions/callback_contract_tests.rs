@@ -613,7 +613,7 @@ fn direct_and_callback_resource_transition(
 ) -> (CState, CState) {
     let direct_outcome = CFunctionOutcome::Return {
         value: CValue::Void,
-        state: state.clone(),
+        state: Box::new(state.clone()),
     };
     let (direct_outcome, direct_obligations) = apply_c_function_contract_resource_transition(
         state,
@@ -657,7 +657,7 @@ fn direct_and_callback_resource_transition(
         direct_state.counted_populations().collect::<Vec<_>>(),
         callback_state.counted_populations().collect::<Vec<_>>()
     );
-    (direct_state, callback_state.clone())
+    (*direct_state, *callback_state.clone())
 }
 
 #[test]

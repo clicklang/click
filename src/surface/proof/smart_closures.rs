@@ -2847,9 +2847,16 @@ impl<'a> Proof<'a> {
         // Every candidate below lowers the same goal, so a failing question
         // about the goal's own loads repeats per candidate; remember those
         // failures for this closure (`with_closure_failure_memo`).
-        crate::kernel::with_closure_failure_memo(|| {
-            self.try_snapshot_transport_closure_candidates(surface_goal)
-        })
+        crate::instrumentation::measure_operation(
+            "surface",
+            "simp closure",
+            "simp closure: snapshot transport",
+            || {
+                crate::kernel::with_closure_failure_memo(|| {
+                    self.try_snapshot_transport_closure_candidates(surface_goal)
+                })
+            },
+        )
     }
 
     fn try_snapshot_transport_closure_candidates(
@@ -2895,8 +2902,18 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Function,
             kind: ProgramPointKind::Entry,
         };
-        let selectors = std::iter::once(SnapshotSelector::ProgramPoint(entry))
-            .chain(view.recorded_snapshots.keys().rev().cloned());
+        // The source points are function entry and the most recently
+        // recorded ones, newest first. A path records a point per statement
+        // it ran, so offering every one made this search linear in the
+        // path's length for each goal, and quadratic over a function's
+        // early-return paths. An older point is still reachable by an
+        // explicit `transport`.
+        let selectors = std::iter::once(SnapshotSelector::ProgramPoint(entry)).chain(
+            view.recorded_snapshots
+                .recent(MAX_TRANSPORT_SOURCE_POINTS)
+                .into_iter()
+                .map(|(selector, _)| selector.clone()),
+        );
         let mut tried = BTreeSet::new();
         for selector in selectors {
             if !tried.insert(selector.clone()) {
@@ -7372,6 +7389,10 @@ impl<'a> Proof<'a> {
 /// How many variables simp's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.
 const MAX_BOUND_VARIABLES: usize = 8;
+
+/// How many recently recorded program points simp offers, beside function
+/// entry, as the source of a transport of its goal.
+const MAX_TRANSPORT_SOURCE_POINTS: usize = 8;
 
 thread_local! {
     static NAMED_PREMISE_CLOSURE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

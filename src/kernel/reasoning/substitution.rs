@@ -368,7 +368,7 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             expression,
             outcome,
         } => Proposition::CExpressionEvaluates {
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
             expression: substitute_bitvector_variable_in_c_expression(expression, from, to),
             outcome: substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
         },
@@ -377,8 +377,10 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             statement,
             outcome,
         } => Proposition::CStatementExecutes {
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
-            statement: substitute_bitvector_variable_in_c_statement(statement, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
+            statement: Box::new(substitute_bitvector_variable_in_c_statement(
+                statement, from, to,
+            )),
             outcome: substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
         },
         Proposition::CStatementVerifies {
@@ -386,8 +388,10 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             statement,
             outcome,
         } => Proposition::CStatementVerifies {
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
-            statement: substitute_bitvector_variable_in_c_statement(statement, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
+            statement: Box::new(substitute_bitvector_variable_in_c_statement(
+                statement, from, to,
+            )),
             outcome: substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
         },
         Proposition::CFunctionExecutes {
@@ -396,8 +400,10 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             arguments,
             outcome,
         } => Proposition::CFunctionExecutes {
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
-            function: substitute_bitvector_variable_in_c_function(function, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
+            function: Box::new(substitute_bitvector_variable_in_c_function(
+                function, from, to,
+            )),
             arguments: arguments
                 .iter()
                 .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
@@ -410,8 +416,10 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             arguments,
             outcome,
         } => Proposition::CFunctionVerifies {
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
-            function: substitute_bitvector_variable_in_c_function(function, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
+            function: Box::new(substitute_bitvector_variable_in_c_function(
+                function, from, to,
+            )),
             arguments: arguments
                 .iter()
                 .map(|argument| substitute_bitvector_variable_in_c_expression(argument, from, to))
@@ -422,7 +430,9 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             function,
             specification,
         } => Proposition::CFunctionSatisfiesSpecification {
-            function: substitute_bitvector_variable_in_c_function(function, from, to),
+            function: Box::new(substitute_bitvector_variable_in_c_function(
+                function, from, to,
+            )),
             specification: Box::new(substitute_bitvector_variable_in_c_function_specification(
                 specification,
                 from,
@@ -433,7 +443,9 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             function,
             specification,
         } => Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: substitute_bitvector_variable_in_c_function(function, from, to),
+            function: Box::new(substitute_bitvector_variable_in_c_function(
+                function, from, to,
+            )),
             specification: Box::new(substitute_bitvector_variable_in_c_function_specification(
                 specification,
                 from,
@@ -477,12 +489,14 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
             bytes: substitute_bitvector_variable(bytes, from, to),
         },
         Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
-            left: substitute_bitvector_variable_in_c_resource(left, from, to),
-            right: substitute_bitvector_variable_in_c_resource(right, from, to),
+            left: Box::new(substitute_bitvector_variable_in_c_resource(left, from, to)),
+            right: Box::new(substitute_bitvector_variable_in_c_resource(right, from, to)),
         },
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: substitute_bitvector_variable_in_c_resource(parent, from, to),
-            child: substitute_bitvector_variable_in_c_resource(child, from, to),
+            parent: Box::new(substitute_bitvector_variable_in_c_resource(
+                parent, from, to,
+            )),
+            child: Box::new(substitute_bitvector_variable_in_c_resource(child, from, to)),
         },
         Proposition::CMemoryMutatesOnly {
             before,
@@ -3653,26 +3667,26 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
     to: &Bitvector32Term,
 ) -> CStatementOutcome {
     match outcome {
-        CStatementOutcome::Normal(state) => {
-            CStatementOutcome::Normal(substitute_bitvector_variable_in_c_state(state, from, to))
-        }
-        CStatementOutcome::Break(state) => {
-            CStatementOutcome::Break(substitute_bitvector_variable_in_c_state(state, from, to))
-        }
-        CStatementOutcome::Continue(state) => {
-            CStatementOutcome::Continue(substitute_bitvector_variable_in_c_state(state, from, to))
-        }
+        CStatementOutcome::Normal(state) => CStatementOutcome::Normal(Box::new(
+            substitute_bitvector_variable_in_c_state(state, from, to),
+        )),
+        CStatementOutcome::Break(state) => CStatementOutcome::Break(Box::new(
+            substitute_bitvector_variable_in_c_state(state, from, to),
+        )),
+        CStatementOutcome::Continue(state) => CStatementOutcome::Continue(Box::new(
+            substitute_bitvector_variable_in_c_state(state, from, to),
+        )),
         CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
             target: *target,
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
             value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
             value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
         CStatementOutcome::UndefinedBehavior(kind) => {
@@ -3690,11 +3704,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
     match outcome {
         CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
             value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
         },
         CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
             value: substitute_bitvector_variable_in_c_value(value, from, to),
-            state: substitute_bitvector_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_bitvector_variable_in_c_state(state, from, to)),
         },
         CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
         CFunctionOutcome::UndefinedBehavior(kind) => {
@@ -5550,7 +5564,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             expression,
             outcome,
         } => Proposition::CExpressionEvaluates {
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
             expression: substitute_pointer_variable_in_c_expression(expression, from, to),
             outcome: substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
         },
@@ -5559,7 +5573,7 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             condition,
             outcome,
         } => Proposition::CConditionEvaluates {
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
             condition: substitute_pointer_variable_in_c_expression(condition, from, to),
             outcome: outcome.clone(),
         },
@@ -5578,13 +5592,13 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             let outcome = substitute_pointer_variable_in_c_statement_outcome(outcome, from, to);
             match proposition {
                 Proposition::CStatementExecutes { .. } => Proposition::CStatementExecutes {
-                    state,
-                    statement,
+                    state: Box::new(state),
+                    statement: Box::new(statement),
                     outcome,
                 },
                 Proposition::CStatementVerifies { .. } => Proposition::CStatementVerifies {
-                    state,
-                    statement,
+                    state: Box::new(state),
+                    statement: Box::new(statement),
                     outcome,
                 },
                 _ => unreachable!("the combined statement proposition arm is exhaustive"),
@@ -5611,14 +5625,14 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             let outcome = substitute_pointer_variable_in_c_function_outcome(outcome, from, to);
             match proposition {
                 Proposition::CFunctionExecutes { .. } => Proposition::CFunctionExecutes {
-                    state,
-                    function,
+                    state: Box::new(state),
+                    function: Box::new(function),
                     arguments,
                     outcome,
                 },
                 Proposition::CFunctionVerifies { .. } => Proposition::CFunctionVerifies {
-                    state,
-                    function,
+                    state: Box::new(state),
+                    function: Box::new(function),
                     arguments,
                     outcome,
                 },
@@ -5629,7 +5643,9 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             function,
             specification,
         } => Proposition::CFunctionSatisfiesSpecification {
-            function: substitute_pointer_variable_in_c_function(function, from, to),
+            function: Box::new(substitute_pointer_variable_in_c_function(
+                function, from, to,
+            )),
             specification: Box::new(substitute_pointer_variable_in_c_function_specification(
                 specification,
                 from,
@@ -5640,7 +5656,9 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             function,
             specification,
         } => Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: substitute_pointer_variable_in_c_function(function, from, to),
+            function: Box::new(substitute_pointer_variable_in_c_function(
+                function, from, to,
+            )),
             specification: Box::new(substitute_pointer_variable_in_c_function_specification(
                 specification,
                 from,
@@ -5684,12 +5702,12 @@ pub(crate) fn substitute_pointer_variable_in_proposition(
             bytes: bytes.clone(),
         },
         Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
-            left: substitute_pointer_variable_in_c_resource(left, from, to),
-            right: substitute_pointer_variable_in_c_resource(right, from, to),
+            left: Box::new(substitute_pointer_variable_in_c_resource(left, from, to)),
+            right: Box::new(substitute_pointer_variable_in_c_resource(right, from, to)),
         },
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: substitute_pointer_variable_in_c_resource(parent, from, to),
-            child: substitute_pointer_variable_in_c_resource(child, from, to),
+            parent: Box::new(substitute_pointer_variable_in_c_resource(parent, from, to)),
+            child: Box::new(substitute_pointer_variable_in_c_resource(child, from, to)),
         },
         Proposition::CResourceComposition(resources) => Proposition::CResourceComposition(
             substitute_pointer_variable_in_resource_context(resources, from, to),
@@ -6467,26 +6485,26 @@ fn substitute_pointer_variable_in_c_statement_outcome(
     to: &Pointer,
 ) -> CStatementOutcome {
     match outcome {
-        CStatementOutcome::Normal(state) => {
-            CStatementOutcome::Normal(substitute_pointer_variable_in_c_state(state, from, to))
-        }
-        CStatementOutcome::Break(state) => {
-            CStatementOutcome::Break(substitute_pointer_variable_in_c_state(state, from, to))
-        }
-        CStatementOutcome::Continue(state) => {
-            CStatementOutcome::Continue(substitute_pointer_variable_in_c_state(state, from, to))
-        }
+        CStatementOutcome::Normal(state) => CStatementOutcome::Normal(Box::new(
+            substitute_pointer_variable_in_c_state(state, from, to),
+        )),
+        CStatementOutcome::Break(state) => CStatementOutcome::Break(Box::new(
+            substitute_pointer_variable_in_c_state(state, from, to),
+        )),
+        CStatementOutcome::Continue(state) => CStatementOutcome::Continue(Box::new(
+            substitute_pointer_variable_in_c_state(state, from, to),
+        )),
         CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
             target: *target,
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
             value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
             value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
         },
         CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
         CStatementOutcome::UndefinedBehavior(kind) => {
@@ -6504,11 +6522,11 @@ fn substitute_pointer_variable_in_c_function_outcome(
     match outcome {
         CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
             value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
         },
         CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
             value: substitute_pointer_variable_in_c_value(value, from, to),
-            state: substitute_pointer_variable_in_c_state(state, from, to),
+            state: Box::new(substitute_pointer_variable_in_c_state(state, from, to)),
         },
         CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
         CFunctionOutcome::UndefinedBehavior(kind) => {

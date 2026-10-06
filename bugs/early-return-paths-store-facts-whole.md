@@ -29,6 +29,69 @@ Measured on 2026-10-02 with `early_return_fan_out` from
 `grouped_proof_finalization_reads_each_path_once` pins only the implicit
 empty-effect check. Neither bounds the whole verification.
 
+## Measured sources
+
+Stored path facts are one source among several. Each source below does work
+proportional to a path's length once per path. Measured on 2026-10-05 at 4,
+8, 16, 32, and 64 returns, in deterministic work units:
+
+| | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|
+| total, before | 7727 | 14947 | 33347 | 85907 | 254003 |
+| total, transport search bounded | 6991 | 12739 | 25987 | 59411 | 153907 |
+| total, terminal joins also fixed | 6811 | 12199 | 24151 | 52679 | 128167 |
+| `simp`, now | 2070 | 4196 | 9456 | 24008 | 69240 |
+| `execute`, before | 4054 | 7138 | 13906 | 29762 | 70690 |
+| `execute`, now | 3874 | 6598 | 12070 | 23030 | 44950 |
+
+Fixed:
+
+- simp's snapshot-transport search
+  (`try_snapshot_transport_closure_candidates`) offered the goal as a
+  transport from every program point the path recorded, about `2k` attempts
+  on path `k`. It now offers function entry and the eight most recent
+  points; `simp_snapshot_transport_search_is_linear_in_early_returns` pins
+  it.
+
+- A terminal branch join re-recorded every enclosing arm's condition
+  spelling into its parent (`merge_branch_surface_facts`,
+  `execution_joins.rs`), so the innermost condition was recorded once per
+  enclosing join, and `execute` grew 2.4 times per doubling. A terminal join
+  has no successor and each path keeps its own spellings, so it no longer
+  carries them; `executing_a_fan_out_is_near_linear_in_its_length` now runs
+  to 64 returns.
+
+Remaining. The proof written with simple tactics only is near linear in
+the range it can be written: 6261, 10723, and 20159 units at 4, 8, and 16
+returns (`explicit_early_return_proof_is_near_linear_in_its_returns`). Its
+nested proof `if`s reach the checked drivers' region nesting bound soon
+after 16 returns, so it cannot be measured further.
+
+What still grows quadratically is in the grouped `execute(); simp();` proof,
+by the work each source charged at 32 and then 64 returns on 2026-10-05:
+
+- simp's dependency selection. On path `k` the goal mentions `a`, so the
+  selection reads every fact connected to `a`, all `k` of the path's
+  `a != j` conditions, although only `a == k` is needed. It then builds a
+  restricted context from them, keys them, and spells each as a premise
+  before the derivation says which it uses. One root cause, charged at
+  `proposition_search.rs:1874` and `assumptions.rs:3617` (1056 then 4160
+  each), `assumptions.rs:5161` (2883 then 9827), `fact_keys.rs`
+  `alpha_work_checkpoint` (4224 then 16640),
+  `surface_propositions.rs:1141` (1250 then 4546),
+  `cursor_execution.rs:1289` (1290 then 4618), and the deadline checks at
+  `surface/proof.rs:130` (2313 then 6665). Spelling only the premises the
+  derivation uses would remove the last three; the selection itself is a
+  smart-search breadth question.
+- Each path's outcome goal re-adds the path's conditions to the root facts
+  (`outcomes_and_focus.rs`, the `with_kernel_checked_fact` loop): 957 then
+  2925. The arm that reached the return already held those facts.
+- Kernel contract certification rebuilds each path's assumptions from its
+  flat fact list (`contract_claims.rs`, `assumptions_with_path_context`):
+  693 then 2405 context entries. This and the item above are the stored
+  path facts this bug was filed for; they need path facts shared across the
+  paths that share a prefix.
+
 ## Intended regression
 
 A scaling test over `early_return_fan_out` at 4, 8, 16, and 32 returns that

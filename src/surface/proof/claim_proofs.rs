@@ -2010,8 +2010,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     function: proved_function,
                     arguments: proved_arguments,
                     ..
-                } if state == pre_state
-                    && proved_function == function
+                } if **state == *pre_state
+                    && **proved_function == *function
                     && proved_arguments == arguments =>
                 {
                     Ok(())
@@ -4719,8 +4719,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &crate::kernel::CRuntimeError::LiveAllocationLeak {
-                                                allocation: obligation.allocation().clone(),
-                                                resource: obligation.holder().cloned(),
+                                                allocation: Box::new(
+                                                    obligation.allocation().clone()
+                                                ),
+                                                resource: obligation
+                                                    .holder()
+                                                    .cloned()
+                                                    .map(Box::new),
                                                 hint: None,
                                             },
                                             parsed_function.parameters(),
@@ -5062,6 +5067,15 @@ pub(super) fn finish_ordered_proof<'a>(
                     specification.requires().len()
                 ))
             })?;
+                    // Every theorem of this path shares one copy of the loop
+                    // clauses and rules its proof reached.
+                    let frontier_loop_clauses: std::sync::Arc<[StructuralClause]> = proof_execution
+                        .presentation
+                        .frontier_loop_clauses
+                        .to_vec()
+                        .into();
+                    let frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]> =
+                        proof_execution.core.frontier_loop_rules.to_vec().into();
                     for (claim_index, claim) in claims.iter().enumerate() {
                         let closed = closures[claim_index].require_evidence(
                             &completed_execution,
@@ -5105,11 +5119,8 @@ pub(super) fn finish_ordered_proof<'a>(
                             specification: specification.clone(),
                             theorem: theorem.clone(),
                             concrete_loop_execution: proof_execution.core.concrete_loop_execution,
-                            frontier_loop_clauses: proof_execution
-                                .presentation
-                                .frontier_loop_clauses
-                                .to_vec(),
-                            frontier_loop_rules: proof_execution.core.frontier_loop_rules.to_vec(),
+                            frontier_loop_clauses: std::sync::Arc::clone(&frontier_loop_clauses),
+                            frontier_loop_rules: std::sync::Arc::clone(&frontier_loop_rules),
                             checked_execution: std::sync::Arc::clone(
                                 &provisional_checked_execution,
                             ),

@@ -1872,13 +1872,10 @@ pub(in crate::kernel) fn exact_separation_fact_covers_range_and_pointer(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (left, right) = match fact {
-        Proposition::CResourceSeparate {
-            left: CResource::Memory(left),
-            right: CResource::Memory(right),
-        } => (left.clone(), right.clone()),
-        _ => return false,
+    let Some((left, right)) = fact.memory_separation() else {
+        return false;
     };
+    let (left, right) = (left.clone(), right.clone());
     if assumptions.memory_ranges_overlap_after_base_equality(&left, &right) {
         return false;
     }
@@ -2038,15 +2035,7 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     let stated = assumptions
         .memory_separation_candidates(&resolved_write.block, &resolved_load.block)
         .find_map(|(proposition, left, right)| {
-            if !matches!(
-                proposition,
-                Proposition::CResourceSeparate {
-                    left: CResource::Memory(_),
-                    right: CResource::Memory(_),
-                }
-            ) {
-                return None;
-            }
+            proposition.memory_separation()?;
             let (orientation, write_membership, load_membership) =
                 if let (Some(write_membership), Some(load_membership)) = (
                     PointerInRangeEvidence::for_pointer(write, left, assumptions),
@@ -6679,18 +6668,18 @@ mod opaque_pointer_frame_tests {
             true,
         );
         let separation = Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new_with_element_width(
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
                 field.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(1),
                 8,
-            )),
-            right: CResource::Memory(CMemoryRange::new_with_element_width(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
                 argument.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(1),
                 4,
-            )),
+            ))),
         };
         (field, write, argument, alias, separation)
     }

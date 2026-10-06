@@ -11,7 +11,7 @@ use crate::kernel::{AlgebraicTermNode, AlgebraicValue, Term};
 
 pub(in crate::surface::proof) struct ExecutionMatchPlan {
     partition: Arc<CheckedProofCasePartition>,
-    source: ProofMatch,
+    source: Arc<ProofMatch>,
     /// One shared copy of the written `match`, so every arm of this plan
     /// records the same path-aligned case identity.
     arm_case_source: Arc<ProofMatch>,
@@ -136,7 +136,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn plan_execution_match(
         &self,
-        source: &ProofMatch,
+        source: &Arc<ProofMatch>,
         arm_source_index: impl Fn(usize) -> usize,
     ) -> Result<ExecutionMatchPlan, ClickError> {
         let equation = ClickProposition::Comparison {
@@ -310,8 +310,8 @@ impl<'a> Proof<'a> {
         parent_locals.next_choice_variable = next;
         let mut plan = ExecutionMatchPlan {
             partition,
-            source: source.clone(),
-            arm_case_source: Arc::new(source.clone()),
+            source: Arc::clone(source),
+            arm_case_source: Arc::clone(source),
             case_indices,
             matched_instance,
             bindings,

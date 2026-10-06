@@ -3163,7 +3163,7 @@ pub enum ProofTactic {
     Have(ProofHave),
     Open(ProofOpen),
     If(ProofIf),
-    Match(Box<ProofMatch>),
+    Match(std::sync::Arc<ProofMatch>),
     Cases(ProofCases),
     Both(ProofBoth),
     Branch(ProofBranch),
@@ -4319,18 +4319,20 @@ impl ProofStep {
                 parameter: parameter.clone(),
                 hypothesis: hypothesis.clone(),
             },
-            Self::Match { scrutinee, arms } => ProofTactic::Match(Box::new(ProofMatch {
-                scrutinee: scrutinee.clone(),
-                arms: arms
-                    .iter()
-                    .map(|arm| ProofInductionArm {
-                        type_name: arm.type_name.clone(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        tactics: arm.proof.to_proof_tactics(),
-                    })
-                    .collect(),
-            })),
+            Self::Match { scrutinee, arms } => {
+                ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                    scrutinee: scrutinee.clone(),
+                    arms: arms
+                        .iter()
+                        .map(|arm| ProofInductionArm {
+                            type_name: arm.type_name.clone(),
+                            variant: arm.variant.clone(),
+                            bindings: arm.bindings.clone(),
+                            tactics: arm.proof.to_proof_tactics(),
+                        })
+                        .collect(),
+                }))
+            }
             Self::StructuralInduct {
                 parameter,
                 hypothesis,
@@ -6072,8 +6074,8 @@ pub struct VerifiedCTheorem {
     /// bound to this theorem's function path. Resource and effect claims keep
     /// their dedicated finalization checks instead.
     pub(crate) checked_proposition: Option<CCheckedFunctionProposition>,
-    pub(crate) frontier_loop_clauses: Vec<StructuralClause>,
-    pub(crate) frontier_loop_rules: Vec<CVerifiedLoopRule>,
+    pub(crate) frontier_loop_clauses: std::sync::Arc<[StructuralClause]>,
+    pub(crate) frontier_loop_rules: std::sync::Arc<[CVerifiedLoopRule]>,
     /// The entry the proof that issued this theorem was built from, shared
     /// by every theorem of that proof.
     pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,

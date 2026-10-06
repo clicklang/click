@@ -615,6 +615,7 @@ impl<'a> Proof<'a> {
                     self.facts(),
                     &selected,
                     &facts,
+                    unfold,
                     selected_children.clone(),
                 )
                 .map_err(|message| self.step_error(message))?;
@@ -2281,7 +2282,7 @@ impl<'a> Proof<'a> {
             .execution_start_state(&execution.core.state);
         let outcome = CFunctionOutcome::Return {
             value: (*goal.data.core.result).clone(),
-            state: (*goal.data.core.state).clone(),
+            state: Box::new((*goal.data.core.state).clone()),
         };
         let checked = fold_composite_resource_on_outcome_for_proof(
             context.resource_environment,
@@ -2328,7 +2329,7 @@ impl<'a> Proof<'a> {
         }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);
-        data.core.state = state.into();
+        data.core.state = (*state).into();
         let mut updated = goal.clone();
         updated.data = Arc::new(data);
         let state = BranchState {

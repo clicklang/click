@@ -1291,8 +1291,8 @@ fn an_aliased_field_inside_a_range_is_not_searched_for_a_separation() {
         ));
         for index in 0..size as u64 {
             assumptions = assumptions.assume_proposition(Proposition::CResourceSeparate {
-                left: CResource::Memory(external_range(2 * index + 1, 0, 4)),
-                right: CResource::Memory(external_range(2 * index + 2, 0, 4)),
+                left: Box::new(CResource::Memory(external_range(2 * index + 1, 0, 4))),
+                right: Box::new(CResource::Memory(external_range(2 * index + 2, 0, 4))),
             });
         }
         let ranges = [external_range(ALIAS, 4, 5)];
@@ -1319,8 +1319,8 @@ fn an_aliased_field_inside_a_range_is_not_searched_for_a_separation() {
 #[test]
 fn extending_a_cloned_context_leaves_the_original_propositions() {
     let separation = |index: u64| Proposition::CResourceSeparate {
-        left: CResource::Memory(external_range(2 * index + 1, 0, 4)),
-        right: CResource::Memory(external_range(2 * index + 2, 0, 4)),
+        left: Box::new(CResource::Memory(external_range(2 * index + 1, 0, 4))),
+        right: Box::new(CResource::Memory(external_range(2 * index + 2, 0, 4))),
     };
     let original = (0..64).fold(PureFactContext::new(), |context, index| {
         context.assume_proposition(separation(index))

@@ -636,7 +636,7 @@ fn instantiate_proof_tactic(
         )
     };
     Ok(match tactic {
-        ProofTactic::Match(proof_match) => ProofTactic::Match(Box::new(ProofMatch {
+        ProofTactic::Match(proof_match) => ProofTactic::Match(std::sync::Arc::new(ProofMatch {
             scrutinee: expression(&proof_match.scrutinee)?,
             arms: proof_match
                 .arms

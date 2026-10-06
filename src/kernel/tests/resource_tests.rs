@@ -4006,8 +4006,8 @@ fn observable_structural_separation_does_not_materialize_owned_pairs() {
                 assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
                 assert!(
                     PureFactContext::new().proves(&Proposition::CResourceSeparate {
-                        left: context.facts()[0].resource().clone(),
-                        right: context.facts()[size - 1].resource().clone(),
+                        left: Box::new(context.facts()[0].resource().clone()),
+                        right: Box::new(context.facts()[size - 1].resource().clone()),
                     })
                 );
                 (size, work)
@@ -4680,8 +4680,8 @@ fn resource_context_observes_write_separation() {
     assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
     assert!(
         PureFactContext::new().proves(&Proposition::CResourceSeparate {
-            left: CResource::Memory(left),
-            right: CResource::Memory(right),
+            left: Box::new(CResource::Memory(left)),
+            right: Box::new(CResource::Memory(right)),
         })
     );
 }
@@ -4717,12 +4717,12 @@ fn resource_context_observes_same_and_cross_family_separation() {
             assumptions.assume_proposition(fact)
         });
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: token.clone(),
-        right: other_token,
+        left: Box::new(token.clone()),
+        right: Box::new(other_token),
     }));
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: memory,
-        right: token,
+        left: Box::new(memory),
+        right: Box::new(token),
     }));
 }
 
@@ -4745,8 +4745,8 @@ fn observable_abstract_resources_use_one_indexed_composition() {
                 assumptions.assume_proposition(fact)
             });
         assert!(assumptions.proves(&Proposition::CResourceSeparate {
-            left: context.facts()[0].resource().clone(),
-            right: context.facts()[size - 1].resource().clone(),
+            left: Box::new(context.facts()[0].resource().clone()),
+            right: Box::new(context.facts()[size - 1].resource().clone()),
         }));
     }
 }
@@ -4800,17 +4800,17 @@ fn resource_separation_covers_larger_memory_range() {
     let right = CResource::Memory(memory_range(base, 10, 11));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: left_first,
-            right: right.clone(),
+            left: Box::new(left_first),
+            right: Box::new(right.clone()),
         })
         .assume_proposition(Proposition::CResourceSeparate {
-            left: left_second,
-            right: right.clone(),
+            left: Box::new(left_second),
+            right: Box::new(right.clone()),
         });
 
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: left_combined,
-        right,
+        left: Box::new(left_combined),
+        right: Box::new(right),
     }));
 }
 
@@ -4831,8 +4831,8 @@ fn resource_separation_transports_across_equal_memory_ranges() {
         CResource::Memory(memory_range(equal_data.clone(), 0, equal_length.clone()));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: target_resource.clone(),
-            right: original_resource,
+            left: Box::new(target_resource.clone()),
+            right: Box::new(original_resource),
         })
         .assume_condition(
             ConditionTerm::pointer_equal(original_data, equal_data),
@@ -4841,8 +4841,8 @@ fn resource_separation_transports_across_equal_memory_ranges() {
         .assume_condition(ConditionTerm::equal(original_length, equal_length), true);
 
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: target_resource,
-        right: equal_resource,
+        left: Box::new(target_resource),
+        right: Box::new(equal_resource),
     }));
 }
 
@@ -4860,17 +4860,17 @@ fn resource_contains_projects_separation_to_children() {
     let other = CResource::Memory(memory_range(base.clone(), 1, 2));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: parent.clone(),
-            right: other.clone(),
+            left: Box::new(parent.clone()),
+            right: Box::new(other.clone()),
         })
         .assume_proposition(Proposition::CResourceContains {
-            parent,
-            child: child.clone(),
+            parent: Box::new(parent),
+            child: Box::new(child.clone()),
         });
 
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: child,
-        right: other,
+        left: Box::new(child),
+        right: Box::new(other),
     }));
 }
 

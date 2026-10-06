@@ -316,9 +316,13 @@ pub(crate) fn capture_spec_integer_value(
     // nothing about what the captured term asserts. Discharge it by the same
     // exact routes an obligation uses -- no search -- and keep refusing a
     // fact that is genuinely unavailable, which is the case below.
+    // Kernel-certified consequences (such as the observation of a guarded
+    // native result) are definitions, not extra assumptions the caller must
+    // restate. Their path guards and proof obligations still need discharge.
     let undischarged = path
         .facts
         .iter()
+        .filter(|fact| !fact.is_certified())
         .map(|fact| fact.proposition())
         .chain(path.obligations.iter().map(|o| o.proposition()))
         .find(|proposition| !required_obligation_is_exactly_discharged(assumptions, proposition));
@@ -1587,7 +1591,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 algebraic_bindings,
                 budget,
-                |left, right| Proposition::CResourceSeparate { left, right },
+                |left, right| Proposition::CResourceSeparate {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             )
         }
         SpecProposition::ResourceContains { parent, child } => {
@@ -1599,7 +1606,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 algebraic_bindings,
                 budget,
-                |parent, child| Proposition::CResourceContains { parent, child },
+                |parent, child| Proposition::CResourceContains {
+                    parent: Box::new(parent),
+                    child: Box::new(child),
+                },
             )
         }
         SpecProposition::MemoryLoadable {
@@ -1777,6 +1787,9 @@ fn evaluate_spec_integer_expression_paths_in(
                     proposition_and_all(
                         path.facts
                             .iter()
+                            // Certified consequences describe the result;
+                            // only unproved path guards restrict its domain.
+                            .filter(|fact| !fact.is_certified())
                             .map(|fact| fact.proposition().clone())
                             .chain(
                                 path.obligations

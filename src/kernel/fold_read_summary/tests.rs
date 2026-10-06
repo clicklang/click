@@ -586,16 +586,16 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
     // object.
     assert!(is_store_refusal(&frame(&old, &new, &[])));
     let separate = Proposition::CResourceSeparate {
-        left: CResource::Memory(CMemoryRange::new(
+        left: Box::new(CResource::Memory(CMemoryRange::new(
             a.clone(),
             Bitvector32Term::Constant(0),
             bv(N),
-        )),
-        right: CResource::Memory(CMemoryRange::new(
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new(
             b.clone(),
             Bitvector32Term::Constant(0),
             bv(N),
-        )),
+        ))),
     };
     let in_b = [le(Bitvector32Term::Constant(0), bv(J)), lt(bv(J), bv(N))];
     let mut facts = vec![separate.clone()];

@@ -409,20 +409,17 @@ fn site_timing_output_distinguishes_measured_and_skipped_cold_work() {
         work,
         elapsed: Duration::from_millis(milliseconds),
     };
-    let base = SiteTimings {
+    let rewrite = |cold_verification| SiteRewrite {
+        expanded: String::new(),
         expansion: cost(10, 1),
-        session_verification: cost(20, 2),
-        cold_verification: None,
+        cold_verification,
         reexpansion: cost(50, 5),
     };
-    let skipped = render_site_timings(&base);
+    let skipped = render_site_rewrite(&rewrite(None));
     assert!(skipped.contains("cold comparison not run"), "{skipped}");
     assert!(!skipped.contains("cold original 0"), "{skipped}");
 
-    let measured = render_site_timings(&SiteTimings {
-        cold_verification: Some((cost(30, 3), cost(40, 4))),
-        ..base
-    });
+    let measured = render_site_rewrite(&rewrite(Some((cost(30, 3), cost(40, 4)))));
     assert!(
         measured.contains("cold original 30 units, 3ms"),
         "{measured}"
@@ -1550,4 +1547,93 @@ fn result_parameter_postconditions_audit_every_site() {
             .unwrap_or_else(|message| panic!("{relative}: {message}"));
         }
     }
+}
+
+#[test]
+fn a_claims_rewrites_combine_into_one_source() {
+    let original = "step;\nsimp;\nstep;\nauto;\nstep;\n";
+    let first = "step;\nrewrite(a);\nassumption();\nstep;\nauto;\nstep;\n";
+    let second = "step;\nsimp;\nstep;\nstep;\n";
+    assert_eq!(
+        combine_rewrites(original, &[second, first]).as_deref(),
+        Some("step;\nrewrite(a);\nassumption();\nstep;\nstep;\n"),
+    );
+    assert_eq!(combine_rewrites(original, &[first]).as_deref(), Some(first));
+}
+
+#[test]
+fn rewrites_of_the_same_text_do_not_combine() {
+    let original = "step;\nsimp;\nstep;\n";
+    let first = "step;\nrewrite(a);\nstep;\n";
+    let second = "step;\nrewrite(b);\nstep;\n";
+    assert_eq!(combine_rewrites(original, &[first, second]), None);
+    assert_eq!(combine_rewrites(original, &[first, first]), None);
+}
+
+/// Verifying a claim's rewrites together runs the claim once, so it costs
+/// about one site's verification rather than one per site.
+#[test]
+fn a_claims_rewrites_are_verified_in_one_run() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    let sources = audit_targets(&path).unwrap();
+    let sites = inventory_sites(&sources).unwrap();
+    // The first claim in the corpus with at least three smart sites.
+    let mut by_claim: BTreeMap<(PathBuf, String), Vec<&AuditSite>> = BTreeMap::new();
+    for site in &sites {
+        by_claim
+            .entry((site.click_path.clone(), site.claim.clone()))
+            .or_default()
+            .push(site);
+    }
+    let limits = AuditLimits::default();
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let mut checked = 0;
+    for ((path, claim), claim_sites) in by_claim {
+        if claim_sites.len() < 3 {
+            continue;
+        }
+        let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
+        let mut rewrites = Vec::new();
+        let mut alone = Vec::new();
+        for site in &claim_sites {
+            let Ok(rewrite) = audit_site_rewrite(site, &mut worker, &limits, false, deadline)
+            else {
+                break;
+            };
+            alone.push(
+                verify_rewrite_in_session(
+                    &mut worker,
+                    &claim,
+                    &rewrite.expanded,
+                    &limits,
+                    deadline,
+                )
+                .unwrap()
+                .work,
+            );
+            rewrites.push(rewrite.expanded);
+        }
+        if rewrites.len() < claim_sites.len() {
+            continue;
+        }
+        let original = worker.source.container_source.clone();
+        let references = rewrites.iter().map(String::as_str).collect::<Vec<_>>();
+        if combine_rewrites(&original, &references).is_none() {
+            continue;
+        }
+        let together =
+            verify_claim_rewrites(&mut worker, &claim, &references, &limits, deadline).unwrap();
+        let largest = *alone.iter().max().unwrap();
+        let total: usize = alone.iter().sum();
+        assert!(
+            together.work <= largest * 2 && together.work < total,
+            "{claim}: together {} units, alone {alone:?}",
+            together.work
+        );
+        checked += 1;
+        if checked == 3 {
+            break;
+        }
+    }
+    assert_eq!(checked, 3, "the corpus has claims with several smart sites");
 }

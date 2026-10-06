@@ -70,8 +70,8 @@ enum MemberForm {
 }
 
 /// Named custody remains exclusively in the checked resource context. A
-/// named authority import supplies a read-only arbitrary population total,
-/// never anonymous member rights or a lifecycle capability.
+/// named authority import supplies an arbitrary population total, never
+/// anonymous member rights. Checked named consumption records exact identities.
 enum OpaqueMemberInputs {
     Quantity(Option<ResourceDescription>),
     NamedAuthority,
@@ -148,6 +148,8 @@ struct OpaqueImport {
     /// Whole-batch custody is independent of the authority holder.
     symbolic_member_holder: Option<Holder>,
     symbolic_delta: Option<(bool, Bitvector32Term)>,
+    /// Occurrences consumed by checked named rewrites, independent of count observations.
+    consumed_named: PersistentMap<crate::kernel::Variable, Arc<crate::kernel::ResourceInstance>>,
     /// Only a checked control wrapper can supply this immutable entry load.
     entry_count: Option<Bitvector32Term>,
     retired_authority: bool,
@@ -748,6 +750,7 @@ impl CreationEvents {
                 entry_symbolic_members: symbolic_members.clone(),
                 symbolic_member_holder: symbolic_members.as_ref().map(|_| self.0.opaque_actor),
                 symbolic_delta: None,
+                consumed_named: PersistentMap::default(),
                 entry_count,
                 retired_authority: false,
             },
@@ -1162,7 +1165,12 @@ impl CreationEvents {
             delta: i32::try_from(import.owned_members)
                 .ok()?
                 .checked_sub(i32::try_from(import.entry_owned_members).ok()?)?,
-            entry_owned_members: import.entry_owned_members,
+            // Each checked named death was a distinct entry occurrence: imported
+            // named births and transfers remain closed. This is a count bound,
+            // never anonymous custody in member_holders.
+            entry_owned_members: import
+                .entry_owned_members
+                .max(u32::try_from(import.consumed_named.len()).expect("bounded named deaths")),
             entry_symbolic_members: import.entry_symbolic_members.clone(),
             symbolic_delta: import.symbolic_delta.clone(),
         })
@@ -2161,6 +2169,99 @@ impl CreationEvents {
                 exclusive_body: false,
             },
         )
+    }
+
+    /// The checked resource rewrite supplies one held named occurrence. This
+    /// records its death without manufacturing anonymous custody from a count.
+    pub(in crate::kernel) fn checked_imported_instance_consumption(
+        &self,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<Self, CreationRefusal> {
+        let reference = ResourceReference::from_instance(instance);
+        let description = reference.description();
+        if description.population_arity().is_some()
+            || description.schema().is_countable()
+            || !description.resource_arguments().is_empty()
+        {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        let import = self
+            .0
+            .opaque_imports
+            .get(description)
+            .filter(|import| import.entry_count.is_some())
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        if import.retired_authority || import.authority_holder != self.0.opaque_actor {
+            return Err(CreationRefusal::MissingAuthority);
+        }
+        let key = CEvent::InstanceMember(reference.clone(), false);
+        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+            return Ok(existing.clone());
+        }
+        if import.consumed_named.contains_key(&instance.identity()) {
+            return Err(CreationRefusal::MissingMembers);
+        }
+        let consumed = u32::try_from(import.consumed_named.len())
+            .ok()
+            .and_then(|count| count.checked_add(1))
+            .filter(|count| *count <= i32::MAX as u32)
+            .ok_or(CreationRefusal::InvalidQuantity)?;
+        let consumed_named = import
+            .consumed_named
+            .with_inserted(instance.identity(), Arc::new(instance.clone()));
+        let after = Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority: self.0.authority.clone(),
+            symbolic_batches: self.0.symbolic_batches.clone(),
+            symbolic_holders: self.0.symbolic_holders.clone(),
+            tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
+            scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
+            opaque_types: self.0.opaque_types.clone(),
+            opaque_imports: self.0.opaque_imports.with_inserted(
+                description.clone(),
+                OpaqueImport {
+                    symbolic_delta: Some((false, Bitvector32Term::Constant(consumed))),
+                    consumed_named,
+                    ..import.clone()
+                },
+            ),
+        }));
+        Ok(self
+            .0
+            .c_events
+            .lock()
+            .expect("C event cache")
+            .entry(key)
+            .or_insert(after)
+            .clone())
+    }
+
+    /// A checked death is a boundary receipt, never current instance custody.
+    pub(in crate::kernel) fn consumed_imported_instance(
+        &self,
+        description: &ResourceDescription,
+        identity: crate::kernel::Variable,
+    ) -> Option<&crate::kernel::ResourceInstance> {
+        let import = self.0.opaque_imports.get(description)?;
+        if import.retired_authority || import.authority_holder != self.0.opaque_actor {
+            return None;
+        }
+        import.consumed_named.get(&identity).map(AsRef::as_ref)
     }
 
     /// Advance the local ledger for one separately owned occurrence. Its

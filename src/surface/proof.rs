@@ -810,7 +810,7 @@ enum InternalProofNode {
     Match {
         index: usize,
         source_index: usize,
-        proof_match: Box<ProofMatch>,
+        proof_match: Arc<ProofMatch>,
         arms: Vec<InternalProofNode>,
         continuation: Box<InternalProofNode>,
     },

@@ -2073,11 +2073,7 @@ impl PureFactContext {
         // check instead of exploring both orientations of every separation
         // fact before reaching the structurally relevant certificate.
         if self.prop_facts.iter().any(|proposition| {
-            let Proposition::CResourceSeparate {
-                left: CResource::Memory(fact_left),
-                right: CResource::Memory(fact_right),
-            } = proposition
-            else {
+            let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
             (memory_range_shallowly_contained_with_facts(left, fact_left, self)
@@ -2093,11 +2089,7 @@ impl PureFactContext {
             return true;
         }
         self.prop_facts.iter().any(|proposition| {
-            let Proposition::CResourceSeparate {
-                left: CResource::Memory(fact_left),
-                right: CResource::Memory(fact_right),
-            } = proposition
-            else {
+            let Some((fact_left, fact_right)) = proposition.memory_separation() else {
                 return false;
             };
             (memory_range_contained_for_memory_resolution(left, fact_left, self)
@@ -2389,7 +2381,7 @@ impl PureFactContext {
                     continue;
                 };
                 if self.resource_contains_builtin(&current, fact_parent) {
-                    stack.push(fact_child.clone());
+                    stack.push(*fact_child.clone());
                 }
             }
         }
@@ -2883,7 +2875,7 @@ impl PureFactContext {
             }
 
             if self.proves_resource_contains(right, &CResource::Memory(other.clone()))
-                && let CResource::Memory(left) = left
+                && let CResource::Memory(left) = &**left
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
                     left.base(),
@@ -2895,7 +2887,7 @@ impl PureFactContext {
             }
 
             if self.proves_resource_contains(left, &CResource::Memory(other.clone()))
-                && let CResource::Memory(right) = right
+                && let CResource::Memory(right) = &**right
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
                     right.base(),
@@ -3282,61 +3274,41 @@ impl PureFactContext {
             {
                 return outside;
             }
-            if let Some(proposition) =
-                self.prop_facts
-                    .iter()
-                    .find(|proposition| match proposition {
-                        Proposition::CResourceSeparate {
-                            left: CResource::Memory(left_range),
-                            right: CResource::Memory(right_range),
-                        } => {
-                            (memory_range_shallowly_contained_with_facts(range, left_range, self)
-                                && (pointer_in_memory_range_shallow_with_facts(
-                                    pointer,
-                                    right_range,
-                                    self,
-                                ) || self
-                                    .pointer_directly_in_memory_range(pointer, right_range))
-                                || memory_range_shallowly_contained_with_facts(
-                                    range,
-                                    right_range,
-                                    self,
-                                ) && (pointer_in_memory_range_shallow_with_facts(
-                                    pointer, left_range, self,
-                                ) || self
-                                    .pointer_directly_in_memory_range(pointer, left_range))
-                                || pointer_in_memory_range_shallow_with_facts(
-                                    pointer, left_range, self,
-                                ) && memory_range_contained_for_memory_resolution(
-                                    range,
-                                    right_range,
-                                    self,
-                                )
-                                || pointer_in_memory_range_shallow_with_facts(
-                                    pointer,
-                                    right_range,
-                                    self,
-                                ) && memory_range_contained_for_memory_resolution(
-                                    range, left_range, self,
-                                )
-                                || self.pointer_directly_in_memory_range(pointer, left_range)
-                                    && memory_range_contained_for_memory_resolution(
-                                        range,
-                                        right_range,
-                                        self,
-                                    )
-                                || self.pointer_directly_in_memory_range(pointer, right_range)
-                                    && memory_range_contained_for_memory_resolution(
-                                        range, left_range, self,
-                                    ))
-                                && !self.memory_ranges_overlap_after_base_equality(
-                                    left_range,
-                                    right_range,
-                                )
-                        }
-                        _ => false,
-                    })
+            if let Some(proposition) = self.prop_facts.iter().find(|proposition| match proposition
+                .memory_separation()
             {
+                Some((left_range, right_range)) => {
+                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
+                        && (pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
+                            || self.pointer_directly_in_memory_range(pointer, right_range))
+                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
+                            && (pointer_in_memory_range_shallow_with_facts(
+                                pointer, left_range, self,
+                            ) || self.pointer_directly_in_memory_range(pointer, left_range))
+                        || pointer_in_memory_range_shallow_with_facts(pointer, left_range, self)
+                            && memory_range_contained_for_memory_resolution(
+                                range,
+                                right_range,
+                                self,
+                            )
+                        || pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
+                            && memory_range_contained_for_memory_resolution(
+                                range, left_range, self,
+                            )
+                        || self.pointer_directly_in_memory_range(pointer, left_range)
+                            && memory_range_contained_for_memory_resolution(
+                                range,
+                                right_range,
+                                self,
+                            )
+                        || self.pointer_directly_in_memory_range(pointer, right_range)
+                            && memory_range_contained_for_memory_resolution(
+                                range, left_range, self,
+                            ))
+                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
+                }
+                _ => false,
+            }) {
                 record_implicit_reasoning_provenance(self, proposition);
                 return true;
             }
@@ -3594,24 +3566,29 @@ impl PureFactContext {
         {
             return true;
         }
-        if let Some(proposition) = self
-            .prop_facts
-            .iter()
-            .find(|proposition| match proposition {
-                Proposition::CResourceSeparate {
-                    left: CResource::Memory(left_range),
-                    right: CResource::Memory(right_range),
-                } => {
-                    (memory_range_shallowly_contained_with_facts(range, left_range, self)
-                        && pointer_in_memory_range_shallow_with_facts(pointer, right_range, self)
-                        || memory_range_shallowly_contained_with_facts(range, right_range, self)
+        if let Some(proposition) =
+            self.prop_facts
+                .iter()
+                .find(|proposition| match proposition.memory_separation() {
+                    Some((left_range, right_range)) => {
+                        (memory_range_shallowly_contained_with_facts(range, left_range, self)
                             && pointer_in_memory_range_shallow_with_facts(
+                                pointer,
+                                right_range,
+                                self,
+                            )
+                            || memory_range_shallowly_contained_with_facts(
+                                range,
+                                right_range,
+                                self,
+                            ) && pointer_in_memory_range_shallow_with_facts(
                                 pointer, left_range, self,
                             ))
-                        && !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
-                }
-                _ => false,
-            })
+                            && !self
+                                .memory_ranges_overlap_after_base_equality(left_range, right_range)
+                    }
+                    _ => false,
+                })
         {
             record_implicit_reasoning_provenance(self, proposition);
             return true;

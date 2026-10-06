@@ -1081,7 +1081,7 @@ fn execute_modeled_pthread_mutex_paths(
                             &current,
                             super::LoanRefusalOperation::MemoryAccess,
                         )
-                        .map(CRuntimeError::LoanRefusal)
+                        .map(|refusal| CRuntimeError::LoanRefusal(Box::new(refusal)))
                 });
             let transition = if let Some(error) = storage_refusal {
                 Err(error)
@@ -1333,7 +1333,7 @@ fn execute_modeled_pthread_mutex_paths(
                     }) {
                         CStatementOutcome::RuntimeError(error)
                     } else {
-                        CStatementOutcome::Normal(next)
+                        CStatementOutcome::Normal(Box::new(next))
                     }
                 }
                 Err(error) => CStatementOutcome::RuntimeError(error),
@@ -1378,7 +1378,7 @@ fn modeled_pthread_handle_store(
         return Ok(None);
     };
     match &path.outcome {
-        CStatementOutcome::Normal(next) => Ok(Some((next.clone(), path.obligations.clone()))),
+        CStatementOutcome::Normal(next) => Ok(Some((*next.clone(), path.obligations.clone()))),
         _ => Ok(None),
     }
 }
@@ -1623,7 +1623,7 @@ fn execute_modeled_pthread_create_paths(
                                             &success,
                                             &failure,
                                         ));
-                                    CStatementOutcome::Normal(neutral)
+                                    CStatementOutcome::Normal(Box::new(neutral))
                                 }
                             } else {
                                 refusal(
@@ -1722,7 +1722,7 @@ fn execute_modeled_pthread_join_paths(
                     }) {
                         CStatementOutcome::RuntimeError(error)
                     } else {
-                        CStatementOutcome::Normal(next)
+                        CStatementOutcome::Normal(Box::new(next))
                     }
                 }
                 Err(error) => CStatementOutcome::RuntimeError(error),
@@ -3123,7 +3123,7 @@ fn join_loop_exits(
     };
     Some(CStatementExecutionPath {
         loop_invariant_correspondence,
-        outcome: CStatementOutcome::Normal(exit_state),
+        outcome: CStatementOutcome::Normal(Box::new(exit_state)),
         facts,
         obligations,
 
@@ -5301,7 +5301,7 @@ pub(super) fn collect_loop_preservation_summary(
                         &back_edge_assumptions,
                     ) {
                         Ok(rebound) => (rebound, None),
-                        Err(failure) => (next_state, Some(failure)),
+                        Err(failure) => (*next_state, Some(failure)),
                     };
                     // Both back-edge directions come from one evaluation
                     // of the guard, so a path the guard did not decide is
@@ -5458,9 +5458,9 @@ pub(super) fn collect_loop_preservation_summary(
                             );
                             final_exit_paths.push(CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
-                                outcome: CStatementOutcome::Normal(
+                                outcome: CStatementOutcome::Normal(Box::new(
                                     head.restored_exit_state(&next_state),
-                                ),
+                                )),
                                 facts: final_path_facts,
                                 obligations: final_obligations,
                                 loan_evidence: body_path.loan_evidence.clone(),
@@ -5502,7 +5502,7 @@ pub(super) fn collect_loop_preservation_summary(
                             );
                             break_exits.push(
                                 CLoopBreakExit::new(
-                                    next_state,
+                                    *next_state,
                                     exit_facts
                                         .iter()
                                         .map(|fact| fact.proposition().clone())
@@ -5535,7 +5535,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_invariant_correspondence: Default::default(),
                                 outcome: CStatementOutcome::Return {
                                     value,
-                                    state: head.restored_exit_state(&state),
+                                    state: Box::new(head.restored_exit_state(&state)),
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
@@ -5568,7 +5568,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_invariant_correspondence: Default::default(),
                                 outcome: CStatementOutcome::Jump {
                                     target,
-                                    state: head.restored_exit_state(&state),
+                                    state: Box::new(head.restored_exit_state(&state)),
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
@@ -7437,7 +7437,7 @@ fn evaluate_loop_effect_segment_value_with_facts(
         ))),
         CExpressionOutcome::RuntimeError(error) => {
             if let CRuntimeError::MissingResource { resource } = &error {
-                crate::kernel::functions::record_resource_dependency(resource.clone());
+                crate::kernel::functions::record_resource_dependency(*resource.clone());
             }
             Ok(Err(format!(
                 "{label} produced runtime error: {}",

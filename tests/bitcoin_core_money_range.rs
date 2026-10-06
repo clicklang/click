@@ -76,7 +76,7 @@ fn check_upstream_cpp(
         .replace("@CLANGXX@", clang.to_str().unwrap())
         .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]));
     fs::write(root.join("compile_commands.json"), database).unwrap();
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
         "exceptions": true, "rtti": true,
         "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
@@ -85,18 +85,47 @@ fn check_upstream_cpp(
         "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
+    if name == "FeeFracDivConstevalRefused" {
+        const CHECK_HASH: &str = "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7";
+        let header = "bitcoin-src/src/util/check.h";
+        assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), CHECK_HASH);
+        config["dependencies"] = serde_json::json!([
+            header,
+            integer_header,
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+        ]);
+        config["library_assertions"] = serde_json::json!([{
+            "kind": "checked_boolean_statement_with_consteval_metadata",
+            "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
+        }]);
+    }
     let config_path = root.join(format!("{name}.click.import.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
-    refresh_import(&config_path).unwrap_or_else(|error| panic!("{selected}: {error}"));
+    let refreshed = refresh_import(&config_path);
+    if selected == "FeeFrac::Div" {
+        let error = refreshed.expect_err("the library Assume boundary must remain explicit");
+        assert!(error.contains("export C++ source"), "{error}");
+        if name == "FeeFracDivConstevalRefused" {
+            assert!(
+                error.contains("metadata argument 2 requires a forced consteval"),
+                "the real template, Boolean temporary, and source_location must reach the string_view boundary: {error}"
+            );
+        }
+        assert!(!root.join(format!("{name}.click-cpp.json")).exists());
+        assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
+        fs::remove_dir_all(root).unwrap();
+        return;
+    }
+    refreshed.unwrap_or_else(|error| panic!("{selected}: {error}"));
     let import = load_import(&config_path).unwrap();
     assert_eq!(import.export().preprocessor_files.len(), 320);
     assert!(import.export().reachable_functions.is_empty());
     let project = read_click_project(&sidecar, source).unwrap();
     verify_program_prepared_project(&project, &import)
         .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
-    if selected == "GetSizeOfCompactSize" {
+    if matches!(selected, "GetSizeOfCompactSize" | "FeeFrac::Mul") {
         let sites = program_prepared_project_smart_tactic_source_sites(&project, &import).unwrap();
         let first = sites.first().unwrap();
         let position = program_prepared_project_tactic_source_position(
@@ -115,7 +144,7 @@ fn check_upstream_cpp(
         .unwrap();
         let rewritten = project.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import)
-            .expect("expanded CompactSize proof reverifies");
+            .expect("expanded upstream proof reverifies");
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
         let sites =
@@ -130,8 +159,13 @@ fn check_upstream_cpp(
         .unwrap();
         session
             .verify_at_project(&expanded, position.line, position.column)
-            .expect("CompactSize retained audit agrees");
-        let false_source = source.replace("ensures result ==", "ensures result !=");
+            .expect("upstream retained audit agrees");
+        let false_source = source
+            .replace("ensures result ==", "ensures result !=")
+            .replace(
+                "ensures to_integer(result) ==",
+                "ensures to_integer(result) !=",
+            );
         let false_project = read_click_project(&sidecar, &false_source).unwrap();
         let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
         assert!(
@@ -140,7 +174,49 @@ fn check_upstream_cpp(
             error.message()
         );
     }
+    if selected == "FeeFrac::Mul" {
+        assert!(import.export().records.is_empty());
+        assert_eq!(import.export().function.parameters.len(), 2);
+        for omitted in [
+            "requires -9223372036854775808 <= to_integer(a);",
+            "requires to_integer(a) <= 9223372036854775807;",
+            "requires -2147483648 <= to_integer(b);",
+            "requires to_integer(b) <= 2147483647;",
+        ] {
+            let hostile = source.replace(omitted, "");
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            verify_program_prepared_project(&parsed, &import)
+                .expect_err("explicit product certificates must establish all named bounds");
+        }
+        let unsafe_source = "verifying \"bitcoin-src/src/util/feefrac.h\"; int128 FeeFrac_Mul(int64 a, int32 b) { ensures 0 == 0; } by { execute(); simp(); }";
+        let parsed = read_click_project(&sidecar, unsafe_source).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("undefined behavior"),
+            "{}",
+            error.message()
+        );
+    }
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::Mul",
+        "FeeFracMul",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_div_consteval_contract_reaches_runtime_string_view_boundary() {
+    check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivConstevalRefused", "");
+}
+
+#[test]
+fn pinned_upstream_fee_frac_div_refuses_unmodelled_library_assume() {
+    check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivRefused", "");
 }
 
 #[test]

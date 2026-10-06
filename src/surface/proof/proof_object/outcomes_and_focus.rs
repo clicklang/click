@@ -83,9 +83,15 @@ impl<'a> Proof<'a> {
         let value = (*goal.data.core.result).clone();
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
-            CFunctionOutcome::Throw { value, state }
+            CFunctionOutcome::Throw {
+                value,
+                state: Box::new(state),
+            }
         } else {
-            CFunctionOutcome::Return { value, state }
+            CFunctionOutcome::Return {
+                value,
+                state: Box::new(state),
+            }
         })
     }
 
@@ -339,7 +345,7 @@ impl<'a> Proof<'a> {
         // this update is constant-size rather than a resource/history
         // materialization.
         data.core.result = Arc::new(value.clone());
-        data.core.state = state.clone().into();
+        data.core.state = (*state.clone()).into();
         let data = Arc::new(data);
         let obligation = match self.focused_obligation() {
             Some(Obligation::FunctionOutcome(goal)) => {
@@ -726,7 +732,7 @@ impl<'a> Proof<'a> {
                             identity: crate::kernel::proof::OutcomeIdentity::fresh(),
                             store_consequences_available: false,
                             result: Arc::new(result),
-                            state: state.into(),
+                            state: (*state).into(),
                             is_exceptional,
                             effect_facts: Arc::new(execution_facts),
                         },

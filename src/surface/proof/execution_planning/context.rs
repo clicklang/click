@@ -520,7 +520,7 @@ fn merge_path_aligned_certificates_with_match_policy(
                     .to_proof_tactics()
                     .to_vec();
             }
-            prefix.push(ProofTactic::Match(Box::new(rebuilt)));
+            prefix.push(ProofTactic::Match(std::sync::Arc::new(rebuilt)));
             return ProofCertificate::from_proof_tactics(&prefix).map_err(|error| {
                 ClickError::new(format!(
                     "`{claim_label}` merged an invalid path-aligned certificate: {error:?}"

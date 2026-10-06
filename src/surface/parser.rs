@@ -3402,6 +3402,7 @@ impl Parser {
                         | C0Type::Float32
                         | C0Type::Float64
                         | C0Type::Int32Array(_)
+                        | C0Type::UInt32Array(_)
                         | C0Type::Int128Array(_)
                         | C0Type::Int64Array(_)
                         | C0Type::UInt128Array(_)
@@ -5775,7 +5776,10 @@ impl Parser {
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
-            return Ok(ProofTactic::Match(Box::new(ProofMatch { scrutinee, arms })));
+            return Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                scrutinee,
+                arms,
+            })));
         }
         if name == "branch" {
             let ensuring = if self.peek_ident() == Some("ensuring") {

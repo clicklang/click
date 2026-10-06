@@ -4063,13 +4063,7 @@ impl PureFactContext {
         let separated = self
             .prop_facts
             .iter()
-            .filter_map(|fact| match fact {
-                Proposition::CResourceSeparate {
-                    left: CResource::Memory(left),
-                    right: CResource::Memory(right),
-                } => Some((left, right)),
-                _ => None,
-            })
+            .filter_map(Proposition::memory_separation)
             .filter(|(left, right)| left.base().block == right.base().block)
             .collect::<Vec<_>>();
         if separated.is_empty() && self.resource_compositions.is_empty() {

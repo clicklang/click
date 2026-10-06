@@ -803,3 +803,40 @@ inherent methods, and concrete trait implementations next; verify reachable
 constructor and operator bodies rather than summarizing the checksum result.
 Only after that adapter boundary passes should the unchanged implementation
 be proved against the shared Adler-32 specification.
+
+### Locked crate inputs and qualified declarations
+
+Schema 4 now locks an explicit crate root, edition, features, selected roots,
+and the complete compiler-observed file closure from rustc dep-info. Extraction
+uses a private snapshot and rejects environment-dependent source macros,
+escaping paths, symlinks, missing files, and extra inputs. All input bytes enter
+the prepared identity, including modules with no translated body. Existing
+schema-3 configurations and locks retain their one-file interpretation.
+
+Module definitions and inherent methods use qualified, injective proof names;
+call resolution keeps Charon declaration IDs. Assignment-operator implementations
+retain their declaration/signature checks inside module namespaces. Positive
+proofs cover same-named module functions and an inherent method call, with
+false-claim and changed-input negatives.
+
+The unchanged adler2 Rust-2021/std trial passes the former source-lock boundary
+and reaches the concrete `Default` implementation. The next increment below
+adds checked constructor bodies and record-return transport.
+
+### Checked constructors and owned record returns
+
+Schema-4 crate interpretation `click-charon-crate-v2` now resolves concrete
+standard `Default` implementations by declaration, implementation, associated
+item, signature, and diagnostic identity, then executes their actual bodies.
+Ordinary constructors and forwarding wrappers return supported flat records
+through the kernel aggregate-return interface. Live flags consume the return
+place and initialize caller-owned storage exactly once; destructor cleanup
+belongs to the caller. Existing schema-3 semantics and locks stay unchanged.
+
+Regressions prove initialized fields through constructor calls and moves,
+caller-supplied field values, changed constructor bodies, and a returned record
+with `Drop`. The unchanged adler2 `Adler32::default` and `Adler32::new` bodies
+now prove their two initialized fields. The complete `adler32_slice` extraction
+next reaches unsupported by-value record assignment-operator operands
+(`U32X4`). Support those concrete operands and their moves before continuing
+the original computation and shared checksum proof; do not assume its result.

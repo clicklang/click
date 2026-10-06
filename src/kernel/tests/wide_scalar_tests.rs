@@ -287,7 +287,7 @@ fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
             panic!("{outcome:?}");
         };
         assert_eq!(CExpressionOutcome::Value(value.clone()), expected);
-        assert_eq!(returned, &state);
+        assert_eq!(**returned, state);
     }
 }
 

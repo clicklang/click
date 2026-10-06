@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 40);
+    assert_eq!(prepared.export().schema, 42);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1743,7 +1743,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1860,7 +1860,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1971,7 +1971,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2032,7 +2032,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2078,7 +2078,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2706,7 +2706,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2784,7 +2784,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2902,7 +2902,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3040,7 +3040,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3142,7 +3142,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3242,7 +3242,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3381,7 +3381,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3531,7 +3531,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let destructor = import
         .export()
         .reachable_functions
@@ -3717,7 +3717,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3820,7 +3820,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 40);
+    assert_eq!(import.export().schema, 42);
     let destructor = import
         .export()
         .reachable_functions
@@ -4752,12 +4752,12 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state,
-            function: function.clone(),
+            state: Box::new(state),
+            function: Box::new(function.clone()),
             arguments: arguments.clone(),
             outcome: CFunctionOutcome::Return {
                 value: int32(42),
-                state: expected_state,
+                state: Box::new(expected_state),
             },
         }
     );
@@ -4775,8 +4775,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(
         overflow.proposition(),
         &Proposition::CFunctionExecutes {
-            state: max_state,
-            function: function.clone(),
+            state: Box::new(max_state),
+            function: Box::new(function.clone()),
             arguments,
             outcome: CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
         }
@@ -8476,7 +8476,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 40);
+        assert_eq!(import.export().schema, 42);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -8659,7 +8659,7 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             refresh_import(&project.config()).unwrap();
             fs::remove_file(&project.exporter).unwrap();
             let import = load_import(&project.config()).unwrap();
-            assert_eq!(import.export().schema, 40);
+            assert_eq!(import.export().schema, 42);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
                 "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
@@ -8940,4 +8940,655 @@ int64 relay(int128 a, int32* untouched) {{
 }} by {{ execute(); simp(); }}"#
     );
     check_return_call_sidecar(&project, &import, &proof);
+}
+
+const SCALAR_BRACES_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/scalar-braces/braces.cpp");
+
+#[test]
+fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
+    for (name, ty, params, post) in [
+        ("signed32", "int32", "int32 n", "result == n"),
+        ("signed64", "int64", "int64 n", "result == n"),
+        ("unsigned32", "uint32", "uint32 n", "result == n"),
+        ("unsigned64", "uint64", "uint64 n", "result == n"),
+        (
+            "signed128",
+            "int128",
+            "int128 n",
+            "to_integer(result) == to_integer(n)",
+        ),
+        (
+            "unsigned128",
+            "uint128",
+            "uint128 n",
+            "to_integer(result) == to_integer(n)",
+        ),
+        ("widen", "int64", "int32 n", "result == n"),
+        ("truth", "bool", "", "result == 1"),
+        ("constant", "int64", "", "result == 2147483648i64"),
+    ] {
+        let project = Project::with_fixture("braces.cpp", name, SCALAR_BRACES_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"braces.cpp\"; {ty} {name}({params}) {{ ensures {post}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn scalar_braces_do_not_convert_narrowing_or_unsupported_initializers_into_casts() {
+    for (params, value) in [
+        ("long n", "int{n}"),
+        ("int n", "U32{n}"),
+        ("int n", "bool{n}"),
+        ("int n", "int{n, 1}"),
+        ("int n", "int{}"),
+        ("int n", "char{1}"),
+        ("int n", "int{1.0}"),
+        ("int n", "int{missing()}"),
+        ("int n", "int{++n}"),
+    ] {
+        let cpp = format!(
+            "using U32 = unsigned; int missing() noexcept; int refused({params}) noexcept {{ return {value}; }}"
+        );
+        let project = Project::with_fixture("braces.cpp", "refused", &cpp);
+        refresh_import(&project.config())
+            .expect_err("unsupported initialization must remain refused");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn scalar_braces_compose_verified_fee_products_and_frame_memory() {
+    let project = Project::with_fixture("braces.cpp", "relay", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helper = include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+        .replace("bitcoin-src/src/util/feefrac.h", "braces.cpp");
+    let source = format!(
+        r#"{helper}
+int128 relay(int64 a, int32 b, int32* untouched) {{
+    requires -9223372036854775808 <= to_integer(a);
+    requires to_integer(a) <= 9223372036854775807;
+    requires -2147483648 <= to_integer(b);
+    requires to_integer(b) <= 2147483647;
+    owns untouched[0..1];
+    ensures to_integer(result) == to_integer(a) * to_integer(b);
+    ensures untouched[0] == old(untouched[0]);
+}} by {{ execute(); simp(); }}
+"#
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    let hostile = source.replace(
+        "ensures to_integer(result) == to_integer(a) * to_integer(b);",
+        "ensures to_integer(result) == to_integer(a) * to_integer(b) + 1;",
+    );
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import).expect_err("false product claims must fail");
+}
+
+#[test]
+fn scalar_braces_keep_argument_and_assumption_effect_restrictions() {
+    let project = Project::with_fixture("braces.cpp", "argument", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"braces.cpp\"; int64 identity(int64 n) { ensures result == n; } by { execute(); simp(); } int64 argument(int32 n) { ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let project = Project::with_fixture("braces.cpp", "guarded", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"braces.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+    check_arithmetic_sidecar(&project, &import, proof);
+    let path = project.directory.join("missing.click");
+    let missing = proof.replace("requires n > 0;", "");
+    fs::write(&path, &missing).unwrap();
+    let parsed = read_click_project(&path, &missing).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("braces cannot discharge an assumption");
+    for cpp in [
+        "long identity(long n) noexcept { return n; } long argument(int n) noexcept { return identity(long{++n}); }",
+        "int guarded(int n) noexcept { __builtin_assume(bool{++n > 0}); return n; }",
+        "int guarded(int n) noexcept { __builtin_assume(bool{n + 1 > 0}); return n; }",
+    ] {
+        let name = if cpp.starts_with("long") {
+            "argument"
+        } else {
+            "guarded"
+        };
+        let project = Project::with_fixture("braces.cpp", name, cpp);
+        refresh_import(&project.config())
+            .expect_err("braces must not hide effects or partial arithmetic");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+fn library_assertion_fixture(header: &str, cpp: &str) -> Project {
+    use sha2::{Digest, Sha256};
+    let mut project = Project::with_fixture("library.cpp", "guarded", cpp);
+    fs::write(project.directory.join("gate.h"), header).unwrap();
+    project.dependencies.push("gate.h".into());
+    project.write_config("guarded");
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["library_assertions"] = serde_json::json!([{
+        "kind": "checked_boolean_statement",
+        "function": "library::check",
+        "header": "gate.h",
+        "sha256": format!("{:x}", Sha256::digest(header.as_bytes()))
+    }]);
+    fs::write(
+        project.config(),
+        serde_json::to_vec_pretty(&config).unwrap(),
+    )
+    .unwrap();
+    project
+}
+
+const LIBRARY_ASSERTION_HEADER: &str = "namespace library { inline bool check(bool value) noexcept { if (!value) __builtin_trap(); return value; } }\n#define Gate(value) library::check(value)\n";
+
+#[test]
+fn assumed_library_assertions_require_proof_and_preserve_cleanup() {
+    let cpp = "#include \"gate.h\"\nstruct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint guarded(int n) noexcept { Guard guard(n); Gate(n > 0); return n; }";
+    let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+    refresh_import(&project.config()).unwrap();
+    let artifact = fs::read(project.artifact()).unwrap();
+    refresh_import(&project.config()).unwrap();
+    assert_eq!(artifact, fs::read(project.artifact()).unwrap());
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(
+        import
+            .export()
+            .reachable_functions
+            .iter()
+            .all(|f| f.name != "library_check")
+    );
+    let CppStatement::LibraryAssert { contract, span, .. } = &import.export().function.body[1]
+    else {
+        panic!("explicit library assertion node")
+    };
+    assert_eq!(contract.function, "library::check");
+    assert_eq!(contract.header, "gate.h");
+    assert_eq!(span.file, "library.cpp");
+    let source = r#"verifying "library.cpp";
+void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for precondition in ["", "requires n == 0;"] {
+        let hostile = source.replace("requires n > 0;", precondition);
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("assumed library contract `library::check`"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            error.message().contains(&contract.sha256),
+            "{}",
+            error.message()
+        );
+    }
+    let hostile = source.replace("ensures result == n;", "ensures result == n + 1;");
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("a proved library condition cannot prove a false return");
+    fs::write(
+        project.directory.join("gate.h"),
+        format!("{LIBRARY_ASSERTION_HEADER}\n// changed\n"),
+    )
+    .unwrap();
+    assert!(
+        load_import(&project.config())
+            .unwrap_err()
+            .contains("explicit pin")
+    );
+}
+
+#[test]
+fn assumed_library_assertions_reject_unpinned_and_effectful_boundaries() {
+    let cpp =
+        "#include \"gate.h\"\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
+    for (header, body) in [
+        (LIBRARY_ASSERTION_HEADER, cpp.replace("n > 0", "++n > 0")),
+        (LIBRARY_ASSERTION_HEADER, cpp.replace("n > 0", "n + 1 > 0")),
+        (
+            "namespace library { void check(bool, int); }",
+            cpp.replace("n > 0", "n > 0, ++n"),
+        ),
+        ("namespace library { void check(int); }", cpp.to_string()),
+        (
+            "namespace library { void check(bool&); }",
+            "#include \"gate.h\"\nint guarded(bool n) noexcept { library::check(n); return 0; }"
+                .to_string(),
+        ),
+        ("namespace library { int check(bool); }", cpp.to_string()),
+        (
+            "namespace library { template<class T> void check(T); }",
+            cpp.to_string(),
+        ),
+        (
+            LIBRARY_ASSERTION_HEADER,
+            cpp.replace(
+                "library::check(n > 0); return n;",
+                "return library::check(n > 0);",
+            ),
+        ),
+    ] {
+        let project = library_assertion_fixture(header, &body);
+        refresh_import(&project.config())
+            .expect_err("unsupported argument/signature/use must fail atomically");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+    let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["library_assertions"] = serde_json::json!([]);
+    fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&project.config())
+        .expect_err("external assertion calls need an explicit contract");
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn assumed_library_assertion_inventory_and_pins_are_checked_before_export() {
+    let cpp =
+        "#include \"gate.h\"\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
+    for change in [
+        "hash",
+        "header",
+        "function",
+        "kind",
+        "duplicate",
+        "too_many",
+    ] {
+        let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+        let mut config: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+        match change {
+            "hash" => config["library_assertions"][0]["sha256"] = "0".repeat(64).into(),
+            "header" => config["library_assertions"][0]["header"] = "../gate.h".into(),
+            "function" => config["library_assertions"][0]["function"] = "check()".into(),
+            "kind" => config["library_assertions"][0]["kind"] = "unchecked_assumption".into(),
+            "duplicate" => {
+                let duplicate = config["library_assertions"][0].clone();
+                config["library_assertions"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(duplicate);
+            }
+            "too_many" => {
+                config["library_assertions"] =
+                    serde_json::Value::Array(vec![config["library_assertions"][0].clone(); 65])
+            }
+            _ => unreachable!(),
+        }
+        fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+        if change != "hash" {
+            fs::remove_file(&project.exporter).unwrap();
+        }
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(
+            !error.contains("resolve C++ exporter"),
+            "policy must be checked before invoking Clang: {error}"
+        );
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn assumed_library_assertions_bind_offline_artifacts_to_config_authority() {
+    use sha2::{Digest, Sha256};
+    let cpp = "#include \"gate.h\"\nint checked(int n) noexcept { library::check(n > 0); return n; }\nint guarded(int n) noexcept { return checked(n); }";
+    for change in [
+        "function",
+        "hash",
+        "header",
+        "invalid_hash",
+        "remove_authority",
+    ] {
+        let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, cpp);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        assert_eq!(
+            artifact["reachable_functions"][0]["body"][0]["kind"],
+            "library_assert"
+        );
+        let contract = &mut artifact["reachable_functions"][0]["body"][0]["contract"];
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        match change {
+            "function" => contract["function"] = "library::other".into(),
+            "hash" => contract["sha256"] = "0".repeat(64).into(),
+            "header" => contract["header"] = "other.h".into(),
+            "invalid_hash" => contract["sha256"] = "F".repeat(64).into(),
+            "remove_authority" => {
+                let mut config: serde_json::Value =
+                    serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+                config["library_assertions"] = serde_json::json!([]);
+                let bytes = serde_json::to_vec(&config).unwrap();
+                lock["config_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+                fs::write(project.config(), bytes).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(
+            error.contains("library assertion") || error.contains("library assertion contract"),
+            "semantic authority must be checked even with updated file digests: {error}"
+        );
+    }
+}
+
+#[test]
+fn assumed_library_assertions_scale_with_explicit_statement_count() {
+    for size in [4usize, 16, 64, 256] {
+        let body = "library::check(n > 0);\n".repeat(size);
+        let cpp =
+            format!("#include \"gate.h\"\nint guarded(int n) noexcept {{ {body} return n; }}");
+        let project = library_assertion_fixture(LIBRARY_ASSERTION_HEADER, &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 64 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work <= 32 * size + 128, "{size}: {work}");
+        if size == 4 {
+            let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+            check_return_call_sidecar(&project, &import, proof);
+        }
+    }
+}
+
+#[test]
+fn assumed_library_assertions_compose_with_modular_callers_and_memory_framing() {
+    let cpp = "#include \"gate.h\"\nint checked(int n) noexcept { library::check(n > 0); return n; }\nint guarded(int& memory, int n) noexcept { return checked(n); }";
+    // A declaration-only, void-return library boundary is also explicitly assumed.
+    let project = library_assertion_fixture("namespace library { void check(bool); }", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "library.cpp";
+int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
+int32 guarded(int32* memory, int32 n) { owns memory[0..1]; requires memory[0] == 7; requires n > 0; ensures memory[0] == 7; ensures result == n; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, source);
+    for hostile in [
+        source.replacen("requires n > 0;", "", 1),
+        source.replace("ensures memory[0] == 7;", "ensures memory[0] == 8;"),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("library and modular contracts must preserve their obligations");
+    }
+}
+
+#[test]
+fn assumed_library_assertions_reject_matching_names_from_another_header() {
+    let header = "#include \"other.h\"\n";
+    let cpp =
+        "#include \"gate.h\"\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
+    let project = library_assertion_fixture(header, cpp);
+    fs::write(
+        project.directory.join("other.h"),
+        "namespace library { void check(bool); }",
+    )
+    .unwrap();
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("declaration differs from its pinned header"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}
+
+#[test]
+fn assumed_library_assertions_cannot_bypass_selected_source_verification() {
+    use sha2::{Digest, Sha256};
+    let cpp = "namespace library { void check(bool value) noexcept { check(value); } }\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
+    let project = library_assertion_fixture("", cpp);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["dependencies"] = serde_json::json!(["library.cpp"]);
+    config["library_assertions"][0]["header"] = "library.cpp".into();
+    config["library_assertions"][0]["sha256"] =
+        format!("{:x}", Sha256::digest(cpp.as_bytes())).into();
+    fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("selected-source C++ definitions require ordinary verified contracts"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}
+
+fn consteval_library_fixture(header: &str, cpp: &str) -> Project {
+    let project = library_assertion_fixture(header, cpp);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["library_assertions"][0]["kind"] =
+        "checked_boolean_statement_with_consteval_metadata".into();
+    fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    project
+}
+
+const CONSTEVAL_LIBRARY_HEADER: &str = r#"
+namespace library {
+struct Location { int line; };
+consteval Location location() { return {3}; }
+consteval int number() { return 7; }
+template<bool Debug, class T> constexpr T&& check(T&& condition, const Location&, int) {
+    if (Debug && !condition) __builtin_trap();
+    return static_cast<T&&>(condition);
+}
+}
+#define Gate(value) library::check<false>(value, library::location(), library::number())
+"#;
+
+#[test]
+fn consteval_library_metadata_keeps_proof_obligations_and_compiler_provenance() {
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, cpp);
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let CppStatement::LibraryAssert {
+        metadata,
+        specialization,
+        ..
+    } = &import.export().function.body[0]
+    else {
+        panic!("explicit library statement")
+    };
+    assert_eq!(metadata.len(), 2);
+    assert_eq!(metadata[0].function, "library::location");
+    assert_eq!(metadata[1].function, "library::number");
+    assert_eq!(
+        metadata[0].declaration_file,
+        project
+            .directory
+            .join("gate.h")
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
+        specialization.as_deref(),
+        Some("library_check__bool_false__bool")
+    );
+    assert!(
+        import.export().records.is_empty(),
+        "compile-time-only opaque metadata does not become a runtime record model"
+    );
+    assert!(import.export().reachable_functions.is_empty());
+    let proof = "verifying \"library.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    for hostile in [
+        proof.replace("requires n > 0;", ""),
+        proof.replace("requires n > 0;", "requires n == 0;"),
+        proof.replace("ensures result == n;", "ensures result == n + 1;"),
+    ] {
+        let path = project.directory.join("hostile.click");
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        verify_program_prepared_project(&parsed, &import)
+            .expect_err("metadata and templates cannot grant unproved conditions or false results");
+    }
+}
+
+#[test]
+fn consteval_library_metadata_rejects_runtime_calls_conversions_and_cleanup() {
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    for (header, body) in [
+        (
+            CONSTEVAL_LIBRARY_HEADER.replace("consteval Location", "constexpr Location"),
+            cpp.to_string(),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.replace("consteval int", "constexpr int"),
+            cpp.to_string(),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.replace(
+                "struct Location { int line; };",
+                "struct Location { int line; constexpr ~Location() {} };",
+            ),
+            cpp.to_string(),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.replace("const Location&", "Location"),
+            cpp.to_string(),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.to_string(),
+            cpp.replace("n > 0", "++n > 0"),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.to_string(),
+            cpp.replace("n > 0", "n + 1 > 0"),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.to_string(),
+            cpp.replace("Gate(n > 0); return n;", "return Gate(n > 0);"),
+        ),
+        (
+            CONSTEVAL_LIBRARY_HEADER.to_string(),
+            cpp.replace(
+                "Gate(n > 0)",
+                "library::check<false>(n > 0, library::location(), ++n)",
+            ),
+        ),
+    ] {
+        let project = consteval_library_fixture(&header, &body);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.len() < 8000, "bounded diagnostic");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn consteval_library_metadata_preserves_normal_cleanup_and_modular_framing() {
+    let cpp = "#include \"gate.h\"\nstruct Guard { int value; explicit Guard(int n) noexcept : value(n) {} ~Guard() noexcept { value = 0; } };\nint checked(int n) noexcept { Gate(n > 0); return n; }\nint guarded(int& memory, int n) noexcept { Guard guard(n); return checked(n); }";
+    let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "library.cpp";
+void Guard_constructor(struct Guard* self, int32 n) { owns self->value; ensures self->value == n; } by { execute(); simp(); }
+void Guard_destructor(struct Guard* self) { owns self->value; ensures self->value == 0; } by { execute(); simp(); }
+int32 checked(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }
+int32 guarded(int32* memory, int32 n) { owns memory[0..1]; requires memory[0] == 7; requires n > 0; ensures memory[0] == 7; ensures result == n; } by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, proof);
+}
+
+#[test]
+fn consteval_library_metadata_offline_checker_rejects_forged_provenance_and_kind() {
+    use sha2::{Digest, Sha256};
+    let cpp = "#include \"gate.h\"\nint guarded(int n) noexcept { Gate(n > 0); return n; }";
+    for change in ["file", "function", "specialization", "too_many", "kind"] {
+        let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, cpp);
+        refresh_import(&project.config()).unwrap();
+        let mut artifact: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+        let statement = &mut artifact["function"]["body"][0];
+        match change {
+            "file" => statement["metadata"][0]["declaration_file"] = "/outside/closure.h".into(),
+            "function" => statement["metadata"][0]["function"] = "factory()".into(),
+            "specialization" => statement["specialization"] = "check<false>".into(),
+            "too_many" => {
+                statement["metadata"] =
+                    serde_json::Value::Array(vec![statement["metadata"][0].clone(); 9])
+            }
+            "kind" => statement["contract"]["kind"] = "checked_boolean_statement".into(),
+            _ => unreachable!(),
+        }
+        let bytes = serde_json::to_vec(&artifact).unwrap();
+        let mut lock: serde_json::Value =
+            serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+        lock["artifact_sha256"] = format!("{:x}", Sha256::digest(&bytes)).into();
+        lock["artifact_bytes"] = bytes.len().into();
+        fs::write(project.artifact(), bytes).unwrap();
+        fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+        let error = load_import(&project.config()).unwrap_err();
+        assert!(error.contains("metadata"), "{error}");
+    }
+}
+
+#[test]
+fn consteval_library_metadata_scales_with_explicit_statement_count() {
+    for size in [4usize, 16, 64, 256] {
+        let body = "Gate(n > 0);\n".repeat(size);
+        let cpp =
+            format!("#include \"gate.h\"\nint guarded(int n) noexcept {{ {body} return n; }}");
+        let project = consteval_library_fixture(CONSTEVAL_LIBRARY_HEADER, &cpp);
+        refresh_import(&project.config()).unwrap();
+        let bytes = fs::metadata(project.artifact()).unwrap().len() as usize;
+        let (import, work) =
+            click::instrumentation::measure_deterministic_work(|| load_import(&project.config()));
+        let import = import.unwrap();
+        assert!(
+            work <= bytes + 64 * size + 256,
+            "{size}: {work} for {bytes} bytes"
+        );
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work <= 32 * size + 128, "{size}: {work}");
+    }
 }

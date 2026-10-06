@@ -1432,8 +1432,8 @@ impl CheckedResourceRewrite {
         for child in &children {
             if let Some(owned) = child.owned_resource() {
                 allowed.push(Proposition::CResourceContains {
-                    parent: selected.resource().clone(),
-                    child: owned.clone(),
+                    parent: Box::new(selected.resource().clone()),
+                    child: Box::new(owned.clone()),
                 });
             }
         }
@@ -1714,8 +1714,8 @@ impl CheckedResourceRewrite {
         for child in expanded.facts() {
             if let Some(owned) = child.owned_resource() {
                 allowed.push(Proposition::CResourceContains {
-                    parent: selected.resource().clone(),
-                    child: owned.clone(),
+                    parent: Box::new(selected.resource().clone()),
+                    child: Box::new(owned.clone()),
                 })
             }
         }
@@ -2704,16 +2704,8 @@ fn resource_delta_pointer_equality(
     source: &Proposition,
     goal: &Proposition,
 ) -> Option<Proposition> {
-    if let (
-        Proposition::CResourceContains {
-            child: CResource::Memory(source_range),
-            ..
-        },
-        Proposition::CResourceContains {
-            child: CResource::Memory(goal_range),
-            ..
-        },
-    ) = (source, goal)
+    if let (Some((_, source_range)), Some((_, goal_range))) =
+        (source.memory_containment(), goal.memory_containment())
     {
         return (resource_containment_key(source) == resource_containment_key(goal)).then(|| {
             Proposition::ConditionIs(
@@ -2741,13 +2733,7 @@ fn resource_delta_pointer_equality(
 type ResourceContainmentKey = (CResource, Bitvector32Term, Bitvector32Term, u32);
 
 fn resource_containment_key(proposition: &Proposition) -> Option<ResourceContainmentKey> {
-    let Proposition::CResourceContains {
-        parent,
-        child: CResource::Memory(range),
-    } = proposition
-    else {
-        return None;
-    };
+    let (parent, range) = proposition.memory_containment()?;
     Some((
         parent.clone(),
         range.start().clone(),
@@ -4958,8 +4944,8 @@ impl CheckedCallOutcomeSplit {
                 else {
                     return false;
                 };
-                if proved_state != &state
-                    || proved_statement != &statement
+                if **proved_state != state
+                    || **proved_statement != statement
                     || outcome != expected
                     || path_facts
                         .iter()
@@ -5029,7 +5015,7 @@ impl CheckedCallOutcomeSplit {
                     state: proved_state,
                     statement: proved_statement,
                     outcome,
-                } if proved_state == state && proved_statement == statement && outcome == *expected
+                } if **proved_state == *state && **proved_statement == *statement && outcome == *expected
             )
         })
     }
@@ -5070,7 +5056,7 @@ impl CheckedBranchSplit {
                 else {
                     return None;
                 };
-                if proved_state != &state || proved_condition != &condition {
+                if **proved_state != state || proved_condition != &condition {
                     return None;
                 }
                 Some(CheckedBranchPath {
@@ -5798,7 +5784,7 @@ fn checked_statement_event(
         } => (state, statement, outcome),
         _ => return None,
     };
-    (proved_state == state && checked_source_statement_matches(proved_statement, statement))
+    (**proved_state == *state && checked_source_statement_matches(proved_statement, statement))
         .then(|| outcome.clone())
 }
 
@@ -5820,7 +5806,7 @@ fn checked_condition_event(
         } => (state, condition, *value),
         _ => return None,
     };
-    if proved_state != state {
+    if **proved_state != *state {
         return None;
     }
     let selected = match statement {
@@ -5913,7 +5899,7 @@ fn check_evidence_events_with_call_events(
             && let CheckedExecutionEvent::ResourceRewrite(rewrite) = event
         {
             current_facts = rewrite.advance_checked(returned, &current_facts, &call_events)?;
-            *returned = rewrite.after_state.clone();
+            **returned = rewrite.after_state.clone();
             continue;
         }
         if let Some(CStatementOutcome::Return {
@@ -5922,7 +5908,7 @@ fn check_evidence_events_with_call_events(
             && let CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) = event
         {
             current_facts = rewrite.advance_checked(returned, &current_facts)?;
-            *returned = rewrite.after_state.clone();
+            **returned = rewrite.after_state.clone();
             continue;
         }
         if let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = event {
@@ -5935,7 +5921,7 @@ fn check_evidence_events_with_call_events(
                     | CStatementOutcome::Throw { state, .. } => state,
                     _ => return None,
                 };
-                *returned = end.advance_checked(returned)?;
+                **returned = end.advance_checked(returned)?;
             } else {
                 state = end.advance_checked(&state)?;
             }
@@ -6002,7 +5988,7 @@ fn check_evidence_events_with_call_events(
             CheckedExecutionEvent::Statement(theorem) => {
                 match checked_statement_event(theorem, &current_facts, &state, &next_statement)? {
                     CStatementOutcome::Normal(next_state) => {
-                        state = next_state;
+                        state = *next_state;
                         remaining = tail;
                     }
                     outcome @ (CStatementOutcome::Break(_)
@@ -6181,7 +6167,7 @@ fn trace_completion(
                     rewrite
                         .advance_checked(state, &rewrite.before_facts)
                         .ok_or("population authority rewrite failed certificate check")?;
-                    *state = rewrite.after_state.clone();
+                    **state = rewrite.after_state.clone();
                 }
             }
             CheckedExecutionEvent::PopulationMemberRewrite(_) => {
@@ -6202,7 +6188,7 @@ fn trace_completion(
                     let CStatementOutcome::Return { state, .. } = outcome else {
                         return Err("resource rewriting requires a returned state");
                     };
-                    if *state != rewrite.before_state {
+                    if **state != rewrite.before_state {
                         return Err("post-return resource rewrite has a different input state");
                     }
                     if let Some(instance) = &rewrite.instance
@@ -6249,20 +6235,21 @@ fn trace_completion(
                                 );
                             }
                         }
-                        let checked_state =
-                            crate::kernel::rewrite_resource_instance_selecting_children(
-                                state,
-                                instance,
-                                &rewrite.definition,
-                                function.composite_resource_definitions(),
-                                executed_under,
-                                false,
-                                rewrite.selected_children.as_deref(),
-                            )
-                            .map_err(
-                                |_| "return fold body is not justified on this execution path",
-                            )?
-                            .state;
+                        let unfold = state
+                            .resources()
+                            .owned_instance(instance.identity())
+                            .is_some();
+                        let checked = crate::kernel::rewrite_resource_instance_selecting_children(
+                            state,
+                            instance,
+                            &rewrite.definition,
+                            function.composite_resource_definitions(),
+                            executed_under,
+                            unfold,
+                            rewrite.selected_children.as_deref(),
+                        )
+                        .map_err(|_| "return fold body is not justified on this execution path")?;
+                        let checked_state = checked.state;
                         if !checked_state
                             .resources
                             .same_exchange_from(&rewrite.after_state.resources, &state.resources)
@@ -6270,16 +6257,23 @@ fn trace_completion(
                                 &rewrite.after_state.instance_field_scope,
                                 &state.instance_field_scope,
                             )
+                            || checked_state.population_effects.creation
+                                != rewrite.after_state.population_effects.creation
                         {
                             return Err(
                                 "return fold does not match this path's checked resource exchange",
                             );
                         }
+                        if unfold {
+                            for fact in checked.semantic_facts {
+                                *executed_under =
+                                    std::mem::take(executed_under).assume_proposition(fact);
+                            }
+                        }
                     }
-                    *state = rewrite.after_state.clone();
-                    // Folding introduces no pure facts. In particular, do not
-                    // publish a proof snapshot's entire assumption context as
-                    // facts of this path.
+                    **state = rewrite.after_state.clone();
+                    // Only the rechecked unfold's checked body facts enter this
+                    // path, never a proof snapshot's entire assumption context.
                 }
             }
             CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
@@ -6289,7 +6283,7 @@ fn trace_completion(
                         | CStatementOutcome::Throw { state, .. } => state,
                         _ => return Err("lifetime end follows a stateless outcome"),
                     };
-                    *state = end
+                    **state = end
                         .advance_checked(state)
                         .ok_or("lifetime end has mismatched state")?;
                 }
@@ -6665,7 +6659,7 @@ impl ExecutionProofCore {
             });
         }
         match outcome {
-            CStatementOutcome::Normal(next_state) => self.evidence_state = Some(next_state),
+            CStatementOutcome::Normal(next_state) => self.evidence_state = Some(*next_state),
             CStatementOutcome::Throw { state, .. }
                 if self
                     .frontier
@@ -6677,11 +6671,11 @@ impl ExecutionProofCore {
                 // transfer. Keep the trace open while the surface executor
                 // records the handler binding and moves the frontier there;
                 // only an uncaught throw completes this execution evidence.
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
             CStatementOutcome::Return { state, .. } | CStatementOutcome::Throw { state, .. } => {
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = true;
             }
             CStatementOutcome::Break(state) | CStatementOutcome::Continue(state)
@@ -6697,19 +6691,19 @@ impl ExecutionProofCore {
                 self.frontier.loop_control =
                     region_loop_control.expect("the guard matched a loop control");
                 self.frontier.position = FrontierPosition::RegionBoundary;
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = true;
             }
             CStatementOutcome::Break(state) => {
                 let source_after = self.advance_loop_control(false, None)?;
                 self.evidence_source = source_after;
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
             CStatementOutcome::Continue(state) => {
                 let source_after = self.advance_loop_control(true, source_after)?;
                 self.evidence_source = source_after;
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
             CStatementOutcome::Jump { target, state } => {
@@ -6718,14 +6712,14 @@ impl ExecutionProofCore {
                 {
                     self.frontier.position = FrontierPosition::RegionBoundary;
                     self.frontier.loop_control = LoopControlExit::BodyEnd;
-                    self.evidence_state = Some(state);
+                    self.evidence_state = Some(*state);
                     self.evidence_completed = true;
                     return Ok(());
                 }
                 if self.frontier.natural_exit_target == Some(target) && self.frontier.in_loop_body {
                     self.frontier.position = FrontierPosition::RegionBoundary;
                     self.frontier.loop_control = LoopControlExit::NaturalExit(target);
-                    self.evidence_state = Some(state);
+                    self.evidence_state = Some(*state);
                     self.evidence_completed = true;
                     return Ok(());
                 }
@@ -6737,7 +6731,7 @@ impl ExecutionProofCore {
                     remaining: target.remaining.clone(),
                 };
                 self.evidence_source = Some(target.remaining.clone());
-                self.evidence_state = Some(state);
+                self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
             // An error outcome is recorded so the driver reports it; it
@@ -7138,7 +7132,7 @@ impl ExecutionProofCore {
                     return Err("retained statement evidence has a non-statement conclusion".into());
                 }
             };
-        match (proved_statement, outcome) {
+        match (&**proved_statement, outcome) {
             (
                 CStatement::Goto { target: expected },
                 CStatementOutcome::Jump { target: actual, .. },
@@ -7155,7 +7149,7 @@ impl ExecutionProofCore {
         // `Skip` at the head of the source when there is one and otherwise
         // nothing; another theorem consumes its statement after the
         // `Skip`s before it.
-        let source_after = if matches!(proved_statement, CStatement::Skip) {
+        let source_after = if matches!(&**proved_statement, CStatement::Skip) {
             match self.current_source(function) {
                 Some(source) => {
                     let (head, tail) = split_shared_source(source);
@@ -7167,10 +7161,10 @@ impl ExecutionProofCore {
                 }
                 None => None,
             }
-        } else if matches!(proved_statement, CStatement::Seq(..))
+        } else if matches!(&**proved_statement, CStatement::Seq(..))
             && self
                 .current_source(function)
-                .is_some_and(|source| source == proved_statement)
+                .is_some_and(|source| *source == **proved_statement)
         {
             // A checked sequence may cover the entire remaining source. This
             // is exact structural identity, not a search through the suffix.
@@ -7205,13 +7199,13 @@ impl ExecutionProofCore {
                         backedge_target: None,
                         natural_exit_target: None,
                         body,
-                    } if !matches!(proved_statement, CStatement::While { .. }) => {
+                    } if !matches!(&**proved_statement, CStatement::While { .. }) => {
                         let (body_head, body_tail) = split_shared_source(body);
                         if !statements_have_same_source(&body_head, proved_statement) {
                             return Err(EvidenceRefusal {
                                 reason: "statement evidence does not prove the frontier's next source statement",
                                 expected: Some(next.into_owned()),
-                                proved: Some(proved_statement.clone()),
+                                proved: Some(*proved_statement.clone()),
                                 premise: None,
                             });
                         }
@@ -7245,7 +7239,7 @@ impl ExecutionProofCore {
                     return Err(EvidenceRefusal {
                         reason: "statement evidence does not prove the frontier's next source statement",
                         expected: Some(next.into_owned()),
-                        proved: Some(proved_statement.clone()),
+                        proved: Some(*proved_statement.clone()),
                         premise: None,
                     });
                 }
@@ -7445,7 +7439,7 @@ impl ExecutionProofCore {
                 .map_or(&no_assumptions, |entry| entry.assumptions());
             let theorem_assumptions =
                 crate::kernel::api::proof_evidence_assumptions(theorem, entry_assumptions);
-            reached =
+            *reached =
                 crate::kernel::resolve_pending_heap_allocations(&reached, &theorem_assumptions);
         }
         if let Some(pending) = &reached.pending_thread_create {
@@ -7463,10 +7457,10 @@ impl ExecutionProofCore {
                     obligations,
                 );
             if let Some(resolved) = pending.resolve(&reached, &decided_assumptions) {
-                reached = resolved;
+                *reached = resolved;
             }
         }
-        Ok((reached, source_after))
+        Ok((*reached, source_after))
     }
 
     /// The part of the evidence judgment shared by statement and condition
@@ -7686,12 +7680,12 @@ impl ExecutionProofCore {
             if let Some(entry) = self.function_entry.as_ref() {
                 reserved.extend(crate::kernel::proposition_variables(
                     &Proposition::CFunctionExecutes {
-                        state: entry.caller_state.clone(),
-                        function: entry.function.as_ref().clone(),
+                        state: Box::new(entry.caller_state.clone()),
+                        function: Box::new(entry.function.as_ref().clone()),
                         arguments: entry.arguments.clone(),
                         outcome: CFunctionOutcome::Return {
                             value: CValue::Void,
-                            state: entry.entry_state.clone(),
+                            state: Box::new(entry.entry_state.clone()),
                         },
                     },
                 ));
@@ -8392,10 +8386,12 @@ impl ExecutionProofCore {
             before_facts,
             selected,
             after_facts,
+            false,
             None,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_return_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,
@@ -8403,6 +8399,7 @@ impl ExecutionProofCore {
         before_facts: &ProofFacts,
         selected: &CResourceFact,
         after_facts: &ProofFacts,
+        unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<(), String> {
         if !self.evidence_completed {
@@ -8435,7 +8432,7 @@ impl ExecutionProofCore {
                     else {
                         return Err("return resource rewrite requires a returning path".to_string());
                     };
-                    break state.clone();
+                    break *state.clone();
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
@@ -8455,7 +8452,7 @@ impl ExecutionProofCore {
             definition,
             function.composite_resource_definitions(),
             before_facts.assumptions(),
-            false,
+            unfold,
             selected_children.as_deref(),
         )
         .map_err(|refusal| refusal.describe())?
@@ -8518,7 +8515,7 @@ impl ExecutionProofCore {
                     else {
                         return Err("return resource rewrite requires a returning path".to_string());
                     };
-                    break state.clone();
+                    break *state.clone();
                 }
                 Some(
                     CheckedExecutionEvent::Context(_)
@@ -8999,8 +8996,8 @@ impl ExecutionProofCore {
                 None => candidate.loan_evidence().clone(),
             };
             let proposition = Proposition::CFunctionVerifies {
-                state: candidates.state().clone(),
-                function: function.clone(),
+                state: Box::new(candidates.state().clone()),
+                function: Box::new(function.clone()),
                 arguments: candidates.arguments().to_vec(),
                 outcome,
             };
@@ -9833,11 +9830,11 @@ mod tests {
             let mut trace = PersistentSequence::default();
             trace.push(CheckedExecutionEvent::Statement(Theorem::new(
                 Proposition::CStatementVerifies {
-                    state: open.clone(),
-                    statement,
+                    state: Box::new(open.clone()),
+                    statement: Box::new(statement),
                     outcome: CStatementOutcome::Return {
                         value: int32(0),
-                        state: open,
+                        state: Box::new(open),
                     },
                 },
             )));
@@ -9928,11 +9925,11 @@ mod tests {
             let mut trace = PersistentSequence::default();
             trace.push(CheckedExecutionEvent::Statement(Theorem::new(
                 Proposition::CStatementVerifies {
-                    state: state.clone(),
-                    statement: statement.clone(),
+                    state: Box::new(state.clone()),
+                    statement: Box::new(statement.clone()),
                     outcome: CStatementOutcome::Return {
                         value: int32(7),
-                        state,
+                        state: Box::new(state),
                     },
                 },
             )));
@@ -9995,7 +9992,7 @@ mod tests {
                 outcome,
                 CStatementOutcome::Return {
                     value: int32(7),
-                    state: folded.clone()
+                    state: Box::new(folded.clone())
                 }
             );
             // Copying an event to a different path with a different body
@@ -10217,7 +10214,7 @@ mod tests {
         value: bool,
     ) -> CheckedExecutionEvent {
         CheckedExecutionEvent::Condition(Theorem::new(Proposition::CConditionEvaluates {
-            state: state.clone(),
+            state: Box::new(state.clone()),
             condition: condition.clone(),
             outcome: CConditionOutcome::Value(value),
         }))
@@ -10245,9 +10242,9 @@ mod tests {
                 None,
             ));
         let theorem = Theorem::new(Proposition::CStatementVerifies {
-            state: before.clone(),
-            statement: CStatement::Skip,
-            outcome: CStatementOutcome::Normal(after),
+            state: Box::new(before.clone()),
+            statement: Box::new(CStatement::Skip),
+            outcome: CStatementOutcome::Normal(Box::new(after)),
         });
         let views = statement_call_havoc_views(&theorem);
         let [view] = views.as_slice() else {
@@ -10525,14 +10522,16 @@ mod tests {
                 .is_some()
         );
         let contains = |i, end| Proposition::CResourceContains {
-            parent: CResourceFact::own_composite("cell".into(), Vec::new())
-                .resource()
-                .clone(),
-            child: CResource::Memory(crate::kernel::CMemoryRange::new(
+            parent: Box::new(
+                CResourceFact::own_composite("cell".into(), Vec::new())
+                    .resource()
+                    .clone(),
+            ),
+            child: Box::new(CResource::Memory(crate::kernel::CMemoryRange::new(
                 pointer(i),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(end),
-            )),
+            ))),
         };
         let relation_index = ResourceDeltaPremises::new(&[contains(20, 1)]);
         assert!(relation_index.prove(&contains(21, 1)).is_none());
@@ -10548,14 +10547,16 @@ mod tests {
                 .is_none()
         );
         let wrong_parent = Proposition::CResourceContains {
-            parent: CResourceFact::own_composite("other".into(), Vec::new())
-                .resource()
-                .clone(),
-            child: CResource::Memory(crate::kernel::CMemoryRange::new(
+            parent: Box::new(
+                CResourceFact::own_composite("other".into(), Vec::new())
+                    .resource()
+                    .clone(),
+            ),
+            child: Box::new(CResource::Memory(crate::kernel::CMemoryRange::new(
                 pointer(21),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(1),
-            )),
+            ))),
         };
         assert!(
             relation_index

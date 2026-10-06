@@ -2009,8 +2009,8 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         child: child_subject.clone(),
                     },
                     &Proposition::CResourceContains {
-                        parent: parent.resource().clone(),
-                        child: child.clone(),
+                        parent: Box::new(parent.resource().clone()),
+                        child: Box::new(child.clone()),
                     },
                 )
                 .map_err(|error| error.raw_summary().to_string())?;
@@ -2044,8 +2044,8 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         right: right_subject.clone(),
                     },
                     &Proposition::CResourceSeparate {
-                        left: left.clone(),
-                        right: right.clone(),
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
                     },
                 )
                 .map_err(|error| error.raw_summary().to_string())?;
@@ -2551,8 +2551,8 @@ fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
         .collect::<Vec<_>>();
     for child in &owned_children {
         let proposition = Proposition::CResourceContains {
-            parent: parent_resource.clone(),
-            child: child.clone(),
+            parent: Box::new(parent_resource.clone()),
+            child: Box::new(child.clone()),
         };
         propositions.insert(proposition);
     }
@@ -3942,7 +3942,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     )));
                 }
             } else if quantity_is_positive {
-                *state = state.clone().with_counted_population(
+                **state = state.clone().with_counted_population(
                     name.clone(),
                     population_arguments.clone(),
                     quantity,
@@ -4368,7 +4368,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             resources = next;
         }
-        post_state = post_state.with_resource_context(resources);
+        post_state = Box::new(post_state.with_resource_context(resources));
 
         if closure == ResourceBodyClosure::Initialize && !folded_representation_already_present {
             let abstract_resource = lower_resource_clause_at_state_with_assumptions(
@@ -4406,7 +4406,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     ))
                 })?;
                 binding.hold = Some(hold);
-                post_state = post_state.with_loan_ledger(Some(ledger));
+                post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
             }
             let (resources, inserted_occurrence) = if authority_control_body {
                 let (resources, inserted) = post_state
@@ -4444,15 +4444,17 @@ fn fold_composite_resources_on_outcome_with_facts(
                     })?
             };
             folded_authority_occurrence = inserted_occurrence;
-            post_state = post_state.with_resource_context(resources);
+            post_state = Box::new(post_state.with_resource_context(resources));
             if let Some(definition) = authority_control_definition.as_ref() {
-                post_state = post_state
-                    .with_checked_current_control_wrapper(
-                        &abstract_resource,
-                        definition,
-                        &assumptions,
-                    )
-                    .map_err(ClickError::new)?;
+                post_state = Box::new(
+                    post_state
+                        .with_checked_current_control_wrapper(
+                            &abstract_resource,
+                            definition,
+                            &assumptions,
+                        )
+                        .map_err(ClickError::new)?,
+                );
             }
 
             if let (Some(occurrence), Some(binding)) =
@@ -4467,13 +4469,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                     binding.viewed.clone()
                 };
                 let resources = post_state.resources().clone();
-                post_state = post_state.with_resource_context_and_loan_dependencies(
+                post_state = Box::new(post_state.with_resource_context_and_loan_dependencies(
                     resources,
                     [(
                         occurrence,
                         crate::kernel::LoanViewBinding { viewed, ..binding },
                     )],
-                );
+                ));
             }
         }
         if closure == ResourceBodyClosure::Initialize
@@ -4526,7 +4528,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         projections,
                         post_state.memory(),
                     );
-                post_state = post_state.with_resource_context(resources);
+                post_state = Box::new(post_state.with_resource_context(resources));
             }
         }
         if matches!(closure, ResourceBodyClosure::CloseOpen { .. }) {
@@ -4545,9 +4547,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                     .counted_population_proven_equal(name, arguments, pure_facts.assumptions())
                     .map(|(name, arguments, _)| (name, arguments))
                     .unwrap_or_else(|| (name.clone(), arguments.clone()));
-                post_state = post_state
-                    .close_population_body(name, arguments)
-                    .map_err(ClickError::new)?;
+                post_state = Box::new(
+                    post_state
+                        .close_population_body(name, arguments)
+                        .map_err(ClickError::new)?,
+                );
             }
         }
         outcome = CFunctionOutcome::Return {
@@ -4741,7 +4745,7 @@ fn fold_composite_resource_for_proof_with_closure(
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
         value: CValue::Int32(Bitvector32Term::Constant(0)),
-        state,
+        state: Box::new(state),
     };
     let outcome = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
@@ -4763,7 +4767,7 @@ fn fold_composite_resource_for_proof_with_closure(
         unreachable!("folding a synthetic return outcome preserves its outcome kind")
     };
     Ok(CheckedResourceFold {
-        state,
+        state: *state,
         facts: facts.facts,
     })
 }

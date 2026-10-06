@@ -4034,7 +4034,7 @@ pub enum CRuntimeError {
     },
     MissingReturn,
     MissingResource {
-        resource: CResourceFact,
+        resource: Box<CResourceFact>,
     },
     /// An operation requires the current initialization's lifecycle owner.
     MissingMutexLive {
@@ -4051,12 +4051,12 @@ pub enum CRuntimeError {
     /// Unlock requires owned folded authority satisfying its protected assertion.
     /// The diagnostic witness's cached fields do not require historical values.
     MissingMutexInvariant {
-        resource: CResourceFact,
+        resource: Box<CResourceFact>,
     },
     /// A stable-view call returned a view that no checked input child,
     /// preserved outer binding, owner projection, or read-only block backs.
     UnbackedReturnedView {
-        view: CResourceFact,
+        view: Box<CResourceFact>,
     },
     MissingVerifiedFunctionRule(String),
     UnsupportedOpaqueFunctionContract(String),
@@ -4075,12 +4075,12 @@ pub enum CRuntimeError {
         allocation: Pointer,
     },
     MutexStorageSeparationRequired {
-        allocation: CMemoryRange,
-        storage: CMemoryRange,
+        allocation: Box<CMemoryRange>,
+        storage: Box<CMemoryRange>,
     },
     MutexStorageWrite {
-        write: CMemoryRange,
-        storage: CMemoryRange,
+        write: Box<CMemoryRange>,
+        storage: Box<CMemoryRange>,
     },
     MissingMutexStorageAlignment {
         mutex: Pointer,
@@ -4097,22 +4097,22 @@ pub enum CRuntimeError {
     InvalidFree(CInvalidFree),
     UnresolvedAllocationOutcome,
     LiveAllocationLeak {
-        allocation: CResourceFact,
+        allocation: Box<CResourceFact>,
         /// The declared resource obligation whose body keeps `allocation`
         /// live, when the kernel can identify one.  Keeping this alongside
         /// the allocation lets surface diagnostics name the obligation that
         /// was lost instead of reverse-engineering resource definitions from
         /// a lowered allocation fact.
-        resource: Option<CResourceFact>,
+        resource: Option<Box<CResourceFact>>,
         /// Advisory fix hint (e.g. proving a counted population non-empty).
         /// Never affects checking; `None` preserves the historical message.
         hint: Option<String>,
     },
     StaleResourceAfterFree {
-        resource: CResourceFact,
+        resource: Box<CResourceFact>,
     },
     DuplicateResource {
-        resource: CResourceFact,
+        resource: Box<CResourceFact>,
     },
     OverlappingOwnedMemoryResources {
         left: Box<CMemoryRange>,
@@ -4127,7 +4127,7 @@ pub enum CRuntimeError {
         piece: Box<CResourceFact>,
         held: Box<CResourceFact>,
     },
-    LoanRefusal(crate::kernel::LoanRefusalDiagnostic),
+    LoanRefusal(Box<crate::kernel::LoanRefusalDiagnostic>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4374,22 +4374,22 @@ pub(super) enum CLValueOutcome {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CStatementOutcome {
-    Normal(CState),
-    Break(CState),
-    Continue(CState),
+    Normal(Box<CState>),
+    Break(Box<CState>),
+    Continue(Box<CState>),
     /// A checked source edge awaiting resumption at its function-owned target.
     Jump {
         target: CControlTargetId,
-        state: CState,
+        state: Box<CState>,
     },
     Return {
         value: CValue,
-        state: CState,
+        state: Box<CState>,
     },
     /// An exceptional transfer that has not yet been handled in this function.
     Throw {
         value: CValue,
-        state: CState,
+        state: Box<CState>,
     },
     /// Internal to `CStatementVerifies`: the statement has no finite
     /// successor, but all of its finite prefixes have been checked.
@@ -4402,12 +4402,12 @@ pub enum CStatementOutcome {
 pub enum CFunctionOutcome {
     Return {
         value: CValue,
-        state: CState,
+        state: Box<CState>,
     },
     /// An exceptional outcome crossing this function boundary.
     Throw {
         value: CValue,
-        state: CState,
+        state: Box<CState>,
     },
     /// Internal to `CFunctionVerifies`: no return frontier exists, but the
     /// function's finite prefixes satisfy its safety proof.
@@ -7889,30 +7889,30 @@ pub enum Proposition {
         arguments: Vec<Term>,
     },
     CExpressionEvaluates {
-        state: CState,
+        state: Box<CState>,
         expression: CExpression,
         outcome: CExpressionOutcome,
     },
     CConditionEvaluates {
-        state: CState,
+        state: Box<CState>,
         condition: CExpression,
         outcome: CConditionOutcome,
     },
     CStatementExecutes {
-        state: CState,
-        statement: CStatement,
+        state: Box<CState>,
+        statement: Box<CStatement>,
         outcome: CStatementOutcome,
     },
     /// An abstract verification transition. Unlike `CStatementExecutes`, this
     /// does not assert that the represented outcome is concretely reachable.
     CStatementVerifies {
-        state: CState,
-        statement: CStatement,
+        state: Box<CState>,
+        statement: Box<CStatement>,
         outcome: CStatementOutcome,
     },
     CFunctionExecutes {
-        state: CState,
-        function: CFunction,
+        state: Box<CState>,
+        function: Box<CFunction>,
         arguments: Vec<CExpression>,
         outcome: CFunctionOutcome,
     },
@@ -7920,20 +7920,20 @@ pub enum Proposition {
     /// on the function returning and is not a termination or reachability
     /// theorem.
     CFunctionVerifies {
-        state: CState,
-        function: CFunction,
+        state: Box<CState>,
+        function: Box<CFunction>,
         arguments: Vec<CExpression>,
         outcome: CFunctionOutcome,
     },
     CFunctionSatisfiesSpecification {
-        function: CFunction,
+        function: Box<CFunction>,
         // Large C payloads stay out of every pure proposition clone frame.
         specification: Box<CFunctionSpecification>,
     },
     /// The specification describes one allowed return branch and makes no
     /// claim that the branch is reachable or that the function terminates.
     CFunctionPartiallySatisfiesSpecification {
-        function: CFunction,
+        function: Box<CFunction>,
         specification: Box<CFunctionSpecification>,
     },
     CMemoryLoads {
@@ -7959,16 +7959,16 @@ pub enum Proposition {
         value_type: CType,
     },
     CResourceSeparate {
-        left: CResource,
-        right: CResource,
+        left: Box<CResource>,
+        right: Box<CResource>,
     },
     /// Internal carrier for an already-validated resource composition.
     /// PureFactContext store this as indexed kernel authority rather than as an
     /// ambient proposition visible to proof search.
     CResourceComposition(ResourceContext),
     CResourceContains {
-        parent: CResource,
-        child: CResource,
+        parent: Box<CResource>,
+        child: Box<CResource>,
     },
     CMemoryMutatesOnly {
         before: CMemory,
@@ -8001,6 +8001,30 @@ pub enum Proposition {
         sort: Sort,
         body: Box<Proposition>,
     },
+}
+
+impl Proposition {
+    /// The two ranges of a separation between two memory resources.
+    pub(crate) fn memory_separation(&self) -> Option<(&CMemoryRange, &CMemoryRange)> {
+        match self {
+            Self::CResourceSeparate { left, right } => match (&**left, &**right) {
+                (CResource::Memory(left), CResource::Memory(right)) => Some((left, right)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// The parent and the child range of a containment of a memory resource.
+    pub(crate) fn memory_containment(&self) -> Option<(&CResource, &CMemoryRange)> {
+        match self {
+            Self::CResourceContains { parent, child } => match &**child {
+                CResource::Memory(range) => Some((parent, range)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 impl Clone for Proposition {
@@ -9311,12 +9335,12 @@ pub struct ExecutionPureFact {
     pub(super) proposition: Proposition,
     pub(super) public: bool,
     pub(super) certified: bool,
-    pub(super) certified_store: Option<CertifiedMemoryStore>,
-    pub(super) transport: Option<CertifiedExecutionFactTransport>,
+    pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
+    pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is
     /// carried with the certified fact rather than recovered from the current
     /// state, since the producer's snapshot and pointer are the authority.
-    pub(super) generated_load_binding: Option<GeneratedLoadBinding>,
+    pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
 }
 
@@ -10070,5 +10094,23 @@ impl KernelVariableGenerator {
                 return Ok(variable);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod representation_size_tests {
+    use super::*;
+
+    /// A connective boxes each side, and a fact list stores each fact, at the
+    /// size of the widest variant. C states, functions, statements, and
+    /// resources therefore stay behind a pointer, so a pure fact such as
+    /// `a == b` does not pay for a C payload it does not carry.
+    #[test]
+    fn pure_facts_do_not_pay_for_c_payloads() {
+        assert!(std::mem::size_of::<Term>() <= 144);
+        assert!(std::mem::size_of::<Proposition>() <= 2 * std::mem::size_of::<Term>());
+        assert!(std::mem::size_of::<ExecutionPureFact>() <= 352);
+        assert!(std::mem::size_of::<CStatementOutcome>() <= 144);
+        assert!(std::mem::size_of::<CFunctionOutcome>() <= 144);
     }
 }

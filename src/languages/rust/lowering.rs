@@ -157,11 +157,29 @@ fn lower_function(
 ) -> Result<C0Function, String> {
     if !matches!(
         f.return_type,
-        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool | Type::Unit
+        Type::I32
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::Usize
+            | Type::Bool
+            | Type::Unit
+            | Type::Record { .. }
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
-    let return_type = scalar_type(&f.return_type)?;
+    let return_layout = match &f.return_type {
+        Type::Record { name } => Some((
+            name,
+            layouts.get(name).ok_or("missing return record layout")?,
+        )),
+        _ => None,
+    };
+    let return_type = if return_layout.is_some() {
+        C0Type::UInt8Pointer
+    } else {
+        scalar_type(&f.return_type)?
+    };
     let mut parameters = Vec::new();
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
@@ -288,12 +306,15 @@ fn lower_function(
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
         None => cx.body(&f.body)?,
     };
-    let kernel = c_function(
+    let mut kernel = c_function(
         return_type.to_kernel_type(),
         &f.name,
         kernel_parameters,
         body,
     );
+    if let Some((_, layout)) = return_layout {
+        kernel = kernel.with_return_aggregate_layout(layout.to_kernel_aggregate_layout());
+    }
     let local_records = f
         .mir
         .as_ref()
@@ -307,11 +328,13 @@ fn lower_function(
                 .collect()
         })
         .unwrap_or_default();
-    Ok(
-        C0Function::external(return_type, f.name.clone(), parameters)
-            .with_local_struct_values(local_records)
-            .with_prelowered_kernel_function(kernel),
-    )
+    let mut lowered = C0Function::external(return_type, f.name.clone(), parameters)
+        .with_local_struct_values(local_records)
+        .with_prelowered_kernel_function(kernel);
+    if let Some((name, layout)) = return_layout {
+        lowered = lowered.with_struct_return(name.clone(), layout.clone());
+    }
+    Ok(lowered)
 }
 struct Context<'a> {
     shared_array_iterators: BTreeMap<String, CType>,
