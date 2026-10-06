@@ -2294,6 +2294,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         matches!(
                             deferred.tactic,
                             PostExecutionTactic::Simp
+                                | PostExecutionTactic::SimpUsing(_)
                                 | PostExecutionTactic::Fold(_)
                                 | PostExecutionTactic::Unfold(_)
                                 | PostExecutionTactic::Construct(_)
@@ -3947,7 +3948,18 @@ pub(super) fn finish_ordered_proof<'a>(
                             | PostExecutionTactic::CallOutcomes { .. } => unreachable!(
                                 "post-execution branch selection must flatten control nodes before checking leaf tactics"
                             ),
-                            PostExecutionTactic::Simp => {
+                            PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => {
+                                let restricted_premises = match post_tactic {
+                                    PostExecutionTactic::SimpUsing(simp) => {
+                                        Some(simp.premises.as_slice())
+                                    }
+                                    _ => None,
+                                };
+                                let closer_name = if restricted_premises.is_some() {
+                                    "simp() using"
+                                } else {
+                                    "simp"
+                                };
                                 let capturing_this_tactic = proof_execution
                                     .presentation
                                     .expansion
@@ -4004,11 +4016,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // claim's proof; what `simp` itself adds is
                                     // only what follows them.
                                     let before_simp = proof.checkpoint();
-                                    let completed = if let Some(completed) =
+                                    let selected = if let Some(premises) = restricted_premises {
+                                        let selected = proof.try_restricted_simp_closure(premises);
+                                        check_verification_deadline()?;
+                                        selected
+                                    } else if let Some(completed) =
                                         proof.try_direct_logical_closure()?
                                     {
-                                        completed
-                                    } else if let Some(completed) = proof.try_simp_closure()? {
+                                        Some(completed)
+                                    } else {
+                                        proof.try_simp_closure()?
+                                    };
+                                    let completed = if let Some(completed) = selected {
                                         completed
                                     } else {
                                         let claim_label = function_claim_label(
@@ -4016,7 +4035,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             &claims[claim_index],
                                         );
                                         return Err(ClickError::new(format!(
-                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` did not complete the retained existential Proof for `{claim_label}`"
+                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained existential Proof for `{claim_label}`"
                                         )));
                                     };
                                     if !completed.is_complete() {
@@ -4220,7 +4239,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // scopes; a rejected unfold is only a candidate miss
                                         // and leaves the persistent root unchanged.
                                         let mut tried_predicates = BTreeSet::new();
-                                        for (_, surface_goal, _) in &direct_claims {
+                                        for (_, surface_goal, _) in direct_claims.iter().filter(|_| restricted_premises.is_none()) {
                                             let ClickProposition::PredicateCall { name, .. } =
                                                 surface_goal
                                             else {
@@ -4284,9 +4303,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 selected = false;
                                                 break;
                                             }
-                                            let selected_scope = if let Some(scope) =
-                                                scope.try_direct_logical_closure()?
-                                            {
+                                            let selected_scope = if let Some(premises) = restricted_premises {
+                                                let selected = scope.try_restricted_simp_closure(premises);
+                                                check_verification_deadline()?;
+                                                selected
+                                            } else if let Some(scope) = scope.try_direct_logical_closure()? {
                                                 Some(scope)
                                             } else {
                                                 scope.try_simp_closure()?
@@ -4308,8 +4329,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     function_block.signature().name(),
                                                     &claims[claim_index],
                                                 );
-                                                let detail = match outcome_proof.as_ref() {
-                                                    Some(root) => close_claim_directly_from_outcome(
+                                                // A restricted miss must stay restricted even
+                                                // while explaining it: do not launch an
+                                                // ambient proof search for diagnostic detail.
+                                                let detail = match (restricted_premises, outcome_proof.as_ref()) {
+                                                    (Some(_), _) => "\nThe current goal could not be proved from only the listed premises.".to_string(),
+                                                    (None, Some(root)) => close_claim_directly_from_outcome(
                                                         root,
                                                         function,
                                                         &claims[claim_index],
@@ -4330,7 +4355,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     .err()
                                                     .map(|reason| format!("\n{}", reason.raw_summary()))
                                                     .unwrap_or_default(),
-                                                    None => String::new(),
+                                                    (None, None) => String::new(),
                                                 };
                                                 let transition_detail = pending_resource_transition_error
                                                     .as_ref()
@@ -4341,7 +4366,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     })
                                                     .unwrap_or_default();
                                                 return Err(direct_proof.step_error(format!(
-                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
+                                                    "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
                                                 )));
                                             };
                                             let joined = scope.join()?;

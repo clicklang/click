@@ -4790,6 +4790,137 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
 }
 
 #[test]
+fn post_execution_restricted_simp_retains_selected_premises_and_expansion() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    let click_source = r#"
+        verifying "identity.c";
+        int32 identity(int32 x) {
+            requires 0 <= x;
+            ensures 0 <= result;
+        } by {
+            execute();
+            have 0 <= result by { simp(); }
+            simp() using { 0 <= result; }
+        }
+    "#;
+    let sources = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &sources)
+        .expect("restricted exit simp should see the preceding have");
+    let position =
+        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+            .expect("restricted exit simp should retain its checked certificate");
+    assert!(!expanded.contains("simp() using"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).expect("the expansion should check independently");
+    for replacement in [
+        "simp() using { x == x; }",
+        "simp() using { result < 0; }",
+        "simp() using { 0 <= result; x < 0; }",
+    ] {
+        let invalid = click_source.replace("simp() using { 0 <= result; }", replacement);
+        let error = verify_c0_sources(&invalid, &sources)
+            .expect_err("only listed, available premises may be used");
+        assert!(error.message().contains("simp() using"), "{error:?}");
+        assert!(
+            error.message().contains("only the listed premises"),
+            "{error:?}"
+        );
+        assert!(!error.message().contains("not implemented"), "{error:?}");
+    }
+}
+
+#[test]
+fn post_execution_restricted_simp_checks_each_return_path() {
+    let sources = [(
+        "choose.c",
+        "int32 choose(int32 flag, int32 x, int32 y) { if (flag) { return x; } else { return y; } }",
+    )];
+    let click_source = r#"
+        verifying "choose.c";
+        int32 choose(int32 flag, int32 x, int32 y) {
+            requires 0 <= x;
+            requires 0 <= y;
+            ensures 0 <= result;
+        } by {
+            execute();
+            have 0 <= result by { simp(); }
+            simp() using { 0 <= result; }
+        }
+    "#;
+    verify_c0_sources(click_source, &sources)
+        .expect("each return path must carry its selected premise");
+    for premise in ["requires 0 <= x;", "requires 0 <= y;"] {
+        assert!(verify_c0_sources(&click_source.replace(premise, ""), &sources).is_err());
+    }
+}
+
+#[test]
+fn post_execution_restricted_simp_continues_an_introduced_claim() {
+    let sources = [("forall_scope.c", "int32 forall_scope(void) { return 0; }")];
+    let click_source = r#"
+        verifying "forall_scope.c";
+        int32 forall_scope() {
+            ensures forall (k: int32) { 0 <= k implies 0 <= k } by {
+                execute();
+                intro();
+                intro();
+                simp() using { 0 <= k; }
+            }
+        }
+    "#;
+    verify_c0_sources(click_source, &sources)
+        .expect("restricted simp must continue the claim's introduced binder");
+    let position =
+        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .expect("the closer's expansion must stay inside the introduced proof");
+    assert!(
+        verify_c0_sources(
+            &click_source.replace("simp() using { 0 <= k; }", "simp() using { k == k; }"),
+            &sources
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn post_execution_restricted_simp_checks_grouped_ownership_and_value_claims() {
+    let sources = [("put.c", "void put(int32* p, int32 x) { *p = x; }")];
+    let click_source = r#"
+        verifying "put.c";
+        void put(int32* p, int32 x) {
+            requires 0 <= x;
+            owns p[0..1];
+            ensures *p == x;
+            ensures 0 <= *p;
+        } by {
+            execute();
+            have *p == x by { simp(); }
+            have 0 <= *p by { simp(); }
+            simp() using { *p == x; 0 <= *p; }
+        }
+    "#;
+    verify_c0_sources(click_source, &sources)
+        .expect("the checked resource transition and restricted propositions must agree");
+    let position =
+        expansion::position_at_offset(click_source, click_source.find("simp() using").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources)
+        .expect("grouped restricted expansion must return the owned cell");
+    assert!(
+        verify_c0_sources(
+            &click_source.replace("owns p[0..1];", "views p[0..1];"),
+            &sources
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn restricted_simp_expands_to_graph_normalization() {
     let click_source = r#"
             theorem equality_transitive(x: int32, y: int32, z: int32) {

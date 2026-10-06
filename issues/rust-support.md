@@ -1051,3 +1051,16 @@ ownership, and false Integer sums and lower bounds on every lane. Original
 source, artifact, and import profile are unchanged. The original nested-loop
 invariants, whole-loop panic freedom, byte accounting, and checksum correctness
 still need proofs.
+
+### Restricted closers at the original computation's exit
+
+An original `Adler32::compute` proof experiment exposed that top-level
+`simp() using { ... }` was not retained after function exit. A minimal C
+reproduction incorrectly blamed an earlier valid `have` as unsupported.
+The ordered outcome driver now retains the restricted closer, checks only
+its listed proposition premises on each returned outcome, and uses the same
+checked resource transition and certificate capture as ordinary `simp`.
+Regressions cover missing/false/irrelevant premises, both return paths,
+grouped ownership and value guarantees, and independent expansion rechecks.
+This repairs proof tooling; it does not prove the original nested loops or
+checksum contract. Original Rust sources and extraction locks are unchanged.
