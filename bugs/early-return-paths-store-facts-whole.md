@@ -39,8 +39,10 @@ proportional to a path's length once per path. Measured on 2026-10-05 at 4,
 |---|---|---|---|---|---|
 | total, before | 7727 | 14947 | 33347 | 85907 | 254003 |
 | total, transport search bounded | 6991 | 12739 | 25987 | 59411 | 153907 |
-| `simp`, bounded | 2070 | 4196 | 9456 | 24008 | 69240 |
-| `execute` | 4054 | 7138 | 13906 | 29762 | 70690 |
+| total, terminal joins also fixed | 6811 | 12199 | 24151 | 52679 | 128167 |
+| `simp`, now | 2070 | 4196 | 9456 | 24008 | 69240 |
+| `execute`, before | 4054 | 7138 | 13906 | 29762 | 70690 |
+| `execute`, now | 3874 | 6598 | 12070 | 23030 | 44950 |
 
 Fixed:
 
@@ -51,13 +53,17 @@ Fixed:
   points; `simp_snapshot_transport_search_is_linear_in_early_returns` pins
   it.
 
-Remaining, by the work each still charges at 32 and then 64 returns:
-
-- A terminal branch join re-records every enclosing arm's condition
+- A terminal branch join re-recorded every enclosing arm's condition
   spelling into its parent (`merge_branch_surface_facts`,
-  `execution_joins.rs`), so the innermost condition is recorded once per
-  enclosing join: 2244 then 8580 `record_lowering` calls, 5028 then 18212
-  units, with 2514 then 9106 and 1250 then 4546 in the lookups beside it.
+  `execution_joins.rs`), so the innermost condition was recorded once per
+  enclosing join, and `execute` grew 2.4 times per doubling. A terminal join
+  has no successor and each path keeps its own spellings, so it no longer
+  carries them; `executing_a_fan_out_is_near_linear_in_its_length` now runs
+  to 64 returns.
+
+Remaining, all inside post-execution `simp` and certification, by the work
+each charged at 32 and then 64 returns before the fixes above:
+
 - Alpha-key work in `fact_keys.rs` (`alpha_work_checkpoint`): 4352 then
   16896.
 - Assumption-context work at `assumptions.rs` near lines 5164 and 3616, the
@@ -72,7 +78,6 @@ Remaining, by the work each still charges at 32 and then 64 returns:
   693 then 2405 context entries, and a simp route rebuilds a context from
   its selected premises (`equality_rewrite.rs`, `pure_context`): 528 then
   2080.
-- `execute` itself grows 2.4 times per doubling.
 
 ## Intended regression
 

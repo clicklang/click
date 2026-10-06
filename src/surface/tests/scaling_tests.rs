@@ -3944,6 +3944,14 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
 /// sizes: 1630, 2730, 5506, and 13362 units of `execute` work, against 3678,
 /// 5946, 11058, and 23586 through the planner.
 ///
+/// Each early return is a terminal join nested in the one before it. A
+/// terminal join used to carry every arm's condition spellings into its
+/// parent, so the innermost condition was recorded again at each enclosing
+/// join: 29762 and then 70690 units at 32 and 64 returns on 2026-10-05, 2.4
+/// times per doubling. A terminal join has no successor to read them, and
+/// each path keeps its own, so it no longer carries them: 3874, 6598,
+/// 12070, 23030, and 44950 units at 4 to 64 returns.
+///
 /// The whole verification's context builds are not asserted: finalization
 /// reads every path's facts, which the checked execution stores whole per
 /// path, so they grow with the square of the path on either route (75, 159,
@@ -3958,7 +3966,7 @@ fn executing_a_fan_out_is_near_linear_in_its_length() {
             const EXECUTE: &str = "smart tactic `execute`";
             let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
             let mut execute = Vec::new();
-            for returns in [4, 8, 16, 32] {
+            for returns in [4, 8, 16, 32, 64] {
                 let c = early_return_fan_out(returns);
                 let (verified, sample) = scaling_sample(returns, || {
                     verify_c0_sources(click, &[("fan_out.c", c.as_str())])
