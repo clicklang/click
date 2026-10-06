@@ -1141,6 +1141,36 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int64_add_to_integer`
+
+```click
+theorem int64_add_to_integer(left: int64, right: int64) {
+    requires defined(left + right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+```
+
+A defined signed 64-bit operation has its exact mathematical Integer value.
+The native definedness premise excludes overflow; this law does not establish
+that premise or infer any operand range.
+
+**Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
+
+### `int64_subtract_to_integer`
+
+```click
+theorem int64_subtract_to_integer(left: int64, right: int64) {
+    requires defined(left - right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+```
+
+A defined signed 64-bit operation has its exact mathematical Integer value.
+The native definedness premise excludes overflow; this law does not establish
+that premise or infer any operand range.
+
+**Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
+
 ### `int32_subtract_to_integer`
 
 ```click

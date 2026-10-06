@@ -10161,6 +10161,8 @@ int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
     requires d <= 100;
     owns untouched[0..1];
     ensures untouched[0] == old(untouched[0]);
+    ensures -101i64 <= result;
+    ensures result <= 101i64;
 } by { execute(); simp(); }
 "#,
             );
@@ -10184,7 +10186,10 @@ int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
             proof.replace("requires d > 0;", ""),
             proof.replace("requires d <= 100;", ""),
             proof.replace("requires d > 0;", "requires d == 0;"),
-            proof.replace("ensures 0 == 0;", "ensures result == 1000i64;"),
+            proof.replace(
+                "ensures -101 <= to_integer(result);",
+                "ensures to_integer(result) == 1000;",
+            ),
             proof.replace(
                 "integer_cast_identity bounds [0, 1]",
                 "integer_cast_identity bounds [1, 0]",
@@ -10192,7 +10197,9 @@ int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
         ] {
             fs::write(&path, &hostile).unwrap();
             let parsed = read_click_project(&path, &hostile).unwrap();
-            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+                panic!("hostile rounding claim must be refused");
+            };
             assert!(error.message().len() < 8000);
         }
     }

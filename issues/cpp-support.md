@@ -577,7 +577,7 @@ The general Bitcoin correction and complete rounding theorem remain open.
 
 A complete bounded safety proof now executes the unchanged pinned
 `FeeFrac::Div`, including both narrowing conversions and every short-circuit
-correction path. Its explicit input profile is `-100 <= to_integer(n) <= 100`
+correction path. Its initial input profile was `-100 <= to_integer(n) <= 100`
 and `0 < d <= 100`; quotient/remainder bounds are derived, transported through
 exact observations, checked against both cast destinations, and reflected into
 native correction bounds. The existing explicit assertion and literal
@@ -588,10 +588,25 @@ that frames unrelated memory have coverage. Shared contract scalar casts now
 name signed/unsigned 64- and 128-bit conversions and parse correctly on the left
 of comparisons. No exporter or kernel arithmetic change was needed.
 
-Next extend this bounded safety proof to useful input ranges and a functional
-rounding theorem for the complete unchanged `FeeFrac::Div`. Compose the exact
-narrowing observations with the final native addition and signed remainder
-correction; bounded safety is not yet a mathematical floor/ceiling theorem. The
+Shared `int64_add_to_integer` and `int64_subtract_to_integer` laws now extend
+int32's exact native-operation observations, retaining the essential native
+definedness premise. The unchanged Bitcoin proof derives Integer and native
+bounds on the corrected return value, rather than closing a trivial
+postcondition. It admits every positive int32 divisor and numerators with
+absolute value at most `INT64_MAX - 1`, then proves the result lies between
+`-INT64_MAX` and `INT64_MAX`. Remainder bounds use the divisor magnitude, so both
+narrowing identities remain checked even for this much wider numerator range.
+The same synthetic correction pattern propagates native result bounds through
+a modular caller and frames unrelated memory. Guard/width/operation forgery,
+overflow boundary oracles, full expansion/reverification, retained audit and
+multi-size application scaling cover the shared bridge laws.
+
+Next connect these exact observations and the signed remainder correction to a
+functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
+Admit wider int128 numerators through quotient/correction bounds derived jointly
+from the caller and divisor; the current interval profile does not cover the
+full 96/32 fee-division contract. Output bounds are not yet a mathematical
+rounding theorem. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful

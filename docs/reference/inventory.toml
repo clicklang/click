@@ -3244,3 +3244,11 @@ path = "reference/library/index.md#int64_less_equal_of_to_integer"
 [[item]]
 id = "stdlib.theorem.int64_equal_of_to_integer"
 path = "reference/library/index.md#int64_equal_of_to_integer"
+
+[[item]]
+id = "stdlib.theorem.int64_add_to_integer"
+path = "reference/library/index.md#int64_add_to_integer"
+
+[[item]]
+id = "stdlib.theorem.int64_subtract_to_integer"
+path = "reference/library/index.md#int64_subtract_to_integer"

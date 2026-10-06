@@ -261,13 +261,19 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             .expect("upstream retained audit agrees");
         let false_source = source
             .replace("ensures 0 == 0;", "ensures 0 == 1;")
+            .replace(
+                "ensures -9223372036854775807 <= to_integer(result);",
+                "ensures 9223372036854775807 <= to_integer(result);",
+            )
             .replace("ensures result ==", "ensures result !=")
             .replace(
                 "ensures to_integer(result) ==",
                 "ensures to_integer(result) !=",
             );
         let false_project = read_click_project(&sidecar, &false_source).unwrap();
-        let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
+        let Err(error) = verify_program_prepared_project(&false_project, &import) else {
+            panic!("false upstream claim must be refused");
+        };
         assert!(
             error.message().contains("unclosed goal"),
             "{}",
@@ -284,12 +290,15 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
         for hostile in [
-            source.replace("requires -100 <= to_integer(n);", ""),
-            source.replace("requires to_integer(n) <= 100;", ""),
+            source.replace("requires -9223372036854775806 <= to_integer(n);", ""),
+            source.replace("requires to_integer(n) <= 9223372036854775806;", ""),
             source.replace("requires d > 0;", ""),
-            source.replace("requires d <= 100;", ""),
+            source.replace("requires d <= 2147483647;", ""),
             source.replace("requires d > 0;", "requires d == 0;"),
-            source.replace("ensures 0 == 0;", "ensures result == 1000i64;"),
+            source.replace(
+                "ensures -9223372036854775807 <= to_integer(result);",
+                "ensures to_integer(result) == 9223372036854775808;",
+            ),
             source.replace(
                 "integer_cast_identity bounds [0, 1]",
                 "integer_cast_identity bounds [1, 0]",

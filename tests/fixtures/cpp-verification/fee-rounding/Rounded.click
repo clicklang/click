@@ -4,7 +4,10 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     requires to_integer(n) <= 100;
     requires d > 0;
     requires d <= 100;
-    ensures 0 == 0;
+    ensures -101 <= to_integer(result);
+    ensures to_integer(result) <= 101;
+    ensures -101i64 <= result;
+    ensures result <= 101i64;
 } by {
     have 1 <= d by { arithmetic() using { d > 0; } }
     apply(int32_less_equal_to_integer(1, d));
@@ -103,5 +106,46 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     } }
     apply(int32_less_equal_of_to_integer(-100, mod));
     apply(int32_less_equal_of_to_integer(mod, 100));
-    execute(); simp();
+    have defined(quot + 0i64) by simp;
+    have defined(quot + 1i64) by simp;
+    have defined(quot + -1i64) by simp;
+    apply(int64_add_to_integer(quot, 0i64));
+    apply(int64_add_to_integer(quot, 1i64));
+    apply(int64_add_to_integer(quot, -1i64));
+    have -101 <= to_integer(quot + 0i64) by { arithmetic() using {
+        to_integer(quot + 0i64) == to_integer(quot) + 0;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    have to_integer(quot + 0i64) <= 101 by { arithmetic() using {
+        to_integer(quot + 0i64) == to_integer(quot) + 0;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    have -101 <= to_integer(quot + 1i64) by { arithmetic() using {
+        to_integer(quot + 1i64) == to_integer(quot) + 1;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    have to_integer(quot + 1i64) <= 101 by { arithmetic() using {
+        to_integer(quot + 1i64) == to_integer(quot) + 1;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    have -101 <= to_integer(quot + -1i64) by { arithmetic() using {
+        to_integer(quot + -1i64) == to_integer(quot) + -1;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    have to_integer(quot + -1i64) <= 101 by { arithmetic() using {
+        to_integer(quot + -1i64) == to_integer(quot) + -1;
+        -100 <= to_integer(quot);
+        to_integer(quot) <= 100;
+    } }
+    execute();
+    have -101 <= to_integer(result) by simp;
+    have to_integer(result) <= 101 by simp;
+    apply(int64_less_equal_of_to_integer(-101i64, result));
+    apply(int64_less_equal_of_to_integer(result, 101i64));
+    simp();
 }

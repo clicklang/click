@@ -2354,6 +2354,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_less_equal_of_to_integer"
                 | "int64_less_equal_to_integer"
                 | "int64_less_equal_of_to_integer"
+                | "int64_add_to_integer"
+                | "int64_subtract_to_integer"
                 | "int64_equal_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
@@ -2429,6 +2431,8 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_less_equal_of_to_integer"
         | "int64_less_equal_to_integer"
         | "int64_less_equal_of_to_integer"
+        | "int64_add_to_integer"
+        | "int64_subtract_to_integer"
         | "int64_equal_of_to_integer"
         | "int32_less_equal_to_integer"
         | "int32_subtract_to_integer"
@@ -2533,6 +2537,10 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "int64_less_equal_of_to_integer" => {
                 crate::kernel::prove_int64_less_equal_of_to_integer(left, right)
+            }
+            "int64_add_to_integer" => crate::kernel::prove_int64_add_to_integer(left, right),
+            "int64_subtract_to_integer" => {
+                crate::kernel::prove_int64_subtract_to_integer(left, right)
             }
             "int64_equal_of_to_integer" => {
                 crate::kernel::prove_int64_equal_of_to_integer(left, right)
@@ -3820,6 +3828,31 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                     verify_standard_declaration(&invalid).is_err(),
                     "forged declaration: {invalid}"
                 );
+            }
+        }
+    }
+    #[test]
+    fn int64_integer_operation_declarations_reject_wrong_guards_and_widths() {
+        for (name, op, other) in [
+            ("int64_add_to_integer", "+", "-"),
+            ("int64_subtract_to_integer", "-", "+"),
+        ] {
+            let source = format!(
+                "theorem {name}(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right); }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires defined(left {op} right);"), ""),
+                source.replace(
+                    &format!("requires defined(left {op} right);"),
+                    &format!("requires defined(left {other} right);"),
+                ),
+                source.replace(": int64", ": int32"),
+                source.replace(": int64", ": uint64"),
+                source.replace(" == ", " != "),
+                source.replace("; ensures", "; requires left == right; ensures"),
+            ] {
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
             }
         }
     }

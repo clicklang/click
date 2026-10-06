@@ -731,4 +731,58 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn int64_integer_operation_applications_recheck_guards_and_expansion() {
+        for (name, op) in [
+            ("int64_add_to_integer", "+"),
+            ("int64_subtract_to_integer", "-"),
+        ] {
+            let source = format!(
+                "theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires defined(left {op} right);"), ""),
+                source.replace(" == ", " != "),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+    #[test]
+    fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
+        for (name, op) in [
+            ("int64_add_to_integer", "+"),
+            ("int64_subtract_to_integer", "-"),
+        ] {
+            let guard = format!("defined(x {op} y)");
+            let goal = format!("to_integer(x {op} y) == to_integer(x) {op} to_integer(y)");
+            let mut samples = Vec::new();
+            for size in [4usize, 16, 64, 256] {
+                let mut source =
+                    format!("theorem exact(x: int64, y: int64, z: int64) {{ requires {guard}; ");
+                for i in 0..size {
+                    source.push_str(&format!("requires to_integer(z) <= {i}; "));
+                }
+                source.push_str(&format!("ensures {goal} by {{ "));
+                for _ in 0..size {
+                    source.push_str(&format!(
+                        "have {goal} by {{ apply({name}(x, y)) using {{ {guard}; }} }} "
+                    ));
+                }
+                source.push_str("assumption(); } }");
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&source, &[])
+                });
+                result.unwrap_or_else(|error| panic!("{name}/{size}: {}", error.message()));
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(pair[1] <= pair[0] * 6, "{name}: {samples:?}");
+            }
+        }
+    }
 }
