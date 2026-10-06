@@ -3304,3 +3304,11 @@ path = "reference/library/index.md#integer_positive_divisor_quotient_lower"
 [[item]]
 id = "stdlib.theorem.integer_positive_divisor_quotient_upper"
 path = "reference/library/index.md#integer_positive_divisor_quotient_upper"
+
+[[item]]
+id = "stdlib.theorem.integer_lower_correction_bound"
+path = "reference/library/index.md#integer_lower_correction_bound"
+
+[[item]]
+id = "stdlib.theorem.integer_upper_correction_bound"
+path = "reference/library/index.md#integer_upper_correction_bound"
