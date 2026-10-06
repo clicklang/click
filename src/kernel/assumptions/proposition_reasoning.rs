@@ -2880,6 +2880,10 @@ impl PureFactContext {
 
         match (fact, target) {
             (
+                ConditionTerm::IntegerEqual(fact_left, fact_right),
+                ConditionTerm::IntegerEqual(target_left, target_right),
+            ) => fact_left == target_right && fact_right == target_left,
+            (
                 ConditionTerm::Bitvector32Equal(fact_left, fact_right),
                 ConditionTerm::Bitvector32Equal(target_left, target_right),
             ) => {

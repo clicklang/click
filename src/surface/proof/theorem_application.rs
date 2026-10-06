@@ -1115,6 +1115,72 @@ mod observed_integer_argument_tests {
     use super::*;
 
     #[test]
+    fn integer_equality_citations_preserve_orientation_polarity_and_certificates() {
+        let source = r#"
+            theorem equal_arguments(a: Integer, b: Integer) {
+                requires a == b;
+                ensures a == b by { assumption(); }
+            }
+            theorem reverse_requirement(a: Integer, b: Integer) {
+                requires b == a;
+                ensures a == b by {
+                    apply(equal_arguments(a, b)) using { b == a; }
+                }
+            }
+            theorem reverse_citation(a: Integer, b: Integer) {
+                requires b == a;
+                ensures a == b by {
+                    apply(equal_arguments(a, b)) using { a == b; }
+                }
+            }
+            theorem reverse_transport(a: Integer, b: Integer) {
+                requires b == a;
+                ensures a == b by {
+                    transport(b == a, a == b) using { b == a; }
+                }
+            }
+            theorem reverse_observations(a: uint32, b: uint32) {
+                requires to_integer(b) == to_integer(a);
+                ensures to_integer(a) == to_integer(b) by {
+                    apply(equal_arguments(to_integer(a), to_integer(b))) using {
+                        to_integer(b) == to_integer(a);
+                    }
+                }
+            }
+        "#;
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "reverse_requirement",
+            "reverse_citation",
+            "reverse_transport",
+            "reverse_observations",
+        ] {
+            let expanded =
+                expand_c0_claim_source_by_label(source, &[], &format!("{label}.ensures_0"))
+                    .unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        for (before, after) in [
+            ("requires b == a;", ""),
+            ("requires b == a;", "requires b != a;"),
+            ("equal_arguments(a, b)", "equal_arguments(a + 1, b)"),
+            ("using { b == a; }", "using {}"),
+            ("transport(b == a, a == b)", "transport(b == a, a != b)"),
+            (
+                "requires to_integer(b) == to_integer(a);",
+                "requires to_integer(b) != to_integer(a);",
+            ),
+        ] {
+            let invalid = source.replace(before, after);
+            assert_ne!(source, invalid);
+            assert!(
+                verify_c0_sources(&invalid, &[]).is_err(),
+                "accepted {before} -> {after}"
+            );
+        }
+    }
+
+    #[test]
     fn integer_theorem_observed_arguments_preserve_types_guards_and_expansion() {
         let prefix = "theorem reflexive(z: Integer) { ensures z == z by simp; } ";
         for (ty, expression, guard) in [

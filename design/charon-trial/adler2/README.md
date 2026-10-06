@@ -104,6 +104,12 @@ four-byte `next` transition. They do not yet prove that the original nested
 loops establish and maintain the numeric bounds, lane bounds, and memory views.
 Full checksum correctness and whole-loop panic freedom remain unproved.
 
+Integer equality evidence now works in either orientation for explicit theorem
+applications and fact transport, including observations of native values and
+entry snapshots. This repairs the proof interface used to connect the derived
+index to iterator transitions; it adds no new loop invariant or checksum claim.
+
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen

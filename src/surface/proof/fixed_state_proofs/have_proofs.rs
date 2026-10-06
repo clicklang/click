@@ -1398,6 +1398,9 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
     proposition: Proposition,
 ) -> Option<Proposition> {
     match proposition {
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => Some(
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(right, left), true),
+        ),
         Proposition::Equal(left, right) => Some(Proposition::Equal(right, left)),
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => Some(
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(right, left), true),

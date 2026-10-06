@@ -980,3 +980,14 @@ Next instantiate these conditional numeric and lane invariants over the
 original nested Charon iterator loops, retaining shared byte views and proving
 the helper call prerequisites. The original loop invariants, whole-loop panic
 freedom, byte accounting, and checksum postcondition remain unproved.
+
+
+### Integer equality evidence for iterator lemmas
+
+The explicit citation rule now recognizes an Integer equality with its operands
+swapped, matching the existing machine-equality rule. Theorem requirements,
+citations, fixed-state rewrites, and fact transport retain checked operand and
+polarity matching. Regressions reverify expanded certificates and reject missing
+evidence, unequal observations, altered operands, and opposite conclusions.
+This removes a proof-interface mismatch encountered while connecting the derived
+iterator index; it does not establish the original nested-loop invariants.
