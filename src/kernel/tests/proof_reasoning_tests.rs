@@ -9038,3 +9038,231 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
         assert!(restricted.derive_simp_proposition(&goal).is_none());
     }
 }
+
+#[test]
+fn signed_integer_order_bridges_match_independent_full_width_boundary_models() {
+    use num_bigint::BigInt;
+    let left = Bitvector32Term::Variable(Variable(185001));
+    let right = Bitvector32Term::Variable(Variable(185002));
+    for (ty, width) in [
+        (MachineIntegerType::Int32, 32u32),
+        (MachineIntegerType::Int64, 64),
+    ] {
+        for reverse in [false, true] {
+            let theorem = match (width, reverse) {
+                (32, false) => prove_int32_less_equal_to_integer(left.clone(), right.clone()),
+                (32, true) => prove_int32_less_equal_of_to_integer(left.clone(), right.clone()),
+                (64, false) => prove_int64_less_equal_to_integer(left.clone(), right.clone()),
+                (64, true) => prove_int64_less_equal_of_to_integer(left.clone(), right.clone()),
+                _ => unreachable!(),
+            };
+            let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+                panic!("missing exact guard");
+            };
+            let (native, integer) = if reverse {
+                (conclusion, premise)
+            } else {
+                (premise, conclusion)
+            };
+            match (width, native.as_ref()) {
+                (
+                    32,
+                    Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessEqual(a, b), true),
+                )
+                | (
+                    64,
+                    Proposition::ConditionIs(ConditionTerm::Bitvector64SignedLessEqual(a, b), true),
+                ) => {
+                    assert_eq!(a.as_ref(), &left);
+                    assert_eq!(b.as_ref(), &right);
+                }
+                _ => panic!("wrong native width or order"),
+            }
+            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) =
+                integer.as_ref()
+            else {
+                panic!("wrong mathematical relation");
+            };
+            let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref())
+            else {
+                panic!("expected exact observers");
+            };
+            assert_eq!(a.ty(), ty);
+            assert_eq!(b.ty(), ty);
+            assert_eq!(a.value(), &left);
+            assert_eq!(b.value(), &right);
+        }
+        let maximum = if width == 32 {
+            u64::from(u32::MAX)
+        } else {
+            u64::MAX
+        };
+        let sign = 1u64 << (width - 1);
+        let integer = |bits: u64| {
+            if bits & sign == 0 {
+                BigInt::from(bits)
+            } else {
+                BigInt::from(bits) - (BigInt::from(1) << width)
+            }
+        };
+        let native = |bits: u64| {
+            if width == 32 {
+                i64::from(bits as u32 as i32)
+            } else {
+                bits as i64
+            }
+        };
+        for a in [
+            0,
+            1,
+            2,
+            sign - 2,
+            sign - 1,
+            sign,
+            sign + 1,
+            maximum - 1,
+            maximum,
+        ] {
+            for b in [
+                0,
+                1,
+                2,
+                sign - 2,
+                sign - 1,
+                sign,
+                sign + 1,
+                maximum - 1,
+                maximum,
+            ] {
+                assert_eq!(integer(a) <= integer(b), native(a) <= native(b));
+                assert_eq!(integer(a) == integer(b), a == b);
+            }
+        }
+    }
+    let theorem = prove_int64_equal_of_to_integer(left.clone(), right.clone());
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing equality guard");
+    };
+    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
+        panic!("wrong observation equality");
+    };
+    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
+        panic!("expected observers");
+    };
+    assert_eq!(a.ty(), MachineIntegerType::Int64);
+    assert_eq!(b.ty(), MachineIntegerType::Int64);
+    let Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(a, b), true) = conclusion.as_ref()
+    else {
+        panic!("wrong native equality width");
+    };
+    assert_eq!(a.as_ref(), &left);
+    assert_eq!(b.as_ref(), &right);
+}
+
+#[test]
+fn int64_integer_operation_bridges_match_independent_overflow_boundary_models() {
+    use num_bigint::BigInt;
+    let left = Bitvector32Term::Variable(Variable(186001));
+    let right = Bitvector32Term::Variable(Variable(186002));
+    for subtract in [false, true] {
+        let theorem = if subtract {
+            prove_int64_subtract_to_integer(left.clone(), right.clone())
+        } else {
+            prove_int64_add_to_integer(left.clone(), right.clone())
+        };
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("missing native definedness premise");
+        };
+        let native = if subtract {
+            ConditionTerm::Bitvector64SignedSubtractOverflows(
+                Box::new(left.clone()),
+                Box::new(right.clone()),
+            )
+        } else {
+            ConditionTerm::Bitvector64SignedAddOverflows(
+                Box::new(left.clone()),
+                Box::new(right.clone()),
+            )
+        };
+        assert_eq!(premise.as_ref(), &Proposition::ConditionIs(native, false));
+        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
+            conclusion.as_ref()
+        else {
+            panic!("wrong observation law");
+        };
+        let IntegerTerm::Machine(machine) = observed.as_ref() else {
+            panic!("missing typed observation");
+        };
+        assert_eq!(machine.ty(), MachineIntegerType::Int64);
+        let operation = if subtract {
+            Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone()))
+        } else {
+            Bitvector32Term::Int64Add(Box::new(left.clone()), Box::new(right.clone()))
+        };
+        assert_eq!(machine.value(), &operation);
+        let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
+        let mathematical = if subtract {
+            IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into())
+        } else {
+            IntegerTerm::Add(observe(left.clone()).into(), observe(right.clone()).into())
+        };
+        assert_eq!(exact.as_ref(), &mathematical);
+        for a in [
+            i64::MIN,
+            i64::MIN + 1,
+            -2,
+            -1,
+            0,
+            1,
+            2,
+            i64::MAX - 1,
+            i64::MAX,
+        ] {
+            for b in [
+                i64::MIN,
+                i64::MIN + 1,
+                -2,
+                -1,
+                0,
+                1,
+                2,
+                i64::MAX - 1,
+                i64::MAX,
+            ] {
+                let exact = if subtract {
+                    BigInt::from(a) - BigInt::from(b)
+                } else {
+                    BigInt::from(a) + BigInt::from(b)
+                };
+                let fits = exact >= BigInt::from(i64::MIN) && exact <= BigInt::from(i64::MAX);
+                let checked = if subtract {
+                    a.checked_sub(b)
+                } else {
+                    a.checked_add(b)
+                };
+                assert_eq!(checked.is_some(), fits);
+                if let Some(value) = checked {
+                    assert_eq!(BigInt::from(value), exact);
+                }
+                let theorem = if subtract {
+                    prove_int64_subtract_to_integer(
+                        Bitvector32Term::Int64Constant(a),
+                        Bitvector32Term::Int64Constant(b),
+                    )
+                } else {
+                    prove_int64_add_to_integer(
+                        Bitvector32Term::Int64Constant(a),
+                        Bitvector32Term::Int64Constant(b),
+                    )
+                };
+                let Proposition::Implies(guard, _) = theorem.proposition() else {
+                    unreachable!()
+                };
+                assert_eq!(
+                    guard.as_ref(),
+                    &Proposition::ConditionIs(ConditionTerm::Constant(!fits), false)
+                );
+            }
+        }
+    }
+}

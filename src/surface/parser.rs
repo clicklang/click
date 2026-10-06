@@ -5139,9 +5139,8 @@ impl Parser {
         if result.is_ok()
             && self.position > 0
             && self.tokens.get(self.position - 1) == Some(&Token::RBrace)
-            && self.peek() == Some(&Token::Semicolon)
         {
-            self.position += 1;
+            self.skip_redundant_semicolon();
         }
         result
     }
@@ -5323,9 +5322,7 @@ impl Parser {
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
                 let body = self.parse_possibly_empty_tactic_block()?;
-                if self.peek() == Some(&Token::Semicolon) {
-                    self.position += 1;
-                }
+                self.skip_redundant_semicolon();
                 Ok(ProofTactic::CloseInvariantsBy(body))
             }
             _ => self.parse_other_proof_tactic(name),
@@ -5542,9 +5539,7 @@ impl Parser {
         }
         let body = self.parse_proposition()?;
         self.expect(Token::RBrace)?;
-        if self.peek() == Some(&Token::Semicolon) {
-            self.position += 1;
-        }
+        self.skip_redundant_semicolon();
         self.integer_literal_context = previous_integer_context;
         self.current_proof_let_names
             .extend(bindings.iter().map(|(name, _)| name.clone()));
@@ -5630,9 +5625,7 @@ impl Parser {
                 self.expect(Token::RBrace)?;
             }
         }
-        if self.peek() == Some(&Token::Semicolon) {
-            self.position += 1;
-        }
+        self.skip_redundant_semicolon();
         Ok(current.expect("the both tactic chain has a root"))
     }
 
@@ -5653,9 +5646,7 @@ impl Parser {
             }
             let proposition = self.parse_proposition()?;
             let proof = self.parse_by_clause()?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::Have(ProofHave { proposition, proof }));
         }
         if name == "mark" {
@@ -5668,9 +5659,7 @@ impl Parser {
             let resource = self.parse_declared_resource_call()?;
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::Open(ProofOpen { resource, tactics }));
         }
         if name == "if" {
@@ -5682,9 +5671,7 @@ impl Parser {
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::If(ProofIf {
                 condition,
                 then_tactics,
@@ -5710,9 +5697,7 @@ impl Parser {
             if arms.len() < 2 {
                 return Err(self.error("`cases` needs one arm for each disjunct, at least two"));
             }
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::Cases(ProofCases::new(arms)));
         }
         if name == "match" {
@@ -5773,9 +5758,7 @@ impl Parser {
                 }
             }
             self.expect(Token::RBrace)?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
                 scrutinee,
                 arms,
@@ -5817,9 +5800,7 @@ impl Parser {
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
             let else_tactics = self.parse_possibly_empty_tactic_block()?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::Branch(ProofBranch {
                 ensuring,
                 then_tactics,
@@ -5857,9 +5838,7 @@ impl Parser {
             else {
                 return Err(self.error("`outcomes` needs both a `returned` and a `threw` arm"));
             };
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             return Ok(ProofTactic::CallOutcomes(ProofCallOutcomes {
                 returned_tactics,
                 threw_tactics,
@@ -5978,9 +5957,7 @@ impl Parser {
                 items.extend(self.parse_region_proof_items()?);
             }
             self.expect(Token::RBrace)?;
-            if self.peek() == Some(&Token::Semicolon) {
-                self.position += 1;
-            }
+            self.skip_redundant_semicolon();
             if items.is_empty() && decreases.is_none() && resources.is_empty() && !diverges {
                 return Err(self
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
@@ -6121,9 +6098,7 @@ impl Parser {
                             .error("`using` requires a pure-function unfold, `unfold(f(args))`"));
                     };
                     let premises = self.parse_exact_premises()?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::UnfoldFunctionUsing {
                         application,
                         premises,
@@ -6149,9 +6124,7 @@ impl Parser {
                     ProofTactic::ApplyTheorem(application)
                 } else {
                     let premises = self.parse_exact_premises()?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ApplyTheoremUsing {
                         application,
                         premises,
@@ -6220,9 +6193,7 @@ impl Parser {
                 if bindings.is_empty() {
                     return Err(self.error("`witness` needs at least one `binder: value`"));
                 }
-                if self.peek() == Some(&Token::Semicolon) {
-                    self.position += 1;
-                }
+                self.skip_redundant_semicolon();
                 return Ok(ProofTactic::Witness(ProofWitness::new(bindings)));
             }
             "obtain" => return self.parse_obtain(),
@@ -6249,9 +6220,7 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::NormalizeUsing(premises));
                 }
                 ProofTactic::Normalize
@@ -6260,9 +6229,7 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::ArithmeticUsing(premises));
                 }
                 ProofTactic::ArithmeticUsing(Vec::new())
@@ -6312,9 +6279,7 @@ impl Parser {
                     ProofTactic::Transport { source, target }
                 } else {
                     let premises = self.parse_exact_premises()?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::TransportUsing {
                         source,
                         target,
@@ -6334,9 +6299,7 @@ impl Parser {
                     ));
                 }
                 let premises = self.parse_exact_premises()?;
-                if self.peek() == Some(&Token::Semicolon) {
-                    self.position += 1;
-                }
+                self.skip_redundant_semicolon();
                 return Ok(ProofTactic::InstantiateUsing {
                     quantified,
                     argument,
@@ -6352,9 +6315,7 @@ impl Parser {
                             "`simp() using` requires at least one explicit premise; use `simp()` for ambient simplification",
                         ));
                     }
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::SimpUsing(ProofSimpUsing { premises }));
                 }
                 ProofTactic::Simp
@@ -6432,9 +6393,7 @@ impl Parser {
                         }
                     }
                     self.expect(Token::RBrace)?;
-                    if self.peek() == Some(&Token::Semicolon) {
-                        self.position += 1;
-                    }
+                    self.skip_redundant_semicolon();
                     return Ok(ProofTactic::StructuralInduct {
                         parameter,
                         hypothesis,
@@ -8766,9 +8725,7 @@ impl Parser {
                 },
             ));
         }
-        if self.peek() == Some(&Token::LParen)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64"))
-        {
+        if self.starts_contract_scalar_cast() {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let target_type = self.parse_type()?.c_type.to_kernel_type();
@@ -10319,7 +10276,15 @@ impl Parser {
             )
     }
 
+    fn starts_contract_scalar_cast(&self) -> bool {
+        self.peek() == Some(&Token::LParen)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
+    }
+
     fn parenthesized_atom_continues_as_contract_expression(&self) -> bool {
+        if self.starts_contract_scalar_cast() {
+            return true;
+        }
         let Some(close) = self
             .matching_parentheses
             .get(self.position)
@@ -10367,6 +10332,14 @@ impl Parser {
     /// still point at it after the token is consumed.
     fn error_context(&self) -> Option<SourcePosition> {
         self.here()
+    }
+
+    /// A `;` after a closing brace ends nothing: it is accepted there and
+    /// never required.
+    fn skip_redundant_semicolon(&mut self) {
+        if self.peek() == Some(&Token::Semicolon) {
+            self.position += 1;
+        }
     }
 
     fn error_at(&self, at: Option<SourcePosition>, message: impl Into<String>) -> ClickError {

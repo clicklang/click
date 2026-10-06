@@ -110,7 +110,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     } else {}
     branch then {
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness { path: Path::Here };
+            witness { path: Path::Here }
             unfold(walk(old(left), old(right), cur, Path::Here));
             simp();
         }
@@ -132,7 +132,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             rewrite(k == cur);
             simp();
         } else {
-            transport(old(visited[k]) != 0, visited[k] != 0) using { old(visited[k]) != 0; };
+            transport(old(visited[k]) != 0, visited[k] != 0) using { old(visited[k]) != 0; }
             assumption();
         }
     }
@@ -140,11 +140,11 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     transport(
         forall (k: int32) { 0 <= k and k < cur implies at(before_mark, visited[k]) == at(before_mark, visited[k]) },
         forall (k: int32) { 0 <= k and k < cur implies at(before_mark, visited[k]) == visited[k] }
-    ) using { forall (k: int32) { 0 <= k and k < cur implies at(before_mark, visited[k]) == at(before_mark, visited[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < cur implies at(before_mark, visited[k]) == at(before_mark, visited[k]) }; }
     transport(
         forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == at(before_mark, visited[k]) },
         forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == visited[k] }
-    ) using { forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == at(before_mark, visited[k]) }; };
+    ) using { forall (k: int32) { cur < k and k < n implies at(before_mark, visited[k]) == at(before_mark, visited[k]) }; }
     have viewable(visited[0..n]) by { simp(); }
     apply(unmarked_point_update(at(before_mark, visited), visited, 0, n, n, cur));
     apply(unmarked_nonnegative(visited, 0, n, n));
@@ -165,11 +165,11 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; }
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(after_mark, right[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; }
 
     let left_result = step(dfs(left, right, visited, n, left[cur], to), {});
     have 0 <= to and to < n implies visited[to] == old(visited[to]) by { simp(); }
@@ -200,14 +200,14 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         } by { simp(); }
         obtain (rest: Path) {
             walk(at(after_mark, left), at(after_mark, right), at(after_mark, left[cur]), rest) == to
-        };
+        }
         have walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to by {
             unfold(walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)));
             assumption();
         }
         apply(walk_frame(old(left), old(right), at(after_mark, left), at(after_mark, right), n, cur, Path::Left(rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness { path: Path::Left(rest) };
+            witness { path: Path::Left(rest) }
             simp() using {
                 walk(old(left), old(right), cur, Path::Left(rest)) == walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest));
                 walk(at(after_mark, left), at(after_mark, right), cur, Path::Left(rest)) == to;
@@ -246,11 +246,11 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; }
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; }
 
     have forall (k: int32) {
         0 <= k and k < n and old(visited[k]) != 0 implies at(before_right, visited[k]) != 0
@@ -288,14 +288,14 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         } by { simp(); }
         obtain (right_rest: Path) {
             walk(at(before_right, left), at(before_right, right), at(before_right, right[cur]), right_rest) == to
-        };
+        }
         have walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to by {
             unfold(walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)));
             assumption();
         }
         apply(walk_frame(old(left), old(right), at(before_right, left), at(before_right, right), n, cur, Path::Right(right_rest)));
         have exists (path: Path) { walk(old(left), old(right), cur, path) == to } by {
-            witness { path: Path::Right(right_rest) };
+            witness { path: Path::Right(right_rest) }
             simp() using {
                 walk(old(left), old(right), cur, Path::Right(right_rest)) == walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest));
                 walk(at(before_right, left), at(before_right, right), cur, Path::Right(right_rest)) == to;
@@ -333,7 +333,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 0 <= k and k < n and at(before_right, visited[k]) == 0 and visited[k] != 0 implies
                     visited[at(before_right, left[k])] != 0 and visited[at(before_right, right[k])] != 0
             };
-        };
+        }
         transport(
             forall (k: int32) {
                 0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
@@ -348,7 +348,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                 0 <= k and k < n and at(after_mark, visited[k]) == 0 and at(before_right, visited[k]) != 0 implies
                     at(before_right, visited[at(after_mark, left[k])]) != 0 and at(before_right, visited[at(after_mark, right[k])]) != 0
             };
-        };
+        }
         have forall (k: int32) {
             0 <= k and k < n and old(visited[k]) == 0 and visited[k] != 0 implies
                 visited[old(left[k])] != 0 and visited[old(right[k])] != 0
@@ -368,7 +368,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     transport(
                         at(before_right, visited[at(after_mark, left[cur])]) != 0,
                         at(before_right, visited[old(left[cur])]) != 0
-                    ) using { at(before_right, visited[at(after_mark, left[cur])]) != 0; };
+                    ) using { at(before_right, visited[at(after_mark, left[cur])]) != 0; }
                     assumption();
                 }
                 instantiate(forall (k: int32) {
@@ -381,7 +381,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
                     rewrite(k == cur);
                     transport(visited[at(before_right, right[cur])] != 0, visited[old(right[cur])] != 0) using {
                         visited[at(before_right, right[cur])] != 0;
-                    };
+                    }
                     assumption();
                 }
                 split();

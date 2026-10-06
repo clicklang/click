@@ -37,8 +37,8 @@ theorem prepend_left(left: int32[], right: int32[], from: int32, to: int32) {
     ensures exists (path: Path) { walk(left, right, from, path) == to } by {
         obtain (rest: Path) {
             walk(left, right, left[from], rest) == to
-        };
-        witness { path: Path::Left(rest) };
+        }
+        witness { path: Path::Left(rest) }
         unfold(walk(left, right, from, Path::Left(rest)));
         assumption();
     }
@@ -51,8 +51,8 @@ theorem prepend_right(left: int32[], right: int32[], from: int32, to: int32) {
     ensures exists (path: Path) { walk(left, right, from, path) == to } by {
         obtain (rest: Path) {
             walk(left, right, right[from], rest) == to
-        };
-        witness { path: Path::Right(rest) };
+        }
+        witness { path: Path::Right(rest) }
         unfold(walk(left, right, from, Path::Right(rest)));
         assumption();
     }

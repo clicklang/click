@@ -29,7 +29,7 @@ void mark(int32 *next, int32 *visited, int32 n, int32 cur) {
         forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n }
     ) using {
         at(before, forall (k: int32) { 0 <= k and k < n implies 0 <= next[k] and next[k] < n });
-    };
+    }
     execute();
     simp();
 }

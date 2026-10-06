@@ -162,7 +162,7 @@ void caller(struct node* p) {
         transport(
             at(before, p->value) == at(before, p->value),
             p->value == at(before, p->value)
-        ) using { };
+        ) using { }
     }
     let ac0 = fold(layer0(p), { tag: at0 }, {});
     let ac1 = fold(layer1(p), { tag: at1 }, { child: ac0 });

@@ -4010,6 +4010,8 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
                 CType::UInt32 => "uint32".to_string(),
                 CType::Int64 => "int64".to_string(),
                 CType::UInt64 => "uint64".to_string(),
+                CType::Int128 => "int128".to_string(),
+                CType::UInt128 => "uint128".to_string(),
                 _ => format!("{target_type:?}"),
             };
             // Contract expressions use the `(type) expression` cast syntax.

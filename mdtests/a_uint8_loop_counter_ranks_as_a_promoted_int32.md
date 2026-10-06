@@ -53,7 +53,7 @@ void clear(int32* values) {
                         }
                     }
                 }
-            };
+            }
         }
     }
     execute();

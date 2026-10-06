@@ -27,7 +27,7 @@ void mark(int32 *v, int32 n, int32 i) {
         forall (k: int32) { 0 <= k and k < n implies v[k] == 0 }
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(v[k]) == 0 };
-    };
+    }
     execute();
     simp();
 }
