@@ -195,7 +195,7 @@ jobs:
         if: matrix.suite == 'rust'
         run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust/rust-runtime.tar.gz"
       - name: Set up test runner
-        run: scripts/setup-environment.sh --test-runner
+        run: scripts/setup-environment.sh ${{ matrix.suite == 'rust' && '--rust-test-runner' || '--test-runner' }}
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
         run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" "${{ matrix.suite }}" "${{ matrix.partition }}"
 
