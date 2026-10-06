@@ -127,10 +127,22 @@ jobs:
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
         run: scripts/check.sh --ci-prepare "$RUNNER_TEMP/compiled-tests"
+      # Two artifacts: every test shard downloads the test binaries, and only
+      # the Rust import shards download Charon and its compiler runtime,
+      # which are nearly half of the build output.
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-tests
-          path: ${{ runner.temp }}/compiled-tests
+          path: |
+            ${{ runner.temp }}/compiled-tests
+            !${{ runner.temp }}/compiled-tests/rust
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-toolchain
+          path: ${{ runner.temp }}/compiled-tests/rust
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -154,6 +166,8 @@ jobs:
           - { suite: unit, partition: '4/6' }
           - { suite: unit, partition: '5/6' }
           - { suite: unit, partition: '6/6' }
+          - { suite: rust, partition: '1/2' }
+          - { suite: rust, partition: '2/2' }
           - { suite: mdtests, partition: '1/3' }
           - { suite: mdtests, partition: '2/3' }
           - { suite: mdtests, partition: '3/3' }
@@ -172,8 +186,14 @@ jobs:
         with:
           name: compiled-tests
           path: ${{ runner.temp }}/compiled-tests
+      - uses: actions/download-artifact@v4
+        if: matrix.suite == 'rust'
+        with:
+          name: rust-toolchain
+          path: ${{ runner.temp }}/compiled-tests/rust
       - name: Restore pinned Charon runtime from the build artifact
-        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
+        if: matrix.suite == 'rust'
+        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust/rust-runtime.tar.gz"
       - name: Set up test runner
         run: scripts/setup-environment.sh --test-runner
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
