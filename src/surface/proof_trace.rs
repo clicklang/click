@@ -222,7 +222,7 @@ impl ProofDiagnosticState for CertificationTraceState {
             let description = source.unwrap_or_else(|| {
                 format!(
                     "internal fact (no exact Click spelling): {}",
-                    render::render_proposition_labeled(fact, labels)
+                    render::render_internal_proposition_labeled(fact, labels)
                 )
             });
             let description = trace_text(&description, 512);
@@ -914,10 +914,13 @@ fn append_added_facts(
         if !visible_checked_fact(&fact.kernel) {
             continue;
         }
-        let source = fact
-            .source
-            .clone()
-            .or_else(|| render::render_simple_click_fact_labeled(&fact.kernel, labels));
+        let source = fact.source.clone().or_else(|| {
+            if fact.surface_view.is_some() {
+                None
+            } else {
+                render::render_simple_click_fact_labeled(&fact.kernel, labels)
+            }
+        });
         if let Some(source) = source {
             output.push_str(&format!("\n{indent}adds: {}", trace_text(&source, 240)));
         } else if let Some(surface) = &fact.surface_view {
@@ -1008,7 +1011,8 @@ mod tests {
                 },
             );
             let mut labels = SnapshotLabels::default();
-            let goal = render::render_proposition_labeled(&loadable_at(first), &mut labels);
+            let goal =
+                render::render_internal_proposition_labeled(&loadable_at(first), &mut labels);
             let trace = render(
                 "f",
                 &[TracePathNode {

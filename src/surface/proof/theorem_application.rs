@@ -1,5 +1,47 @@
 use super::*;
 
+thread_local! {
+    static APPLICATION_SOURCE: std::cell::RefCell<Option<std::rc::Rc<TheoremApplication>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The checker resolves proof bindings to values. Retain just this tactic's
+/// written arguments for diagnostics; never consult them to decide a proof.
+pub(super) fn with_application_source<T>(
+    application: &TheoremApplication,
+    check: impl FnOnce() -> T,
+) -> T {
+    struct Restore(Option<std::rc::Rc<TheoremApplication>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            APPLICATION_SOURCE.with(|source| *source.borrow_mut() = self.0.take());
+        }
+    }
+    let prior = APPLICATION_SOURCE
+        .with(|source| source.replace(Some(std::rc::Rc::new(application.clone()))));
+    let _restore = Restore(prior);
+    check()
+}
+
+fn requirement_source_bindings(
+    theorem: &TheoremDefinition,
+    application: &TheoremApplication,
+) -> Vec<(String, ContractExpression)> {
+    let written = APPLICATION_SOURCE.with(|source| source.borrow().clone());
+    let source = written
+        .as_deref()
+        .filter(|written| {
+            written.name == application.name
+                && written.arguments.len() == application.arguments.len()
+        })
+        .unwrap_or(application);
+    theorem
+        .parameters()
+        .iter()
+        .zip(&source.arguments)
+        .map(|(parameter, argument)| (parameter.name().to_owned(), argument.clone()))
+        .collect()
+}
+
 pub(super) struct TheoremApplicationContext<'a> {
     pub(super) values: &'a BTreeMap<String, CValue>,
     pub(super) array_refs: &'a ClickArrayRefs,
@@ -334,17 +376,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                     theorem.name(),
                     requirement_index,
                     requirement,
-                    &theorem
-                        .parameters()
-                        .iter()
-                        .zip(&application.arguments)
-                        .map(|(parameter, argument)| {
-                            (
-                                parameter.name().to_string(),
-                                crate::surface::diagnostics::describe_contract_expression(argument),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
+                    &requirement_source_bindings(&theorem, application),
                     &lowered,
                 ),
             ));
@@ -436,15 +468,30 @@ pub(super) fn describe_unavailable_theorem_requirement(
     theorem_name: &str,
     requirement_index: usize,
     requirement: &ClickProposition,
-    bindings: &[(String, String)],
+    bindings: &[(String, ContractExpression)],
     lowered: &Proposition,
 ) -> String {
+    // Substitute the actual written arguments rather than asking a kernel
+    // load to recover the state selector the author already supplied.
+    let substitutions = bindings.iter().cloned().collect::<BTreeMap<_, _>>();
+    let instantiation = substitute_click_proposition(requirement, &substitutions)
+        .map(|surface| crate::surface::printing::source_click_proposition(&surface))
+        .unwrap_or_else(|_| crate::surface::proof_diagnostics::render::render_proposition(lowered));
+    let names = bindings
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.clone(),
+                crate::surface::diagnostics::describe_contract_expression(value),
+            )
+        })
+        .collect::<Vec<_>>();
     describe_unavailable_theorem_requirement_spelled(
         theorem_name,
         requirement_index,
         requirement,
-        bindings,
-        &crate::surface::proof_diagnostics::render::render_proposition(lowered),
+        &names,
+        &instantiation,
     )
 }
 
@@ -1377,5 +1424,43 @@ mod observed_integer_argument_tests {
             work_samples.windows(2).all(|pair| pair[0] == pair[1]),
             "{work_samples:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_source_tests {
+    use super::*;
+
+    #[test]
+    fn application_diagnostic_source_restores_after_nested_failures() {
+        let outer = TheoremApplication {
+            name: "outer".into(),
+            arguments: vec![ContractExpression::Binding("r".into())],
+        };
+        let inner = TheoremApplication {
+            name: "inner".into(),
+            arguments: vec![],
+        };
+        assert!(APPLICATION_SOURCE.with(|source| source.borrow().is_none()));
+        with_application_source(&outer, || {
+            let error = with_application_source(&inner, || {
+                assert_eq!(
+                    APPLICATION_SOURCE.with(|source| source
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .name
+                        .clone()),
+                    "inner"
+                );
+                Err::<(), _>("refused")
+            });
+            assert_eq!(error, Err("refused"));
+            assert_eq!(
+                APPLICATION_SOURCE.with(|source| source.borrow().as_ref().unwrap().name.clone()),
+                "outer"
+            );
+        });
+        assert!(APPLICATION_SOURCE.with(|source| source.borrow().is_none()));
     }
 }

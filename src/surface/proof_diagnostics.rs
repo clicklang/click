@@ -17,6 +17,9 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     fn source_goal(&self) -> Option<String> {
         None
     }
+    fn source_fact(&self, _fact: &Proposition) -> Option<String> {
+        None
+    }
     fn kernel_goal(&self) -> Option<&Proposition>;
     fn premises(&self, limit: usize) -> Vec<&Proposition>;
     fn premise_count(&self) -> usize;
@@ -167,7 +170,7 @@ fn render_diagnostic_labeled(
                 rendered.push_str(&source);
             }
             if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
-                let internal = render::render_proposition_labeled(goal, labels);
+                let internal = render::render_internal_proposition_labeled(goal, labels);
                 if internal.contains("snapshot#") || internal.contains("snapshot<untracked>") {
                     rendered.push_str("\n  snapshot identity (internal): ");
                     rendered.push_str(&internal);
@@ -176,9 +179,11 @@ fn render_diagnostic_labeled(
         } else if let Some(source) = render::render_simple_click_fact_labeled(goal, labels) {
             rendered.push_str("\n  goal: ");
             rendered.push_str(&source);
-        } else {
+        } else if crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
             rendered.push_str("\n  internal goal (no exact Click spelling): ");
-            rendered.push_str(&render::render_proposition_labeled(goal, labels));
+            rendered.push_str(&render::render_internal_proposition_labeled(goal, labels));
+        } else {
+            rendered.push_str("\n  goal has no exact Click spelling at this frontier");
         }
     }
     if summary.is_some() {
@@ -189,23 +194,30 @@ fn render_diagnostic_labeled(
                 "\n  recent premises (showing {} of {total}):",
                 premises.len()
             ));
+            let mut omitted = false;
             for premise in &premises {
-                rendered.push_str("\n    ");
-                let text = render::render_simple_click_fact_labeled(premise, labels)
-                    .unwrap_or_else(|| {
-                        format!(
-                            "internal (no exact Click spelling): {}",
-                            render::render_proposition_labeled(premise, labels)
-                        )
-                    });
-                let mut end = text.len().min(2048);
-                while end > 0 && !text.is_char_boundary(end) {
-                    end -= 1;
+                if let Some(text) = diagnostic
+                    .state
+                    .as_ref()
+                    .and_then(|state| state.source_fact(premise))
+                    .or_else(|| render::render_simple_click_fact_labeled(premise, labels))
+                {
+                    rendered.push_str("\n    ");
+                    let mut end = text.len().min(2048);
+                    while end > 0 && !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    rendered.push_str(&text[..end]);
+                    if end < text.len() {
+                        rendered.push('…');
+                    }
+                } else {
+                    omitted = true;
                 }
-                rendered.push_str(&text[..end]);
-                if end < text.len() {
-                    rendered.push('…');
-                }
+            }
+            if omitted {
+                rendered
+                    .push_str("\n    some premises have no exact Click spelling at this frontier");
             }
         }
         if diagnostic.premise_count() > premises.len() {
@@ -227,7 +239,7 @@ fn render_diagnostic_labeled(
                     .as_ref()
                     .and_then(|diagnostic| diagnostic.kernel_goal())
             {
-                rendered.push_str("; internal goal: ");
+                rendered.push_str("; goal: ");
                 rendered.push_str(&render::render_proposition_labeled(goal, labels));
             }
         }

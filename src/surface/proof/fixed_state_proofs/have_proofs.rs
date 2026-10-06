@@ -806,7 +806,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
         assumptions,
     )
     .map_err(|refusal| {
-        crate::surface::proof_diagnostics::render::describe_spec_capture_refusal(&refusal)
+        let (names, arguments) = crate::surface::diagnostics::value_naming_tables(values);
+        let mut labels =
+            crate::surface::proof_diagnostics::render::SnapshotLabels::naming(&names, &arguments);
+        crate::surface::proof_diagnostics::render::describe_spec_capture_refusal_labeled(
+            &refusal,
+            &mut labels,
+        )
     })
 }
 

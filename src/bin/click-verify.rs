@@ -1664,6 +1664,81 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn assert_source_diagnostic(report: &str) {
+        for internal in ["snapshot#", "snapshot<", "load A=", "pointer(pointer "] {
+            assert!(!report.contains(internal), "{report}");
+        }
+        assert!(
+            !report
+                .split("value ")
+                .skip(1)
+                .any(|tail| { tail.as_bytes().first().is_some_and(u8::is_ascii_uppercase) }),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn refused_transport_names_the_cell_and_loop_counter_without_kernel_notation() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
+        let report =
+            entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
+        assert_source_diagnostic(&report);
+        assert!(report.contains("store to occupied[start]"), "{report}");
+        assert!(report.contains("i >= end"), "{report}");
+        assert!(report.contains("at(pre, occupied[start])"), "{report}");
+        assert!(!report.contains("lowered target"), "{report}");
+        assert_eq!(
+            report
+                .matches("some effect facts have no exact Click spelling")
+                .count(),
+            1,
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn refused_call_result_fact_uses_the_proof_binding() {
+        let (root, path) = temporary_project(
+            "call-result-diagnostic",
+            r#"
+            extern int32 child(int32 x);
+            int32 parent(int32 x) { return child(x); }
+        "#,
+            r#"
+            verifying "program.c";
+            theorem negative(n: int32) {
+                requires n < 0;
+                ensures n < 1 by { simp(); }
+            }
+            extern int32 child(int32 x) {
+                requires 0 <= x;
+                ensures 0 <= result;
+            }
+            int32 parent(int32 x) {
+                requires 0 <= x;
+                ensures 0 <= result;
+            } by {
+                let r = step(child(x), {});
+                have r < 1 by {
+                    apply(negative(r)) using { 0 <= r; }
+                }
+                step();
+                simp();
+            }
+        "#,
+        );
+        let result = entry_with([path.display().to_string()]);
+        fs::remove_dir_all(root).unwrap();
+        let report = result.expect_err("a nonnegative call result is not negative");
+        assert_source_diagnostic(&report);
+        assert!(report.contains("r < 0"), "{report}");
+        assert!(
+            report.contains("with n = r instantiates to r < 0"),
+            "{report}"
+        );
+    }
+
     #[test]
     fn refused_match_arm_contradiction_reports_its_own_tactic() {
         for name in [

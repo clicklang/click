@@ -622,14 +622,18 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             }
             let read_refusal =
                 frame_refusal.unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
+            let mut labels = render::SnapshotLabels::with_state(parameters, arguments, state);
+            labels.source_state(pre_state, "function.entry".into());
+            for (selector, snapshot) in recorded_snapshots.recent(16) {
+                labels.source_state(snapshot, describe_snapshot_selector(selector));
+            }
             let mut rendered = describe_unreachable_fact_transport(
                 claim_label,
                 tactic_index,
                 surface_source,
                 surface_target,
-                &source,
-                &target,
                 &transition_facts,
+                &mut labels,
             );
             if !matches!(
                 fold_refusal,
@@ -666,38 +670,25 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     Ok(CheckedFixedStateFactTransport { source, target })
 }
 
-/// Say what a refused `transport ... using` was comparing and what it still
-/// needs, in the same rendering the rest of a proof report uses.
-///
-/// This refusal used to print the Rust `Debug` of the whole current `CMemory`
-/// and of every frontier effect fact. A repeated raw memory snapshot is a
-/// diagnostic defect: it is unbounded, it is not the reader's vocabulary, and
-/// it never says which of the two sides is which. The transport rule compares
-/// exactly two propositions and looks for one frontier fact relating their
-/// memories, so that is what the message prints — including the case where
-/// the two sides already name the same memory, where nothing needs
-/// transporting and the target has to be proved directly.
+/// Show the written source and target once, then the bounded frontier facts
+/// that could relate them. Name stores, current locals, and recoverable source
+/// points; omit facts with no exact source spelling instead of dumping lowered
+/// loads and snapshot identities.
 fn describe_unreachable_fact_transport(
     claim_label: &str,
     tactic_index: usize,
     surface_source: &ClickProposition,
     surface_target: &ClickProposition,
-    source: &Proposition,
-    target: &Proposition,
     transition_facts: &[ExecutionPureFact],
+    labels: &mut render::SnapshotLabels,
 ) -> String {
-    let mut labels = render::SnapshotLabels::ambient();
     let mut rendered = format!(
         "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
          carrying its source fact to the target's state\
          \n  source (holds): {}\
-         \n  target (wanted): {}\
-         \n  lowered source: {}\
-         \n  lowered target: {}",
+         \n  target (wanted): {}",
         crate::surface::printing::source_click_proposition(surface_source),
         crate::surface::printing::source_click_proposition(surface_target),
-        render::render_proposition_labeled(source, &mut labels),
-        render::render_proposition_labeled(target, &mut labels),
     );
     if transition_facts.is_empty() {
         rendered.push_str(
@@ -714,12 +705,30 @@ fn describe_unreachable_fact_transport(
         "\n  effect facts relating states at this frontier (showing {} of {total}):",
         total.min(LISTED)
     ));
+    let mut omitted = false;
     for fact in transition_facts.iter().take(LISTED) {
-        rendered.push_str("\n    ");
-        rendered.push_str(&render::render_proposition_labeled(
-            fact.proposition(),
-            &mut labels,
-        ));
+        match render::render_simple_click_fact_labeled(fact.proposition(), labels) {
+            Some(text) => {
+                rendered.push_str("\n    ");
+                rendered.push_str(&text);
+            }
+            None => omitted = true,
+        }
+        if let Proposition::CMemoryMutatesOnly { writes, .. } = fact.proposition() {
+            for (pointer, bytes) in writes.iter().take(LISTED) {
+                if let Some((names, values)) = labels.naming_tables()
+                    && let Some(cell) =
+                        crate::surface::diagnostics::diagnostic_source_cell(pointer, names, values)
+                {
+                    rendered.push_str(&format!(
+                        "\n    memory change: store to {cell} ({bytes} bytes)"
+                    ));
+                }
+            }
+        }
+    }
+    if omitted {
+        rendered.push_str("\n    some effect facts have no exact Click spelling at this frontier");
     }
     if total > LISTED {
         rendered.push_str("\n    … <additional effect facts omitted>");

@@ -87,6 +87,23 @@ fn truncate_utf8_with_suffix(message: &str, limit: usize, suffix: &str) -> Strin
     bounded
 }
 
+fn compact_unspelled_facts(entries: &mut Vec<String>) {
+    let mut omitted = 0;
+    entries.retain(|entry| {
+        if entry == "fact has no exact Click spelling at this frontier" {
+            omitted += 1;
+            false
+        } else {
+            true
+        }
+    });
+    if omitted > 0 {
+        entries.push(format!(
+            "{omitted} fact(s) have no exact Click spelling at this frontier"
+        ));
+    }
+}
+
 fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String) -> String {
     if items.is_empty() {
         return "[]".to_string();
@@ -97,6 +114,7 @@ fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String)
         .take(item_limit)
         .map(&mut describe)
         .collect::<Vec<_>>();
+    compact_unspelled_facts(&mut entries);
     if items.len() > item_limit {
         entries.push(format!("… {} more omitted", items.len() - item_limit));
     }
@@ -132,6 +150,7 @@ fn describe_context_pure_and_execution_facts(
         .take(item_limit)
         .map(|fact| describe_stated_fact(fact, parameters, arguments))
         .collect::<Vec<_>>();
+    compact_unspelled_facts(&mut entries);
     if total > item_limit {
         entries.push(format!("… {} more omitted", total - item_limit));
     }
@@ -2772,6 +2791,28 @@ fn describe_same_object_store_cause(
             store.text()
         ),
     }
+}
+
+/// Exact named cell for a diagnostic. Never offer a verifier-owned index as
+/// a source expression.
+pub(in crate::surface) fn diagnostic_source_cell(
+    pointer: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let cell = describe_source_cell(pointer, parameters, arguments)?;
+    (!matches!(cell.index, CellIndex::Unnamed)).then(|| cell.text())
+}
+
+pub(in crate::surface) fn diagnostic_source_load_cell(
+    pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let cell = describe_source_cell(pointer, parameters, arguments)?;
+    (cell.element_bytes == Some(kind.byte_width()) && !matches!(cell.index, CellIndex::Unnamed))
+        .then(|| cell.text())
 }
 
 /// The source spelling [`describe_source_cell`] gives an address, for the

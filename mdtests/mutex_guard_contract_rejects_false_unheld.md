@@ -70,5 +70,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: not established: `false = true`
+fail: not established: `false == true`
 ```
