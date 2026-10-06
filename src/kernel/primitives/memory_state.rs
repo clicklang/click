@@ -3348,7 +3348,15 @@ impl CMemory {
             .collect::<BTreeSet<_>>();
         blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
-        std::sync::Arc::make_mut(&mut self.forgotten).ended_local_blocks = ended_local_blocks;
+        let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
+        forgotten.ended_local_blocks = ended_local_blocks;
+        // A forget mark says this snapshot is some earlier one with cached
+        // values dropped and the memory itself unchanged. The joined memory
+        // is no arm's memory: it is their abstraction, named by its own
+        // fresh havoc block above. Keeping an arm's mark would also make the
+        // abstraction depend on which arm it was computed from, so arms that
+        // forgot from different snapshots on the way could never rejoin.
+        forgotten.forgotten_from = None;
         self.heap = std::sync::Arc::new(CHeapMemory {
             live_allocations,
             deallocated_allocations,
