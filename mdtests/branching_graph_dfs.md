@@ -47,9 +47,6 @@ theorem marked_transitive(a: int32[], b: int32[], c: int32[], n: int32) {
     ensures forall (k: int32) { 0 <= k and k < n and a[k] != 0 implies c[k] != 0 } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < n);
-        extract(a[k] != 0);
         instantiate(forall (k: int32) { 0 <= k and k < n and a[k] != 0 implies b[k] != 0 }, k) using { 0 <= k; k < n; a[k] != 0; }
         instantiate(forall (k: int32) { 0 <= k and k < n and b[k] != 0 implies c[k] != 0 }, k) using { 0 <= k; k < n; b[k] != 0; }
         assumption();
@@ -125,9 +122,6 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < n);
-        extract(old(visited[k]) != 0);
         if k == cur {
             rewrite(k == cur);
             simp();

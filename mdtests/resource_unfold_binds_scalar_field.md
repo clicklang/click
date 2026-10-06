@@ -162,7 +162,6 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
         extract(k < p + 1);
         if k < p {
             have at(before_store, occupied[k]) == 1 by {
@@ -207,7 +206,6 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         intro();
         intro();
         extract(p + 1 <= k);
-        extract(k < capacity);
         apply(int32_increment_strictly_increases(p, capacity)) using { p < capacity; }
         apply(int32_successor_le_implies_lt(p, k)) using {
             p < p + 1;

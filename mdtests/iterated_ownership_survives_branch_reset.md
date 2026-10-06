@@ -101,8 +101,6 @@ int32 scan_run(struct arena* arena, int32 count) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < 0);
         have not (k < 0) by {
             arithmetic() using { 0 <= k; }
         }
@@ -162,8 +160,6 @@ int32 scan_run(struct arena* arena, int32 count) {
                 } by {
                     intro();
                     intro();
-                    extract(lo <= k);
-                    extract(k < i);
                     if k < at(iteration, i) {
                         have k < hi by {
                             simp();
@@ -296,8 +292,6 @@ int32 scan_run(struct arena* arena, int32 count) {
                 } by {
                     intro();
                     intro();
-                    extract(i <= k);
-                    extract(k < i);
                     have not (k < i) by {
                         arithmetic() using { i <= k; }
                     }

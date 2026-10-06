@@ -45,8 +45,6 @@ theorem increment_is_guarded_progress() {
     ensures GuardedProgress(&increment) by {
         unfold(GuardedProgress);
         intro();
-        extract(0 <= old(cell[0]));
-        extract(old(cell[0]) < 100);
         both {
             apply(int32_lt_transitive(old(cell[0]), 100, 1000)) using {
                 old(cell[0]) < 100;

@@ -98,8 +98,6 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             } by {
                 intro();
                 intro();
-                extract(i <= k);
-                extract(k < end);
                 if i < k {
                     apply(int32_increment_upper_bound(i, k)) using { i < k; }
                     have n <= k by {
