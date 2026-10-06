@@ -3252,3 +3252,23 @@ path = "reference/library/index.md#int64_add_to_integer"
 [[item]]
 id = "stdlib.theorem.int64_subtract_to_integer"
 path = "reference/library/index.md#int64_subtract_to_integer"
+
+[[item]]
+id = "stdlib.theorem.integer_truncation_identity"
+path = "reference/library/index.md#integer_truncation_identity"
+
+[[item]]
+id = "stdlib.theorem.integer_positive_divisor_remainder_lower"
+path = "reference/library/index.md#integer_positive_divisor_remainder_lower"
+
+[[item]]
+id = "stdlib.theorem.integer_positive_divisor_remainder_upper"
+path = "reference/library/index.md#integer_positive_divisor_remainder_upper"
+
+[[item]]
+id = "stdlib.theorem.integer_nonnegative_dividend_remainder"
+path = "reference/library/index.md#integer_nonnegative_dividend_remainder"
+
+[[item]]
+id = "stdlib.theorem.integer_nonpositive_dividend_remainder"
+path = "reference/library/index.md#integer_nonpositive_dividend_remainder"

@@ -1053,3 +1053,32 @@ theorem int64_subtract_to_integer(left: int64, right: int64) {
     requires defined(left - right);
     ensures to_integer(left - right) == to_integer(left) - to_integer(right);
 }
+
+theorem integer_truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
+}
+
+theorem integer_positive_divisor_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures 1 - d <= truncating_remainder(n, d);
+}
+
+theorem integer_positive_divisor_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures truncating_remainder(n, d) <= d - 1;
+}
+
+theorem integer_nonnegative_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 <= n;
+    ensures 0 <= truncating_remainder(n, d);
+}
+
+theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires n <= 0;
+    ensures truncating_remainder(n, d) <= 0;
+}

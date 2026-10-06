@@ -785,4 +785,77 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn integer_truncation_applications_recheck_guards_claims_and_expansion() {
+        for (name, requirements, goal) in [
+            (
+                "integer_truncation_identity",
+                &["d != 0"][..],
+                "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_lower",
+                &["d != 0", "0 < d"][..],
+                "1 - d <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_upper",
+                &["d != 0", "0 < d"][..],
+                "truncating_remainder(n, d) <= d - 1",
+            ),
+            (
+                "integer_nonnegative_dividend_remainder",
+                &["d != 0", "0 <= n"][..],
+                "0 <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_nonpositive_dividend_remainder",
+                &["d != 0", "n <= 0"][..],
+                "truncating_remainder(n, d) <= 0",
+            ),
+        ] {
+            let requires = requirements
+                .iter()
+                .map(|r| format!("requires {r}; "))
+                .collect::<String>();
+            let source = format!(
+                "theorem law(n: Integer, d: Integer) {{ {requires}ensures {goal} by {{ apply({name}(n, d)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded = expand_c0_claim_source_by_label(&source, &[], "law.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for guard in requirements {
+                let invalid = source.replace(&format!("requires {guard};"), "");
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+            let invalid = source.replace(&format!("ensures {goal}"), "ensures n == d");
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
+        let goal = "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)";
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source =
+                String::from("theorem law(n: Integer, d: Integer, z: Integer) { requires d != 0; ");
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str(&format!("ensures {goal} by {{ "));
+            for _ in 0..size {
+                source.push_str(&format!("have {goal} by {{ apply(integer_truncation_identity(n, d)) using {{ d != 0; }} }} "));
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
 }

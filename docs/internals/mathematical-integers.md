@@ -506,6 +506,32 @@ semantics; C++ source division/remainder separately retains native guards and
 uses artifact schema 43.
 
 
+The shared library now exposes `integer_truncation_identity` under `d != 0`,
+relating the symbolic terms by `n == truncating_quotient(n, d) * d +
+truncating_remainder(n, d)`. For positive `d`, retaining the nonzero domain
+premise,
+`integer_positive_divisor_remainder_lower` and
+`integer_positive_divisor_remainder_upper` establish `1 - d <= r <= d - 1`.
+`integer_nonnegative_dividend_remainder` and
+`integer_nonpositive_dividend_remainder` establish the corresponding remainder
+sign under a nonzero divisor and the explicit dividend sign premise. Negative
+divisors are supported by the identity and sign laws. These are kernel laws of
+the builtin Integer operations; reserved declarations are checked against their
+exact parameter types, guards and conclusions. They establish no native
+operation or narrowing safety. General affine reasoning still does not open
+symbolic truncation or multiply two symbolic Integers.
+
+<!-- verified-example: mdtests/integer_truncation_laws.md -->
+```click
+theorem check_truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d) by {
+        apply(integer_truncation_identity(n, d));
+    }
+}
+```
+
+
 ## Full-width native comparisons
 
 All six native comparisons accept matching `Int128` or `UInt128` operands.

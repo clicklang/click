@@ -601,8 +601,21 @@ a modular caller and frames unrelated memory. Guard/width/operation forgery,
 overflow boundary oracles, full expansion/reverification, retained audit and
 multi-size application scaling cover the shared bridge laws.
 
-Next connect these exact observations and the signed remainder correction to a
-functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
+Shared symbolic truncation laws now relate the dividend, quotient and remainder
+under an explicit nonzero divisor. Positive-divisor remainder bounds and
+nonnegative/nonpositive dividend sign laws also have exact checked declarations,
+signed arbitrary-width oracles, hostile guard/type/operand cases,
+expansion/reverification and deterministic multi-size application coverage.
+These shared Integer laws apply independently of C++, C or Rust; they do not
+infer native safety or expose nonlinear terms to affine arithmetic.
+
+Next extend the shared Integer theorem-argument binding to accept native
+observations such as `to_integer(n)` at a fixed execution state, preserving
+operand definedness and using only explicitly referenced bindings. Its current
+specification-only path rejects this argument promptly. Then establish
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after both
+checked narrowing conversions, and connect these exact observations and the
+signed remainder correction to a functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
 Admit wider int128 numerators through quotient/correction bounds derived jointly
 from the caller and divisor; the current interval profile does not cover the
 full 96/32 fee-division contract. Output bounds are not yet a mathematical

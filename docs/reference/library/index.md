@@ -2385,3 +2385,58 @@ theorem integer_to_uint64_round_trip(z: Integer) {
 
 An Integer within the exact `uint64` range retains its value after conversion
 to that machine type and back. Both bounds are required.
+
+## Mathematical truncating division
+
+These Integer laws use truncation toward zero, independently of native machine
+widths and of the planned Euclidean `/` and `%` operators. They do not establish
+native division or narrowing safety.
+
+### `integer_truncation_identity`
+
+```click
+theorem integer_truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
+}
+```
+
+### `integer_positive_divisor_remainder_lower`
+
+```click
+theorem integer_positive_divisor_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures 1 - d <= truncating_remainder(n, d);
+}
+```
+
+### `integer_positive_divisor_remainder_upper`
+
+```click
+theorem integer_positive_divisor_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures truncating_remainder(n, d) <= d - 1;
+}
+```
+
+### `integer_nonnegative_dividend_remainder`
+
+```click
+theorem integer_nonnegative_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 <= n;
+    ensures 0 <= truncating_remainder(n, d);
+}
+```
+
+### `integer_nonpositive_dividend_remainder`
+
+```click
+theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires n <= 0;
+    ensures truncating_remainder(n, d) <= 0;
+}
+```
