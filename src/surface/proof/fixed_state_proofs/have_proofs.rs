@@ -733,8 +733,9 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
 
 /// Capture one proof-side Integer expression as the symbolic term it denotes
 /// at the current fixed state. Evaluation is intentionally checked here: any
-/// load, conversion, or machine operation needed to form the argument must
-/// already be justified by the supplied proof assumptions.
+/// conversion or machine arithmetic needed to form the argument must already
+/// be justified by the supplied proof assumptions. Heap observations use the
+/// existing logical specification read semantics and grant no access authority.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
     expression: &ContractExpression,
@@ -779,40 +780,16 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
-    // Captured expressions substitute only their explicit names. The kernel
-    // reads memory and deferred C fragments against the borrowed actual states;
-    // there is no need to copy or enumerate either frame or its history.
-    let mut entry_values = BTreeMap::new();
-    let mut current_values = BTreeMap::new();
-    let mut element_types = BTreeMap::new();
-    for name in contract_expression_referenced_names(expression) {
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return Err("Integer argument capture exceeded its work limit".into());
-        }
-        for (source, destination) in [(pre_state, &mut entry_values), (state, &mut current_values)]
-        {
-            if let Some(value) = source.locals().get(&name) {
-                destination.insert(name.clone(), value.clone());
-            } else if let Some((value, element_type)) = source.locals().array_object_value(&name) {
-                destination.insert(name.clone(), value);
-                element_types.insert(name.clone(), element_type);
-            } else if !source.locals().contains_name(&name)
-                && let Some(value) = values.get(&name)
-            {
-                destination.insert(name.clone(), value.clone());
-            }
-        }
-        if let Some(array_ref) = array_refs.get(&name) {
-            element_types.entry(name).or_insert(array_ref.element_type);
-        }
-    }
+    let states = FixedStateLowering::for_expression(
+        expression, values, array_refs, pre_state, state, result,
+    );
     let spec =
         crate::surface::lowering::elaborate_fixed_state_integer_expression_with_integer_values(
             expression,
-            element_types,
-            pre_state,
-            entry_values,
-            current_values,
+            states.element_types,
+            &states.entry_state,
+            states.entry_values,
+            states.current_values,
             integer_values,
             result,
             recorded_snapshots,
@@ -1283,6 +1260,59 @@ pub(in crate::surface::proof) struct FixedStateLowering {
 }
 
 impl FixedStateLowering {
+    // Integer arguments capture only the names in this expression. State handles
+    // retain the complete memory/resources, while indexed local queries avoid
+    // work proportional to unrelated caller bindings.
+    fn for_expression(
+        expression: &ContractExpression,
+        values: &BTreeMap<String, CValue>,
+        array_refs: &ClickArrayRefs,
+        pre_state: &CState,
+        state: &CState,
+        result: Option<&CValue>,
+    ) -> Self {
+        let names = crate::surface::lowering::contract_expression_referenced_names(expression);
+        let mut entry_state = pre_state.clone();
+        let mut lowering_state = state.clone();
+        let mut element_types = BTreeMap::new();
+        let mut entry_values = BTreeMap::new();
+        let mut current_values = BTreeMap::new();
+        for name in names {
+            if let Some(value) = values.get(&name) {
+                if !entry_state.locals().contains_name(&name) {
+                    entry_state = entry_state.with_local(name.clone(), value.clone());
+                }
+                if !lowering_state.locals().contains_name(&name) {
+                    lowering_state = lowering_state.with_local(name.clone(), value.clone());
+                }
+            }
+            if let Some(element_type) = lowering_state
+                .locals()
+                .array_object_element_type(&name)
+                .or_else(|| array_refs.get(&name).map(|array| array.element_type))
+            {
+                element_types.insert(name.clone(), element_type);
+            }
+            if let Some(value) = entry_state.locals().get(&name) {
+                entry_values.insert(name.clone(), value.clone());
+            }
+            if let Some(value) = lowering_state.locals().get(&name) {
+                current_values.insert(name, value.clone());
+            }
+        }
+        if let Some(result) = result {
+            lowering_state =
+                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
+        }
+        Self {
+            entry_state,
+            lowering_state,
+            element_types,
+            entry_values,
+            current_values,
+        }
+    }
+
     pub(in crate::surface::proof) fn new(
         values: &BTreeMap<String, CValue>,
         array_refs: &ClickArrayRefs,
@@ -1604,5 +1634,48 @@ fn verified_claim_key(claim: &VerifiedClaim) -> (bool, usize) {
     match claim {
         VerifiedClaim::Ensure { index, .. } => (false, *index),
         VerifiedClaim::ExceptionalEnsure { index, .. } => (true, *index),
+    }
+}
+
+#[cfg(test)]
+mod integer_capture_scaling_tests {
+    use super::*;
+
+    #[test]
+    fn integer_argument_state_selection_scales_with_referenced_names() {
+        let expression = ContractExpression::Binding("used".into());
+        for size in [16, 256, 4096] {
+            let mut state = CState::new().with_local(
+                "used",
+                CValue::UInt32(crate::kernel::Bitvector32Term::Constant(7)),
+            );
+            let mut values = BTreeMap::new();
+            for index in 0..size {
+                let name = format!("unrelated_{index}");
+                let value = CValue::UInt32(crate::kernel::Bitvector32Term::Constant(index));
+                values.insert(name.clone(), value.clone());
+                state = state.with_local(name, value);
+            }
+            let (selected, work) = crate::persistent::measure_persistent_work(|| {
+                FixedStateLowering::for_expression(
+                    &expression,
+                    &values,
+                    &ClickArrayRefs::new(),
+                    &state,
+                    &state,
+                    None,
+                )
+            });
+            assert_eq!(selected.entry_values.len(), 1);
+            assert_eq!(selected.current_values.len(), 1);
+            assert_eq!(
+                selected.current_values["used"],
+                CValue::UInt32(crate::kernel::Bitvector32Term::Constant(7))
+            );
+            assert!(
+                work <= 64,
+                "{size} unrelated locals caused {work} persistent operations"
+            );
+        }
     }
 }

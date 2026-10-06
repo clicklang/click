@@ -221,7 +221,9 @@ not truncate Rust slice metadata. `.len()` alone needs no byte resource and
 preserves larger 64-bit lengths. Slice returns, general range subscripts,
 indexed compound assignment, other slice element types, and slices in owned-value
 MIR functions remain unsupported. Normal numeric contract casts now include
-`(int32)`, `(uint32)`, and `(uint64)`.
+`(int32)`, `(uint32)`, `(int64)`, and `(uint64)`.
+Use signed 64-bit widening to state full-width u32 addition guards, for
+example `((int64)x + (int64)y) <= 4294967295i64`.
 
 ## Shared slice splitting
 

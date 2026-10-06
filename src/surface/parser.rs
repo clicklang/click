@@ -6754,6 +6754,24 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::IntegerRelationTransport { bounds, result });
                 }
+                "integer_polynomial_identity" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer polynomial identity premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result });
+                }
+                "integer_quotient_shift" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer quotient shift premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerQuotientShift { bounds, result });
+                }
                 "int32_defined" | "int64_defined" => {
                     let width = if keyword == "int32_defined" {
                         crate::kernel::SignedDefinedWidth::Int32

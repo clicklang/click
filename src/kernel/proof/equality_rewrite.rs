@@ -127,11 +127,11 @@ fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), true) => {
             ConditionTerm::Bitvector32Equal(b.clone(), a.clone())
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
-            ConditionTerm::IntegerEqual(b.clone(), a.clone())
-        }
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(a, b), true) => {
             ConditionTerm::Bitvector64Equal(b.clone(), a.clone())
+        }
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) => {
+            ConditionTerm::IntegerEqual(b.clone(), a.clone())
         }
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(a, b), true) => {
             ConditionTerm::PointerOffsetEqual(b.clone(), a.clone())
@@ -364,10 +364,10 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
             left == right
         }
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => left == right,
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
             left == right
         }
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => left == right,
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
             left == right
         }
@@ -1312,6 +1312,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             (left, right)
         }
         _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".to_string()),
+
     };
     fn rewrite_term(
         term: &Bitvector32Term,
@@ -2693,6 +2694,73 @@ mod tests {
         assert!(
             costs[0] > 0 && costs.iter().all(|work| *work == costs[0]),
             "{costs:?}"
+        );
+    }
+    #[test]
+    fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
+        let x: SharedIntegerTerm = IntegerTerm::var(Variable(187_001)).into();
+        let y: SharedIntegerTerm = IntegerTerm::var(Variable(187_002)).into();
+        let eq = |a, b| Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true);
+        let cited = eq(x.clone(), y.clone());
+        let goal = eq(
+            IntegerTerm::TruncatingQuotient(x.clone(), IntegerTerm::constant_i64(2).into()).into(),
+            y.clone(),
+        );
+        let expected = eq(
+            IntegerTerm::TruncatingQuotient(y.clone(), IntegerTerm::constant_i64(2).into()).into(),
+            y.clone(),
+        );
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &cited)
+                .is_err()
+        );
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut facts = ProofFacts::default();
+            for index in 0..size {
+                facts = facts.with_fact(eq(
+                    IntegerTerm::var(Variable(188_000 + index)).into(),
+                    IntegerTerm::constant_i64(index as i64).into(),
+                ));
+            }
+            // Admission may use the reversed exact fact; rewriting follows the cited direction.
+            facts = facts.with_fact(eq(y.clone(), x.clone()));
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited)
+            });
+            assert_eq!(checked.unwrap().proposition(), &expected);
+            costs.push(work);
+            assert!(
+                facts
+                    .check_equality_rewrite(
+                        &goal,
+                        &eq(x.clone(), IntegerTerm::constant_i64(42).into())
+                    )
+                    .is_err()
+            );
+        }
+        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+        let captured = Proposition::ForAll {
+            var: Variable(187_001),
+            sort: Sort::Integer,
+            body: Box::new(goal.clone()),
+        };
+        assert!(
+            ProofFacts::default()
+                .with_fact(cited.clone())
+                .check_equality_rewrite(&captured, &cited)
+                .is_err()
+        );
+        let mut false_equality = cited.clone();
+        if let Proposition::ConditionIs(_, truth) = &mut false_equality {
+            *truth = false;
+        }
+        assert!(
+            ProofFacts::default()
+                .with_fact(false_equality.clone())
+                .check_equality_rewrite(&goal, &false_equality)
+                .is_err()
         );
     }
 }

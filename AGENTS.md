@@ -68,12 +68,13 @@ contributors follow the normal PR and review process.
    queue entry:
 
    ```sh
-   gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){mergeQueueEntry{id state}}}}'
+   gh api graphql -f query='{repository(owner:"clicklang",name:"click"){pullRequest(number:<PR>){id mergeQueueEntry{id state}}}}'
    ```
 
    If its state is `QUEUED`, its final build has not started and nothing is
    wasted by resetting it: remove it from the queue (the `dequeuePullRequest`
-   mutation with that entry `id`), push the new work, update the PR
+   mutation with the pull request `id`, not the queue-entry `id`), push the
+   new work, update the PR
    description, run `gh pr merge <PR> --auto` again, and confirm the queued
    head is the new one. If its build has started (`AWAITING_CHECKS` or
    later), or the new work is a large change on its own, leave the PR alone

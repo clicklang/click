@@ -863,6 +863,18 @@ fn expand_declared_resource_certificate(
                                 result: proposition(result)?,
                             }
                         }
+                        SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => {
+                            SpecialArithmeticNode::IntegerPolynomialIdentity {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
+                        SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => {
+                            SpecialArithmeticNode::IntegerQuotientShift {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
                             SpecialArithmeticNode::UnsignedSumBound {
                                 bounds,

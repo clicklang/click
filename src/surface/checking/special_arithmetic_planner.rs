@@ -229,6 +229,18 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerPolynomialIdentity { bounds, .. } => {
+                SpecialArithmeticNode::IntegerPolynomialIdentity {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
+            KernelNode::IntegerQuotientShift { bounds, .. } => {
+                SpecialArithmeticNode::IntegerQuotientShift {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::SignedDefined { width, bounds, .. } => {
                 SpecialArithmeticNode::SignedDefined {
                     width: *width,

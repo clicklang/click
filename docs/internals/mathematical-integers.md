@@ -738,6 +738,50 @@ C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
 and remainder narrowing, modular caller framing, offline artifacts, expansion,
 and retained audit. The source profile remains unchanged; the current artifact schema is 43.
 
+
+## Bounded polynomial identities and quotient shifts
+
+The explicit `special` node
+`integer_polynomial_identity bounds [] => L == R;` checks an equality in the
+Integer ring. It expands addition, subtraction, negation, and multiplication;
+all other roots, including truncating quotients, pure applications, folds, and
+machine observations, are opaque atoms identified by shared Integer DAG nodes.
+It never distributes native machine operations or cancels a denominator.
+Its bounds list must be empty: it reads no premise or ambient environment.
+
+The checker uses an iterative DAG traversal with local memoized polynomial
+maps. Each node is expanded once, with hard limits of 256 ring DAG nodes,
+256 monomials per intermediate polynomial, degree 16, and 4096-bit
+coefficients. These limits bound each local map operation; exceeding a limit
+returns a prompt structural-limit refusal. Magnitude-dependent arithmetic, map
+operations, and monomial construction are charged before the work. There is
+no unbounded polynomial expansion or nonlinear search. Kernel regressions
+check fixed-width DAG growth, certificate-node growth, unrelated premise
+populations, expansion caps, and exact deterministic budget boundaries.
+
+The companion node `integer_quotient_shift bounds [i, j] => P;` checks exactly
+
+```text
+truncating_quotient(x + d * k, d) == truncating_quotient(x, d) + k
+```
+
+where `d` is a positive constant, premise `i` is `0 <= x`, and premise `j`
+is `0 <= k`. Operand identities, guard polarity, and references must match
+exactly. This follows from floor division on nonnegative numerators; it needs
+no divisibility or parity premise. Both guards matter because truncation can
+cross zero. Forms normalized away at lowering, such as division by one, are
+proved with `normalize` instead. The checker performs only the two explicit
+premise lookups and root-local shape checks; its work is independent of the
+unused premise population.
+
+`rewrite` accepts exact available mathematical Integer equalities as well as
+machine equalities. Integer substitution follows the arithmetic spine through
+products and quotients and pure-function arguments, refuses entry into internal binders,
+and uses the existing equality-admission and binder-capture checks. It does
+not infer an equality or rewrite ambient facts. Together these rules prove
+adler2's triangular successor and weighted lane-bound recurrence without
+changing its Rust source. See the
+[checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_polynomial_and_quotient_shift.md).
 ## Checked equality rewriting
 
 `rewrite(a == b)` accepts mathematical Integer equality alongside native,

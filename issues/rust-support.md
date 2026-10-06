@@ -869,6 +869,135 @@ statics, and cycles. Schema-3 semantics stay unchanged. Constant dependencies,
 branching initializers, trait/generic constants, references and const-fn calls
 remain later work. The unchanged selection rooted at `adler2::adler32_slice`
 now produces and reloads a prepared import including `Adler32::compute`.
-Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. Next prove the
-imported lane helpers and compose nested chunks/remainder invariants with
-the shared checksum specification; checksum correctness remains unproved.
+Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. The helper increment
+below proves the imported lane bodies. Next compose nested chunks/remainder
+invariants with the shared checksum specification; checksum correctness
+remains unproved.
+
+### Original adler2 lane helper proofs
+
+The locked full-crate fixture now proves the unchanged `U32X4::from`,
+`AddAssign<Self>`, `RemAssign<u32>`, and `MulAssign<u32>` bodies, with all four
+lane postconditions. Contracts retain the full safe u32 arithmetic domain:
+signed 64-bit widening states addition guards, nonzero divisors protect
+remainder, and quotient bounds permit multiplication including zero. Shared
+byte views and receiver ownership protect reads and writes. Frozen/live source
+hash checks and false-claim, short-read, missing-guard, and authority negatives
+cover this boundary; verify/profile/audit and expanded certificates agree.
+No Rust source or Charon interpretation profile changes were needed.
+
+Next establish these helper preconditions from the original nested
+chunks/remainder loop invariants, preserve byte accounting, and connect the
+computation to the common Adler-32 specification. The checksum result and
+whole-loop panic freedom remain unproved.
+
+
+### Deferred-reduction lane ceilings
+
+The adler2 bounds library now verifies the proposed lane ceilings
+`A(n) = 65520 + 255*n` and
+`B(n) = 65520 + 65520*n + 255*n*(n+1)/2` against the full u32 capacity.
+Product and division certificates cover all batch indices through 5552;
+`B(5552) = 4294690200` fits and `B(5553) = 4296171735` does not. Reduced
+initial values satisfy the initial ceilings. The A-bound is preserved by a
+byte update, and both next additions fit when the current lanes satisfy the
+proposed bounds and `n < 5552`. Frozen helper and pure-bound claims verify in
+the same prepared environment. False range, byte, endpoint, certificate, and
+invariant-step claims are rejected, with checked tool expansion.
+
+This proves arithmetic implications, not that the original loop maintains
+them. The following increments prove the weighted B-bound recurrence and
+bridge mathematical observations to native u32 checks. Next connect the batch
+index to actual iterator state without a generated processed-count variable. Then
+compose byte accounting with the shared Adler-32 specification. Total input
+length is not restricted to one batch by these lemmas.
+
+
+### Checked weighted lane recurrence
+
+The bounds library now proves the triangular successor identity,
+`B(n+1) = B(n) + A(n+1)`, and preservation of the weighted B-bound by
+`b + (a + byte)` for every batch step `0 <= n < 5552`. It composes a bounded
+Integer polynomial-identity certificate with a positive-constant quotient
+shift under explicit nonnegative numerator and increment guards. Quotients,
+machine values, and pure applications remain opaque to ring checking.
+Mathematical Integer equalities can now rewrite the arithmetic spine through
+the existing checked substitution routine. Forged coefficients, negative or
+missing guards, wrong references/polarity, and false successor bounds are
+rejected; work scales independently of unrelated premises and linearly in
+certificate nodes. Expansion rechecks the new certificates.
+
+Both lane-bound update implications are now established. Next connect those
+invariants to the original nested chunks/remainder iterator state. The following
+increment bridges Integer observations to native u32 guards. No generated processed-count
+variable, Rust source edit, new import interpretation, checksum postcondition,
+or whole-loop panic-freedom claim is introduced by this increment.
+
+
+### Native u32 lane-step observations and guards
+
+The bounds library now proves the widened `int64` guards required by the
+original `U32X4::add_assign` contract for both lane updates. Under the checked
+A/B ceilings and byte bound, the native additions do not wrap, their unsigned
+Integer observations equal the mathematical sums, and their observations
+satisfy `A(n+1)` and `B(n+1)`. The B update uses the newly updated native A.
+The library contains 18 theorem groups with 30 checked ensures clauses.
+
+Two reusable checked kernel bridges require the mathematical sum to be at
+most `u32::MAX`: one establishes the widened guard, the other the exact
+unsigned addition observation. Unsigned definedness alone permits wrapping
+and cannot replace that premise. Integer theorem arguments now capture explicit
+machine observations through checked fixed-state evaluation, selecting only
+referenced caller bindings; arithmetic evaluation guards remain kernel-checked. Heap observations use
+logical specification read semantics and grant no access authority. Boundary models, altered declarations, wrapping/undefined
+argument rejection, and deterministic local-selection scaling are covered.
+
+Next establish these bounds over the original nested iterator states, then
+compose the helper calls and byte accounting with the Adler-32 specification.
+Whole-loop panic freedom and the checksum postcondition remain unproved.
+
+
+### Lane index derived from remaining-byte state
+
+The iterator bounds library defines the vector index from the existing native
+remaining-byte state, using Integer observations and division by four.
+Under `0 <= remaining <= total <= 22208`, the index lies in `0..5552`;
+when at least four bytes remain it is at most 5551. Checked native subtraction
+and nonnegative quotient-shift proofs establish that the four-byte transition
+advances the index by one. The native A/B step proofs now preserve the lane
+ceilings at the index observed after `remaining - 4`, and prove both native
+addition guards using the index at the iterator head. No runtime processed
+count is generated. The batch bound imposes no total input-length bound.
+
+The new library has 14 theorem groups and 30 conclusions. Regressions cover
+initial/empty input, short tails, exact multiples, full-batch endpoints,
+missing remaining/length/definedness guards, false stride and successor claims,
+and rejection of a larger batch. It imports the existing lane arithmetic;
+the module graph also verifies with the pinned original helper contracts.
+Tool checks retain all conclusions and recheck expanded certificates.
+
+Next instantiate these conditional numeric and lane invariants over the
+original nested Charon iterator loops, retaining shared byte views and proving
+the helper call prerequisites. The original loop invariants, whole-loop panic
+freedom, byte accounting, and checksum postcondition remain unproved.
+
+
+### Integer equality evidence for iterator lemmas
+
+The explicit citation rule now recognizes an Integer equality with its operands
+swapped, matching the existing machine-equality rule. Theorem requirements,
+citations, fixed-state rewrites, and fact transport retain checked operand and
+polarity matching. Regressions reverify expanded certificates and reject missing
+evidence, unequal observations, altered operands, and opposite conclusions.
+This removes a proof-interface mismatch encountered while connecting the derived
+iterator index; it does not establish the original nested-loop invariants.
+
+
+### Original four-byte constructor range guarantees
+
+The unchanged `U32X4::from` body now proves that each returned native u32 lane
+is at most 255, alongside its existing exact byte correspondence. The guarantees
+are available at the helper-call boundary with only the four-byte shared view
+and length prerequisite. Regressions reject 254 as the universal bound for each
+lane. This supplies the native byte range needed by the proposed lane invariants;
+instantiating their Integer observations over the nested loops remains next.

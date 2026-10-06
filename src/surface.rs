@@ -5392,6 +5392,14 @@ pub enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
+    IntegerPolynomialIdentity {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
+    IntegerQuotientShift {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     IntegerCastIdentity {
         bounds: Vec<usize>,
         result: ClickProposition,

@@ -4087,6 +4087,9 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         return None;
     };
     let mirrored = match condition {
+        ConditionTerm::IntegerEqual(left, right) => {
+            ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        }
         ConditionTerm::Bitvector32Equal(left, right) => {
             ConditionTerm::Bitvector32Equal(right.clone(), left.clone())
         }
@@ -4117,4 +4120,35 @@ pub(crate) fn listed_premise_holds(
     proposition_holds_without_facts(premise)
         || available(premise)
         || mirrored_equality(premise).is_some_and(|mirrored| available(&mirrored))
+}
+
+#[cfg(test)]
+mod integer_equality_citation_tests {
+    use super::*;
+
+    #[test]
+    fn integer_equality_mirroring_preserves_polarity_and_exact_operands() {
+        let left: SharedIntegerTerm = IntegerTerm::constant_i64(7).into();
+        let right: SharedIntegerTerm = IntegerTerm::constant_i64(9).into();
+        for polarity in [true, false] {
+            let source = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                polarity,
+            );
+            let target = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                polarity,
+            );
+            assert_eq!(mirrored_equality(&source), Some(target.clone()));
+            assert_eq!(mirrored_equality(&target), Some(source.clone()));
+            assert!(listed_premise_holds(&target, |fact| fact == &source));
+            let wrong_polarity = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                !polarity,
+            );
+            assert!(!listed_premise_holds(&wrong_polarity, |fact| fact == &source));
+        }
+        let ordered = Proposition::ConditionIs(ConditionTerm::IntegerLessThan(left, right), true);
+        assert!(mirrored_equality(&ordered).is_none());
+    }
 }

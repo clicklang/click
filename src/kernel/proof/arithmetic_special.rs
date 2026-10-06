@@ -581,6 +581,14 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerPolynomialIdentity {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
+    IntegerQuotientShift {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     IntegerCastIdentity {
         bounds: Vec<usize>,
         result: Proposition,
@@ -648,6 +656,9 @@ pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerDivisionBounds(usize),
     InvalidIntegerBoundExclusion(usize),
     InvalidIntegerRelationTransport(usize),
+    InvalidIntegerPolynomialIdentity(usize),
+    IntegerPolynomialLimitExceeded,
+    InvalidIntegerQuotientShift(usize),
     InvalidIntegerCastIdentity(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
@@ -716,6 +727,12 @@ impl SpecialArithmeticCertificate {
             }
             SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
                 super::integer_relation_transport::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => {
+                super::integer_polynomial_identity::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => {
+                super::integer_quotient_shift::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
                 super::integer_cast_identity::check(index, bounds, premises, result)
@@ -1110,6 +1127,8 @@ impl SpecialArithmeticNode {
             | Self::IntegerDivisionBounds { result, .. }
             | Self::IntegerBoundExclusion { result, .. }
             | Self::IntegerRelationTransport { result, .. }
+            | Self::IntegerPolynomialIdentity { result, .. }
+            | Self::IntegerQuotientShift { result, .. }
             | Self::IntegerCastIdentity { result, .. }
             | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }

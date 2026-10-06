@@ -20,4 +20,3 @@ theorem unsigned64(x: uint64) {
 ```expect
 pass
 ```
-
