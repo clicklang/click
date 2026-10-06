@@ -198,7 +198,7 @@ holds only the plan.
 | 1. Bounded pool | Complete | Original pool C verifies initialization, checkout/return, resize, transfer, and cleanup |
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
-| 4. Mutex-held authority controls | 4 chunks | Ordinary protected controls replace counted-population mutex custody |
+| 4. Mutex-held authority controls | Chunk 1 complete; 3 chunks | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | 4 chunks | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
@@ -252,7 +252,9 @@ milestone 7. The inventory names every file.
    control remains usable sequentially without a mutex. Regressions reject
    unlock without the restored invariant, a member alone exposing the control,
    a wrong mutex, and stale initialization. A kernel check confirms that this
-   path uses no counted-population mutex custody.
+   path uses no counted-population mutex custody. **Complete:** the control
+   declares a proof field so that it is a named instance; the inventory's
+   milestone 4 record lists the evidence.
 2. **Acquiring and releasing helpers.** Independently checked helpers lock and
    unlock through existing `owns`/`consumes`/`produces`, including replacement
    state and lifetime holds. Count observations after an acquisition or a

@@ -688,10 +688,12 @@ impl<'a> Proof<'a> {
                     )
                 })?;
         }
+        // The ancestor is the state the retained evidence reached, which is
+        // the one the kernel's check of the join intersects against.
         ResourceContext::common_exact_descendant(
             &then_residual,
             &else_residual,
-            parent_execution.core.state.resources(),
+            parent_execution.core.reached_state().resources(),
         )
         .ok_or_else(|| {
             self.step_error(
@@ -937,8 +939,10 @@ impl<'a> Proof<'a> {
             if then_state.locals() != else_state.locals() {
                 differing.push("the local variables");
             }
+            let memory_parts = then_state.memory().differing_parts(else_state.memory());
+            let memory_difference = format!("the memory ({})", memory_parts.join(", "));
             if then_state.memory() != else_state.memory() {
-                differing.push("the memory");
+                differing.push(memory_difference.as_str());
             }
             if then_state.resources() != else_state.resources() {
                 differing.push("the interface resources");
@@ -962,6 +966,30 @@ impl<'a> Proof<'a> {
             &assertions,
         )?;
 
+        // The facts the joined proof holds: the interface's, and what both
+        // arms established anyway. They are settled before the resources
+        // are composed, because the kernel's check of the join normalizes
+        // the successor's resources under these facts, and the same
+        // resources normalized under fewer facts can be written differently.
+        let mut facts = parent_facts.clone();
+        let mut added_facts = Vec::new();
+        let else_introduced: std::collections::BTreeSet<&Proposition> =
+            arms[1].introduced_facts.iter().collect();
+        let retained_facts = then_interface_vec
+            .iter()
+            .chain(arms[0].introduced_facts.iter().filter(|fact| {
+                else_introduced.contains(fact)
+                    && arms[0].facts.contains(fact)
+                    && arms[1].facts.contains(fact)
+            }))
+            .collect::<Vec<_>>();
+        for fact in &retained_facts {
+            if !facts.contains_top_level(fact) {
+                facts = facts.with_kernel_checked_fact((*fact).clone());
+                added_facts.push((*fact).clone());
+            }
+        }
+
         // Owned interface facts were consumed above and must be restored once.
         // Duplicable views are added only when the residual common context
         // does not already establish them.
@@ -972,22 +1000,20 @@ impl<'a> Proof<'a> {
             .resources()
             .facts()
             .iter()
-            .filter(|fact| {
-                fact.is_own() || !resources.satisfies_fact(fact, then_interface_facts.assumptions())
-            })
+            .filter(|fact| fact.is_own() || !resources.satisfies_fact(fact, facts.assumptions()))
             .cloned()
             .collect::<Vec<_>>();
         resources = resources
             .try_compose_into_valid_context_delaying_normalization(
                 additions.iter().cloned(),
-                then_interface_facts.assumptions(),
+                facts.assumptions(),
             )
             .map_err(|error| {
                 self.step_error(format!(
                     "invalid automatic common `branch ensuring` resource interface: {error:?}"
                 ))
             })?
-            .normalized_around_facts(&additions, then_interface_facts.assumptions());
+            .normalized_around_facts(&additions, facts.assumptions());
         let state = (*then_abstract.core.state)
             .clone()
             .with_resource_context(resources);
@@ -1082,13 +1108,7 @@ impl<'a> Proof<'a> {
             "branch ensuring",
         )?;
 
-        let mut facts = parent_facts.clone();
-        let mut added_facts = Vec::new();
-        let mut retain_fact = |fact: &Proposition| -> Result<(), ClickError> {
-            if !facts.contains_top_level(fact) {
-                facts = facts.with_kernel_checked_fact(fact.clone());
-                added_facts.push(fact.clone());
-            }
+        for fact in retained_facts {
             for surface in then_abstract.surface_propositions.surfaces(fact) {
                 if else_abstract
                     .surface_propositions
@@ -1100,20 +1120,6 @@ impl<'a> Proof<'a> {
                         .surface_propositions
                         .record_lowering(surface, fact)?;
                 }
-            }
-            Ok(())
-        };
-        for fact in &then_interface_vec {
-            retain_fact(fact)?;
-        }
-        let else_introduced: std::collections::BTreeSet<&Proposition> =
-            arms[1].introduced_facts.iter().collect();
-        for fact in &arms[0].introduced_facts {
-            if else_introduced.contains(fact)
-                && arms[0].facts.contains(fact)
-                && arms[1].facts.contains(fact)
-            {
-                retain_fact(fact)?;
             }
         }
 

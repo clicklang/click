@@ -441,3 +441,49 @@ these payloads remain unsupported. The positive and negative helper fixtures
 are `mdtests/population_mutex_helper_held.md` and
 `mdtests/population_mutex_helper_unheld.md`; the quantity-bearing consumption
 control is `mdtests/population_conservation_local_mutex.md`.
+
+## Authority-bearing controls
+
+Under authority resource semantics, a mutex protects an ordinary control that
+owns population authority. No mutex rule refers to counted populations, and
+initialization takes no counted-population custody. The control declares a
+proof field so that it is a named instance, which the initialization `state`
+binder requires:
+
+<!-- verified-example: mdtests/authority_mutex_control_deposit.md -->
+```click
+resource control(obj: struct object*) {
+    field refs: int32;
+    owns obj->refs;
+    owns authority(reference(obj));
+    fact obj->refs == refs;
+    fact refs == count(reference(obj));
+}
+```
+
+The creator establishes the authority, folds the control, and deposits it at
+initialization. Locking returns the same control with the acquisition guard.
+Inside the critical section the returned authority permits member changes and
+count observations. Unlocking requires the control folded again under the
+deposited binder, with its facts true at the current population total.
+Destruction returns the control.
+
+While the control is in the mutex, its authority is in no thread's resource
+context. A member held outside the mutex therefore grants no count
+observation, and no thread can change the population. Locking a different
+mutex returns no control, and an earlier initialization's lifetime cannot
+destroy a later one. The same control also works sequentially with no mutex.
+
+The regressions are `authority_mutex_control_deposit.md`,
+`authority_mutex_control_sequential.md`,
+`authority_mutex_control_unlock_open_rejected.md`,
+`authority_mutex_control_bad_increment_rejected.md`,
+`authority_mutex_member_alone_rejected.md`,
+`authority_mutex_control_wrong_mutex_rejected.md`,
+`authority_mutex_control_stale_initialization_rejected.md`, and
+`authority_control_instance_duplicate_authority_rejected.md`. The kernel test
+`authority_mode_publication_takes_no_population_custody` checks that
+publication, acquisition, release, and destruction create no custody.
+Helpers that acquire or release such a control, fresh observations after a
+helper return, and worker transfer are later chunks of
+`issues/authority-migration.md`.

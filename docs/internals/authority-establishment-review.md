@@ -33,7 +33,10 @@ exact wrapper and its counter equation; the caller's concrete ledger tracks
 the member exchange across the call. Selective verification may use the scoped
 contract of a concrete helper whose proof is outside the selection. Arbitrary
 external contracts, worker calls, and field-bearing or nested member bodies
-remain refused by this slice.
+remain refused by this slice. The modeled mutex operations are the exception
+among C calls: they transfer an authority-bearing control without changing
+any population, as described in the
+[mutex contract page](mutex-resource-contracts.md#authority-bearing-controls).
 
 Shared-parent helpers combine these transfers with ordinary named memory
 resources. A parent instance owns its link field; a reference is a separate
@@ -181,8 +184,15 @@ to change membership and counter together; closing must reestablish its facts.
 The authority-mode resource-rewrite checker now validates this exact
 memory-plus-authority exchange and rechecks the body fact against the current
 ledger total. Its supported shape is field-free, unconditional, and has one
-contained authority plus owned memory; broader wrapper bodies remain future
-work.
+contained authority plus owned memory. A control may instead declare proof
+fields, making it a named instance that a mutex can hold. Its fold and unfold
+use the ordinary named-instance exchange: the fold consumes the caller's
+actual authority, an unfold returns the one the instance holds, and the
+certificate checker requires the creation ledger to be unchanged. An unfold
+also requires the authority's population to be recognized. A standalone
+helper therefore cannot yet open an imported field-bearing control, and an
+authority already owned beside the control cannot be duplicated by opening
+it. Other wrapper bodies remain future work.
 
 ## Syntax and staged implementation
 
