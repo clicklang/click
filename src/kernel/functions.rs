@@ -18239,13 +18239,25 @@ mod aggregate_union_copy_tests {
                 Some(CValue::UInt32(7u32.into()))
             );
             samples.push(work);
-            // Forget a known whole-field footprint while retaining initialized
-            // bytes. Symbolic-index invalidation has its own filed scaling bug.
-            let forgotten = changed.without_possible_aliasing_cells(
-                &source,
-                count * 4,
-                &PureFactContext::new(),
+            // An unplaced store invalidates the compact source run and its
+            // concrete last-lane override. The immutable copy is disjoint,
+            // and every forgotten source byte remains initialized.
+            let unplaced =
+                source.offset_by_elements(Bitvector32Term::Variable(Variable(925_002)), 4);
+            let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                changed.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
+            });
+            assert_eq!(forgotten.known_value(&source), None);
+            assert_eq!(
+                forgotten.known_value(&source.offset_by_bytes((count - 1) * 4)),
+                None
             );
+            assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
+            assert_eq!(
+                forgotten.known_value(&last),
+                Some(CValue::UInt32(7u32.into()))
+            );
+            samples.push(work);
             let (unknown, work) = crate::instrumentation::measure_deterministic_work(|| {
                 copy_aggregate_fields_checked(forgotten, &source, &destination, &layout).unwrap()
             });

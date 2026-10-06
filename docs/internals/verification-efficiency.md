@@ -202,6 +202,14 @@ charged to visible semantic output rather than hidden ambient state:
   slot: a declaration's initializer records its whole object, so dropping
   the runs it seeded is one covering query each, whatever their length
   (`a_declared_object_makes_dropping_its_runs_one_query`).
+  A symbolic store invalidates a compact constant-value run by its possible index window,
+  or forgets the whole run when the index is unplaced. It keeps values outside
+  a proven window and records dropped initialized bytes per interval; it does
+  not ask every logical element for extra separation facts. The regression
+  `symbolic_stores_into_compact_arrays_scale_with_represented_cells` measures
+  bounded and unbounded stores at 4, 1,024, and 1,000,000 elements. A constant
+  store checks partial coverage at live-interval endpoints, also charging the
+  intervals rather than walking all overwritten slots.
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work

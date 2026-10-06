@@ -8,7 +8,6 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-- [Symbolic writes walk every element of compact local arrays](compact-array-symbolic-write-walks-every-element.md)
 
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
