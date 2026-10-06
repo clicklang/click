@@ -3156,7 +3156,7 @@ pub enum ProofTactic {
     Have(ProofHave),
     Open(ProofOpen),
     If(ProofIf),
-    Match(Box<ProofMatch>),
+    Match(std::sync::Arc<ProofMatch>),
     Cases(ProofCases),
     Both(ProofBoth),
     Branch(ProofBranch),
@@ -4312,18 +4312,20 @@ impl ProofStep {
                 parameter: parameter.clone(),
                 hypothesis: hypothesis.clone(),
             },
-            Self::Match { scrutinee, arms } => ProofTactic::Match(Box::new(ProofMatch {
-                scrutinee: scrutinee.clone(),
-                arms: arms
-                    .iter()
-                    .map(|arm| ProofInductionArm {
-                        type_name: arm.type_name.clone(),
-                        variant: arm.variant.clone(),
-                        bindings: arm.bindings.clone(),
-                        tactics: arm.proof.to_proof_tactics(),
-                    })
-                    .collect(),
-            })),
+            Self::Match { scrutinee, arms } => {
+                ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                    scrutinee: scrutinee.clone(),
+                    arms: arms
+                        .iter()
+                        .map(|arm| ProofInductionArm {
+                            type_name: arm.type_name.clone(),
+                            variant: arm.variant.clone(),
+                            bindings: arm.bindings.clone(),
+                            tactics: arm.proof.to_proof_tactics(),
+                        })
+                        .collect(),
+                }))
+            }
             Self::StructuralInduct {
                 parameter,
                 hypothesis,

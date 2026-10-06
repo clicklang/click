@@ -1330,17 +1330,15 @@ impl ProofFacts {
         let mut batch = self.prioritized.as_deref();
         while let Some(current) = batch {
             for fact in current.facts.iter() {
-                let owned = crate::kernel::clone_proposition_iteratively(fact);
-                if seen.insert(crate::kernel::clone_proposition_iteratively(fact)) {
-                    ordered.push(owned);
+                if seen.insert(fact) {
+                    ordered.push(crate::kernel::clone_proposition_iteratively(fact));
                 }
             }
             batch = current.parent.as_deref();
         }
         for fact in self.ordered.iter() {
-            let owned = crate::kernel::clone_proposition_iteratively(fact);
-            if seen.insert(crate::kernel::clone_proposition_iteratively(fact)) {
-                ordered.push(owned);
+            if seen.insert(fact) {
+                ordered.push(crate::kernel::clone_proposition_iteratively(fact));
             }
         }
         #[cfg(test)]

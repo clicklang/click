@@ -2612,7 +2612,7 @@ fn advance_focused_execution_region_after_leading_tactic<'a>(
 /// source steps.
 fn advance_execution_match<'a>(
     proof: Proof<'a>,
-    source: &ProofMatch,
+    source: &Arc<ProofMatch>,
     arms: &[InternalProofNode],
     continuation: &InternalProofNode,
     expansion_capture: Option<&mut ExpansionCapture>,
