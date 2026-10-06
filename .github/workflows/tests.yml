@@ -53,7 +53,8 @@ jobs:
 
   quality:
     needs: scope
-    if: needs.scope.outputs.docs_only != 'true'
+    # A push to `master` is a tree the merge queue already checked.
+    if: needs.scope.outputs.docs_only != 'true' && github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -161,7 +162,10 @@ jobs:
 
   test_shards:
     needs: [scope, prepare]
-    if: needs.scope.outputs.docs_only != 'true'
+    # A push to `master` is a tree the merge queue already tested. Running
+    # the shards again took a dozen runners for every merge and made the
+    # runs that do gate something wait for one.
+    if: needs.scope.outputs.docs_only != 'true' && github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -215,7 +219,7 @@ jobs:
 
   docs:
     needs: scope
-    if: needs.scope.outputs.docs_only == 'true'
+    if: needs.scope.outputs.docs_only == 'true' && github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -248,10 +252,18 @@ jobs:
           QUALITY_RESULT: ${{ needs.quality.result }}
           SHARDS_RESULT: ${{ needs.test_shards.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [[ "$SCOPE_RESULT" != success ]]; then
             echo "check scope failed"
             exit 1
+          fi
+          # A push to `master` only builds, to save the build snapshot that
+          # pull requests and the merge queue restore; the queue ran the gate
+          # on this exact tree before merging it.
+          if [[ "$EVENT_NAME" == push ]]; then
+            [[ "$PREPARE_RESULT" == success || "$PREPARE_RESULT" == skipped ]] || { echo "post-merge build did not pass"; exit 1; }
+            exit 0
           fi
           if [[ "$DOCS_ONLY" == true ]]; then
             [[ "$DOCS_RESULT" == success ]] || { echo "documentation gate did not pass"; exit 1; }

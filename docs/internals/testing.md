@@ -274,6 +274,11 @@ CI uses these internal modes for code-affecting changes:
   run in the nightly gate. `scripts/check.sh --charon-live` runs them alone,
   building pinned Charon first.
 
+A push to `master` runs the build job alone, to save the build snapshot that
+pull requests and the merge queue restore. The merge queue already ran the
+whole gate on that exact tree, and repeating it after every merge took a dozen
+runners that gating runs then waited for.
+
 The final required `test` check requires quality, preparation, and every
 partition to pass. A failed or cancelled quality job fails this gate even
 when every test succeeds.
