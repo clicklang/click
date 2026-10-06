@@ -22,4 +22,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
-- [Expanding one smart site in `__rb_insert` exhausts memory](expanding-a-site-in-rb-insert-exhausts-memory.md)
+- [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)

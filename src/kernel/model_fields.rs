@@ -171,6 +171,29 @@ pub(crate) fn model_field_spelling(variable: Variable) -> Option<String> {
     })
 }
 
+/// The model-field registry as one value a reusable session captures and
+/// restores.
+#[derive(Clone)]
+pub(crate) struct ModelFieldRegistryState {
+    variables: std::collections::HashMap<Variable, ModelFieldOrigin>,
+    spellings: std::collections::HashMap<Variable, Arc<str>>,
+    field_names: std::collections::HashMap<(Variable, usize), Arc<str>>,
+}
+
+pub(crate) fn capture_model_field_registry() -> ModelFieldRegistryState {
+    ModelFieldRegistryState {
+        variables: MODEL_FIELD_VARIABLES.with(|registry| registry.borrow().clone()),
+        spellings: INSTANCE_SPELLINGS.with(|registry| registry.borrow().clone()),
+        field_names: INSTANCE_FIELD_NAMES.with(|registry| registry.borrow().clone()),
+    }
+}
+
+pub(crate) fn restore_model_field_registry(state: &ModelFieldRegistryState) {
+    MODEL_FIELD_VARIABLES.with(|registry| *registry.borrow_mut() = state.variables.clone());
+    INSTANCE_SPELLINGS.with(|registry| *registry.borrow_mut() = state.spellings.clone());
+    INSTANCE_FIELD_NAMES.with(|registry| *registry.borrow_mut() = state.field_names.clone());
+}
+
 pub(crate) fn clear_model_field_registry() {
     MODEL_FIELD_VARIABLES.with(|registry| registry.borrow_mut().clear());
     INSTANCE_SPELLINGS.with(|registry| registry.borrow_mut().clear());
