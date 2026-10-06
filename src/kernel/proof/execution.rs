@@ -97,6 +97,9 @@ pub(crate) enum CheckedExecutionEvent {
     Context(PureFactContext),
     Branch(CheckedExecutionBranch),
     ProofCase(CheckedProofCaseArm),
+    /// Every live arm of one logical partition, rejoined at one program
+    /// point and one state. What follows it is checked once.
+    ProofCaseJoin(CheckedProofCaseJoin),
     ResourceObservation(CheckedResourceObservation),
     AutomaticLifetimeEnd(CheckedAutomaticLifetimeEnd),
     ResourceRewrite(CheckedResourceRewrite),
@@ -3658,6 +3661,250 @@ impl CheckedProofCaseArm {
     }
 }
 
+/// The live arms of one checked logical partition, rejoined.
+///
+/// A partition splits a frontier by facts alone: under each case the proof
+/// runs an arm. When every live arm ends at the same program point in the
+/// same state, that state is reached whichever case holds, so the proof
+/// continues from it once. This is case analysis; the partition is already
+/// exhaustive, by its own check or by a checked contradiction in each
+/// excluded case.
+///
+/// Only [`Self::check`] builds one. It keeps each arm's events and the facts
+/// they were proved under, so trace certification re-walks every arm from the
+/// split and compares where it lands.
+#[derive(Clone)]
+pub(crate) struct CheckedProofCaseJoin {
+    partition: Arc<CheckedProofCasePartition>,
+    /// One entry per case, in partition order: `None` for an excluded case.
+    arms: Vec<Option<CheckedProofCaseJoinArm>>,
+    start_state: CState,
+    joined_state: CState,
+    /// The partition's root facts plus every fact all live arms established.
+    joined_facts: ProofFacts,
+}
+
+#[derive(Clone)]
+struct CheckedProofCaseJoinArm {
+    facts: ProofFacts,
+    events: Vec<CheckedExecutionEvent>,
+}
+
+impl CheckedProofCaseJoin {
+    /// Checks that `arms` are the live arms of `partition`, each continuing
+    /// `parent`'s one trace, and that they rejoin. `arms` has one entry per
+    /// case of the partition: `None` exactly for the excluded cases.
+    fn check(
+        parent: &ExecutionProofCore,
+        arms: &[Option<(&ExecutionProofCore, &ProofFacts)>],
+        function: &CFunction,
+        arguments: &[CExpression],
+    ) -> Result<Self, &'static str> {
+        // The partition is the one the first live arm entered; every other
+        // arm is then required to have entered that same partition.
+        let partition = arms
+            .iter()
+            .flatten()
+            .find_map(|(arm, _)| match arm.execution_evidence.as_slice() {
+                [trace] => trace.iter().rev().find_map(|event| match event {
+                    CheckedExecutionEvent::ProofCase(entered) => Some(entered.partition.clone()),
+                    _ => None,
+                }),
+                _ => None,
+            })
+            .ok_or("a case join needs an arm that entered a case")?;
+        if arms.len() != partition.case_facts.len() {
+            return Err("a case join does not have one entry per case of its partition");
+        }
+        let [parent_trace] = parent.execution_evidence.as_slice() else {
+            return Err("the case-join parent does not have one execution trace");
+        };
+        let start_state = parent
+            .running_state(function, arguments)
+            .map_err(|_| "the case-join parent has no running state")?
+            .into_owned();
+        let source = parent.current_source(function).cloned();
+        let mut checked = Vec::with_capacity(arms.len());
+        let mut joined: Option<(&ExecutionProofCore, Option<CStatement>)> = None;
+        for (index, arm) in arms.iter().enumerate() {
+            let Some((arm, facts)) = arm else {
+                if partition.excluded[index].is_none() {
+                    return Err("a case join is missing a live arm of its partition");
+                }
+                checked.push(None);
+                continue;
+            };
+            if partition.excluded[index].is_some() {
+                return Err("a case join carries an arm its partition excluded");
+            }
+            let [trace] = arm.execution_evidence.as_slice() else {
+                return Err("a case-join arm does not have one execution trace");
+            };
+            let events = trace
+                .suffix_since(parent_trace)
+                .ok_or("a case-join arm trace does not descend from the parent trace")?;
+            let Some(CheckedExecutionEvent::ProofCase(entered)) = events.first() else {
+                return Err("a case-join arm does not begin by entering its own case");
+            };
+            if !Arc::ptr_eq(&entered.partition, &partition)
+                || entered.arm_index != index
+                || !entered.is_valid()
+            {
+                return Err("a case-join arm does not begin by entering its own case");
+            }
+            // The facts offered for the arm must be this arm's: the facts it
+            // entered its case with, extended by what it went on to establish.
+            if facts.introduced_since(&entered.facts).is_none() {
+                return Err("a case-join arm's facts do not extend the facts it entered with");
+            }
+            if arm.evidence_completed {
+                return Err("a case-join arm has already completed its trace");
+            }
+            // The entering event was checked just above. The rest of the arm
+            // is walked against the facts the arm ended with, which hold
+            // everything its steps relied on.
+            let progress =
+                check_evidence_events(&events[1..], facts, start_state.clone(), source.clone())
+                    .ok_or("a case-join arm trace does not follow its C source from the split")?;
+            if progress.completed.is_some() {
+                return Err("a case-join arm has already completed its trace");
+            }
+            if &progress.state != arm.reached_state() {
+                return Err("a case-join arm trace does not reach its recorded state");
+            }
+            match &joined {
+                None => joined = Some((arm, progress.remaining)),
+                Some((first, remaining)) => {
+                    if progress.remaining != *remaining {
+                        return Err("the case-join arms end at different program points");
+                    }
+                    if arm.reached_state() != first.reached_state() {
+                        return Err("the case-join arms end in different states");
+                    }
+                    if arm.evidence_try_stack != first.evidence_try_stack {
+                        return Err("the case-join arms end in different `try` regions");
+                    }
+                }
+            }
+            checked.push(Some(CheckedProofCaseJoinArm {
+                facts: (*facts).clone(),
+                events,
+            }));
+        }
+        let Some((first, _)) = joined else {
+            return Err("a case join needs at least one live arm");
+        };
+        // A fact every live arm established holds whichever case does. The
+        // case facts themselves differ between arms, so they do not survive.
+        let live = checked.iter().flatten().collect::<Vec<_>>();
+        let mut joined_facts = partition.root_facts.clone();
+        let introduced = live[0]
+            .facts
+            .introduced_since(&partition.root_facts)
+            .ok_or("a case-join arm's facts do not extend the partition's root facts")?;
+        for arm in &live[1..] {
+            if arm.facts.introduced_since(&partition.root_facts).is_none() {
+                return Err("a case-join arm's facts do not extend the partition's root facts");
+            }
+        }
+        for fact in introduced {
+            if live[1..].iter().all(|arm| arm.facts.contains(&fact)) {
+                joined_facts = joined_facts.with_kernel_checked_fact(fact);
+            }
+        }
+        Ok(Self {
+            partition,
+            arms: checked,
+            start_state,
+            joined_state: first.reached_state().clone(),
+            joined_facts,
+        })
+    }
+
+    pub(crate) fn start_state(&self) -> &CState {
+        &self.start_state
+    }
+
+    pub(crate) fn joined_state(&self) -> &CState {
+        &self.joined_state
+    }
+
+    /// The facts the proof continues with after the join.
+    pub(crate) fn joined_facts(&self) -> &ProofFacts {
+        &self.joined_facts
+    }
+
+    /// Whether any arm did more than reason: it advanced the C program or
+    /// changed the state. When no arm did, the joined state is the split
+    /// state and the frontier is where the split found it.
+    pub(crate) fn arms_changed_execution(&self) -> bool {
+        self.joined_state != self.start_state
+            || self.arms.iter().flatten().any(|arm| {
+                arm.events[1..].iter().any(|event| {
+                    !matches!(
+                        event,
+                        CheckedExecutionEvent::ProofCase(_)
+                            | CheckedExecutionEvent::ProofCaseJoin(_)
+                            | CheckedExecutionEvent::Context(_)
+                    )
+                })
+            })
+    }
+
+    /// The events of every live arm, in partition order.
+    pub(crate) fn live_arm_events(&self) -> impl Iterator<Item = &[CheckedExecutionEvent]> {
+        self.arms.iter().flatten().map(|arm| arm.events.as_slice())
+    }
+
+    /// Re-walks every live arm from `state` over `source` and returns the
+    /// source they all leave, or `None` if any arm fails to reach the joined
+    /// state at that one program point.
+    fn advance_checked(
+        &self,
+        state: &CState,
+        source: &Option<CStatement>,
+        call_events: &CheckedCallEvents,
+    ) -> Option<Option<CStatement>> {
+        if state != &self.start_state {
+            return None;
+        }
+        let mut remaining: Option<Option<CStatement>> = None;
+        for (index, arm) in self.arms.iter().enumerate() {
+            let Some(arm) = arm else {
+                self.partition.excluded.get(index)?.as_ref()?;
+                continue;
+            };
+            let (entering, body) = arm.events.split_first()?;
+            let enters_this_case = matches!(
+                entering,
+                CheckedExecutionEvent::ProofCase(entered)
+                    if Arc::ptr_eq(&entered.partition, &self.partition)
+                        && entered.arm_index == index
+                        && entered.is_valid()
+            );
+            if !enters_this_case {
+                return None;
+            }
+            let progress = check_evidence_events_with_call_events(
+                body,
+                &arm.facts,
+                state.clone(),
+                source.clone(),
+                call_events.clone(),
+            )?;
+            if progress.completed.is_some() || progress.state != self.joined_state {
+                return None;
+            }
+            match &remaining {
+                None => remaining = Some(progress.remaining),
+                Some(first) if *first == progress.remaining => {}
+                Some(_) => return None,
+            }
+        }
+        remaining
+    }
+}
+
 /// One exhaustive nonterminal C `if`, checked against its exact source arms
 /// and retained as a nested execution-evidence node.
 #[derive(Clone)]
@@ -5168,10 +5415,35 @@ pub(crate) struct ExecutionFrontier {
     pub(crate) natural_exit_target: Option<crate::kernel::CControlTargetId>,
 }
 
+impl ExecutionFrontier {
+    /// Whether two frontiers that split from one stand at the same program
+    /// point: the same statement to run next, in the same region, with the
+    /// same enclosing continuations still owed.
+    pub(crate) fn at_same_program_point(&self, other: &Self) -> bool {
+        self.region == other.region
+            && self.entry_member_prefix == other.entry_member_prefix
+            && self.next_statement_index == other.next_statement_index
+            && self.in_loop_body == other.in_loop_body
+            && self.loop_control == other.loop_control
+            && self.natural_backedge_target == other.natural_backedge_target
+            && self.natural_exit_target == other.natural_exit_target
+            && self.continuations.len() == other.continuations.len()
+            && match (&self.position, &other.position) {
+                (FrontierPosition::FunctionEntry, FrontierPosition::FunctionEntry)
+                | (FrontierPosition::RegionBoundary, FrontierPosition::RegionBoundary) => true,
+                (
+                    FrontierPosition::StatementEntry { remaining: left },
+                    FrontierPosition::StatementEntry { remaining: right },
+                ) => Arc::ptr_eq(left, right) || left == right,
+                _ => false,
+            }
+    }
+}
+
 /// One entered `try` body tracked for evidence order validation: the
 /// handler to resume at if unwinding reaches it, and the source tail after
 /// the `try` for normal completion.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EvidenceTryFrame {
     pub(crate) binding: String,
     pub(crate) handler: Arc<CStatement>,
@@ -5435,6 +5707,11 @@ fn collect_applied_tactics(
                     collect_applied_tactics(&arm.events, tactics);
                 }
             }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                for events in join.live_arm_events() {
+                    collect_applied_tactics(events, tactics);
+                }
+            }
             _ => {}
         }
     }
@@ -5450,6 +5727,11 @@ fn collect_retained_call_events(
             CheckedExecutionEvent::Branch(branch) => {
                 for arm in &branch.arms {
                     collect_retained_call_events(&arm.events, call_events);
+                }
+            }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                for events in join.live_arm_events() {
+                    collect_retained_call_events(events, call_events);
                 }
             }
             CheckedExecutionEvent::Statement(_)
@@ -5938,6 +6220,11 @@ fn check_evidence_events_with_call_events(
                 current_facts = arm.facts.clone();
                 continue;
             }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                remaining = join.advance_checked(&state, &remaining, &call_events)?;
+                state = join.joined_state().clone();
+                continue;
+            }
             CheckedExecutionEvent::ResourceObservation(observation) => {
                 current_facts =
                     observation.advance_checked(&state, &current_facts, &call_events)?;
@@ -6040,7 +6327,9 @@ fn check_evidence_events_with_call_events(
                     current_facts = successor_facts.clone();
                 }
             }
-            CheckedExecutionEvent::ProofCase(_) | CheckedExecutionEvent::Context(_) => {
+            CheckedExecutionEvent::ProofCase(_)
+            | CheckedExecutionEvent::ProofCaseJoin(_)
+            | CheckedExecutionEvent::Context(_) => {
                 unreachable!("handled before source advance")
             }
             CheckedExecutionEvent::Call(_) => unreachable!("handled before source advance"),
@@ -6290,7 +6579,8 @@ fn trace_completion(
             }
             CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::ResourceObservation(_)
-            | CheckedExecutionEvent::IteratedStep(_) => {
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::ProofCaseJoin(_) => {
                 fallthrough = None;
                 if completed.is_some() {
                     return Err("a trace continues past its completing theorem");
@@ -6355,6 +6645,9 @@ fn events_use_the_function_definitions(
                         check(function, branch.arm_events(arm_index), checked_entries)
                     })
             }
+            CheckedExecutionEvent::ProofCaseJoin(join) => join
+                .live_arm_events()
+                .all(|events| check(function, events, checked_entries)),
             CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::IteratedStep(_)
             | CheckedExecutionEvent::Statement(_)
@@ -6409,6 +6702,13 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
                 pending_call_views.clear();
                 for arm in &branch.arms {
                     validate_checked_event_shapes(&arm.events)?;
+                }
+                continue;
+            }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                pending_call_views.clear();
+                for events in join.live_arm_events() {
+                    validate_checked_event_shapes(events)?;
                 }
                 continue;
             }
@@ -7624,6 +7924,39 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::ProofCase(arm.clone()));
         }
         true
+    }
+
+    /// Rejoins the live arms of the partition they entered and continues
+    /// this core, a copy of `parent`, from their one state. Returns the
+    /// facts the proof holds after the join (the partition's root facts plus
+    /// what every live arm established) and whether any arm advanced the C
+    /// program or changed the state. `arms` has one entry per case of the
+    /// partition, `None` for an excluded one.
+    pub(crate) fn record_proof_case_join(
+        &mut self,
+        parent: &ExecutionProofCore,
+        arms: &[Option<(&ExecutionProofCore, &ProofFacts)>],
+        function: &CFunction,
+        arguments: &[CExpression],
+    ) -> Result<(ProofFacts, bool), &'static str> {
+        let join = CheckedProofCaseJoin::check(parent, arms, function, arguments)?;
+        let changed_execution = join.arms_changed_execution();
+        let (first, _) = arms
+            .iter()
+            .flatten()
+            .next()
+            .expect("a checked case join has a live arm");
+        let mut trace = parent.execution_evidence[0].clone();
+        let joined_state = join.joined_state().clone();
+        let joined_facts = join.joined_facts().clone();
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        self.execution_evidence = vec![trace].into();
+        self.checked_call_events = parent.checked_call_events.clone();
+        self.evidence_state = Some(joined_state);
+        self.evidence_source = first.evidence_source.clone();
+        self.evidence_try_stack = first.evidence_try_stack.clone();
+        self.evidence_completed = false;
+        Ok((joined_facts, changed_execution))
     }
 
     /// This execution's fresh-variable counter, execution-relative: the

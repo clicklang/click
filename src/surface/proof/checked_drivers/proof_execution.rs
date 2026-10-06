@@ -117,6 +117,19 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     )
 }
 
+/// Whether a proof region is one straight run of tactics with no nested
+/// split. Such an arm is cheap to run on its own before asking whether it
+/// rejoins its sibling.
+fn region_is_straight_line(region: &InternalProofNode) -> bool {
+    match region {
+        InternalProofNode::Done => true,
+        InternalProofNode::Linear { continuation, .. } => {
+            matches!(continuation.as_ref(), InternalProofNode::Done)
+        }
+        _ => false,
+    }
+}
+
 fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
@@ -1166,7 +1179,8 @@ fn try_check_structural_function_proof_inner<'a>(
                 };
                 proof = next;
                 saw_structure = true;
-                current = &InternalProofNode::Done;
+                // A rejoined `match` leaves its continuation to run once.
+                current = continuation;
             }
             InternalProofNode::Done => break,
             InternalProofNode::Linear {
@@ -1472,6 +1486,45 @@ fn try_check_structural_function_proof_inner<'a>(
                 } else {
                     proof.split_focused_execution_if(condition.clone())?
                 };
+                // Straight-line arms that end at one program point in one
+                // state are rejoined, so what follows the `if` is checked
+                // once and not once per case. Arms that do not rejoin, or
+                // that nest another split, still run the continuation
+                // themselves, below.
+                if !consumed_leading_steps
+                    && staged_expansion_capture.is_none()
+                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                    && region_is_straight_line(then_branch)
+                    && region_is_straight_line(else_branch)
+                {
+                    let mut reasoned = Some(split.clone());
+                    for (take_then, branch) in
+                        [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
+                    {
+                        let Some(current_proof) = reasoned.take() else {
+                            break;
+                        };
+                        let focused = current_proof.focus_execution_if_arm(&record, take_then)?;
+                        reasoned = advance_focused_execution_region(
+                            focused,
+                            None,
+                            branch,
+                            None,
+                            proof_site.as_ref(),
+                            owning_source_index,
+                            1,
+                        )?
+                        .filter(|next| !next.is_at_function_exit());
+                    }
+                    if let Some(reasoned) = reasoned
+                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
+                    {
+                        proof = joined;
+                        saw_structure = true;
+                        current = continuation;
+                        continue;
+                    }
+                }
                 let mut advanced = split;
                 let mut consumed_continuation = false;
                 for (take_then, branch) in
@@ -2620,11 +2673,10 @@ fn advance_execution_match<'a>(
     owning_source_index: usize,
     depth: usize,
 ) -> Result<Option<Proof<'a>>, ClickError> {
-    if !matches!(continuation, InternalProofNode::Done) {
-        return Err(ClickError::new(
-            "proof `match` currently requires each arm to complete the function proof; put the continuation inside each arm",
-        ));
-    }
+    // With tactics written after it, the `match` must rejoin its live arms:
+    // they are checked once, from the one state every arm ends in. Without
+    // any, each arm completes the function proof on its own.
+    let rejoins = !matches!(continuation, InternalProofNode::Done);
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source, |index| {
@@ -2700,6 +2752,7 @@ fn advance_execution_match<'a>(
         owning_source_index,
         depth,
         0,
+        rejoins,
     )?
     else {
         return decline();
@@ -2730,6 +2783,7 @@ fn advance_execution_match_group<'a>(
     owning_source_index: usize,
     depth: usize,
     split_depth: usize,
+    rejoins: bool,
 ) -> Result<Option<Proof<'a>>, ClickError> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
         return decline_region_depth();
@@ -2745,7 +2799,8 @@ fn advance_execution_match_group<'a>(
             ));
         }
         let (mut proof, record) = proof.split_execution_match_group(plan.condition(left))?;
-        for (take_left, group) in [(true, left), (false, right)] {
+        let mut completed = [false, false];
+        for (side, (take_left, group)) in [(true, left), (false, right)].into_iter().enumerate() {
             let focused = proof.focus_execution_if_arm(&record, take_left)?;
             let Some(next) = advance_execution_match_group(
                 focused,
@@ -2758,13 +2813,23 @@ fn advance_execution_match_group<'a>(
                 owning_source_index,
                 depth,
                 split_depth + 1,
+                rejoins,
             )?
             else {
                 return decline();
             };
+            completed[side] = next.is_at_function_exit();
             proof = next;
         }
-        return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        if completed == [true, true] {
+            return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        }
+        let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
+            return Err(ClickError::new(
+                "the arms of this proof `match` do not rejoin: with tactics written after the `match`, every live arm must end at the same program point in the same state",
+            ));
+        };
+        return Ok(Some(joined));
     };
     let index = *index;
     let proof = proof.enter_execution_match_arm(plan, index)?;
@@ -2781,7 +2846,7 @@ fn advance_execution_match_group<'a>(
     else {
         return decline();
     };
-    if !proof.is_at_function_exit() {
+    if !rejoins && !proof.is_at_function_exit() {
         return Err(ClickError::new(
             "each proof `match` arm must reach function exit",
         ));
@@ -2863,7 +2928,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     proof_match,
                     arms,
                     continuation,
-                    expansion_capture,
+                    expansion_capture.as_deref_mut(),
                     proof_site,
                     owning_source_index,
                     depth,
@@ -2871,7 +2936,10 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 else {
                     return decline();
                 };
-                return Ok(Some(matched.restore_execution_tactic_attribution(&owner)?));
+                // A rejoined `match` leaves its continuation to run once.
+                proof = matched.restore_execution_tactic_attribution(&owner)?;
+                region = continuation;
+                branch_continuation = None;
             }
             InternalProofNode::Done => return Ok(Some(proof)),
             InternalProofNode::Linear {
@@ -3176,6 +3244,42 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 } else {
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
+                // As at the top level: straight-line arms that rejoin are
+                // joined, and the continuation is checked once.
+                if !consumed_leading_steps
+                    && expansion_capture.is_none()
+                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                    && region_is_straight_line(then_branch)
+                    && region_is_straight_line(else_branch)
+                {
+                    let mut reasoned = Some(split.clone());
+                    for (take_then, branch) in
+                        [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
+                    {
+                        let Some(current_proof) = reasoned.take() else {
+                            break;
+                        };
+                        let focused = current_proof.focus_execution_if_arm(&record, take_then)?;
+                        reasoned = advance_focused_execution_region(
+                            focused,
+                            enclosing_record,
+                            branch,
+                            None,
+                            proof_site,
+                            owning_source_index,
+                            depth + 1,
+                        )?
+                        .filter(|next| !next.is_at_function_exit());
+                    }
+                    if let Some(reasoned) = reasoned
+                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
+                    {
+                        proof = joined.restore_execution_tactic_attribution(&owner)?;
+                        region = continuation;
+                        branch_continuation = None;
+                        continue;
+                    }
+                }
                 let mut advanced = split;
                 let mut consumed_continuation = false;
                 for (take_then, branch) in

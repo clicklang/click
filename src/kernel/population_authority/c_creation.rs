@@ -150,9 +150,21 @@ struct OpaqueImport {
     symbolic_delta: Option<(bool, Bitvector32Term)>,
     /// Occurrences consumed by checked named rewrites, independent of count observations.
     consumed_named: PersistentMap<crate::kernel::Variable, Arc<crate::kernel::ResourceInstance>>,
+    /// Named births remain distinct from entry occurrences, even after death.
+    born_named: PersistentMap<crate::kernel::Variable, ()>,
+    named_counts: PersistentMap<ResourceDescription, NamedCountChange>,
+    /// Unresolved indices permit exact observation only of this single selection.
+    named_selection: Option<ResourceDescription>,
+    named_ambiguous: bool,
     /// Only a checked control wrapper can supply this immutable entry load.
     entry_count: Option<Bitvector32Term>,
     retired_authority: bool,
+}
+
+#[derive(Clone, Default)]
+struct NamedCountChange {
+    delta: i32,
+    entry_deaths: u32,
 }
 
 #[derive(Clone)]
@@ -751,6 +763,10 @@ impl CreationEvents {
                 symbolic_member_holder: symbolic_members.as_ref().map(|_| self.0.opaque_actor),
                 symbolic_delta: None,
                 consumed_named: PersistentMap::default(),
+                born_named: PersistentMap::default(),
+                named_counts: PersistentMap::default(),
+                named_selection: None,
+                named_ambiguous: false,
                 entry_count,
                 retired_authority: false,
             },
@@ -1165,12 +1181,15 @@ impl CreationEvents {
             delta: i32::try_from(import.owned_members)
                 .ok()?
                 .checked_sub(i32::try_from(import.entry_owned_members).ok()?)?,
-            // Each checked named death was a distinct entry occurrence: imported
-            // named births and transfers remain closed. This is a count bound,
-            // never anonymous custody in member_holders.
-            entry_owned_members: import
-                .entry_owned_members
-                .max(u32::try_from(import.consumed_named.len()).expect("bounded named deaths")),
+            // Only deaths of distinct entry occurrences bound the entry count.
+            // Consuming a newly born occurrence contributes no entry bound and
+            // neither transition grants anonymous custody in member_holders.
+            entry_owned_members: import.entry_owned_members.max(
+                import
+                    .named_counts
+                    .get(description)
+                    .map_or(0, |change| change.entry_deaths),
+            ),
             entry_symbolic_members: import.entry_symbolic_members.clone(),
             symbolic_delta: import.symbolic_delta.clone(),
         })
@@ -1571,6 +1590,37 @@ impl CreationEvents {
                         symbolic_delta: None,
                     });
                 }
+            }
+            if !scope.schema().is_countable() {
+                let key = Self::exact_count_key(description);
+                if import.named_ambiguous
+                    || import
+                        .named_selection
+                        .as_ref()
+                        .is_some_and(|selection| selection != &key)
+                {
+                    return Err(CreationRefusal::InvalidMember);
+                }
+                let entry_count = import
+                    .exact_entry_counts
+                    .lock()
+                    .expect("exact entry counts")
+                    .entry(key.clone())
+                    .or_insert_with(|| {
+                        Bitvector32Term::Variable(
+                            crate::kernel::Variable::allocate_fresh()
+                                .expect("exact count identity exhausted"),
+                        )
+                    })
+                    .clone();
+                let change = import.named_counts.get(&key).cloned().unwrap_or_default();
+                return Ok(SymbolicPopulationCount {
+                    entry_count,
+                    delta: change.delta,
+                    entry_owned_members: change.entry_deaths,
+                    entry_symbolic_members: None,
+                    symbolic_delta: None,
+                });
             }
             if let Some(member) = import
                 .private_members
@@ -2177,6 +2227,15 @@ impl CreationEvents {
         &self,
         instance: &crate::kernel::ResourceInstance,
     ) -> Result<Self, CreationRefusal> {
+        self.checked_imported_instance_exchange(instance, false, &PureFactContext::new())
+    }
+
+    pub(in crate::kernel) fn checked_imported_instance_exchange(
+        &self,
+        instance: &crate::kernel::ResourceInstance,
+        produce: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, CreationRefusal> {
         let reference = ResourceReference::from_instance(instance);
         let description = reference.description();
         if description.population_arity().is_some()
@@ -2185,30 +2244,109 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::InvalidMember);
         }
+        let scope = self
+            .governing_authority(description)
+            .ok_or(CreationRefusal::MissingAuthority)?;
         let import = self
             .0
             .opaque_imports
-            .get(description)
+            .get(&scope)
             .filter(|import| import.entry_count.is_some())
             .ok_or(CreationRefusal::MissingAuthority)?;
         if import.retired_authority || import.authority_holder != self.0.opaque_actor {
             return Err(CreationRefusal::MissingAuthority);
         }
-        let key = CEvent::InstanceMember(reference.clone(), false);
+        let key = CEvent::InstanceMember(reference.clone(), produce);
         if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
             return Ok(existing.clone());
         }
         if import.consumed_named.contains_key(&instance.identity()) {
             return Err(CreationRefusal::MissingMembers);
         }
-        let consumed = u32::try_from(import.consumed_named.len())
-            .ok()
-            .and_then(|count| count.checked_add(1))
-            .filter(|count| *count <= i32::MAX as u32)
-            .ok_or(CreationRefusal::InvalidQuantity)?;
-        let consumed_named = import
-            .consumed_named
-            .with_inserted(instance.identity(), Arc::new(instance.clone()));
+        if produce && import.born_named.contains_key(&instance.identity()) {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        let aggregate = import.named_counts.get(&scope).cloned().unwrap_or_default();
+        if produce {
+            let entry = import
+                .entry_count
+                .clone()
+                .ok_or(CreationRefusal::UnknownTotal)?;
+            let current = if aggregate.delta >= 0 {
+                Bitvector32Term::add(
+                    entry.clone(),
+                    Bitvector32Term::Constant(aggregate.delta as u32),
+                )
+            } else {
+                Bitvector32Term::subtract(
+                    entry.clone(),
+                    Bitvector32Term::Constant(aggregate.delta.unsigned_abs()),
+                )
+            };
+            let overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+                current,
+                Bitvector32Term::Constant(1),
+            );
+            if assumptions.exact_condition_value(&overflow) != Some(false)
+                && !assumptions
+                    .indexed_constant_interval(&entry)
+                    .is_some_and(|(_, high)| {
+                        high + i64::from(aggregate.delta) < i64::from(i32::MAX)
+                    })
+            {
+                return Err(CreationRefusal::InvalidQuantity);
+            }
+        }
+        let entry_death = !produce && !import.born_named.contains_key(&instance.identity());
+        let advance = |before: NamedCountChange| -> Result<NamedCountChange, CreationRefusal> {
+            Ok(NamedCountChange {
+                delta: before
+                    .delta
+                    .checked_add(if produce { 1 } else { -1 })
+                    .ok_or(CreationRefusal::InvalidQuantity)?,
+                entry_deaths: before
+                    .entry_deaths
+                    .checked_add(u32::from(entry_death))
+                    .filter(|n| *n <= i32::MAX as u32)
+                    .ok_or(CreationRefusal::InvalidQuantity)?,
+            })
+        };
+        let aggregate = advance(aggregate)?;
+        let mut named_counts = import
+            .named_counts
+            .with_inserted(scope.clone(), aggregate.clone());
+        let exact = Self::exact_count_key(description);
+        if scope.population_arity().is_some() {
+            let change = advance(import.named_counts.get(&exact).cloned().unwrap_or_default())?;
+            named_counts.insert(exact.clone(), change);
+        }
+        let unresolved = description.arguments().iter().skip(1).any(|value| {
+            !matches!(value, AlgebraicValue::C(CValue::Int32(value)) if value.as_const().is_some())
+        });
+        let named_ambiguous = import.named_ambiguous
+            || import
+                .named_selection
+                .as_ref()
+                .is_some_and(|selection| selection != &exact)
+            || unresolved
+                && !import.named_counts.is_empty()
+                && !import.named_counts.contains_key(&exact);
+        let named_selection = import
+            .named_selection
+            .clone()
+            .or_else(|| unresolved.then_some(exact));
+        let consumed_named = if produce {
+            import.consumed_named.clone()
+        } else {
+            import
+                .consumed_named
+                .with_inserted(instance.identity(), Arc::new(instance.clone()))
+        };
+        let born_named = if produce {
+            import.born_named.with_inserted(instance.identity(), ())
+        } else {
+            import.born_named.clone()
+        };
         let after = Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
@@ -2233,10 +2371,19 @@ impl CreationEvents {
             exact_members: self.0.exact_members.clone(),
             opaque_types: self.0.opaque_types.clone(),
             opaque_imports: self.0.opaque_imports.with_inserted(
-                description.clone(),
+                scope.clone(),
                 OpaqueImport {
-                    symbolic_delta: Some((false, Bitvector32Term::Constant(consumed))),
+                    symbolic_delta: (aggregate.delta != 0).then(|| {
+                        (
+                            aggregate.delta > 0,
+                            Bitvector32Term::Constant(aggregate.delta.unsigned_abs()),
+                        )
+                    }),
                     consumed_named,
+                    born_named,
+                    named_counts,
+                    named_selection,
+                    named_ambiguous,
                     ..import.clone()
                 },
             ),
@@ -2257,7 +2404,8 @@ impl CreationEvents {
         description: &ResourceDescription,
         identity: crate::kernel::Variable,
     ) -> Option<&crate::kernel::ResourceInstance> {
-        let import = self.0.opaque_imports.get(description)?;
+        let scope = self.governing_authority(description)?;
+        let import = self.0.opaque_imports.get(&scope)?;
         if import.retired_authority || import.authority_holder != self.0.opaque_actor {
             return None;
         }

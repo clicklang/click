@@ -6893,15 +6893,12 @@ impl CState {
             }
             let reference = super::super::ResourceReference::from_instance(instance);
             if events.recognizes_imported_population(&description) {
-                if produce || governing.population_arity().is_some() {
-                    return Err("named member fold/unfold at imported authority entries is not supported yet".into());
-                }
                 let owned = CResourceFact::own(CResource::Instance(instance.clone()));
-                if !before.resources.satisfies_fact(&owned, assumptions) {
+                if !produce && !before.resources.satisfies_fact(&owned, assumptions) {
                     return Err("Requires owning the exact named member before consumption".into());
                 }
                 events
-                    .checked_imported_instance_consumption(instance)
+                    .checked_imported_instance_exchange(instance, produce, assumptions)
                     .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
             } else {
                 events
