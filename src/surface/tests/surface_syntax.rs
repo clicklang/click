@@ -4390,3 +4390,36 @@ fn snapshot_read_alignment_fact_renders_as_aligned() {
     let rendered = diagnostics::describe_click_proposition(&fact);
     assert_eq!(rendered, "at(function.entry, aligned(arena, 8))");
 }
+
+#[test]
+fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_equality() {
+    let source = r#"
+        theorem unrelated_cast(x: Integer, y: Integer) {
+            requires -5 <= x;
+            requires x <= 5;
+            ensures x == y by {
+                arithmetic_certificate special {
+                    premise 0: -5 <= x => -5 <= x;
+                    premise 1: x <= 5 => x <= 5;
+                    integer_cast_identity bounds [0, 1] => x == y;
+                    conclusion 0;
+                }
+            }
+        }
+    "#;
+    let file = parse(source).unwrap();
+    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
+        panic!("expected certificate script");
+    };
+    let printed = super::printing::format_partial_tactic_sequence(tactics);
+    assert!(printed.contains("integer_cast_identity bounds [0, 1]"));
+    let round_trip = parse(&format!(
+        "theorem unrelated_cast(x: Integer, y: Integer) {{ ensures x == y by {{ {printed} }} }}"
+    ))
+    .unwrap();
+    assert_eq!(
+        round_trip.theorem_definitions()[0].ensures()[0].proof(),
+        file.theorem_definitions()[0].ensures()[0].proof()
+    );
+    assert!(verify_click_theorems(source).is_err());
+}

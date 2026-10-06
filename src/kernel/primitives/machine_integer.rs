@@ -444,7 +444,7 @@ impl MachineIntegerType {
         }
     }
 
-    fn accepts_cast_operand(self, value: &Bitvector32Term) -> bool {
+    pub(in crate::kernel) fn accepts_cast_operand(self, value: &Bitvector32Term) -> bool {
         let (mut ty, mut value) = (self, value);
         loop {
             crate::instrumentation::record_deterministic_work(1);
