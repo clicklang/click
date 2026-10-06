@@ -5852,3 +5852,91 @@ fn simp_snapshot_transport_search_is_linear_in_early_returns() {
         .join()
         .expect("fan-out thread");
 }
+
+/// The `execute(); simp();` proof of [`early_return_fan_out`] written with
+/// simple tactics only, as `click expand` writes it: the steps and C
+/// branches of `execute`, then one closer per path under the same nested
+/// conditions.
+fn early_return_fan_out_explicit_proof(returns: usize) -> String {
+    fn indent(depth: usize) -> String {
+        "    ".repeat(depth + 1)
+    }
+    let condition = |index: usize| {
+        let statement = 7 + 3 * index;
+        format!("at(statement({statement}).entry, a) == at(statement({statement}).entry, {index})")
+    };
+    let transported = "have result == a or result == -1 by {\n{i}    transport(at(function.entry, result == a or result == -1), result == a or result == -1) using {\n{i}    }\n{i}}\n{i}assumption();\n";
+    let mut proof = String::from(
+        "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    step();\n    step();\n    if at(statement(2).entry, p) == at(statement(2).entry, 0) {\n        step();\n        step();\n    } else {\n        step();\n        step();\n        step();\n        step();\n",
+    );
+    for index in 0..returns {
+        let i = indent(index + 1);
+        proof.push_str(&format!(
+            "{i}if {} {{\n{i}    step();\n{i}    step();\n{i}}} else {{\n{i}    step();\n{i}    step();\n",
+            condition(index)
+        ));
+    }
+    proof.push_str(&format!("{}step();\n", indent(returns + 1)));
+    for index in (0..returns).rev() {
+        proof.push_str(&format!("{}}}\n", indent(index + 1)));
+    }
+    proof.push_str("    }\n    if at(statement(2).entry, p) == at(statement(2).entry, 0) {\n");
+    proof.push_str(&format!(
+        "        {}",
+        transported.replace("{i}", "        ")
+    ));
+    proof.push_str("    } else {\n");
+    for index in 0..returns {
+        let i = indent(index + 1);
+        let statement = 7 + 3 * index;
+        proof.push_str(&format!(
+            "{i}if {} {{\n{i}    have result == a or result == -1 by {{\n{i}        have result == a by {{\n{i}            rewrite(at(statement({statement}).entry, {index}) == at(statement({statement}).entry, a));\n{i}            normalize();\n{i}        }}\n{i}        left();\n{i}    }}\n{i}    assumption();\n{i}}} else {{\n",
+            condition(index)
+        ));
+    }
+    let i = indent(returns + 1);
+    proof.push_str(&format!("{i}{}", transported.replace("{i}", &i)));
+    for index in (0..returns).rev() {
+        proof.push_str(&format!("{}}}\n", indent(index + 1)));
+    }
+    proof.push_str("    }\n}\n");
+    proof
+}
+
+/// The early-return fan-out proved with simple tactics only verifies in work
+/// near linear in its returns. This is the form the simple-verification
+/// contract governs; the nested proof `if`s reach the checked drivers'
+/// region nesting bound soon after 16 returns, so it is measured to there:
+/// 6261, 10723, and 20159 units at 4, 8, and 16 returns on 2026-10-05.
+///
+/// The grouped `execute(); simp();` proof of the same function is not yet
+/// linear: on path `k`, simp's dependency selection reads all `k` conditions
+/// about `a` (`bugs/early-return-paths-store-facts-whole.md`).
+#[test]
+fn explicit_early_return_proof_is_near_linear_in_its_returns() {
+    std::thread::Builder::new()
+        .name("fan-out-explicit".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            let mut samples = Vec::new();
+            for returns in [2, 4, 8, 16] {
+                let c = early_return_fan_out(returns);
+                let click = early_return_fan_out_explicit_proof(returns);
+                let (verified, sample) = scaling_sample(returns, || {
+                    verify_c0_sources(&click, &[("fan_out.c", c.as_str())])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!(
+                        "explicit fan-out of {returns} returns failed: {}",
+                        error.message()
+                    )
+                });
+                samples.push(sample);
+            }
+            assert_near_linear_scaling("an explicit early-return proof", &samples);
+        })
+        .expect("spawn the fan-out thread")
+        .join()
+        .expect("fan-out thread");
+}
