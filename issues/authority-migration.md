@@ -200,12 +200,12 @@ holds only the plan.
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
 | 4. Mutex-held authority controls | 4 chunks | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | 4 chunks | No active `guarded_by` consumer; associations come from checked initialization |
-| 6. Concurrent lifetime and worker accounting | 4 chunks | Shared refcount and worker accounting verify through ordinary transfers |
+| 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
 The remaining plan is **four milestones of four chunks**. These are planning
-estimates, not promises. The worker protocol in milestone 6 is the largest
-design risk, and tooling repairs may add chunks.
+estimates, not promises. The milestone 6 worker protocol is now frozen and
+needs no new syntax or kernel algebra. Tooling repairs may still add chunks.
 
 What remains on the legacy path is 34 mutex and worker count fixtures and 64
 `guarded_by` fixtures. Eight fixtures appear in both groups. One deliberate
@@ -309,7 +309,10 @@ negatives retain their refusals through ordinary initialization and transfer.
    authority or uses a specifically justified deferred transfer; join cannot
    retroactively authorize birth or consumption. Map each of the 19 worker
    fixtures to the protocol. If it needs new surface syntax or kernel algebra
-   beyond existing transfers, stop and discuss before coding.
+   beyond existing transfers, stop and discuss before coding. **Complete:** the
+   [worker authority protocol](../docs/internals/worker-authority-protocol.md)
+   uses only existing transfers and maps all 19 fixtures. It also lists the
+   properties that milestone 4 must provide.
 2. **Lifetime transport and abstract workers.** Implement the smallest
    protocol with independent certificate checks and misuse regressions,
    rejecting premature observation and reclamation. Migrate the nine abstract
