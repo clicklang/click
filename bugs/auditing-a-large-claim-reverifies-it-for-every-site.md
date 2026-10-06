@@ -49,6 +49,27 @@ systemd-run --user --scope -q -p MemoryMax=14G -p MemorySwapMax=0 \
 `LINE` is the line of `void __rb_insert(`. Each `expanded` row prints the
 phase costs above.
 
+### Rust chunks CI reproduction
+
+On PR #268 at `4a3943de0`, the `unit, 2/4` shard of workflow
+[37473480380](https://github.com/clicklang/click/actions/runs/37473480380)
+failed in `rust_chunks_exact_owned_loop_tools_recheck_all_sites`. Its
+`cover.contract` audit discovered 14 sites, initialized the retained session
+in 2,057,595 work units and 21 seconds, then exhausted its ten-minute
+whole-run bound while processing the claim. No proof failure was reported.
+
+The saved import reproduces the slow capture workload without Charon:
+
+```sh
+click audit --time-limit 2m examples/rust-chunks-exact/chunks.click
+```
+
+At `4a3943de0`, this bounded local run initialized in 2,057,595 units and
+11 seconds, reached eight of the fourteen sites, and stopped at the run
+bound. The audit and its verifier workers exited. Keep this fixture’s C/Rust
+source and contracts unchanged; fix the repeated capture work rather than
+raising its time limit.
+
 ## Intended regression
 
 A deterministic scaling regression that audits a claim with `n` independent

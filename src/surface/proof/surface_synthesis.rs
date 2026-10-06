@@ -3,6 +3,14 @@ use super::*;
 #[cfg(test)]
 mod tests;
 
+fn surface_local_name(name: &str) -> &str {
+    if name == crate::kernel::C_CONTRACT_RESULT_NAME {
+        "result"
+    } else {
+        name
+    }
+}
+
 const SURFACE_SYNTHESIS_WORK_LIMIT: usize = 16_384;
 pub(super) const SURFACE_SYNTHESIS_DEPTH_LIMIT: usize = 128;
 
@@ -156,7 +164,7 @@ fn struct_owners(
     for (name, value) in state.locals().object_values() {
         if let (Some(layout), CValue::Pointer(base)) = (owners.locals.get(name), value) {
             found.push(StructOwner {
-                base: CExpression::Variable(name.to_string()),
+                base: CExpression::Variable(surface_local_name(name).to_string()),
                 pointer: base.clone(),
                 layout: layout.clone(),
             });
@@ -374,9 +382,13 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
         })?;
         Some(ContractExpression::At {
             selector: selector.clone(),
-            expression: Box::new(ContractExpression::CFragment(CExpression::Variable(
-                name.to_string(),
-            ))),
+            expression: Box::new(if name == "result" {
+                ContractExpression::CBinding(name.to_string())
+            } else {
+                ContractExpression::CFragment(CExpression::Variable(
+                    surface_local_name(name).to_string(),
+                ))
+            }),
         })
     })
 }
@@ -1418,7 +1430,7 @@ fn synthesize_external_symbolic_element_range(
         state,
         bound_variables,
     )?)?;
-    let named = CExpression::Variable(name.to_string());
+    let named = CExpression::Variable(surface_local_name(name).to_string());
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
             state: ContractSegmentState::Current,
@@ -1482,7 +1494,7 @@ fn named_pointer_bases<'a>(
                     return None;
                 };
                 let width = base.c_type().pointee_type()?.byte_width();
-                Some((name.to_string(), base.clone(), width))
+                Some((surface_local_name(name).to_string(), base.clone(), width))
             })
         }))
 }
@@ -2016,9 +2028,15 @@ fn synthesize_unsigned_comparison(
             .locals()
             .object_values()
             .find(|(name, value)| {
-                *name != "result" && matches!(value, CValue::UInt32(value) if value == term)
+                *name != "result"
+                    && *name != crate::kernel::C_CONTRACT_RESULT_NAME
+                    && matches!(value, CValue::UInt32(value) if value == term)
             })
-            .map(|(name, _)| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+            .map(|(name, _)| {
+                ContractExpression::CFragment(CExpression::Variable(
+                    surface_local_name(name).to_string(),
+                ))
+            })
             .or_else(|| {
                 let expression = synthesize_surface_bitvector(
                     term,
@@ -2502,10 +2520,14 @@ fn synthesize_surface_bitvector(
                 if local == term
         )
     }) {
-        return Some(if name == "result" {
+        return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
+            ContractExpression::CFragment(CExpression::Variable("result".to_string()))
+        } else if name == "result" {
             ContractExpression::CBinding(name.to_string())
         } else {
-            ContractExpression::CFragment(CExpression::Variable(name.to_string()))
+            ContractExpression::CFragment(CExpression::Variable(
+                surface_local_name(name).to_string(),
+            ))
         });
     }
     // The term is the value a parameter was passed. No local holds it now, or
@@ -2517,21 +2539,24 @@ fn synthesize_surface_bitvector(
     // to a different proposition, and `both` then refused to split a bundle
     // whose text did not match its goal.
     if let Some(name) = describe_parameter_bitvector(term, parameters, arguments) {
-        let reassigned = name != "result"
-            && state
-                .locals()
-                .object_values()
-                .any(|(local, _)| *local == name);
-        return Some(if name == "result" {
-            ContractExpression::CBinding(name)
-        } else if reassigned {
+        let reassigned = state
+            .locals()
+            .object_values()
+            .any(|(local, _)| *local == name);
+        return Some(if reassigned {
             ContractExpression::At {
                 selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
                     region: CodeRegionRef::Function,
                     kind: ProgramPointKind::Entry,
                 }),
-                expression: Box::new(ContractExpression::CFragment(CExpression::Variable(name))),
+                expression: Box::new(if name == "result" {
+                    ContractExpression::CBinding(name)
+                } else {
+                    ContractExpression::CFragment(CExpression::Variable(name))
+                }),
             }
+        } else if name == "result" {
+            ContractExpression::CBinding(name)
         } else {
             ContractExpression::CFragment(CExpression::Variable(name))
         });
@@ -3230,7 +3255,7 @@ fn synthesize_local_aggregate_field(
                     if value_term != *term {
                         return None;
                     }
-                    let base = CExpression::Variable(name.to_string());
+                    let base = CExpression::Variable(surface_local_name(name).to_string());
                     let lowered_pointer = if field.offset_bytes() == 0 {
                         base.clone()
                     } else {
@@ -3274,7 +3299,11 @@ fn synthesize_local_aggregate_field(
                         );
                         Some(ContractExpression::ArrayIndex {
                             base: Box::new(field_expression),
-                            indexes,
+                            indexes: indexes
+                                .into_iter()
+                                .map(ContractExpression::CFragment)
+                                .collect(),
+                            dimensions: shape.to_vec(),
                             lowered,
                         })
                     } else {
@@ -3431,7 +3460,7 @@ fn synthesize_local_indexed_int32_load(
         }
         Some(ContractExpression::Index(
             Box::new(ContractExpression::CFragment(CExpression::Variable(
-                name.to_string(),
+                surface_local_name(name).to_string(),
             ))),
             Box::new(synthesize_surface_bitvector(
                 &index,
@@ -3571,7 +3600,7 @@ fn synthesize_owned_field_at_address(
     let field = layout.fields().iter().find(|field| {
         field.c_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
     })?;
-    let base = CExpression::Variable(name.to_string());
+    let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
@@ -3615,7 +3644,7 @@ fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<C
     let field = layout.fields().iter().find(|field| {
         field.c_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
     })?;
-    let base = CExpression::Variable(name.to_string());
+    let base = CExpression::Variable(surface_local_name(name).to_string());
     Some(ContractExpression::Field {
         base: Box::new(ContractExpression::CFragment(base.clone())),
         field: field.name().to_string(),
@@ -3679,7 +3708,7 @@ fn synthesize_surface_pointer(
         };
         let element_width = base.c_type().pointee_type()?.byte_width();
         let index = pointer.element_index_from_base_with_width(base, element_width)?;
-        let base = CExpression::Variable(name.to_string());
+        let base = CExpression::Variable(surface_local_name(name).to_string());
         if index == Bitvector32Term::Constant(0) {
             return Some(base);
         }

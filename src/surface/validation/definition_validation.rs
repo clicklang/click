@@ -2097,15 +2097,17 @@ fn collect_resource_fact_reads_from_contract_expression(
 ) -> Result<(), ClickError> {
     match expression {
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::Negate(inner) => collect_resource_fact_reads_from_contract_expression(
-            inner,
-            predicate_definitions,
-            click_function_definitions,
-            visited_predicates,
-            visited_functions,
-            reads,
-            resource_name,
-        ),
+        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+            collect_resource_fact_reads_from_contract_expression(
+                inner,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => Ok(()),

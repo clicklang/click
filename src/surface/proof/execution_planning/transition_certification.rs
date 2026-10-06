@@ -458,6 +458,11 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     let executed_under = assumptions.clone();
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
         .with_next_opaque_call(*next_opaque_call);
+    // Exit facts are retained behind shared slices, so these copies move one
+    // handle per exit rather than cloning each exit's whole proposition list.
+    crate::instrumentation::record_deterministic_work(
+        final_exit_candidates.len() + break_exits.len(),
+    );
     let (execution, loop_rule) = prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         state.clone(),
         statement.clone(),

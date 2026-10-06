@@ -10,6 +10,140 @@ use super::*;
 
 const SIZES: [usize; 5] = [64, 128, 256, 512, 1024];
 
+#[test]
+fn symbolic_stores_into_compact_arrays_scale_with_represented_cells() {
+    for bounded in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = scaling_cell("local:compact-symbolic-store", 1);
+            let beside = scaling_cell("local:compact-symbolic-store", 0);
+            let after = source.offset_by_bytes(count * 4);
+            let separate = scaling_cell("local:compact-symbolic-separate", 0);
+            let value = CValue::UInt32(7u32.into());
+            let memory = CMemory::new()
+                .with_block(source.block.clone(), (count + 2) * 4)
+                .with_block(separate.block.clone(), 4)
+                .write_scalar_array_region(
+                    &source,
+                    CType::UInt32,
+                    count,
+                    value.clone(),
+                    false,
+                    false,
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .store(beside.clone(), value.clone())
+                .store(after.clone(), value.clone())
+                .store(separate.clone(), value.clone());
+            let index = Bitvector32Term::Variable(Variable(925_002));
+            let assumptions = if bounded {
+                let range = |base: &Pointer, elements: u32| {
+                    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                        base.clone(),
+                        0u32.into(),
+                        elements.into(),
+                        4,
+                    ))
+                };
+                let composition = ResourceContext::new()
+                    .unchecked_with_fact(range(&beside, 1))
+                    .unchecked_with_fact(range(&source, count))
+                    .unchecked_with_fact(range(&after, 1));
+                PureFactContext::new()
+                    .assume_condition(
+                        ConditionTerm::signed_less_equal(1u32.into(), index.clone()),
+                        true,
+                    )
+                    .assume_condition(
+                        ConditionTerm::signed_less_than(index.clone(), (count - 1).into()),
+                        true,
+                    )
+                    .assume_proposition(Proposition::CResourceComposition(composition))
+            } else {
+                PureFactContext::new()
+            };
+            let write = source.offset_by_elements(index, 4);
+            let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.without_possible_aliasing_cells(&write, 4, &assumptions)
+            });
+            assert_eq!(forgotten.known_value(&separate), Some(value.clone()));
+            assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
+            assert_eq!(forgotten.known_value(&source.offset_by_bytes(4)), None);
+            assert_eq!(
+                forgotten.known_value(&source.offset_by_bytes((count - 2) * 4)),
+                None
+            );
+            if bounded {
+                for kept in [
+                    &beside,
+                    &source,
+                    &source.offset_by_bytes((count - 1) * 4),
+                    &after,
+                ] {
+                    assert_eq!(
+                        forgotten.known_value(kept),
+                        Some(value.clone()),
+                        "bounded store with {count} elements must preserve {kept:?}"
+                    );
+                }
+            } else {
+                assert_eq!(forgotten.known_value(&source), None);
+                assert_eq!(
+                    forgotten.known_value(&source.offset_by_bytes((count - 1) * 4)),
+                    None
+                );
+            }
+            samples.push((count, work));
+            assert!(
+                work <= samples[0].1 * 2 + 128,
+                "bounded={bounded}: {samples:?}"
+            );
+        }
+        eprintln!("bounded={bounded}: {samples:?}");
+    }
+}
+
+#[test]
+fn whole_and_partial_stores_into_compact_arrays_visit_live_intervals() {
+    for partial in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = scaling_cell("local:compact-whole-store", 0);
+            let memory = CMemory::new()
+                .with_block(source.block.clone(), count * 4)
+                .write_scalar_array_region(
+                    &source,
+                    CType::UInt32,
+                    count,
+                    CValue::UInt32(7u32.into()),
+                    false,
+                    false,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            let bytes = count * 4 - u32::from(partial);
+            let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.without_possible_aliasing_cells(&source, bytes, &PureFactContext::new())
+            });
+            assert_eq!(forgotten.known_value(&source), None);
+            assert_eq!(
+                forgotten.known_value(&source.offset_by_bytes((count - 1) * 4)),
+                None
+            );
+            assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
+            samples.push((count, work));
+            assert!(
+                work <= samples[0].1 * 2 + 64,
+                "partial={partial}: {samples:?}"
+            );
+        }
+        eprintln!("partial={partial}: {samples:?}");
+    }
+}
+
 fn scaling_cell(block: &str, index: usize) -> Pointer {
     Pointer {
         block: PointerBlock::from(block),

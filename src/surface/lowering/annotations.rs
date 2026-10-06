@@ -106,6 +106,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::CFragment(_)
+        | ContractExpression::CUnary { .. }
         | ContractExpression::ResourceWildcard => None,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::Call { arguments, .. } => {
@@ -1310,11 +1311,14 @@ fn fixed_state_elaboration<'a>(
         ..SpecElaborationContext::default()
     };
     if let Some(result) = result {
-        context
-            .values
-            .insert("result".to_string(), SpecExpression::Value(result.clone()));
-        context.contract_result_in_scope = true;
+        context.values.insert(
+            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+            SpecExpression::Value(result.clone()),
+        );
     }
+    context.contract_result_in_scope = context
+        .values
+        .contains_key(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
     (lowerer, context)
 }
 
@@ -1834,7 +1838,9 @@ pub(in crate::surface) fn function_contract_summary(
 
     let mut exceptional_ensures = Vec::new();
     let mut exceptional_context = context.clone();
-    exceptional_context.values.remove(&"result".to_string());
+    exceptional_context
+        .values
+        .remove(&crate::kernel::C_CONTRACT_RESULT_NAME.to_string());
     exceptional_context.values.insert(
         "exception".to_string(),
         SpecExpression::CExpression(CExpression::Variable(
@@ -4473,6 +4479,34 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         match expression {
+            ContractExpression::CUnary { operand, lowered } => {
+                let value = self.lower_contract_expression_to_spec(operand, environment)?;
+                match lowered {
+                    CExpression::Cast { target_type, .. } => {
+                        Ok(SpecExpression::Cast(Box::new(value), *target_type))
+                    }
+                    CExpression::PointerOffsetBytes { bytes, .. } => {
+                        Ok(SpecExpression::PointerOffset {
+                            pointer: Box::new(value),
+                            elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                            byte_width: 1,
+                        })
+                    }
+                    CExpression::TypedLoad { value_type, .. } => Ok(SpecExpression::MemoryLoad {
+                        memory: environment.current_memory.clone(),
+                        pointer: Box::new(value),
+                        value_type: *value_type,
+                    }),
+                    CExpression::Load(_) => Ok(SpecExpression::MemoryLoad {
+                        memory: environment.current_memory.clone(),
+                        pointer: Box::new(value),
+                        value_type: self.contract_array_element_type(operand, environment),
+                    }),
+                    CExpression::AddressOf(_) => Ok(SpecExpression::CExpression(lowered.clone())),
+                    _ => Err("invalid C unary operation".to_string()),
+                }
+            }
+
             ContractExpression::Call { name, arguments }
                 if integer_conversion_target(name).is_some() =>
             {
@@ -4625,6 +4659,82 @@ impl AnnotationLowerer<'_> {
                     arms: lowered_arms,
                 })
             }
+            ContractExpression::Field {
+                base,
+                lowered,
+                offset_bytes,
+                ..
+            } if contract_expression_has_explicit_c_result_reference(base) => {
+                self.lower_snapshot_field_to_spec(base, lowered, *offset_bytes, environment)
+            }
+            ContractExpression::ArrayIndex {
+                base,
+                indexes,
+                dimensions,
+                lowered,
+            } if contract_expression_has_explicit_c_result_reference(base)
+                || indexes
+                    .iter()
+                    .any(contract_expression_has_explicit_c_result_reference) =>
+            {
+                let pointer = self.lower_contract_expression_to_spec(base, environment)?;
+                let mut offset = None;
+                for (index, expression) in indexes.iter().enumerate() {
+                    let stride =
+                        dimensions[index + 1..]
+                            .iter()
+                            .try_fold(1u32, |stride, dimension| {
+                                stride
+                                    .checked_mul(*dimension)
+                                    .ok_or_else(|| "array stride overflow".to_string())
+                            })?;
+                    let mut term =
+                        self.lower_contract_expression_to_spec(expression, environment)?;
+                    if stride != 1 {
+                        term = SpecExpression::Multiply(
+                            Box::new(term),
+                            Box::new(SpecExpression::Value(int32(stride))),
+                        );
+                    }
+                    offset = Some(match offset {
+                        None => term,
+                        Some(previous) => SpecExpression::Add(Box::new(previous), Box::new(term)),
+                    });
+                }
+                let offset = offset.ok_or_else(|| "array access requires an index".to_string())?;
+                match lowered {
+                    CExpression::Index(lowered_base, _) => {
+                        let value_type = self
+                            .c_expression_array_element_type(lowered_base, environment)
+                            .unwrap_or(CType::Int32);
+                        Ok(SpecExpression::MemoryLoad {
+                            memory: environment.current_memory.clone(),
+                            pointer: Box::new(SpecExpression::PointerOffset {
+                                pointer: Box::new(pointer),
+                                elements: Box::new(offset),
+                                byte_width: value_type.byte_width(),
+                            }),
+                            value_type,
+                        })
+                    }
+                    CExpression::Add(lowered_base, stride) => {
+                        let CExpression::Multiply(_, width) = stride.as_ref() else {
+                            return Err("invalid struct array stride".to_string());
+                        };
+                        Ok(SpecExpression::PointerOffset {
+                            pointer: Box::new(pointer),
+                            elements: Box::new(SpecExpression::Multiply(
+                                Box::new(offset),
+                                Box::new(self.lower_c_fragment_to_spec(width, environment)?),
+                            )),
+                            byte_width: self
+                                .c_expression_array_element_width(lowered_base, environment)
+                                .unwrap_or(1),
+                        })
+                    }
+                    _ => Err("invalid array access lowering".to_string()),
+                }
+            }
             ContractExpression::QualifiedC {
                 lowered: expression,
                 ..
@@ -4657,15 +4767,7 @@ impl AnnotationLowerer<'_> {
                 }
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
-            ContractExpression::CBinding(name) => {
-                if name == "result" && environment.contract_result_in_scope {
-                    return Err(
-                        "`c(result)` cannot name a C binding where the contract `result` is in scope; read it through a snapshot such as `old(c(result))` or `at(statement(N).entry, c(result))`"
-                            .to_string(),
-                    );
-                }
-                self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
-            }
+            ContractExpression::CBinding(name) => self.lower_c_binding_to_spec(name, environment),
             ContractExpression::ResourceCount(resource) => {
                 let ResourceClause::Declared {
                     name, arguments, ..
@@ -5779,7 +5881,7 @@ impl AnnotationLowerer<'_> {
             function_contract: false,
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
-            contract_result_in_scope: false,
+            contract_result_in_scope: environment.contract_result_in_scope,
         })
     }
 
@@ -5885,6 +5987,56 @@ impl AnnotationLowerer<'_> {
         }
     }
 
+    fn lower_c_binding_to_spec(
+        &self,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        match environment.values.get(name) {
+            Some(value) => Ok(value.clone()),
+            None if environment
+                .snapshot_state
+                .as_ref()
+                .is_some_and(|state| state.locals().aggregate_object_pointer(name).is_some()) =>
+            {
+                // Automatic aggregates are places rather than ordinary
+                // object-value bindings. Resolve only the named place in
+                // this recorded state, including after it leaves scope.
+                let pointer = environment
+                    .snapshot_state
+                    .as_ref()
+                    .and_then(|state| state.locals().aggregate_object_pointer(name))
+                    .expect("checked aggregate snapshot binding");
+                Ok(SpecExpression::Value(CValue::typed_pointer(
+                    pointer.clone(),
+                    CType::UInt8Pointer,
+                )))
+            }
+            None if self.entry_state.global_object_type(name).is_some() => {
+                Ok(SpecExpression::MemoryLoad {
+                    memory: environment.current_memory.clone(),
+                    pointer: Box::new(SpecExpression::CExpression(CExpression::AddressOf(
+                        Box::new(CExpression::Variable(name.to_string())),
+                    ))),
+                    value_type: self
+                        .entry_state
+                        .global_object_type(name)
+                        .expect("checked global object type"),
+                })
+            }
+            None if matches!(environment.current_memory, SpecMemory::Fixed(_)) => {
+                if name == crate::kernel::C_CONTRACT_RESULT_NAME {
+                    Err("`result` is not available inside `old(...)`".to_string())
+                } else {
+                    Err(format!("unknown old-state variable `{name}`"))
+                }
+            }
+            None => Ok(SpecExpression::CExpression(CExpression::Variable(
+                name.to_string(),
+            ))),
+        }
+    }
+
     fn lower_c_fragment_to_spec(
         &self,
         expression: &CExpression,
@@ -5892,48 +6044,14 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         match expression {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
-            CExpression::Variable(name) => match environment.values.get(name) {
-                Some(value) => Ok(value.clone()),
-                None if environment.snapshot_state.as_ref().is_some_and(|state| {
-                    state.locals().aggregate_object_pointer(name).is_some()
-                }) =>
-                {
-                    // Automatic aggregates are places rather than ordinary
-                    // object-value bindings. Resolve only the named place in
-                    // this recorded state, including after it leaves scope.
-                    let pointer = environment
-                        .snapshot_state
-                        .as_ref()
-                        .and_then(|state| state.locals().aggregate_object_pointer(name))
-                        .expect("checked aggregate snapshot binding");
-                    Ok(SpecExpression::Value(CValue::typed_pointer(
-                        pointer.clone(),
-                        CType::UInt8Pointer,
-                    )))
-                }
-                None if self.entry_state.global_object_type(name).is_some() => {
-                    Ok(SpecExpression::MemoryLoad {
-                        memory: environment.current_memory.clone(),
-                        pointer: Box::new(SpecExpression::CExpression(CExpression::AddressOf(
-                            Box::new(CExpression::Variable(name.clone())),
-                        ))),
-                        value_type: self
-                            .entry_state
-                            .global_object_type(name)
-                            .expect("checked global object type"),
-                    })
-                }
-                None if matches!(environment.current_memory, SpecMemory::Fixed(_)) => {
-                    if name == "result" {
-                        Err("`result` is not available inside `old(...)`".to_string())
-                    } else {
-                        Err(format!("unknown old-state variable `{name}`"))
-                    }
-                }
-                None => Ok(SpecExpression::CExpression(CExpression::Variable(
-                    name.clone(),
-                ))),
-            },
+            CExpression::Variable(name) => self.lower_c_binding_to_spec(
+                if name == "result" && environment.contract_result_in_scope {
+                    crate::kernel::C_CONTRACT_RESULT_NAME
+                } else {
+                    name
+                },
+                environment,
+            ),
             CExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
@@ -6122,7 +6240,22 @@ impl AnnotationLowerer<'_> {
                     .c_expression_array_element_type(pointer, environment)
                     .unwrap_or(CType::Int32),
             }),
-            expression => Ok(SpecExpression::CExpression(expression.clone())),
+            expression => {
+                let expression = if environment.contract_result_in_scope {
+                    substitute_c_fragment_in(
+                        expression,
+                        &ContractSubstitutions::for_contract_result(&BTreeMap::from([(
+                            "result".to_string(),
+                            ContractExpression::CFragment(CExpression::Variable(
+                                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                            )),
+                        )])),
+                    )?
+                } else {
+                    expression.clone()
+                };
+                Ok(SpecExpression::CExpression(expression))
+            }
         }
     }
 
@@ -6311,11 +6444,16 @@ impl AnnotationLowerer<'_> {
         name: &str,
         environment: &SpecElaborationContext,
     ) -> CType {
+        let name = if name == "result" && environment.contract_result_in_scope {
+            crate::kernel::C_CONTRACT_RESULT_NAME
+        } else {
+            name
+        };
         self.parameter_array_element_types
             .get(name)
             .copied()
             .or_else(|| {
-                (name == "result")
+                (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                     .then(|| self.result_type.pointee_type())
                     .flatten()
             })
@@ -6337,6 +6475,31 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> CType {
         match expression {
+            ContractExpression::CBinding(name) => self
+                .parameter_array_element_types
+                .get(name)
+                .copied()
+                .or_else(|| self.entry_state.global_array_element_type(name))
+                .or_else(|| {
+                    environment.values.get(name).and_then(|value| match value {
+                        SpecExpression::Value(CValue::Pointer(pointer)) => {
+                            pointer.c_type().pointee_type()
+                        }
+                        _ => None,
+                    })
+                })
+                .unwrap_or(CType::Int32),
+            ContractExpression::CUnary { operand, lowered } => match lowered {
+                CExpression::Cast { target_type, .. } => {
+                    target_type.pointee_type().unwrap_or(CType::Int32)
+                }
+                CExpression::PointerOffsetBytes { .. } => {
+                    self.contract_array_element_type(operand, environment)
+                }
+                _ => self
+                    .c_expression_array_element_type(lowered, environment)
+                    .unwrap_or(CType::Int32),
+            },
             ContractExpression::Binding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => environment
                 .array_refs
@@ -6378,6 +6541,13 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<CType> {
         match expression {
+            ContractExpression::CUnary { operand, lowered } => match lowered {
+                CExpression::Cast { target_type, .. } => target_type.pointee_type(),
+                CExpression::PointerOffsetBytes { .. } => {
+                    self.contract_pointer_element_type(operand, environment)
+                }
+                _ => self.c_expression_array_element_type(lowered, environment),
+            },
             ContractExpression::CBinding(name) => environment
                 .array_refs
                 .get(name)
@@ -6417,6 +6587,14 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Option<CType> {
+        if matches!(expression, CExpression::Variable(name) if name == "result")
+            && environment.contract_result_in_scope
+        {
+            return self.c_expression_array_element_type(
+                &CExpression::Variable(crate::kernel::C_CONTRACT_RESULT_NAME.to_string()),
+                environment,
+            );
+        }
         match expression {
             CExpression::Value(CValue::Pointer(pointer)) => pointer.c_type().pointee_type(),
             CExpression::Cast { target_type, .. } => target_type.pointee_type(),
@@ -6426,7 +6604,7 @@ impl AnnotationLowerer<'_> {
                 .map(|array_ref| array_ref.element_type)
                 .or_else(|| self.parameter_array_element_types.get(name).copied())
                 .or_else(|| {
-                    (name == "result")
+                    (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                 })
@@ -6470,6 +6648,14 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
+        if matches!(expression, CExpression::Variable(name) if name == "result")
+            && environment.contract_result_in_scope
+        {
+            return self.c_expression_array_element_width(
+                &CExpression::Variable(crate::kernel::C_CONTRACT_RESULT_NAME.to_string()),
+                environment,
+            );
+        }
         match expression {
             CExpression::Value(CValue::Pointer(pointer)) => {
                 pointer.c_type().pointee_type().map(CType::byte_width)
@@ -6488,7 +6674,7 @@ impl AnnotationLowerer<'_> {
                         .map(|ty| ty.byte_width())
                 })
                 .or_else(|| {
-                    (name == "result")
+                    (name == crate::kernel::C_CONTRACT_RESULT_NAME)
                         .then(|| self.result_type.pointee_type())
                         .flatten()
                         .map(CType::byte_width)
