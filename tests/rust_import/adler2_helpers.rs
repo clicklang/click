@@ -190,18 +190,22 @@ fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_from_tools_recheck_expanded_certificate() {
     recheck_helper_tools(0, &["verify", "profile", "audit"], true);
 }
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_add_tools_recheck_expanded_certificate() {
     recheck_helper_tools(1, &["verify", "profile", "audit"], true);
 }
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_rem_tools_recheck_expanded_certificate() {
     recheck_helper_tools(2, &["verify", "profile", "audit"], true);
 }
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_profile_checks_verified_contract() {
     recheck_helper_tools(3, &["verify", "profile"], false);
 }
@@ -229,14 +233,17 @@ fn audit_mul_site(tactic: &str) {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_audit_execute_certificate() {
     audit_mul_site("execute()");
 }
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_audit_simp_certificate() {
     audit_mul_site("simp()");
 }
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_helpers_mul_tools_recheck_expanded_certificate() {
     recheck_helper_tools(3, &["verify"], true);
 }
@@ -322,6 +329,7 @@ fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
     let p = adler2_helpers_project();
     fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
@@ -341,6 +349,7 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_expand_math_certificates() {
     expand_bounds_claims(&[
         ("adler_lane_half_product_5551", 1),
@@ -361,6 +370,7 @@ fn charon_adler2_lane_bounds_tools_expand_math_certificates() {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_lane_bounds_tools_expand_native_certificates() {
     expand_bounds_claims(&[
         ("adler_lane_native_a_sum_fits", 1),
@@ -463,6 +473,7 @@ fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_verify_profile_and_audit() {
     let p = iterator_bounds_project();
     for command in ["verify", "profile", "audit"] {
@@ -516,6 +527,7 @@ fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_expand_index_certificates() {
     expand_iterator_bounds_claims(&[
         ("adler_lane_iterator_observations", 3),
@@ -532,6 +544,7 @@ fn charon_adler2_iterator_bounds_tools_expand_index_certificates() {
 }
 
 #[test]
+#[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
 fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
     expand_iterator_bounds_claims(&[
         ("adler_lane_iterator_native_step", 4),

@@ -43,7 +43,9 @@ They do not establish that the checksum loops satisfy those contracts.
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,
 wrapping addition bounds, and mutation under a shared view. CLI verification,
-profiling, auditing, and expanded certificates must agree.
+profiling, auditing, and expanded certificates must agree. These tool rechecks
+run in the nightly suite; direct verification and rejection tests stay in the
+ordinary gate.
 
 ## Lane batch arithmetic
 
