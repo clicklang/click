@@ -559,6 +559,26 @@ impl PropositionDerivation {
         }
     }
 
+    /// The premises an equality or signed-order path names, when this
+    /// derivation recorded one: the facts its typed closer cites, in path
+    /// order without repeats.
+    pub fn recorded_path_premises(&self) -> Option<Vec<Proposition>> {
+        let mut premises = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut push = |premise: &Proposition| {
+            if seen.insert(premise.clone()) {
+                premises.push(premise.clone());
+            }
+        };
+        if let Some(path) = self.bitvector_equality_path() {
+            path.iter().for_each(|step| push(step.premise()));
+        } else {
+            let path = self.signed_order_path()?;
+            path.iter().for_each(|step| push(step.premise()));
+        }
+        Some(premises)
+    }
+
     pub fn context_premises(&self) -> Vec<Proposition> {
         let mut premises = BTreeSet::new();
         self.collect_context_premises(&mut premises);

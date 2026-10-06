@@ -1828,9 +1828,33 @@ impl<'a> Proof<'a> {
         // discovery here would perform the same search a second time.
         let mut anchored_pairs = Vec::new();
         let atomic = (|| {
-            let (goal, derivation, premise_pairs, fixed_state_application_closes_goal) = self
-                .selected_simp_derivation_with_surfaces(exclude_exact_goal, introduced_surfaces)?;
-            anchored_pairs = premise_pairs;
+            let (goal, derivation, fixed_state_application_closes_goal) =
+                self.selected_simp_derivation_plan(exclude_exact_goal)?;
+            // A derivation that records the exact path it used names its
+            // own premises. Spell only those first: the selection it ran in
+            // holds every fact connected to the goal's variables, and
+            // spelling them all costs work in the path's length for a
+            // closer that cites one or two.
+            if let Some(cited) = derivation.recorded_path_premises()
+                && let Some(pairs) = self.resolve_simp_premises(&cited, introduced_surfaces)
+                && pairs.len() == cited.len()
+                && let Some(closed) = self.check_typed_atomic_simp_candidate(
+                    &goal,
+                    &derivation,
+                    &pairs,
+                    fixed_state_application_closes_goal,
+                )
+            {
+                return Some(closed);
+            }
+            // A derivation that only selects a disjunct proves nothing the
+            // atomic closers below can check: its premises belong to that
+            // disjunct, which the structural closure proves on its own goal.
+            if derivation.disjunction_choice().is_some() {
+                return None;
+            }
+            anchored_pairs =
+                self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
             let typed_atomic =
                 match self.extract_special_conjunct_premises(&derivation, premise_pairs) {
@@ -3420,45 +3444,38 @@ impl<'a> Proof<'a> {
         Vec<(Proposition, ClickProposition)>,
         bool,
     )> {
-        let frontier_anchor: Option<ProgramPointRef>;
-        let (surface_facts, theorem_application_closes_goal, premise_anchor) =
-            match self.context.as_ref() {
-                ProofContext::Pure(context) => {
-                    (&context.theorem_context.surface_requirements, true, None)
+        let (goal, derivation, theorem_application_closes_goal) =
+            self.selected_simp_derivation_plan(exclude_exact_goal)?;
+        let premise_pairs =
+            self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
+        Some((
+            goal,
+            derivation,
+            premise_pairs,
+            theorem_application_closes_goal,
+        ))
+    }
+
+    /// The derivation simp selected for the focused goal, before any of its
+    /// premises is spelled, and whether a theorem application closes the
+    /// goal in this context.
+    fn selected_simp_derivation_plan(
+        &self,
+        exclude_exact_goal: bool,
+    ) -> Option<(Proposition, PropositionDerivation, bool)> {
+        let theorem_application_closes_goal = match self.context.as_ref() {
+            ProofContext::Pure(_) | ProofContext::FixedState(_) => true,
+            // Entry-anchored premises can add a check-equivalent outcome
+            // fact without discharging the exact goal form. Keep the
+            // ordinary trailing assumption so the checked successor decides
+            // whether it is needed.
+            ProofContext::Execution(_) => {
+                if self.focused_outcome_data().is_none() {
+                    self.execution()?;
                 }
-                ProofContext::FixedState(context) => (
-                    context.surface_propositions,
-                    true,
-                    context.premise_anchor.as_ref(),
-                ),
-                // A judgment stated at a function outcome supplies the
-                // outcome's recorded lowerings and statement-entry anchor.
-                ProofContext::Execution(_) => {
-                    if let Some(data) = self.focused_outcome_data() {
-                        (
-                            &data.surface_propositions,
-                            // Entry-anchored premises can add a check-equivalent
-                            // outcome fact without discharging the exact goal
-                            // form. Keep the ordinary trailing assumption so
-                            // the checked successor decides whether it is needed.
-                            false,
-                            data.premise_anchor.as_ref(),
-                        )
-                    } else {
-                        // A judgment stated mid-execution (a `have` before
-                        // function exit) supplies the frontier's recorded
-                        // lowerings and the entry of the last executed
-                        // statement, exactly as an outcome data does.
-                        let execution = self.execution()?;
-                        frontier_anchor = frontier_premise_anchor(execution);
-                        (
-                            &execution.presentation.surface_propositions,
-                            false,
-                            frontier_anchor.as_ref(),
-                        )
-                    }
-                }
-            };
+                false
+            }
+        };
         let goal = self.goal()?.clone();
         let derivation = if exclude_exact_goal {
             self.facts()
@@ -3474,7 +3491,67 @@ impl<'a> Proof<'a> {
                 _ => return None,
             }
         };
-        let context_premises = derivation.context_premises();
+        Some((goal, derivation, theorem_application_closes_goal))
+    }
+
+    /// Spells each of `premises` in this context's recorded source forms,
+    /// leaving out one that has none.
+    fn resolve_simp_premises(
+        &self,
+        premises: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Option<Vec<(Proposition, ClickProposition)>> {
+        crate::instrumentation::measure_operation(
+            "surface",
+            "simp closure",
+            "simp closure: premise spelling",
+            || self.resolve_simp_premises_unmeasured(premises, introduced_surfaces),
+        )
+    }
+
+    fn resolve_simp_premises_unmeasured(
+        &self,
+        premises: &[Proposition],
+        introduced_surfaces: &[ClickProposition],
+    ) -> Option<Vec<(Proposition, ClickProposition)>> {
+        let frontier_anchor: Option<ProgramPointRef>;
+        let (surface_facts, _, premise_anchor) = match self.context.as_ref() {
+            ProofContext::Pure(context) => {
+                (&context.theorem_context.surface_requirements, true, None)
+            }
+            ProofContext::FixedState(context) => (
+                context.surface_propositions,
+                true,
+                context.premise_anchor.as_ref(),
+            ),
+            // A judgment stated at a function outcome supplies the
+            // outcome's recorded lowerings and statement-entry anchor.
+            ProofContext::Execution(_) => {
+                if let Some(data) = self.focused_outcome_data() {
+                    (
+                        &data.surface_propositions,
+                        // Entry-anchored premises can add a check-equivalent
+                        // outcome fact without discharging the exact goal
+                        // form. Keep the ordinary trailing assumption so
+                        // the checked successor decides whether it is needed.
+                        false,
+                        data.premise_anchor.as_ref(),
+                    )
+                } else {
+                    // A judgment stated mid-execution (a `have` before
+                    // function exit) supplies the frontier's recorded
+                    // lowerings and the entry of the last executed
+                    // statement, exactly as an outcome data does.
+                    let execution = self.execution()?;
+                    frontier_anchor = frontier_premise_anchor(execution);
+                    (
+                        &execution.presentation.surface_propositions,
+                        false,
+                        frontier_anchor.as_ref(),
+                    )
+                }
+            }
+        };
         let resolve_premise = |premise: &Proposition, anchor: Option<&ProgramPointRef>| {
             if let Some(surface) = self.available_surface_fact(surface_facts, anchor, premise) {
                 return Some((premise.clone(), surface));
@@ -3494,7 +3571,7 @@ impl<'a> Proof<'a> {
                     surface.map(|surface| (form, surface))
                 })
         };
-        let mut premise_pairs = context_premises
+        let mut premise_pairs = premises
             .iter()
             .filter_map(|premise| resolve_premise(premise, premise_anchor))
             .collect::<Vec<_>>();
@@ -3513,7 +3590,7 @@ impl<'a> Proof<'a> {
             .collect::<BTreeSet<_>>();
         if anchors.len() == 1 {
             let inferred = anchors.first().expect("one inferred anchor");
-            let anchored_pairs = context_premises
+            let anchored_pairs = premises
                 .iter()
                 .filter_map(|premise| resolve_premise(premise, Some(inferred)))
                 .collect::<Vec<_>>();
@@ -3521,12 +3598,7 @@ impl<'a> Proof<'a> {
                 premise_pairs = anchored_pairs;
             }
         }
-        Some((
-            goal,
-            derivation,
-            premise_pairs,
-            theorem_application_closes_goal,
-        ))
+        Some(premise_pairs)
     }
 
     /// Resolves one exact retained fact to a surface form that will lower
