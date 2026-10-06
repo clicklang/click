@@ -136,6 +136,25 @@ fn example_projects() {
             }
         });
     }
+    // CI splits the examples across jobs to stay inside the gate's time
+    // budget: `EXAMPLE_PARTITION=k/n` keeps every n-th project from the k-th,
+    // over the sorted names, so the shards cover them exactly once.
+    if let Ok(partition) = std::env::var("EXAMPLE_PARTITION") {
+        let (shard, total) = partition
+            .split_once('/')
+            .and_then(|(shard, total)| {
+                Some((shard.parse::<usize>().ok()?, total.parse::<usize>().ok()?))
+            })
+            .filter(|(shard, total)| (1..=*total).contains(shard))
+            .unwrap_or_else(|| {
+                panic!("EXAMPLE_PARTITION must be `k/n` with 1 <= k <= n, got `{partition}`")
+            });
+        let mut index = 0;
+        projects.retain(|_| {
+            index += 1;
+            (index - 1) % total == shard - 1
+        });
+    }
     if !run_quarantined {
         projects.retain(|path| {
             let name = path.file_name().and_then(|name| name.to_str());
