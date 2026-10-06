@@ -66,6 +66,7 @@
 - [Resource invariants and synchronization](internals/resource-invariants.md)
 - [Authority migration consumer inventory](internals/authority-migration-inventory.md)
 - [Object-anchored population authority](internals/authority-establishment-review.md)
+- [Worker authority protocol](internals/worker-authority-protocol.md)
 - [Concurrency contracts and diagnostics (proposal)](internals/concurrency-contracts-and-diagnostics.md)
 - [Resource arguments and mutex associations (design)](internals/resource-parameters.md)
 - [User-defined tactics (design)](internals/user-defined-tactics.md)

@@ -2466,6 +2466,11 @@ fn describe_model_field_version_stop(
                      `{owner}` a fresh model. If the body keeps the field, carry it through as \
                      `invariant {field} == old({field});`."
                 ),
+                Some(crate::kernel::model_fields::ModelMint::Join) => format!(
+                    "a join's `ensuring` names `{owner}`, and its arms may leave it with \
+                     different models, so the join gives `{owner}` a fresh one. State what the \
+                     arms agree on as a `fact` in that `ensuring`."
+                ),
                 Some(crate::kernel::model_fields::ModelMint::Refinement) => format!(
                     "contract/implementation refinement gave `{owner}` an arbitrary model, so only \
                      what both sides state relates the two."

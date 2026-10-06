@@ -3661,60 +3661,105 @@ impl CheckedProofCaseArm {
     }
 }
 
-/// The live arms of one checked logical partition, rejoined.
+/// Arms of one checked logical partition, rejoined.
 ///
 /// A partition splits a frontier by facts alone: under each case the proof
-/// runs an arm. When every live arm ends at the same program point in the
-/// same state, that state is reached whichever case holds, so the proof
-/// continues from it once. This is case analysis; the partition is already
-/// exhaustive, by its own check or by a checked contradiction in each
-/// excluded case.
+/// runs an arm. When arms end at the same program point in the same state,
+/// that state is reached whichever of their cases holds, so the proof
+/// continues from it once. This is case analysis.
 ///
-/// Only [`Self::check`] builds one. It keeps each arm's events and the facts
-/// they were proved under, so trace certification re-walks every arm from the
-/// split and compares where it lands.
+/// A join need not take every case at once. Each arm covers one case, or the
+/// cases an earlier join of the same partition merged, so a wide `match` is
+/// joined pairwise. Whether the cases are exhaustive is not this join's
+/// concern: every path's coverage of every partition is checked once, over
+/// the finished traces.
+///
+/// Only [`Self::check`] and [`Self::check_interface`] build one. A join
+/// keeps each arm's events and the facts they were proved under, so trace
+/// certification re-walks every arm from the split and compares where it
+/// lands.
 #[derive(Clone)]
 pub(crate) struct CheckedProofCaseJoin {
     partition: Arc<CheckedProofCasePartition>,
-    /// One entry per case, in partition order: `None` for an excluded case.
-    arms: Vec<Option<CheckedProofCaseJoinArm>>,
+    arms: Vec<CheckedProofCaseJoinArm>,
     start_state: CState,
     joined_state: CState,
-    /// The partition's root facts plus every fact all live arms established.
+    /// The facts the proof holds after the join: the partition's root facts,
+    /// and what every arm established or the interface admits.
     joined_facts: ProofFacts,
+    /// Present when the arms ended in different states and were merged
+    /// through an explicit `ensuring` interface.
+    interface: Option<CheckedProofCaseJoinInterface>,
+}
+
+/// What an interface join of two logical cases retains beyond the arms: the
+/// same record a `branch ensuring` keeps.
+#[derive(Clone)]
+struct CheckedProofCaseJoinInterface {
+    execution_facts: Vec<ExecutionPureFact>,
+    effect_facts: Vec<ExecutionPureFact>,
+    resource_definitions: Vec<crate::kernel::CCompositeResourceDefinition>,
+    lowerings: Arc<Vec<[CheckedInterfaceLowering; 3]>>,
+    next_kernel_variable: u64,
 }
 
 #[derive(Clone)]
 struct CheckedProofCaseJoinArm {
+    /// The cases of the partition this arm stands for.
+    cases: Vec<usize>,
     facts: ProofFacts,
     events: Vec<CheckedExecutionEvent>,
 }
 
+impl CheckedProofCaseJoinArm {
+    /// The events to re-walk against the arm's final facts. An arm that
+    /// entered one case begins with that entry, which only swaps the facts
+    /// and is validated on its own; an arm that is itself a join is walked
+    /// whole.
+    fn walked_events(&self) -> &[CheckedExecutionEvent] {
+        match self.events.first() {
+            Some(CheckedExecutionEvent::ProofCase(_)) => &self.events[1..],
+            _ => &self.events,
+        }
+    }
+}
+
+/// How one arm of a join begins: the partition it belongs to, the cases it
+/// covers, and the facts its own facts must extend.
+fn case_join_arm_entry(
+    events: &[CheckedExecutionEvent],
+) -> Option<(&Arc<CheckedProofCasePartition>, Vec<usize>, &ProofFacts)> {
+    match events.first()? {
+        CheckedExecutionEvent::ProofCase(entered) if entered.is_valid() => {
+            Some((&entered.partition, vec![entered.arm_index], &entered.facts))
+        }
+        CheckedExecutionEvent::ProofCaseJoin(inner) => {
+            Some((&inner.partition, inner.covered_cases(), &inner.joined_facts))
+        }
+        _ => None,
+    }
+}
+
+/// The arms of one partition, walked from the split to one program point.
+struct WalkedCaseArms {
+    partition: Arc<CheckedProofCasePartition>,
+    arms: Vec<CheckedProofCaseJoinArm>,
+    start_state: CState,
+}
+
 impl CheckedProofCaseJoin {
-    /// Checks that `arms` are the live arms of `partition`, each continuing
-    /// `parent`'s one trace, and that they rejoin. `arms` has one entry per
-    /// case of the partition: `None` exactly for the excluded cases.
-    fn check(
+    /// Checks that `arms` are arms of one partition over disjoint cases,
+    /// each continuing `parent`'s one trace to the same program point, and
+    /// with `same_state` to the same state.
+    fn walk_arms(
         parent: &ExecutionProofCore,
-        arms: &[Option<(&ExecutionProofCore, &ProofFacts)>],
+        arms: &[(&ExecutionProofCore, &ProofFacts)],
         function: &CFunction,
         arguments: &[CExpression],
-    ) -> Result<Self, &'static str> {
-        // The partition is the one the first live arm entered; every other
-        // arm is then required to have entered that same partition.
-        let partition = arms
-            .iter()
-            .flatten()
-            .find_map(|(arm, _)| match arm.execution_evidence.as_slice() {
-                [trace] => trace.iter().rev().find_map(|event| match event {
-                    CheckedExecutionEvent::ProofCase(entered) => Some(entered.partition.clone()),
-                    _ => None,
-                }),
-                _ => None,
-            })
-            .ok_or("a case join needs an arm that entered a case")?;
-        if arms.len() != partition.case_facts.len() {
-            return Err("a case join does not have one entry per case of its partition");
+        same_state: bool,
+    ) -> Result<WalkedCaseArms, &'static str> {
+        if arms.len() < 2 {
+            return Err("a case join needs at least two arms");
         }
         let [parent_trace] = parent.execution_evidence.as_slice() else {
             return Err("the case-join parent does not have one execution trace");
@@ -3724,52 +3769,56 @@ impl CheckedProofCaseJoin {
             .map_err(|_| "the case-join parent has no running state")?
             .into_owned();
         let source = parent.current_source(function).cloned();
-        let mut checked = Vec::with_capacity(arms.len());
+        let mut partition: Option<Arc<CheckedProofCasePartition>> = None;
+        let mut covered = std::collections::BTreeSet::new();
+        let mut checked: Vec<CheckedProofCaseJoinArm> = Vec::with_capacity(arms.len());
         let mut joined: Option<(&ExecutionProofCore, Option<CStatement>)> = None;
-        for (index, arm) in arms.iter().enumerate() {
-            let Some((arm, facts)) = arm else {
-                if partition.excluded[index].is_none() {
-                    return Err("a case join is missing a live arm of its partition");
-                }
-                checked.push(None);
-                continue;
-            };
-            if partition.excluded[index].is_some() {
-                return Err("a case join carries an arm its partition excluded");
-            }
+        for (arm, facts) in arms {
             let [trace] = arm.execution_evidence.as_slice() else {
                 return Err("a case-join arm does not have one execution trace");
             };
             let events = trace
                 .suffix_since(parent_trace)
                 .ok_or("a case-join arm trace does not descend from the parent trace")?;
-            let Some(CheckedExecutionEvent::ProofCase(entered)) = events.first() else {
-                return Err("a case-join arm does not begin by entering its own case");
-            };
-            if !Arc::ptr_eq(&entered.partition, &partition)
-                || entered.arm_index != index
-                || !entered.is_valid()
-            {
-                return Err("a case-join arm does not begin by entering its own case");
+            let (entered, cases, entry_facts) = case_join_arm_entry(&events)
+                .ok_or("a case-join arm does not begin by entering a case")?;
+            match &partition {
+                None => partition = Some(entered.clone()),
+                Some(partition) if Arc::ptr_eq(partition, entered) => {}
+                Some(_) => return Err("the case-join arms entered different partitions"),
+            }
+            for case in &cases {
+                if entered.excluded.get(*case).is_none_or(Option::is_some) {
+                    return Err("a case-join arm stands for a case its partition excluded");
+                }
+                if !covered.insert(*case) {
+                    return Err("two case-join arms stand for the same case");
+                }
             }
             // The facts offered for the arm must be this arm's: the facts it
-            // entered its case with, extended by what it went on to establish.
-            if facts.introduced_since(&entered.facts).is_none() {
+            // entered with, extended by what it went on to establish.
+            if facts.introduced_since(entry_facts).is_none() {
                 return Err("a case-join arm's facts do not extend the facts it entered with");
             }
             if arm.evidence_completed {
                 return Err("a case-join arm has already completed its trace");
             }
-            // The entering event was checked just above. The rest of the arm
-            // is walked against the facts the arm ended with, which hold
-            // everything its steps relied on.
-            let progress =
-                check_evidence_events(&events[1..], facts, start_state.clone(), source.clone())
-                    .ok_or("a case-join arm trace does not follow its C source from the split")?;
+            let walked = CheckedProofCaseJoinArm {
+                cases,
+                facts: (*facts).clone(),
+                events,
+            };
+            let progress = check_evidence_events(
+                walked.walked_events(),
+                facts,
+                start_state.clone(),
+                source.clone(),
+            )
+            .ok_or("a case-join arm trace does not follow its C source from the split")?;
             if progress.completed.is_some() {
                 return Err("a case-join arm has already completed its trace");
             }
-            if &progress.state != arm.reached_state() {
+            if same_state && &progress.state != arm.reached_state() {
                 return Err("a case-join arm trace does not reach its recorded state");
             }
             match &joined {
@@ -3778,7 +3827,7 @@ impl CheckedProofCaseJoin {
                     if progress.remaining != *remaining {
                         return Err("the case-join arms end at different program points");
                     }
-                    if arm.reached_state() != first.reached_state() {
+                    if same_state && arm.reached_state() != first.reached_state() {
                         return Err("the case-join arms end in different states");
                     }
                     if arm.evidence_try_stack != first.evidence_try_stack {
@@ -3786,39 +3835,185 @@ impl CheckedProofCaseJoin {
                     }
                 }
             }
-            checked.push(Some(CheckedProofCaseJoinArm {
-                facts: (*facts).clone(),
-                events,
-            }));
+            checked.push(walked);
         }
-        let Some((first, _)) = joined else {
-            return Err("a case join needs at least one live arm");
-        };
-        // A fact every live arm established holds whichever case does. The
-        // case facts themselves differ between arms, so they do not survive.
-        let live = checked.iter().flatten().collect::<Vec<_>>();
-        let mut joined_facts = partition.root_facts.clone();
-        let introduced = live[0]
-            .facts
+        Ok(WalkedCaseArms {
+            partition: partition.expect("a join of two arms found their partition"),
+            arms: checked,
+            start_state,
+        })
+    }
+
+    /// Checks that `arms` rejoin in one state, and that `successor_facts`
+    /// adds to the partition's root facts only what every arm established.
+    fn check(
+        parent: &ExecutionProofCore,
+        arms: &[(&ExecutionProofCore, &ProofFacts)],
+        function: &CFunction,
+        arguments: &[CExpression],
+        successor_facts: &ProofFacts,
+    ) -> Result<Self, &'static str> {
+        let WalkedCaseArms {
+            partition,
+            arms: checked,
+            start_state,
+        } = Self::walk_arms(parent, arms, function, arguments, true)?;
+        // A fact every arm established holds whichever of their cases does.
+        // The case facts themselves differ between arms, so none survives.
+        let introduced = successor_facts
             .introduced_since(&partition.root_facts)
-            .ok_or("a case-join arm's facts do not extend the partition's root facts")?;
-        for arm in &live[1..] {
-            if arm.facts.introduced_since(&partition.root_facts).is_none() {
-                return Err("a case-join arm's facts do not extend the partition's root facts");
-            }
-        }
-        for fact in introduced {
-            if live[1..].iter().all(|arm| arm.facts.contains(&fact)) {
-                joined_facts = joined_facts.with_kernel_checked_fact(fact);
-            }
+            .ok_or("the case-join successor facts do not extend the partition's root facts")?;
+        if introduced
+            .iter()
+            .any(|fact| checked.iter().any(|arm| !arm.facts.contains(fact)))
+        {
+            return Err("the case-join successor holds a fact that not every arm established");
         }
         Ok(Self {
             partition,
             arms: checked,
             start_state,
-            joined_state: first.reached_state().clone(),
-            joined_facts,
+            joined_state: arms[0].0.reached_state().clone(),
+            joined_facts: successor_facts.clone(),
+            interface: None,
         })
+    }
+
+    /// Checks a two-arm join through an explicit interface: the arms end at
+    /// one program point but in different states, and `joined_state` is the
+    /// abstraction of both that keeps what the interface names. The
+    /// abstraction and every interface fact are checked exactly as for a
+    /// `branch ensuring`; only where the arms came from differs.
+    #[allow(clippy::too_many_arguments)]
+    fn check_interface(
+        parent: &ExecutionProofCore,
+        root_facts: &ProofFacts,
+        arms: [(&ExecutionProofCore, &ProofFacts); 2],
+        function: &CFunction,
+        arguments: &[CExpression],
+        stable_join_locals: &BTreeMap<String, CValue>,
+        interface_specs: &[SpecProposition],
+        interface_resource_specs: &[CResourceSpec],
+        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        joined_state: &CState,
+        successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
+    ) -> Result<Self, &'static str> {
+        let WalkedCaseArms {
+            partition,
+            arms: checked,
+            start_state,
+        } = Self::walk_arms(parent, &arms, function, arguments, false)?;
+        let exact_root = partition
+            .root_facts
+            .introduced_since(root_facts)
+            .is_some_and(|delta| delta.is_empty())
+            && root_facts
+                .introduced_since(&partition.root_facts)
+                .is_some_and(|delta| delta.is_empty());
+        if !exact_root {
+            return Err("the interface join does not start from its partition's root facts");
+        }
+        let arm_cores = [arms[0].0, arms[1].0];
+        let arm_facts = [arms[0].1, arms[1].1];
+        if !arm_effect_deltas_are_exact(parent, arm_cores, arm_effect_facts) {
+            return Err("an interface arm effect delta is not exact");
+        }
+        let CheckedInterfaceAbstraction {
+            next_kernel_variable,
+            arm_interface_resources,
+            introduced,
+            interface_lowerings,
+        } = check_interface_abstraction(
+            root_facts,
+            &start_state,
+            parent,
+            arm_cores,
+            arm_facts,
+            stable_join_locals,
+            interface_specs,
+            interface_resource_specs,
+            joined_state,
+            successor_facts,
+            old_reference,
+        )?;
+        let conditional_heap_frees = conditional_heap_frees(arm_effect_facts);
+        if !conditional_heap_frees.is_empty()
+            && !interface_resources_guard_heap_frees(
+                function,
+                &arm_interface_resources,
+                [arm_cores[0].reached_state(), arm_cores[1].reached_state()],
+                arm_facts,
+                &conditional_heap_frees,
+            )
+        {
+            return Err(
+                "a conditional heap deallocation must be represented by an arm-sensitive owned resource",
+            );
+        }
+        let effect_facts = checked_interface_effect_facts(
+            &start_state,
+            joined_state,
+            arm_cores,
+            arm_facts,
+            arm_effect_facts,
+        )?;
+        Ok(Self {
+            partition,
+            arms: checked,
+            start_state,
+            joined_state: joined_state.clone(),
+            joined_facts: successor_facts.clone(),
+            interface: Some(CheckedProofCaseJoinInterface {
+                execution_facts: introduced
+                    .into_iter()
+                    .map(ExecutionPureFact::certified)
+                    .collect(),
+                effect_facts,
+                resource_definitions: function.composite_resource_definitions().to_vec(),
+                lowerings: Arc::new(interface_lowerings),
+                next_kernel_variable,
+            }),
+        })
+    }
+
+    /// The facts an interface join certified for the successor, in the form
+    /// trace completion retains them.
+    pub(crate) fn interface_execution_facts(&self) -> &[ExecutionPureFact] {
+        self.interface
+            .as_ref()
+            .map_or(&[], |interface| interface.execution_facts.as_slice())
+    }
+
+    /// The facts the proof holds after an interface join, when this is one.
+    pub(crate) fn interface_successor_facts(&self) -> Option<&ProofFacts> {
+        self.interface.as_ref().map(|_| &self.joined_facts)
+    }
+
+    /// Whether an interface join was checked under this function's resource
+    /// definitions and kept a complete, consistent lowering of every
+    /// interface fact. A structural join has nothing of the kind to check.
+    pub(crate) fn matches_interface_resource_definitions(&self, function: &CFunction) -> bool {
+        let Some(interface) = &self.interface else {
+            return true;
+        };
+        let [then_arm, else_arm] = self.arms.as_slice() else {
+            return false;
+        };
+        interface.resource_definitions == function.composite_resource_definitions()
+            && interface.lowerings.iter().all(|lowerings| {
+                lowerings
+                    .iter()
+                    .all(CheckedInterfaceLowering::has_complete_proof)
+                    && lowerings[0].spec == lowerings[1].spec
+                    && lowerings[0].spec == lowerings[2].spec
+                    && lowerings[0].reference == lowerings[1].reference
+                    && lowerings[0].reference == lowerings[2].reference
+                    && lowerings[2].snapshot == self.joined_state
+                    && lowerings[0].facts.shares_premises_with(&then_arm.facts)
+                    && lowerings[1].facts.shares_premises_with(&else_arm.facts)
+                    && lowerings[2].facts.shares_premises_with(&self.joined_facts)
+            })
     }
 
     pub(crate) fn start_state(&self) -> &CState {
@@ -3829,9 +4024,12 @@ impl CheckedProofCaseJoin {
         &self.joined_state
     }
 
-    /// The facts the proof continues with after the join.
-    pub(crate) fn joined_facts(&self) -> &ProofFacts {
-        &self.joined_facts
+    /// The cases of the partition this join merged.
+    fn covered_cases(&self) -> Vec<usize> {
+        self.arms
+            .iter()
+            .flat_map(|arm| arm.cases.iter().copied())
+            .collect()
     }
 
     /// Whether any arm did more than reason: it advanced the C program or
@@ -3839,26 +4037,25 @@ impl CheckedProofCaseJoin {
     /// state and the frontier is where the split found it.
     pub(crate) fn arms_changed_execution(&self) -> bool {
         self.joined_state != self.start_state
-            || self.arms.iter().flatten().any(|arm| {
-                arm.events[1..].iter().any(|event| {
-                    !matches!(
-                        event,
-                        CheckedExecutionEvent::ProofCase(_)
-                            | CheckedExecutionEvent::ProofCaseJoin(_)
-                            | CheckedExecutionEvent::Context(_)
-                    )
+            || self.arms.iter().any(|arm| {
+                arm.events.iter().any(|event| match event {
+                    CheckedExecutionEvent::ProofCase(_) | CheckedExecutionEvent::Context(_) => {
+                        false
+                    }
+                    CheckedExecutionEvent::ProofCaseJoin(inner) => inner.arms_changed_execution(),
+                    _ => true,
                 })
             })
     }
 
-    /// The events of every live arm, in partition order.
+    /// The events of every arm.
     pub(crate) fn live_arm_events(&self) -> impl Iterator<Item = &[CheckedExecutionEvent]> {
-        self.arms.iter().flatten().map(|arm| arm.events.as_slice())
+        self.arms.iter().map(|arm| arm.events.as_slice())
     }
 
-    /// Re-walks every live arm from `state` over `source` and returns the
-    /// source they all leave, or `None` if any arm fails to reach the joined
-    /// state at that one program point.
+    /// Re-walks every arm from `state` over `source` and returns the source
+    /// they all leave, or `None` if any arm fails to reach that one program
+    /// point, or without an interface the joined state.
     fn advance_checked(
         &self,
         state: &CState,
@@ -3869,30 +4066,21 @@ impl CheckedProofCaseJoin {
             return None;
         }
         let mut remaining: Option<Option<CStatement>> = None;
-        for (index, arm) in self.arms.iter().enumerate() {
-            let Some(arm) = arm else {
-                self.partition.excluded.get(index)?.as_ref()?;
-                continue;
-            };
-            let (entering, body) = arm.events.split_first()?;
-            let enters_this_case = matches!(
-                entering,
-                CheckedExecutionEvent::ProofCase(entered)
-                    if Arc::ptr_eq(&entered.partition, &self.partition)
-                        && entered.arm_index == index
-                        && entered.is_valid()
-            );
-            if !enters_this_case {
+        for arm in &self.arms {
+            let (entered, cases, _) = case_join_arm_entry(&arm.events)?;
+            if !Arc::ptr_eq(entered, &self.partition) || cases != arm.cases {
                 return None;
             }
             let progress = check_evidence_events_with_call_events(
-                body,
+                arm.walked_events(),
                 &arm.facts,
                 state.clone(),
                 source.clone(),
                 call_events.clone(),
             )?;
-            if progress.completed.is_some() || progress.state != self.joined_state {
+            if progress.completed.is_some()
+                || (self.interface.is_none() && progress.state != self.joined_state)
+            {
                 return None;
             }
             match &remaining {
@@ -3903,6 +4091,265 @@ impl CheckedProofCaseJoin {
         }
         remaining
     }
+}
+
+/// What an explicit join interface makes of two concrete arms: the
+/// abstraction both agree on, the interface resources each arm gives up, the
+/// facts the successor gains, and the checked lowering of every interface
+/// fact. The split the arms came from, a C `if` or a logical partition,
+/// plays no part here.
+struct CheckedInterfaceAbstraction {
+    next_kernel_variable: u64,
+    arm_interface_resources: [Vec<CResourceFact>; 2],
+    introduced: Vec<Proposition>,
+    interface_lowerings: Vec<[CheckedInterfaceLowering; 3]>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_interface_abstraction(
+    root_facts: &ProofFacts,
+    split_state: &CState,
+    parent: &ExecutionProofCore,
+    arms: [&ExecutionProofCore; 2],
+    arm_facts: [&ProofFacts; 2],
+    stable_join_locals: &BTreeMap<String, CValue>,
+    interface_specs: &[SpecProposition],
+    interface_resource_specs: &[CResourceSpec],
+    joined_state: &CState,
+    successor_facts: &ProofFacts,
+    old_reference: Option<&CState>,
+) -> Result<CheckedInterfaceAbstraction, &'static str> {
+    let expected_stable_locals = arms[0]
+        .state
+        .locals()
+        .object_values()
+        .filter(|(name, value)| arms[1].reached_state().locals().get(name) == Some(*value))
+        .map(|(name, value)| (name.to_string(), value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    if &expected_stable_locals != stable_join_locals {
+        return Err("the interface stable-local set is not exact");
+    }
+    let sibling_states = [arms[0].reached_state(), arms[1].reached_state()];
+    // Both arms abstract from the same counter, the higher of the two, so
+    // the abstraction is the same whichever arm allocated more and neither
+    // arm's own identities can be re-issued by the join.
+    let join_next_kernel_variable = arms[0]
+        .next_kernel_variable
+        .max(arms[1].next_kernel_variable);
+    let abstract_then = crate::kernel::abstract_c_state_for_interface_join_across(
+        arms[0].reached_state(),
+        &sibling_states,
+        stable_join_locals,
+        join_next_kernel_variable,
+    )
+    .map_err(|_| "the then interface state could not be abstracted")?;
+    let abstract_else = crate::kernel::abstract_c_state_for_interface_join_across(
+        arms[1].reached_state(),
+        &sibling_states,
+        stable_join_locals,
+        join_next_kernel_variable,
+    )
+    .map_err(|_| "the else interface state could not be abstracted")?;
+    if abstract_then != abstract_else {
+        return Err("the interface arms do not have one deterministic abstraction");
+    }
+    // The successor and the arm abstraction reach an empty resource
+    // context by different routes, so compare the shape with the context
+    // dropped the same way on both sides, then check the successor's loan
+    // authority explicitly. The shape comparison still covers the ledger
+    // and the participant, because dropping a resource context does not
+    // touch either.
+    if joined_state
+        .clone()
+        .with_resource_context(ResourceContext::new())
+        != abstract_then.state
+    {
+        return Err("the interface successor is not the checked arm abstraction");
+    }
+    // D2 law 9: a join keeps the arms' authority, it never sums it. Every
+    // loan dependency the successor's interface carries must be one an arm
+    // already held; a changed or invented root is not admitted here.
+    if !interface_successor_loans_are_inherited(joined_state, sibling_states) {
+        return Err("the interface successor claims a loan dependency no arm held");
+    }
+    let mut arm_interface_resources = [Vec::new(), Vec::new()];
+    let mut successor_interface_resources = Vec::new();
+    let mut successor_interface_resource_facts = Vec::new();
+    for spec in interface_resource_specs {
+        for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
+            let fact = evaluate_interface_resource_spec(spec, arm.reached_state(), facts)
+                .ok_or("an interface resource does not lower in a concrete arm")?;
+            arm_interface_resources[index].push(fact);
+        }
+        let fact = evaluate_interface_resource_spec(spec, joined_state, successor_facts)
+            .ok_or("an interface resource does not lower at the abstract successor")?;
+        if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, joined_state) {
+            successor_interface_resource_facts.push(proposition);
+        }
+        successor_interface_resources.push(fact);
+    }
+    let mut arm_residuals = Vec::with_capacity(2);
+    for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
+        let mut remaining = arm.state.resources().clone();
+        // Views are non-consuming. Check them while their owned support
+        // is still present, then consume the owned interface facts in
+        // their source order so consuming a parent cannot erase a view
+        // that the same interface has already established.
+        for required in arm_interface_resources[index]
+            .iter()
+            .filter(|fact| fact.is_view())
+        {
+            if remaining
+                .clone()
+                .without_facts(std::slice::from_ref(required), facts.assumptions())
+                .is_none()
+            {
+                return Err("an interface resource is not owned by one concrete arm");
+            }
+        }
+        for required in arm_interface_resources[index]
+            .iter()
+            .filter(|fact| fact.is_own())
+        {
+            let Some(next) = remaining
+                .clone()
+                .without_facts(std::slice::from_ref(required), facts.assumptions())
+            else {
+                return Err("an interface resource is not owned by one concrete arm");
+            };
+            remaining = next;
+        }
+        arm_residuals.push(remaining);
+    }
+    let common_resources = ResourceContext::common_exact_descendant(
+        &arm_residuals[0],
+        &arm_residuals[1],
+        parent.reached_state().resources(),
+    )
+    .ok_or("the interface arm resources do not descend from the branch root")?;
+    let expected_resources = common_resources
+        .try_compose_into_valid_context_delaying_normalization(
+            successor_interface_resources.iter().cloned(),
+            successor_facts.assumptions(),
+        )
+        .map_err(|_| "the interface resources do not form a valid successor context")?
+        .normalized_around_facts(
+            &successor_interface_resources,
+            successor_facts.assumptions(),
+        );
+    if &expected_resources != joined_state.resources() {
+        return Err("the interface successor resource context is not exact");
+    }
+    if successor_interface_resources.iter().any(|fact| {
+        !joined_state
+            .resources()
+            .satisfies_fact(fact, successor_facts.assumptions())
+    }) {
+        return Err("an interface resource is absent from the abstract successor");
+    }
+
+    // `old(...)` in an interface fact names one fixed earlier state. Any
+    // state serves, so long as every lowering of the fact below reads the
+    // same one; the proof side says which, because inside a loop body it is
+    // the function's entry and not the body's own start.
+    let reference_state = old_reference.unwrap_or_else(|| {
+        parent
+            .frontier
+            .execution_start_state
+            .as_ref()
+            .unwrap_or(split_state)
+    });
+    let concrete_access = [0, 1].map(|index| {
+        InterfaceReadPremises::new(
+            interface_resource_specs
+                .iter()
+                .zip(&arm_interface_resources[index])
+                .filter_map(|(spec, resource)| {
+                    interface_resource_intrinsic_fact(spec, resource, arms[index].reached_state())
+                }),
+        )
+    });
+    let successor_access =
+        InterfaceReadPremises::new(successor_interface_resource_facts.iter().cloned());
+    let mut interface_lowerings = Vec::with_capacity(interface_specs.len());
+    for spec in interface_specs {
+        let concrete = |index: usize| {
+            CheckedInterfaceLowering::check(
+                spec,
+                arms[index].reached_state(),
+                reference_state,
+                arm_facts[index],
+                &concrete_access[index],
+            )
+            .ok_or("an interface fact is not established by both concrete arms")
+        };
+        let then_lowering = concrete(0)?;
+        let else_lowering = concrete(1)?;
+        let successor = CheckedInterfaceLowering::check(
+            spec,
+            joined_state,
+            reference_state,
+            successor_facts,
+            &successor_access,
+        )
+        .ok_or("an interface fact is not retained at the abstract successor")?;
+        interface_lowerings.push([then_lowering, else_lowering, successor]);
+    }
+    let interface_propositions = interface_lowerings
+        .iter()
+        .map(|lowerings| &lowerings[2].path.proposition)
+        .collect::<std::collections::BTreeSet<_>>();
+    let introduced = successor_facts
+        .introduced_since(root_facts)
+        .ok_or("the interface successor facts do not descend from the branch root")?;
+    for fact in &introduced {
+        let common_arm_fact = arm_facts
+            .iter()
+            .all(|facts| checked_branch_fact_is_available(facts, fact));
+        let interface_fact = interface_propositions.contains(fact);
+        let interface_resource_fact =
+            ResourceContext::new_with_equalities(successor_facts.assumptions())
+                .unchecked_with_facts(successor_interface_resources.clone())
+                .observable_facts_assuming_valid(successor_facts.assumptions())
+                .contains(fact)
+                || successor_interface_resource_facts.contains(fact);
+        if !common_arm_fact && !interface_fact && !interface_resource_fact {
+            return Err("the interface successor contains an unchecked new fact");
+        }
+    }
+
+    // A named interface instance carries a model the arms need not agree on.
+    // The successor must hold it with the fresh model this join mints, so
+    // nothing is known of that model beyond what the interface facts state.
+    let mut next_kernel_variable = abstract_then.next_kernel_variable;
+    for spec in interface_resource_specs {
+        let (Some(identity), Some(schema)) = (spec.instance_identity(), spec.instance_schema())
+        else {
+            continue;
+        };
+        let (expected, next) = crate::kernel::functions::interface_join_instance_fields(
+            schema,
+            identity,
+            next_kernel_variable,
+        )
+        .ok_or("a named interface resource could not be given a fresh model")?;
+        let fresh = joined_state
+            .resources()
+            .owned_instance(identity)
+            .is_some_and(|instance| instance.fields == expected);
+        if !fresh {
+            return Err(
+                "the interface successor does not hold a named resource with a fresh model",
+            );
+        }
+        next_kernel_variable = next;
+    }
+    Ok(CheckedInterfaceAbstraction {
+        next_kernel_variable,
+        arm_interface_resources,
+        introduced,
+        interface_lowerings,
+    })
 }
 
 /// One exhaustive nonterminal C `if`, checked against its exact source arms
@@ -4085,6 +4532,7 @@ impl CheckedExecutionBranch {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Self, &'static str> {
         if !branch_split_starts_at_parent(parent, &split.state, function, arguments, root_facts) {
             return Err("the interface split does not start at the parent state");
@@ -4110,204 +4558,24 @@ impl CheckedExecutionBranch {
             return Err("the interface arms do not exhaust the checked condition split");
         }
 
-        let expected_stable_locals = arms[0]
-            .state
-            .locals()
-            .object_values()
-            .filter(|(name, value)| arms[1].reached_state().locals().get(name) == Some(*value))
-            .map(|(name, value)| (name.to_string(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        if &expected_stable_locals != stable_join_locals {
-            return Err("the interface stable-local set is not exact");
-        }
-        let sibling_states = [arms[0].reached_state(), arms[1].reached_state()];
-        // Both arms abstract from the same counter, the higher of the two, so
-        // the abstraction is the same whichever arm allocated more and neither
-        // arm's own identities can be re-issued by the join.
-        let join_next_kernel_variable = arms[0]
-            .next_kernel_variable
-            .max(arms[1].next_kernel_variable);
-        let abstract_then = crate::kernel::abstract_c_state_for_interface_join_across(
-            arms[0].reached_state(),
-            &sibling_states,
+        let CheckedInterfaceAbstraction {
+            next_kernel_variable,
+            arm_interface_resources,
+            introduced,
+            interface_lowerings,
+        } = check_interface_abstraction(
+            root_facts,
+            &split.state,
+            parent,
+            arms,
+            arm_facts,
             stable_join_locals,
-            join_next_kernel_variable,
-        )
-        .map_err(|_| "the then interface state could not be abstracted")?;
-        let abstract_else = crate::kernel::abstract_c_state_for_interface_join_across(
-            arms[1].reached_state(),
-            &sibling_states,
-            stable_join_locals,
-            join_next_kernel_variable,
-        )
-        .map_err(|_| "the else interface state could not be abstracted")?;
-        if abstract_then != abstract_else {
-            return Err("the interface arms do not have one deterministic abstraction");
-        }
-        // The successor and the arm abstraction reach an empty resource
-        // context by different routes, so compare the shape with the context
-        // dropped the same way on both sides, then check the successor's loan
-        // authority explicitly. The shape comparison still covers the ledger
-        // and the participant, because dropping a resource context does not
-        // touch either.
-        if joined_state
-            .clone()
-            .with_resource_context(ResourceContext::new())
-            != abstract_then.state
-        {
-            return Err("the interface successor is not the checked arm abstraction");
-        }
-        // D2 law 9: a join keeps the arms' authority, it never sums it. Every
-        // loan dependency the successor's interface carries must be one an arm
-        // already held; a changed or invented root is not admitted here.
-        if !interface_successor_loans_are_inherited(joined_state, sibling_states) {
-            return Err("the interface successor claims a loan dependency no arm held");
-        }
-        let mut arm_interface_resources = [Vec::new(), Vec::new()];
-        let mut successor_interface_resources = Vec::new();
-        let mut successor_interface_resource_facts = Vec::new();
-        for spec in interface_resource_specs {
-            for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
-                let fact = evaluate_interface_resource_spec(spec, arm.reached_state(), facts)
-                    .ok_or("an interface resource does not lower in a concrete arm")?;
-                arm_interface_resources[index].push(fact);
-            }
-            let fact = evaluate_interface_resource_spec(spec, joined_state, successor_facts)
-                .ok_or("an interface resource does not lower at the abstract successor")?;
-            if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, joined_state)
-            {
-                successor_interface_resource_facts.push(proposition);
-            }
-            successor_interface_resources.push(fact);
-        }
-        let mut arm_residuals = Vec::with_capacity(2);
-        for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
-            let mut remaining = arm.state.resources().clone();
-            // Views are non-consuming. Check them while their owned support
-            // is still present, then consume the owned interface facts in
-            // their source order so consuming a parent cannot erase a view
-            // that the same interface has already established.
-            for required in arm_interface_resources[index]
-                .iter()
-                .filter(|fact| fact.is_view())
-            {
-                if remaining
-                    .clone()
-                    .without_facts(std::slice::from_ref(required), facts.assumptions())
-                    .is_none()
-                {
-                    return Err("an interface resource is not owned by one concrete arm");
-                }
-            }
-            for required in arm_interface_resources[index]
-                .iter()
-                .filter(|fact| fact.is_own())
-            {
-                let Some(next) = remaining
-                    .clone()
-                    .without_facts(std::slice::from_ref(required), facts.assumptions())
-                else {
-                    return Err("an interface resource is not owned by one concrete arm");
-                };
-                remaining = next;
-            }
-            arm_residuals.push(remaining);
-        }
-        let common_resources = ResourceContext::common_exact_descendant(
-            &arm_residuals[0],
-            &arm_residuals[1],
-            parent.reached_state().resources(),
-        )
-        .ok_or("the interface arm resources do not descend from the branch root")?;
-        let expected_resources = common_resources
-            .try_compose_into_valid_context_delaying_normalization(
-                successor_interface_resources.iter().cloned(),
-                successor_facts.assumptions(),
-            )
-            .map_err(|_| "the interface resources do not form a valid successor context")?
-            .normalized_around_facts(
-                &successor_interface_resources,
-                successor_facts.assumptions(),
-            );
-        if &expected_resources != joined_state.resources() {
-            return Err("the interface successor resource context is not exact");
-        }
-        if successor_interface_resources.iter().any(|fact| {
-            !joined_state
-                .resources()
-                .satisfies_fact(fact, successor_facts.assumptions())
-        }) {
-            return Err("an interface resource is absent from the abstract successor");
-        }
-
-        let reference_state = parent
-            .frontier
-            .execution_start_state
-            .as_ref()
-            .unwrap_or(&split.state);
-        let concrete_access = [0, 1].map(|index| {
-            InterfaceReadPremises::new(
-                interface_resource_specs
-                    .iter()
-                    .zip(&arm_interface_resources[index])
-                    .filter_map(|(spec, resource)| {
-                        interface_resource_intrinsic_fact(
-                            spec,
-                            resource,
-                            arms[index].reached_state(),
-                        )
-                    }),
-            )
-        });
-        let successor_access =
-            InterfaceReadPremises::new(successor_interface_resource_facts.iter().cloned());
-        let mut interface_lowerings = Vec::with_capacity(interface_specs.len());
-        for spec in interface_specs {
-            let concrete = |index: usize| {
-                CheckedInterfaceLowering::check(
-                    spec,
-                    arms[index].reached_state(),
-                    reference_state,
-                    arm_facts[index],
-                    &concrete_access[index],
-                )
-                .ok_or("an interface fact is not established by both concrete arms")
-            };
-            let then_lowering = concrete(0)?;
-            let else_lowering = concrete(1)?;
-            let successor = CheckedInterfaceLowering::check(
-                spec,
-                joined_state,
-                reference_state,
-                successor_facts,
-                &successor_access,
-            )
-            .ok_or("an interface fact is not retained at the abstract successor")?;
-            interface_lowerings.push([then_lowering, else_lowering, successor]);
-        }
-        let interface_propositions = interface_lowerings
-            .iter()
-            .map(|lowerings| &lowerings[2].path.proposition)
-            .collect::<std::collections::BTreeSet<_>>();
-        let introduced = successor_facts
-            .introduced_since(root_facts)
-            .ok_or("the interface successor facts do not descend from the branch root")?;
-        for fact in &introduced {
-            let common_arm_fact = arm_facts
-                .iter()
-                .all(|facts| checked_branch_fact_is_available(facts, fact));
-            let interface_fact = interface_propositions.contains(fact);
-            let interface_resource_fact =
-                ResourceContext::new_with_equalities(successor_facts.assumptions())
-                    .unchecked_with_facts(successor_interface_resources.clone())
-                    .observable_facts_assuming_valid(successor_facts.assumptions())
-                    .contains(fact)
-                    || successor_interface_resource_facts.contains(fact);
-            if !common_arm_fact && !interface_fact && !interface_resource_fact {
-                return Err("the interface successor contains an unchecked new fact");
-            }
-        }
-
+            interface_specs,
+            interface_resource_specs,
+            joined_state,
+            successor_facts,
+            old_reference,
+        )?;
         let parent_trace = &parent.execution_evidence[0];
         let full_source = prepend_checked_evidence_statement(
             split.branch_statement.clone(),
@@ -4385,7 +4653,7 @@ impl CheckedExecutionBranch {
                 function.composite_resource_definitions().to_vec(),
             ),
             interface_lowerings: Arc::new(interface_lowerings),
-            interface_next_kernel_variable: Some(abstract_then.next_kernel_variable),
+            interface_next_kernel_variable: Some(next_kernel_variable),
         })
     }
 
@@ -6223,6 +6491,9 @@ fn check_evidence_events_with_call_events(
             CheckedExecutionEvent::ProofCaseJoin(join) => {
                 remaining = join.advance_checked(&state, &remaining, &call_events)?;
                 state = join.joined_state().clone();
+                if let Some(successor_facts) = join.interface_successor_facts() {
+                    current_facts = successor_facts.clone();
+                }
                 continue;
             }
             CheckedExecutionEvent::ResourceObservation(observation) => {
@@ -6577,10 +6848,23 @@ fn trace_completion(
                         .ok_or("lifetime end has mismatched state")?;
                 }
             }
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                fallthrough = None;
+                if completed.is_some() {
+                    return Err("a trace continues past its completing theorem");
+                }
+                for fact in join.interface_execution_facts() {
+                    if !interface_execution_facts
+                        .iter()
+                        .any(|retained| retained.proposition() == fact.proposition())
+                    {
+                        interface_execution_facts.push(fact.clone());
+                    }
+                }
+            }
             CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::ResourceObservation(_)
-            | CheckedExecutionEvent::IteratedStep(_)
-            | CheckedExecutionEvent::ProofCaseJoin(_) => {
+            | CheckedExecutionEvent::IteratedStep(_) => {
                 fallthrough = None;
                 if completed.is_some() {
                     return Err("a trace continues past its completing theorem");
@@ -6645,9 +6929,12 @@ fn events_use_the_function_definitions(
                         check(function, branch.arm_events(arm_index), checked_entries)
                     })
             }
-            CheckedExecutionEvent::ProofCaseJoin(join) => join
-                .live_arm_events()
-                .all(|events| check(function, events, checked_entries)),
+            CheckedExecutionEvent::ProofCaseJoin(join) => {
+                join.matches_interface_resource_definitions(function)
+                    && join
+                        .live_arm_events()
+                        .all(|events| check(function, events, checked_entries))
+            }
             CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::IteratedStep(_)
             | CheckedExecutionEvent::Statement(_)
@@ -7935,28 +8222,80 @@ impl ExecutionProofCore {
     pub(crate) fn record_proof_case_join(
         &mut self,
         parent: &ExecutionProofCore,
-        arms: &[Option<(&ExecutionProofCore, &ProofFacts)>],
+        arms: &[(&ExecutionProofCore, &ProofFacts)],
         function: &CFunction,
         arguments: &[CExpression],
-    ) -> Result<(ProofFacts, bool), &'static str> {
-        let join = CheckedProofCaseJoin::check(parent, arms, function, arguments)?;
+        successor_facts: &ProofFacts,
+    ) -> Result<bool, &'static str> {
+        let join = CheckedProofCaseJoin::check(parent, arms, function, arguments, successor_facts)?;
         let changed_execution = join.arms_changed_execution();
-        let (first, _) = arms
-            .iter()
-            .flatten()
-            .next()
-            .expect("a checked case join has a live arm");
+        let first = arms[0].0;
         let mut trace = parent.execution_evidence[0].clone();
         let joined_state = join.joined_state().clone();
-        let joined_facts = join.joined_facts().clone();
         trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
-        self.evidence_source = first.evidence_source.clone();
+        // An arm that ran no C has recorded no source of its own yet; what
+        // remains for it is what its frontier says.
+        self.evidence_source = first.current_source_shared(function);
         self.evidence_try_stack = first.evidence_try_stack.clone();
         self.evidence_completed = false;
-        Ok((joined_facts, changed_execution))
+        Ok(changed_execution)
+    }
+
+    /// Rejoins two arms that ended in different states through an explicit
+    /// interface, and continues this core, a copy of `parent`, from
+    /// `joined_state`. Returns the effect facts the join certifies across
+    /// both arms. The kernel recomputes the abstraction, so it installs the
+    /// fresh-variable counter the abstraction left.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_interface_proof_case_join(
+        &mut self,
+        parent: &ExecutionProofCore,
+        root_facts: &ProofFacts,
+        arms: [(&ExecutionProofCore, &ProofFacts); 2],
+        function: &CFunction,
+        arguments: &[CExpression],
+        stable_join_locals: &BTreeMap<String, CValue>,
+        interface_specs: &[SpecProposition],
+        interface_resource_specs: &[CResourceSpec],
+        arm_effect_facts: [&[ExecutionPureFact]; 2],
+        joined_state: &CState,
+        successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
+    ) -> Result<Vec<ExecutionPureFact>, &'static str> {
+        let join = CheckedProofCaseJoin::check_interface(
+            parent,
+            root_facts,
+            arms,
+            function,
+            arguments,
+            stable_join_locals,
+            interface_specs,
+            interface_resource_specs,
+            arm_effect_facts,
+            joined_state,
+            successor_facts,
+            old_reference,
+        )?;
+        let interface = join
+            .interface
+            .as_ref()
+            .expect("an interface join retains its interface");
+        let effect_facts = interface.effect_facts.clone();
+        self.advance_kernel_variable_mark(interface.next_kernel_variable)?;
+        let mut trace = parent.execution_evidence[0].clone();
+        trace.push(CheckedExecutionEvent::ProofCaseJoin(join));
+        self.execution_evidence = vec![trace].into();
+        self.checked_call_events = parent.checked_call_events.clone();
+        self.evidence_state = Some(joined_state.clone());
+        // An arm that ran no C has recorded no source of its own yet; what
+        // remains for it is what its frontier says.
+        self.evidence_source = arms[0].0.current_source_shared(function);
+        self.evidence_try_stack = arms[0].0.evidence_try_stack.clone();
+        self.evidence_completed = false;
+        Ok(effect_facts)
     }
 
     /// This execution's fresh-variable counter, execution-relative: the
@@ -8961,6 +9300,7 @@ impl ExecutionProofCore {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Vec<ExecutionPureFact>, &'static str> {
         let parent_trace = match parent.execution_evidence.as_slice() {
             [trace] => trace,
@@ -8981,6 +9321,7 @@ impl ExecutionProofCore {
             arm_effect_facts,
             joined_state,
             successor_facts,
+            old_reference,
         )?;
         let interface_effect_facts = branch.interface_effect_facts().to_vec();
         let joined_state = branch.joined_state().clone();
@@ -12401,6 +12742,7 @@ mod tests {
             [&[], &[]],
             &state,
             &successor_facts,
+            None,
         )
         .expect("the exact fact-only abstraction should check");
         assert_eq!(checked.interface_lowerings.len(), 1);
@@ -12453,6 +12795,7 @@ mod tests {
                 [&[], &[]],
                 &state,
                 &successor_facts.with_fact(forged_fact),
+                None,
             )
             .is_err(),
             "an unrelated successor fact must not gain interface authority"
@@ -12478,6 +12821,7 @@ mod tests {
                 [&[], &[]],
                 &forged_state,
                 &successor_facts,
+                None,
             )
             .is_err(),
             "a resource absent from both arms must not gain interface authority"

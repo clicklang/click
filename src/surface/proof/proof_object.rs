@@ -856,6 +856,7 @@ impl ProofExecutionView<'_> {
             condition,
             then_proof,
             else_proof,
+            ..
         }) = current.last()
         {
             let selected_then = decisions

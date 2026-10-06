@@ -610,7 +610,10 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
-    if let Some(ProofStep::Match { scrutinee, arms }) = steps.last_mut() {
+    if let Some(ProofStep::Match {
+        scrutinee, arms, ..
+    }) = steps.last_mut()
+    {
         // The terminal join retains a path selector for deferred operations.
         // Serialize those operations inside the original lexical constructor
         // arms, not after the match where field names escape.
@@ -637,12 +640,14 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
         condition: existing_condition,
         then_proof,
         else_proof,
+        ..
     }) = steps.last_mut()
     {
         if let ProofStep::If {
             condition,
             then_proof: selected_then,
             else_proof: selected_else,
+            ..
         } = &step
             && condition == existing_condition
         {
@@ -701,6 +706,7 @@ fn match_arm_suffix(
         condition,
         then_proof,
         else_proof,
+        ..
     } = step
     else {
         return None;
@@ -1115,10 +1121,12 @@ pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {
     vec![match branch {
         ProofStep::If {
             condition,
+            ensuring,
             then_proof,
             else_proof,
         } => ProofStep::If {
             condition: condition.clone(),
+            ensuring: ensuring.clone(),
             then_proof: arm(then_proof),
             else_proof: arm(else_proof),
         },
@@ -1216,6 +1224,7 @@ pub(super) fn synthesize_surface_paths(
     );
     steps.push(match first_choice.selector {
         SurfacePathSelector::Proposition(condition) => ProofStep::If {
+            ensuring: None,
             condition,
             then_proof,
             else_proof,

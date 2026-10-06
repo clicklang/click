@@ -598,6 +598,7 @@ impl<'a> Proof<'a> {
                 split_branches: Vec::new(),
                 step: Some(Arc::new(ProofStep::Match {
                     scrutinee: source.scrutinee.clone(),
+                    ensuring: source.ensuring.clone(),
                     arms,
                 })),
             }),

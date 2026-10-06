@@ -117,6 +117,13 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     )
 }
 
+/// The refusal for an `if ... ensuring` whose arm cannot reach the join.
+fn if_ensuring_arm_did_not_end() -> ClickError {
+    ClickError::new(
+        "an arm of this proof `if` did not end at a program point the other arm can rejoin: with `ensuring`, both arms must stop before function exit, at the same statement",
+    )
+}
+
 /// Whether a proof region is one straight run of tactics with no nested
 /// split. Such an arm is cheap to run on its own before asking whether it
 /// rejoins its sibling.
@@ -706,6 +713,7 @@ fn deferred_post_execution_region(
             then_branch,
             else_branch,
             continuation,
+            ..
         } => {
             let mut deferred = vec![DeferredPostExecutionTactic {
                 lexical_bindings: None,
@@ -1386,6 +1394,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 index,
                 source_index,
                 condition,
+                ensuring,
                 then_branch,
                 else_branch,
                 continuation,
@@ -1460,6 +1469,9 @@ fn try_check_structural_function_proof_inner<'a>(
                     },
                     _ => None,
                 };
+                // An `ensuring` interface joins the arms where they end, so
+                // their leading steps are not folded into the split.
+                let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
                     let exact = proof.try_split_source_successor_if(
                         condition,
@@ -1488,14 +1500,17 @@ fn try_check_structural_function_proof_inner<'a>(
                 };
                 // Straight-line arms that end at one program point in one
                 // state are rejoined, so what follows the `if` is checked
-                // once and not once per case. Arms that do not rejoin, or
-                // that nest another split, still run the continuation
-                // themselves, below.
-                if !consumed_leading_steps
-                    && staged_expansion_capture.is_none()
-                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_is_straight_line(then_branch)
-                    && region_is_straight_line(else_branch)
+                // once and not once per case. With `ensuring`, the arms must
+                // rejoin through that interface. Otherwise arms that do not
+                // rejoin, or that nest another split, still run the
+                // continuation themselves, below.
+                let must_rejoin = ensuring.is_some();
+                if must_rejoin
+                    || (!consumed_leading_steps
+                        && staged_expansion_capture.is_none()
+                        && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && region_is_straight_line(then_branch)
+                        && region_is_straight_line(else_branch))
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in
@@ -1509,16 +1524,29 @@ fn try_check_structural_function_proof_inner<'a>(
                             focused,
                             None,
                             branch,
-                            None,
+                            if must_rejoin {
+                                staged_expansion_capture.as_mut()
+                            } else {
+                                None
+                            },
                             proof_site.as_ref(),
                             owning_source_index,
                             1,
                         )?
                         .filter(|next| !next.is_at_function_exit());
                     }
-                    if let Some(reasoned) = reasoned
-                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
-                    {
+                    let joined = match (reasoned, ensuring) {
+                        (Some(reasoned), Some(assertions)) => Some(
+                            reasoned
+                                .join_focused_execution_if_interface(&record, assertions.clone())?,
+                        ),
+                        (None, Some(_)) => return Err(if_ensuring_arm_did_not_end()),
+                        (Some(reasoned), None) => {
+                            reasoned.try_join_focused_execution_if(&record)?
+                        }
+                        (None, None) => None,
+                    };
+                    if let Some(joined) = joined {
                         proof = joined;
                         saw_structure = true;
                         current = continuation;
@@ -1793,6 +1821,39 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
+            // With an interface the arms rejoin inside the body, as the arms
+            // of a `branch` do, and what follows the `match` is checked
+            // once on the one path that leaves it.
+            if proof_match.ensuring.is_some() {
+                let Some(joined) = advance_execution_match(
+                    proof,
+                    proof_match,
+                    arms,
+                    continuation,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: proof `match` did not rejoin as a checked preservation operation"
+                    )));
+                };
+                return advance_preservation_region(
+                    joined,
+                    continuation,
+                    pending,
+                    expansion_capture,
+                    proof_site,
+                    owning_source_index,
+                    claim_label,
+                    leaves,
+                    refuted_match_paths,
+                    unfinished,
+                    Some((*index, "match")),
+                );
+            }
             let plan = proof.plan_execution_match(proof_match, |index| {
                 execution_region_leading_tactic(&arms[index])
                     .map_or(usize::MAX, |tactic| tactic.source_index)
@@ -2027,13 +2088,55 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
         }
         InternalProofNode::If {
             index,
+            source_index,
             condition,
+            ensuring,
             then_branch,
             else_branch,
             continuation,
-            ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
+            // With an interface the cases rejoin inside the body, as the
+            // arms of a `branch` do, and what follows the `if` is checked
+            // once on the one path that leaves it.
+            if ensuring.is_some() {
+                let alone = InternalProofNode::If {
+                    index: *index,
+                    source_index: *source_index,
+                    condition: condition.clone(),
+                    ensuring: ensuring.clone(),
+                    then_branch: then_branch.clone(),
+                    else_branch: else_branch.clone(),
+                    continuation: Box::new(InternalProofNode::Done),
+                };
+                let Some(joined) = advance_focused_execution_region(
+                    proof,
+                    None,
+                    &alone,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: proof `if` did not rejoin as a checked preservation operation"
+                    )));
+                };
+                return advance_preservation_region(
+                    joined,
+                    continuation,
+                    pending,
+                    expansion_capture,
+                    proof_site,
+                    owning_source_index,
+                    claim_label,
+                    leaves,
+                    refuted_match_paths,
+                    unfinished,
+                    Some((*index, "if")),
+                );
+            }
             // An expanded C branch is the checked execution split it spells,
             // exactly as in a function body: a decided branch keeps its
             // infeasible arm empty, and reading that as a logical case split
@@ -2676,7 +2779,7 @@ fn advance_execution_match<'a>(
     // With tactics written after it, the `match` must rejoin its live arms:
     // they are checked once, from the one state every arm ends in. Without
     // any, each arm completes the function proof on its own.
-    let rejoins = !matches!(continuation, InternalProofNode::Done);
+    let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source, |index| {
@@ -2753,6 +2856,7 @@ fn advance_execution_match<'a>(
         depth,
         0,
         rejoins,
+        source.ensuring.as_deref(),
     )?
     else {
         return decline();
@@ -2784,6 +2888,7 @@ fn advance_execution_match_group<'a>(
     depth: usize,
     split_depth: usize,
     rejoins: bool,
+    ensuring: Option<&[ProofAssertion]>,
 ) -> Result<Option<Proof<'a>>, ClickError> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
         return decline_region_depth();
@@ -2814,6 +2919,7 @@ fn advance_execution_match_group<'a>(
                 depth,
                 split_depth + 1,
                 rejoins,
+                ensuring,
             )?
             else {
                 return decline();
@@ -2821,8 +2927,22 @@ fn advance_execution_match_group<'a>(
             completed[side] = next.is_at_function_exit();
             proof = next;
         }
-        if completed == [true, true] {
+        if completed == [true, true] && ensuring.is_none() {
             return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        }
+        // With an interface, each split of the constructor family rejoins
+        // through it: the halves of a wider `match` are joined pairwise, and
+        // a half that was itself joined already holds the interface's state.
+        if let Some(assertions) = ensuring {
+            if completed != [false, false] {
+                return Err(ClickError::new(
+                    "an arm of this proof `match` reached function exit, so its `ensuring` interface has nothing to rejoin",
+                ));
+            }
+            return Ok(Some(proof.join_focused_execution_if_interface(
+                &record,
+                assertions.to_vec(),
+            )?));
         }
         let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
             return Err(ClickError::new(
@@ -3142,6 +3262,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 index,
                 source_index,
                 condition,
+                ensuring,
                 then_branch,
                 else_branch,
                 continuation,
@@ -3218,6 +3339,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     },
                     _ => None,
                 };
+                // An `ensuring` interface joins the arms where they end, so
+                // their leading steps are not folded into the split.
+                let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
                     let product = proof_at_if.try_split_source_successor_if(
                         condition,
@@ -3245,12 +3369,15 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
                 // As at the top level: straight-line arms that rejoin are
-                // joined, and the continuation is checked once.
-                if !consumed_leading_steps
-                    && expansion_capture.is_none()
-                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_is_straight_line(then_branch)
-                    && region_is_straight_line(else_branch)
+                // joined, and the continuation is checked once; with
+                // `ensuring` the arms must rejoin through that interface.
+                let must_rejoin = ensuring.is_some();
+                if must_rejoin
+                    || (!consumed_leading_steps
+                        && expansion_capture.is_none()
+                        && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && region_is_straight_line(then_branch)
+                        && region_is_straight_line(else_branch))
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in
@@ -3264,16 +3391,29 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                             focused,
                             enclosing_record,
                             branch,
-                            None,
+                            if must_rejoin {
+                                expansion_capture.as_deref_mut()
+                            } else {
+                                None
+                            },
                             proof_site,
                             owning_source_index,
                             depth + 1,
                         )?
                         .filter(|next| !next.is_at_function_exit());
                     }
-                    if let Some(reasoned) = reasoned
-                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
-                    {
+                    let joined = match (reasoned, ensuring) {
+                        (Some(reasoned), Some(assertions)) => Some(
+                            reasoned
+                                .join_focused_execution_if_interface(&record, assertions.clone())?,
+                        ),
+                        (None, Some(_)) => return Err(if_ensuring_arm_did_not_end()),
+                        (Some(reasoned), None) => {
+                            reasoned.try_join_focused_execution_if(&record)?
+                        }
+                        (None, None) => None,
+                    };
+                    if let Some(joined) = joined {
                         proof = joined.restore_execution_tactic_attribution(&owner)?;
                         region = continuation;
                         branch_continuation = None;
@@ -3584,6 +3724,7 @@ fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<Pro
                 }
                 steps.push(ProofStep::If {
                     condition: condition.clone(),
+                    ensuring: None,
                     then_proof: Box::new(ProofCertificate::from_steps(then_steps).ok()?),
                     else_proof: Box::new(ProofCertificate::from_steps(else_steps).ok()?),
                 });

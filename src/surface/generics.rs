@@ -638,6 +638,7 @@ fn instantiate_proof_tactic(
     Ok(match tactic {
         ProofTactic::Match(proof_match) => ProofTactic::Match(std::sync::Arc::new(ProofMatch {
             scrutinee: expression(&proof_match.scrutinee)?,
+            ensuring: proof_match.ensuring.clone(),
             arms: proof_match
                 .arms
                 .iter()
@@ -737,6 +738,7 @@ fn instantiate_proof_tactic(
         }),
         ProofTactic::If(proof_if) => ProofTactic::If(ProofIf {
             condition: proposition(&proof_if.condition)?,
+            ensuring: proof_if.ensuring.clone(),
             then_tactics: instantiate_proof_tactics(
                 &proof_if.then_tactics,
                 substitution,

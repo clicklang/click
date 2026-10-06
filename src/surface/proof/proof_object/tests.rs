@@ -13433,6 +13433,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
             condition,
             then_proof,
             else_proof,
+            ..
         }] if then_proof.steps().is_empty()
             && matches!(
                 else_proof.steps(),
@@ -13623,6 +13624,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 condition,
                 then_proof,
                 else_proof,
+                ..
             }] if matches!(
                 then_proof.steps(),
                 [ProofStep::Step, ProofStep::Step]
@@ -13708,6 +13710,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 condition,
                 then_proof,
                 else_proof,
+                ..
             }] if matches!(
                 then_proof.steps(),
                 [ProofStep::Step, ProofStep::Step]

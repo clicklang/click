@@ -583,6 +583,7 @@ fn prepare_pure_induction_tactics(
                 }
                 ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                     condition: proof_if.condition.clone(),
+                    ensuring: proof_if.ensuring.clone(),
                     then_tactics: transform(&proof_if.then_tactics, hypothesis)?,
                     else_tactics: transform(&proof_if.else_tactics, hypothesis)?,
                 })),
@@ -731,6 +732,7 @@ fn prepare_structural_induction_arm_tactics(
             }),
             ProofTactic::If(proof_if) => Ok(ProofTactic::If(ProofIf {
                 condition: proof_if.condition.clone(),
+                ensuring: proof_if.ensuring.clone(),
                 then_tactics: prepare_structural_induction_arm_tactics(
                     &proof_if.then_tactics,
                     setup,

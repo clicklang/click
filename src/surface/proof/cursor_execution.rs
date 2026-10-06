@@ -110,6 +110,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         return Ok(());
     }
     let entry_state = execution.core.frontier.execution_start_state(state).clone();
+    // `old(...)` in an interface fact means the function's entry, also
+    // inside a loop body, where the region's own start is a later state.
+    let old_reference = proof_context
+        .old_reference_state(&execution.core.frontier, state)
+        .clone();
     let abstraction = match sibling_join_states {
         Some(states) => abstract_c_state_for_interface_join_across(
             state,
@@ -125,7 +130,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         ))
     })?;
     let mut abstract_state = abstraction.state;
-    let join_kernel_variable_mark = abstraction.next_kernel_variable;
+    let mut join_kernel_variable_mark = abstraction.next_kernel_variable;
 
     // Branch abstraction discards incidental source-boundary snapshots, but
     // an explicit proof mark is a deliberate historical dependency. Preserve
@@ -148,6 +153,40 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let mut exported_pure_facts = Vec::new();
     for assertion in assertions {
         if let ProofAssertion::Resource(resource) = assertion {
+            // A named instance may carry a different model in each arm. The
+            // rejoined proof holds it with a fresh model, drawn after the
+            // abstraction's own identities; the kernel's check of the join
+            // draws the same one.
+            let with_fresh_model;
+            let resource = match resource {
+                ResourceClause::Named {
+                    binding,
+                    resource: declared,
+                } if binding.schema.is_some() => {
+                    let schema = binding.schema.as_ref().expect("checked just above");
+                    let (fields, next) = crate::kernel::interface_join_instance_fields(
+                        schema,
+                        binding.identity,
+                        join_kernel_variable_mark,
+                    )
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "`{claim_label}` tactic {tactic_index}: could not give interface resource `{}` a fresh model",
+                            binding.name
+                        ))
+                    })?;
+                    join_kernel_variable_mark = next;
+                    with_fresh_model = ResourceClause::Named {
+                        binding: ResourceInstanceBinding {
+                            fields: Some(fields),
+                            ..binding.clone()
+                        },
+                        resource: declared.clone(),
+                    };
+                    &with_fresh_model
+                }
+                other => other,
+            };
             let fact =
                 lower_resource_clause_at_state(resource, parameters, arguments, &abstract_state)?;
             exported_resources = exported_resources.unchecked_with_fact(fact);
@@ -209,7 +248,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     &exported_pure_facts,
                     parameters,
                     arguments,
-                    &entry_state,
+                    &old_reference,
                     &abstract_state,
                     None,
                     &execution.presentation.recorded_snapshots,
