@@ -11224,6 +11224,7 @@ fn owned_segmented_buffer_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[ignore = "nightly: whole-pipeline expansion rechecks measured 12s"]
 fn owned_string_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[3];
     assert_resource_example_pipeline_has_no_outcome_fallbacks(
