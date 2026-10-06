@@ -25,9 +25,9 @@ use crate::kernel::{
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
     c_call_assign, c_cast, c_declare, c_declare_aggregate, c_divide, c_equal, c_function,
     c_greater_equal, c_greater_than, c_if, c_int64_literal, c_less_equal, c_less_than, c_multiply,
-    c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip, c_subtract,
-    c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source, c_typed_store,
-    c_variable,
+    c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq, c_skip,
+    c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source,
+    c_typed_store, c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -935,6 +935,7 @@ impl LoweringContext<'_> {
                     CppBinaryOperator::Divide => c_divide(left, right),
                     CppBinaryOperator::Remainder => c_remainder(left, right),
                     CppBinaryOperator::Equal => c_equal(left, right),
+                    CppBinaryOperator::NotEqual => c_not_equal(left, right),
                     CppBinaryOperator::LessThan => c_less_than(left, right),
                     CppBinaryOperator::GreaterThan => c_greater_than(left, right),
                     CppBinaryOperator::LessEqual => c_less_equal(left, right),

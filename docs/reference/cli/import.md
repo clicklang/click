@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 39;
+its documented application invariant. The typed artifact schema is now 40;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -534,7 +534,8 @@ refresh of earlier locks.
 
 Scalar interpretation is shared by the artifact validator, execution lowering,
 and proof-facing signatures. It distinguishes mutable and const qualification
-from the five supported value kinds: Boolean, int32, int64, uint32, and uint64.
+from the seven supported value kinds: Boolean, int32, int64, uint32, uint64,
+int128, and uint128.
 Integer literals use one checked parser in validation and lowering. Source
 aliases preserve provenance without changing the value kind. Reference and
 record-field restrictions remain specific to their positions in the profile.
@@ -542,7 +543,7 @@ Explicit integral casts use one C++ conversion policy over the common kernel;
 the frontend does not re-infer promotions from source syntax.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
-`%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked
+`%`, unary negation, and `==`, `!=`, `<`, `>`, `<=`, `>=` into the common checked
 kernel. Clang's integral promotions and signed casts are explicit artifact
 nodes; mixed-width operands require those conversions. Signed 64-to-32
 narrowing follows C++20's modulo semantics using the kernel's unsigned bit
@@ -595,10 +596,24 @@ for MIN. Missing guards and false results are refused, including for trivial
 postconditions. Symbolic contracts, constants above 64 bits, modular caller
 framing, offline verification, expansion, and retained audit have coverage.
 
-Wide pointers, references, record fields, arrays, comparisons, negation,
+The `wide-comparisons` fixture adds all six comparisons (`==`, `!=`, `<`,
+`<=`, `>`, `>=`) on signed and unsigned 128-bit values. Comparison uses the
+full mathematical observation with the operand's signedness; Clang-resolved
+promotions remain explicit. The shared native and pure-spec condition
+constructor keeps execution and retained branch proofs consistent. Boolean
+contracts describe results as `0` or `1` and relate them to comparisons of
+`to_integer(a)` and `to_integer(b)`. Exact premises and their complementary
+relations settle known results without scanning unrelated proof facts.
+Symbolic results, high-bit constants, mixed-width promotions, branches,
+modular caller framing, offline verification, expansion, and retained audit
+have regression coverage. Undefined operand arithmetic still fails even with
+a trivial postcondition. `!=` is also admitted for the existing 32/64-bit
+scalar profile.
+
+Wide pointers, references, record fields, arrays, negation,
 addition, subtraction, and unsigned multiplication remain unsupported. Both
 the live exporter and serialized artifact validator reject these operations.
-Schema 39 requires refreshing older locks. The unchanged Bitcoin fee arithmetic
+Schema 40 requires refreshing older locks. The unchanged Bitcoin fee arithmetic
 helpers still need wide rounding operations, checked narrowing bounds, and an
 explicit treatment of the library `Assume` boundary.
 

@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 39);
+    assert_eq!(prepared.export().schema, 40);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1743,7 +1743,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1811,15 +1811,17 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
 }
 
 #[test]
-fn signed_int64_predicate_rejects_inequality_and_disjunction() {
-    let less_than = Project::int64_predicate();
+fn signed_int64_predicate_admits_inequality_and_rejects_unsupported_siblings() {
+    let inequality = Project::int64_predicate();
     fs::write(
-        less_than.source(),
+        inequality.source(),
         INT64_PREDICATE_SOURCE.replace("nValue >= 0", "nValue != 0"),
     )
     .unwrap();
-    let error = refresh_import(&less_than.config()).unwrap_err();
-    assert!(error.contains("unsupported binary operator"), "{error}");
+    refresh_import(&inequality.config()).unwrap();
+    let import = load_import(&inequality.config()).unwrap();
+    let proof = INT64_PREDICATE_SIDECAR.replace(">= 0i64", "!= 0i64");
+    check_arithmetic_sidecar(&inequality, &import, &proof);
 
     let disjunction = Project::int64_predicate();
     fs::write(
@@ -1858,7 +1860,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1969,7 +1971,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -2030,7 +2032,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -2076,7 +2078,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2704,7 +2706,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2782,7 +2784,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2900,7 +2902,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -3038,7 +3040,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3140,7 +3142,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3240,7 +3242,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3379,7 +3381,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3529,7 +3531,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let destructor = import
         .export()
         .reachable_functions
@@ -3715,7 +3717,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3818,7 +3820,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 39);
+    assert_eq!(import.export().schema, 40);
     let destructor = import
         .export()
         .reachable_functions
@@ -8127,8 +8129,6 @@ fn wide_intermediates_refuse_unimplemented_source_operations() {
     for expression in [
         "a + b",
         "a - b",
-        "a == b",
-        "a < b",
         "-a",
         "static_cast<unsigned __int128>(a) * b",
     ] {
@@ -8476,7 +8476,7 @@ fn wide_division_symbolic_contracts_verify_expand_and_audit_offline() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        assert_eq!(import.export().schema, 39);
+        assert_eq!(import.export().schema, 40);
         let source = format!(
             "verifying \"wide.cpp\"; {ty} {name}({ty} a, {ty} b) {{ {domain} ensures to_integer(result) == {helper}(to_integer(a), to_integer(b)); }} by {{ execute(); simp(); }}"
         );
@@ -8637,5 +8637,162 @@ fn wide_division_native_undefined_behavior_cannot_be_hidden_by_trivial_posts() {
         let parsed = read_click_project(&path, &proof).unwrap();
         let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
         assert!(error.message().contains(diagnostic), "{}", error.message());
+    }
+}
+
+const WIDE_COMPARISONS_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/wide-comparisons/comparisons.cpp");
+
+#[test]
+fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
+    for (prefix, ty) in [("signed", "int128"), ("unsigned", "uint128")] {
+        for (name, op) in [
+            ("equal", "=="),
+            ("not_equal", "!="),
+            ("less", "<"),
+            ("greater", ">"),
+            ("less_equal", "<="),
+            ("greater_equal", ">="),
+        ] {
+            let name = format!("{prefix}_{name}");
+            let project = Project::with_fixture("wide.cpp", &name, WIDE_COMPARISONS_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            fs::remove_file(&project.exporter).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            assert_eq!(import.export().schema, 40);
+            let relation = format!("to_integer(a) {op} to_integer(b)");
+            let proof = format!(
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &proof);
+            let false_proof = proof.replace(
+                "ensures result == 0 implies not",
+                "ensures result == 0 implies",
+            );
+            let path = project.directory.join("false.click");
+            fs::write(&path, &false_proof).unwrap();
+            let parsed = read_click_project(&path, &false_proof).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
+    for (name, expected) in [
+        ("high_equal_zero", false),
+        ("minimum_negative", true),
+        ("unsigned_max_positive", true),
+        ("mixed_constant", true),
+    ] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_COMPARISONS_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let expected = u32::from(expected);
+        let proof = format!(
+            "verifying \"wide.cpp\"; bool {name}() {{ ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
+        let false_proof = proof.replace(&format!("== {expected}"), &format!("== {}", 1 - expected));
+        let path = project.directory.join("false.click");
+        fs::write(&path, &false_proof).unwrap();
+        let parsed = read_click_project(&path, &false_proof).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
+    let project = Project::with_fixture("wide.cpp", "narrow_compare", WIDE_COMPARISONS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"wide.cpp\"; bool narrow_compare(int128 a, int64 b) { ensures result == 1 implies to_integer(a) < to_integer(b); ensures result == 0 implies not (to_integer(a) < to_integer(b)); } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
+    let project = Project::with_fixture("wide.cpp", "choose", WIDE_COMPARISONS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"wide.cpp\"; int32 choose(int128 a, int128 b) { ensures to_integer(a) < to_integer(b) implies result == 7; ensures not (to_integer(a) < to_integer(b)) implies result == 11; } by { execute(); simp(); }";
+    check_arithmetic_sidecar(&project, &import, proof);
+    let project = Project::with_fixture("wide.cpp", "relay", WIDE_COMPARISONS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "wide.cpp";
+bool signed_less(int128 a, int128 b) {
+    requires to_integer(a) < to_integer(b);
+    ensures result == 1;
+} by { execute(); simp(); }
+bool relay(int128 a, int128 b, int32* untouched) {
+    requires to_integer(a) < to_integer(b);
+    owns untouched[0..1];
+    ensures result == 1;
+    ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_return_call_sidecar(&project, &import, proof);
+}
+
+#[test]
+fn wide_comparisons_do_not_erase_operand_division_guards() {
+    let project = Project::with_fixture("wide.cpp", "unsafe_operand", WIDE_COMPARISONS_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    for domain in ["", "requires to_integer(b) != 0;"] {
+        let proof = format!(
+            "verifying \"wide.cpp\"; bool unsafe_operand(int128 a, int128 b) {{ {domain} ensures 0 == 0; }} by {{ execute(); simp(); }}"
+        );
+        let path = project.directory.join("unsafe.click");
+        fs::write(&path, &proof).unwrap();
+        let parsed = read_click_project(&path, &proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("undefined behavior"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn wide_comparisons_recognize_complementary_contract_premises() {
+    for (name, inverse) in [
+        ("equal", "!="),
+        ("not_equal", "=="),
+        ("less", ">="),
+        ("less_equal", ">"),
+        ("greater", "<="),
+        ("greater_equal", "<"),
+    ] {
+        for (prefix, ty) in [("signed", "int128"), ("unsigned", "uint128")] {
+            let name = format!("{prefix}_{name}");
+            let project = Project::with_fixture("wide.cpp", &name, WIDE_COMPARISONS_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let proof = format!(
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == 0; }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+    }
+}
+
+#[test]
+fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
+    for (cpp, ty) in [
+        ("int", "int32"),
+        ("unsigned int", "uint32"),
+        ("long", "int64"),
+        ("unsigned long", "uint64"),
+    ] {
+        let source = format!("bool unequal({cpp} a, {cpp} b) noexcept {{ return a != b; }}");
+        let project = Project::with_fixture("comparison.cpp", "unequal", &source);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let proof = format!(
+            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == 1 implies a != b; ensures result == 0 implies a == b; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
     }
 }
