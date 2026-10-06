@@ -3142,6 +3142,18 @@ id = "stdlib.theorem.uint32_add_to_integer"
 path = "reference/library/index.md#uint32_add_to_integer"
 
 [[item]]
+id = "stdlib.theorem.uint32_less_equal_to_integer"
+path = "reference/library/index.md#uint32_less_equal_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_less_equal_of_to_integer"
+path = "reference/library/index.md#uint32_less_equal_of_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_to_integer_bounds"
+path = "reference/library/index.md#uint32_to_integer_bounds"
+
+[[item]]
 id = "stdlib.theorem.int32_add_to_integer"
 path = "reference/library/index.md#int32_add_to_integer"
 

@@ -9341,3 +9341,71 @@ fn uint32_add_bridges_agree_with_boundary_models() {
         }
     }
 }
+
+#[test]
+fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
+    fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(910) => a,
+            Bitvector32Term::Variable(v) if *v == Variable(911) => b,
+            Bitvector32Term::Constant(v) => *v,
+            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            _ => panic!("unexpected unsigned-order encoding {term:?}"),
+        }
+    }
+    fn holds(p: &Proposition, a: u32, b: u32) -> bool {
+        match p {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                true,
+            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                let observe = |term: &IntegerTerm| {
+                    let IntegerTerm::Machine(value) = term else {
+                        panic!("expected exact observation")
+                    };
+                    assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                    num_bigint::BigInt::from(machine(value.value(), a, b))
+                };
+                observe(left) <= observe(right)
+            }
+            _ => panic!("unexpected bridge proposition {p:?}"),
+        }
+    }
+    let left = Bitvector32Term::Variable(Variable(910));
+    let right = Bitvector32Term::Variable(Variable(911));
+    for theorem in [
+        prove_uint32_less_equal_to_integer(left.clone(), right.clone()),
+        prove_uint32_less_equal_of_to_integer(left.clone(), right.clone()),
+    ] {
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("missing guard")
+        };
+        for a in [
+            0,
+            1,
+            255,
+            65520,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x8000_0001,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            for b in [
+                0,
+                1,
+                255,
+                65520,
+                0x7fff_ffff,
+                0x8000_0000,
+                0x8000_0001,
+                u32::MAX - 1,
+                u32::MAX,
+            ] {
+                assert_eq!(holds(premise, a, b), a <= b);
+                assert_eq!(holds(conclusion, a, b), a <= b);
+            }
+        }
+    }
+}

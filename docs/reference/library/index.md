@@ -1157,6 +1157,49 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_less_equal_to_integer`
+
+```click
+theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+```
+
+Preserves native unsigned order in exact Integer observations, including values above the sign bit. The native order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_less_equal_of_to_integer`
+
+```click
+theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+Reflects exact Integer observation order into native unsigned order. The mathematical order premise is required.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_to_integer_bounds`
+
+```click
+theorem uint32_to_integer_bounds(value: uint32) {
+    ensures 0 <= to_integer(value) by {
+        apply(uint32_less_equal_to_integer(0u32, value));
+    }
+    ensures to_integer(value) <= 4294967295 by {
+        apply(uint32_less_equal_to_integer(value, 4294967295u32));
+    }
+}
+```
+
+Proves the full unsigned observation range from native order. This theorem does not distribute observations over wrapping operations.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_add_to_integer`
 
 ```click

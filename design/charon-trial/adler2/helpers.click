@@ -11,7 +11,26 @@ struct __rust_q_I6_adler2_I4_algo_I5_U32X4 __rust_q_I6_adler2_I4_algo_T35___rust
     ensures result._0[1] <= 255u32;
     ensures result._0[2] <= 255u32;
     ensures result._0[3] <= 255u32;
-} by { execute(); simp(); }
+    ensures 0 <= to_integer(result._0[0]);
+    ensures to_integer(result._0[0]) <= 255;
+    ensures 0 <= to_integer(result._0[1]);
+    ensures to_integer(result._0[1]) <= 255;
+    ensures 0 <= to_integer(result._0[2]);
+    ensures to_integer(result._0[2]) <= 255;
+    ensures 0 <= to_integer(result._0[3]);
+    ensures to_integer(result._0[3]) <= 255;
+} by {
+    execute();
+    apply(uint32_to_integer_bounds(result._0[0]));
+    apply(uint32_less_equal_to_integer(result._0[0], 255u32));
+    apply(uint32_to_integer_bounds(result._0[1]));
+    apply(uint32_less_equal_to_integer(result._0[1], 255u32));
+    apply(uint32_to_integer_bounds(result._0[2]));
+    apply(uint32_less_equal_to_integer(result._0[2], 255u32));
+    apply(uint32_to_integer_bounds(result._0[3]));
+    apply(uint32_less_equal_to_integer(result._0[3], 255u32));
+    simp();
+}
 
 void __rust_q_I6_adler2_I4_algo_I5_U32X4_add_assign_value_35__rust_q_I6_adler2_I4_algo_I5_U32X4(struct __rust_q_I6_adler2_I4_algo_I5_U32X4* self, struct __rust_q_I6_adler2_I4_algo_I5_U32X4 other) {
     requires ((int64)self->_0[0] + (int64)other._0[0]) <= 4294967295i64;

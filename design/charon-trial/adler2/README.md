@@ -28,7 +28,7 @@ and native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
-| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255 |
+| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
 | `AddAssign<Self>` | Each widened lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand |
 | `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |
@@ -39,6 +39,12 @@ the full safe u32 domain. Multiplication's disjunction includes a zero multiplie
 without evaluating division by zero. These proofs establish the access and
 panic prerequisites in the helper bodies, conditional on their contracts.
 They do not establish that the checksum loops satisfy those contracts.
+
+The constructor also exports `0 <= to_integer(lane) <= 255` for each lane.
+Its proof applies checked unsigned-order bridges to the actual returned
+fields, making the byte bounds usable by the Integer lane-step lemmas. The
+bridges retain the full u32 range; signed reinterpretation would be unsound
+for accumulated B lanes above the sign bit.
 
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,

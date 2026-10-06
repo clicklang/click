@@ -1001,3 +1001,22 @@ are available at the helper-call boundary with only the four-byte shared view
 and length prerequisite. Regressions reject 254 as the universal bound for each
 lane. This supplies the native byte range needed by the proposed lane invariants;
 instantiating their Integer observations over the nested loops remains next.
+
+### Unsigned order and constructor Integer bounds
+
+Checked native-u32/Integer order bridges now preserve and reflect non-strict
+order over the full unsigned domain. Their declarations require the exact
+order premise, type, and conclusion. A proved library range theorem supplies
+nonnegative observations through u32::MAX without assuming signed bounds or
+no-wrap distribution. Boundary models exercise the sign-bit transition and
+maximum; regressions reject missing/reversed guards, changed declarations,
+false signed-range ceilings, wrapping distribution, and undefined arguments.
+
+The unchanged original `U32X4::from` contract now exports all four byte lanes'
+Integer bounds `0..255`, proved by applying those bridges to the returned
+fields. False lower and upper bounds are rejected for each lane. The source,
+locked Charon artifact, and import profile are unchanged. This connects the
+constructor's guarantees to the numeric vocabulary used by the lane-step
+lemmas. Next instantiate the original nested-loop invariants and establish
+helper-call prerequisites from the stored iterator states. Whole-loop panic
+freedom, byte accounting, and checksum correctness remain unproved.

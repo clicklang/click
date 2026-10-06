@@ -250,6 +250,51 @@ mod tests {
     }
 
     #[test]
+    fn uint32_integer_bounds_do_not_distribute_wrapping_or_define_zero_division() {
+        for invalid in [
+            "theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(uint32_to_integer_bounds(value)); } }",
+            "theorem wrong(value: uint32) { ensures to_integer(value + 1u32) == to_integer(value) + 1 by { apply(uint32_to_integer_bounds(value + 1u32)); } }",
+            "theorem wrong(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(uint32_to_integer_bounds(value / 0u32)); } }",
+        ] {
+            assert!(verify_c0_sources(invalid, &[]).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn uint32_integer_order_bridges_recheck_expansion_and_require_evidence() {
+        for (name, premise, conclusion) in [
+            (
+                "uint32_less_equal_to_integer",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "uint32_less_equal_of_to_integer",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+        ] {
+            let source = format!(
+                "theorem bridge(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion} by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {premise};"), ""),
+                source.replace("ensures", "ensures not"),
+                source.replace(
+                    &format!("{name}(left, right)"),
+                    &format!("{name}(right, left)"),
+                ),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
     fn integer_order_observation_requires_the_c_guard_and_rechecks_expansion() {
         let source = "theorem bridge(left: int32, right: int32) { requires left <= right; ensures to_integer(left) <= to_integer(right) by { apply(int32_less_equal_to_integer(left, right)); } }";
         verify_c0_sources(source, &[]).unwrap();

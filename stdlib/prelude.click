@@ -954,6 +954,25 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 
+theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+
+theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+
+theorem uint32_to_integer_bounds(value: uint32) {
+    ensures 0 <= to_integer(value) by {
+        apply(uint32_less_equal_to_integer(0u32, value));
+    }
+    ensures to_integer(value) <= 4294967295 by {
+        apply(uint32_less_equal_to_integer(value, 4294967295u32));
+    }
+}
+
 theorem int32_add_to_integer(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
