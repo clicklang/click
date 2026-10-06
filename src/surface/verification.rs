@@ -9169,6 +9169,17 @@ int32 copy_pair(struct pair* s, struct pair* t) {
         );
     }
 
+    #[test]
+    fn unsigned_array_field_returns_preserve_values_in_c_callers() {
+        let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
+        let proof = r#"verifying "reader.c";
+            struct packet make(uint32 x) { ensures result.words[3] == x; } by { execute(); simp(); }
+            uint32 read(uint32 x) { ensures result == x; } by { execute(); simp(); }
+        "#;
+        verify_sources(proof, source).unwrap();
+        assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
+    }
+
     const BORROWING_BOX_PRELUDE: &str = r#"
 verifying "reader.c";
 

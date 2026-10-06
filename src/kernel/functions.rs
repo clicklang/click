@@ -17634,6 +17634,25 @@ fn aggregate_copy_reads_uninitialized(
     // field type this copy cannot carry drops the destination cells instead
     // of leaving them readable, so it cannot go stale here.
     for field in layout.fields() {
+        if let CType::UInt32Array(count) = field.c_type() {
+            let source_field = source.offset_by_bytes(field.offset_bytes());
+            let Some(bytes) = count.checked_mul(4) else {
+                return true;
+            };
+            if bytes == 0
+                || memory.has_initialized_bytes_under(&source_field, bytes, &PureFactContext::new())
+                || memory.is_zeroed_heap_address(&source_field, bytes, &PureFactContext::new())
+            {
+                continue;
+            }
+            if memory.is_uninitialized_heap_address(&source_field, bytes, &PureFactContext::new())
+                || (source_field.block.starts_with("local:")
+                    && memory.access_in_bounds(&source_field, bytes))
+            {
+                return true;
+            }
+        }
+
         let (element_type, element_count) = match field.c_type() {
             CType::Int8 => (field.c_type(), 1),
             CType::Int16
@@ -17648,6 +17667,7 @@ fn aggregate_copy_reads_uninitialized(
             | CType::Float32
             | CType::Float64 => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
+            CType::UInt32Array(length) => (CType::UInt32, length),
             CType::Int64Array(length) => (CType::Int64, length),
             CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
@@ -17794,6 +17814,40 @@ fn copy_aggregate_fields(
     layout: &CAggregateLayout,
 ) -> CMemory {
     for field in layout.fields() {
+        if let CType::UInt32Array(count) = field.c_type() {
+            let source_field = source.offset_by_bytes(field.offset_bytes());
+            let target_field = destination.offset_by_bytes(field.offset_bytes());
+            if let Ok(copied) = memory.clone().write_scalar_array_region(
+                &target_field,
+                CType::UInt32,
+                count,
+                CValue::typed_pointer(source_field, CType::UInt32Pointer),
+                true,
+                false,
+                &PureFactContext::new(),
+            ) {
+                memory = copied;
+                continue;
+            }
+            // Forgotten initialized values stay an immutable typed snapshot,
+            // without generating one load for each element of the field.
+            if let Ok(copied) = memory.clone().write_scalar_array_snapshot(
+                &target_field,
+                CType::UInt32,
+                count,
+                CValue::typed_pointer(
+                    source.offset_by_bytes(field.offset_bytes()),
+                    CType::UInt32Pointer,
+                ),
+                true,
+                false,
+                &PureFactContext::new(),
+            ) {
+                memory = copied;
+                continue;
+            }
+        }
+
         let (element_type, element_count) = match field.c_type() {
             CType::Int8 => (field.c_type(), 1),
             CType::Int16
@@ -17808,6 +17862,7 @@ fn copy_aggregate_fields(
             | CType::Float32
             | CType::Float64 => (field.c_type(), 1),
             CType::Int32Array(length) => (CType::Int32, length),
+            CType::UInt32Array(length) => (CType::UInt32, length),
             CType::Int64Array(length) => (CType::Int64, length),
             CType::Int128Array(length) => (CType::Int128, length),
             CType::UInt64Array(length) => (CType::UInt64, length),
@@ -18135,6 +18190,78 @@ mod aggregate_union_copy_tests {
                 .is_none()
         );
         (memory, source, destination, layout)
+    }
+
+    #[test]
+    fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
+        let mut samples = Vec::new();
+        for count in [4u32, 1024, 1_000_000] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = Pointer {
+                block: "local:aggregate-array-source".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let destination = Pointer {
+                block: "local:aggregate-array-target".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let layout = CAggregateLayout::new(
+                count * 4,
+                4,
+                vec![CAggregateField::new("words", 0, CType::UInt32Array(count))],
+            );
+            let memory = CMemory::new()
+                .with_block(source.block.clone(), count * 4)
+                .with_block(destination.block.clone(), count * 4)
+                .write_scalar_array_region(
+                    &source,
+                    CType::UInt32,
+                    count,
+                    CValue::UInt32(7u32.into()),
+                    false,
+                    false,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            let (copied, work) = crate::instrumentation::measure_deterministic_work(|| {
+                copy_aggregate_fields_checked(memory, &source, &destination, &layout).unwrap()
+            });
+            let last = destination.offset_by_bytes((count - 1) * 4);
+            assert_eq!(copied.known_value(&last), Some(CValue::UInt32(7u32.into())));
+            let changed = copied.store(
+                source.offset_by_bytes((count - 1) * 4),
+                CValue::UInt32(9u32.into()),
+            );
+            assert_eq!(
+                changed.known_value(&last),
+                Some(CValue::UInt32(7u32.into()))
+            );
+            samples.push(work);
+            // Forget a known whole-field footprint while retaining initialized
+            // bytes. Symbolic-index invalidation has its own filed scaling bug.
+            let forgotten = changed.without_possible_aliasing_cells(
+                &source,
+                count * 4,
+                &PureFactContext::new(),
+            );
+            let (unknown, work) = crate::instrumentation::measure_deterministic_work(|| {
+                copy_aggregate_fields_checked(forgotten, &source, &destination, &layout).unwrap()
+            });
+            assert!(unknown.known_value(&last).is_some());
+            assert!(unknown.has_initialized_bytes_at(&destination, count * 4));
+            samples.push(work);
+            let uninitialized = CMemory::new()
+                .with_block(source.block.clone(), count * 4)
+                .with_block(destination.block.clone(), count * 4);
+            assert_eq!(
+                copy_aggregate_fields_checked(uninitialized, &source, &destination, &layout).err(),
+                Some(CUndefinedBehavior::UninitializedRead)
+            );
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] * 2 + 64),
+            "{samples:?}"
+        );
     }
 
     #[test]

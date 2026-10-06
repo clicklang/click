@@ -83,3 +83,23 @@ or assuming the checksum result would bypass the trial's purpose.
 Only after the original reachable computation adapts can sidecars establish
 access bounds, no panic, byte preservation, termination, and the shared
 Adler-32 specification described in the [checksum assessment](../../rust-checksum-assessment.md).
+
+## Follow-up: locked crate inputs
+
+Schema 4 now provides the crate root, edition, features, selected roots, and
+complete rustc dep-info closure. The `charon_adler2_locked_crate_reaches_owned_operand_boundary`
+live regression runs these original sources with Rust 2021 and `std`. The
+source lock, qualified identities, and checked concrete `Default` dispatch pass.
+Adaptation next rejects an assignment-operator operand passed by value as a
+record (`U32X4`). No full-loop artifact or lock is published and no checksum
+contract is assumed. The separate
+`charon_adler2_unchanged_constructor_returns_initialized_state` regression
+selects `Adler32::new`, imports its actual `Default` body, and proves both
+functions return `a = 1`, `b = 0` using ordinary aggregate-return contracts.
+False initialized-field claims are rejected. The earlier result record above remains the
+historical single-file trial.
+
+Multi-module regressions prove separate same-named functions and an inherent
+method call, including a false-claim negative. Changes to an unreachable
+module invalidate the lock. Crate configuration changes, missing or extra
+files, path escapes, and symlinks are rejected.

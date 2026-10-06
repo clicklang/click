@@ -3639,3 +3639,6 @@ mod retirement;
 
 #[path = "rust_import/adler2_trial.rs"]
 mod adler2_trial;
+
+#[path = "rust_import/crate_inputs.rs"]
+mod crate_inputs;

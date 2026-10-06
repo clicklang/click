@@ -3018,6 +3018,14 @@ impl C0Function {
         self
     }
 
+    /// Preserve a foreign adapter's by-value return identity for sidecar checks.
+    pub(crate) fn with_struct_return(mut self, name: String, layout: C0StructLayout) -> Self {
+        self.return_type = struct_value_type(&layout);
+        self.structs.insert(name.clone(), layout);
+        self.return_struct_name = Some(name);
+        self
+    }
+
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
     }
@@ -8161,6 +8169,7 @@ impl Parser {
                         | C0Type::Float32
                         | C0Type::Float64
                         | C0Type::Int32Array(_)
+                        | C0Type::UInt32Array(_)
                         | C0Type::Int128Array(_)
                         | C0Type::Int64Array(_)
                         | C0Type::UInt128Array(_)

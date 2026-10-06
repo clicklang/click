@@ -189,12 +189,28 @@ pub(super) fn lower(
             T::Return => {
                 let mut end = if f.return_type == Type::Unit {
                     c_return(c_void_value())
+                } else if let Type::Record { name } = &f.return_type {
+                    let flag = check("__rust_mir_0", name)?;
+                    c_seq(
+                        assertion(flag, true),
+                        c_seq(
+                            c_assign(flag, c_int32_literal(0)),
+                            c_return(c_variable("__rust_mir_0")),
+                        ),
+                    )
                 } else {
                     c_return(c_variable("__rust_mir_0"))
                 };
                 // Plain values without a destructor can die at Return; any
                 // destructor-bearing value must already have been consumed.
                 for (local, record) in &records {
+                    if *local == "__rust_mir_0"
+                        && matches!(&f.return_type, Type::Record { name } if name == record)
+                    {
+                        // The return sequence itself consumes this slot;
+                        // its destructor belongs to the receiving caller.
+                        continue;
+                    }
                     if cx
                         .records
                         .get(record)
@@ -241,7 +257,16 @@ pub(super) fn lower(
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
                 let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
-                let call = if callee.return_type == Type::Unit {
+                let call = if let Type::Record { name } = &callee.return_type {
+                    let flag = check(destination, name)?;
+                    c_seq(
+                        assertion(flag, false),
+                        c_seq(
+                            c_call_assign(destination, function, arguments_values),
+                            c_assign(flag, c_int32_literal(1)),
+                        ),
+                    )
+                } else if callee.return_type == Type::Unit {
                     c_call(function, arguments_values)
                 } else {
                     c_call_assign(destination, function, arguments_values)

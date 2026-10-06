@@ -1,5 +1,6 @@
 //! Experimental safe Rust imports, compiler-owned extraction and direct kernel lowering.
 mod charon;
+mod crate_inputs;
 mod import;
 pub(crate) mod lowering;
 mod profile;
