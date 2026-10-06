@@ -506,6 +506,32 @@ semantics; C++ source division/remainder separately retains native guards and
 uses artifact schema 43.
 
 
+The shared library now exposes `integer_truncation_identity` under `d != 0`,
+relating the symbolic terms by `n == truncating_quotient(n, d) * d +
+truncating_remainder(n, d)`. For positive `d`, retaining the nonzero domain
+premise,
+`integer_positive_divisor_remainder_lower` and
+`integer_positive_divisor_remainder_upper` establish `1 - d <= r <= d - 1`.
+`integer_nonnegative_dividend_remainder` and
+`integer_nonpositive_dividend_remainder` establish the corresponding remainder
+sign under a nonzero divisor and the explicit dividend sign premise. Negative
+divisors are supported by the identity and sign laws. These are kernel laws of
+the builtin Integer operations; reserved declarations are checked against their
+exact parameter types, guards and conclusions. They establish no native
+operation or narrowing safety. General affine reasoning still does not open
+symbolic truncation or multiply two symbolic Integers.
+
+<!-- verified-example: mdtests/integer_truncation_laws.md -->
+```click
+theorem check_truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d) by {
+        apply(integer_truncation_identity(n, d));
+    }
+}
+```
+
+
 ## Full-width native comparisons
 
 All six native comparisons accept matching `Int128` or `UInt128` operands.
@@ -577,6 +603,52 @@ proves no native definedness or cast identity. Compose it with the existing
 native division guards, exact quotient/remainder observations, and
 `integer_cast_identity` for range-checked narrowing. See the checked
 [division-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md).
+
+
+## Observing defined signed 64-bit operations
+
+`int64_add_to_integer` and `int64_subtract_to_integer` extend the signed int32
+observation laws to the full signed 64-bit carrier. Their kernel implementation
+is shared with the int32 laws. Each exact observation requires the corresponding
+native `defined(left + right)` or `defined(left - right)` fact. Modular machine
+terms alone do not establish mathematical addition/subtraction, and an overflow
+case cannot discharge the guard. Declaration checks retain the signed width,
+operation, guard polarity and exact conclusion.
+
+The unchanged Bitcoin division sidecar uses the addition law for the three
+possible correction values after proving each native sum is defined. Explicit
+Integer arithmetic then bounds those corrected observations before the original
+short-circuit expression executes. Signed order reflection restores native bounds
+on the actual returned value. This proves output bounds for both rounding
+branches; identifying the result as a mathematical floor/ceiling remains separate.
+Boundary oracles, forged declarations, missing/false guards, expansion,
+reverification and deterministic application scaling cover the shared laws.
+See the checked
+[operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
+
+
+## Restoring signed native facts
+
+Signed `int32` and `int64` observations preserve and reflect non-strict order.
+The standard-library `int32_less_equal_of_to_integer` and
+`int64_less_equal_of_to_integer` lemmas restore native order from an exact
+Integer comparison. `int64_less_equal_to_integer` supplies the forward direction,
+matching the existing int32 bridge. `int64_equal_of_to_integer` extends the
+existing int32 injectivity bridge to the full signed 64-bit carrier.
+
+These are width-specific kernel standard theorems with checked declaration
+shape, parameter types, premise and conclusion. They require no overflow fact
+because an already-existing signed bit pattern has one exact Integer value.
+They infer neither implicit ranges nor narrowing identities. Prove the cast
+identity and transport its Integer bounds before applying the reverse order
+bridge to the narrowed native result. The C++ regression uses a range strictly
+smaller than either native carrier, retains expansion/reverification and audit,
+and frames unrelated memory through a modular caller.
+
+Boundary models include both signs and full-width extrema; forged declarations,
+missing/reversed premises, wrong carriers, false native bounds, and incorrect
+certificate references are refused. See the checked
+[signed bridge fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
 
 ## Bounds excluding constants

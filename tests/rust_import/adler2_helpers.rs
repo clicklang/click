@@ -338,7 +338,11 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
             String::from_utf8_lossy(&result.stderr)
         );
     }
-    for (name, ensures) in [
+}
+
+#[test]
+fn charon_adler2_lane_bounds_tools_expand_math_certificates() {
+    expand_bounds_claims(&[
         ("adler_lane_half_product_5551", 1),
         ("adler_lane_triangle_5551", 1),
         ("adler_lane_ceiling_5551", 2),
@@ -353,11 +357,23 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
         ("adler_lane_triangle_successor", 1),
         ("adler_lane_b_ceiling_successor", 1),
         ("adler_lane_b_invariant_step", 1),
+    ]);
+}
+
+#[test]
+fn charon_adler2_lane_bounds_tools_expand_native_certificates() {
+    expand_bounds_claims(&[
         ("adler_lane_native_a_sum_fits", 1),
         ("adler_lane_native_a_step", 3),
         ("adler_lane_native_b_sum_fits", 1),
         ("adler_lane_native_b_step", 3),
-    ] {
+    ]);
+}
+
+fn expand_bounds_claims(claims: &[(&str, usize)]) {
+    let p = adler2_helpers_project();
+    fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
+    for &(name, ensures) in claims {
         for index in 0..ensures {
             let result = Command::new(env!("CARGO_BIN_EXE_click"))
                 .args([

@@ -8543,25 +8543,64 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
 /// Exact mathematical observation of a defined signed 32-bit addition.
 /// The overflow premise is essential: the machine term alone is modular.
 pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_int32_operation_to_integer(left, right, false)
+    prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Signed int32 order is preserved by its exact mathematical observation.
 /// Every int32 bit pattern has an Integer interpretation, so this law needs
 /// only the corresponding C order premise and no definedness side condition.
 pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
+}
+
+/// Reflect mathematical order into native signed int32 order.
+pub fn prove_int32_less_equal_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
+}
+
+/// Preserve native signed int64 order in its mathematical observation.
+pub fn prove_int64_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
+}
+
+/// Reflect mathematical order into native signed int64 order.
+pub fn prove_int64_less_equal_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
+}
+
+fn prove_signed_integer_order_bridge(
+    ty: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+    reverse: bool,
+) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("typed signed operands have exact Integer interpretations")
     };
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
+    let native = match ty {
+        MachineIntegerType::Int32 => ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+        MachineIntegerType::Int64 => {
+            ConditionTerm::int64_signed_less_equal(left.clone(), right.clone())
+        }
+        _ => unreachable!("signed order bridges admit only int32/int64"),
+    };
+    let native = Proposition::ConditionIs(native, true);
+    let integer = Proposition::ConditionIs(
         ConditionTerm::IntegerLessEqual(observe(left).into(), observe(right).into()),
         true,
     );
+    let (premise, conclusion) = if reverse {
+        (integer, native)
+    } else {
+        (native, integer)
+    };
     Theorem::new(Proposition::Implies(
         Box::new(premise),
         Box::new(conclusion),
@@ -8572,51 +8611,86 @@ pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
 /// have the same 32-bit pattern. No overflow premise or conversion back is
 /// needed, since every signed int32 pattern has one exact Integer value.
 pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_equality_bridge(MachineIntegerType::Int32, left, right)
+}
+
+/// Signed int64 observation is injective, including the full 64-bit extrema.
+pub fn prove_int64_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_equality_bridge(MachineIntegerType::Int64, left, right)
+}
+
+fn prove_signed_integer_equality_bridge(
+    ty: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("typed signed operands have exact Integer interpretations")
+    };
+    let integer = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(observe(left.clone()).into(), observe(right.clone()).into()),
+        true,
+    );
+    let native = match ty {
+        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
+        MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
+        _ => unreachable!("signed equality bridges admit only int32/int64"),
     };
     Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(
-                observe(left.clone()).into(),
-                observe(right.clone()).into(),
-            ),
-            true,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(left, right),
-            true,
-        )),
+        Box::new(integer),
+        Box::new(Proposition::ConditionIs(native, true)),
     ))
 }
 
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
 pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_int32_operation_to_integer(left, right, true)
+    prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, true)
 }
 
-fn prove_int32_operation_to_integer(
+/// Exact mathematical observation of a defined signed 64-bit addition.
+pub fn prove_int64_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, false)
+}
+
+/// Exact mathematical observation of a defined signed 64-bit subtraction.
+pub fn prove_int64_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, true)
+}
+
+fn prove_signed_operation_to_integer(
+    ty: MachineIntegerType,
     left: Bitvector32Term,
     right: Bitvector32Term,
     subtract: bool,
 ) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("typed signed operands have exact Integer interpretations")
     };
-    let (overflow, machine, mathematical) = if subtract {
-        (
-            ConditionTerm::signed_subtract_overflows(left.clone(), right.clone()),
-            Bitvector32Term::Subtract(Box::new(left.clone()), Box::new(right.clone())),
-            IntegerTerm::Subtract(observe(left).into(), observe(right).into()),
-        )
-    } else {
-        (
+    let (overflow, machine) = match (ty, subtract) {
+        (MachineIntegerType::Int32, false) => (
             ConditionTerm::signed_add_overflows(left.clone(), right.clone()),
             Bitvector32Term::Add(Box::new(left.clone()), Box::new(right.clone())),
-            IntegerTerm::Add(observe(left).into(), observe(right).into()),
-        )
+        ),
+        (MachineIntegerType::Int32, true) => (
+            ConditionTerm::signed_subtract_overflows(left.clone(), right.clone()),
+            Bitvector32Term::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+        ),
+        (MachineIntegerType::Int64, false) => (
+            ConditionTerm::int64_signed_add_overflows(left.clone(), right.clone()),
+            Bitvector32Term::Int64Add(Box::new(left.clone()), Box::new(right.clone())),
+        ),
+        (MachineIntegerType::Int64, true) => (
+            ConditionTerm::int64_signed_subtract_overflows(left.clone(), right.clone()),
+            Bitvector32Term::Int64Subtract(Box::new(left.clone()), Box::new(right.clone())),
+        ),
+        _ => unreachable!("signed operation bridges admit only int32/int64"),
+    };
+    let mathematical = if subtract {
+        IntegerTerm::Subtract(observe(left).into(), observe(right).into())
+    } else {
+        IntegerTerm::Add(observe(left).into(), observe(right).into())
     };
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::ConditionIs(overflow, false)),

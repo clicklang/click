@@ -2344,6 +2344,7 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
     integer_round_trip_destination(name).is_some()
+        || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
         || matches!(
             name,
@@ -2351,6 +2352,12 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_subtract_defined_by_integer_bounds"
                 | "int32_equal_of_to_integer"
                 | "int32_add_to_integer"
+                | "int32_less_equal_of_to_integer"
+                | "int64_less_equal_to_integer"
+                | "int64_less_equal_of_to_integer"
+                | "int64_add_to_integer"
+                | "int64_subtract_to_integer"
+                | "int64_equal_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
@@ -2420,10 +2427,20 @@ fn verify_kernel_standard_theorem_axiom(
         "nat_integer_succ" | "nat_integer_nonnegative" | "nat_integer_round_trip" => (1, 0),
         "integer_nat_round_trip" => (1, 1),
         name if integer_round_trip_destination(name).is_some() => (1, 2),
+        name if crate::kernel::integer_truncation_law_requirements(name).is_some() => (
+            2,
+            crate::kernel::integer_truncation_law_requirements(name).unwrap(),
+        ),
         "int32_add_defined_by_integer_bounds" | "int32_subtract_defined_by_integer_bounds" => {
             (2, 2)
         }
         "int32_add_to_integer"
+        | "int32_less_equal_of_to_integer"
+        | "int64_less_equal_to_integer"
+        | "int64_less_equal_of_to_integer"
+        | "int64_add_to_integer"
+        | "int64_subtract_to_integer"
+        | "int64_equal_of_to_integer"
         | "int32_less_equal_to_integer"
         | "int32_subtract_to_integer"
         | "int32_equal_of_to_integer" => (2, 1),
@@ -2486,7 +2503,20 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if is_nat_integer_law_name(theorem.name()) {
+    let axiom = if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
+        let parameter = |index: usize| {
+            let parameter = &theorem.parameters()[index];
+            match context.integer_values.get(parameter.name()) {
+                Some(crate::kernel::SpecIntegerExpression::Term(value)) => Ok(value.clone()),
+                _ => Err(ClickError::new(format!(
+                    "`{claim_label}` kernel parameter `{}` must be Integer",
+                    parameter.name()
+                ))),
+            }
+        };
+        crate::kernel::prove_integer_truncation_law(theorem.name(), parameter(0)?, parameter(1)?)
+            .expect("registered Integer truncation law")
+    } else if is_nat_integer_law_name(theorem.name()) {
         let proposition = context
             .requires
             .iter()
@@ -2509,6 +2539,35 @@ fn verify_kernel_standard_theorem_axiom(
             )));
         };
         crate::kernel::prove_integer_machine_round_trip(value.clone(), destination)
+    } else if theorem.name().starts_with("int64_") {
+        let parameter = |index: usize| {
+            let parameter = &theorem.parameters()[index];
+            match context.values.get(parameter.name()) {
+                Some(CValue::Int64(value)) => Ok(value.clone()),
+                _ => Err(ClickError::new(format!(
+                    "`{claim_label}` kernel parameter `{}` must be int64",
+                    parameter.name()
+                ))),
+            }
+        };
+        let left = parameter(0)?;
+        let right = parameter(1)?;
+        match theorem.name() {
+            "int64_less_equal_to_integer" => {
+                crate::kernel::prove_int64_less_equal_to_integer(left, right)
+            }
+            "int64_less_equal_of_to_integer" => {
+                crate::kernel::prove_int64_less_equal_of_to_integer(left, right)
+            }
+            "int64_add_to_integer" => crate::kernel::prove_int64_add_to_integer(left, right),
+            "int64_subtract_to_integer" => {
+                crate::kernel::prove_int64_subtract_to_integer(left, right)
+            }
+            "int64_equal_of_to_integer" => {
+                crate::kernel::prove_int64_equal_of_to_integer(left, right)
+            }
+            _ => unreachable!("only registered int64 bridges"),
+        }
     } else if theorem.name().starts_with("uint32_") {
         let uint32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
@@ -2599,6 +2658,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "int32_equal_of_to_integer" => {
                 crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)
+            }
+            "int32_less_equal_of_to_integer" => {
+                crate::kernel::prove_int32_less_equal_of_to_integer(value, int32_parameter(1)?)
             }
             "int32_less_equal_to_integer" => {
                 crate::kernel::prove_int32_less_equal_to_integer(value, int32_parameter(1)?)
@@ -3777,6 +3839,136 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 source.replace(conclusion, "true"),
             ] {
                 assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+        }
+    }
+    #[test]
+    fn signed_integer_order_bridge_declarations_reject_wrong_guards_types_and_goals() {
+        for (name, ty, premise, goal) in [
+            (
+                "int32_less_equal_of_to_integer",
+                "int32",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_less_equal_to_integer",
+                "int64",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "int64_less_equal_of_to_integer",
+                "int64",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_equal_of_to_integer",
+                "int64",
+                "to_integer(left) == to_integer(right)",
+                "left == right",
+            ),
+        ] {
+            let source = format!(
+                "theorem {name}(left: {ty}, right: {ty}) {{ requires {premise}; ensures {goal}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {premise};"), ""),
+                source.replace(&format!("requires {premise};"), "requires left < right;"),
+                source.replace(&format!("ensures {goal};"), "ensures left > right;"),
+                source.replace(&format!(": {ty}"), ": uint64"),
+                source.replace(
+                    &format!(": {ty}"),
+                    if ty == "int64" { ": int32" } else { ": int64" },
+                ),
+                source.replace("; ensures", "; requires left == right; ensures"),
+            ] {
+                assert!(
+                    verify_standard_declaration(&invalid).is_err(),
+                    "forged declaration: {invalid}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn int64_integer_operation_declarations_reject_wrong_guards_and_widths() {
+        for (name, op, other) in [
+            ("int64_add_to_integer", "+", "-"),
+            ("int64_subtract_to_integer", "-", "+"),
+        ] {
+            let source = format!(
+                "theorem {name}(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right); }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires defined(left {op} right);"), ""),
+                source.replace(
+                    &format!("requires defined(left {op} right);"),
+                    &format!("requires defined(left {other} right);"),
+                ),
+                source.replace(": int64", ": int32"),
+                source.replace(": int64", ": uint64"),
+                source.replace(" == ", " != "),
+                source.replace("; ensures", "; requires left == right; ensures"),
+            ] {
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+        }
+    }
+    #[test]
+    fn integer_truncation_declarations_reject_forged_guards_operands_and_types() {
+        for (name, requirements, goal) in [
+            (
+                "integer_truncation_identity",
+                &["d != 0"][..],
+                "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_lower",
+                &["d != 0", "0 < d"][..],
+                "1 - d <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_upper",
+                &["d != 0", "0 < d"][..],
+                "truncating_remainder(n, d) <= d - 1",
+            ),
+            (
+                "integer_nonnegative_dividend_remainder",
+                &["d != 0", "0 <= n"][..],
+                "0 <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_nonpositive_dividend_remainder",
+                &["d != 0", "n <= 0"][..],
+                "truncating_remainder(n, d) <= 0",
+            ),
+        ] {
+            let requires = requirements
+                .iter()
+                .map(|r| format!("requires {r}; "))
+                .collect::<String>();
+            let source =
+                format!("theorem {name}(n: Integer, d: Integer) {{ {requires}ensures {goal}; }}");
+            verify_standard_declaration(&source).unwrap();
+            let mut invalid = vec![
+                source.replace(": Integer", ": int32"),
+                source.replace("truncating_remainder(n, d)", "truncating_remainder(d, n)"),
+                source.replace(&format!("ensures {goal};"), "ensures n == d;"),
+                source.replace("ensures", "requires n == d; ensures"),
+                source.replace("ensures", "ensures n == n; ensures"),
+            ];
+            for guard in requirements {
+                invalid.push(source.replace(&format!("requires {guard};"), ""));
+                invalid.push(source.replace(
+                    &format!("requires {guard};"),
+                    &format!("requires not ({guard});"),
+                ));
+            }
+            for forged in invalid {
+                assert!(verify_standard_declaration(&forged).is_err(), "{forged}");
             }
         }
     }
