@@ -19,7 +19,7 @@ int64 next(uint8 byte) {
 } by {
     execute();
     have result <= 255i64 by {
-        simp() using { ((uint32)byte) <= 255u32; byte < 255; };
+        simp() using { ((uint32)byte) <= 255u32; byte < 255; }
     }
     have result <= 255i64 by {
         arithmetic_certificate special {

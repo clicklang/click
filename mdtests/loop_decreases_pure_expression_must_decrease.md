@@ -42,7 +42,7 @@ int32 drain(int32 box[4]) {
                 }
             }
             step();
-            close_invariants by { unfold(head(box)); simp(); };
+            close_invariants by { unfold(head(box)); simp(); }
         }
     }
     step();

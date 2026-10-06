@@ -152,7 +152,7 @@ int32 caller(struct node* p) {
         transport(
             at(before, p->other) == at(before, p->other),
             p->other == at(before, p->other)
-        ) using { };
+        ) using { }
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);

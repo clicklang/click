@@ -10,7 +10,7 @@ existential before the witness runs.
 ```click
 theorem identity(n: int64) {
     ensures exists (x: int64) { x == n } by {
-        witness { x: n };
+        witness { x: n }
         simp();
     }
 }

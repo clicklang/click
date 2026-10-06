@@ -76,7 +76,7 @@ int32 drain(int32 n) {
             }
             simp() using {
                 to_integer(n - 1) == to_integer(n) - to_integer(1);
-            };
+            }
         }
         step();
         step();
