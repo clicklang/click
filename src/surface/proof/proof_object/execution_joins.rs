@@ -732,15 +732,37 @@ impl<'a> Proof<'a> {
         // lowered, as a loop binder does. The certificate keeps the
         // assertions as written.
         let written_assertions = assertions;
+        // The interface is written inside this frontier's proof scope: a
+        // proof `match` arm's fields, `let` names, call-result binders. Its
+        // entries name them as a `have` goal here would, so they are
+        // resolved before anything is lowered.
+        let proof_locals = self.proof_local_values();
         let assertions = written_assertions
             .iter()
             .map(|assertion| match assertion {
-                ProofAssertion::Fact(_) => Ok(assertion.clone()),
+                ProofAssertion::Fact(fact) => substitute_click_proposition(fact, &proof_locals)
+                    .map(ProofAssertion::Fact)
+                    .map_err(|message| {
+                        self.step_error(format!(
+                            "could not resolve the names in an `ensuring` fact: {message}"
+                        ))
+                    }),
                 ProofAssertion::Resource(resource) => {
-                    crate::surface::lowering::loop_resource_with_field_schema(
+                    crate::surface::verification::substitute_resource_clause_for_summary(
                         resource,
-                        context.resource_environment,
+                        &proof_locals,
                     )
+                    .map_err(|message| {
+                        self.step_error(format!(
+                            "could not resolve the names in an `ensuring` resource: {message}"
+                        ))
+                    })
+                    .and_then(|resource| {
+                        crate::surface::lowering::loop_resource_with_field_schema(
+                            &resource,
+                            context.resource_environment,
+                        )
+                    })
                     .map(ProofAssertion::Resource)
                 }
             })
@@ -905,9 +927,29 @@ impl<'a> Proof<'a> {
         if then_interface_vec != else_interface_vec
             || *then_abstract.core.state != *else_abstract.core.state
         {
-            return Err(self.step_error(
-                "`branch ensuring` arms produced different abstract successor states",
-            ));
+            // Say which part of the two abstractions disagrees: the arms
+            // must agree on everything the interface does not abstract.
+            let (then_state, else_state) = (&then_abstract.core.state, &else_abstract.core.state);
+            let mut differing = Vec::new();
+            if then_interface_vec != else_interface_vec {
+                differing.push("the facts the interface exports");
+            }
+            if then_state.locals() != else_state.locals() {
+                differing.push("the local variables");
+            }
+            if then_state.memory() != else_state.memory() {
+                differing.push("the memory");
+            }
+            if then_state.resources() != else_state.resources() {
+                differing.push("the interface resources");
+            }
+            if differing.is_empty() {
+                differing.push("state outside locals, memory, and resources");
+            }
+            return Err(self.step_error(format!(
+                "`branch ensuring` arms produced different abstract successor states: they differ in {}",
+                differing.join(", ")
+            )));
         }
 
         // Consume owned exports from both concrete arms before intersecting
