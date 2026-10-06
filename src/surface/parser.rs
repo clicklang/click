@@ -6466,7 +6466,14 @@ impl Parser {
             return Err(self.error("a named interface resource requires a declared resource"));
         };
         let identity = match self.current_resource_bindings.get(&name) {
-            Some((identity, family)) if family == resource_name => *identity,
+            // A binder an `unfold` introduced for a child slot is recorded
+            // under its parent's resource, so it is taken by identity alone,
+            // as a loop header takes it.
+            Some((identity, family))
+                if family == resource_name || self.child_slot_identities.contains(identity) =>
+            {
+                *identity
+            }
             Some((_, family)) => {
                 return Err(self.error(format!(
                     "interface binder `{name}` rebinds an instance of resource `{family}`, not `{resource_name}`"

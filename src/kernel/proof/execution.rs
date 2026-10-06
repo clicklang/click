@@ -4908,6 +4908,38 @@ fn memory_diff_is_covered_by_ranges(
         })
 }
 
+/// Whether the memory an arm's effects have produced so far is `recorded`,
+/// the memory the arm recorded at this point.
+///
+/// Effects account for writes. An arm that returns from an inlined call also
+/// ends the lifetimes of that call's automatic objects, which writes nothing
+/// and leaves no effect, so the recorded memory may hold tombstones the
+/// effects do not produce. Those objects are ended here the same way before
+/// the comparison. The join carries every arm's tombstones on its own
+/// ([`CMemory::with_interface_memory_havoc_preserving_loans`]), so this
+/// admits no write the effects do not cover.
+fn interface_chain_memory_matches(
+    produced: &CMemory,
+    recorded: &CMemory,
+    assumptions: &PureFactContext,
+) -> bool {
+    use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
+    // End the lifetimes first: with them the memories are usually the same
+    // snapshot, which the comparison answers without looking at a cell.
+    let mut ended: Option<CMemory> = None;
+    for block in recorded.ended_local_blocks() {
+        if !produced.is_ended_local_block(block) {
+            ended = Some(
+                ended
+                    .as_ref()
+                    .unwrap_or(produced)
+                    .without_local_block(block),
+            );
+        }
+    }
+    c_memories_definitionally_equal(ended.as_ref().unwrap_or(produced), recorded, assumptions)
+}
+
 fn checked_interface_effect_facts(
     split_state: &CState,
     joined_state: &CState,
@@ -4931,16 +4963,19 @@ fn checked_interface_effect_facts(
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
                     }
-                    if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-                        &memory,
-                        before,
-                        assumptions,
-                    ) {
+                    if !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface arm effect chain does not start at its current memory",
                         );
                     }
-                    if !memory_diff_is_covered_by_writes(before, after, changed, assumptions, fact)
+                    if !fact.is_join_summary()
+                        && !memory_diff_is_covered_by_writes(
+                            before,
+                            after,
+                            changed,
+                            assumptions,
+                            fact,
+                        )
                     {
                         return Err(
                             "an interface arm memory effect does not cover its memory diff",
@@ -4961,16 +4996,18 @@ fn checked_interface_effect_facts(
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
                     }
-                    if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-                        &memory,
-                        before,
-                        assumptions,
-                    ) {
+                    if !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface arm effect summary does not start at its current memory",
                         );
                     }
-                    if !memory_diff_is_covered_by_ranges(before, after, mutable_ranges, assumptions)
+                    if !fact.is_join_summary()
+                        && !memory_diff_is_covered_by_ranges(
+                            before,
+                            after,
+                            mutable_ranges,
+                            assumptions,
+                        )
                     {
                         return Err(
                             "an interface arm memory effect does not cover its memory diff",
@@ -4989,11 +5026,7 @@ fn checked_interface_effect_facts(
                     allocation_base,
                     bytes,
                 } => {
-                    if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-                        &memory,
-                        before,
-                        assumptions,
-                    ) {
+                    if !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
                             "an interface heap-free effect does not start at its current memory",
                         );
@@ -5009,11 +5042,7 @@ fn checked_interface_effect_facts(
                 _ => return Err("an interface arm contains unchecked effect metadata"),
             }
         }
-        if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
-            &memory,
-            arms[arm_index].state.memory(),
-            assumptions,
-        ) {
+        if !interface_chain_memory_matches(&memory, arms[arm_index].state.memory(), assumptions) {
             return Err("an interface arm effect chain does not reach its recorded memory");
         }
     }
@@ -5059,7 +5088,7 @@ fn checked_interface_effect_facts(
             mutable_ranges: ranges,
         }
     };
-    let mut facts = vec![ExecutionPureFact::certified(proposition)];
+    let mut facts = vec![ExecutionPureFact::certified_join_summary(proposition)];
     facts.extend(common_non_memory_effect_facts(arm_effect_facts));
     Ok(facts)
 }
@@ -6591,7 +6620,12 @@ fn check_evidence_events_with_call_events(
             CheckedExecutionEvent::ProofCaseJoin(join) => {
                 remaining = join.advance_checked(&state, &remaining, &call_events)?;
                 state = join.joined_state().clone();
-                if let Some(successor_facts) = join.interface_successor_facts() {
+                // The walk runs under the facts its own path ends with, which
+                // extend whatever the join left. Only a walk that began
+                // before those facts existed takes the join's.
+                if let Some(successor_facts) = join.interface_successor_facts()
+                    && current_facts.introduced_since(successor_facts).is_none()
+                {
                     current_facts = successor_facts.clone();
                 }
                 continue;

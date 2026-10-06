@@ -75,8 +75,14 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 }
             }
             ProofAssertion::Resource(resource) => {
-                let expected =
-                    lower_resource_clause_at_state(resource, parameters, arguments, state)?;
+                let expected = lower_resource_clause_at_state_with_assumptions(
+                    resource,
+                    parameters,
+                    arguments,
+                    state,
+                    None,
+                    concrete_facts.assumptions(),
+                )?;
                 let is_observed_core = resource_is_direct_observed_core(
                     resource,
                     &established_interface_resources,
@@ -187,8 +193,14 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 }
                 other => other,
             };
-            let fact =
-                lower_resource_clause_at_state(resource, parameters, arguments, &abstract_state)?;
+            let fact = lower_resource_clause_at_state_with_assumptions(
+                resource,
+                parameters,
+                arguments,
+                &abstract_state,
+                None,
+                concrete_facts.assumptions(),
+            )?;
             exported_resources = exported_resources.unchecked_with_fact(fact);
             append_lowered_resource_clause_loadable_fact(
                 resource,

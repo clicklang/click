@@ -1081,6 +1081,12 @@ impl CellStore {
         &self.concrete
     }
 
+    /// Whether the store holds exactly this run: the same slots answered
+    /// from the same source, with the same holes.
+    pub(crate) fn holds_run(&self, run: &CellRun) -> bool {
+        self.runs.get(&run.key()) == Some(run)
+    }
+
     /// Every run, in key order. Every run has a live slot.
     pub(crate) fn runs(&self) -> impl Iterator<Item = &CellRun> + '_ {
         self.runs.values()
