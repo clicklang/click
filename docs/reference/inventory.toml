@@ -3304,3 +3304,23 @@ path = "reference/library/index.md#uint32_less_than_to_integer"
 [[item]]
 id = "stdlib.theorem.uint32_remainder_less_than_divisor"
 path = "reference/library/index.md#uint32_remainder_less_than_divisor"
+
+[[item]]
+id = "stdlib.theorem.integer_multiply_add"
+path = "reference/library/index.md#integer_multiply_add"
+
+[[item]]
+id = "stdlib.theorem.integer_floor_from_remainder"
+path = "reference/library/index.md#integer_floor_from_remainder"
+
+[[item]]
+id = "stdlib.theorem.integer_ceiling_from_remainder"
+path = "reference/library/index.md#integer_ceiling_from_remainder"
+
+[[item]]
+id = "stdlib.theorem.integer_positive_divisor_quotient_lower"
+path = "reference/library/index.md#integer_positive_divisor_quotient_lower"
+
+[[item]]
+id = "stdlib.theorem.integer_positive_divisor_quotient_upper"
+path = "reference/library/index.md#integer_positive_divisor_quotient_upper"

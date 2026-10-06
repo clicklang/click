@@ -70,6 +70,29 @@ theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }
 }
 
+theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires r < 0 implies value == q + -1;
+    requires 0 <= r implies value == q;
+    ensures value * d <= n by { apply(integer_floor_from_remainder(n, d, q, r, value)); }
+    ensures n < (value + 1) * d by { apply(integer_floor_from_remainder(n, d, q, r, value)); }
+}
+theorem use_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires 0 < r implies value == q + 1;
+    requires r <= 0 implies value == q;
+    ensures n <= value * d by { apply(integer_ceiling_from_remainder(n, d, q, r, value)); }
+    ensures (value + -1) * d < n by { apply(integer_ceiling_from_remainder(n, d, q, r, value)); }
+}
+theorem use_multiply_add(a: Integer, b: Integer, c: Integer) {
+    ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); }
+}
 theorem check_truncation_identity(n: Integer, d: Integer) {
     requires d != 0;
     ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d) by {
@@ -880,6 +903,15 @@ theorem use_integer_to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
     ensures to_integer(to_uint64(z)) == z by { apply(integer_to_uint64_round_trip(z)); }
+}
+
+theorem use_scaled_quotient(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound * d <= n;
+    requires n <= bound * d;
+    ensures bound <= truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_lower(n, d, bound)); }
+    ensures truncating_quotient(n, d) <= bound by { apply(integer_positive_divisor_quotient_upper(n, d, bound)); }
 }
 
 ```

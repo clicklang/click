@@ -399,7 +399,8 @@ fn fold_atom_for_claim(
 ///
 /// This is intentionally a small, context-free conversion. The returned
 /// atom map contains only checked source identities: variables, machine
-/// observations, pure applications, and snapshot-aware opaque folds. An
+/// observations, pure applications, snapshot-aware opaque folds, and complete
+/// symbolic products and truncating terms. An
 /// arbitrary deep Integer term is never used directly as a map key.
 pub(crate) fn integer_affine_claim(proposition: &Proposition) -> Option<IntegerAffineClaim> {
     let mut context = IntegerAffineCollectionContext::default();
@@ -554,14 +555,20 @@ fn collect_integer_affine_terms(
         stack.push((node.clone(), true));
         match node.as_ref() {
             IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
-            IntegerTerm::Add(left, right)
-            | IntegerTerm::Subtract(left, right)
-            | IntegerTerm::Multiply(left, right)
-            | IntegerTerm::TruncatingQuotient(left, right)
-            | IntegerTerm::TruncatingRemainder(left, right) => {
+            IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
                 stack.push((right.clone(), false));
                 stack.push((left.clone(), false));
             }
+            IntegerTerm::Multiply(left, right) => {
+                // A symbolic product is one opaque atom. Only a literal
+                // coefficient has an affine child to schedule.
+                if left.as_const().is_some() {
+                    stack.push((right.clone(), false));
+                } else if right.as_const().is_some() {
+                    stack.push((left.clone(), false));
+                }
+            }
+            IntegerTerm::TruncatingQuotient(_, _) | IntegerTerm::TruncatingRemainder(_, _) => {}
             IntegerTerm::Constant(_)
             | IntegerTerm::Variable(_)
             | IntegerTerm::Machine(_)
@@ -604,39 +611,27 @@ fn collect_integer_affine_terms(
             IntegerTerm::Variable(_)
             | IntegerTerm::Machine(_)
             | IntegerTerm::PureFunctionApplication(_)
-            | IntegerTerm::AlgebraicMatch { .. } => {
+            | IntegerTerm::AlgebraicMatch { .. }
+            | IntegerTerm::TruncatingQuotient(_, _)
+            | IntegerTerm::TruncatingRemainder(_, _) => {
                 let atom = match node.as_ref() {
                     IntegerTerm::Variable(variable) => IntegerAffineAtom::Variable(*variable),
                     IntegerTerm::Machine(source) => IntegerAffineAtom::Machine(source.id()),
                     IntegerTerm::AlgebraicMatch { .. } => return None,
+                    IntegerTerm::TruncatingQuotient(_, _)
+                    | IntegerTerm::TruncatingRemainder(_, _) => {
+                        IntegerAffineAtom::Nonlinear(node.id())
+                    }
                     IntegerTerm::PureFunctionApplication(application) => {
                         IntegerAffineAtom::Application(application.id())
                     }
                     _ => unreachable!(),
                 };
-                let existing = terms.get(&atom).map_or(0, |value| value.bits() as usize);
-                if crate::instrumentation::deadline_exceeded_with_work(
-                    existing + weight.bits() as usize + 1,
-                ) {
-                    return None;
-                }
-                let merged = terms.remove(&atom).unwrap_or_else(BigInt::zero) + weight;
-                if !merged.is_zero() {
-                    terms.insert(atom, merged);
-                }
+                add_atom_weight(terms, atom, weight)?;
             }
             IntegerTerm::RangeFold { .. } => {
                 let atom = IntegerAffineAtom::Fold(fold_atom_for_claim(context, &node)?);
-                let existing = terms.get(&atom).map_or(0, |value| value.bits() as usize);
-                if crate::instrumentation::deadline_exceeded_with_work(
-                    existing + weight.bits() as usize + 1,
-                ) {
-                    return None;
-                }
-                let merged = terms.remove(&atom).unwrap_or_else(BigInt::zero) + weight;
-                if !merged.is_zero() {
-                    terms.insert(atom, merged);
-                }
+                add_atom_weight(terms, atom, weight)?;
             }
             IntegerTerm::Negate(child) => {
                 if !add_weight(&mut weights, child.id(), -weight) {
@@ -657,16 +652,14 @@ fn collect_integer_affine_terms(
                     return None;
                 }
             }
-            // Truncation is nonlinear: do not interpret it as affine arithmetic.
-            IntegerTerm::TruncatingQuotient(_, _) | IntegerTerm::TruncatingRemainder(_, _) => {
-                return None;
-            }
             IntegerTerm::Multiply(left, right) => {
                 let (child, factor) = if let Some(value) = left.as_const() {
                     (right, value)
-                } else {
-                    let value = right.as_const()?;
+                } else if let Some(value) = right.as_const() {
                     (left, value)
+                } else {
+                    add_atom_weight(terms, IntegerAffineAtom::Nonlinear(node.id()), weight)?;
+                    continue;
                 };
                 if !charge_integer_product(&weight, factor) {
                     return None;
@@ -676,6 +669,22 @@ fn collect_integer_affine_terms(
                 }
             }
         }
+    }
+    Some(())
+}
+
+fn add_atom_weight(
+    terms: &mut BTreeMap<IntegerAffineAtom, BigInt>,
+    atom: IntegerAffineAtom,
+    weight: BigInt,
+) -> Option<()> {
+    let existing = terms.get(&atom).map_or(0, |value| value.bits() as usize);
+    if crate::instrumentation::deadline_exceeded_with_work(existing + weight.bits() as usize + 1) {
+        return None;
+    }
+    let merged = terms.remove(&atom).unwrap_or_else(BigInt::zero) + weight;
+    if !merged.is_zero() {
+        terms.insert(atom, merged);
     }
     Some(())
 }
@@ -709,7 +718,75 @@ mod tests {
                 ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(1).into()),
                 true,
             );
-            assert!(integer_affine_claim(&proposition).is_none());
+            let claim = integer_affine_claim(&proposition).unwrap();
+            assert_eq!(claim.terms.len(), 1);
+            let certificate = IntegerArithmeticCertificate {
+                nodes: vec![IntegerArithmeticNode::Trivial { result: claim }],
+                conclusion: 0,
+            };
+            assert!(certificate.check(&proposition, &[]).is_err());
+        }
+    }
+
+    #[test]
+    fn nonlinear_integer_atoms_do_not_traverse_their_operand_dags() {
+        let mut shared_work = Vec::new();
+        for size in [8usize, 16, 32, 64] {
+            let mut child = IntegerTerm::var(Variable(93001));
+            for _ in 0..size {
+                child = IntegerTerm::add(child.clone(), child.clone());
+            }
+            let divisor = IntegerTerm::var(Variable(93002));
+            for atom in [
+                IntegerTerm::multiply(child.clone(), divisor.clone()),
+                IntegerTerm::truncating_quotient(child.clone(), divisor.clone()),
+                IntegerTerm::truncating_remainder(child.clone(), divisor.clone()),
+            ] {
+                let atom: crate::kernel::SharedIntegerTerm = atom.into();
+                let id = atom.id();
+                let goal = proposition(ConditionTerm::IntegerLessEqual(
+                    atom,
+                    IntegerTerm::constant_i64(0).into(),
+                ));
+                let (result, work) =
+                    crate::instrumentation::measure_deterministic_work(|| claim(&goal));
+                assert_eq!(
+                    result.terms,
+                    BTreeMap::from([(IntegerAffineAtom::Nonlinear(id), BigInt::one())])
+                );
+                shared_work.push(work);
+            }
+        }
+        assert!(
+            shared_work.iter().all(|work| *work == shared_work[0]),
+            "{shared_work:?}"
+        );
+    }
+
+    #[test]
+    fn opaque_integer_atoms_scale_with_affine_wrappers_and_distinct_atoms() {
+        let mut samples = Vec::new();
+        for size in [8usize, 16, 32, 64] {
+            let divisor = IntegerTerm::var(Variable(94001));
+            let mut expression = IntegerTerm::constant_i64(0);
+            for index in 0..size {
+                let atom = IntegerTerm::multiply(
+                    IntegerTerm::var(Variable(95000 + index as u64)),
+                    divisor.clone(),
+                );
+                expression = IntegerTerm::add(expression, atom);
+            }
+            let goal = proposition(ConditionTerm::integer_less_equal(
+                expression,
+                IntegerTerm::constant_i64(0),
+            ));
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| claim(&goal));
+            assert_eq!(result.terms.len(), size);
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 3, "{samples:?}");
         }
     }
 
@@ -1305,7 +1382,7 @@ mod tests {
     }
 
     #[test]
-    fn nonlinear_integer_terms_fail_as_unsupported() {
+    fn nonlinear_integer_terms_are_opaque_and_not_zero() {
         let left = variable(10);
         let right = variable(11);
         let goal = proposition(ConditionTerm::IntegerLessEqual(
@@ -1317,11 +1394,13 @@ mod tests {
         ));
         assert_eq!(
             IntegerArithmeticCertificate {
-                nodes: vec![],
+                nodes: vec![IntegerArithmeticNode::Trivial {
+                    result: claim(&goal)
+                }],
                 conclusion: 0,
             }
             .check(&goal, &[]),
-            Err(IntegerArithmeticCheckError::UnsupportedGoal)
+            Err(IntegerArithmeticCheckError::NodeResultMismatch(0))
         );
     }
 

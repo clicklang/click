@@ -1300,6 +1300,7 @@ impl<'a> Proof<'a> {
                 node,
                 SpecialArithmeticNode::IntegerProductBounds { .. }
                     | SpecialArithmeticNode::IntegerDivisionBounds { .. }
+                    | SpecialArithmeticNode::IntegerQuotientBound { .. }
                     | SpecialArithmeticNode::IntegerBoundExclusion { .. }
                     | SpecialArithmeticNode::IntegerRelationTransport { .. }
                     | SpecialArithmeticNode::IntegerPolynomialIdentity { .. }
@@ -1370,6 +1371,18 @@ impl<'a> Proof<'a> {
                         result: self.lower_integer_surface_proposition(
                             result,
                             "integer division bound result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => {
+                    KernelNode::IntegerQuotientBound {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer quotient bound result",
                         )?,
                     }
                 }
@@ -3161,6 +3174,9 @@ fn describe_special_arithmetic_check_error(
         ),
         Error::InvalidIntegerDivisionBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the truncating quotient/remainder operands, in numerator-lower/upper then divisor-lower/upper order, with the divisor interval excluding zero"
+        ),
+        Error::InvalidIntegerQuotientBound(index) => format!(
+            "node {index} requires an exact scaled numerator bound (bound * d <= n or n <= bound * d), followed by 1 <= d, for the claimed truncating quotient bound"
         ),
         Error::InvalidIntegerBoundExclusion(index) => format!(
             "node {index} requires one non-strict Integer bound with a constant endpoint strictly excluding the claimed unequal constant"
