@@ -13,7 +13,19 @@ pub(super) fn lower(
     let mut records = BTreeMap::new();
     let mut live = BTreeMap::new();
     let mut declarations = c_skip();
-    for (index, local) in mir.locals.iter().enumerate() {
+    let owned_parameter_count = f
+        .parameters
+        .iter()
+        .filter(|p| matches!(p.value_type, Type::Record { .. }))
+        .count();
+    for (index, local) in f
+        .parameters
+        .iter()
+        .filter(|p| matches!(p.value_type, Type::Record { .. }))
+        .chain(mir.locals.iter())
+        .enumerate()
+    {
+        let parameter = index < owned_parameter_count;
         if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
             &local.value_type
         {
@@ -34,7 +46,7 @@ pub(super) fn lower(
             );
             continue;
         }
-        if !cx.locals.insert(local.name.clone()) {
+        if !parameter && !cx.locals.insert(local.name.clone()) {
             return Err("duplicate MIR local identity".into());
         }
         if let Type::Reference { mutable, .. } = &local.value_type {
@@ -54,6 +66,16 @@ pub(super) fn lower(
                 // Construction grants authority over fresh stack bytes. The
                 // live flag stays false until every typed field is overwritten;
                 // source reads cannot observe the kernel's fresh placeholders.
+                if parameter {
+                    declarations = c_seq(
+                        declarations,
+                        c_seq(
+                            c_declare(flag.clone(), CType::Int32),
+                            c_assign(flag, c_int32_literal(1)),
+                        ),
+                    );
+                    continue;
+                }
                 c_seq(
                     c_declare(flag.clone(), CType::Int32),
                     c_seq(
@@ -249,6 +271,7 @@ pub(super) fn lower(
             T::Call {
                 function,
                 arguments,
+                owned_arguments,
                 destination,
                 ..
             } => {
@@ -257,6 +280,35 @@ pub(super) fn lower(
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
                 let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
+                let mut transfer = c_skip();
+                let mut indices = BTreeSet::new();
+                let mut previous_index = None;
+                for argument in owned_arguments {
+                    if previous_index.is_some_and(|previous| previous >= argument.index)
+                        || !indices.insert(argument.index)
+                        || !matches!(arguments.get(argument.index), Some(E::Local { name }) if name == &argument.local)
+                        || callee.parameters.get(argument.index).map(|p| &p.value_type)
+                            != Some(&Type::Record {
+                                name: argument.record.clone(),
+                            })
+                    {
+                        return Err("owned call metadata disagrees with callee and operands".into());
+                    }
+                    previous_index = Some(argument.index);
+                    let flag = check(&argument.local, &argument.record)?;
+                    if !argument.moved {
+                        check_copyable(cx, &argument.record)?;
+                    }
+                    transfer = c_seq(transfer, assertion(flag, true));
+                    if argument.moved {
+                        transfer = c_seq(transfer, c_assign(flag, c_int32_literal(0)));
+                    }
+                }
+                if callee.parameters.iter().enumerate().any(|(index, p)| {
+                    matches!(p.value_type, Type::Record { .. }) && !indices.contains(&index)
+                }) {
+                    return Err("owned call operand lacks transfer metadata".into());
+                }
                 let call = if let Type::Record { name } = &callee.return_type {
                     let flag = check(destination, name)?;
                     c_seq(
@@ -273,7 +325,7 @@ pub(super) fn lower(
                 };
                 c_seq(
                     accesses(&arguments.iter().collect::<Vec<_>>(), &live),
-                    c_seq(prefix, call),
+                    c_seq(prefix, c_seq(transfer, call)),
                 )
             }
         };
@@ -433,7 +485,16 @@ pub(super) fn lower(
                     target,
                     source,
                     record,
+                }
+                | S::Copy {
+                    target,
+                    source,
+                    record,
                 } => {
+                    let moving = matches!(s, S::Move { .. });
+                    if !moving {
+                        check_copyable(cx, record)?;
+                    }
                     if target == source {
                         return Err("self move is invalid".into());
                     }
@@ -482,7 +543,11 @@ pub(super) fn lower(
                     c_seq(
                         copy,
                         c_seq(
-                            c_assign(source_flag, c_int32_literal(0)),
+                            if moving {
+                                c_assign(source_flag, c_int32_literal(0))
+                            } else {
+                                c_skip()
+                            },
                             c_assign(target_flag, c_int32_literal(1)),
                         ),
                     )
@@ -722,6 +787,17 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
     roots.into_iter().fold(c_skip(), |s, flag| {
         c_seq(s, c_assert(c_equal(c_variable(flag), c_int32_literal(1))))
     })
+}
+
+fn check_copyable(cx: &Context<'_>, name: &str) -> Result<(), String> {
+    let record = cx.records.get(name).ok_or("unknown copied record")?;
+    if record.destructor.is_some() || record.fields.iter().any(|field| {
+        !matches!(&field.value_type, Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool)
+            && !matches!(&field.value_type, Type::Array { element, .. } if matches!(element.as_ref(), Type::I32 | Type::U8 | Type::U32))
+    }) {
+        return Err("record copies require plain scalar/array fields and no Drop".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]

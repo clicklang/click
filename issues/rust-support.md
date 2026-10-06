@@ -840,3 +840,35 @@ now prove their two initialized fields. The complete `adler32_slice` extraction
 next reaches unsupported by-value record assignment-operator operands
 (`U32X4`). Support those concrete operands and their moves before continuing
 the original computation and shared checksum proof; do not assume its result.
+
+### Owned record parameters and operator operands
+
+Schema-4 interpretation `click-charon-crate-v3` transports flat records by
+value through kernel aggregate parameters. Callees receive fresh independent
+storage, and checked call metadata distinguishes compiler moves from copies.
+Moves consume the live source; copies require plain scalar/array fields and
+no destructor, and retain a live source. Local copies use the same restrictions.
+Destructor-bearing moved parameters follow the existing compiler Drop CFG.
+Negative regressions cover missing or mismatched metadata, duplicate move
+consumption, and forbidden copies. Existing schema-3 locks retain their
+interpretation; older schema-4 crate envelopes require refresh.
+
+At v3, the unchanged adler2 selection passed by-value U32X4 operator
+registration and rejected its local constant/global initializer bodies. The
+v4 increment below resolves that boundary without assuming the checksum
+result or rewriting the crate.
+
+Schema-4 interpretation `click-charon-crate-v4` imports named local scalar
+constants with straight-line arithmetic initializer CFGs. Declaration, type,
+source closure, initializer link, and qualified identity are checked; reads
+use ordinary verified initializer contracts rather than assumed values or a
+second evaluator. Frozen and live regressions cover duplicate module names,
+`CHUNK_SIZE` arithmetic, full-width usize, narrow scalars, bool, false claims,
+initializer deletion/overflow, changed source, forged reads, corrupt links,
+statics, and cycles. Schema-3 semantics stay unchanged. Constant dependencies,
+branching initializers, trait/generic constants, references and const-fn calls
+remain later work. The unchanged selection rooted at `adler2::adler32_slice`
+now produces and reloads a prepared import including `Adler32::compute`.
+Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. Next prove the
+imported lane helpers and compose nested chunks/remainder invariants with
+the shared checksum specification; checksum correctness remains unproved.

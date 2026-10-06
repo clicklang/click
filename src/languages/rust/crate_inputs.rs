@@ -1,5 +1,5 @@
 //! Versioned crate inputs; source closure comes from rustc dep-info, not names.
-pub(super) const PROFILE_ID: &str = "click-charon-crate-v2";
+pub(super) const PROFILE_ID: &str = "click-charon-crate-v4";
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

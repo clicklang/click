@@ -10,6 +10,7 @@ fn rhs_name(ty: &Type) -> Result<String, String> {
         Type::U32 => "u32".into(),
         Type::Usize => "usize".into(),
         Type::Bool => "bool".into(),
+        Type::Record { name } => format!("value_{}{name}", name.len()),
         Type::Reference { mutable, pointee } => {
             let name = match pointee.as_ref() {
                 Type::Record { name } => name.clone(),

@@ -6,6 +6,8 @@ mod chunks;
 #[cfg(test)]
 mod move_regressions;
 mod moves;
+#[cfg(test)]
+mod owned_parameter_regressions;
 mod shared_arrays;
 use crate::kernel::*;
 use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type};
@@ -202,6 +204,17 @@ fn lower_function(
         }
         if !locals.insert(p.name.clone()) {
             return Err("duplicate Rust parameter".into());
+        }
+        if let Type::Record { name } = &p.value_type {
+            if f.mir.is_none() {
+                return Err("owned record parameters require compiler MIR".into());
+            }
+            let layout = layouts.get(name).ok_or("missing parameter record layout")?;
+            let parameter = C0Parameter::new(C0Type::UInt8Pointer, p.name.clone(), None)
+                .with_struct_value(name.clone(), layout.clone());
+            kernel_parameters.push(parameter.to_kernel_parameter());
+            parameters.push(parameter);
+            continue;
         }
         if let Type::ByteSlice { mutable } = &p.value_type {
             let length = format!("{}_len", p.name);
@@ -927,6 +940,16 @@ impl Context<'_> {
         let mut checks = c_skip();
         let mut values = Vec::new();
         for (argument, value_type) in args.iter().zip(types) {
+            if matches!(value_type, Type::Record { .. }) {
+                let E::Local { name } = argument else {
+                    return Err("owned call operand must be a MIR local".into());
+                };
+                if !self.owned_locals.contains(name) {
+                    return Err("owned call operand has no local storage".into());
+                }
+                values.push(c_variable(name));
+                continue;
+            }
             if let Type::ByteSlice { mutable } = value_type {
                 let (pointer, length) = self.slice_parts(argument)?;
                 let (capture_pointer, pointer_name) = self.capture_operand(

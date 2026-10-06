@@ -485,6 +485,7 @@ mod tests {
                 block(T::Call {
                     function: "guard".into(),
                     arguments: vec![],
+                    owned_arguments: vec![],
                     destination: "marker".into(),
                     target: 1,
                 }),

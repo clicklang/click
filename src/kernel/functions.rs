@@ -16030,8 +16030,15 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             callee_state.locals.set_aggregate_object_at(
                 parameter.name().to_string(),
                 layout.clone(),
-                slot,
+                slot.clone(),
             );
+            // A by-value parameter owns its fresh private bytes, just as an
+            // aggregate local does. This grants no authority over pointers
+            // stored inside it or over the caller's original object.
+            callee_state.resources = callee_state
+                .resources
+                .clone()
+                .unchecked_with_fact(private_aggregate_storage_owner(slot, layout));
             continue;
         }
         let value = coerce_c_function_argument_without_obligations(value, parameter)?
@@ -18854,6 +18861,34 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
+fn private_aggregate_storage_owner(slot: Pointer, layout: &CAggregateLayout) -> CResourceFact {
+    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        slot,
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(layout.size_bytes()),
+        1,
+    ))
+}
+
+fn with_private_aggregate_parameter_owners(
+    mut resources: ResourceContext,
+    callee: &CState,
+    interface: &CFunctionContractInterface,
+) -> ResourceContext {
+    // Only the selected parameters, never the caller's unrelated frame.
+    // Argument binding has already allocated each slot independently.
+    for parameter in interface.parameters() {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(layout) = parameter.aggregate_layout()
+            && let Some(slot) = callee.locals.slot(parameter.name())
+        {
+            resources = resources
+                .unchecked_with_fact(private_aggregate_storage_owner(slot.clone(), layout));
+        }
+    }
+    resources
+}
+
 /// Prepares the resource transition of one contract application; see
 /// [`ResourceTransitionPurpose`] for the two routes.
 fn prepare_contract_resource_transfer(
@@ -18902,7 +18937,11 @@ fn prepare_contract_resource_transfer(
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
-            callee_resources: ResourceContext::new_with_equalities(assumptions),
+            callee_resources: with_private_aggregate_parameter_owners(
+                ResourceContext::new_with_equalities(assumptions),
+                callee_state,
+                interface,
+            ),
             caller_resources_after_requirements: caller_state.resources().clone(),
             memory_effects: Vec::new(),
             post_outputs: None,
@@ -20036,7 +20075,11 @@ fn prepare_contract_resource_transfer(
         borrowed_inputs,
         consumed_inputs,
         canonical_borrowed_owners,
-        callee_resources,
+        callee_resources: with_private_aggregate_parameter_owners(
+            callee_resources,
+            callee_state,
+            interface,
+        ),
         caller_resources_after_requirements: return_resources,
         memory_effects: Vec::new(),
         post_outputs: None,
