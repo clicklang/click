@@ -1170,7 +1170,7 @@ fn parses_and_prints_pure_function_unfold_with_guards() {
         theorem icount_empty(lo: int32, hi: int32) {
             requires hi <= lo;
             ensures icount(lo, hi) == 0 by {
-                unfold(icount(lo, hi)) using {
+                peel(icount(lo, hi)) using {
                     hi <= lo;
                 }
                 normalize();
@@ -1183,35 +1183,44 @@ fn parses_and_prints_pure_function_unfold_with_guards() {
     };
     assert!(matches!(
         &tactics[0],
-        ProofTactic::UnfoldFunctionUsing { application, premises }
+        ProofTactic::PeelFunction { application, premises }
             if application.name == "icount" && premises.len() == 1
     ));
     let printed = super::printing::format_partial_tactic_sequence(tactics);
     assert!(
-        printed.contains("unfold(icount(lo, hi)) using {"),
+        printed.contains("peel(icount(lo, hi)) using {"),
         "{printed}"
     );
 
-    // `using` selects a range-fold law from the function's declaration, so it
-    // is meaningful only on the pure-function form.
+    // `peel` selects a range-fold law from the function's declaration, so it
+    // takes a pure-function application and nothing else.
     let predicate_form = r#"
         predicate nonnegative(x: int32) { x >= 0 }
 
-        theorem guarded_predicate_unfold(x: int32) {
+        theorem guarded_predicate_peel(x: int32) {
             requires nonnegative(x);
             ensures x >= 0 by {
-                unfold(nonnegative) using {
+                peel(nonnegative) using {
                     nonnegative(x);
                 }
                 simp();
             }
         }
     "#;
-    let error = parse(predicate_form).expect_err("`using` needs a pure-function unfold");
+    let error = parse(predicate_form).expect_err("`peel` needs a pure-function application");
     assert!(
         error
             .message()
-            .contains("`using` requires a pure-function unfold"),
+            .contains("`peel` requires a pure-function application"),
+        "{}",
+        error.message()
+    );
+
+    // The retired spelling names its replacement.
+    let error = parse(&source.replace("peel(", "unfold("))
+        .expect_err("`unfold` no longer takes a `using` list");
+    assert!(
+        error.message().contains("write `peel(f(args)) using"),
         "{}",
         error.message()
     );
@@ -1263,26 +1272,26 @@ fn parses_and_prints_arithmetic_certificates() {
 }
 
 #[test]
-fn arithmetic_certificate_is_canonical_with_integer_alias_compatibility() {
-    for spelling in ["arithmetic_certificate", "integer_certificate"] {
-        let source = format!(
+fn arithmetic_certificate_is_the_only_integer_family_spelling() {
+    let source = |spelling: &str| {
+        format!(
             "theorem certificate_spelling(n: Integer) {{ ensures n == n by {{ {spelling} {{ trivial => 0 <= 1; conclusion 0; }} }} }}"
-        );
-        let file = parse(&source).expect("arithmetic certificate spelling should parse");
-        let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof()
-        else {
-            panic!("expected an explicit theorem proof");
-        };
-        assert!(matches!(
-            tactics.as_slice(),
-            [ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
-                family: ArithmeticCertificateFamily::Integer(_),
-            })]
-        ));
-        let printed = super::printing::format_partial_tactic_sequence(tactics);
-        assert!(printed.contains("arithmetic_certificate {"), "{printed}");
-        assert!(!printed.contains("integer_certificate {"), "{printed}");
-    }
+        )
+    };
+    let file = parse(&source("arithmetic_certificate"))
+        .expect("arithmetic certificate spelling should parse");
+    let SourceProof::Script(tactics) = file.theorem_definitions()[0].ensures()[0].proof() else {
+        panic!("expected an explicit theorem proof");
+    };
+    assert!(matches!(
+        tactics.as_slice(),
+        [ProofTactic::ArithmeticCertificate(ArithmeticCertificate {
+            family: ArithmeticCertificateFamily::Integer(_),
+        })]
+    ));
+    let printed = super::printing::format_partial_tactic_sequence(tactics);
+    assert!(printed.contains("arithmetic_certificate {"), "{printed}");
+    parse(&source("integer_certificate")).expect_err("the retired alias should not parse");
 }
 
 #[test]

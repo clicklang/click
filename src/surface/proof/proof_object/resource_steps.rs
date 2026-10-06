@@ -956,7 +956,7 @@ impl<'a> Proof<'a> {
                 ))
             })?;
 
-        // `unfold(f(args)) using { ... }` opens one layer too, but the layer
+        // `peel(f(args)) using { ... }` opens one layer too, but the layer
         // it opens is the range-fold law the listed guards select, stated
         // over `f(args)` rather than over the fold the declaration writes.
         // Its single fact is that equation, and the goal is refreshed through
@@ -1268,10 +1268,10 @@ impl<'a> Proof<'a> {
         // Exactly the listed premises, each of which must already hold.
         let mut available = Vec::new();
         for premise in premises {
-            let lowered = lower(premise, "an `unfold ... using` premise")?;
+            let lowered = lower(premise, "a `peel ... using` premise")?;
             if !self.facts().listed_premise_available(&lowered, &[], false) {
                 return Err(self.step_error(format!(
-                    "`unfold({name}(...)) using` requires an unavailable exact premise: {}",
+                    "`peel({name}(...)) using` requires an unavailable exact premise: {}",
                     describe_pure_fact(&lowered, &[], &[])
                 )));
             }
@@ -1281,7 +1281,7 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(ConditionTerm::IntegerEqual(whole, folded), true) = equality
         else {
             return Err(self.step_error(format!(
-                "`unfold({name}(...)) using` applies to an `Integer`-valued pure function whose body is a range fold"
+                "`peel({name}(...)) using` applies to an `Integer`-valued pure function whose body is a range fold"
             )));
         };
         let IntegerTerm::RangeFold {
@@ -1293,7 +1293,7 @@ impl<'a> Proof<'a> {
         } = folded.as_ref()
         else {
             return Err(self.step_error(format!(
-                "`unfold({name}(...)) using` requires the body of `{name}` to be a range fold over a symbolic range; this call's range is already reduced"
+                "`peel({name}(...)) using` requires the body of `{name}` to be a range fold over a symbolic range; this call's range is already reduced"
             )));
         };
 
@@ -1373,7 +1373,7 @@ impl<'a> Proof<'a> {
             let mut labels =
                 crate::surface::proof_diagnostics::render::SnapshotLabels::naming(&names, &values);
             return Err(self.step_error(format!(
-                "`unfold({name}(...)) using` found no listed guard that decides the range. The empty-range equation needs {}; the append-last-cell equation needs {}.",
+                "`peel({name}(...)) using` found no listed guard that decides the range. The empty-range equation needs {}; the append-last-cell equation needs {}.",
                 describe_missing_fold_guards(&empty_missing, &mut labels),
                 describe_missing_fold_guards(&append_missing, &mut labels)
             )));
@@ -1413,12 +1413,12 @@ impl<'a> Proof<'a> {
         } = definition.body()
         else {
             return Err(self.step_error(format!(
-                "`unfold({name}(...)) using` requires the body of `{name}` to be exactly a range fold"
+                "`peel({name}(...)) using` requires the body of `{name}` to be exactly a range fold"
             )));
         };
         let Some(end_parameter) = fold_end_parameter_name(end).cloned() else {
             return Err(self.step_error(format!(
-                "`unfold({name}(...)) using`: the append-last-cell equation restates the shorter fold as `{name}` at the predecessor endpoint, so the fold's end must be a parameter of `{name}`"
+                "`peel({name}(...)) using`: the append-last-cell equation restates the shorter fold as `{name}` at the predecessor endpoint, so the fold's end must be a parameter of `{name}`"
             )));
         };
         for (part, what) in [
@@ -1428,7 +1428,7 @@ impl<'a> Proof<'a> {
         ] {
             if contract_expression_reads_binding(part, &end_parameter) {
                 return Err(self.step_error(format!(
-                    "`unfold({name}(...)) using`: the fold's {what} also reads `{end_parameter}`, so the shorter fold is not `{name}` at the predecessor endpoint"
+                    "`peel({name}(...)) using`: the fold's {what} also reads `{end_parameter}`, so the shorter fold is not `{name}` at the predecessor endpoint"
                 )));
             }
         }
@@ -1438,18 +1438,18 @@ impl<'a> Proof<'a> {
             .position(|parameter| parameter.name() == end_parameter)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`unfold({name}(...)) using`: `{end_parameter}` is not a parameter of `{name}`"
+                    "`peel({name}(...)) using`: `{end_parameter}` is not a parameter of `{name}`"
                 ))
             })?;
         crate::kernel::integer_range_fold_predecessor_application(whole.as_ref(), position)
             .ok_or_else(|| {
                 self.step_error(format!(
-                    "`unfold({name}(...)) using` requires the call to remain the opaque application `{name}(...)` with an `int32` argument for `{end_parameter}`"
+                    "`peel({name}(...)) using` requires the call to remain the opaque application `{name}(...)` with an `int32` argument for `{end_parameter}`"
                 ))
             })
     }
 
-    /// The Surface spelling of the goal `unfold(f(args)) using { ... }` just
+    /// The Surface spelling of the goal `peel(f(args)) using { ... }` just
     /// refreshed, or `None` when this step cannot write one down.
     ///
     /// The kernel goal was refreshed by substituting the restated fold law's

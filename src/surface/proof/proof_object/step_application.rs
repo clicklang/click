@@ -364,6 +364,9 @@ fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i
     }
     values.pop().flatten()
 }
+/// What a failing bare `arithmetic()` says in place of "the listed premises":
+/// it listed none, and it never reads the context for them.
+const BARE_ARITHMETIC_HINT: &str = "`arithmetic()` without `using` reads no facts from the context, so list the facts the goal depends on with `using { ... }`";
 
 /// How `arithmetic` read each listed premise while planning over the Integer
 /// linear fragment, written in the reader's own spelling.
@@ -894,7 +897,7 @@ impl<'a> Proof<'a> {
             } => self.apply_transport_using(source, target, premises),
             ProofStep::UnfoldPredicate(name) => self.apply_predicate_unfold(name),
             ProofStep::UnfoldFunction(application) => self.apply_function_unfold(application, None),
-            ProofStep::UnfoldFunctionUsing {
+            ProofStep::PeelFunction {
                 application,
                 premises,
             } => self.apply_function_unfold(application, Some(premises)),
@@ -1233,6 +1236,11 @@ impl<'a> Proof<'a> {
                     plan.nodes.len()
                 )));
             }
+            if premises.is_empty() {
+                return Err(self.step_error(format!(
+                    "`arithmetic` read the current goal as an Integer linear claim, which does not hold on its own; {BARE_ARITHMETIC_HINT}"
+                )));
+            }
             return Err(self.step_error(format!(
                 "`arithmetic` read the current goal as an Integer linear claim; no combination of the listed premises proves it{}",
                 describe_integer_premise_reading(&premises, &anchored_surface_premises)
@@ -1251,10 +1259,20 @@ impl<'a> Proof<'a> {
                     ));
                 }
                 if machine_operation && !signed_goal_is_unsigned_signbit_bound(goal) {
+                    if premises.is_empty() {
+                        return Err(self.step_error(format!(
+                            "`arithmetic` cannot establish that every int32 operation in the current goal is defined without overflow from the goal alone; {BARE_ARITHMETIC_HINT}"
+                        )));
+                    }
                     return Err(self.step_error(
                         "`arithmetic` cannot establish that every int32 operation in the current goal is defined without overflow from exactly the listed premises",
                     ));
                 }
+            }
+            if premises.is_empty() {
+                return Err(self.step_error(format!(
+                    "current goal does not follow by arithmetic alone; {BARE_ARITHMETIC_HINT}"
+                )));
             }
             if premises
                 .iter()
@@ -1264,6 +1282,11 @@ impl<'a> Proof<'a> {
                     "current goal does not follow from exactly the listed arithmetic premises (exactly the listed premises were insufficient)",
                 ));
             }
+        }
+        if premises.is_empty() {
+            return Err(self.step_error(format!(
+                "`arithmetic` could not construct a checked arithmetic certificate from the goal alone; {BARE_ARITHMETIC_HINT}"
+            )));
         }
         Err(self.step_error(
             "`arithmetic` could not construct a checked arithmetic certificate from exactly the listed premises",

@@ -25,7 +25,7 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "f73abd0ce92840d55d5071e26b2ae851645e6087964ad25cd1b4f9004ec804eb"
+    "frozen_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
     "config": "examples/rust-chunks-exact/chunks.click.import.json",
@@ -51,7 +51,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "645200b80536e553febac28917d8dfeedd7967b3709ec57c5deb6c4f32d340c1"
+    "frozen_sha256": "9fce5c740360aa8145bb54116a1b410b6a078ffaba533472425d8da184ceaed0"
   },
   {
     "config": "examples/rust-iterators/sum.click.import.json",
@@ -59,7 +59,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "645200b80536e553febac28917d8dfeedd7967b3709ec57c5deb6c4f32d340c1"
+    "frozen_sha256": "9fce5c740360aa8145bb54116a1b410b6a078ffaba533472425d8da184ceaed0"
   },
   {
     "config": "examples/rust-loops/loops.click.import.json",

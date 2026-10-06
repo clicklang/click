@@ -2536,7 +2536,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let before = evolving.checkpoint();
                                 let step = match premises {
                                     None => ProofStep::UnfoldFunction(application.clone()),
-                                    Some(premises) => ProofStep::UnfoldFunctionUsing {
+                                    Some(premises) => ProofStep::PeelFunction {
                                         application: application.clone(),
                                         premises: premises.clone(),
                                     },

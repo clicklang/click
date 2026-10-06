@@ -1,6 +1,6 @@
 # an unfolded last cell is about the snapshot it was unfolded at
 
-`unfold(icount(a, 0, i + 1)) using { ... }` reads the written cell out of the
+`peel(icount(a, 0, i + 1)) using { ... }` reads the written cell out of the
 snapshot the store produced, so its equation is about that snapshot. A second
 store to the same cell makes a new one, and the equation does not carry over.
 
@@ -31,7 +31,7 @@ void mark_twice(int32 a[], int32 n, int32 i) {
         arithmetic() using { i < n; n <= 1073741823; }
     }
     have icount(a, 0, i + 1) == icount(a, 0, i) + 1 by {
-        unfold(icount(a, 0, i + 1)) using {
+        peel(icount(a, 0, i + 1)) using {
             0 <= i;
             i < 2147483647;
         }

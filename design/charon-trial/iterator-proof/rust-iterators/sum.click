@@ -18,7 +18,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
         }
     }
     have prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining)) == 0 by {
-        unfold(prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining))) using {
+        peel(prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining))) using {
             0 >= ((int32)(uint32)bytes_len - iter_remaining);
         } simp();
     }
@@ -197,7 +197,7 @@ int32 sum(const uint8* bytes, uint64 bytes_len) {
                 }
             }
             have prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining - 1) + 1) == prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining - 1)) + to_integer((int32)bytes[((int32)(uint32)bytes_len - iter_remaining - 1)]) by {
-                unfold(prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining - 1) + 1)) using {
+                peel(prefix(bytes, ((int32)(uint32)bytes_len - iter_remaining - 1) + 1)) using {
                     0 <= ((int32)(uint32)bytes_len - iter_remaining - 1);
                     (((int32)(uint32)bytes_len - iter_remaining - 1)) < 2147483647;
                 }

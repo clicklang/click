@@ -7,7 +7,7 @@ on, so such a proof needs that the count is nonnegative
 cell inside the range is marked (`unmarked_point_update`). Its boundary case
 uses `unmarked_frame`: two arrays that agree below the marked cell count the
 same prefix. All three are ordinary `induct(hi)` proofs over the
-append-last-cell law `unfold(unmarked(..)) using { lo <= hi - 1; hi - 1 <
+append-last-cell law `peel(unmarked(..)) using { lo <= hi - 1; hi - 1 <
 2147483647; }` opens. A C proof does not need `unmarked_frame` for a store
 outside the counted range: the kernel's fold read frame carries the
 application across it (`sweep_maintains_a_zero_unmarked_count.md`).

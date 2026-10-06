@@ -950,7 +950,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "simp" => surface == "`simp()`",
             "simp-using" => surface == "`simp() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",
-            "unfold-function-using" => surface == "`unfold(function(args)) using { P; ... }`",
+            "peel-function" => surface == "`peel(function(args)) using { P; ... }`",
             _ => surface.contains(form.syntax),
         };
         let matching = rows

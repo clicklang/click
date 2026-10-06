@@ -35,7 +35,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
     ensures 0 <= unmarked(v, lo, hi) by {
         induct(hi) as ih;
         if hi <= lo {
-            unfold(unmarked(v, lo, hi)) using {
+            peel(unmarked(v, lo, hi)) using {
                 hi <= lo;
             }
             simp();
@@ -70,7 +70,7 @@ theorem unmarked_nonnegative(v: int32[], lo: int32, hi: int32) {
                 hi - 1 - lo <= 1073741823;
             }
             have hi - 1 < 2147483647 by { arithmetic() using { 0 <= lo; lo < hi; } }
-            unfold(unmarked(v, lo, hi)) using {
+            peel(unmarked(v, lo, hi)) using {
                 lo <= hi - 1;
                 hi - 1 < 2147483647;
             }

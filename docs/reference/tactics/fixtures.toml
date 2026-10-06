@@ -68,9 +68,9 @@ path = "mdtests/pure_function_unfold.md"
 needle = "unfold(clamp_nonpositive(n));"
 
 [[form]]
-id = "unfold-function-using"
+id = "peel-function"
 path = "mdtests/unfold_fold_function_empty_range.md"
-needle = "unfold(icount(p, lo, hi, x)) using {"
+needle = "peel(icount(p, lo, hi, x)) using {"
 
 [[form]]
 id = "unfold-resource"

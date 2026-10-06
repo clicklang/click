@@ -346,10 +346,10 @@ pub(in crate::surface::proof) fn explicit_linear_step(tactic: &ProofTactic) -> O
         ProofTactic::UnfoldFunction(application) => {
             Some(ProofStep::UnfoldFunction(application.clone()))
         }
-        ProofTactic::UnfoldFunctionUsing {
+        ProofTactic::PeelFunction {
             application,
             premises,
-        } => Some(ProofStep::UnfoldFunctionUsing {
+        } => Some(ProofStep::PeelFunction {
             application: application.clone(),
             premises: premises.clone(),
         }),
@@ -2624,7 +2624,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Choose(_) => "choose",
         ProofStep::UnfoldPredicate(_)
         | ProofStep::UnfoldFunction(_)
-        | ProofStep::UnfoldFunctionUsing { .. }
+        | ProofStep::PeelFunction { .. }
         | ProofStep::UnfoldResource(_) => "unfold",
         ProofStep::FoldResource(_) => "fold",
         ProofStep::ConstructResource(_) => "construct",

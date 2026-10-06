@@ -12,5 +12,5 @@ theorem unlisted(x: uint32) {
 ```
 
 ```expect
-fail: current goal does not follow from exactly the listed arithmetic premises
+fail: current goal does not follow by arithmetic alone; `arithmetic()` without `using` reads no facts from the context
 ```

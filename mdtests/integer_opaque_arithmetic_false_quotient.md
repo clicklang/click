@@ -8,5 +8,5 @@ theorem false_quotient(n: Integer, d: Integer) {
 ```
 
 ```expect
-fail: no combination of the listed premises proves it
+fail: `arithmetic` read the current goal as an Integer linear claim, which does not hold on its own
 ```

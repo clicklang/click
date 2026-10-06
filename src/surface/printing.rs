@@ -176,7 +176,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 format_click_function_application(application)
             ),
         ),
-        ProofTactic::UnfoldFunctionUsing {
+        ProofTactic::PeelFunction {
             application,
             premises,
         } => {
@@ -184,7 +184,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 output,
                 &prefix,
                 &format!(
-                    "unfold({}) using {{",
+                    "peel({}) using {{",
                     format_click_function_application(application)
                 ),
             );

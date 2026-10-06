@@ -45,7 +45,7 @@ void mark_prefix(int32 a[], int32 n) {
             have i < 2147483647 by { arithmetic() using { i < 1073741823; } }
             step();
             have icount(a, 0, i + 1) == icount(a, 0, i) + to_integer(a[i]) by {
-                unfold(icount(a, 0, i + 1)) using {
+                peel(icount(a, 0, i + 1)) using {
                     0 <= i;
                     i < 2147483647;
                 }
