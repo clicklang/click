@@ -14,7 +14,7 @@
   ],
   "semantics": [
     "flat-record-drop-v1",
-    "unsigned-from-v1",
+    "unsigned-from-v2",
     "compact-uniform-scalar-array-v1",
     "byte-slice-metadata-v1",
     "shared-byte-chunks-exact-v1",
@@ -30,7 +30,9 @@
     "external-scalar-array-snapshot-v1",
     "split-shared-slice-while-header-v1",
     "shared-scalar-slice-into-iteration-v1",
-    "shared-byte-split-at-pair-v1"
+    "shared-byte-split-at-pair-v1",
+    "borrowed-iterator-forwarding-v1",
+    "stable-extraction-output-metadata-v1"
   ],
   "extractor_version": "0.1.279"
 }

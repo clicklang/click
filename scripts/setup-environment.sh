@@ -67,15 +67,16 @@ fi
 
 # The docs-only gate does not build or run compiler exporters.
 if [[ "$docs_only" != true ]]; then
-    # The typed Rust exporter uses private compiler APIs on a separately
-    # pinned toolchain. Click itself continues to use rust-toolchain.toml.
-    source scripts/rust-exporter-toolchain.sh
+    # Charon owns compiler extraction on its separately pinned toolchain.
+    # Click itself continues to use rust-toolchain.toml.
+    source scripts/charon-toolchain.sh
     if [[ "$test_runner" != true ]]; then
-        rustup toolchain install "$RUST_EXPORTER_TOOLCHAIN" --profile minimal \
-            --component rustc-dev --target "$RUST_EXPORTER_TARGET"
-    elif [[ ! -d "$RUST_EXPORTER_SYSROOT/lib/rustlib/$RUST_EXPORTER_TARGET/lib" ]] || \
-        ! compgen -G "$RUST_EXPORTER_SYSROOT/lib/librustc_driver*" >/dev/null; then
-        echo "error: restore the pinned Rust exporter runtime at $RUST_EXPORTER_SYSROOT before setting up a test runner" >&2
+        rustup toolchain install "$CHARON_TOOLCHAIN" --profile minimal \
+            --component rustc-dev --component rust-src --target "$CHARON_TARGET"
+    elif [[ ! -x "$CHARON_SYSROOT/bin/rustc" ]] || \
+        [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
+        ! compgen -G "$CHARON_SYSROOT/lib/librustc_driver*" >/dev/null; then
+        echo "error: restore the pinned Charon compiler runtime at $CHARON_SYSROOT before setting up a test runner" >&2
         exit 1
     fi
     needs_llvm=false

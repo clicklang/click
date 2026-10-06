@@ -19,7 +19,6 @@ fi
 
 run_quality_checks() {
     cargo fmt --check
-    cargo fmt --manifest-path tools/rust-exporter/Cargo.toml --check
     scripts/test-setup-environment.sh
     cargo clippy --all-targets -- -D warnings
     scripts/mdbook-build.sh
@@ -79,11 +78,11 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         echo "error: shared C++ exporter is missing at $CLICK_CPP_EXPORTER" >&2
         exit 1
     fi
-    mkdir -p target/rust-exporter/debug
-    tar -xf "$artifacts/rust-exporter.tar" -C target/rust-exporter/debug
-    export CLICK_RUST_EXPORTER="$PWD/target/rust-exporter/debug/click-rust-exporter"
-    if [[ ! -x "$CLICK_RUST_EXPORTER" ]]; then
-        echo "error: shared Rust exporter is missing at $CLICK_RUST_EXPORTER" >&2
+    mkdir -p target/charon/debug
+    tar -xf "$artifacts/charon.tar" -C target/charon/debug
+    export CLICK_CHARON="$PWD/target/charon/debug/charon"
+    if [[ ! -x "$CLICK_CHARON" ]]; then
+        echo "error: shared Charon extractor is missing at $CLICK_CHARON" >&2
         exit 1
     fi
 
@@ -99,7 +98,7 @@ fi
 # Explicit local counterpart of the required archive-based live CI gate.
 if [[ "${1:-}" == "--charon-live" ]]; then
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
-    export CLICK_RUST_EXPORTER="${CLICK_RUST_EXPORTER:-$PWD/target/rust-exporter/debug/click-rust-exporter}"
+    export CLICK_CHARON="${CLICK_CHARON:-$PWD/target/charon/debug/charon}"
     scripts/build-charon.sh
     cargo nextest run --test rust_import --filterset 'test(charon_)' \
         --run-ignored only --test-threads 2 --no-fail-fast
@@ -128,8 +127,8 @@ fi
 export CLICK_CPP_EXPORTER
 CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
 
-export CLICK_RUST_EXPORTER
-CLICK_RUST_EXPORTER="$(scripts/build-rust-exporter.sh)"
+export CLICK_CHARON
+CLICK_CHARON="$(scripts/build-charon.sh)"
 
 # The gate needs nextest: `.config/nextest.toml` holds the per-test time
 # budgets, and prover regressions usually manifest as hangs, which must be
@@ -153,9 +152,9 @@ if [[ -n "$ci_artifacts" ]]; then
         --archive-file "$ci_artifacts/tests.tar.zst"
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
-    tar -cf "$ci_artifacts/rust-exporter.tar" \
-        -C "$(dirname "$CLICK_RUST_EXPORTER")" "$(basename "$CLICK_RUST_EXPORTER")"
-    scripts/rust-exporter-runtime.sh pack "$ci_artifacts/rust-runtime.tar.gz"
+    tar -cf "$ci_artifacts/charon.tar" \
+        -C "$(dirname "$CLICK_CHARON")" "$(basename "$CLICK_CHARON")" charon-driver
+    scripts/charon-runtime.sh pack "$ci_artifacts/rust-runtime.tar.gz"
     exit 0
 fi
 

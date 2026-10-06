@@ -136,7 +136,7 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
         let path = root.join(&entry.config);
         let config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(config["schema"], 3);
-        assert_eq!(config["backend"], "charon-trial");
+        assert!(config.get("backend").is_none());
         assert!(config["artifact"].as_str().unwrap().ends_with(".ullbc"));
         let prepared = load_import(&path).unwrap();
         let sidecar = path.with_file_name(
