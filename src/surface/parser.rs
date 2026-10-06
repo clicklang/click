@@ -3402,6 +3402,7 @@ impl Parser {
                         | C0Type::Float32
                         | C0Type::Float64
                         | C0Type::Int32Array(_)
+                        | C0Type::UInt32Array(_)
                         | C0Type::Int128Array(_)
                         | C0Type::Int64Array(_)
                         | C0Type::UInt128Array(_)

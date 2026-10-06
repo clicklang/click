@@ -820,7 +820,23 @@ proofs cover same-named module functions and an inherent method call, with
 false-claim and changed-input negatives.
 
 The unchanged adler2 Rust-2021/std trial passes the former source-lock boundary
-and reaches the concrete `Default` implementation. That constructor remains
-unsupported, so adaptation publishes neither artifact nor lock. The next
-checksum increment must execute and verify reachable concrete constructor
-bodies, followed by the remaining original computation and checksum proof.
+and reaches the concrete `Default` implementation. The next increment below
+adds checked constructor bodies and record-return transport.
+
+### Checked constructors and owned record returns
+
+Schema-4 crate interpretation `click-charon-crate-v2` now resolves concrete
+standard `Default` implementations by declaration, implementation, associated
+item, signature, and diagnostic identity, then executes their actual bodies.
+Ordinary constructors and forwarding wrappers return supported flat records
+through the kernel aggregate-return interface. Live flags consume the return
+place and initialize caller-owned storage exactly once; destructor cleanup
+belongs to the caller. Existing schema-3 semantics and locks stay unchanged.
+
+Regressions prove initialized fields through constructor calls and moves,
+caller-supplied field values, changed constructor bodies, and a returned record
+with `Drop`. The unchanged adler2 `Adler32::default` and `Adler32::new` bodies
+now prove their two initialized fields. The complete `adler32_slice` extraction
+next reaches unsupported by-value record assignment-operator operands
+(`U32X4`). Support those concrete operands and their moves before continuing
+the original computation and shared checksum proof; do not assume its result.

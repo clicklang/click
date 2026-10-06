@@ -8,6 +8,7 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
+- [Symbolic writes walk every element of compact local arrays](compact-array-symbolic-write-walks-every-element.md)
 - [Signature diagnostics omit pointer constness](signature-diagnostic-omits-pointer-constness.md)
 
 - [Expansion refuses a witness that has no surface spelling](expansion-needs-unspellable-resource-witness.md)

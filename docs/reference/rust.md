@@ -85,7 +85,7 @@ Extraction compiles a private snapshot of those bytes. The aggregate source
 hash covers every input, and configuration hashes bind the root, edition,
 features, and entry points. Ordinary loading rechecks the full closure
 without executing a compiler. Schema-4 artifacts use the versioned
-`click-charon-crate-v1` envelope; existing schema-3 locks keep their identity.
+`click-charon-crate-v2` envelope; existing schema-3 locks keep their identity.
 
 Module definitions and inherent methods retain compiler-resolved identities.
 Proof identifiers encode tagged, length-prefixed path components, so `a::read`,
@@ -95,11 +95,25 @@ Charon's declaration IDs and execute imported bodies; names never grant a
 library summary. Concrete assignment operators retain their trait,
 implementation, signature, and associated-item checks across module paths.
 
-The unchanged adler2 trial now accepts its two-file input closure, Rust 2021,
-`std`, and selected root. It stops at the unsupported concrete `Default`
-constructor before publishing an artifact or lock. This is progress through
-the crate boundary, not a checksum proof. General trait dispatch and arbitrary
-Rust crates remain outside the supported subset.
+Schema 4 supports by-value returns of supported flat records, including owned
+array fields and records with `Drop`. The concrete return layout enters the
+kernel's aggregate-return interface: field values copy into fresh caller
+storage, and Rust live flags transfer ownership once. Reference, array, and
+nested-record returns and by-value aggregate arguments remain unsupported.
+
+Concrete `core::default::Default` implementations on local records execute
+their imported bodies. Dispatch checks the standard diagnostic identity,
+qualified trait path, associated method, implementation ID, signatures, and
+return type. Ordinary constructors use the same body and return path. Sidecar
+contracts use `struct <qualified-record> <function>(...)` and can state
+`ensures result.field == value;`; those contracts must verify before callers
+can use them.
+
+The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
+`a = 1`, `b = 0`. Selecting the complete checksum loop next rejects a by-value
+record operand of an assignment operator, before publishing an artifact or
+lock. General trait dispatch and arbitrary Rust crates remain outside the
+supported subset.
 
 ## Supported semantics
 
@@ -268,15 +282,18 @@ The compiler checks borrow validity, and Click still checks slice bounds and
 the callee's `views`/`owns` requirements. See the synthetic
 [array-to-slice example](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click).
 
-By-value array parameters or returns, nested arrays, array fields, and
-non-byte slices remain unsupported. Indexed compound assignment and arrays
-in owned-value MIR remain outside the supported subset. The builtin length
+By-value array parameters or returns, nested arrays, and non-byte slices
+remain unsupported. Supported flat records can contain owned array fields,
+including in schema-4 record returns described above. Indexed compound
+assignment remains outside the supported subset. The builtin length
 operation also supports non-byte fixed arrays by recovering their fixed
 length; this does not enable non-byte slices or general library methods.
 
-Modules, imports, macros, semantic attributes, dependencies, unsafe code,
-general traits, type/const generics, heap allocation, aggregate parameters and returns, reference
-returns, and other integer widths are outside this slice. Unsupported syntax
+Schema-3 single-file imports exclude modules and imports; schema 4 supports
+the locked module closure described above. Macros, semantic attributes,
+dependencies, unsafe code, general traits, type/const generics, heap
+allocation, aggregate parameters, reference returns, and other integer widths
+are outside this slice. Unsupported syntax
 fails during extraction or direct lowering. This is not general Cargo-project
 support.
 
@@ -462,7 +479,7 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
-by-value aggregate calls/returns, unstructured control flow, heap owners such
+by-value aggregate arguments, nested aggregate returns, unstructured control flow, heap owners such
 as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 

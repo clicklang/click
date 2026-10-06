@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod constructors;
 mod protocol;
 mod shared_arrays;
 #[cfg(test)]
@@ -1105,6 +1106,7 @@ impl BodyAdapter<'_, '_> {
                     .get(id)
                     .ok_or_else(|| unsupported("missing call definition"))?;
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
+                self.adapter.default_constructor_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
                     let [a::Operand::Move(p)] = call.args.as_slice() else {
                         return Err(unsupported("mem::drop operand"));
@@ -1119,6 +1121,20 @@ impl BodyAdapter<'_, '_> {
                         target: target.index(),
                     }
                 } else {
+                    if self.adapter.crate_mode
+                        && (call.args.len() != callee.signature.inputs.len()
+                            || self.adapter.ty(&call.dest.ty)?
+                                != self.adapter.ty(&callee.signature.output)?)
+                    {
+                        return Err(unsupported("source call signature/destination type"));
+                    }
+                    if self.adapter.crate_mode {
+                        for (arg, ty) in call.args.iter().zip(&callee.signature.inputs) {
+                            if self.adapter.ty(arg.ty())? != self.adapter.ty(ty)? {
+                                return Err(unsupported("source call operand type"));
+                            }
+                        }
+                    }
                     if call.safety == a::CallSafety::Unsafe
                         || callee.signature.is_unsafe
                         || !ptr.generics.types.is_empty()
@@ -1309,7 +1325,11 @@ pub(super) fn decode_crate(
                     continue;
                 }
                 if tr.item_meta.lang_item != Some(LangItem::Drop) {
-                    let name = adapter.assignment_operator_name(f)?;
+                    let name = if adapter.is_default_method(f) {
+                        adapter.default_constructor_name(f)?
+                    } else {
+                        adapter.assignment_operator_name(f)?
+                    };
                     adapter.functions.insert(id, name);
                     continue;
                 }
@@ -1331,6 +1351,9 @@ pub(super) fn decode_crate(
             }
             _ => return Err(unsupported("function source")),
         };
+        if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
+            return Err("Rust reference/aggregate returns are not supported".into());
+        }
         if f.signature.is_unsafe
             || f.signature.abi != a::Abi::Rust
             || f.signature.is_variadic
@@ -1389,6 +1412,30 @@ pub(super) fn decode_crate(
         let a::Body::Unstructured(body) = &f.body else {
             return Err(unsupported("missing or non-CFG source body"));
         };
+        if adapter.crate_mode {
+            let return_local = body
+                .locals
+                .locals
+                .first()
+                .ok_or_else(|| unsupported("missing function return local"))?;
+            if body.locals.arg_count != f.signature.inputs.len()
+                || adapter.ty(&return_local.ty)? != adapter.ty(&f.signature.output)?
+            {
+                return Err(unsupported("function body return/argument signature"));
+            }
+            for (local, ty) in body
+                .locals
+                .locals
+                .iter()
+                .skip(1)
+                .take(body.locals.arg_count)
+                .zip(&f.signature.inputs)
+            {
+                if adapter.ty(&local.ty)? != adapter.ty(ty)? {
+                    return Err(unsupported("function parameter local type"));
+                }
+            }
+        }
         let (iterator_refs, iterator_discriminants) = protocol::bindings(&adapter, body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
