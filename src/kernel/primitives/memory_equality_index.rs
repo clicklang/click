@@ -587,31 +587,93 @@ impl MemoryAccessCandidates {
 pub(in crate::kernel) struct ObjectEvidenceSources {
     resources: ResourceContext,
     source_checkpoints: PersistentMap<usize, ResourceContext>,
+    // Address selection retains only producer-published inputs. Raw provenance
+    // sources remain cheap to hold and never initialize a logical read index.
+    address_resources: ResourceContext,
+    address_source_checkpoints: PersistentMap<usize, ResourceContext>,
 }
 impl ObjectEvidenceSources {
     pub(in crate::kernel) fn admit(&mut self, source: &ResourceContext) {
-        // Retained contexts keep their origin allocation alive, so an address
-        // cannot be reused as another source's key during this proof context.
+        Self::admit_into(&mut self.resources, &mut self.source_checkpoints, source);
+        if !source.storage.index.memory_by_block.is_empty()
+            && source
+                .memory_equalities
+                .lock()
+                .expect("memory equality index")
+                .published
+                .is_some()
+        {
+            Self::admit_into(
+                &mut self.address_resources,
+                &mut self.address_source_checkpoints,
+                source,
+            );
+        }
+    }
+
+    fn admit_into(
+        resources: &mut ResourceContext,
+        checkpoints: &mut PersistentMap<usize, ResourceContext>,
+        source: &ResourceContext,
+    ) {
+        // Retained sources keep their origin alive; keys cannot be reused.
         let origin = std::sync::Arc::as_ptr(&source.storage.origin) as usize;
-        let delta = self
-            .source_checkpoints
+        let delta = checkpoints
             .get(&origin)
             .and_then(|prior| source.changed_memory_inputs_from(prior));
-        if self.resources.is_empty() {
-            self.resources = source.clone();
+        if resources.is_empty() {
+            *resources = source.clone();
         } else if let Some(delta) = delta {
-            self.resources = self.resources.clone().unchecked_with_facts(delta);
+            *resources = resources.clone().unchecked_with_facts(delta);
         } else {
-            // An independent admission adds its explicit memory input once;
-            // no later query visits this source or the ambient source list.
+            // An independent admission adds its explicit memory input once.
             for fact in source.iter() {
                 if fact.memory_range().is_some() {
-                    self.resources = self.resources.clone().unchecked_with_fact(fact.clone());
+                    *resources = resources.clone().unchecked_with_fact(fact.clone());
                 }
             }
         }
-        self.source_checkpoints.insert(origin, source.clone());
+        checkpoints.insert(origin, source.clone());
     }
+
+    /// Apply admitted class deltas at their producer, so selecting a logical
+    /// address never catches up by walking unrelated equality history.
+    pub(in crate::kernel) fn advance_memory_equalities(&self, assumptions: &PureFactContext) {
+        self.address_resources
+            .advance_prepared_memory_equalities(assumptions);
+    }
+
+    /// Select one admitted footprint's address coordinates through the class
+    /// index. Its quantity and extent grant no authority to a logical read.
+    pub(in crate::kernel) fn memory_address_spelling(
+        &self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Option<Pointer> {
+        // A logical read cannot publish an ambient input or initialize its
+        // suppliers. Construction and checked proof boundaries do that work.
+        self.address_resources
+            .memory_equalities
+            .lock()
+            .expect("memory equality index")
+            .published
+            .as_ref()?;
+        let mut candidates = self
+            .address_resources
+            .read_access_entries(pointer, 1, assumptions)?;
+        let entry = candidates.next()?;
+        let range = candidates
+            .index
+            .resources
+            .facts
+            .get(&entry)?
+            .memory_range()?;
+        candidates
+            .index
+            .graph
+            .pointer_at_constant_base(pointer, &range.base().object_base())
+    }
+
     pub(in crate::kernel) fn memory_object_evidence(
         &self,
         pointer: &Pointer,

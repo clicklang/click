@@ -543,12 +543,12 @@ blocks C3; each is a candidate package when it starts to.
   because a per-clause re-decision broke the near-linear width contract
   (A28).
 - **Pointer spellings across a write or a fold:** a fold at an arm identity
-  after a store to another owned node now verifies (chunk 1). The logical
-  form is still open and filed as
-  `bugs/arm-identity-read-differs-from-parameter-read-after-a-store.md`:
-  after such a store, `have id->right == p->right` is refused although
-  `have p == id` holds. Loads in fold arguments
-  (`fold(rb_at(x->left), ...)`) are unsupported.
+  after a store to another owned node verifies (chunk 1). The logical form
+  now verifies too: `have id->right == p->right` and marked reads through
+  `id` use the admitted footprint's address spelling. The regression
+  `mdtests/arm_identity_read_after_store.md` covers every node field; writes
+  that reach the cell remain refused through both spellings. Loads in fold
+  arguments (`fold(rb_at(x->left), ...)`) are unsupported.
 - **Stale prose:** `mdtests/rb_replace_node.md` says a victim with
   children cannot be contracted, which `rb_replace_node_with_children.md`
   contradicts.

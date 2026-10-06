@@ -78,6 +78,19 @@ a cell it cannot prove untouched stays at its pre-step snapshot; an explicit
 frame reasoning. The user-facing statement of this rule is
 [What a step carries](../concepts/proof-state.md#what-a-step-carries).
 
+Logical reads through opaque pointers select an admitted footprint's address
+coordinates through the composition's existing class and interval indexes.
+Only producer-published footprints enter this selection index; admitting raw
+composition provenance still shares its persistent storage without a scan.
+Admitting a composition or pointer equality advances only its prepared index
+delta at that producer. Selection aligns one supplier occurrence against the
+trusted graph; it does not enumerate pointer spellings, scan composition
+frames, or resolve older snapshots. Address alignment grants no read authority
+or value preservation. The regression
+`logical_read_address_uses_class_index_without_scanning_aliases_or_frames`
+varies unrelated compositions and equivalent pointer spellings at 4, 64,
+and 1,024 entries, including field offsets zero, four, and eight.
+
 ## Output-sensitive exceptions
 
 Some verification work is inherently larger than one lookup. Its cost must be

@@ -4695,6 +4695,8 @@ impl PureFactContext {
         if let Proposition::CResourceComposition(resources) = proposition {
             if std::sync::Arc::make_mut(&mut self.resource_compositions).insert(resources.clone()) {
                 self.composition_object_resources.admit(&resources);
+                self.composition_object_resources
+                    .advance_memory_equalities(self);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
             }
             return;
@@ -5107,6 +5109,10 @@ impl PureFactContext {
         self.adjust_pointer_block_alias(&condition, value, true);
         self.adjust_pointer_offset_alias(&condition, value, true);
         self.adjust_int32_graph_equality(&condition, value, true);
+        if value && matches!(condition, ConditionTerm::PointerEqual(..)) {
+            self.composition_object_resources
+                .advance_memory_equalities(&self);
+        }
         self.adjust_bitvector64_equality(&condition, value, true);
         self.adjust_exact_constant_equality(&condition, value, true);
         self.adjust_condition_match_indexes(&condition, value, true);
