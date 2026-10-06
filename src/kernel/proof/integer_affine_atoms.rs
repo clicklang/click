@@ -57,6 +57,8 @@ pub(crate) enum IntegerAffineAtom {
     Machine(u64),
     Application(u64),
     Fold(Arc<IntegerFoldAtomRecord>),
+    /// A complete symbolic product, quotient, or remainder, keyed by shared DAG identity.
+    Nonlinear(u64),
 }
 
 impl fmt::Debug for IntegerAffineAtom {
@@ -65,6 +67,7 @@ impl fmt::Debug for IntegerAffineAtom {
             Self::Variable(variable) => formatter.debug_tuple("Variable").field(variable).finish(),
             Self::Machine(id) => formatter.debug_tuple("Machine").field(id).finish(),
             Self::Application(id) => formatter.debug_tuple("Application").field(id).finish(),
+            Self::Nonlinear(id) => formatter.debug_tuple("Nonlinear").field(id).finish(),
             Self::Fold(record) => formatter.debug_tuple("Fold").field(&record.id()).finish(),
         }
     }
@@ -77,6 +80,7 @@ impl PartialEq for IntegerAffineAtom {
             (Self::Machine(left), Self::Machine(right)) => left == right,
             (Self::Application(left), Self::Application(right)) => left == right,
             (Self::Fold(left), Self::Fold(right)) => left.id() == right.id(),
+            (Self::Nonlinear(left), Self::Nonlinear(right)) => left == right,
             _ => false,
         }
     }
@@ -92,6 +96,7 @@ impl Ord for IntegerAffineAtom {
             Self::Machine(_) => 1,
             Self::Application(_) => 2,
             Self::Fold(_) => 3,
+            Self::Nonlinear(_) => 4,
         };
         match tag(self).cmp(&tag(other)) {
             Ordering::Equal => match (self, other) {
@@ -99,6 +104,7 @@ impl Ord for IntegerAffineAtom {
                 (Self::Machine(left), Self::Machine(right)) => left.cmp(right),
                 (Self::Application(left), Self::Application(right)) => left.cmp(right),
                 (Self::Fold(left), Self::Fold(right)) => left.id().cmp(&right.id()),
+                (Self::Nonlinear(left), Self::Nonlinear(right)) => left.cmp(right),
                 _ => unreachable!("atom tags already match"),
             },
             ordering => ordering,
@@ -125,6 +131,10 @@ impl Hash for IntegerAffineAtom {
             }
             Self::Application(id) => {
                 2u8.hash(state);
+                id.hash(state);
+            }
+            Self::Nonlinear(id) => {
+                4u8.hash(state);
                 id.hash(state);
             }
             Self::Fold(record) => {

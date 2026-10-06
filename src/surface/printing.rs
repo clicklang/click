@@ -829,6 +829,15 @@ fn write_special_arithmetic_certificate(
                     .join(", "),
                 source_click_proposition(result)
             ),
+            SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => format!(
+                "integer_quotient_bound bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => format!(
                 "integer_bound_exclusion bounds [{}] => {};",
                 bounds

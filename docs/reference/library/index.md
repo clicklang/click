@@ -2490,3 +2490,141 @@ theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
     ensures truncating_remainder(n, d) <= 0;
 }
 ```
+
+
+### `integer_multiply_add`
+
+```click
+theorem integer_multiply_add(a: Integer, b: Integer, c: Integer) {
+    ensures (a + b) * c == a * c + b * c by {
+        arithmetic_certificate special {
+            integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
+            conclusion 0;
+        }
+    }
+}
+```
+
+
+### `integer_floor_from_remainder`
+
+```click
+theorem integer_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires r < 0 implies value == q + -1;
+    requires 0 <= r implies value == q;
+    ensures value * d <= n by {
+        if r < 0 {
+            have value == q + -1 by simp;
+            apply(integer_multiply_add(q, -1, d));
+            rewrite(value == q + -1);
+            rewrite((q + -1) * d == q * d + -1 * d);
+            arithmetic() using { n == q * d + r; 1 - d <= r; }
+        } else {
+            have 0 <= r by { arithmetic() using { not (r < 0); } }
+            have value == q by simp;
+            rewrite(value == q);
+            arithmetic() using { n == q * d + r; 0 <= r; }
+        }
+    }
+    ensures n < (value + 1) * d by {
+        if r < 0 {
+            have value == q + -1 by simp;
+            have value + 1 == q by { arithmetic() using { value == q + -1; } }
+            rewrite(value + 1 == q);
+            arithmetic() using { n == q * d + r; r < 0; }
+        } else {
+            have 0 <= r by { arithmetic() using { not (r < 0); } }
+            have value == q by simp;
+            apply(integer_multiply_add(q, 1, d));
+            rewrite(value == q);
+            rewrite((q + 1) * d == q * d + 1 * d);
+            arithmetic() using { n == q * d + r; r <= d - 1; }
+        }
+    }
+}
+```
+
+
+### `integer_ceiling_from_remainder`
+
+```click
+theorem integer_ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires 0 < r implies value == q + 1;
+    requires r <= 0 implies value == q;
+    ensures n <= value * d by {
+        if 0 < r {
+            have value == q + 1 by simp;
+            apply(integer_multiply_add(q, 1, d));
+            rewrite(value == q + 1);
+            rewrite((q + 1) * d == q * d + 1 * d);
+            arithmetic() using { n == q * d + r; r <= d - 1; }
+        } else {
+            have r <= 0 by { arithmetic() using { not (0 < r); } }
+            have value == q by simp;
+            rewrite(value == q);
+            arithmetic() using { n == q * d + r; r <= 0; }
+        }
+    }
+    ensures (value + -1) * d < n by {
+        if 0 < r {
+            have value == q + 1 by simp;
+            have value + -1 == q by { arithmetic() using { value == q + 1; } }
+            rewrite(value + -1 == q);
+            arithmetic() using { n == q * d + r; 0 < r; }
+        } else {
+            have r <= 0 by { arithmetic() using { not (0 < r); } }
+            have value == q by simp;
+            apply(integer_multiply_add(q, -1, d));
+            rewrite(value == q);
+            rewrite((q + -1) * d == q * d + -1 * d);
+            arithmetic() using { n == q * d + r; 1 - d <= r; }
+        }
+    }
+}
+```
+
+
+### `integer_positive_divisor_quotient_lower`
+
+```click
+theorem integer_positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound * d <= n;
+    ensures bound <= truncating_quotient(n, d) by {
+        arithmetic_certificate special {
+            premise 0: bound * d <= n => bound * d <= n;
+            premise 1: 1 <= d => 1 <= d;
+            integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
+            conclusion 0;
+        }
+    }
+}
+```
+
+
+### `integer_positive_divisor_quotient_upper`
+
+```click
+theorem integer_positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= bound * d;
+    ensures truncating_quotient(n, d) <= bound by {
+        arithmetic_certificate special {
+            premise 0: n <= bound * d => n <= bound * d;
+            premise 1: 1 <= d => 1 <= d;
+            integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
+            conclusion 0;
+        }
+    }
+}
+```
