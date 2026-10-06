@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 38;
+pub(crate) const EXPORT_SCHEMA: u32 = 39;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -2259,10 +2259,14 @@ impl CppExpression {
                 require_scalar_integer(value_type, "binary result type")?;
                 let kind = Scalar::mutable_kind(value_type).unwrap();
                 if kind.is_wide()
-                    && !(*operator == CppBinaryOperator::Multiply && kind == ScalarKind::Int128)
+                    && !(matches!(
+                        operator,
+                        CppBinaryOperator::Divide | CppBinaryOperator::Remainder
+                    ) || (*operator == CppBinaryOperator::Multiply
+                        && kind == ScalarKind::Int128))
                 {
                     return Err(
-                        "C++ wide arithmetic supports checked signed multiplication only".into(),
+                        "C++ wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only".into(),
                     );
                 }
                 span.validate(logical_source)?;
@@ -4667,9 +4671,55 @@ mod tests {
                     expression
                         .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
                         .is_ok(),
-                    signed && operator == CppBinaryOperator::Multiply,
+                    matches!(
+                        operator,
+                        CppBinaryOperator::Divide | CppBinaryOperator::Remainder
+                    ) || (signed && operator == CppBinaryOperator::Multiply),
                     "{signed}: {operator:?}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn wide_division_artifacts_require_compiler_resolved_operand_types() {
+        for signed in [false, true] {
+            for operator in [CppBinaryOperator::Divide, CppBinaryOperator::Remainder] {
+                for (bits, operand_signed) in [(64, signed), (128, !signed)] {
+                    let ty = CppType::Integer {
+                        bits: 128,
+                        signed,
+                        is_const: false,
+                        source_aliases: vec![],
+                    };
+                    let operand_ty = CppType::Integer {
+                        bits,
+                        signed: operand_signed,
+                        is_const: false,
+                        source_aliases: vec![],
+                    };
+                    let expression = CppExpression::Binary {
+                        operator,
+                        left: Box::new(CppExpression::IntegerLiteral {
+                            value: "7".into(),
+                            value_type: ty.clone(),
+                            span: cleanup_span(),
+                        }),
+                        right: Box::new(CppExpression::IntegerLiteral {
+                            value: "3".into(),
+                            value_type: operand_ty,
+                            span: cleanup_span(),
+                        }),
+                        value_type: ty,
+                        span: cleanup_span(),
+                    };
+                    assert!(
+                        expression
+                            .validate(&ValidationPlaces::new(), &BTreeMap::new(), "fixture.cpp")
+                            .unwrap_err()
+                            .contains("matching widths and signedness")
+                    );
+                }
             }
         }
     }

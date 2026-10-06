@@ -1596,6 +1596,7 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
 
 /// One load variable's registry entry: the load it names, and what the
 /// session has learned about it since.
+#[derive(Clone)]
 struct RegisteredLoad {
     /// The canonical snapshot, address and kind: the load itself.
     memory: SharedCMemory,
@@ -1661,6 +1662,51 @@ pub(crate) fn load_substitution_term_visits() -> usize {
 pub(crate) fn clear_load_canonicalization_caches() {
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
     TERM_CACHE.with(|cache| cache.borrow_mut().clear());
+}
+
+/// Everything `clear_load_variable_registry` clears, as one value: the load
+/// names, their origins and widths, the pointer-load names, and the logical
+/// pointer reads. A reusable session captures it once and restores it before
+/// each check.
+#[derive(Clone)]
+pub(crate) struct LoadRegistryState {
+    variables: std::collections::HashMap<Variable, RegisteredLoad>,
+    pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
+    widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
+    widths_at_address: std::collections::HashMap<Pointer, u32>,
+    array_widths: std::collections::BTreeMap<(PointerBlock, i64), SymbolicArrayAccessWidths>,
+    origin_epoch: u64,
+    logical_pointer_reads: crate::kernel::equality_graph::LogicalPointerReadsState,
+}
+
+/// How many load and pointer-load names are registered.
+#[cfg(test)]
+pub(crate) fn load_registry_entry_count() -> usize {
+    LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().len())
+        + POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().len())
+}
+
+pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
+    LoadRegistryState {
+        variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
+        pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
+        widths: LOAD_ACCESS_WIDTH.with(|widths| widths.borrow().clone()),
+        widths_at_address: LOAD_ACCESS_WIDTH_AT_ADDRESS.with(|widths| widths.borrow().clone()),
+        array_widths: SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| arrays.borrow().clone()),
+        origin_epoch: LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get),
+        logical_pointer_reads: crate::kernel::equality_graph::capture_logical_pointer_reads(),
+    }
+}
+
+pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
+    LOAD_VARIABLE_REGISTRY.with(|registry| *registry.borrow_mut() = state.variables.clone());
+    POINTER_LOAD_REGISTRY.with(|registry| *registry.borrow_mut() = state.pointers.clone());
+    LOAD_ACCESS_WIDTH.with(|widths| *widths.borrow_mut() = state.widths.clone());
+    LOAD_ACCESS_WIDTH_AT_ADDRESS
+        .with(|widths| *widths.borrow_mut() = state.widths_at_address.clone());
+    SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| *arrays.borrow_mut() = state.array_widths.clone());
+    LOAD_ORIGIN_EPOCH.with(|epoch| epoch.set(state.origin_epoch));
 }
 
 pub(crate) fn clear_load_variable_registry() {

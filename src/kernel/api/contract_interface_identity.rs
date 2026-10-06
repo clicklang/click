@@ -300,7 +300,9 @@ impl Names {
             SpecIntegerExpression::Negate(inner) => self.integer(inner),
             SpecIntegerExpression::Add(left, right)
             | SpecIntegerExpression::Subtract(left, right)
-            | SpecIntegerExpression::Multiply(left, right) => {
+            | SpecIntegerExpression::Multiply(left, right)
+            | SpecIntegerExpression::TruncatingQuotient(left, right)
+            | SpecIntegerExpression::TruncatingRemainder(left, right) => {
                 self.integer(left);
                 self.integer(right);
             }

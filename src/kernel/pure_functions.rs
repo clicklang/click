@@ -112,6 +112,19 @@ pub(crate) fn registered_pure_function_definition(
     PURE_FUNCTION_DEFINITIONS.with(|registry| registry.borrow().get(name).cloned())
 }
 
+/// The registered pure-function definitions, for a reusable session to
+/// capture and restore.
+pub(crate) fn capture_pure_function_definitions()
+-> BTreeMap<String, std::sync::Arc<CPureFunctionDefinition>> {
+    PURE_FUNCTION_DEFINITIONS.with(|definitions| definitions.borrow().clone())
+}
+
+pub(crate) fn restore_pure_function_definitions(
+    state: &BTreeMap<String, std::sync::Arc<CPureFunctionDefinition>>,
+) {
+    PURE_FUNCTION_DEFINITIONS.with(|definitions| *definitions.borrow_mut() = state.clone());
+}
+
 pub(crate) fn clear_pure_function_definitions() {
     PURE_FUNCTION_DEFINITIONS.with(|registry| registry.borrow_mut().clear());
 }

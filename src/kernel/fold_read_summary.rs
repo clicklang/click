@@ -433,6 +433,10 @@ impl BodyChecker<'_> {
                 self.integer(left, scope)?;
                 self.integer(right, scope)
             }
+            SpecIntegerExpression::TruncatingQuotient(_, _)
+            | SpecIntegerExpression::TruncatingRemainder(_, _) => {
+                Err(Self::unsupported("a deferred truncating division"))
+            }
             SpecIntegerExpression::RangeFold { .. } => Err(Self::unsupported("a nested fold")),
             SpecIntegerExpression::PureFunctionApplication { .. } => {
                 Err(Self::unsupported("a function call"))
@@ -610,6 +614,19 @@ pub fn register_fold_read_definition(definition: CFoldReadDefinition) {
             }
         }
     });
+}
+
+/// The registered fold-read summaries, for a reusable session to capture and
+/// restore.
+#[derive(Clone)]
+pub(crate) struct FoldReadSummariesState(BTreeMap<String, (u64, RegisteredFoldRead)>);
+
+pub(crate) fn capture_fold_read_summaries() -> FoldReadSummariesState {
+    FoldReadSummariesState(FOLD_READ_SUMMARIES.with(|summaries| summaries.borrow().clone()))
+}
+
+pub(crate) fn restore_fold_read_summaries(state: &FoldReadSummariesState) {
+    FOLD_READ_SUMMARIES.with(|summaries| *summaries.borrow_mut() = state.0.clone());
 }
 
 pub(crate) fn clear_fold_read_summaries() {

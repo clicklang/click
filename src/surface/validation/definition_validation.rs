@@ -113,6 +113,12 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                 definition.name()
             )));
         }
+        if is_integer_truncation(definition.name()) {
+            return Err(ClickError::new(format!(
+                "`{}` is a built-in Integer truncation name",
+                definition.name()
+            )));
+        }
         if is_integer_conversion(definition.name()) || definition.name() == "to_nat" {
             return Err(ClickError::new(format!(
                 "`{}` is a built-in Integer conversion name",

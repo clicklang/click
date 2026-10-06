@@ -99,6 +99,7 @@ mod diagnostics;
 mod expansion;
 mod generics;
 mod integer_conversions;
+mod integer_truncation;
 mod lowering;
 mod modules;
 mod parser;
@@ -107,6 +108,7 @@ pub(crate) mod proof_diagnostics;
 mod source_registry;
 mod surface_propositions;
 use integer_conversions::*;
+use integer_truncation::*;
 pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
@@ -6309,6 +6311,11 @@ pub struct C0VerificationSession {
     /// under. Its snapshots live in this thread's kernel tables, which the
     /// next fresh verification on the thread replaces.
     kernel_generation: u64,
+    /// The kernel tables as they stood once that environment was built. Each
+    /// check restores them first, so a check starts from exactly the
+    /// environment's own state and leaves nothing behind for the next: a
+    /// session's memory is bounded by its largest check, not their sum.
+    kernel_state: crate::kernel::VerificationSessionState,
 }
 
 impl ClickFile {

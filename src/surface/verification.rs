@@ -1757,6 +1757,7 @@ impl C0VerificationSession {
                     verified_function_environment,
                     environment_identity,
                     kernel_generation: crate::kernel::verification_session_generation(),
+                    kernel_state: crate::kernel::VerificationSession::capture_state(),
                 },
                 verified,
             ))
@@ -1786,6 +1787,7 @@ impl C0VerificationSession {
                     verified_function_environment,
                     environment_identity,
                     kernel_generation: crate::kernel::verification_session_generation(),
+                    kernel_state: crate::kernel::VerificationSession::capture_state(),
                 },
                 verified,
             ))
@@ -1817,6 +1819,7 @@ impl C0VerificationSession {
                 verified_function_environment,
                 environment_identity,
                 kernel_generation: crate::kernel::verification_session_generation(),
+                kernel_state: crate::kernel::VerificationSession::capture_state(),
             },
             verified,
         ))
@@ -1855,6 +1858,7 @@ impl C0VerificationSession {
                     verified_function_environment,
                     environment_identity,
                     kernel_generation: crate::kernel::verification_session_generation(),
+                    kernel_state: crate::kernel::VerificationSession::capture_state(),
                 },
                 verified,
             ))
@@ -1890,6 +1894,7 @@ impl C0VerificationSession {
                     verified_function_environment,
                     environment_identity,
                     kernel_generation: crate::kernel::verification_session_generation(),
+                    kernel_state: crate::kernel::VerificationSession::capture_state(),
                 },
                 verified,
             ))
@@ -1925,6 +1930,7 @@ impl C0VerificationSession {
                     verified_function_environment,
                     environment_identity,
                     kernel_generation: crate::kernel::verification_session_generation(),
+                    kernel_state: crate::kernel::VerificationSession::capture_state(),
                 },
                 verified,
             ))
@@ -1953,13 +1959,18 @@ impl C0VerificationSession {
     /// exhausting its budget only in the session) and at worst lets a
     /// snapshot inherit another verification's facts. Keep a session on a
     /// thread of its own when other verification runs on the same thread.
-    /// On success, the returned guard joins those tables for the check, so a
-    /// check that starts no retained environment (a theorem target) still
-    /// runs inside them rather than replacing them for later checks.
+    /// On success, the tables are first restored to the state captured when
+    /// the environment was built, so a check starts from that state alone and
+    /// what an earlier check interned, named, or memoized is gone. The
+    /// returned guard then joins those tables for the check, so a check that
+    /// starts no retained environment (a theorem target) still runs inside
+    /// them rather than replacing them for later checks.
     fn ensure_kernel_state_retained(
         &self,
     ) -> Result<crate::kernel::VerificationSession, ClickError> {
-        if crate::kernel::verification_session_generation() == self.kernel_generation {
+        if crate::kernel::verification_session_generation() == self.kernel_generation
+            && crate::kernel::VerificationSession::restore_state(&self.kernel_state)
+        {
             return Ok(crate::kernel::VerificationSession::resume());
         }
         Err(ClickError::new(

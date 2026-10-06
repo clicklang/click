@@ -987,6 +987,49 @@ int32 caller(int32 x) {
     assert!(!expanded.contains("execute_until(statement(1));"));
 }
 
+/// A reusable session restores the kernel's tables to its baseline before each
+/// check. Without that, every check's pinned snapshot storage and load names
+/// stay in the tables, so a session that audits many sites of one large proof
+/// grows without limit. The same check, repeated, must leave the same number
+/// of entries behind each time.
+#[test]
+fn retained_session_checks_leave_no_kernel_state_behind() {
+    let c_source = r#"
+int32 bump(int32 *p) {
+    p[0] = p[0] + 0;
+    p[0] = p[0] + 0;
+    return p[0];
+}
+"#;
+    let click_source = r#"
+verifying "bump.c";
+
+int32 bump(int32* p) {
+    owns p[0..1];
+    ensures result == old(p[0]);
+} by {
+    execute();
+    simp();
+}
+"#;
+    let sources = [("bump.c", c_source)];
+    let position =
+        expansion::position_at_offset(click_source, click_source.find("execute();").unwrap());
+    let (session, _) =
+        C0VerificationSession::new(click_source, &sources).expect("baseline should verify");
+    let mut counts = Vec::new();
+    for _ in 0..4 {
+        session
+            .verify_at(click_source, position.line, position.column)
+            .expect("the unchanged proof unit rechecks");
+        counts.push(crate::kernel::VerificationSession::state_entry_count());
+    }
+    assert!(
+        counts.iter().all(|count| *count == counts[0]),
+        "each check must start from the session's baseline tables: {counts:?}"
+    );
+}
+
 #[test]
 fn verification_session_reuses_certified_dependencies_and_rechecks_target() {
     let callee_c = r#"

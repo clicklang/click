@@ -7394,6 +7394,18 @@ fn substitute_pointer_variable_in_spec_integer(
             Box::new(substitute_pointer_variable_in_spec_integer(left, from, to)),
             Box::new(substitute_pointer_variable_in_spec_integer(right, from, to)),
         ),
+        SpecIntegerExpression::TruncatingQuotient(left, right) => {
+            SpecIntegerExpression::TruncatingQuotient(
+                Box::new(substitute_pointer_variable_in_spec_integer(left, from, to)),
+                Box::new(substitute_pointer_variable_in_spec_integer(right, from, to)),
+            )
+        }
+        SpecIntegerExpression::TruncatingRemainder(left, right) => {
+            SpecIntegerExpression::TruncatingRemainder(
+                Box::new(substitute_pointer_variable_in_spec_integer(left, from, to)),
+                Box::new(substitute_pointer_variable_in_spec_integer(right, from, to)),
+            )
+        }
         SpecIntegerExpression::Multiply(left, right) => SpecIntegerExpression::Multiply(
             Box::new(substitute_pointer_variable_in_spec_integer(left, from, to)),
             Box::new(substitute_pointer_variable_in_spec_integer(right, from, to)),

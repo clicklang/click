@@ -140,6 +140,19 @@ impl TraceSurfaceView<'_> {
                 Box::new(self.integer(left, binders, depth)?),
                 Box::new(self.integer(right, binders, depth)?),
             )),
+            IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => Some(ContractExpression::Call {
+                name: if matches!(term.as_ref(), IntegerTerm::TruncatingQuotient(_, _)) {
+                    "truncating_quotient"
+                } else {
+                    "truncating_remainder"
+                }
+                .into(),
+                arguments: vec![
+                    self.integer(left, binders, depth)?,
+                    self.integer(right, binders, depth)?,
+                ],
+            }),
             IntegerTerm::PureFunctionApplication(application) => {
                 self.call(application.name(), application.arguments(), binders, depth)
             }

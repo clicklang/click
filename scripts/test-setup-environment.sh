@@ -95,30 +95,34 @@ cat > "$directory/bin/uname" <<'EOF'
 echo Darwin
 EOF
 chmod +x "$directory/bin/llvm-config-19" "$directory/bin/uname"
-
-# A cache can disappear after prepare finishes. Restore that job's runtime
-# archive without installing a compiler, preserving executable and link modes.
-mkdir -p "$RUST_EXPORTER_SYSROOT/bin"
-printf 'mock runtime\n' > "$RUST_EXPORTER_SYSROOT/bin/rustc"
-chmod +x "$RUST_EXPORTER_SYSROOT/bin/rustc"
-ln -s librustc_driver-mock.so "$RUST_EXPORTER_SYSROOT/lib/driver-link"
-"$repository/scripts/rust-exporter-runtime-archive.sh" pack "$directory/runtime.tar.gz"
-rm -rf "$RUST_EXPORTER_SYSROOT"
-if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
-    echo "error: runner setup accepted a missing runtime" >&2
-    exit 1
-fi
-"$repository/scripts/rust-exporter-runtime-archive.sh" restore "$directory/runtime.tar.gz"
-[[ -x "$RUST_EXPORTER_SYSROOT/bin/rustc" ]]
-[[ -L "$RUST_EXPORTER_SYSROOT/lib/driver-link" ]]
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
 
-mkdir -p "$directory/empty"
-tar -czf "$directory/empty.tar.gz" -C "$directory/empty" .
-if RUSTUP_HOME="$directory/incomplete" \
-    "$repository/scripts/rust-exporter-runtime-archive.sh" restore "$directory/empty.tar.gz" \
-    > "$directory/output" 2>&1; then
-    echo "error: runtime restore accepted an incomplete archive" >&2
+# Fresh archive consumers have no runtime cache and still never call rustup.
+"$repository/scripts/rust-exporter-runtime.sh" pack "$directory/runtime.tar.gz"
+cached_runtime="$RUST_EXPORTER_SYSROOT"
+export RUSTUP_HOME="$directory/cold-rustup"
+source "$repository/scripts/rust-exporter-toolchain.sh"
+if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
+    echo "error: setup accepted a missing exporter runtime" >&2
+    exit 1
+fi
+"$repository/scripts/rust-exporter-runtime.sh" restore "$directory/runtime.tar.gz"
+[[ -f "$RUST_EXPORTER_SYSROOT/lib/librustc_driver-mock.so" ]]
+[[ ! -d "$RUST_EXPORTER_SYSROOT/bin" ]]
+"$repository/scripts/setup-environment.sh" --test-runner >/dev/null
+
+# Refuse mismatched identities before creating the destination runtime.
+printf 'wrong compiler identity\n' > "$directory/click-rust-runtime.identity"
+tar -czf "$directory/wrong-runtime.tar.gz" -C "$cached_runtime" lib \
+    -C "$directory" click-rust-runtime.identity
+export RUSTUP_HOME="$directory/wrong-rustup"
+if "$repository/scripts/rust-exporter-runtime.sh" restore "$directory/wrong-runtime.tar.gz" > "$directory/output" 2>&1; then
+    echo "error: restored a mismatched Rust runtime archive" >&2
+    exit 1
+fi
+[[ ! -e "$RUSTUP_HOME" ]]
+if "$repository/scripts/rust-exporter-runtime.sh" pack "$directory/missing-runtime.tar.gz" > "$directory/output" 2>&1; then
+    echo "error: packed a missing Rust runtime" >&2
     exit 1
 fi
 echo "Environment setup regressions passed"

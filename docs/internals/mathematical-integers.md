@@ -271,8 +271,8 @@ C/C++ undefined behavior or Rust panic policy. Existing signed/unsigned
 retaining their execution guards and symbolic nodes. Exact-oracle checks cover
 all formats and exhaustive byte pairs; operation batches have deterministic
 linear work checks. The symbolic representation is described below; guarded
-wide execution and C++ frontend admission remain the next slice. Artifact
-schema remains 38.
+wide execution and C++ frontend admission are described below. This constant
+foundation used artifact schema 38.
 
 ## Explicit machine modulo casts
 
@@ -422,8 +422,8 @@ native execution guard, rather than the mathematical term constructor.
 A zero divisor stays opaque. Constructors do not cancel `x/x` or `0/x`;
 these nodes do not certify a native division's definedness. Native execution
 must establish nonzero divisors and the signed overflow exclusion before
-producing results. Wide source division and its contract spellings remain
-closed until that guarded execution and observation path is implemented.
+producing results. Proof spellings and C++ source admission build on this
+representation as described below.
 
 Interning, alpha keys, variable collectors, binder-aware rewriting, fold
 framing, and diagnostics preserve the distinct operators. The affine solver
@@ -432,4 +432,66 @@ substitution memoizes shared nodes and rebuilds both operands; substituting
 nonzero constants folds, while substituting a zero divisor stays opaque.
 Regressions cover full-width signed/unsigned magnitudes, both remainder signs,
 2/8/32/128-node shared DAGs, and explicit numeric bit-length work charging.
-Artifact schema remains 38 because no source operation is newly admitted.
+This representation foundation used schema 38 without admitting new source operations.
+
+## Guarded wide native division
+
+Kernel execution admits quotient and remainder on matching `Int128` or
+`UInt128` values. Callers must resolve promotions before this boundary.
+Execution checks the divisor's full-width Integer observation against zero.
+Signed execution additionally excludes `MIN/-1` for both `/` and `%`, using
+`left != MIN || right != -1` in the existing proposition model. Each unknown
+guard retains a UB path and a guarded normal path; proving nonzero alone does
+not eliminate signed overflow, and proving the overflow exclusion alone does
+not eliminate division by zero. Known operand conditions simplify the guard.
+
+After these guards, the shared mathematical quotient/remainder fits the
+result's native format. Constants preserve their signedness and all 128 bits;
+symbolic results use the checked Integer-to-machine representation. Only the
+normal path carries the kernel-certified equation equating its full-width
+machine observation with that mathematical term. This equation follows from
+the native operation, rather than an assumed conversion range. Operand
+execution obligations are preserved before either operation.
+
+Exact guard lookup does not scan unrelated ambient facts. Regressions cover
+signed/unsigned extrema, quotient and remainder signs, zero and MIN/-1,
+missing guards, explicit promotions, checked function artifact rechecking, and
+2/8/32/128-operation work scaling. Equality-as-false and inequality-as-true
+guards use exact indexed lookup, including the signed overflow disjunction.
+C++ source division/remainder is admitted in schema 39; wide source memory
+remains separate work. See the [C++ import profile](../reference/cli/import.md).
+
+
+## Explicit truncation in proofs
+
+`truncating_quotient(a, b)` and `truncating_remainder(a, b)` take two
+mathematical Integer arguments. Quotients truncate toward zero; a nonzero
+remainder has the dividend's sign. Both require `b != 0`, including under
+cancellation or multiplication by zero. Native operand evaluation retains its
+own definedness obligations: `truncating_quotient(to_integer(x + 1), 3)` also
+requires the machine addition to be defined.
+
+Nonzero constants fold exactly at arbitrary width. Mathematical `MIN/-1`
+therefore denotes the positive unbounded quotient; it does not establish that
+a native signed division is defined. Symbolic terms remain opaque to affine
+reasoning. These explicit spellings leave mathematical Integer `/` and `%`
+unavailable, preserving their separate planned Euclidean policy.
+
+<!-- verified-example: mdtests/integer_truncation.md -->
+```click
+theorem guarded(a: Integer, b: Integer) {
+    requires b != 0;
+    ensures truncating_quotient(a, b) == truncating_quotient(a, b) by simp;
+    ensures truncating_remainder(a, b) == truncating_remainder(a, b) by simp;
+}
+```
+
+The kernel retains deferred operands and mandatory domain obligations before
+constructing shared terms. A pure expression with a nonzero constant divisor
+can use the shared Integer DAG directly. Deferred truncation is not treated
+as an obligation-free argument or a total fold summary. Expansion preserves
+the spellings and verifies again; regressions check hostile constants, erased
+guards, full-width signs, native operand obligations, shared aliases, and
+lookup with unrelated facts. The proof notation has mathematical Integer
+semantics; C++ source division/remainder separately retains native guards and
+uses artifact schema 39.

@@ -198,7 +198,9 @@ fn collect_spec_integer_carriers(
         }
         SpecIntegerExpression::Add(left, right)
         | SpecIntegerExpression::Subtract(left, right)
-        | SpecIntegerExpression::Multiply(left, right) => {
+        | SpecIntegerExpression::Multiply(left, right)
+        | SpecIntegerExpression::TruncatingQuotient(left, right)
+        | SpecIntegerExpression::TruncatingRemainder(left, right) => {
             collect_spec_integer_carriers(left, variables, integer_seen);
             if variables.exhausted() {
                 return;
@@ -1208,6 +1210,18 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_spec_integer(left)?),
                 Box::new(self.rewrite_spec_integer(right)?),
             ),
+            SpecIntegerExpression::TruncatingQuotient(left, right) => {
+                SpecIntegerExpression::TruncatingQuotient(
+                    Box::new(self.rewrite_spec_integer(left)?),
+                    Box::new(self.rewrite_spec_integer(right)?),
+                )
+            }
+            SpecIntegerExpression::TruncatingRemainder(left, right) => {
+                SpecIntegerExpression::TruncatingRemainder(
+                    Box::new(self.rewrite_spec_integer(left)?),
+                    Box::new(self.rewrite_spec_integer(right)?),
+                )
+            }
             SpecIntegerExpression::Multiply(left, right) => SpecIntegerExpression::Multiply(
                 Box::new(self.rewrite_spec_integer(left)?),
                 Box::new(self.rewrite_spec_integer(right)?),
