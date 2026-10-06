@@ -881,6 +881,12 @@ impl<'a> Proof<'a> {
             }
         }
 
+        premises.extend(self.integer_argument_guard_premises(
+            theorem,
+            application,
+            &application_context,
+            &premises,
+        )?);
         Ok(ProofStep::ApplyTheoremUsing {
             application: written_application.clone(),
             premises,
@@ -1015,10 +1021,169 @@ impl<'a> Proof<'a> {
                 premises.push(surface);
             }
         }
+        premises.extend(self.integer_argument_guard_premises(
+            &theorem,
+            application,
+            &application_context,
+            &premises,
+        )?);
         Ok(ProofStep::ApplyTheoremUsing {
             application: application.clone(),
             premises,
         })
+    }
+
+    /// Propose checked source evidence for evaluation of mathematical theorem
+    /// arguments. Formal callee requirements alone cannot justify a native
+    /// overflow, load or domain condition inside an argument expression.
+    fn integer_argument_guard_premises(
+        &self,
+        theorem: &TheoremDefinition,
+        application: &TheoremApplication,
+        context: &TheoremApplicationContext<'_>,
+        formal_premises: &[ClickProposition],
+    ) -> Result<Vec<ClickProposition>, ClickError> {
+        let mut premises = Vec::new();
+        let arguments = theorem
+            .parameters()
+            .iter()
+            .zip(&application.arguments)
+            .filter(|(parameter, argument)| {
+                parameter.click_type() == &ClickType::Integer
+                    && crate::surface::lowering::lower_contract_integer_to_spec(
+                        argument,
+                        context.integer_values,
+                    )
+                    .is_err()
+            })
+            .map(|(_, argument)| argument)
+            .collect::<Vec<_>>();
+        if arguments.is_empty() {
+            return Ok(premises);
+        }
+        let (predicates, functions) = match self.context.as_ref() {
+            ProofContext::Pure(context) => (
+                context.predicate_environment,
+                context.click_function_environment,
+            ),
+            ProofContext::FixedState(context) => (
+                context.predicate_environment,
+                context.click_function_environment,
+            ),
+            ProofContext::Execution(context) => (
+                context.predicate_environment,
+                context.click_function_environment,
+            ),
+        };
+        let mut explicit = PureFactContext::new();
+        for surface in formal_premises {
+            explicit = explicit
+                .assume_proposition(self.lower_surface_proposition(surface, "theorem premise")?);
+        }
+        for argument in arguments {
+            // Source forms retain evaluation guards even when evaluation under
+            // the ambient context has already discharged and removed them.
+            let mut pending = vec![argument];
+            while let Some(expression) = pending.pop() {
+                match expression {
+                    ContractExpression::Call { name, arguments } => {
+                        if name == "to_integer" && arguments.len() == 1 {
+                            let surface = ClickProposition::Defined {
+                                expression: arguments[0].clone(),
+                            };
+                            if let Ok(lowered) = self
+                                .lower_surface_proposition(&surface, "Integer observation guard")
+                                && !normalizes_context_free(&lowered)
+                                && self.facts().listed_premise_available(&lowered, &[], false)
+                            {
+                                explicit = explicit.assume_proposition(lowered);
+                                premises.push(surface);
+                            }
+                        } else if matches!(
+                            name.as_str(),
+                            "truncating_quotient" | "truncating_remainder"
+                        ) && arguments.len() == 2
+                        {
+                            let surface = ClickProposition::Comparison {
+                                left: arguments[1].clone(),
+                                operator: ComparisonOperator::NotEqual,
+                                right: ContractExpression::IntegerLiteral("0".into()),
+                            };
+                            if let Ok(lowered) =
+                                self.lower_surface_proposition(&surface, "Integer divisor guard")
+                                && !normalizes_context_free(&lowered)
+                                && self.facts().listed_premise_available(&lowered, &[], false)
+                            {
+                                explicit = explicit.assume_proposition(lowered);
+                                premises.push(surface);
+                            }
+                        }
+                        pending.extend(arguments);
+                    }
+                    ContractExpression::Add(a, b)
+                    | ContractExpression::Subtract(a, b)
+                    | ContractExpression::Multiply(a, b) => {
+                        pending.extend([a.as_ref(), b.as_ref()]);
+                    }
+                    ContractExpression::Old(value) | ContractExpression::Negate(value) => {
+                        pending.push(value)
+                    }
+                    ContractExpression::At { expression, .. } => pending.push(expression),
+                    _ => {}
+                }
+            }
+            let (_, guards) = capture_fixed_state_integer_expression_with_guards(
+                argument,
+                context.integer_values,
+                self.facts().assumptions(),
+                context.values,
+                context.array_refs,
+                context.pre_state,
+                context.post_state,
+                context.result,
+                context.recorded_snapshots,
+                predicates,
+                functions,
+            )
+            .map_err(|message| self.step_error(message))?;
+            for guard in guards {
+                if normalizes_context_free(&guard) {
+                    continue;
+                }
+                let surface = self.context_surface_propositions()
+                    .into_iter().flat_map(|forms| forms.surfaces(&guard))
+                    .find(|surface| self.lower_surface_proposition(surface, "Integer argument guard")
+                        .is_ok_and(|lowered| lowered == guard && self.facts().listed_premise_available(&lowered, &[], false)))
+                    .cloned().ok_or_else(|| self.step_error(format!(
+                        "Integer theorem argument needs explicit source evidence for `{}`; cite its evaluation guard with `apply(...) using {{ ... }}`",
+                        crate::surface::proof_diagnostics::render::render_proposition(&guard))))?;
+                let lowered = self.lower_surface_proposition(&surface, "Integer capture guard")?;
+                explicit = explicit.assume_proposition(lowered);
+                premises.push(surface);
+            }
+            // Check the proposed argument evidence before returning a simple
+            // candidate. An unsupported source form is a bounded search refusal,
+            // never a candidate whose certificate disagrees with the checker.
+            capture_fixed_state_integer_expression(
+                argument,
+                context.integer_values,
+                &explicit,
+                context.values,
+                context.array_refs,
+                context.pre_state,
+                context.post_state,
+                context.result,
+                context.recorded_snapshots,
+                predicates,
+                functions,
+            )
+            .map_err(|message| {
+                self.step_error(format!(
+                    "Integer argument needs explicit evaluation evidence: {message}"
+                ))
+            })?;
+        }
+        Ok(premises)
     }
 
     /// The guarantees of a theorem application as the caller would write

@@ -91,6 +91,7 @@ pub(crate) mod resource_tracker;
 mod spec;
 pub(crate) use spec::{
     SpecCaptureRefusal, capture_spec_algebraic_value, capture_spec_integer_value,
+    capture_spec_integer_value_with_guards,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
