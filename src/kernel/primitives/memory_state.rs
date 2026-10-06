@@ -1576,6 +1576,14 @@ impl CLocalEnvironment {
         }
     }
 
+    /// Read one automatic array's metadata by name without scanning the frame.
+    pub fn array_object_element_type(&self, name: &str) -> Option<CType> {
+        match self.bindings.get(name) {
+            Some(CLocalBinding::ArrayObject { element_type, .. }) => Some(*element_type),
+            _ => None,
+        }
+    }
+
     /// Exact name membership, including arrays and uninitialized objects.
     /// Proof-local binders use this indexed query to reject shadowing without
     /// materializing or scanning the complete local environment.

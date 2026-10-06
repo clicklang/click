@@ -8483,6 +8483,63 @@ pub fn prove_integer_machine_round_trip(
     ))
 }
 
+/// Exact unsigned observations of both summands must fit the u32 range.
+/// Widening each u32 operand to i64 is value-preserving, and their sum is at
+/// most 2*(2^32-1), so evaluating the widened guard cannot overflow i64.
+pub fn prove_uint32_widened_add_guard_by_integer_bound(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    let premise = uint32_exact_sum_bound(left.clone(), right.clone());
+    let sum = Bitvector32Term::int64_add(
+        Bitvector32Term::int64_from_uint32(left),
+        Bitvector32Term::int64_from_uint32(right),
+    );
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::int64_signed_less_equal(
+                sum,
+                Bitvector32Term::Int64Constant(i64::from(u32::MAX)),
+            ),
+            true,
+        )),
+    ))
+}
+
+fn uint32_exact_sum_bound(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(
+            IntegerTerm::Add(observe(left).into(), observe(right).into()).into(),
+            IntegerTerm::constant_i64(i64::from(u32::MAX)).into(),
+        ),
+        true,
+    )
+}
+
+/// Unsigned machine addition agrees with mathematical addition precisely
+/// under the explicit no-wrap bound. Definedness alone permits wrapping.
+pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let premise = uint32_exact_sum_bound(left.clone(), right.clone());
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let observed_sum = observe(Bitvector32Term::add(left.clone(), right.clone()));
+    let exact = IntegerTerm::Add(observe(left).into(), observe(right).into());
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(observed_sum.into(), exact.into()),
+            true,
+        )),
+    ))
+}
+
 /// Exact mathematical observation of a defined signed 32-bit addition.
 /// The overflow premise is essential: the machine term alone is modular.
 pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {

@@ -9038,3 +9038,78 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
         assert!(restricted.derive_simp_proposition(&goal).is_none());
     }
 }
+
+#[test]
+fn uint32_add_bridges_agree_with_boundary_models() {
+    fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u64 {
+        match term {
+            Bitvector32Term::Variable(variable) if *variable == Variable(910) => u64::from(a),
+            Bitvector32Term::Variable(variable) if *variable == Variable(911) => u64::from(b),
+            Bitvector32Term::Constant(value) => u64::from(*value),
+            Bitvector32Term::Add(left, right) => {
+                u64::from((machine(left, a, b) as u32).wrapping_add(machine(right, a, b) as u32))
+            }
+            Bitvector32Term::Int64FromUInt32(value) => machine(value, a, b),
+            Bitvector32Term::Int64Add(left, right) => machine(left, a, b) + machine(right, a, b),
+            Bitvector32Term::Int64Constant(value) => u64::try_from(*value).unwrap(),
+            _ => panic!("unexpected term {term:?}"),
+        }
+    }
+    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
+        match term {
+            IntegerTerm::Constant(value) => value.clone(),
+            IntegerTerm::Machine(value) => {
+                assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                machine(value.value(), a, b).into()
+            }
+            IntegerTerm::Add(left, right) => integer(left, a, b) + integer(right, a, b),
+            _ => panic!("unexpected Integer term {term:?}"),
+        }
+    }
+    for theorem in [
+        prove_uint32_add_to_integer(
+            Bitvector32Term::Variable(Variable(910)),
+            Bitvector32Term::Variable(Variable(911)),
+        ),
+        prove_uint32_widened_add_guard_by_integer_bound(
+            Bitvector32Term::Variable(Variable(910)),
+            Bitvector32Term::Variable(Variable(911)),
+        ),
+    ] {
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("missing bound")
+        };
+        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(sum, max), true) =
+            premise.as_ref()
+        else {
+            panic!("wrong bound")
+        };
+        for a in [
+            0,
+            1,
+            255,
+            65520,
+            1481280,
+            0x80000000,
+            4294690200,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            for b in [0, 1, 255, 65520, 1481280, 0x80000000, u32::MAX] {
+                let safe = u64::from(a) + u64::from(b) <= u64::from(u32::MAX);
+                assert_eq!(integer(sum, a, b) <= integer(max, a, b), safe);
+                let holds = match conclusion.as_ref() {
+                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+                        integer(left, a, b) == integer(right, a, b)
+                    }
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector64SignedLessEqual(left, right),
+                        true,
+                    ) => machine(left, a, b) <= machine(right, a, b),
+                    _ => panic!("wrong conclusion {conclusion:?}"),
+                };
+                assert_eq!(holds, safe, "{a} + {b}");
+            }
+        }
+    }
+}

@@ -2392,6 +2392,8 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_positive_predecessor_strictly_decreases"
                 | "uint32_increment_upper_bound"
                 | "uint32_increment_strictly_increases"
+                | "uint32_widened_add_guard_by_integer_bound"
+                | "uint32_add_to_integer"
                 | "uint32_lt_implies_positive_difference"
                 | "uint32_gt_implies_reversed_lt"
                 | "uint32_lt_implies_reversed_gt"
@@ -2458,6 +2460,7 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_lt_le_transitive"
         | "int32_lt_transitive"
         | "int32_ge_transitive" => (3, 2),
+        "uint32_widened_add_guard_by_integer_bound" | "uint32_add_to_integer" => (2, 1),
         "uint32_positive_predecessor_strictly_decreases" => (1, 1),
         "uint32_increment_upper_bound"
         | "uint32_increment_strictly_increases"
@@ -2519,6 +2522,15 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = uint32_parameter(0)?;
         match theorem.name() {
+            "uint32_widened_add_guard_by_integer_bound" => {
+                crate::kernel::prove_uint32_widened_add_guard_by_integer_bound(
+                    value,
+                    uint32_parameter(1)?,
+                )
+            }
+            "uint32_add_to_integer" => {
+                crate::kernel::prove_uint32_add_to_integer(value, uint32_parameter(1)?)
+            }
             "uint32_positive_predecessor_strictly_decreases" => {
                 prove_uint32_positive_predecessor_strictly_decreases(value)
             }
@@ -3736,6 +3748,36 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 verify_standard_declaration(&invalid).is_err(),
                 "invalid order axiom declaration was accepted: {invalid}"
             );
+        }
+    }
+    #[test]
+    fn uint32_add_bridges_check_exact_kernel_declarations() {
+        for (name, conclusion) in [
+            (
+                "uint32_widened_add_guard_by_integer_bound",
+                "((int64)left + (int64)right) <= 4294967295i64",
+            ),
+            (
+                "uint32_add_to_integer",
+                "to_integer(left + right) == to_integer(left) + to_integer(right)",
+            ),
+        ] {
+            let source = format!(
+                "theorem {name}(left: uint32, right: uint32) {{ requires to_integer(left) + to_integer(right) <= 4294967295; ensures {conclusion}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(
+                    "requires to_integer(left) + to_integer(right) <= 4294967295;",
+                    "",
+                ),
+                source.replace("<= 4294967295;", "<= 4294967296;"),
+                source.replace("left: uint32", "left: int32"),
+                source.replace("right: uint32", "right: uint64"),
+                source.replace(conclusion, "true"),
+            ] {
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
         }
     }
 }

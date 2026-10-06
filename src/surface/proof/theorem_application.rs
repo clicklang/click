@@ -790,7 +790,23 @@ pub(super) fn theorem_application_bindings(
             let value = crate::surface::lowering::lower_contract_integer_to_spec(
                 argument,
                 context.integer_values,
-            )?;
+            )
+            .or_else(|_| {
+                capture_fixed_state_integer_expression(
+                    argument,
+                    context.integer_values,
+                    assumptions,
+                    context.values,
+                    context.array_refs,
+                    context.pre_state,
+                    context.post_state,
+                    context.result,
+                    context.recorded_snapshots,
+                    predicate_environment,
+                    click_function_environment,
+                )
+                .map(crate::kernel::SpecIntegerExpression::Term)
+            })?;
             integer_values = integer_values.with_inserted(parameter.name().to_string(), value);
             continue;
         }

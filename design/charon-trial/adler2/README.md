@@ -68,9 +68,14 @@ proposed `A(n)` and `B(n)` bounds and `n < 5552`, the next two additions remain
 nonnegative and below the full-batch ceilings. The range is per batch; it
 imposes no bound on the total number of batches in an input.
 
-These are checked mathematical lemmas. They do not yet establish the
-lane bounds over the original iterator states, transport mathematical observations
-to the native u32 panic guards, or prove checksum correctness. The tests check
+The native lane-step lemmas now compose those ceilings with unsigned Integer
+observations to establish the exact widened `int64` addition guards used by
+`U32X4::add_assign`. Checked no-wrap bridges prove that the updated native A
+and B lanes have the mathematical sum values and satisfy their successor
+ceilings. In B's update, the operand is the newly updated native A lane.
+
+These are checked arithmetic implications. They do not yet establish the
+lane bounds over the original iterator states or prove checksum correctness. The tests check
 the bounds alongside the actual helper contracts in one prepared environment,
 and reject a larger batch, missing bounds, false endpoints, altered product
 or quotient certificates, altered recurrence coefficients, reversed quotient-shift
@@ -104,7 +109,7 @@ cargo nextest run --test rust_import --run-ignored only \
 ## Remaining proof work
 
 Establish and preserve the lane invariants over the original chunks/remainder
-iterator states using the checked A- and B-bound recurrences, and add native u32
+iterator states using the checked A- and B-bound recurrences and native u32
 observation bridges. Then use the helper contracts and byte accounting
 to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
 Successful import and helper proofs alone do not establish checksum correctness

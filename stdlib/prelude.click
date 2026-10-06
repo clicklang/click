@@ -944,6 +944,16 @@ extern int32 strlen(uint8 bytes[]) {
     ensures old(bytes[0]) == '\0' implies result == 0;
 }
 
+theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures ((int64)left + (int64)right) <= 4294967295i64;
+}
+
+theorem uint32_add_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+
 theorem int32_add_to_integer(left: int32, right: int32) {
     requires defined(left + right);
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);

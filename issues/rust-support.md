@@ -906,11 +906,9 @@ the same prepared environment. False range, byte, endpoint, certificate, and
 invariant-step claims are rejected, with checked tool expansion.
 
 This proves arithmetic implications, not that the original loop maintains
-them. Next prove the weighted B-bound recurrence, bridge mathematical
-observations to native u32 checks, and connect the batch index to actual
-iterator state. Polynomial identities such as the triangular successor step
-need checked algebra beyond the current affine arithmetic fragment; do not
-assume those identities or add a generated processed-count variable. Then
+them. The following increments prove the weighted B-bound recurrence and
+bridge mathematical observations to native u32 checks. Next connect the batch
+index to actual iterator state without a generated processed-count variable. Then
 compose byte accounting with the shared Adler-32 specification. Total input
 length is not restricted to one batch by these lemmas.
 
@@ -930,7 +928,30 @@ rejected; work scales independently of unrelated premises and linearly in
 certificate nodes. Expansion rechecks the new certificates.
 
 Both lane-bound update implications are now established. Next connect those
-invariants to the original nested chunks/remainder iterator state and bridge
-Integer observations to native u32 guards. No generated processed-count
+invariants to the original nested chunks/remainder iterator state. The following
+increment bridges Integer observations to native u32 guards. No generated processed-count
 variable, Rust source edit, new import interpretation, checksum postcondition,
 or whole-loop panic-freedom claim is introduced by this increment.
+
+
+### Native u32 lane-step observations and guards
+
+The bounds library now proves the widened `int64` guards required by the
+original `U32X4::add_assign` contract for both lane updates. Under the checked
+A/B ceilings and byte bound, the native additions do not wrap, their unsigned
+Integer observations equal the mathematical sums, and their observations
+satisfy `A(n+1)` and `B(n+1)`. The B update uses the newly updated native A.
+The library contains 18 theorem groups with 30 checked ensures clauses.
+
+Two reusable checked kernel bridges require the mathematical sum to be at
+most `u32::MAX`: one establishes the widened guard, the other the exact
+unsigned addition observation. Unsigned definedness alone permits wrapping
+and cannot replace that premise. Integer theorem arguments now capture explicit
+machine observations through checked fixed-state evaluation, selecting only
+referenced caller bindings; arithmetic evaluation guards remain kernel-checked. Heap observations use
+logical specification read semantics and grant no access authority. Boundary models, altered declarations, wrapping/undefined
+argument rejection, and deterministic local-selection scaling are covered.
+
+Next establish these bounds over the original nested iterator states, then
+compose the helper calls and byte accounting with the Adler-32 specification.
+Whole-loop panic freedom and the checksum postcondition remain unproved.

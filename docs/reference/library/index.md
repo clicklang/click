@@ -1131,6 +1131,32 @@ When constant bounds on the operands themselves suffice, the checked
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_widened_add_guard_by_integer_bound`
+
+```click
+theorem uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures ((int64)left + (int64)right) <= 4294967295i64;
+}
+```
+
+Bounds on unsigned Integer observations imply the widened signed `int64` addition guard used by checked Rust addition. Both operands are widened before addition; their sum always fits `int64`.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `uint32_add_to_integer`
+
+```click
+theorem uint32_add_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+```
+
+Unsigned machine addition agrees with mathematical addition when the mathematical sum fits `uint32`. Unsigned definedness alone allows wrapping and cannot establish this equality.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_add_to_integer`
 
 ```click

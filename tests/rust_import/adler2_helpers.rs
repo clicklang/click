@@ -259,11 +259,20 @@ const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click
 #[test]
 fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
     use click::surface::verify_click_theorems;
-    assert_eq!(verify_click_theorems(BOUNDS).unwrap().len(), 22);
+    assert_eq!(verify_click_theorems(BOUNDS).unwrap().len(), 30);
     for (before, after) in [
         ("requires n <= 5552;", "requires n <= 5553;"),
         ("requires n < 5552;", "requires n <= 5552;"),
         ("requires byte <= 255;", "requires byte <= 256;"),
+        (
+            "requires to_integer(byte) <= 255;",
+            "requires to_integer(byte) <= 256;",
+        ),
+        ("requires to_integer(b) <= adler_lane_b_ceiling(n);", ""),
+        (
+            "ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n + 1)",
+            "ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(n)",
+        ),
         ("requires b <= adler_lane_b_ceiling(n);", ""),
         ("requires 0 <= n;", ""),
         (
@@ -344,6 +353,10 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
         ("adler_lane_triangle_successor", 1),
         ("adler_lane_b_ceiling_successor", 1),
         ("adler_lane_b_invariant_step", 1),
+        ("adler_lane_native_a_sum_fits", 1),
+        ("adler_lane_native_a_step", 3),
+        ("adler_lane_native_b_sum_fits", 1),
+        ("adler_lane_native_b_step", 3),
     ] {
         for index in 0..ensures {
             let result = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -369,6 +382,6 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
         click::surface::verify_click_theorems(&expanded)
             .unwrap()
             .len(),
-        22
+        30
     );
 }

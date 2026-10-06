@@ -35,6 +35,16 @@ int32 docs_identity(int32 value) {
 ```
 
 ```click
+theorem use_uint32_widened_add_guard_by_integer_bound(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures ((int64)left + (int64)right) <= 4294967295i64 by { apply(uint32_widened_add_guard_by_integer_bound(left, right)); }
+}
+
+theorem use_uint32_add_to_integer(left: uint32, right: uint32) {
+    requires to_integer(left) + to_integer(right) <= 4294967295;
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by { apply(uint32_add_to_integer(left, right)); }
+}
+
 theorem integer_bounds_establish_c_add_safety(left: int32, right: int32) {
     requires to_integer(left) + to_integer(right) >= -2147483648;
     requires to_integer(left) + to_integer(right) <= 2147483647;
