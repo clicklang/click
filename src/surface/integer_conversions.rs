@@ -638,4 +638,224 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
+        for (name, ty, guard, goal) in [
+            (
+                "int32_less_equal_of_to_integer",
+                "int32",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_less_equal_to_integer",
+                "int64",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "int64_less_equal_of_to_integer",
+                "int64",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_equal_of_to_integer",
+                "int64",
+                "to_integer(left) == to_integer(right)",
+                "left == right",
+            ),
+        ] {
+            let source = format!(
+                "theorem bridge(left: {ty}, right: {ty}) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {guard};"), ""),
+                source.replace(&format!("ensures {goal}"), "ensures left > right"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn signed_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
+        for ty in ["int32", "int64"] {
+            let mut samples = Vec::new();
+            for size in [4usize, 16, 64, 256] {
+                let mut source = format!(
+                    "theorem bridge(x: {ty}, y: {ty}, z: {ty}) {{ requires to_integer(x) <= to_integer(y); "
+                );
+                for i in 0..size {
+                    source.push_str(&format!("requires to_integer(z) <= {i}; "));
+                }
+                source.push_str("ensures x <= y by { ");
+                for _ in 0..size {
+                    source.push_str(&format!("have x <= y by {{ apply({ty}_less_equal_of_to_integer(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
+                }
+                source.push_str("assumption(); } }");
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&source, &[])
+                });
+                result.unwrap_or_else(|error| panic!("{ty}/{size}: {}", error.message()));
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(
+                    pair[1] <= pair[0] * 6,
+                    "bridge work grew faster than the proof: {ty}: {samples:?}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
+        for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
+            let source = format!(
+                "theorem cast(x: {ty}) {{ ensures ({ty})x == x by {{ have ({ty})x == x by simp; assumption(); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("({ty})x"), &format!("({ty}*)x")),
+                source.replace(&format!("x: {ty}"), "x: Integer"),
+                source.replace(&format!("({ty})x"), &format!("({ty})old(x)")),
+                source.replace("== x", "!= x"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+    #[test]
+    fn int64_integer_operation_applications_recheck_guards_and_expansion() {
+        for (name, op) in [
+            ("int64_add_to_integer", "+"),
+            ("int64_subtract_to_integer", "-"),
+        ] {
+            let source = format!(
+                "theorem exact(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right) by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "exact.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires defined(left {op} right);"), ""),
+                source.replace(" == ", " != "),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+    #[test]
+    fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
+        for (name, op) in [
+            ("int64_add_to_integer", "+"),
+            ("int64_subtract_to_integer", "-"),
+        ] {
+            let guard = format!("defined(x {op} y)");
+            let goal = format!("to_integer(x {op} y) == to_integer(x) {op} to_integer(y)");
+            let mut samples = Vec::new();
+            for size in [4usize, 16, 64, 256] {
+                let mut source =
+                    format!("theorem exact(x: int64, y: int64, z: int64) {{ requires {guard}; ");
+                for i in 0..size {
+                    source.push_str(&format!("requires to_integer(z) <= {i}; "));
+                }
+                source.push_str(&format!("ensures {goal} by {{ "));
+                for _ in 0..size {
+                    source.push_str(&format!(
+                        "have {goal} by {{ apply({name}(x, y)) using {{ {guard}; }} }} "
+                    ));
+                }
+                source.push_str("assumption(); } }");
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&source, &[])
+                });
+                result.unwrap_or_else(|error| panic!("{name}/{size}: {}", error.message()));
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(pair[1] <= pair[0] * 6, "{name}: {samples:?}");
+            }
+        }
+    }
+    #[test]
+    fn integer_truncation_applications_recheck_guards_claims_and_expansion() {
+        for (name, requirements, goal) in [
+            (
+                "integer_truncation_identity",
+                &["d != 0"][..],
+                "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_lower",
+                &["d != 0", "0 < d"][..],
+                "1 - d <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_positive_divisor_remainder_upper",
+                &["d != 0", "0 < d"][..],
+                "truncating_remainder(n, d) <= d - 1",
+            ),
+            (
+                "integer_nonnegative_dividend_remainder",
+                &["d != 0", "0 <= n"][..],
+                "0 <= truncating_remainder(n, d)",
+            ),
+            (
+                "integer_nonpositive_dividend_remainder",
+                &["d != 0", "n <= 0"][..],
+                "truncating_remainder(n, d) <= 0",
+            ),
+        ] {
+            let requires = requirements
+                .iter()
+                .map(|r| format!("requires {r}; "))
+                .collect::<String>();
+            let source = format!(
+                "theorem law(n: Integer, d: Integer) {{ {requires}ensures {goal} by {{ apply({name}(n, d)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded = expand_c0_claim_source_by_label(&source, &[], "law.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for guard in requirements {
+                let invalid = source.replace(&format!("requires {guard};"), "");
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+            let invalid = source.replace(&format!("ensures {goal}"), "ensures n == d");
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
+        let goal = "n == truncating_quotient(n, d) * d + truncating_remainder(n, d)";
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source =
+                String::from("theorem law(n: Integer, d: Integer, z: Integer) { requires d != 0; ");
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str(&format!("ensures {goal} by {{ "));
+            for _ in 0..size {
+                source.push_str(&format!("have {goal} by {{ apply(integer_truncation_identity(n, d)) using {{ d != 0; }} }} "));
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
 }

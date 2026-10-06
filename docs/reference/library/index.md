@@ -1145,6 +1145,36 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int64_add_to_integer`
+
+```click
+theorem int64_add_to_integer(left: int64, right: int64) {
+    requires defined(left + right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+}
+```
+
+A defined signed 64-bit operation has its exact mathematical Integer value.
+The native definedness premise excludes overflow; this law does not establish
+that premise or infer any operand range.
+
+**Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
+
+### `int64_subtract_to_integer`
+
+```click
+theorem int64_subtract_to_integer(left: int64, right: int64) {
+    requires defined(left - right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+```
+
+A defined signed 64-bit operation has its exact mathematical Integer value.
+The native definedness premise excludes overflow; this law does not establish
+that premise or infer any operand range.
+
+**Verified use:** [`mdtests/int64_integer_operation_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
+
 ### `int32_subtract_to_integer`
 
 ```click
@@ -1192,6 +1222,58 @@ two operands. The C order premise is required; the bridge does not assume an
 order between unrelated machine values.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
+### `int32_less_equal_of_to_integer`
+
+```click
+theorem int32_less_equal_of_to_integer(left: int32, right: int32) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+A proved non-strict order between exact signed observations establishes the native order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_less_equal_to_integer`
+
+```click
+theorem int64_less_equal_to_integer(left: int64, right: int64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+```
+
+The exact signed mathematical observation preserves native non-strict order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_less_equal_of_to_integer`
+
+```click
+theorem int64_less_equal_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+A proved non-strict order between exact signed observations establishes the native order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_equal_of_to_integer`
+
+```click
+theorem int64_equal_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+Equal exact signed observations identify the same native value, including full-width extrema. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
 ### `int32_add_nonnegative_right_is_at_least_left`
 
@@ -2303,3 +2385,58 @@ theorem integer_to_uint64_round_trip(z: Integer) {
 
 An Integer within the exact `uint64` range retains its value after conversion
 to that machine type and back. Both bounds are required.
+
+## Mathematical truncating division
+
+These Integer laws use truncation toward zero, independently of native machine
+widths and of the planned Euclidean `/` and `%` operators. They do not establish
+native division or narrowing safety.
+
+### `integer_truncation_identity`
+
+```click
+theorem integer_truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
+}
+```
+
+### `integer_positive_divisor_remainder_lower`
+
+```click
+theorem integer_positive_divisor_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures 1 - d <= truncating_remainder(n, d);
+}
+```
+
+### `integer_positive_divisor_remainder_upper`
+
+```click
+theorem integer_positive_divisor_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures truncating_remainder(n, d) <= d - 1;
+}
+```
+
+### `integer_nonnegative_dividend_remainder`
+
+```click
+theorem integer_nonnegative_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 <= n;
+    ensures 0 <= truncating_remainder(n, d);
+}
+```
+
+### `integer_nonpositive_dividend_remainder`
+
+```click
+theorem integer_nonpositive_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires n <= 0;
+    ensures truncating_remainder(n, d) <= 0;
+}
+```

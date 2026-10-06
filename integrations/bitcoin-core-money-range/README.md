@@ -258,11 +258,37 @@ foundation now includes explicit quotient/remainder
 interval bounds and equality transport. Standalone C++ narrowing proofs derive
 their bounds from operand ranges and compose them with exact native observations
 and checked cast identities; they are pattern coverage, not a proof of this
-Bitcoin helper. The general
-`FeeFrac::Div` theorem is not proved. Next compose quotient/remainder
-observations, both narrowing identities, and the **narrow**
-correction bounds. The general rounding theorem and `EvaluateFeeDown/Up` remain
-open.
+Bitcoin helper. Signed int32/int64 order reflection now restores native bounds
+from proved Integer comparisons; standalone checked narrowing proofs compose
+this bridge with cast identities and preserve a modular caller's unrelated
+memory.
+
+[`FeeFracDivBounded.click`](FeeFracDivBounded.click) now proves complete
+execution safety and both Integer/native output bounds of the unchanged pinned
+helper. Its numerator lies in
+`[-9223372036854775806, 9223372036854775806]` (absolute value at most
+`INT64_MAX - 1`), and `0 < d <= 2147483647` admits every positive int32 divisor.
+For either value of `round_down`, the result lies in
+`[-9223372036854775807, 9223372036854775807]`.
+
+Both narrowing identities are derived from quotient/remainder intervals. The
+remainder interval uses the divisor's maximum magnitude, so it stays inside
+int32 even for the wider numerator range. After proving native definedness,
+the shared `int64_add_to_integer` bridge bounds each possible corrected sum;
+order reflection transfers those Integer bounds back to the returned native
+value. No output range is assumed. The sidecar retains the explicit pinned
+library assumptions described above.
+
+Full proof expansion reverifies; retained audit and hostile omitted input
+bounds, zero divisor, false result claims and swapped cast-certificate references
+have coverage. The standalone fixture retains the same correction pattern and
+verifies native output bounds and unrelated memory through a modular caller.
+These output bounds do not identify a mathematical floor/ceiling result.
+
+The general `FeeFrac::Div` rounding theorem is not proved. Next connect the exact quotient/remainder observations and signed correction
+to a mathematical floor/ceiling specification, then admit wider numerators
+through bounds derived jointly from the caller and divisor. `EvaluateFeeDown/Up`
+remain open.
 
 ## CompactSize encoded length
 

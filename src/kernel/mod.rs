@@ -58,12 +58,16 @@ pub use loans::{
     LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject,
 };
+mod integer_truncation_laws;
 mod loops;
 mod memory_provenance;
 pub(crate) mod model_fields;
 #[allow(dead_code)]
 mod mutexes;
 mod named_authority;
+pub(crate) use integer_truncation_laws::{
+    integer_truncation_law_requirements, prove_integer_truncation_law,
+};
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type, is_nat_integer_image};
 mod primitives;
