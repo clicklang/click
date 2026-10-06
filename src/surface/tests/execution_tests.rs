@@ -1358,7 +1358,9 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     element_width: 4,
                 }],
                 vec![SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(CExpression::Variable("result".to_string(),)),
+                    left: SpecExpression::CExpression(CExpression::Variable(
+                        crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                    )),
                     operator: CComparisonOperator::Equal,
                     right: SpecExpression::Value(int32(2)),
                 }],

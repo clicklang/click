@@ -1003,6 +1003,7 @@ pub(in crate::surface) fn evaluate_c_fragment_through_kernel(
         state,
         result,
         false,
+        None,
     )
 }
 
@@ -1024,9 +1025,45 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
         state,
         result,
         true,
+        None,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
+    original: &ContractExpression,
+    lowered: &CExpression,
+    assumptions: &PureFactContext,
+    values: &BTreeMap<String, CValue>,
+    array_refs: &ClickArrayRefs,
+    state: &CState,
+    result: Option<&CValue>,
+) -> Result<CValue, String> {
+    // Most resource fragments already carry their resolved C spelling.
+    // Retain the source expression only where its `c(result)` distinction
+    // matters, and keep the typed null supplied by parameter lowering.
+    let original = if result.is_none()
+        || !crate::surface::lowering::contract_expression_referenced_names(original)
+            .contains("result")
+        || matches!(lowered, CExpression::Value(CValue::Pointer(pointer)) if pointer.is_null())
+    {
+        None
+    } else {
+        Some(original)
+    };
+    evaluate_c_fragment_with_binding_policy(
+        lowered,
+        assumptions,
+        values,
+        array_refs,
+        state,
+        result,
+        true,
+        original,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn evaluate_c_fragment_with_binding_policy(
     expression: &CExpression,
     assumptions: &PureFactContext,
@@ -1035,14 +1072,16 @@ fn evaluate_c_fragment_with_binding_policy(
     state: &CState,
     result: Option<&CValue>,
     logical_arguments: bool,
+    original: Option<&ContractExpression>,
 ) -> Result<CValue, String> {
     let mut states = FixedStateLowering::new(values, array_refs, state, state, result);
     if logical_arguments {
         states.entry_values.extend(values.clone());
         states.current_values.extend(values.clone());
     }
+    let fragment = ContractExpression::CFragment(expression.clone());
     let spec = crate::surface::lowering::elaborate_fixed_state_expression(
-        &ContractExpression::CFragment(expression.clone()),
+        original.unwrap_or(&fragment),
         states.element_types,
         &states.entry_state,
         states.entry_values,
@@ -1207,7 +1246,8 @@ impl FixedStateLowering {
         let entry_state = bound(pre_state);
         let mut lowering_state = bound(state);
         if let Some(result) = result {
-            lowering_state = lowering_state.with_local("result", result.clone());
+            lowering_state =
+                lowering_state.with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone());
         }
         let mut element_types = array_refs
             .iter()

@@ -1942,7 +1942,7 @@ fn interface(index: usize) -> CFunctionContract {
     .with_contract(
         vec![],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::GreaterEqual,
             right: SpecExpression::Value(int32((-(index as i32)) as u32)),
         }],

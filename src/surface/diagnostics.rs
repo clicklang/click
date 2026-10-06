@@ -4420,6 +4420,34 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_binary_contract_expression(left, "++", right)
         }
         ContractExpression::QualifiedC { name, .. } => name.clone(),
+        ContractExpression::CUnary { operand, lowered } => {
+            let operand = describe_contract_expression(operand);
+            match lowered {
+                CExpression::Cast {
+                    target_type,
+                    pointee_struct,
+                    ..
+                } => {
+                    let spelling = pointee_struct
+                        .as_ref()
+                        .map(|name| format!("struct {name} *"))
+                        .unwrap_or_else(|| {
+                            crate::kernel::c_type_spelling(*target_type).to_string()
+                        });
+                    format!("(({spelling}){operand})")
+                }
+                CExpression::PointerOffsetBytes { bytes, .. } => {
+                    format!("byte_offset({operand}, {bytes})")
+                }
+                CExpression::TypedLoad { value_type, .. } => format!(
+                    "load_{}({operand})",
+                    crate::kernel::c_type_spelling(*value_type)
+                ),
+                CExpression::Load(_) => format!("*({operand})"),
+                CExpression::AddressOf(_) => format!("&({operand})"),
+                _ => unreachable!("CUnary stores a unary C operation"),
+            }
+        }
         ContractExpression::CFragment(expression) => describe_c_expression(expression),
         ContractExpression::Field { base, field, .. } => {
             format!("{}->{field}", describe_contract_expression(base))
@@ -4511,7 +4539,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_contract_expression(base),
             indexes
                 .iter()
-                .map(|index| format!("[{}]", describe_c_expression(index)))
+                .map(|index| format!("[{}]", describe_contract_expression(index)))
                 .collect::<String>()
         ),
         ContractExpression::If {

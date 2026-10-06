@@ -1459,3 +1459,35 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
         }
     }
 }
+
+#[test]
+fn result_parameter_postconditions_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "mdtests/result_parameter_old_value_certifies.md",
+        "mdtests/result_parameter_entry_snapshot_certifies.md",
+        "mdtests/result_parameter_current_binding_certifies.md",
+        "mdtests/result_parameter_resource_binding_certifies.md",
+        "mdtests/result_parameter_mutation_certifies.md",
+        "mdtests/result_parameter_field_binding_certifies.md",
+        "mdtests/result_parameter_cast_binding_certifies.md",
+        "mdtests/result_parameter_pointer_operations_certify.md",
+        "mdtests/result_parameter_array_indices_certify.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(!sites.is_empty(), "{relative} must have tactic sites");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| panic!("{relative}: {message}"));
+        }
+    }
+}

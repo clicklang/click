@@ -7153,16 +7153,38 @@ pub(in crate::surface) fn function_resource_summary(
         } else {
             CResourceSnapshot::Post
         };
+        let result_binding = BTreeMap::from([(
+            "result".to_string(),
+            ContractExpression::CFragment(CExpression::Variable(
+                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+            )),
+        )]);
+        let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
+        let lowered_resource = if ensure.borrowed() {
+            // Borrowed clauses were written at entry; `result` there can be
+            // a C parameter, and the return value has no entry binding.
+            std::borrow::Cow::Borrowed(resource)
+        } else {
+            std::borrow::Cow::Owned(
+                substitute_resource_clause_for_summary_in(resource, &result_substitutions)
+                    .map_err(ClickError::new)?,
+            )
+        };
         let specs = resource_clause_to_resource_specs_with_metadata(
-            resource,
+            &lowered_resource,
             parsed_function.parameters(),
-            Some(parsed_function.return_type().to_kernel_type()),
+            (!ensure.borrowed()).then(|| parsed_function.return_type().to_kernel_type()),
             role,
             snapshot,
         )?;
         let guard = ensure
             .condition()
             .map(|condition| {
+                let condition = crate::surface::lowering::substitute_click_proposition_in(
+                    condition,
+                    &result_substitutions,
+                )
+                .map_err(ClickError::new)?;
                 crate::surface::lowering::elaborate_requirement_proposition(
                     parsed_function.parameters(),
                     guard_entry_state.get_or_init(|| {
@@ -7171,7 +7193,7 @@ pub(in crate::surface) fn function_resource_summary(
                             &parsed_function.to_kernel_function(),
                         )
                     }),
-                    condition,
+                    &condition,
                     predicate_environment,
                     click_function_environment,
                 )
@@ -7203,8 +7225,20 @@ pub(in crate::surface) fn function_resource_constructors(
         .constructs()
         .iter()
         .map(|resource| {
-            resource_clause_to_resource_spec_with_metadata(
+            let result_binding = BTreeMap::from([(
+                "result".to_string(),
+                ContractExpression::CFragment(CExpression::Variable(
+                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                )),
+            )]);
+            let resource = substitute_resource_clause_for_summary_in(
                 resource,
+                &ContractSubstitutions::for_contract_result(&result_binding),
+            )
+            .map_err(ClickError::new)?;
+
+            resource_clause_to_resource_spec_with_metadata(
+                &resource,
                 &[],
                 None,
                 CResourceTransferRole::Produce,
@@ -8068,6 +8102,9 @@ pub(in crate::surface) fn substitute_contract_segment(
     segment: &ContractSegment,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractSegment, String> {
+    if substitutions.is_contract_result_binding() && segment.state == ContractSegmentState::Old {
+        return Ok(segment.clone());
+    }
     let surface = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end } => ContractSegmentSurface::Range {
             base: substitute_contract_expression_in(base, substitutions)?,
@@ -8076,6 +8113,27 @@ pub(in crate::surface) fn substitute_contract_segment(
         },
         surface => surface.clone(),
     };
+    // Preserve resolved C spellings unless a component actually refers to
+    // the return name. Its surface form then distinguishes `c(result)`.
+    if substitutions.is_contract_result_binding()
+        && let ContractSegmentSurface::Range { base, start, end } = &surface
+    {
+        let lower = |original: &CExpression, source: &ContractExpression| {
+            let rewritten = substitute_c_fragment_in(original, substitutions)?;
+            if rewritten == *original {
+                return Ok(original.clone());
+            }
+            crate::surface::lowering::resource_argument_to_c_expression(source)
+                .map_err(|error| error.message().to_string())
+        };
+        return Ok(ContractSegment {
+            state: segment.state,
+            base: lower(&segment.base, base)?,
+            start: lower(&segment.start, start)?,
+            end: lower(&segment.end, end)?,
+            surface,
+        });
+    }
     Ok(ContractSegment {
         state: segment.state,
         base: substitute_c_fragment_in(&segment.base, substitutions)?,

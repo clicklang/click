@@ -1200,9 +1200,11 @@ fn prepare_function_claim_path(
             CType::Int32,
         );
     } else if function.return_type() != CType::Void {
-        post_state
-            .locals
-            .set_typed("result".to_string(), value.clone(), function.return_type());
+        post_state.locals.set_typed(
+            C_CONTRACT_RESULT_NAME.to_string(),
+            value.clone(),
+            function.return_type(),
+        );
     }
     // A named predicate returned by a verified call is an opaque certified
     // execution fact. Reconstruct its registered body at the enclosing
@@ -2060,9 +2062,11 @@ pub fn c_function_ensure_goals(
     // Preserve checked body consumption evidence when reconstructing the exit.
     post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != CType::Void {
-        post_state
-            .locals
-            .set_typed("result".to_string(), value.clone(), function.return_type());
+        post_state.locals.set_typed(
+            C_CONTRACT_RESULT_NAME.to_string(),
+            value.clone(),
+            function.return_type(),
+        );
     }
     let lowering_assumptions = assumptions
         .clone()

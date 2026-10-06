@@ -34,7 +34,8 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
-            ContractExpression::Negate(inner)
+            ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::At {
                 expression: inner, ..

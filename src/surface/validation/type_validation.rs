@@ -733,6 +733,7 @@ fn contains_scoped_expression_shape(
                 || contains_scoped_expression_shape(right, shape)
         }
         ContractExpression::Field { base, .. }
+        | ContractExpression::CUnary { operand: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::Old(base)
         | ContractExpression::At {
@@ -2524,6 +2525,10 @@ pub(super) fn infer_contract_expression_type(
             lowered: expression,
             ..
         }
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::CFragment(expression)
         | ContractExpression::Field {
             lowered: expression,
@@ -3550,7 +3555,7 @@ fn validate_contract_expression_calls(
     }
     match expression {
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
         }
         ContractExpression::ResourceField(_)

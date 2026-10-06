@@ -3339,6 +3339,9 @@ pub enum CFunctionContractClaimTarget {
     ExceptionalEnsureProposition(usize),
 }
 
+/// Contract return value, separate from every source C identifier.
+pub(crate) const C_CONTRACT_RESULT_NAME: &str = "@click:result";
+
 /// Kernel-only binding used while lowering an exceptional postcondition.
 /// A future surface syntax may choose its own binder spelling and lower it to
 /// this name, just as ordinary postconditions lower their result binding.
