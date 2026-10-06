@@ -759,10 +759,13 @@ impl<'a> Proof<'a> {
                 "the arms of this proof `if` end at different program points, so they cannot rejoin",
             ));
         }
-        let interface_reference_state = parent_execution
-            .core
-            .frontier
-            .execution_start_state(&parent_execution.core.state)
+        // `old(...)` in an interface fact means what it means everywhere
+        // else in this proof: the function's entry, also inside a loop body.
+        let interface_reference_state = context
+            .old_reference_state(
+                &parent_execution.core.frontier,
+                &parent_execution.core.state,
+            )
             .clone();
         let join_continuation = derive_execution_join_continuation(
             parent_execution,
@@ -1100,6 +1103,7 @@ impl<'a> Proof<'a> {
                     arm_effect_facts,
                     &joined_state,
                     &facts,
+                    Some(&interface_reference_state),
                 )
             }
             None => execution.core.record_interface_proof_case_join(
@@ -1117,6 +1121,7 @@ impl<'a> Proof<'a> {
                 arm_effect_facts,
                 &joined_state,
                 &facts,
+                Some(&interface_reference_state),
             ),
         }
         .map_err(|message| {

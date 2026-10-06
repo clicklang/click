@@ -110,6 +110,11 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         return Ok(());
     }
     let entry_state = execution.core.frontier.execution_start_state(state).clone();
+    // `old(...)` in an interface fact means the function's entry, also
+    // inside a loop body, where the region's own start is a later state.
+    let old_reference = proof_context
+        .old_reference_state(&execution.core.frontier, state)
+        .clone();
     let abstraction = match sibling_join_states {
         Some(states) => abstract_c_state_for_interface_join_across(
             state,
@@ -243,7 +248,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     &exported_pure_facts,
                     parameters,
                     arguments,
-                    &entry_state,
+                    &old_reference,
                     &abstract_state,
                     None,
                     &execution.presentation.recorded_snapshots,

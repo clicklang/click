@@ -3897,6 +3897,7 @@ impl CheckedProofCaseJoin {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Self, &'static str> {
         let WalkedCaseArms {
             partition,
@@ -3934,6 +3935,7 @@ impl CheckedProofCaseJoin {
             interface_resource_specs,
             joined_state,
             successor_facts,
+            old_reference,
         )?;
         let conditional_heap_frees = conditional_heap_frees(arm_effect_facts);
         if !conditional_heap_frees.is_empty()
@@ -4115,6 +4117,7 @@ fn check_interface_abstraction(
     interface_resource_specs: &[CResourceSpec],
     joined_state: &CState,
     successor_facts: &ProofFacts,
+    old_reference: Option<&CState>,
 ) -> Result<CheckedInterfaceAbstraction, &'static str> {
     let expected_stable_locals = arms[0]
         .state
@@ -4245,11 +4248,17 @@ fn check_interface_abstraction(
         return Err("an interface resource is absent from the abstract successor");
     }
 
-    let reference_state = parent
-        .frontier
-        .execution_start_state
-        .as_ref()
-        .unwrap_or(split_state);
+    // `old(...)` in an interface fact names one fixed earlier state. Any
+    // state serves, so long as every lowering of the fact below reads the
+    // same one; the proof side says which, because inside a loop body it is
+    // the function's entry and not the body's own start.
+    let reference_state = old_reference.unwrap_or_else(|| {
+        parent
+            .frontier
+            .execution_start_state
+            .as_ref()
+            .unwrap_or(split_state)
+    });
     let concrete_access = [0, 1].map(|index| {
         InterfaceReadPremises::new(
             interface_resource_specs
@@ -4523,6 +4532,7 @@ impl CheckedExecutionBranch {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Self, &'static str> {
         if !branch_split_starts_at_parent(parent, &split.state, function, arguments, root_facts) {
             return Err("the interface split does not start at the parent state");
@@ -4564,6 +4574,7 @@ impl CheckedExecutionBranch {
             interface_resource_specs,
             joined_state,
             successor_facts,
+            old_reference,
         )?;
         let parent_trace = &parent.execution_evidence[0];
         let full_source = prepend_checked_evidence_statement(
@@ -8252,6 +8263,7 @@ impl ExecutionProofCore {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Vec<ExecutionPureFact>, &'static str> {
         let join = CheckedProofCaseJoin::check_interface(
             parent,
@@ -8265,6 +8277,7 @@ impl ExecutionProofCore {
             arm_effect_facts,
             joined_state,
             successor_facts,
+            old_reference,
         )?;
         let interface = join
             .interface
@@ -9287,6 +9300,7 @@ impl ExecutionProofCore {
         arm_effect_facts: [&[ExecutionPureFact]; 2],
         joined_state: &CState,
         successor_facts: &ProofFacts,
+        old_reference: Option<&CState>,
     ) -> Result<Vec<ExecutionPureFact>, &'static str> {
         let parent_trace = match parent.execution_evidence.as_slice() {
             [trace] => trace,
@@ -9307,6 +9321,7 @@ impl ExecutionProofCore {
             arm_effect_facts,
             joined_state,
             successor_facts,
+            old_reference,
         )?;
         let interface_effect_facts = branch.interface_effect_facts().to_vec();
         let joined_state = branch.joined_state().clone();
@@ -12727,6 +12742,7 @@ mod tests {
             [&[], &[]],
             &state,
             &successor_facts,
+            None,
         )
         .expect("the exact fact-only abstraction should check");
         assert_eq!(checked.interface_lowerings.len(), 1);
@@ -12779,6 +12795,7 @@ mod tests {
                 [&[], &[]],
                 &state,
                 &successor_facts.with_fact(forged_fact),
+                None,
             )
             .is_err(),
             "an unrelated successor fact must not gain interface authority"
@@ -12804,6 +12821,7 @@ mod tests {
                 [&[], &[]],
                 &forged_state,
                 &successor_facts,
+                None,
             )
             .is_err(),
             "a resource absent from both arms must not gain interface authority"
