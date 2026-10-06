@@ -3029,3 +3029,148 @@ fn pure_machine_witness_does_not_narrow_unsupported_binder_widths() {
         );
     }
 }
+
+#[test]
+fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
+    for (ty, annotation) in [("int32*", ""), ("int32", ""), ("Integer", ": Integer")] {
+        let source = format!(
+            r#"
+            theorem retain(p: {ty}) {{
+                let saved{annotation} = p;
+                let again{annotation} = saved;
+                ensures exists (p: {ty}) {{ p == saved }} by {{
+                    witness {{ p: again }};
+                    simp();
+                }}
+            }}
+            theorem captured(p: {ty}) {{
+                let saved{annotation} = p;
+                ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
+                    intro();
+                    witness {{ q: saved }};
+                    simp();
+                }}
+            }}
+            theorem shadow_alias(p: {ty}) {{
+                let saved{annotation} = p;
+                ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
+                    intro();
+                    witness {{ q: saved }};
+                    simp();
+                }}
+            }}
+            theorem nested(p: {ty}) {{
+                let saved{annotation} = p;
+                ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
+                    intro();
+                    witness {{ saved: p }};
+                    simp();
+                }}
+            }}
+        "#
+        );
+        verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{ty}: {}", error.message()));
+        for label in ["retain", "captured", "shadow_alias", "nested"] {
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], &format!("{label}.ensures_0"))
+                    .expect("alias witness proof should expand");
+            verify_c0_sources(&expanded, &[]).expect("expanded alias witness should reverify");
+        }
+    }
+}
+
+#[test]
+fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
+    for (ty, annotation) in [("int32", ""), ("Integer", ": Integer")] {
+        let source = format!(
+            r#"
+            theorem false_claim(p: {ty}) {{
+                requires p == 0;
+                let saved{annotation} = p;
+                ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == p }} }} by {{
+                    intro();
+                    witness {{ q: saved }};
+                    normalize();
+                }}
+            }}
+        "#
+        );
+        let error = verify_c0_sources(&source, &[])
+            .expect_err("outer alias cannot equal every introduced value");
+        assert!(
+            error.message().contains("did not normalize to true"),
+            "{ty}: {}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
+    let source = r#"
+        theorem literals() {
+            let machine = 0;
+            let integer: Integer = 0;
+            ensures exists (n: int32) { n == 0 } by { witness { n: machine }; simp(); }
+            ensures exists (n: Integer) { n == 0 } by { witness { n: integer }; simp(); }
+        }
+        spec enum Flag { Clear }
+        theorem algebraic(p: Flag) {
+            let saved = p;
+            ensures exists (q: Flag) { q == saved } by { witness { q: saved }; simp(); }
+        }
+    "#;
+    verify_c0_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
+    let later = r#"
+        theorem later(p: int32) {
+            ensures exists (q: int32) { q == p } by { witness { q: saved }; simp(); }
+            let saved = p;
+        }
+    "#;
+    let error = verify_c0_sources(later, &[]).expect_err("a later declaration is not in scope");
+    assert!(
+        error.message().contains("unbound variable `saved`"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn pure_witness_integer_aliases_keep_shared_term_scaling() {
+    for function_backed in [false, true] {
+        let mut measured = Vec::new();
+        for depth in [8, 16, 32, 64] {
+            let mut source = if function_backed {
+                "function f(x: Integer, y: Integer) -> Integer { x + y }\n theorem aliases(x: Integer) { let a0: Integer = x;\n".to_owned()
+            } else {
+                "theorem aliases(x: int32) { let a0: Integer = to_integer(x);\n".to_owned()
+            };
+            for index in 1..=depth {
+                let previous = index - 1;
+                let value = if function_backed {
+                    format!("f(a{previous}, a{previous})")
+                } else {
+                    format!("a{previous} + a{previous}")
+                };
+                source.push_str(&format!("let a{index}: Integer = {value};\n"));
+            }
+            source.push_str(&format!("ensures exists (q: Integer) {{ q == a{depth} }} by {{ witness {{ q: a{depth} }}; simp(); }} }}"));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| {
+                panic!(
+                    "function backed {function_backed}, depth {depth}: {}",
+                    error.message()
+                )
+            });
+            measured.push(work);
+        }
+        for pair in measured.windows(2) {
+            assert!(
+                pair[1] <= 3 * pair[0],
+                "witness aliases must retain shared terms: {measured:?}"
+            );
+        }
+    }
+}

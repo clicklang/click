@@ -2155,9 +2155,9 @@ fn unheld_model_field_access<'a>(
 }
 
 /// The refusal for a proposition that reads a field of a resource instance
-/// `state` does not hold, usually because `unfold` consumed it. The field's
-/// folded value stays nameable: `let { field: name } = unfold(owner);` binds
-/// it, as a proof `match` arm binds a constructor payload.
+/// `state` does not hold. Advice follows the checked consumption and field
+/// type: an unfold pattern can bind only C fields, while an algebraic match
+/// can retain constructor payloads before an instance is consumed.
 ///
 /// `through_old` also reads fields under `old(..)`, for a loop invariant,
 /// whose `old(..)` names the loop's entry state rather than the function's.
@@ -2209,12 +2209,54 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
     if !access.children.is_empty() {
         return None;
     }
+    let owner = &access.owner;
+    let field = &access.field;
+    let cause = state.resources().instance_consumption(access.identity);
+    let advice = match cause {
+        Some(crate::kernel::InstanceConsumption::Unfold) => match &access.click_type {
+            Some(ClickType::C(_)) => format!(
+                "`unfold({owner})` consumed it; name the field's folded value where the instance is \
+                 unfolded with `let {{ {field}: name }} = unfold({owner});` and write `name` instead"
+            ),
+            Some(ClickType::Algebraic(_)) => format!(
+                "`unfold({owner})` consumed it; an unfold pattern cannot bind an algebraic field. \
+                 Match `{owner}.{field}` before the unfold and retain its constructor payloads \
+                 in proof bindings; there is no unfold-pattern binding for the whole model"
+            ),
+            _ => format!(
+                "`unfold({owner})` consumed it; no unfold-pattern binding exists for this field's \
+                 logical type"
+            ),
+        },
+        Some(crate::kernel::InstanceConsumption::FoldChild { parent, slot }) => {
+            let parent = crate::kernel::model_fields::registered_instance_spelling(*parent);
+            match parent {
+                Some(parent) if matches!(access.click_type, Some(ClickType::Algebraic(_))) => {
+                    format!(
+                        "it was consumed as child `{slot}` when `{parent}` was folded. \
+                     Where the held parent's model carries the child's model, match it before \
+                     the loop and retain that payload in a proof binding; use that binding \
+                     in the invariant. Otherwise retain the value before folding the parent"
+                    )
+                }
+                Some(parent) => format!(
+                    "it was consumed as child `{slot}` when `{parent}` was folded. \
+                     Retain the field value before folding the parent; an unfold pattern at \
+                     this point cannot bind a consumed child's field"
+                ),
+                None => format!(
+                    "it was consumed as child `{slot}` of a folded parent. \
+                     Retain the field value before that fold; no unfold-pattern binding can \
+                     recover it at this point"
+                ),
+            }
+        }
+        None => "no checked fold or unfold of this instance is recorded here; \
+                 no held field value is available to bind"
+            .to_string(),
+    };
     Some(format!(
-        "`{owner}.{field}` reads a field of `{owner}`, which is not held here; when \
-         `unfold({owner})` consumed it, name the field's folded value where the instance is \
-         unfolded with `let {{ {field}: name }} = unfold({owner});` and write `name` instead",
-        owner = access.owner,
-        field = access.field
+        "`{owner}.{field}` reads a field of `{owner}`, which is not held here; {advice}"
     ))
 }
 

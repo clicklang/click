@@ -1694,6 +1694,7 @@ pub(in crate::surface) fn apply_contract_lets_to_ensure_clause(
     bindings: &[ContractLetBinding],
 ) -> Result<EnsureClause, String> {
     let EnsureClause {
+        proof_bindings: _,
         name,
         ensure,
         proof,
@@ -1709,6 +1710,18 @@ pub(in crate::surface) fn apply_contract_lets_to_ensure_clause(
         }
     };
     Ok(EnsureClause {
+        proof_bindings: bindings
+            .iter()
+            .filter_map(|binding| {
+                binding.value().map(|value| {
+                    (
+                        binding.name.clone(),
+                        binding.click_type.clone(),
+                        value.clone(),
+                    )
+                })
+            })
+            .collect(),
         name,
         ensure,
         proof,

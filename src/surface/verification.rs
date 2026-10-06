@@ -2867,6 +2867,7 @@ fn verify_c0_sources_in_context(
                 verification_function_environment.with_conditional_resource_cases();
         }
         let implicit_safety_clause = EnsureClause {
+            proof_bindings: Vec::new(),
             name: None,
             ensure: Ensure::Proposition(ClickProposition::Comparison {
                 left: ContractExpression::CFragment(CExpression::Value(int32(0))),

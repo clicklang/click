@@ -1438,3 +1438,103 @@ int32 f() { ensures result == 2; } by { step(); simp(); }
         Some(("unproved.ensures_0", &[0][..]))
     );
 }
+
+fn folded_child_loop_fixture() -> crate::cli::MdTest {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/loop_invariant_old_model_of_an_instance_folded_into_a_parent.md");
+    crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap()
+}
+
+#[test]
+fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
+    let fixture = folded_child_loop_fixture();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("consumed as child `inner` when `w` was folded"),
+        "{error:?}"
+    );
+    assert!(
+        error.message().contains("match it before the loop"),
+        "{error:?}"
+    );
+    assert!(!error.message().contains("unfold(c)"), "{error:?}");
+    assert!(!error.message().contains("let { model:"), "{error:?}");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/loop_invariant_binds_model_from_a_folded_parent.md");
+    let repaired =
+        crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(fixture.c_sources, repaired.c_sources);
+    verify_c0_sources(repaired.click_source.as_deref().unwrap(), &sources)
+        .unwrap_or_else(|error| panic!("the suggested payload binding must verify: {error:?}"));
+}
+
+#[test]
+fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
+    let fixture = folded_child_loop_fixture();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let mut click = fixture.click_source.unwrap();
+    let loop_start = click.find("    loop {").unwrap();
+    click.truncate(loop_start);
+    click.push_str(
+        r#"
+        match w.model {
+            Wrap::Wrap(entry_model) => {
+                let { inner: child } = unfold(w);
+                have w.model == Wrap::Wrap(entry_model) by { simp(); }
+            },
+        }
+    }
+    "#,
+    );
+    let error = verify_c0_sources(&click, &sources).unwrap_err();
+    assert!(
+        error.message().contains("`unfold(w)` consumed it"),
+        "{error:?}"
+    );
+    assert!(
+        error
+            .message()
+            .contains("an unfold pattern cannot bind an algebraic field"),
+        "{error:?}"
+    );
+    assert!(!error.message().contains("let { model:"), "{error:?}");
+}
+
+#[test]
+fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
+    let proposition = ClickProposition::Comparison {
+        operator: ComparisonOperator::Equal,
+        left: ContractExpression::ResourceField(ResourceFieldAccess {
+            owner: "absent".into(),
+            resource_name: "cell".into(),
+            identity: Variable(999),
+            children: vec![],
+            field: "rank".into(),
+            field_index: 0,
+            click_type: Some(ClickType::C(C0Type::Int32)),
+        }),
+        right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+    };
+    let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
+        &proposition,
+        &CState::new(),
+        false,
+    )
+    .unwrap();
+    assert!(
+        message.contains("no checked fold or unfold of this instance is recorded"),
+        "{message}"
+    );
+    assert!(!message.contains("consumed it"), "{message}");
+}

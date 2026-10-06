@@ -6,9 +6,11 @@ wrapper's model to the model `c` had at function entry.
 
 `old(c.model)` is refused there. A loop clause reads `old(name.field)` through
 the instance of that name the loop's entry state holds, and after the fold
-there is none: `c` is a child of `w`. The refusal suggests naming the folded
-value at an `unfold`, but `c` was never unfolded, and an `unfold` pattern binds
-only C-typed fields, so an algebraic model cannot be named that way either.
+there is none: `c` is a child of `w`. The refusal names the fold that consumed
+`c` and suggests keeping the model payload through a match on the held
+wrapper. The neighbouring [positive](loop_invariant_binds_model_from_a_folded_parent.md)
+uses that binding in the loop invariant. An unfold pattern binds only C-typed
+fields, so it cannot bind this algebraic model.
 
 A descent that pushes its entry context under a new frame has exactly this
 shape. The unchanged Linux `rb_next` folds `ctx_at(node->rb_right)` over the
@@ -81,5 +83,5 @@ int32 count_down(struct node* p, int32 n) {
 ```
 
 ```expect
-fail: `c.model` reads a field of `c`, which is not held here
+fail: it was consumed as child `inner` when `w` was folded. Where the held parent's model carries the child's model, match it before the loop
 ```

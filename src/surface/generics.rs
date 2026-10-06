@@ -517,6 +517,23 @@ fn instantiate_ensure_clause(
         resource @ Ensure::Resource(_) => resource.clone(),
     };
     Ok(EnsureClause {
+        proof_bindings: ensure
+            .proof_bindings
+            .iter()
+            .map(|(name, click_type, value)| {
+                Ok((
+                    name.clone(),
+                    click_type
+                        .as_ref()
+                        .map(|click_type| instantiate_click_type(click_type, substitution))
+                        .transpose()?,
+                    substitute_contract_expression(
+                        &instantiate_expression(value, substitution)?,
+                        algebraic_parameters,
+                    )?,
+                ))
+            })
+            .collect::<Result<_, String>>()?,
         name: ensure.name.clone(),
         ensure: ensure_value,
         proof: instantiate_source_proof(ensure.proof(), substitution, algebraic_parameters)?,
