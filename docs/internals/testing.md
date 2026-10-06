@@ -255,10 +255,11 @@ CI uses these internal modes for code-affecting changes:
   all selected test binaries. It does not execute tests or quality checks.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
   without compiling Click or either exporter. Six deterministic nextest
-  hash partitions cover the unit, C, and C++ import tests, and two more cover
+  hash partitions cover the unit, C, and C++ import tests, and three more cover
   the Rust import tests, which alone need Charon; mdtests run on three
-  runners, each taking every third file by `MDTEST_PARTITION`; examples have
-  one. The build job takes about six of the ten minutes, so a shard has to
+  runners, each taking every third file by `MDTEST_PARTITION`; examples run
+  on two, by `EXAMPLE_PARTITION`. The build job saves its build snapshot only
+  on a push to `master`, because every shard waits for that job to end. The build job takes about six of the ten minutes, so a shard has to
   finish in under four.
 
 - Canonical examples that select native Charon imports load their locked
