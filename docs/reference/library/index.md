@@ -1223,6 +1223,30 @@ order between unrelated machine values.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int32_less_than_to_integer`
+
+```click
+theorem int32_less_than_to_integer(left: int32, right: int32) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right) by {
+        if to_integer(right) <= to_integer(left) {
+            apply(int32_less_equal_of_to_integer(right, left));
+            contradiction(left < right);
+        } else {
+            arithmetic() using { not (to_integer(right) <= to_integer(left)); }
+        }
+    }
+}
+```
+
+A strict signed native comparison transfers to mathematical Integer order,
+including when an operand is a narrowed wide value. This is a proof-backed
+lemma: it uses the existing non-strict reflection bridge by contraposition,
+rather than extending the trusted kernel. A non-strict premise is insufficient.
+
+**Verified use:** [`mdtests/integer_strict_order_observation.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_strict_order_observation.md),
+[`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_less_equal_of_to_integer`
 
 ```click
