@@ -155,17 +155,50 @@ fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
                 "old(self->_0[3]) + other._0[2]",
             ),
             (
-                "requires ((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64;",
+                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
                 "",
             ),
-            ("4294967295i64", "4294967296i64"),
+            ("<= 4294967295;", "<= 4294967296;"),
             (
-                "((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64",
-                "self->_0[3] + other._0[3] <= 4294967295u32",
+                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
+                "requires self->_0[3] + other._0[3] <= 4294967295u32;",
             ),
             ("owns self->_0[0..4];", "views self->_0[0..4];"),
         ],
     );
+}
+
+fn reject_helper_add_observations(lane: usize) {
+    let exact = format!(
+        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{lane}]);"
+    );
+    let wrong = format!(
+        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{}]);",
+        (lane + 1) % 4
+    );
+    let lower = format!("ensures 0 <= to_integer(self->_0[{lane}]);");
+    let false_lower = format!("ensures 1 <= to_integer(self->_0[{lane}]);");
+    reject_helper_contracts(1, &[(&exact, &wrong), (&lower, &false_lower)]);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_0() {
+    reject_helper_add_observations(0);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_1() {
+    reject_helper_add_observations(1);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_2() {
+    reject_helper_add_observations(2);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
+    reject_helper_add_observations(3);
 }
 
 #[test]

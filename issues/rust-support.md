@@ -937,7 +937,7 @@ or whole-loop panic-freedom claim is introduced by this increment.
 ### Native u32 lane-step observations and guards
 
 The bounds library now proves the widened `int64` guards required by the
-original `U32X4::add_assign` contract for both lane updates. Under the checked
+original `U32X4::add_assign` body for both lane updates. Under the checked
 A/B ceilings and byte bound, the native additions do not wrap, their unsigned
 Integer observations equal the mathematical sums, and their observations
 satisfy `A(n+1)` and `B(n+1)`. The B update uses the newly updated native A.
@@ -1038,3 +1038,16 @@ Next instantiate the numeric invariants and helper-call prerequisites over the
 original nested iterators, using the constructor's Integer byte bounds and
 these modulo-reduction guarantees. Original loop preservation, whole-loop
 panic freedom, byte accounting, and checksum correctness remain unproved.
+
+### Original addition helper Integer interface
+
+The unchanged `U32X4::add_assign` contract now accepts each lane's Integer
+sum bound through u32::MAX, establishes the original widened overflow guard,
+and exports both exact native and exact Integer sums plus nonnegative updated
+observations. This connects the helper call to the lane recurrence vocabulary;
+the sidecar does not assume distribution over wrapping addition. Regressions
+reject a missing lane guard, MAX+1, a tautological wrapping guard, changed
+ownership, and false Integer sums and lower bounds on every lane. Original
+source, artifact, and import profile are unchanged. The original nested-loop
+invariants, whole-loop panic freedom, byte accounting, and checksum correctness
+still need proofs.
