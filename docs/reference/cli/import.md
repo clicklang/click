@@ -636,6 +636,16 @@ Modular caller framing, offline loading, expansion, and retained audit have
 coverage. This adds proof support without changing the schema or trusting
 conversion bounds. See [Integer certificates](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
 
+Operand intervals can now supply the quotient/remainder narrowing bounds through
+an explicit `integer_division_bounds` certificate. The separate
+`integer_relation_transport` certificate moves those mathematical bounds along
+the exact native observation equality, then composes the range-checked cast
+identity with that observation. These are shared proof rules with no automatic
+range inference or change to the C++ source model. The narrowing regression uses
+full signed 64-bit numerator observer bounds and a positive signed 32-bit divisor
+range, states the native guards separately, and checks verification,
+expansion/reverification, retained audit, and false result claims.
+
 Wide pointers, references, record fields, arrays, negation,
 addition, subtraction, and unsigned multiplication remain unsupported. Both
 the live exporter and serialized artifact validator reject these operations.

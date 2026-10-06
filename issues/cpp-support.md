@@ -544,12 +544,32 @@ missing wide division guards, and the unbounded narrow correction, even with a
 trivial postcondition. Neither library implementation is verified, and the
 general division/rounding theorem remains open.
 
-Next prove the native division guards and quotient/remainder observations,
-then both narrowing identities and the **narrow** correction bounds. The
+The arithmetic foundation now supplies shared explicit `integer_division_bounds`
+and `integer_relation_transport` certificates. Four operand endpoints bound a
+truncating quotient or remainder, with zero excluded from the divisor interval.
+A separate equality transport moves one whole bound/equality operand along a
+named equality, including nonlinear terms. Kernel oracle, malformed-certificate,
+large-value and budget tests, unused-fact and node-count scaling, pure fixtures,
+and C++ native quotient/remainder narrowing composition have coverage. Those
+narrowing proofs derive result bounds from operand intervals rather than taking
+result ranges as preconditions, and retain expansion/reverification and audit.
+No frontend schema or conversion semantics change.
+
+The shared `integer_bound_exclusion` certificate now excludes a constant
+strictly outside one named Integer bound. The unchanged `FeeFrac::Div` proof
+can derive `1 <= d` from its real `d > 0` precondition, bridge that bound to
+Integer, and exclude `0` and `-1` to discharge its wide division guards.
+The pinned source regression advances to the still-unproved narrow correction
+without assuming either guard. Complete native quotient/remainder guard proofs
+retain expansion/reverification and audit; signed endpoint oracles, hostile
+certificates, magnitude budgets, and fact/node scaling cover the shared rule.
+No automatic range inference or frontend schema change is introduced.
+
+Next compose quotient/remainder observations, both narrowing identities, and the
+**narrow** correction bounds in the complete unchanged `FeeFrac::Div` proof. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
-A positive narrow divisor fact currently does not automatically discharge its
-wide observer guards, and a zero numerator observer alone does not establish
-the narrowed correction's bounds. Use explicit checked certificates and useful
+A zero numerator observer alone still does not establish the narrowed
+correction's bounds. Use explicit checked certificates and useful
 shared lemmas; do not edit Bitcoin or infer unproved ranges. `Assume` remains
 an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction

@@ -532,6 +532,76 @@ frontend admission remains separate. Source verification, expansion, offline
 artifacts, and retained audit use the shared kernel behavior.
 
 
+## Truncating division bounds
+
+The explicit `integer_division_bounds` node in the special arithmetic family
+checks a non-strict constant bound on `truncating_quotient(n, d)` or
+`truncating_remainder(n, d)`. Four named premises supply constant-endpoint
+numerator lower/upper and divisor lower/upper bounds, in that order. Both
+intervals must be ordered, and the divisor interval must exclude zero. Positive
+and negative divisor intervals are supported; an interval crossing zero is
+refused even when another ambient fact says the divisor is nonzero.
+
+Quotient extrema are the four corner quotients, computed with truncation toward
+zero. Remainder bounds use the largest divisor magnitude minus one, narrowed by
+the numerator's magnitude and sign. These remainder bounds are conservative.
+When every numerator magnitude is strictly below every divisor magnitude, the
+remainder equals the numerator and its input interval is retained exactly.
+
+The checker reads only its four named premises and uses shared Integer operand
+identities. It validates polarity, endpoints, operand correspondence, references,
+and the selected conclusion. Magnitude-dependent work is charged before
+arbitrary-precision division. Regressions compare signed small-value oracles,
+large bounds, false claims, zero-crossing and inverted ranges, malformed
+certificates, unused premise populations, certificate node counts, and exact
+work-budget boundaries.
+
+The companion `integer_relation_transport bounds [i, j] => P` node names an
+Integer equality followed by either an Integer equality or a non-strict bound.
+It replaces exactly one whole operand of the second relation by its equal;
+equality orientation may be reversed, but relation kind and truth polarity are
+preserved. It does not rewrite inside an expression, search ambient facts, or
+reinterpret a nonlinear term as affine arithmetic. Its checking work is constant
+per node and independent of unused premises. This supplies explicit composition
+from a native operation observation to its mathematical bound, and then from a
+range-checked cast observation to the exact quotient/remainder result.
+
+Expression lowering still requires the operation's nonzero guard in scope.
+A numeric interval does not silently supply that evaluation guard. The fixture
+states it explicitly, while the division-bound checker separately validates that
+its own divisor interval excludes zero.
+
+This is a mathematical truncating-division rule, separate from the planned
+Euclidean division laws. It supplies no implicit machine observer ranges and
+proves no native definedness or cast identity. Compose it with the existing
+native division guards, exact quotient/remainder observations, and
+`integer_cast_identity` for range-checked narrowing. See the checked
+[division-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md).
+
+
+## Bounds excluding constants
+
+The explicit `integer_bound_exclusion bounds [i] => P` special certificate
+excludes a constant strictly outside one named non-strict Integer bound. From
+`lo <= x` it can establish `x != c` when `c < lo`; from `x <= hi` it can
+establish `x != c` when `hi < c`. Equality at the endpoint is refused. The
+result may reverse the disequality operands; a false equality has the same
+meaning, while a true equality or false disequality is refused.
+
+The checker reads one premise and compares shared Integer operand identities.
+It accepts nonlinear operands without collecting affine terms. Endpoint and
+excluded-constant comparison work is charged from their bit lengths before the
+comparison. Unused facts do not change checking work, and certificate checking
+scales linearly with its node count. This rule supplies no implicit machine
+range or evaluation guard.
+
+For a positive `int32` divisor, first prove `1 <= d` and use the existing
+`int32_less_equal_to_integer` bridge. Excluding `0` and `-1` from
+`1 <= to_integer(d)` then proves the wide signed division guards without adding
+them to the contract. See the checked
+[bound-exclusion fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_bound_exclusion.md).
+
+
 ## Range-checked modulo cast identities
 
 The explicit `integer_cast_identity` node in the special arithmetic certificate

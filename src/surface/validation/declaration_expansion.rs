@@ -845,6 +845,24 @@ fn expand_declared_resource_certificate(
                                 result: proposition(result)?,
                             }
                         }
+                        SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
+                            SpecialArithmeticNode::IntegerDivisionBounds {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
+                        SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => {
+                            SpecialArithmeticNode::IntegerBoundExclusion {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
+                        SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
+                            SpecialArithmeticNode::IntegerRelationTransport {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
                             SpecialArithmeticNode::UnsignedSumBound {
                                 bounds,
