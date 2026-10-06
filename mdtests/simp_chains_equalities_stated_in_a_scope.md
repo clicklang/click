@@ -66,8 +66,6 @@ int32 caller(int32* occ, int32* other, int32 n) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < n);
         have occ[k] == at(b, occ[k]) by {
             transport(at(b, occ[k]) == at(b, occ[k]), occ[k] == at(b, occ[k])) using {
                 at(b, occ[k]) == at(b, occ[k]);

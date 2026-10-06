@@ -24,8 +24,6 @@ theorem nested_universal_body(n: int32) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < n);
         both {
             assumption();
         } and {

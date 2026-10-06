@@ -73,8 +73,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
         assumption();
     }
     have start < arena->capacity by {
-        extract(at(function.entry, 0) <= at(function.entry, arena->capacity));
-        extract(at(function.entry, arena->capacity) <= at(function.entry, 1073741823));
         apply(int32_lt_le_transitive(at(function.entry, start), at(function.entry, end), at(function.entry, arena->capacity))) using {
             at(function.entry, start) < at(function.entry, end);
             at(function.entry, end) <= at(function.entry, arena->capacity);
@@ -87,8 +85,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
     }
     step();
     have viewable(arena->occupied[0..arena->capacity]) by {
-        extract(at(function.entry, 0) <= at(function.entry, arena->capacity));
-        extract(at(function.entry, arena->capacity) <= at(function.entry, 1073741823));
         transport(at(statement(0).entry, viewable(arena->occupied[0..load_int32(byte_offset(arena, 16))])), viewable(arena->occupied[0..arena->capacity])) using {
             at(statement(0).entry, viewable(arena->occupied[0..load_int32(byte_offset(arena, 16))]));
         }
@@ -104,8 +100,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                 have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark.entry, arena->occupied[k]) } by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(k < start);
                     transport(at(mark.entry, arena->occupied[k]) == at(mark.entry, arena->occupied[k]), arena->occupied[k] == at(mark.entry, arena->occupied[k])) using {
                         0 <= k;
                         k < start;
@@ -117,8 +111,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                 have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark.entry, arena->occupied[k]) } by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(k < start);
                     transport(at(mark.entry, arena->occupied[k]) == at(mark.entry, arena->occupied[k]), arena->occupied[k] == at(mark.entry, arena->occupied[k])) using {
                         0 <= k;
                         k < start;
@@ -160,8 +152,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
             have forall (k: int32) { start <= k and k < (at(opened, i) + 1) implies arena->occupied[k] == 1 } by {
                 intro();
                 intro();
-                extract(start <= k);
-                extract(k < (at(opened, i) + 1));
                 if k < at(opened, i) {
                     have k < m by {
                         rewrite(at(statement(5).entry, m) == at(statement(5).entry, i));
@@ -175,8 +165,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
                         assumption();
                     }
                     have 0 <= k by {
-                        extract(at(function.entry, 0) <= at(function.entry, arena->capacity));
-                        extract(at(function.entry, arena->capacity) <= at(function.entry, 1073741823));
                         apply(int32_le_transitive(at(function.entry, 0), at(function.entry, start), k)) using {
                             at(function.entry, 0) <= at(function.entry, start);
                             start <= k;
@@ -212,8 +200,6 @@ void mark_run(struct arena* arena, int32 start, int32 end) {
             have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark.entry, arena->occupied[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
                 have at(opened, arena->occupied[k]) == at(mark.entry, arena->occupied[k]) by {
                     instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, arena->occupied[j]) == at(mark.entry, arena->occupied[j]) }, k) using {
                         0 <= k;

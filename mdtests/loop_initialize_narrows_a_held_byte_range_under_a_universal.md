@@ -40,8 +40,6 @@ int32 count_up(uint8 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k <= n);
                 simp();
             }
             simp();
@@ -52,8 +50,6 @@ int32 count_up(uint8 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k <= n);
                 simp();
             }
             close_invariants();

@@ -45,25 +45,17 @@ int32 loop_old_count_invariant(int32 p[3]) {
             step();
             have i >= 0 and i <= 3 by {
                 both {
-                    extract(at(statement(3).entry, i) <= at(statement(3).entry, 3));
-                    extract(at(statement(3).entry, i) >= at(statement(3).entry, 0));
                     apply(int32_increment_greater_equal_lower_bound(at(statement(3).entry, i), at(statement(3).entry, 0), at(statement(3).entry, 3))) using {
                         at(statement(3).entry, i) >= at(statement(3).entry, 0);
                         at(statement(3).entry, i) < at(statement(3).entry, 3);
                     }
                 } and {
-                    extract(at(statement(3).entry, i) <= at(statement(3).entry, 3));
-                    extract(at(statement(3).entry, i) >= at(statement(3).entry, 0));
                     apply(int32_increment_upper_bound(at(statement(3).entry, i), at(statement(3).entry, 3))) using {
                         at(statement(3).entry, i) < at(statement(3).entry, 3);
                     }
                 }
             }
             close_invariants by {
-                extract(i >= 0);
-                extract(i <= 3);
-                extract(at(statement(3).entry, i) >= at(statement(3).entry, 0));
-                extract(at(statement(3).entry, i) <= at(statement(3).entry, 3));
                 both {
                     normalize();
                 } and {
@@ -106,8 +98,6 @@ int32 loop_old_count_invariant(int32 p[3]) {
     }
     step();
     have result == 3 by {
-        extract(at(loop(0).exit, i) <= at(loop(0).exit, 3));
-        extract(at(loop(0).exit, i) >= at(loop(0).exit, 0));
         apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, 3))) using {
             at(loop(0).exit, i) <= at(loop(0).exit, 3);
             not at(loop(0).exit, i) < at(loop(0).exit, 3);
