@@ -432,6 +432,7 @@ impl LoweringContext<'_> {
                 condition,
                 contract,
                 span,
+                ..
             } => Ok(crate::kernel::c_labeled_assert(
                 self.lower_expression(condition)?,
                 format!(

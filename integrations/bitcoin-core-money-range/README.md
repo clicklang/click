@@ -219,16 +219,24 @@ int32_t mod = n % d;
 return quot + ((mod > 0) - (mod && round_down));
 ```
 
-A refusal regression keeps this source out of the admitted profile until its
-library call is modeled. The importer now has an explicit pinned, assumed
-Boolean-only statement contract, with a caller obligation to prove the
-condition true. That foundation does not yet admit this template/reference
-signature or its evaluated metadata arguments. Bitcoin's `Assume` expands to
-`inline_assertion_check<false>` in `util/check.h`, with source-location and
-string-view arguments and a build-dependent abort policy. It is an evaluated
-library call, not Clang's unevaluated `__builtin_assume`. No condition or abort
-behavior is silently assumed. Next work must state the compiler/library
-boundary explicitly, prove native division and both narrowing bounds, and
+The missing-contract refusal keeps this source out of the admitted profile.
+A second opt-in regression pins `util/check.h` (SHA-256
+`82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7`)
+and declares the explicit, assumed
+`checked_boolean_statement_with_consteval_metadata` contract. It admits the real
+template and Boolean temporary, discarded reference return, and forced
+`std::source_location::current()`, then rejects metadata argument 2: the runtime
+string-view construction. Both regressions use the unchanged source, archive,
+and compiler command. `FeeFrac::Div` is still neither admitted nor proved.
+
+Bitcoin's `Assume` expands to `inline_assertion_check<false>` in `util/check.h`,
+with source-location and string-view arguments and a build-dependent abort
+policy. It is an evaluated library call, not Clang's unevaluated
+`__builtin_assume`. The explicit library contract requires a proof that the
+condition is true and assumes defined normal behavior without caller-visible
+memory changes under that condition; it does not prove the library itself or
+admit false-input behavior. Next model literal string-view construction and its
+parameter lifetime, then prove native division and both narrowing bounds, and
 bound the subsequent **narrow** correction. The general rounding theorem and
 `EvaluateFeeDown/Up` remain open.
 

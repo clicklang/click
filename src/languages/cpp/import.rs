@@ -418,6 +418,11 @@ fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
         .iter()
         .map(|contract| (contract.function.as_str(), contract))
         .collect();
+    let metadata_files: std::collections::BTreeSet<_> = export
+        .preprocessor_files
+        .iter()
+        .map(|file| file.canonical_path.as_str())
+        .collect();
     let mut pending = vec![export.function.body.as_slice()];
     pending.extend(
         export
@@ -429,9 +434,16 @@ fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
         for statement in statements {
             crate::instrumentation::record_deterministic_work(1);
             match statement {
-                CppStatement::LibraryAssert { contract, .. } => {
+                CppStatement::LibraryAssert {
+                    contract, metadata, ..
+                } => {
                     if contracts.get(contract.function.as_str()).copied() != Some(contract) {
                         return Err("C++ artifact library assertion differs from its configured assumed contract".into());
+                    }
+                    for argument in metadata {
+                        if !metadata_files.contains(argument.declaration_file.as_str()) {
+                            return Err("C++ consteval metadata declaration must belong to the locked preprocessor closure".into());
+                        }
                     }
                 }
                 CppStatement::If {

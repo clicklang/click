@@ -76,7 +76,7 @@ fn check_upstream_cpp(
         .replace("@CLANGXX@", clang.to_str().unwrap())
         .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]));
     fs::write(root.join("compile_commands.json"), database).unwrap();
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
         "exceptions": true, "rtti": true,
         "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
@@ -85,6 +85,20 @@ fn check_upstream_cpp(
         "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
+    if name == "FeeFracDivConstevalRefused" {
+        const CHECK_HASH: &str = "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7";
+        let header = "bitcoin-src/src/util/check.h";
+        assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), CHECK_HASH);
+        config["dependencies"] = serde_json::json!([
+            header,
+            integer_header,
+            "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"
+        ]);
+        config["library_assertions"] = serde_json::json!([{
+            "kind": "checked_boolean_statement_with_consteval_metadata",
+            "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
+        }]);
+    }
     let config_path = root.join(format!("{name}.click.import.json"));
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     let sidecar = root.join(format!("{name}.click"));
@@ -93,6 +107,12 @@ fn check_upstream_cpp(
     if selected == "FeeFrac::Div" {
         let error = refreshed.expect_err("the library Assume boundary must remain explicit");
         assert!(error.contains("export C++ source"), "{error}");
+        if name == "FeeFracDivConstevalRefused" {
+            assert!(
+                error.contains("metadata argument 2 requires a forced consteval"),
+                "the real template, Boolean temporary, and source_location must reach the string_view boundary: {error}"
+            );
+        }
         assert!(!root.join(format!("{name}.click-cpp.json")).exists());
         assert!(!root.join(format!("{name}.click.import.json.lock")).exists());
         fs::remove_dir_all(root).unwrap();
@@ -187,6 +207,11 @@ fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
         "FeeFracMul",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click"),
     );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_div_consteval_contract_reaches_runtime_string_view_boundary() {
+    check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivConstevalRefused", "");
 }
 
 #[test]

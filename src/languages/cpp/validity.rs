@@ -323,9 +323,15 @@ impl Metadata<'_> {
                 CppStatement::LibraryAssert {
                     condition,
                     contract,
+                    metadata,
+                    specialization,
                     span,
                 } => {
-                    contract.validate()?;
+                    super::schema::validate_library_assertion_metadata(
+                        contract,
+                        metadata,
+                        specialization,
+                    )?;
                     self.expression(condition)?;
                     span
                 }

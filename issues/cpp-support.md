@@ -166,7 +166,7 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 41 and earlier locks require
+needs separate support. Artifact schema is now 42 and earlier locks require
 an explicit refresh. The unchanged Bitcoin division helper remains unsupported.
 
 ## Required invariant
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 41. The full `__int128` path remains a prerequisite for the
+artifact schema is now 42. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Current schema 41
+arrangement restrictions remain semantic-profile limitations. Current schema 42
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -398,7 +398,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Current schema 41
+Exporter and schema both reject unsupported wide operations. Current schema 42
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -416,7 +416,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Current schema 41 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 42 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -509,14 +509,28 @@ proof that its evaluated condition is true before using the assumed normal,
 no-memory-effects behavior. Ordinary same-named functions retain call semantics.
 Missing or false conditions, unsafe signatures/arguments, altered pins,
 expansion/reverification, cleanup, modular framing, offline authority, and
-deterministic statement scaling have coverage. Artifact schema is 41.
+deterministic statement scaling have coverage. That slice used artifact schema 41.
 
-Next extend that boundary for the frozen unchanged `FeeFrac::Div`. Its template,
-Boolean rvalue reference, discarded reference result, and **evaluated metadata**
-are still refused. Model source-location evaluation, literal string-view
-construction, and temporary cleanup explicitly; never erase arbitrary
-constructors or argument effects by name or by constant-expression eligibility.
-Pin and expose the additional library assumptions.
+The next library-contract slice now handles Boolean forwarding temporaries,
+discarded Boolean rvalue-reference returns, resolved Boolean/scalar templates,
+and up to eight forced `consteval` metadata arguments. Exact-type records bind
+only to const references and require trivial destruction; integer metadata is
+also supported. Metadata factory names and canonical declaration files, plus
+the resolved specialization, remain visible in schema 42. Offline checking
+binds their provenance to the pinned preprocessor closure. Pure runtime
+`constexpr` calls are deliberately not inferred from constant-expression
+eligibility. Cleanup, modular framing, hostile arguments and provenance, and
+4/16/64/256-statement scaling have coverage.
+
+The unchanged `FeeFrac::Div` opt-in regression now admits the real annotation's
+template, Boolean temporary, discarded reference, and forced
+`std::source_location::current()`. It stops specifically at metadata argument 2:
+the **runtime** literal `string_view` construction. Next model that constructor,
+its value-parameter initialization, and trivial destruction explicitly. Pin and
+expose any standard-library assumptions; do not erase arbitrary constructors,
+conversions, or argument effects by name. The library implementation remains an
+explicit assumed contract, and the selected source's own definitions still
+require ordinary verified contracts.
 
 The pinned archive and a refusal regression keep its exact source selected:
 it narrows `n / d` to int64 and `n % d` to int32 **before**
