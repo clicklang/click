@@ -619,7 +619,11 @@ impl<'a> Proof<'a> {
                 return Ok(Some(closed));
             }
         }
-        if let Some(closed) = self.try_simp_closure()? {
+        let named_premises =
+            crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter();
+        let simp = self.try_simp_closure()?;
+        drop(named_premises);
+        if let Some(closed) = simp {
             return Ok(Some(closed));
         }
         let mut forall_surfaces = loop_head_surfaces.to_vec();
@@ -1368,7 +1372,12 @@ impl<'a> Proof<'a> {
                     "surface",
                     "close invariants",
                     "close invariants: simp closure",
-                    || root.try_simp_closure(),
+                    || {
+                        let _named_premises =
+                            crate::surface::proof::smart_closures::NamedPremiseClosureScope::enter(
+                            );
+                        root.try_simp_closure()
+                    },
                 )? {
                     Some(completed) => Ok(Some(completed)),
                     None => {

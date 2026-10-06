@@ -750,6 +750,19 @@ impl<'a> Proof<'a> {
                     .and_then(|bindings| bindings.get(&name))
                     .or_else(|| self.local_binding(&name))
                     .cloned()
+                    .or_else(|| match self.context.as_ref() {
+                        ProofContext::Pure(context)
+                            if self.local_integer_values().get(&name).is_none()
+                                && self.local_algebraic_values().get(&name).is_none() =>
+                        {
+                            context
+                                .theorem_context
+                                .declaration_bindings
+                                .get(&name)
+                                .cloned()
+                        }
+                        _ => None,
+                    })
                     .or_else(|| (name == "exception").then(|| exception.clone()).flatten())
                     .map(|value| (name, value))
             })

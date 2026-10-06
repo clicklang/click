@@ -145,6 +145,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 
 #[derive(Clone, Debug)]
 pub(super) struct PureTheoremContext {
+    pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: CMemory,
     pub(super) values: BTreeMap<String, CValue>,
     pub(super) integer_values:
@@ -152,6 +153,117 @@ pub(super) struct PureTheoremContext {
     pub(super) array_refs: ClickArrayRefs,
     pub(super) requires: Vec<Proposition>,
     pub(super) surface_requirements: SurfacePropositionMap,
+}
+
+impl PureTheoremContext {
+    fn with_declaration_bindings(
+        &self,
+        bindings: &[(String, Option<ClickType>, ContractExpression)],
+        predicate_environment: &PredicateEnvironment,
+        click_function_environment: &ClickFunctionEnvironment,
+    ) -> Result<Self, ClickError> {
+        let mut context = self.clone();
+        let names: BTreeSet<_> = bindings
+            .iter()
+            .flat_map(|(_, _, value)| contract_expression_referenced_names(value))
+            .collect();
+        let mut substitutions = BTreeMap::new();
+        for name in names {
+            if let Some(value) = self.values.get(&name) {
+                substitutions.insert(
+                    name.clone(),
+                    ContractExpression::CFragment(CExpression::Value(value.clone())),
+                );
+            } else if let Some(value) = self.integer_values.get(&name) {
+                // This spelling cannot be written by a source-level binder.
+                let captured = format!("@declaration:{name}");
+                context.integer_values = context
+                    .integer_values
+                    .with_inserted(captured.clone(), value.clone());
+                substitutions.insert(name, ContractExpression::Binding(captured));
+            }
+        }
+        let assumptions = assumptions_from_propositions(&context.requires);
+        for (name, click_type, value) in bindings {
+            let value =
+                substitute_contract_expression(value, &substitutions).map_err(ClickError::new)?;
+            let promoted = super::surface_lowering::promote_integer_expression(
+                &value,
+                &context.integer_values,
+                &crate::persistent::PersistentMap::default(),
+            );
+            let is_integer = match click_type.as_ref() {
+                Some(ClickType::Integer) => true,
+                Some(_) => false,
+                None => contract_expression_referenced_names(&promoted)
+                    .iter()
+                    .any(|name| context.integer_values.get(name).is_some()),
+            };
+            let value = if is_integer {
+                let value = match crate::surface::lowering::lower_contract_integer_to_spec(
+                    &promoted,
+                    &context.integer_values,
+                ) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        // Conversion-backed and function-backed aliases also
+                        // need shared terms. Inlining their source expressions
+                        // would double a binary alias chain at every binding.
+                        let state = CState::new().with_memory(context.memory.clone());
+                        let integer_values = contract_expression_referenced_names(&promoted)
+                            .into_iter()
+                            .filter_map(|name| {
+                                context
+                                    .integer_values
+                                    .get(&name)
+                                    .map(|value| (name, value.clone()))
+                            })
+                            .fold(
+                                crate::persistent::PersistentMap::default(),
+                                |values, (name, value)| values.with_inserted(name, value),
+                            );
+                        let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
+                            &ClickProposition::Comparison {
+                                left: promoted,
+                                operator: ComparisonOperator::Equal,
+                                right: ContractExpression::IntegerLiteral("0".into()),
+                            }, BTreeMap::new(), BTreeMap::new(), &state, BTreeMap::new(), BTreeMap::new(),
+                            BTreeMap::new(), &integer_values, None, &RecordedSnapshots::new(),
+                            &PureFactContext::new(), predicate_environment, click_function_environment,
+                            BTreeSet::new(), BTreeMap::new(),
+                        ).map_err(ClickError::new)?;
+                        let crate::kernel::SpecProposition::IntegerComparison { left, .. } = spec
+                        else {
+                            // An unannotated machine conversion can reference
+                            // Integer inputs without having an Integer result.
+                            // Keep its typed expression rather than narrowing it.
+                            if click_type.as_ref() == Some(&ClickType::Integer) {
+                                return Err(ClickError::new(
+                                    "declaration alias must be an Integer expression",
+                                ));
+                            }
+                            substitutions.insert(name.clone(), value.clone());
+                            context.declaration_bindings.insert(name.clone(), value);
+                            continue;
+                        };
+                        let term = crate::kernel::capture_spec_integer_value(&state, &left, Some(&state), &assumptions)
+                            .map_err(|refusal| ClickError::new(crate::surface::proof_diagnostics::render::describe_spec_capture_refusal(&refusal)))?;
+                        crate::kernel::SpecIntegerExpression::Term(term)
+                    }
+                };
+                let captured = format!("@declaration:{name}");
+                context.integer_values = context
+                    .integer_values
+                    .with_inserted(captured.clone(), value);
+                ContractExpression::Binding(captured)
+            } else {
+                value
+            };
+            substitutions.insert(name.clone(), value.clone());
+            context.declaration_bindings.insert(name.clone(), value);
+        }
+        Ok(context)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1182,6 +1294,7 @@ pub(super) fn pure_theorem_context(
         }
     }
     Ok(PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         memory,
         values,
         integer_values,
@@ -1598,6 +1711,19 @@ fn verify_theorem_ensure(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
+    // Resolve declaration aliases against the outer parameter values once.
+    // Proof-local introductions can shadow either name without recapturing it.
+    let scoped_context;
+    let context = if ensure_clause.proof_bindings.is_empty() {
+        context
+    } else {
+        scoped_context = context.with_declaration_bindings(
+            &ensure_clause.proof_bindings,
+            predicate_environment,
+            click_function_environment,
+        )?;
+        &scoped_context
+    };
     let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
         return Err(ClickError::new(
             crate::surface::validation::theorem_resource_conclusion_refusal(theorem.name()),

@@ -5828,6 +5828,9 @@ impl ResourceOccurrenceId {
 /// logarithmic paths in the fact store and affected indexes.
 #[derive(Default)]
 pub struct ResourceContext {
+    /// Diagnostic path state, omitted from semantic equality, hashing and ordering.
+    /// A shared persistent root keeps clones constant-work and never copies facts.
+    instance_consumptions: Option<std::sync::Arc<PersistentMap<Variable, InstanceConsumption>>>,
     /// Derived trusted-kernel index. It never supplies ownership evidence.
     memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
@@ -5842,6 +5845,7 @@ pub struct ResourceContext {
 impl Clone for ResourceContext {
     fn clone(&self) -> Self {
         Self {
+            instance_consumptions: self.instance_consumptions.clone(),
             storage: self.storage.clone(),
             loan_dependencies: self.loan_dependencies.clone(),
             memory_equalities: std::sync::Mutex::new(
@@ -5855,6 +5859,31 @@ impl Clone for ResourceContext {
 }
 
 impl ResourceContext {
+    /// Diagnostic provenance only; this never grants ownership or supplies a fact.
+    pub(crate) fn instance_consumption(&self, identity: Variable) -> Option<&InstanceConsumption> {
+        self.instance_consumptions.as_ref()?.get(&identity)
+    }
+
+    pub(super) fn record_instance_consumption(
+        &mut self,
+        identity: Variable,
+        cause: Option<InstanceConsumption>,
+    ) {
+        let Some(map) = self.instance_consumptions.as_deref() else {
+            if let Some(cause) = cause {
+                self.instance_consumptions = Some(std::sync::Arc::new(
+                    PersistentMap::default().with_inserted(identity, cause),
+                ));
+            }
+            return;
+        };
+        let updated = match cause {
+            Some(cause) => map.with_inserted(identity, cause),
+            None => map.without_key(&identity),
+        };
+        self.instance_consumptions = (!updated.is_empty()).then(|| std::sync::Arc::new(updated));
+    }
+
     /// True only for the constant-work empty semantic form. Mutation ancestry
     /// and next-entry counters are intentionally omitted, as in `PartialEq`.
     pub(crate) fn is_pristine_semantically_empty(&self) -> bool {
@@ -6019,6 +6048,15 @@ pub(super) struct ResourceContextStorage {
     /// Legacy callers that explicitly enumerate every fact pay the
     /// output-sized materialization once per immutable snapshot.
     pub(super) materialized: std::sync::OnceLock<Vec<CResourceFact>>,
+}
+
+#[derive(Clone)]
+pub(crate) enum InstanceConsumption {
+    Unfold,
+    FoldChild {
+        parent: Variable,
+        slot: std::sync::Arc<str>,
+    },
 }
 
 #[derive(Clone)]

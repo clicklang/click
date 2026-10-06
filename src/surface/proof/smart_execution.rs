@@ -645,6 +645,10 @@ impl<'a> Proof<'a> {
         click_function_environment: &ClickFunctionEnvironment,
         theorem_environment: &TheoremEnvironment,
     ) -> Result<ProofStep, ClickError> {
+        // Resolve names for semantic checking, but retain the written arguments
+        // in the certificate. A match arm's pointer value may have no spelling
+        // once its source binding has been replaced with a kernel value.
+        let written_application = application;
         let application = &self.resolve_theorem_application(application)?;
         let values = parameter_values(parameters, arguments).map_err(|error| {
             self.step_error(format!(
@@ -700,6 +704,33 @@ impl<'a> Proof<'a> {
             self.step_error(format!("could not lower theorem requirements: {message}"))
         })?;
 
+        let definition = theorem_environment
+            .get(&application.name)
+            .expect("requirement lowering checked the theorem name");
+        let instantiated;
+        let theorem = if definition.type_parameters().is_empty() {
+            definition
+        } else {
+            instantiated = instantiate_generic_theorem_application_definition(
+                definition,
+                application,
+                &lowering_assumptions,
+                &application_context,
+                predicate_environment,
+                click_function_environment,
+            )
+            .map_err(|message| self.step_error(message))?;
+            &instantiated
+        };
+        let source_requirements =
+            crate::surface::proof::pure_theorems::theorem_requirement_propositions(theorem)?;
+        let source_substitutions = theorem
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.name().to_owned())
+            .zip(written_application.arguments.iter().cloned())
+            .collect();
+
         let mut premises = Vec::new();
         for (requirement_index, requirement) in requirements.into_iter().enumerate() {
             if matches!(normalize_proposition(&requirement), SimpProposition::True) {
@@ -730,6 +761,22 @@ impl<'a> Proof<'a> {
                     application.name,
                     crate::surface::proof_diagnostics::render::render_proposition(&guard),
                 )));
+            }
+
+            // The theorem's own clause supplies a source form even when its
+            // match-bound arguments have no independently synthesizable names.
+            if let Some(source_requirement) = source_requirements.get(requirement_index)
+                && let Ok(surface) =
+                    substitute_click_proposition(source_requirement, &source_substitutions)
+                && let Ok(lowered) =
+                    self.lower_surface_proposition(&surface, "selected theorem premise")
+                && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
+                && self.facts().available_across_effects(&lowered, &[])
+            {
+                if !premises.contains(&surface) {
+                    premises.push(surface);
+                }
+                continue;
             }
 
             // Reuse the established snapshot-surface search for execution
@@ -835,7 +882,7 @@ impl<'a> Proof<'a> {
         }
 
         Ok(ProofStep::ApplyTheoremUsing {
-            application: application.clone(),
+            application: written_application.clone(),
             premises,
         })
     }

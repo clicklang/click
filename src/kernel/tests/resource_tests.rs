@@ -1382,6 +1382,16 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
             )
         };
     let open = rewrite(&state, &instance, true, &children).unwrap().state;
+    assert!(matches!(
+        open.resources().instance_consumption(instance.identity()),
+        Some(InstanceConsumption::Unfold)
+    ));
+    assert!(
+        state
+            .resources()
+            .instance_consumption(instance.identity())
+            .is_none()
+    );
     assert!(open.instance_field_scope.is_empty());
     assert!(open.resource_instance_fields(instance.identity()).is_none());
     assert!(
@@ -1402,6 +1412,29 @@ fn independent_children_kernel_consumes_names_and_accepts_replacements() {
     let closed = rewrite(&replaced, &instance, false, &selected)
         .unwrap()
         .state;
+    assert!(
+        closed
+            .resources()
+            .instance_consumption(instance.identity())
+            .is_none()
+    );
+    assert!(matches!(
+        closed.resources().instance_consumption(Variable(503)),
+        Some(InstanceConsumption::FoldChild { parent, slot })
+            if *parent == instance.identity() && slot.as_ref() == "left"
+    ));
+    let reopened = rewrite(&closed, &instance, true, &selected).unwrap().state;
+    assert!(
+        reopened
+            .resources()
+            .instance_consumption(Variable(503))
+            .is_none()
+    );
+    // Refolding and unfolding a sibling snapshot do not change the original.
+    assert!(matches!(
+        raw.resources().instance_consumption(left.identity()),
+        Some(InstanceConsumption::Unfold)
+    ));
     assert_eq!(closed.resources(), state.resources());
     assert!(closed.instance_field_scope.is_empty());
     for bad in [
@@ -1432,6 +1465,11 @@ fn independent_children_kernel_work_ignores_unrelated_instances() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
         let mut state = initial.clone();
+        for identity in 10_000..10_000 + size {
+            state
+                .resources
+                .record_instance_consumption(Variable(identity), Some(InstanceConsumption::Unfold));
+        }
         for identity in 2..=size {
             let mut unrelated = instance.clone();
             unrelated.identity = Variable(identity);

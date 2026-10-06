@@ -1,22 +1,10 @@
-# a missed theorem premise is named, not dumped
+# A theorem premise retains the match arm's source names
 
-`apply(theorem(args))` is a smart tactic: it selects the theorem's premises
-from context by searching for a checked surface spelling of each one. The
-search is bounded and it misses. Here it misses a pure fact about a model that
-the `have` just above established, because the `have` proved it by rewriting
-its goal through the arm's constructor and the form the search looks for is the
-one written in the source.
-
-A bounded smart-search miss is an ordinary outcome and the remedy is the simple
-spelling, `apply(theorem(args)) using { P; ... }`, which checks exactly the
-listed premises with no search — that is what
-[`rb_insert_color.md`](rb_insert_color.md) writes for the same theorem.
-
-What was not ordinary was the refusal. It printed the premise's Rust debug
-form, which for a proposition over an algebraic model expands the complete
-type, every variant, and the schema of every reachable type twice — about six
-thousand characters naming nothing the author wrote. The premise is now
-rendered the way a kernel goal is.
+The proof establishes `parent_is(t.model, node_parent) == 1` inside a match
+arm and cites it with `apply(parent_is_holds(t.model, node_parent))`. The
+selector uses the theorem's own requirement to retain a checked source
+spelling of that premise. The certificate preserves the written arguments
+instead of replacing the named pointer with an unspellable kernel value.
 
 ```c filename=parent_value.c
 struct node {
@@ -97,5 +85,5 @@ int read_parent_value(struct node* n) {
 ```
 
 ```expect
-fail: theorem application `parent_is_holds` has no checked surface form for exact premise `int32 =(parent_is(
+pass
 ```

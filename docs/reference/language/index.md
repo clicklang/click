@@ -1564,10 +1564,20 @@ closing contract claims may all name it. One pattern may mix child slots and
 fields, `let { marks: m, prefix: p, free: f, live: n } = unfold(state)`
 (`mdtests/resource_unfold_binds_children_and_fields.md`). A binder must be a
 fresh name that is not a C parameter or local in scope. Only C-typed fields
-bind this way; an algebraic or `Integer` field is refused, and a proof `match`
-on the field before the unfold names its payload. Expansion and audit print
+bind this way; an algebraic or `Integer` field is refused. For an algebraic
+field, a proof `match` before the unfold names its constructor payloads.
+Expansion and audit print
 the pattern as written. The refusal for reading the consumed field is
 `mdtests/resource_unfold_field_binding_rejects_consumed_read.md`.
+
+A fold can also consume an instance as a child of its result. Reading that
+child's field afterward does not imply that the child was unfolded. If the
+held parent's model contains the child's model as a constructor payload,
+match the parent before a loop and keep the payload in a proof binding for
+the invariant. This keeps a name for the value without opening either
+instance (`mdtests/loop_invariant_binds_model_from_a_folded_parent.md`).
+The refusal distinguishes this fold from an unfold and does not suggest an
+unfold-pattern binding for an algebraic field.
 
 Guarded and constructor-matched memory-only bodies support explicit construction
 and field updates with the same `let c = fold(...)` syntax. No earlier unfold
@@ -2316,7 +2326,9 @@ Existential goals are proved explicitly in proof scripts with `witness`.
 The witness name must match the existential binder. Pure theorem scripts also
 support `int32` and pointer witnesses, alongside `Integer` and algebraic
 witnesses. The value must have the binder's type, and the instantiated body
-still needs a proof. See [the pure witness example](https://github.com/clicklang/click/blob/master/mdtests/pure_machine_witness.md).
+still needs a proof. A declaration-level `let` alias can be a witness value;
+it retains the value from its declaration when a proof introduces a variable
+with the same name. See [the pure witness example](https://github.com/clicklang/click/blob/master/mdtests/pure_machine_witness.md).
 For a symbolic `.any`, the range item name is the existential binder:
 
 <!-- verified-example: mdtests/exists_and_symbolic_any.md -->
