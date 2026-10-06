@@ -920,6 +920,7 @@ impl<'a> Proof<'a> {
             &mut execution,
             parent_execution,
             [&then_abstract, &else_abstract],
+            true,
         )?;
         execution.core.state = abstract_state.clone().into();
         execution.core.loan_evidence = joined_loan_evidence;
@@ -1138,7 +1139,11 @@ impl<'a> Proof<'a> {
     }
 
     /// Carries only checked C-branch anchor spellings across a structural
-    /// join. The persistent fact set is owned by `Proof`; it retains exact
+    /// join, when `carry_condition_spellings` is set. A terminal join does
+    /// not set it: carrying them there re-recorded every enclosing arm's
+    /// condition at each nested join, quadratic work in a function's early
+    /// returns, for a frontier that has no successor to read them.
+    /// The persistent fact set is owned by `Proof`; it retains exact
     /// historical premises and extraction spellings without publishing
     /// unrelated arm-local predicate or resource provenance.
     pub(super) fn merge_branch_surface_facts(
@@ -1146,6 +1151,7 @@ impl<'a> Proof<'a> {
         execution: &mut ExecutionProofState,
         parent: &ExecutionProofState,
         arms: [&ExecutionProofState; 2],
+        carry_condition_spellings: bool,
     ) -> Result<(), ClickError> {
         self.merge_branch_generated_load_bindings(execution, parent, arms)?;
         self.merge_branch_generated_load_source_events(execution, parent, arms)?;
@@ -1156,6 +1162,9 @@ impl<'a> Proof<'a> {
             == arms[1].presentation.chosen_projection)
             .then(|| arms[0].presentation.chosen_projection.clone())
             .flatten();
+        if !carry_condition_spellings {
+            return Ok(());
+        }
         for arm in arms {
             let introduced = arm
                 .branch_surface_facts
@@ -1494,6 +1503,10 @@ impl<'a> Proof<'a> {
             &mut execution,
             parent_execution,
             [arms[0].execution, arms[1].execution],
+            // Both arms ended at function exit: nothing runs after this
+            // join to cite an arm's condition, and each terminal path keeps
+            // its own spellings in its outcome provenance.
+            false,
         )?;
         execution.core.state = execution_start_state.clone().into();
         execution.presentation.recorded_snapshots = common_snapshots;
@@ -1797,6 +1810,7 @@ impl<'a> Proof<'a> {
             &mut execution,
             parent_execution,
             [arms[0].execution, arms[1].execution],
+            true,
         )?;
         execution.core.state = (**then_state).clone().into();
         execution.core.loan_evidence = joined_loan_evidence;
