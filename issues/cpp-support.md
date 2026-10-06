@@ -565,8 +565,61 @@ retain expansion/reverification and audit; signed endpoint oracles, hostile
 certificates, magnitude budgets, and fact/node scaling cover the shared rule.
 No automatic range inference or frontend schema change is introduced.
 
-Next compose quotient/remainder observations, both narrowing identities, and the
-**narrow** correction bounds in the complete unchanged `FeeFrac::Div` proof. The
+The standard-library signed observation bridges now preserve and reflect
+non-strict order for int32/int64, and int64 has the same observation-injectivity
+bridge as int32. Checked wide-to-narrow cast identities and explicit Integer
+bound transport can therefore establish native correction bounds without
+assuming them. Complete proofs on the unchanged narrowing fixture cover both
+widths and a modular caller that frames unrelated memory, with expansion,
+reverification, retained audit, and hostile claims. Independent boundary models
+and forged standard-theorem declarations cover the shared kernel laws.
+The general Bitcoin correction and complete rounding theorem remain open.
+
+A complete bounded safety proof now executes the unchanged pinned
+`FeeFrac::Div`, including both narrowing conversions and every short-circuit
+correction path. Its initial input profile was `-100 <= to_integer(n) <= 100`
+and `0 < d <= 100`; quotient/remainder bounds are derived, transported through
+exact observations, checked against both cast destinations, and reflected into
+native correction bounds. The existing explicit assertion and literal
+constructor contracts remain assumptions about the library implementations.
+Full claim expansion/reverification, retained audit, hostile bounds/claims and
+certificate references, and the same synthetic pattern with a modular caller
+that frames unrelated memory have coverage. Shared contract scalar casts now
+name signed/unsigned 64- and 128-bit conversions and parse correctly on the left
+of comparisons. No exporter or kernel arithmetic change was needed.
+
+Shared `int64_add_to_integer` and `int64_subtract_to_integer` laws now extend
+int32's exact native-operation observations, retaining the essential native
+definedness premise. The unchanged Bitcoin proof derives Integer and native
+bounds on the corrected return value, rather than closing a trivial
+postcondition. It admits every positive int32 divisor and numerators with
+absolute value at most `INT64_MAX - 1`, then proves the result lies between
+`-INT64_MAX` and `INT64_MAX`. Remainder bounds use the divisor magnitude, so both
+narrowing identities remain checked even for this much wider numerator range.
+The same synthetic correction pattern propagates native result bounds through
+a modular caller and frames unrelated memory. Guard/width/operation forgery,
+overflow boundary oracles, full expansion/reverification, retained audit and
+multi-size application scaling cover the shared bridge laws.
+
+Shared symbolic truncation laws now relate the dividend, quotient and remainder
+under an explicit nonzero divisor. Positive-divisor remainder bounds and
+nonnegative/nonpositive dividend sign laws also have exact checked declarations,
+signed arbitrary-width oracles, hostile guard/type/operand cases,
+expansion/reverification and deterministic multi-size application coverage.
+These shared Integer laws apply independently of C++, C or Rust; they do not
+infer native safety or expose nonlinear terms to affine arithmetic.
+
+Next extend the shared Integer theorem-argument binding to accept native
+observations such as `to_integer(n)` at a fixed execution state, preserving
+operand definedness and using only explicitly referenced bindings. Its current
+specification-only path rejects this argument promptly. Then establish
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after both
+checked narrowing conversions, and connect these exact observations and the
+signed remainder correction to a functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
+Admit wider int128 numerators through quotient/correction bounds derived jointly
+from the caller and divisor; the current interval profile does not cover the
+full 96/32 fee-division contract. Output bounds are not yet a mathematical
+rounding theorem. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful
