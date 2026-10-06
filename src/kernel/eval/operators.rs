@@ -955,6 +955,66 @@ fn apply_c_int128_multiply(
     paths
 }
 
+/// Compare already-resolved wide operands by their full mathematical values.
+/// Signedness belongs to the observer, and promotions remain caller-owned.
+fn apply_c_int128_comparison(
+    operator: CComparisonOperator,
+    left: CValue,
+    right: CValue,
+    facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    let Some(condition) = wide_integer_comparison_condition(operator, &left, &right) else {
+        return vec![c_type_mismatch_expression_path(facts, obligations)];
+    };
+    // Complementary relations have separate Integer nodes. Query the two
+    // exact keys without scanning unrelated premises or changing the guard.
+    let complement = match operator {
+        CComparisonOperator::Equal => CComparisonOperator::NotEqual,
+        CComparisonOperator::NotEqual => CComparisonOperator::Equal,
+        CComparisonOperator::LessThan => CComparisonOperator::GreaterEqual,
+        CComparisonOperator::LessEqual => CComparisonOperator::GreaterThan,
+        CComparisonOperator::GreaterThan => CComparisonOperator::LessEqual,
+        CComparisonOperator::GreaterEqual => CComparisonOperator::LessThan,
+    };
+    let known = decide_with_facts(assumptions, &facts, &condition).or_else(|| {
+        let opposite = wide_integer_comparison_condition(complement, &left, &right)?;
+        decide_with_facts(assumptions, &facts, &opposite).map(|truth| !truth)
+    });
+    if let Some(truth) = known {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::Value(int32(u32::from(truth))),
+            facts,
+            obligations,
+        }];
+    }
+    condition_as_c_int32_paths(condition, facts, obligations, assumptions)
+}
+
+/// One condition representation for native execution and pure-spec transport.
+pub(in crate::kernel) fn wide_integer_comparison_condition(
+    operator: CComparisonOperator,
+    left: &CValue,
+    right: &CValue,
+) -> Option<ConditionTerm> {
+    let (ty, left, right) = match (left, right) {
+        (CValue::Int128(a), CValue::Int128(b)) => (MachineIntegerType::Int128, a, b),
+        (CValue::UInt128(a), CValue::UInt128(b)) => (MachineIntegerType::UInt128, a, b),
+        _ => return None,
+    };
+    let left = IntegerTerm::from_machine(ty, left.clone())?;
+    let right = IntegerTerm::from_machine(ty, right.clone())?;
+    Some(match operator {
+        CComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
+        CComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(left, right),
+        CComparisonOperator::LessThan => ConditionTerm::integer_less_than(left, right),
+        CComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(left, right),
+        CComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(left, right),
+        CComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+    })
+}
+
 /// Integer equality and inequality have separate representation nodes. Both
 /// spellings denote the same native guard; query each by exact indexed lookup.
 fn decide_wide_integer_equality(
@@ -1788,6 +1848,12 @@ fn apply_c_comparison(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return apply_c_int128_comparison(operator, left, right, facts, obligations, assumptions);
+    }
+
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -4301,6 +4367,19 @@ pub(in crate::kernel) fn apply_c_equal(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return apply_c_int128_comparison(
+            CComparisonOperator::Equal,
+            left,
+            right,
+            facts,
+            obligations,
+            assumptions,
+        );
+    }
+
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -4457,6 +4536,19 @@ pub(in crate::kernel) fn apply_c_not_equal(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return apply_c_int128_comparison(
+            CComparisonOperator::NotEqual,
+            left,
+            right,
+            facts,
+            obligations,
+            assumptions,
+        );
+    }
+
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {

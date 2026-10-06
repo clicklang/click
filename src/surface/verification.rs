@@ -9464,3 +9464,57 @@ int read_view(const int *(*f)(const int *), const int *p) {{
         );
     }
 }
+
+#[cfg(test)]
+mod retained_caller_tests {
+    use super::*;
+
+    #[test]
+    fn retained_session_reverifies_unchanged_static_array_caller() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");
+        let fixture =
+            crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+        let click = fixture.click_source.unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let (session, _) = C0VerificationSession::new(&click, &sources).unwrap();
+        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        for _ in 0..2 {
+            session
+                .verify_at(&click, position.line, position.column)
+                .expect("an unchanged caller must keep the baseline verdict");
+        }
+        let changed = click.replace("ensures result == 16", "ensures result == 17");
+        assert!(
+            session
+                .verify_at(&changed, position.line, position.column)
+                .is_err(),
+            "retained facts must not prove a changed, false postcondition"
+        );
+    }
+
+    #[test]
+    fn resumed_kernel_reverifies_static_array_caller_without_a_cached_environment() {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/static_local_arrays.md");
+        let fixture =
+            crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+        let click = fixture.click_source.unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let position = expansion::position_at_offset(&click, click.rfind("auto;").unwrap());
+        verify_c0_sources(&click, &sources).unwrap();
+        let _tables = crate::kernel::VerificationSession::resume();
+        for _ in 0..2 {
+            verify_c0_sources_at(&click, &sources, position.line, position.column)
+                .expect("a fresh target in retained tables must keep the baseline verdict");
+        }
+    }
+}

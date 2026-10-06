@@ -5743,3 +5743,59 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
         assert_near_linear_scaling(name, &rechecks);
     }
 }
+
+/// simp's bound selection follows bounds from the goal's variables to the
+/// variables they name, but visits a fixed number of variables, and plans
+/// the certificate before spelling any premise. Each selection therefore
+/// costs the same however long the chain `x0 <= x1 <= ... <= xN` is; a
+/// failing `simp` retries its closure a number of times linear in the
+/// chain, so its total work stays linear, not quadratic.
+#[test]
+fn failing_simp_bound_selection_stays_linear_along_a_variable_chain() {
+    let simp_work = |sample: &ScalingSample| {
+        sample
+            .named_work
+            .iter()
+            .filter(|(name, _)| name.ends_with("tactic `simp`"))
+            .map(|(_, work)| *work)
+            .sum::<usize>()
+    };
+    let sources = |size: usize| {
+        let c_parameters = (0..=size)
+            .map(|index| format!("int x{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let parameters = (0..=size)
+            .map(|index| format!("int32 x{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let requires = (0..size)
+            .map(|index| format!("    requires x{index} <= x{};\n", index + 1))
+            .collect::<String>();
+        (
+            format!("int chain({c_parameters}) {{\n    return 0;\n}}\n"),
+            format!(
+                "verifying \"chain.c\";\n\nint32 chain({parameters}) {{\n    requires 0 <= x0;\n{requires}    requires x{size} <= 100;\n    ensures x0 + 1 <= 50;\n}} by {{\n    execute();\n    simp();\n}}\n"
+            ),
+        )
+    };
+    let mut work = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let (c_source, click_source) = sources(size);
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(&click_source, &[("chain.c", c_source.as_str())])
+        });
+        assert!(
+            verified.is_err(),
+            "`x0 + 1 <= 50` does not follow at size {size}"
+        );
+        work.push(simp_work(&sample));
+    }
+    assert!(work[0] > 0, "{work:?}");
+    for pair in work.windows(2) {
+        assert!(
+            pair[1] <= pair[0].saturating_mul(3),
+            "failing simp work grew faster than linear along the chain: {work:?}"
+        );
+    }
+}

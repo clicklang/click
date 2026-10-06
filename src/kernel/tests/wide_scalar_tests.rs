@@ -164,7 +164,7 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
     for expression in [
         c_add(c_int128_literal(1), c_int128_literal(2)),
         c_multiply(c_uint128_literal(1), c_uint128_literal(2)),
-        c_less_than(c_uint128_literal(1), c_uint128_literal(2)),
+        c_subtract(c_int128_literal(1), c_int128_literal(2)),
     ] {
         assert_mismatch(expression);
     }
