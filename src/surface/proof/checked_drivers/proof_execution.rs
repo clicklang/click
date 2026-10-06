@@ -117,6 +117,13 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     )
 }
 
+/// The refusal for an `if ... ensuring` whose arm cannot reach the join.
+fn if_ensuring_arm_did_not_end() -> ClickError {
+    ClickError::new(
+        "an arm of this proof `if` did not end at a program point the other arm can rejoin: with `ensuring`, both arms must stop before function exit, at the same statement",
+    )
+}
+
 /// Whether a proof region is one straight run of tactics with no nested
 /// split. Such an arm is cheap to run on its own before asking whether it
 /// rejoins its sibling.
@@ -706,6 +713,7 @@ fn deferred_post_execution_region(
             then_branch,
             else_branch,
             continuation,
+            ..
         } => {
             let mut deferred = vec![DeferredPostExecutionTactic {
                 lexical_bindings: None,
@@ -1386,6 +1394,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 index,
                 source_index,
                 condition,
+                ensuring,
                 then_branch,
                 else_branch,
                 continuation,
@@ -1460,6 +1469,9 @@ fn try_check_structural_function_proof_inner<'a>(
                     },
                     _ => None,
                 };
+                // An `ensuring` interface joins the arms where they end, so
+                // their leading steps are not folded into the split.
+                let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
                     let exact = proof.try_split_source_successor_if(
                         condition,
@@ -1488,14 +1500,17 @@ fn try_check_structural_function_proof_inner<'a>(
                 };
                 // Straight-line arms that end at one program point in one
                 // state are rejoined, so what follows the `if` is checked
-                // once and not once per case. Arms that do not rejoin, or
-                // that nest another split, still run the continuation
-                // themselves, below.
-                if !consumed_leading_steps
-                    && staged_expansion_capture.is_none()
-                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_is_straight_line(then_branch)
-                    && region_is_straight_line(else_branch)
+                // once and not once per case. With `ensuring`, the arms must
+                // rejoin through that interface. Otherwise arms that do not
+                // rejoin, or that nest another split, still run the
+                // continuation themselves, below.
+                let must_rejoin = ensuring.is_some();
+                if must_rejoin
+                    || (!consumed_leading_steps
+                        && staged_expansion_capture.is_none()
+                        && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && region_is_straight_line(then_branch)
+                        && region_is_straight_line(else_branch))
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in
@@ -1509,16 +1524,29 @@ fn try_check_structural_function_proof_inner<'a>(
                             focused,
                             None,
                             branch,
-                            None,
+                            if must_rejoin {
+                                staged_expansion_capture.as_mut()
+                            } else {
+                                None
+                            },
                             proof_site.as_ref(),
                             owning_source_index,
                             1,
                         )?
                         .filter(|next| !next.is_at_function_exit());
                     }
-                    if let Some(reasoned) = reasoned
-                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
-                    {
+                    let joined = match (reasoned, ensuring) {
+                        (Some(reasoned), Some(assertions)) => Some(
+                            reasoned
+                                .join_focused_execution_if_interface(&record, assertions.clone())?,
+                        ),
+                        (None, Some(_)) => return Err(if_ensuring_arm_did_not_end()),
+                        (Some(reasoned), None) => {
+                            reasoned.try_join_focused_execution_if(&record)?
+                        }
+                        (None, None) => None,
+                    };
+                    if let Some(joined) = joined {
                         proof = joined;
                         saw_structure = true;
                         current = continuation;
@@ -3142,6 +3170,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 index,
                 source_index,
                 condition,
+                ensuring,
                 then_branch,
                 else_branch,
                 continuation,
@@ -3218,6 +3247,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     },
                     _ => None,
                 };
+                // An `ensuring` interface joins the arms where they end, so
+                // their leading steps are not folded into the split.
+                let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
                     let product = proof_at_if.try_split_source_successor_if(
                         condition,
@@ -3245,12 +3277,15 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
                 // As at the top level: straight-line arms that rejoin are
-                // joined, and the continuation is checked once.
-                if !consumed_leading_steps
-                    && expansion_capture.is_none()
-                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_is_straight_line(then_branch)
-                    && region_is_straight_line(else_branch)
+                // joined, and the continuation is checked once; with
+                // `ensuring` the arms must rejoin through that interface.
+                let must_rejoin = ensuring.is_some();
+                if must_rejoin
+                    || (!consumed_leading_steps
+                        && expansion_capture.is_none()
+                        && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                        && region_is_straight_line(then_branch)
+                        && region_is_straight_line(else_branch))
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in
@@ -3264,16 +3299,29 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                             focused,
                             enclosing_record,
                             branch,
-                            None,
+                            if must_rejoin {
+                                expansion_capture.as_deref_mut()
+                            } else {
+                                None
+                            },
                             proof_site,
                             owning_source_index,
                             depth + 1,
                         )?
                         .filter(|next| !next.is_at_function_exit());
                     }
-                    if let Some(reasoned) = reasoned
-                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
-                    {
+                    let joined = match (reasoned, ensuring) {
+                        (Some(reasoned), Some(assertions)) => Some(
+                            reasoned
+                                .join_focused_execution_if_interface(&record, assertions.clone())?,
+                        ),
+                        (None, Some(_)) => return Err(if_ensuring_arm_did_not_end()),
+                        (Some(reasoned), None) => {
+                            reasoned.try_join_focused_execution_if(&record)?
+                        }
+                        (None, None) => None,
+                    };
+                    if let Some(joined) = joined {
                         proof = joined.restore_execution_tactic_attribution(&owner)?;
                         region = continuation;
                         branch_continuation = None;
@@ -3584,6 +3632,7 @@ fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<Pro
                 }
                 steps.push(ProofStep::If {
                     condition: condition.clone(),
+                    ensuring: None,
                     then_proof: Box::new(ProofCertificate::from_steps(then_steps).ok()?),
                     else_proof: Box::new(ProofCertificate::from_steps(else_steps).ok()?),
                 });

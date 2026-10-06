@@ -3797,6 +3797,7 @@ pub enum ProofStep {
     },
     If {
         condition: ClickProposition,
+        ensuring: Option<Vec<ProofAssertion>>,
         then_proof: Box<ProofCertificate>,
         else_proof: Box<ProofCertificate>,
     },
@@ -4196,6 +4197,7 @@ impl ProofStep {
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
+                ensuring: proof_if.ensuring.clone(),
                 then_proof: Box::new(ProofCertificate::from_validated_steps(
                     proof_if
                         .then_tactics
@@ -4414,10 +4416,12 @@ impl ProofStep {
             }),
             Self::If {
                 condition,
+                ensuring,
                 then_proof,
                 else_proof,
             } => ProofTactic::If(ProofIf {
                 condition: condition.clone(),
+                ensuring: ensuring.clone(),
                 then_tactics: then_proof.to_proof_tactics(),
                 else_tactics: else_proof.to_proof_tactics(),
             }),
@@ -4964,6 +4968,8 @@ pub struct ProofOpen {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofIf {
     condition: ClickProposition,
+    /// What the rejoined proof keeps when the arms end in different states.
+    ensuring: Option<Vec<ProofAssertion>>,
     then_tactics: Vec<ProofTactic>,
     else_tactics: Vec<ProofTactic>,
 }

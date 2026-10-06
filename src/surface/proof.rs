@@ -742,6 +742,7 @@ mod certificate_tests {
                 condition: merged_condition,
                 then_proof,
                 else_proof,
+                ..
             },
         ] = merged.steps()
         else {
@@ -829,6 +830,7 @@ enum InternalProofNode {
         index: usize,
         source_index: usize,
         condition: ClickProposition,
+        ensuring: Option<Vec<ProofAssertion>>,
         then_branch: Box<InternalProofNode>,
         else_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
@@ -1094,6 +1096,7 @@ fn build_internal_proof_at(
                 index,
                 source_index,
                 condition: proof_if.condition.clone(),
+                ensuring: proof_if.ensuring.clone(),
                 then_branch: Box::new(build_internal_proof_at(
                     &proof_if.then_tactics,
                     index + 1,

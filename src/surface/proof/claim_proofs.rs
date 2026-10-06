@@ -5484,6 +5484,7 @@ mod tests {
                 condition: actual,
                 then_proof,
                 else_proof,
+                ..
             },
         ] = steps.as_slice()
         else {

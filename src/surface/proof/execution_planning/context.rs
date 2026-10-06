@@ -574,6 +574,7 @@ fn merge_path_aligned_certificates_with_match_policy(
             }
             prefix.push(ProofStep::If {
                 condition,
+                ensuring: None,
                 then_proof: Box::new(merge(claim_label, then_paths, retain_common_match_cases)?),
                 else_proof: Box::new(merge(claim_label, else_paths, retain_common_match_cases)?),
             });

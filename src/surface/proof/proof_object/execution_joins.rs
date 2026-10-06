@@ -637,6 +637,7 @@ impl<'a> Proof<'a> {
         };
         Ok(ProofStep::If {
             condition: surface_condition,
+            ensuring: None,
             then_proof: Box::new(then_proof),
             else_proof: Box::new(else_proof),
         })
@@ -716,13 +717,30 @@ impl<'a> Proof<'a> {
         continuation_index: usize,
         continuation_remaining: &Option<Arc<CStatement>>,
         execution_start_state: CState,
-        checked_condition_split: CheckedBranchSplit,
+        // The C branch the arms came from, or `None` with
+        // `proof_case_condition` when they are the cases of a proof `if`.
+        checked_condition_split: Option<CheckedBranchSplit>,
+        proof_case_condition: Option<ClickProposition>,
         assertions: Vec<ProofAssertion>,
         arms: [CheckedExecutionJoinArm<'_>; 2],
     ) -> Result<CheckedExecutionJoinParts, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
+        // The cases of a proof `if` rejoin where they stand: at the program
+        // point both arms reached, not after a C statement.
+        let rejoins_cases = proof_case_condition.is_some();
+        if rejoins_cases
+            && !arms[0]
+                .execution
+                .core
+                .frontier
+                .at_same_program_point(&arms[1].execution.core.frontier)
+        {
+            return Err(self.step_error(
+                "the arms of this proof `if` end at different program points, so they cannot rejoin",
+            ));
+        }
         let interface_reference_state = parent_execution
             .core
             .frontier
@@ -739,6 +757,7 @@ impl<'a> Proof<'a> {
         // continuation statement the arms recorded at their boundaries.
         let target = ProgramPointRef {
             region: CodeRegionRef::Statement(match &join_continuation {
+                _ if rejoins_cases => arms[0].execution.core.frontier.next_statement_index,
                 Some(join) => join.next_statement_index,
                 None => continuation_index,
             }),
@@ -781,7 +800,7 @@ impl<'a> Proof<'a> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         for (name, expected, arm) in [("then", true, &arms[0]), ("else", false, &arms[1])] {
-            if !arm.execution.core.frontier.is_at_region_boundary() {
+            if !rejoins_cases && !arm.execution.core.frontier.is_at_region_boundary() {
                 return Err(self.step_error(format!(
                     "{name} `branch ensuring` arm has not reached its region boundary"
                 )));
@@ -929,15 +948,20 @@ impl<'a> Proof<'a> {
             .presentation
             .recorded_snapshots
             .insert(target, abstract_state.clone());
-        execution.presentation.recorded_snapshots.insert(
-            ProgramPointRef {
-                region: CodeRegionRef::Statement(statement_index),
-                kind: ProgramPointKind::Exit,
-            },
-            abstract_state.clone(),
-        );
+        if !rejoins_cases {
+            execution.presentation.recorded_snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(statement_index),
+                    kind: ProgramPointKind::Exit,
+                },
+                abstract_state.clone(),
+            );
+        }
         execution.core.frontier.execution_start_state = Some(execution_start_state);
         match join_continuation {
+            _ if rejoins_cases => {
+                execution.core.frontier = arms[0].execution.core.frontier.clone();
+            }
             Some(join) => {
                 execution.core.frontier.next_statement_index = join.next_statement_index;
                 execution.core.frontier.continuations = join.continuations;
@@ -974,13 +998,15 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
-        record_statement_program_snapshot_state(
-            &mut execution.presentation.recorded_snapshots,
-            context.function_block,
-            statement_index,
-            ProgramPointKind::Exit,
-            abstract_state,
-        );
+        if !rejoins_cases {
+            record_statement_program_snapshot_state(
+                &mut execution.presentation.recorded_snapshots,
+                context.function_block,
+                statement_index,
+                ProgramPointKind::Exit,
+                abstract_state,
+            );
+        }
         record_current_statement_entry(
             &execution.core.frontier,
             &mut execution.presentation.recorded_snapshots,
@@ -1028,50 +1054,76 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let [Some(then_theorem), Some(else_theorem)] =
-            [arms[0].condition_theorem, arms[1].condition_theorem]
-        else {
-            return Err(
-                self.step_error("checked interface join lost one of its condition theorems")
-            );
-        };
         let joined_state = (*execution.core.state).clone();
-        let joined_effect = execution
-            .core
-            .record_interface_branch_join(
-                checked_condition_split,
-                parent_facts,
-                [then_theorem, else_theorem],
-                [arms[0].facts, arms[1].facts],
+        let arm_effect_facts: [&[ExecutionPureFact]; 2] = [
+            &arms[0].introduced_effect_facts,
+            &arms[1].introduced_effect_facts,
+        ];
+        let joined_effect = match checked_condition_split {
+            Some(checked_condition_split) => {
+                let [Some(then_theorem), Some(else_theorem)] =
+                    [arms[0].condition_theorem, arms[1].condition_theorem]
+                else {
+                    return Err(self
+                        .step_error("checked interface join lost one of its condition theorems"));
+                };
+                execution.core.record_interface_branch_join(
+                    checked_condition_split,
+                    parent_facts,
+                    [then_theorem, else_theorem],
+                    [arms[0].facts, arms[1].facts],
+                    &parent_execution.core,
+                    [&arms[0].execution.core, &arms[1].execution.core],
+                    context.function,
+                    context.arguments,
+                    &stable_join_locals,
+                    &interface_specs,
+                    &interface_resource_specs,
+                    arm_effect_facts,
+                    &joined_state,
+                    &facts,
+                )
+            }
+            None => execution.core.record_interface_proof_case_join(
                 &parent_execution.core,
-                [&arms[0].execution.core, &arms[1].execution.core],
+                parent_facts,
+                [
+                    (&arms[0].execution.core, arms[0].facts),
+                    (&arms[1].execution.core, arms[1].facts),
+                ],
                 context.function,
                 context.arguments,
                 &stable_join_locals,
                 &interface_specs,
                 &interface_resource_specs,
-                [
-                    &arms[0].introduced_effect_facts,
-                    &arms[1].introduced_effect_facts,
-                ],
+                arm_effect_facts,
                 &joined_state,
                 &facts,
-            )
-            .map_err(|message| {
-                self.step_error(format!(
-                    "kernel rejected the checked `branch ensuring` interface: {message}"
-                ))
-            })?;
+            ),
+        }
+        .map_err(|message| {
+            self.step_error(format!(
+                "kernel rejected the checked `ensuring` interface: {message}"
+            ))
+        })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
 
         #[cfg(test)]
         CHECKED_EXECUTION_INTERFACE_JOINS.with(|count| count.set(count.get() + 1));
 
         let [then_view, else_view] = arms;
-        let step = ProofStep::Branch {
-            ensuring: Some(assertions),
-            then_proof: Box::new(then_view.certificate),
-            else_proof: Box::new(else_view.certificate),
+        let step = match proof_case_condition {
+            Some(condition) => ProofStep::If {
+                condition,
+                ensuring: Some(assertions),
+                then_proof: Box::new(then_view.certificate),
+                else_proof: Box::new(else_view.certificate),
+            },
+            None => ProofStep::Branch {
+                ensuring: Some(assertions),
+                then_proof: Box::new(then_view.certificate),
+                else_proof: Box::new(else_view.certificate),
+            },
         };
         Ok(CheckedExecutionJoinParts {
             execution,
@@ -1125,17 +1177,71 @@ impl<'a> Proof<'a> {
             &record.continuation_remaining,
             record.execution_start_state.clone(),
             match &record.checked_split {
-                CheckedExecutionSplit::Branch(split) => split.clone(),
+                CheckedExecutionSplit::Branch(split) => Some(split.clone()),
                 CheckedExecutionSplit::CallOutcomes(_) => {
                     return Err(
                         self.step_error("`branch ensuring` cannot apply to a call-outcome split")
                     );
                 }
             },
+            None,
             assertions,
             arms,
         )?;
         self.resume_parent_after_sibling_join(record, ids, parts)
+    }
+
+    /// Rejoins the two arms of a proof-level execution `if` through an
+    /// explicit interface: the arms end at one program point in different
+    /// states, and the proof continues once from the abstraction of both
+    /// that keeps what the interface names.
+    pub(in crate::surface::proof) fn join_focused_execution_if_interface(
+        &self,
+        record: &ExecutionProofCaseSplit<'a>,
+        assertions: Vec<ProofAssertion>,
+    ) -> Result<Self, ClickError> {
+        let [then_steps, else_steps] =
+            self.partition_steps_since(&record.marker, record.split, record.arm_branches)?;
+        let then_view = self.sibling_execution_arm_view_from_bases(
+            "then",
+            record.split,
+            record.arm_branches[0],
+            then_steps,
+            &record.base_facts[0],
+            &record.common_facts,
+            &record.base_executions[0],
+            None,
+        )?;
+        let else_view = self.sibling_execution_arm_view_from_bases(
+            "else",
+            record.split,
+            record.arm_branches[1],
+            else_steps,
+            &record.base_facts[1],
+            &record.common_facts,
+            &record.base_executions[1],
+            None,
+        )?;
+        let statement_index = record.parent_execution.core.frontier.next_statement_index;
+        let parts = self.merge_interface_execution_join(
+            &record.common_facts,
+            &record.parent_unfolds,
+            &record.parent_execution,
+            statement_index,
+            statement_index,
+            &None,
+            record.execution_start_state.clone(),
+            None,
+            Some(record.surface_condition.clone()),
+            assertions,
+            [then_view, else_view],
+        )?;
+        self.resume_parent_after_sibling_join_from_marker(
+            &record.marker,
+            record.split,
+            record.arm_branches,
+            parts,
+        )
     }
 
     /// Carries only checked C-branch anchor spellings across a structural
@@ -1592,6 +1698,7 @@ impl<'a> Proof<'a> {
                     } else {
                         vec![ProofTactic::If(ProofIf {
                             condition: surface_condition.clone(),
+                            ensuring: None,
                             then_tactics: capture.branch_skeleton,
                             else_tactics: Vec::new(),
                         })]
@@ -1608,6 +1715,7 @@ impl<'a> Proof<'a> {
                     } else {
                         vec![ProofTactic::If(ProofIf {
                             condition: surface_condition.clone(),
+                            ensuring: None,
                             then_tactics: Vec::new(),
                             else_tactics: capture.branch_skeleton,
                         })]
@@ -1720,6 +1828,7 @@ impl<'a> Proof<'a> {
         } else {
             ProofStep::If {
                 condition: surface_condition,
+                ensuring: None,
                 then_proof: Box::new(then_proof),
                 else_proof: Box::new(else_proof),
             }
@@ -2304,6 +2413,7 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             step: ProofStep::If {
                 condition: surface_condition,
+                ensuring: None,
                 then_proof: Box::new(then_arm.certificate),
                 else_proof: Box::new(else_arm.certificate),
             },
@@ -3159,6 +3269,7 @@ impl<'a> Proof<'a> {
                     condition,
                     then_proof,
                     else_proof,
+                    ..
                 } => proof.apply_execution_if_within(
                     &enclosing,
                     condition,

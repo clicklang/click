@@ -679,6 +679,29 @@ fn expand_declared_resource_proof(
     }
 }
 
+/// Expands declared resources in the assertions of a join's `ensuring`
+/// block.
+fn expand_declared_join_interface(
+    ensuring: Option<Vec<ProofAssertion>>,
+    resource_definitions: &DeclaredResourceScope,
+) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
+    ensuring
+        .map(|assertions| {
+            assertions
+                .into_iter()
+                .map(|assertion| match assertion {
+                    ProofAssertion::Fact(fact) => Ok(ProofAssertion::Fact(
+                        expand_declared_resource_proposition(fact, resource_definitions)?,
+                    )),
+                    ProofAssertion::Resource(resource) => Ok(ProofAssertion::Resource(
+                        expand_declared_resource_clause(resource, resource_definitions)?,
+                    )),
+                })
+                .collect::<Result<Vec<_>, ClickError>>()
+        })
+        .transpose()
+}
+
 // Keep the recursive tactic dispatcher small. Each helper owns only one
 // family of large syntax temporaries, so nested proof scripts do not retain
 // every tactic variant's frame at once.
@@ -1301,6 +1324,7 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                 proof_if.condition,
                 resource_definitions,
             )?,
+            ensuring: expand_declared_join_interface(proof_if.ensuring, resource_definitions)?,
             then_tactics: proof_if
                 .then_tactics
                 .into_iter()
@@ -1377,22 +1401,7 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             })))
         }
         ProofTactic::Branch(proof_branch) => Ok(ProofTactic::Branch(ProofBranch {
-            ensuring: proof_branch
-                .ensuring
-                .map(|assertions| {
-                    assertions
-                        .into_iter()
-                        .map(|assertion| match assertion {
-                            ProofAssertion::Fact(fact) => Ok(ProofAssertion::Fact(
-                                expand_declared_resource_proposition(fact, resource_definitions)?,
-                            )),
-                            ProofAssertion::Resource(resource) => Ok(ProofAssertion::Resource(
-                                expand_declared_resource_clause(resource, resource_definitions)?,
-                            )),
-                        })
-                        .collect::<Result<Vec<_>, ClickError>>()
-                })
-                .transpose()?,
+            ensuring: expand_declared_join_interface(proof_branch.ensuring, resource_definitions)?,
             then_tactics: proof_branch
                 .then_tactics
                 .into_iter()

@@ -124,6 +124,25 @@ pub fn format_proof_certificate(certificate: &ProofCertificate) -> String {
     output
 }
 
+/// The assertions of a join's `ensuring` block, one per line.
+fn write_join_interface(output: &mut String, assertions: &[ProofAssertion], indent: usize) {
+    let prefix = "    ".repeat(indent);
+    for assertion in assertions {
+        let text = match assertion {
+            ProofAssertion::Fact(fact) => format!("fact {};", source_click_proposition(fact)),
+            ProofAssertion::Resource(resource) => format!(
+                "{} {};",
+                match resource_access(resource) {
+                    ResourceAccessMode::Own => "owns",
+                    ResourceAccessMode::View => "views",
+                },
+                format_resource_target(resource)
+            ),
+        };
+        line(output, &prefix, &text);
+    }
+}
+
 fn write_tactics(output: &mut String, tactics: &[ProofTactic], indent: usize) {
     for tactic in tactics {
         write_tactic(output, tactic, indent);
@@ -400,7 +419,13 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             output.push_str(&prefix);
             output.push_str("if ");
             output.push_str(&source_click_proposition(&proof_if.condition));
-            output.push_str(" {\n");
+            if let Some(assertions) = &proof_if.ensuring {
+                output.push_str(" ensuring {\n");
+                write_join_interface(output, assertions, indent + 1);
+                line(output, &prefix, "} then {");
+            } else {
+                output.push_str(" {\n");
+            }
             write_tactics(output, &proof_if.then_tactics, indent + 1);
             line(output, &prefix, "} else {");
             write_tactics(output, &proof_if.else_tactics, indent + 1);
@@ -430,22 +455,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Branch(proof_branch) => {
             if let Some(assertions) = &proof_branch.ensuring {
                 line(output, &prefix, "branch ensuring {");
-                for assertion in assertions {
-                    let text = match assertion {
-                        ProofAssertion::Fact(fact) => {
-                            format!("fact {};", source_click_proposition(fact))
-                        }
-                        ProofAssertion::Resource(resource) => format!(
-                            "{} {};",
-                            match resource_access(resource) {
-                                ResourceAccessMode::Own => "owns",
-                                ResourceAccessMode::View => "views",
-                            },
-                            format_resource_target(resource)
-                        ),
-                    };
-                    line(output, &"    ".repeat(indent + 1), &text);
-                }
+                write_join_interface(output, assertions, indent + 1);
                 line(output, &prefix, "} then {");
             } else {
                 line(output, &prefix, "branch then {");

@@ -605,6 +605,7 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
         ProofTactic::Mark("before_step".to_string()),
         ProofTactic::Step,
         ProofTactic::If(ProofIf {
+            ensuring: None,
             condition: nonnegative.clone(),
             then_tactics: vec![ProofTactic::Have(ProofHave {
                 proposition: nonnegative.clone(),
@@ -759,6 +760,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
     let tactics = [ProofTactic::Branch(ProofBranch {
         ensuring: None,
         then_tactics: vec![ProofTactic::If(ProofIf {
+            ensuring: None,
             condition,
             then_tactics: vec![ProofTactic::Have(ProofHave {
                 proposition: ClickProposition::Comparison {

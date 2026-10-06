@@ -5664,6 +5664,12 @@ impl Parser {
         }
         if name == "if" {
             let condition = self.parse_proposition()?;
+            // Arms that end in different states name what the rejoined
+            // proof keeps, as a `branch` does.
+            let ensuring = self.parse_optional_join_interface()?;
+            if ensuring.is_some() {
+                self.expect_ident_spelling("then")?;
+            }
             // A proof `if` branch may be empty: it contributes only its case
             // split, and every path goal is still owed at path end. Pure
             // case-split certificates expand to exactly this shape (owner
@@ -5674,6 +5680,7 @@ impl Parser {
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::If(ProofIf {
                 condition,
+                ensuring,
                 then_tactics,
                 else_tactics,
             }));
@@ -5765,37 +5772,7 @@ impl Parser {
             })));
         }
         if name == "branch" {
-            let ensuring = if self.peek_ident() == Some("ensuring") {
-                self.position += 1;
-                self.expect(Token::LBrace)?;
-                let mut assertions = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let kind = self.expect_ident("branch assertion kind")?;
-                    let assertion = match kind.as_str() {
-                        "fact" => ProofAssertion::Fact(self.parse_proposition()?),
-                        "owns" => ProofAssertion::Resource(
-                            self.parse_resource_target(ResourceAccessMode::Own)?,
-                        ),
-                        "views" => ProofAssertion::Resource(
-                            self.parse_resource_target(ResourceAccessMode::View)?,
-                        ),
-                        _ => {
-                            return Err(self.error(format!(
-                                "expected branch assertion `fact`, `owns`, or `views`, got `{kind}`"
-                            )));
-                        }
-                    };
-                    self.expect(Token::Semicolon)?;
-                    assertions.push(assertion);
-                }
-                if assertions.is_empty() {
-                    return Err(self.error("`ensuring` block must contain at least one assertion"));
-                }
-                self.expect(Token::RBrace)?;
-                Some(assertions)
-            } else {
-                None
-            };
+            let ensuring = self.parse_optional_join_interface()?;
             self.expect_ident_spelling("then")?;
             let then_tactics = self.parse_possibly_empty_tactic_block()?;
             self.expect_ident_spelling("else")?;
@@ -6414,6 +6391,41 @@ impl Parser {
         };
         self.expect(Token::Semicolon)?;
         Ok(tactic)
+    }
+
+    /// An optional `ensuring { fact ...; owns ...; views ...; }` block: what
+    /// the state after a join keeps when its arms end in different states.
+    fn parse_optional_join_interface(&mut self) -> Result<Option<Vec<ProofAssertion>>, ClickError> {
+        if self.peek_ident() != Some("ensuring") {
+            return Ok(None);
+        }
+        self.position += 1;
+        self.expect(Token::LBrace)?;
+        let mut assertions = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let kind = self.expect_ident("branch assertion kind")?;
+            let assertion = match kind.as_str() {
+                "fact" => ProofAssertion::Fact(self.parse_proposition()?),
+                "owns" => {
+                    ProofAssertion::Resource(self.parse_resource_target(ResourceAccessMode::Own)?)
+                }
+                "views" => {
+                    ProofAssertion::Resource(self.parse_resource_target(ResourceAccessMode::View)?)
+                }
+                _ => {
+                    return Err(self.error(format!(
+                        "expected branch assertion `fact`, `owns`, or `views`, got `{kind}`"
+                    )));
+                }
+            };
+            self.expect(Token::Semicolon)?;
+            assertions.push(assertion);
+        }
+        if assertions.is_empty() {
+            return Err(self.error("`ensuring` block must contain at least one assertion"));
+        }
+        self.expect(Token::RBrace)?;
+        Ok(Some(assertions))
     }
 
     fn parse_possibly_empty_tactic_block(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
