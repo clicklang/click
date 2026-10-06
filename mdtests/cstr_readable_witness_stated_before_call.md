@@ -33,7 +33,7 @@ int32 fixed_string_length(uint8 bytes[]) {
         have exists (len: int32) {
             0 <= len + 1
         } by {
-            witness { len: 0 };
+            witness { len: 0 }
             both {
                 simp();
             } and {
@@ -46,7 +46,7 @@ int32 fixed_string_length(uint8 bytes[]) {
                     0 <= k and k < len implies viewable((bytes + k)[0..1])
                 }
         } by {
-            witness { len: 0 };
+            witness { len: 0 }
             both {
                 simp();
             } and {
@@ -56,7 +56,7 @@ int32 fixed_string_length(uint8 bytes[]) {
         have exists (len: int32) {
             defined(len + 1) and viewable((bytes + len)[0..1])
         } by {
-            witness { len: 0 };
+            witness { len: 0 }
             both {
                 simp();
             } and {
@@ -76,7 +76,7 @@ int32 fixed_string_length(uint8 bytes[]) {
                 } and
                 bytes[len] == '\0'
         } by {
-            witness { len: 2 };
+            witness { len: 2 }
             simp();
         }
         execute();

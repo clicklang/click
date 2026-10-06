@@ -62,13 +62,13 @@ void walk(int32 *left, int32 *visited, int32 n, int32 cur) {
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after_mark, left[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; }
     step();
     mark after;
     transport(
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
         forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(after, left[k]) }
-    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; };
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; }
     execute();
     simp();
 }

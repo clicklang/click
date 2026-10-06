@@ -50,7 +50,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     }
     obtain (rest: Path) {
         pick(at(before_call, a[i]), rest) == r
-    };
+    }
     step();
     simp();
 }

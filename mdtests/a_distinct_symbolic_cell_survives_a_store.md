@@ -34,7 +34,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     ) using {
         at(entry, a[m]) == at(entry, a[m]);
         m != i;
-    };
+    }
     execute();
     simp();
 }

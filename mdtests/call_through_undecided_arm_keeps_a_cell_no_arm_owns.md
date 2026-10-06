@@ -105,7 +105,7 @@ int32 caller(struct node* p) {
         transport(
             at(before, p->spare) == at(before, p->spare),
             p->spare == at(before, p->spare)
-        ) using { };
+        ) using { }
     }
     let { tag: rt1, child: rc0 } = unfold(o);
     let { tag: rt0 } = unfold(rc0);
