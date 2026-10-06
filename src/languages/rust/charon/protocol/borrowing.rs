@@ -35,7 +35,13 @@ impl Adapter<'_> {
         };
         let into = method == "into_iter" && self.protocol_reference(&call.dest.ty) == Some(true);
         let next = method == "next"
-            && matches!(ptr.generics.types.iter().next(), Some(ty) if self.protocol_type(ty));
+            && matches!(ptr.generics.types.iter().next(), Some(ty) if self.protocol_type(ty))
+            // An adapter such as Rev<I> also has I as its first type argument.
+            // Only the nested mutable receiver belongs to reference forwarding.
+            && matches!(call.args.as_slice(), [argument]
+                if matches!(argument.ty().kind(), a::TyKind::Ref(_, pointee, a::RefKind::Mut)
+                    if matches!(pointee.kind(), a::TyKind::Ref(_, iterator, a::RefKind::Mut)
+                        if self.protocol_type(iterator))));
         if !into && !next {
             return Ok(None);
         }
