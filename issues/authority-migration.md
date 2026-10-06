@@ -369,7 +369,7 @@ that custody and authority. Count recovers the declared field schema through
 an immutable indexed import map. Regressions retain two distinct members with
 equal arguments, and forward-declared List functions preserve Count observations
 across calls. Negatives reject missing authority, exact totals invented from
-local ownership, and imported named lifecycle operations. Kernel checks enforce
+local ownership, and unsupported imported named lifecycle operations. Kernel checks enforce
 read-only imports and bounded lookup work beside growing unrelated populations.
 Wildcard helpers preserve aggregate and exact observations while other named
 members stay framed; an authority-only helper preserves them with all members
@@ -380,7 +380,7 @@ and named occurrences through the shared checked call engine. They cannot birth
 or spend named members, replace identity, or introduce anonymous lifecycle
 rights. Regressions retain unary/wildcard counts and List-valued fields, and
 reject missing authority, duplicate binders, another anchor, and consumption.
-Body-opening lifecycle effects remain unsupported. The two original field-count
+Named lifecycle transfers at these assumed interfaces remain unsupported. The two original field-count
 controls now select authority and pass: the external interface retains its
 original count precondition with named custody, and the forward-declared pure
 function keeps its List-valued count body. A caller exercises sealed private
@@ -389,12 +389,26 @@ hidden observations and calls when authority is closed, including after a prior
 authorized observation. The external reader remains an explicit assumption;
 this does not certify its absent C body.
 
+**Unary named consumption at standalone entries:** Checked unfolds record exact
+member identities and relative deaths without assuming that locally owned
+members exhaust the imported population. Input-clause receipts do not restore
+live custody. Source regressions cover unfolds before and after C execution,
+checked body facts, and a framed named member. False totals, closed authority,
+missing deaths, and partially checked consumption are rejected. Return-rewrite
+certificates check the requested direction and independently recheck body facts
+and the ledger; repeated folds remain rejected. Kernel regressions cover
+identity, duplicate death, equal-field distinct occurrences, no anonymous
+custody, and logarithmic indexed work beside 16/64/256 unrelated imports.
+Named creation, wildcard named lifecycle operations, and caller-side named
+consumption transfers remain guarded. This does not close milestone three.
+
 **List-valued named fields:** Protected resource types and named member lowering
 now share checked algebraic field schemas. A private-memory preserving helper
 proof retains two distinct List values while authority is closed, and observes
 counts after reopening it. Negatives reject anonymous field-bearing quantities,
 missing count authority, and incorrect model types. The original field-count controls now use authority with preserving external
-interfaces; imported body opening still needs lifecycle effects. Unary and wildcard preserving authority imports are supported
+interfaces; imported body opening beyond standalone unary consumption still needs
+checked lifecycle effects. Unary and wildcard preserving authority imports are supported
 by the slice above. This slice does not add named helper
 lifecycle effects or sums over model fields.
 

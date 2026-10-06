@@ -6249,20 +6249,21 @@ fn trace_completion(
                                 );
                             }
                         }
-                        let checked_state =
-                            crate::kernel::rewrite_resource_instance_selecting_children(
-                                state,
-                                instance,
-                                &rewrite.definition,
-                                function.composite_resource_definitions(),
-                                executed_under,
-                                false,
-                                rewrite.selected_children.as_deref(),
-                            )
-                            .map_err(
-                                |_| "return fold body is not justified on this execution path",
-                            )?
-                            .state;
+                        let unfold = state
+                            .resources()
+                            .owned_instance(instance.identity())
+                            .is_some();
+                        let checked = crate::kernel::rewrite_resource_instance_selecting_children(
+                            state,
+                            instance,
+                            &rewrite.definition,
+                            function.composite_resource_definitions(),
+                            executed_under,
+                            unfold,
+                            rewrite.selected_children.as_deref(),
+                        )
+                        .map_err(|_| "return fold body is not justified on this execution path")?;
+                        let checked_state = checked.state;
                         if !checked_state
                             .resources
                             .same_exchange_from(&rewrite.after_state.resources, &state.resources)
@@ -6270,16 +6271,23 @@ fn trace_completion(
                                 &rewrite.after_state.instance_field_scope,
                                 &state.instance_field_scope,
                             )
+                            || checked_state.population_effects.creation
+                                != rewrite.after_state.population_effects.creation
                         {
                             return Err(
                                 "return fold does not match this path's checked resource exchange",
                             );
                         }
+                        if unfold {
+                            for fact in checked.semantic_facts {
+                                *executed_under =
+                                    std::mem::take(executed_under).assume_proposition(fact);
+                            }
+                        }
                     }
                     *state = rewrite.after_state.clone();
-                    // Folding introduces no pure facts. In particular, do not
-                    // publish a proof snapshot's entire assumption context as
-                    // facts of this path.
+                    // Only the rechecked unfold's checked body facts enter this
+                    // path, never a proof snapshot's entire assumption context.
                 }
             }
             CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
@@ -8392,10 +8400,12 @@ impl ExecutionProofCore {
             before_facts,
             selected,
             after_facts,
+            false,
             None,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record_return_resource_rewrite_with_children(
         &mut self,
         function: &CFunction,
@@ -8403,6 +8413,7 @@ impl ExecutionProofCore {
         before_facts: &ProofFacts,
         selected: &CResourceFact,
         after_facts: &ProofFacts,
+        unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<(), String> {
         if !self.evidence_completed {
@@ -8455,7 +8466,7 @@ impl ExecutionProofCore {
             definition,
             function.composite_resource_definitions(),
             before_facts.assumptions(),
-            false,
+            unfold,
             selected_children.as_deref(),
         )
         .map_err(|refusal| refusal.describe())?

@@ -27,5 +27,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: named member fold/unfold at imported authority entries is not supported yet
+fail: helper consumption of named population members requires checked authority effects
 ```
