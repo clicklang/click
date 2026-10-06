@@ -155,6 +155,7 @@ if [[ -n "$ci_artifacts" ]]; then
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
     tar -cf "$ci_artifacts/rust-exporter.tar" \
         -C "$(dirname "$CLICK_RUST_EXPORTER")" "$(basename "$CLICK_RUST_EXPORTER")"
+    scripts/rust-exporter-runtime.sh pack "$ci_artifacts/rust-runtime.tar.gz"
     exit 0
 fi
 

@@ -165,7 +165,9 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                 SpecIntegerExpression::Negate(inner) => pending.push(Node::Integer(inner)),
                 SpecIntegerExpression::Add(left, right)
                 | SpecIntegerExpression::Subtract(left, right)
-                | SpecIntegerExpression::Multiply(left, right) => {
+                | SpecIntegerExpression::Multiply(left, right)
+                | SpecIntegerExpression::TruncatingQuotient(left, right)
+                | SpecIntegerExpression::TruncatingRemainder(left, right) => {
                     pending.extend([Node::Integer(left), Node::Integer(right)]);
                 }
                 SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
@@ -297,6 +299,43 @@ mod tests {
             right: SpecIntegerExpression::Term(IntegerTerm::constant(0.into())),
         };
         assert!(observes_resource_state(&integer));
+    }
+
+    #[test]
+    fn truncation_operands_preserve_predicate_resource_dependencies() {
+        for remainder in [false, true] {
+            for count_on_left in [false, true] {
+                for dependent in [false, true] {
+                    let observed = SpecIntegerExpression::FromMachine(Box::new(if dependent {
+                        count()
+                    } else {
+                        literal()
+                    }));
+                    let constant = SpecIntegerExpression::Term(IntegerTerm::constant_i64(3));
+                    let (left, right) = if count_on_left {
+                        (observed, constant)
+                    } else {
+                        (constant, observed)
+                    };
+                    let expression = if remainder {
+                        SpecIntegerExpression::TruncatingRemainder(Box::new(left), Box::new(right))
+                    } else {
+                        SpecIntegerExpression::TruncatingQuotient(Box::new(left), Box::new(right))
+                    };
+                    let body = SpecProposition::IntegerComparison {
+                        left: expression,
+                        operator: IntegerComparisonOperator::Equal,
+                        right: SpecIntegerExpression::Term(IntegerTerm::constant_i64(0)),
+                    };
+                    let registered = CPredicateUnfolding::new(predicate(false), body);
+                    assert!(
+                        matches!(registered.predicate(), SpecProposition::Predicate {
+                        resource_state_dependent, ..
+                    } if *resource_state_dependent == dependent)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

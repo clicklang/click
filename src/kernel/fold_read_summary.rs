@@ -433,6 +433,10 @@ impl BodyChecker<'_> {
                 self.integer(left, scope)?;
                 self.integer(right, scope)
             }
+            SpecIntegerExpression::TruncatingQuotient(_, _)
+            | SpecIntegerExpression::TruncatingRemainder(_, _) => {
+                Err(Self::unsupported("a deferred truncating division"))
+            }
             SpecIntegerExpression::RangeFold { .. } => Err(Self::unsupported("a nested fold")),
             SpecIntegerExpression::PureFunctionApplication { .. } => {
                 Err(Self::unsupported("a function call"))

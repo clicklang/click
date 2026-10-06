@@ -245,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 38;
+    artifact["schema"] = 39;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -2240,9 +2240,13 @@ private:
       const bool signed_wide_product = wide &&
           binary->getOpcode() == clang::BO_Mul &&
           binary->getType()->isSignedIntegerType();
-      if (wide && !signed_wide_product) {
+      const bool wide_division = wide &&
+          (binary->getOpcode() == clang::BO_Div ||
+           binary->getOpcode() == clang::BO_Rem);
+      const bool supported_wide_arithmetic = signed_wide_product || wide_division;
+      if (wide && !supported_wide_arithmetic) {
         fail(binary->getOperatorLoc(),
-             "C++ wide arithmetic supports checked signed multiplication only; wide comparisons are unsupported");
+             "C++ wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only; wide comparisons are unsupported");
         return std::nullopt;
       }
       if (binary->getOpcode() == clang::BO_Add ||
@@ -2253,7 +2257,7 @@ private:
         if (!binary->getType()->isIntegerType() ||
             (context_.getTypeSize(binary->getType()) != 32 &&
              context_.getTypeSize(binary->getType()) != 64 &&
-             !signed_wide_product)) {
+             !supported_wide_arithmetic)) {
           fail(binary->getOperatorLoc(),
                "C++ arithmetic requires signed/unsigned 32/64-bit operands; "
                "pointer "

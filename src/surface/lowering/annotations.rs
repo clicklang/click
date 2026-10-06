@@ -3955,7 +3955,9 @@ impl AnnotationLowerer<'_> {
                 }
                 result_type
             }
-            ContractExpression::Call { name, .. } if name == "to_integer" => {
+            ContractExpression::Call { name, .. }
+                if name == "to_integer" || is_integer_truncation(name) =>
+            {
                 Some(ClickType::Integer)
             }
             ContractExpression::Call { name, .. } => self
@@ -4115,6 +4117,34 @@ impl AnnotationLowerer<'_> {
             return Ok(value.clone());
         }
         match expression {
+            ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+                let (left, right) = integer_truncation_arguments(name, arguments)?;
+                let left = self.lower_contract_integer_to_spec(left, environment)?;
+                let right = self.lower_contract_integer_to_spec(right, environment)?;
+                // Only a pure, nonzero constant divisor removes the domain check.
+                // Deferred operand effects must survive surrounding simplification.
+                if let (SpecIntegerExpression::Term(a), SpecIntegerExpression::Term(b)) =
+                    (&left, &right)
+                    && b.as_const()
+                        .is_some_and(|b| b != &num_bigint::BigInt::from(0))
+                {
+                    check_integer_lowering_work(
+                        integer_root_work(a).saturating_mul(integer_root_work(b)),
+                    )?;
+                    return Ok(SpecIntegerExpression::Term(
+                        if name == "truncating_quotient" {
+                            crate::kernel::IntegerTerm::truncating_quotient(a.clone(), b.clone())
+                        } else {
+                            crate::kernel::IntegerTerm::truncating_remainder(a.clone(), b.clone())
+                        },
+                    ));
+                }
+                Ok(if name == "truncating_quotient" {
+                    SpecIntegerExpression::TruncatingQuotient(Box::new(left), Box::new(right))
+                } else {
+                    SpecIntegerExpression::TruncatingRemainder(Box::new(left), Box::new(right))
+                })
+            }
             ContractExpression::Call { name, arguments } if name != "to_integer" => {
                 let definition = self
                     .click_function_environment
@@ -4275,9 +4305,10 @@ impl AnnotationLowerer<'_> {
                                 access.click_type == Some(ClickType::Integer)
                             }
                             ContractExpression::Call { name, .. } => {
-                                functions.get(name).is_some_and(|function| {
-                                    function.return_type() == &ClickType::Integer
-                                })
+                                is_integer_truncation(name)
+                                    || functions.get(name).is_some_and(|function| {
+                                        function.return_type() == &ClickType::Integer
+                                    })
                             }
                             ContractExpression::Add(left, right)
                             | ContractExpression::Subtract(left, right)
