@@ -8754,9 +8754,7 @@ impl Parser {
                 explicit_qualification: false,
             }));
         }
-        if self.peek() == Some(&Token::LParen)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64"))
-        {
+        if self.starts_contract_scalar_cast() {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let target_type = self.parse_type()?.c_type.to_kernel_type();
@@ -10237,7 +10235,15 @@ impl Parser {
             )
     }
 
+    fn starts_contract_scalar_cast(&self) -> bool {
+        self.peek() == Some(&Token::LParen)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64" | "int64" | "int128" | "uint128"))
+    }
+
     fn parenthesized_atom_continues_as_contract_expression(&self) -> bool {
+        if self.starts_contract_scalar_cast() {
+            return true;
+        }
         let Some(close) = self
             .matching_parentheses
             .get(self.position)

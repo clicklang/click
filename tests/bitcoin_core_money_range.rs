@@ -85,7 +85,10 @@ fn check_upstream_cpp(
         "dependencies": [integer_header, "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
         "function": selected, "artifact": format!("{name}.click-cpp.json")
     });
-    if matches!(name, "FeeFracDivConstevalRefused" | "FeeFracDivImported") {
+    if matches!(
+        name,
+        "FeeFracDivConstevalRefused" | "FeeFracDivImported" | "FeeFracDivBounded"
+    ) {
         const CHECK_HASH: &str = "82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7";
         let header = "bitcoin-src/src/util/check.h";
         assert_eq!(sha256(&fs::read(root.join(header)).unwrap()), CHECK_HASH);
@@ -99,7 +102,7 @@ fn check_upstream_cpp(
             "function": "inline_assertion_check", "header": header, "sha256": CHECK_HASH
         }]);
     }
-    if name == "FeeFracDivImported" {
+    if matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
         const STRING_VIEW_HASH: &str =
             "9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c";
         let header = "sysroot/usr/include/c++/12/string_view";
@@ -126,7 +129,7 @@ fn check_upstream_cpp(
     let sidecar = root.join(format!("{name}.click"));
     fs::write(&sidecar, source).unwrap();
     let refreshed = refresh_import(&config_path);
-    if selected == "FeeFrac::Div" && name != "FeeFracDivImported" {
+    if selected == "FeeFrac::Div" && !matches!(name, "FeeFracDivImported" | "FeeFracDivBounded") {
         let error = refreshed.expect_err("the library Assume boundary must remain explicit");
         assert!(error.contains("export C++ source"), "{error}");
         if name == "FeeFracDivConstevalRefused" {
@@ -144,7 +147,7 @@ fn check_upstream_cpp(
     let import = load_import(&config_path).unwrap();
     assert_eq!(import.export().preprocessor_files.len(), 320);
     assert!(import.export().reachable_functions.is_empty());
-    if selected == "FeeFrac::Div" {
+    if selected == "FeeFrac::Div" && name != "FeeFracDivBounded" {
         use click::languages::cpp::{CppLibraryMetadata, CppLiteralMetadataBinding, CppStatement};
         let CppStatement::LibraryAssert { metadata, .. } = &import.export().function.body[0] else {
             panic!("retained upstream annotation")
@@ -218,7 +221,10 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     let project = read_click_project(&sidecar, source).unwrap();
     verify_program_prepared_project(&project, &import)
         .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
-    if matches!(selected, "GetSizeOfCompactSize" | "FeeFrac::Mul") {
+    if matches!(
+        selected,
+        "GetSizeOfCompactSize" | "FeeFrac::Mul" | "FeeFrac::Div"
+    ) {
         let sites = program_prepared_project_smart_tactic_source_sites(&project, &import).unwrap();
         let first = sites.first().unwrap();
         let position = program_prepared_project_tactic_source_position(
@@ -254,6 +260,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             .verify_at_project(&expanded, position.line, position.column)
             .expect("upstream retained audit agrees");
         let false_source = source
+            .replace("ensures 0 == 0;", "ensures 0 == 1;")
             .replace("ensures result ==", "ensures result !=")
             .replace(
                 "ensures to_integer(result) ==",
@@ -266,6 +273,32 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
             "{}",
             error.message()
         );
+    }
+
+    if name == "FeeFracDivBounded" {
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &project,
+            &import,
+            "FeeFrac_Div.ensures_0",
+        )
+        .unwrap();
+        verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+        for hostile in [
+            source.replace("requires -100 <= to_integer(n);", ""),
+            source.replace("requires to_integer(n) <= 100;", ""),
+            source.replace("requires d > 0;", ""),
+            source.replace("requires d <= 100;", ""),
+            source.replace("requires d > 0;", "requires d == 0;"),
+            source.replace("ensures 0 == 0;", "ensures result == 1000i64;"),
+            source.replace(
+                "integer_cast_identity bounds [0, 1]",
+                "integer_cast_identity bounds [1, 0]",
+            ),
+        ] {
+            let parsed = read_click_project(&sidecar, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().len() < 8000);
+        }
     }
     if selected == "FeeFrac::Mul" {
         assert!(import.export().records.is_empty());
@@ -781,5 +814,14 @@ fn pinned_upstream_compact_size_9_reexports_and_verifies() {
         include_str!("../integrations/bitcoin-core-money-range/CompactSize9.click"),
         "bitcoin-src/src/serialize.h",
         "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h",
+    );
+}
+
+#[test]
+fn upstream_fee_frac_div_bounded_native_correction_is_safe() {
+    check_upstream_fee_frac(
+        "FeeFrac::Div",
+        "FeeFracDivBounded",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"),
     );
 }

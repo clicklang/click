@@ -10137,3 +10137,63 @@ int64 relay(int128 a, int32* untouched) {
         }
     }
 }
+
+#[test]
+fn fee_rounding_pattern_has_checked_native_correction_bounds() {
+    for name in ["rounded", "caller"] {
+        let project = Project::with_fixture(
+            "round.cpp",
+            name,
+            include_str!("fixtures/cpp-verification/fee-rounding/round.cpp"),
+        );
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let mut proof =
+            include_str!("fixtures/cpp-verification/fee-rounding/Rounded.click").to_owned();
+        if name == "caller" {
+            proof.push_str(
+                r#"
+int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
+    requires -100 <= to_integer(n);
+    requires to_integer(n) <= 100;
+    requires d > 0;
+    requires d <= 100;
+    owns untouched[0..1];
+    ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#,
+            );
+            check_return_call_sidecar(&project, &import, &proof);
+        } else {
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+        let path = project.directory.join("complete.click");
+        fs::write(&path, &proof).unwrap();
+        let parsed = read_click_project(&path, &proof).unwrap();
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &parsed,
+            &import,
+            "rounded.ensures_0",
+        )
+        .unwrap();
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+        for hostile in [
+            proof.replace("requires -100 <= to_integer(n);", ""),
+            proof.replace("requires to_integer(n) <= 100;", ""),
+            proof.replace("requires d > 0;", ""),
+            proof.replace("requires d <= 100;", ""),
+            proof.replace("requires d > 0;", "requires d == 0;"),
+            proof.replace("ensures 0 == 0;", "ensures result == 1000i64;"),
+            proof.replace(
+                "integer_cast_identity bounds [0, 1]",
+                "integer_cast_identity bounds [1, 0]",
+            ),
+        ] {
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().len() < 8000);
+        }
+    }
+}

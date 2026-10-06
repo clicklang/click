@@ -712,4 +712,23 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn contract_scalar_casts_check_all_supported_widths_and_recheck_expansion() {
+        for ty in ["int32", "uint32", "int64", "uint64", "int128", "uint128"] {
+            let source = format!(
+                "theorem cast(x: {ty}) {{ ensures ({ty})x == x by {{ have ({ty})x == x by simp; assumption(); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded = expand_c0_claim_source_by_label(&source, &[], "cast.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("({ty})x"), &format!("({ty}*)x")),
+                source.replace(&format!("x: {ty}"), "x: Integer"),
+                source.replace(&format!("({ty})x"), &format!("({ty})old(x)")),
+                source.replace("== x", "!= x"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
 }

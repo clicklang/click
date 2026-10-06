@@ -573,10 +573,25 @@ assuming them. Complete proofs on the unchanged narrowing fixture cover both
 widths and a modular caller that frames unrelated memory, with expansion,
 reverification, retained audit, and hostile claims. Independent boundary models
 and forged standard-theorem declarations cover the shared kernel laws.
-The actual Bitcoin correction and complete rounding theorem remain open.
+The general Bitcoin correction and complete rounding theorem remain open.
 
-Next compose quotient/remainder observations, both narrowing identities, and the
-**narrow** correction bounds in the complete unchanged `FeeFrac::Div` proof. The
+A complete bounded safety proof now executes the unchanged pinned
+`FeeFrac::Div`, including both narrowing conversions and every short-circuit
+correction path. Its explicit input profile is `-100 <= to_integer(n) <= 100`
+and `0 < d <= 100`; quotient/remainder bounds are derived, transported through
+exact observations, checked against both cast destinations, and reflected into
+native correction bounds. The existing explicit assertion and literal
+constructor contracts remain assumptions about the library implementations.
+Full claim expansion/reverification, retained audit, hostile bounds/claims and
+certificate references, and the same synthetic pattern with a modular caller
+that frames unrelated memory have coverage. Shared contract scalar casts now
+name signed/unsigned 64- and 128-bit conversions and parse correctly on the left
+of comparisons. No exporter or kernel arithmetic change was needed.
+
+Next extend this bounded safety proof to useful input ranges and a functional
+rounding theorem for the complete unchanged `FeeFrac::Div`. Compose the exact
+narrowing observations with the final native addition and signed remainder
+correction; bounded safety is not yet a mathematical floor/ceiling theorem. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful

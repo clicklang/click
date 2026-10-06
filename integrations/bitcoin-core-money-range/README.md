@@ -261,11 +261,26 @@ and checked cast identities; they are pattern coverage, not a proof of this
 Bitcoin helper. Signed int32/int64 order reflection now restores native bounds
 from proved Integer comparisons; standalone checked narrowing proofs compose
 this bridge with cast identities and preserve a modular caller's unrelated
-memory. The general
-`FeeFrac::Div` theorem is not proved. Next compose quotient/remainder
-observations, both narrowing identities, and the **narrow**
-correction bounds. The general rounding theorem and `EvaluateFeeDown/Up` remain
-open.
+memory.
+
+[`FeeFracDivBounded.click`](FeeFracDivBounded.click) now verifies complete
+execution safety of the unchanged pinned helper under explicit
+`-100 <= to_integer(n) <= 100` and `0 < d <= 100` input bounds, for either value
+of `round_down`. The postcondition is deliberately trivial: successful proof
+checks every native operation and correction path, rather than asserting a
+mathematical rounding result. Both narrowing identities are proved from
+quotient/remainder intervals and their native correction bounds are restored
+with the signed observation bridges. The sidecar's import configuration retains
+the explicit pinned library assumptions described above. Full proof expansion
+reverifies; retained audit and hostile omitted input bounds, zero divisor,
+false result claims and swapped cast-certificate references have coverage.
+The standalone fixture retains the same correction pattern and verifies a
+modular caller with unrelated memory.
+
+The general `FeeFrac::Div` rounding theorem is not proved. Next extend the
+bounded safety profile and connect the final native addition and remainder
+correction to a mathematical floor/ceiling specification. `EvaluateFeeDown/Up`
+remain open.
 
 ## CompactSize encoded length
 
