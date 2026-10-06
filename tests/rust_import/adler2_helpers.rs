@@ -1,0 +1,255 @@
+use super::*;
+use sha2::{Digest, Sha256};
+
+const HELPERS: &str = include_str!("../../design/charon-trial/adler2/helpers.click");
+
+fn adler2_helpers_project() -> Project {
+    let p = Project::new("");
+    fs::create_dir(p.root.join("src")).unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../design/rust-checksum-sources.json")).unwrap();
+    let pin = manifest["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["name"] == "adler2")
+        .unwrap();
+    for (name, bytes) in [
+        (
+            "src/lib.rs",
+            include_bytes!("../../design/charon-trial/adler2/src/lib.rs").as_slice(),
+        ),
+        (
+            "src/algo.rs",
+            include_bytes!("../../design/charon-trial/adler2/src/algo.rs").as_slice(),
+        ),
+    ] {
+        let file = pin["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == name)
+            .unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(bytes)), file["sha256"]);
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    for (name, bytes) in [
+        ("borrow.click", HELPERS.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../../design/charon-trial/adler2/helpers.click.import.json").as_slice(),
+        ),
+        (
+            "helpers.ullbc",
+            include_bytes!("../../design/charon-trial/adler2/helpers.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../../design/charon-trial/adler2/helpers.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+
+fn helper_proof(index: usize) -> String {
+    let blocks: Vec<_> = HELPERS.split("\n\n").collect();
+    assert_eq!(blocks.len(), 5);
+    format!("{}\n\n{}", blocks[0], blocks[index + 1])
+}
+
+fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let proof = helper_proof(index);
+    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    for (before, after) in mutations {
+        let invalid = proof.replace(before, after);
+        assert_ne!(invalid, proof, "missing mutation: {before}");
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    assert!(
+        prepared
+            .export()
+            .functions
+            .iter()
+            .any(|f| f.name.ends_with("_I7_compute") && f.mir.is_some())
+    );
+    C0VerificationSession::new_program_prepared(HELPERS, &prepared).unwrap();
+    // Module identity is checked even when all the proved helpers are unchanged.
+    fs::write(p.root.join("src/lib.rs"), "// changed crate root\n").unwrap();
+    assert!(
+        load_import(&p.config())
+            .unwrap_err()
+            .contains("lock differs")
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
+    reject_helper_contracts(
+        0,
+        &[
+            ("result._0[3] == bytes[3]", "result._0[3] == bytes[2]"),
+            ("requires bytes_len >= 4u64;", "requires bytes_len >= 3u64;"),
+            ("views bytes[0..4];", "views bytes[0..3];"),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
+    reject_helper_contracts(
+        1,
+        &[
+            (
+                "old(self->_0[3]) + other._0[3]",
+                "old(self->_0[3]) + other._0[2]",
+            ),
+            (
+                "requires ((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64;",
+                "",
+            ),
+            ("4294967295i64", "4294967296i64"),
+            (
+                "((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64",
+                "self->_0[3] + other._0[3] <= 4294967295u32",
+            ),
+            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
+    reject_helper_contracts(
+        2,
+        &[
+            ("old(self->_0[3]) % quotient", "old(self->_0[2]) % quotient"),
+            ("requires quotient != 0u32;", ""),
+            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
+    reject_helper_contracts(
+        3,
+        &[
+            ("old(self->_0[3]) * rhs", "old(self->_0[2]) * rhs"),
+            (
+                "requires rhs == 0u32 or self->_0[3] <= 4294967295u32 / rhs;",
+                "",
+            ),
+            ("owns self->_0[0..4];", "views self->_0[0..4];"),
+        ],
+    );
+}
+
+fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {
+    let p = adler2_helpers_project();
+    let proof = helper_proof(index);
+    let claim = proof
+        .lines()
+        .find(|line| line.starts_with("struct ") || line.starts_with("void "))
+        .unwrap()
+        .split_once('(')
+        .unwrap()
+        .0
+        .split_whitespace()
+        .last()
+        .unwrap();
+    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    for command in commands {
+        assert_cli(&p, &[command]);
+    }
+    if expand {
+        assert_cli(
+            &p,
+            &[
+                "expand",
+                "--claim",
+                &format!("{claim}.contract"),
+                "--in-place",
+            ],
+        );
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn charon_adler2_helpers_from_tools_recheck_expanded_certificate() {
+    recheck_helper_tools(0, &["verify", "profile", "audit"], true);
+}
+#[test]
+fn charon_adler2_helpers_add_tools_recheck_expanded_certificate() {
+    recheck_helper_tools(1, &["verify", "profile", "audit"], true);
+}
+#[test]
+fn charon_adler2_helpers_rem_tools_recheck_expanded_certificate() {
+    recheck_helper_tools(2, &["verify", "profile", "audit"], true);
+}
+#[test]
+fn charon_adler2_helpers_mul_profile_checks_verified_contract() {
+    recheck_helper_tools(3, &["verify", "profile"], false);
+}
+fn audit_mul_site(tactic: &str) {
+    let p = adler2_helpers_project();
+    let proof = helper_proof(3);
+    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    let prefix = proof.split_once(tactic).unwrap().0;
+    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let column = prefix.rsplit('\n').next().unwrap().len() + 1;
+    let cursor = format!("{}:{line}:{column}", p.root.join("borrow.click").display());
+    // Each site still expands, rechecks retained/cold proofs, and checks its
+    // fixed point. Bound the audit to one site so timings name that site.
+    let result = p.cli(&["audit", "--start-at", &cursor, "--max-sites", "1"]);
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        result.status.success(),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        stdout.contains("SUMMARY: 1 sites passed; 0 site failures; 0 session failures;"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_mul_audit_execute_certificate() {
+    audit_mul_site("execute()");
+}
+#[test]
+fn charon_adler2_helpers_mul_audit_simp_certificate() {
+    audit_mul_site("simp()");
+}
+#[test]
+fn charon_adler2_helpers_mul_tools_recheck_expanded_certificate() {
+    recheck_helper_tools(3, &["verify"], true);
+}
+
+#[test]
+#[ignore = "requires the pinned live Charon extractor"]
+fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
+    let p = adler2_helpers_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = std::env::var("CLICK_CHARON").unwrap().into();
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
+        .unwrap();
+}

@@ -8755,7 +8755,7 @@ impl Parser {
             }));
         }
         if self.peek() == Some(&Token::LParen)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64"))
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64" | "int64"))
         {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;

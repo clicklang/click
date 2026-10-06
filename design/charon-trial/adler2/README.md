@@ -1,130 +1,88 @@
 # Unchanged adler2 crate adapter trial
 
-Run on 2026-10-06 against the native Charon backend. **The crate does not yet
-pass through Click's checked adapter. No Adler-32 postcondition is verified.**
+Click imports the complete selection rooted at `adler2::adler32_slice` and
+proves the four-lane helper bodies. **The Adler-32 checksum postcondition
+remains unproved.**
 
 The two files in `src/` are byte-for-byte copies of adler2 2.0.1, revision
-`89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the existing
+`89a031a0f42eeff31c70dc598b398cbf31f1680f`. Their hashes match the
 [source manifest](../../rust-checksum-sources.json). The original 0BSD license
 is included. Neither modules, derives, methods, operators, nor loops were edited.
 
-## Observed pipeline
+## Current checked boundary
 
-| Stage | Result |
+Schema 4 locks the Rust-2021 crate root, `std` feature, selected entry point,
+and complete rustc dep-info closure. Both module files enter the prepared
+identity. Missing, extra, changed, escaping, or symlinked inputs are rejected.
+Qualified declaration identities distinguish module functions, inherent
+methods, and concrete assignment-operator implementations.
+
+The `click-charon-crate-v4` adapter imports the original reachable computation,
+including `Adler32::compute`. Constructor regressions prove that the actual
+`Adler32::default` and `Adler32::new` bodies return `a = 1`, `b = 0`. Scalar
+initializer contracts prove `MOD = 65521` and `CHUNK_SIZE = 22208` by executing
+their imported CFGs.
+
+The [helper sidecar](helpers.click) uses the [locked configuration](helpers.click.import.json)
+and native Charon artifact to prove every lane of these original helpers:
+
+| Body | Contract |
 | --- | --- |
-| Source identity | Both original source hashes match |
-| Selected extraction | Succeeds with edition 2021, `std`, and `adler2::adler32_slice` |
-| Native MIR selection | Optimized MIR, precise drops, reconstructed fallible operations |
-| Extracted computation | 15 bodies including glue; `compute` has 94 blocks |
-| Production import | Rejects with `Charon trial requires exactly one locked source file` |
-| Artifact and lock publication | Neither is published |
-| Checked lowering and proof | Not reached |
+| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte |
+| `AddAssign<Self>` | Each widened lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand |
+| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor |
+| `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |
 
-The [result record](result.json) contains the exact compiler/extractor profile,
-body shapes, and file identities. The selected extraction uses the production
-MIR transforms, but its edition, feature, and root selection are **not supported
-production configuration fields**. The production attempt instead uses its
-fixed edition 2024, no feature flags, and all local items. These are distinct
-experiments; successful selected extraction does not establish configuration
-parity or successful adaptation.
+Mutating helpers require ownership of all four receiver lanes. Addition uses
+`(int64)` contract casts to express the exact Rust overflow guard; it permits
+the full safe u32 domain. Multiplication's disjunction includes a zero multiplier
+without evaluating division by zero. These proofs establish the access and
+panic prerequisites in the helper bodies, conditional on their contracts.
+They do not establish that the checksum loops satisfy those contracts.
 
-Unlike the older elaborated-MIR extraction assessment, this run uses the
-native adapter's optimized-MIR selection. Its smaller block count is not
-evidence of checksum verification.
+Frozen and live regressions check the original source hashes, prove all four
+helpers, and reject false lane claims, short reads, missing safety guards,
+wrapping addition bounds, and mutation under a shared view. CLI verification,
+profiling, auditing, and expanded certificates must agree.
 
 ## Reproduce
 
-Build Click and pinned Charon with the normal repository setup. Run the live
-regression, which checks source hashes, invokes the real production refresh,
-and requires rejection before publishing an artifact or lock:
+Build Click and pinned Charon with the normal repository setup. The frozen
+artifact verifies without extracting again:
+
+```sh
+target/debug/click verify design/charon-trial/adler2/helpers.click
+```
+
+Refresh the entire selected crate through the production adapter:
+
+```sh
+target/debug/click import lock design/charon-trial/adler2/helpers.click
+```
+
+The configured exporter path is relative to this directory. Run the focused
+live regression to refresh a private copy and reprove the original helper bodies:
 
 ```sh
 export CLICK_CHARON="$PWD/target/charon/debug/charon"
 cargo nextest run --test rust_import --run-ignored only \
-  -E 'test(charon_adler2_crate_trial_rejects_unlocked_module_closure)'
+  -E 'test(charon_adler2_helpers_live_refresh_proves_original_bodies)'
 ```
 
-To reproduce the selected extraction, create a fresh output directory and run:
+## Remaining proof work
 
-```sh
-trial_output=$(mktemp -d)
-target/charon/debug/charon rustc \
-  --ullbc --mir optimized --precise-drops \
-  --reconstruct-fallible-operations --sysroot default \
-  --opaque core --opaque alloc --opaque std --error-on-warnings \
-  --start-from adler2::adler32_slice \
-  --dest-file "$trial_output/adler2.ullbc" -- \
-  "$PWD/design/charon-trial/adler2/src/lib.rs" \
-  --crate-name adler2 --crate-type lib --edition 2021 \
-  --target x86_64-unknown-linux-gnu \
-  -Cpanic=abort -Coverflow-checks=on -Zmir-opt-level=0 \
-  --cfg 'feature="std"'
-```
+Compose the helper contracts with the nested chunks/remainder loop invariants,
+including lane bounds and byte accounting, then connect the original computation
+to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
+Successful import and helper proofs alone do not establish checksum correctness
+or whole-loop panic freedom.
 
-## Next adapter boundary
+## Historical trial
 
-First add an explicit, locked crate configuration: crate root, edition,
-features, selected roots, and the complete compiler-observed source closure.
-Changes to either module must invalidate a prepared import. Reject missing,
-extra, changed, or escaping source inputs before publishing outputs.
-
-Do not identify that closure by `crate_name` alone. This run also contains a
-virtual `adler2` source from the standard library's dependencies, alongside the
-two local target files. Its same-name crate is a different compilation unit.
-Use compiler file/declaration ownership and paths, and lock dependencies
-through the compiler/runtime identity rather than treating them as target files.
-
-Next preserve qualified declaration identities for `algo::U32X4`, inherent
-methods, and trait implementations. The checksum path reaches the concrete
-`Default` constructor, `U32X4::from`, and its assignment operators. These
-bodies require checked interpretation; accepting methods by their final name
-or assuming the checksum result would bypass the trial's purpose.
-
-Only after the original reachable computation adapts can sidecars establish
-access bounds, no panic, byte preservation, termination, and the shared
-Adler-32 specification described in the [checksum assessment](../../rust-checksum-assessment.md).
-
-## Follow-up: locked crate inputs
-
-Schema 4 provides the crate root, edition, features, selected roots, and
-complete rustc dep-info closure. Earlier crate increments reached the concrete
-`Default` constructor, then by-value `U32X4` operator operands, then scalar
-constant initializers. The current
-`charon_adler2_locked_crate_imports_compute_and_proves_constants` live
-regression imports the complete original selection with Rust 2021 and `std`.
-The separate `charon_adler2_unchanged_constructor_returns_initialized_state`
-regression selects `Adler32::new`, imports its actual `Default` body, and
-proves both functions return `a = 1`, `b = 0` using ordinary aggregate-return
-contracts. False initialized-field claims are rejected. The result record
-above remains the historical single-file trial.
-
-Multi-module regressions prove separate same-named functions and an inherent
-method call, including a false-claim negative. Changes to an unreachable
-module invalidate the lock. Crate configuration changes, missing or extra
-files, path escapes, and symlinks are rejected.
-
-### Owned operator operand follow-up
-
-Schema-4 `click-charon-crate-v3` imports by-value flat-record operator operands
-and preserves compiler Copy/Move events through fresh kernel aggregate
-parameter storage. At that version, the unchanged full-loop selection passed operator identity
-registration and rejected local constant/global initializer bodies
-(`MOD` and `CHUNK_SIZE`) before publishing an artifact or lock. The checksum
-postcondition remains unproved. Constructor proofs continue to pass; synthetic
-four-lane operator and ordinary-call regressions verify values, copy
-independence, moves, and destructor-bearing parameters.
-
-### Checked scalar constant follow-up
-
-Schema-4 `click-charon-crate-v4` imports the unchanged full selection rooted at
-`adler2::adler32_slice`, including `Adler32::compute`, and writes an artifact
-and lock that load as prepared input. The local `MOD` and `CHUNK_SIZE`
-initializers execute their imported scalar CFGs; checked contracts prove
-65521 and 22208, and a false modulus claim is rejected. The vendored Rust
-source remains unchanged. The earlier constant rejection boundary above is
-resolved.
-
-The checksum postcondition remains unproved. Next prove the imported four-lane
-helpers and compose their contracts with nested chunks/remainder loop
-invariants and the common checksum specification. Successful import alone
-does not establish arithmetic safety or checksum correctness.
+The [result record](result.json) preserves the initial 2026-10-06 single-file
+trial. Selected native extraction succeeded, but production schema 3 rejected
+the two-file crate before publishing an artifact or lock. Schema 4 resolved
+that input boundary; subsequent increments added checked constructors, by-value
+operator operands, and scalar constant initializers. The historical result's
+rejection is not the current adapter status. Schema-3 configurations retain
+their single-file interpretation.

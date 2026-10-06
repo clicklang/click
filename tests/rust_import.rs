@@ -3642,3 +3642,6 @@ mod adler2_trial;
 
 #[path = "rust_import/crate_inputs.rs"]
 mod crate_inputs;
+
+#[path = "rust_import/adler2_helpers.rs"]
+mod adler2_helpers;

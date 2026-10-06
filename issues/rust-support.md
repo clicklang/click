@@ -869,6 +869,24 @@ statics, and cycles. Schema-3 semantics stay unchanged. Constant dependencies,
 branching initializers, trait/generic constants, references and const-fn calls
 remain later work. The unchanged selection rooted at `adler2::adler32_slice`
 now produces and reloads a prepared import including `Adler32::compute`.
-Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. Next prove the
-imported lane helpers and compose nested chunks/remainder invariants with
-the shared checksum specification; checksum correctness remains unproved.
+Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. The helper increment
+below proves the imported lane bodies. Next compose nested chunks/remainder
+invariants with the shared checksum specification; checksum correctness
+remains unproved.
+
+### Original adler2 lane helper proofs
+
+The locked full-crate fixture now proves the unchanged `U32X4::from`,
+`AddAssign<Self>`, `RemAssign<u32>`, and `MulAssign<u32>` bodies, with all four
+lane postconditions. Contracts retain the full safe u32 arithmetic domain:
+signed 64-bit widening states addition guards, nonzero divisors protect
+remainder, and quotient bounds permit multiplication including zero. Shared
+byte views and receiver ownership protect reads and writes. Frozen/live source
+hash checks and false-claim, short-read, missing-guard, and authority negatives
+cover this boundary; verify/profile/audit and expanded certificates agree.
+No Rust source or Charon interpretation profile changes were needed.
+
+Next establish these helper preconditions from the original nested
+chunks/remainder loop invariants, preserve byte accounting, and connect the
+computation to the common Adler-32 specification. The checksum result and
+whole-loop panic freedom remain unproved.
