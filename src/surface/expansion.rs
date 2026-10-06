@@ -4845,11 +4845,13 @@ fn tactic_end_token(
                     // the tactic: `let { slot: child } = unfold(parent)`
                     // and `let { binder: instance } = step(...)`.
                     // `branch ensuring { ... } then { ... } else { ... }`
-                    // continues past its interface block.
+                    // and `if P ensuring { ... } then { ... } else { ... }`
+                    // continue past their interface block.
                     if !(matches!(continuation, Some("else" | "by" | "="))
                         || (tokens[start].text == "both" && continuation == Some("and"))
                         || (tokens[start].text == "match" && continuation == Some("{"))
-                        || (tokens[start].text == "branch" && continuation == Some("then")))
+                        || (matches!(tokens[start].text.as_str(), "branch" | "if")
+                            && continuation == Some("then")))
                     {
                         let terminator = if continuation == Some(";") {
                             cursor + 1

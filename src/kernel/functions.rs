@@ -8760,6 +8760,28 @@ pub(super) fn fresh_resource_instance_fields(
     Ok(fields.into_iter().collect())
 }
 
+/// The arbitrary model a join gives one named interface instance, drawn from
+/// the join's own fresh-variable counter. Returns the fields and the counter
+/// after them. It depends on nothing but its arguments, so the proof side
+/// and the kernel's check of the join arrive at the same fields.
+pub(crate) fn interface_join_instance_fields(
+    schema: &ResourceFieldSchema,
+    identity: Variable,
+    next_kernel_variable: u64,
+) -> Option<(ResourceArguments, u64)> {
+    let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
+    let fields = arbitrary_resource_instance_fields(
+        schema,
+        ModelFieldMintSite {
+            identity,
+            minted_by: &ModelMint::Join,
+        },
+        &mut budget,
+    )
+    .ok()?;
+    Some((fields, budget.next_kernel_variable()))
+}
+
 pub(super) fn arbitrary_resource_instance_fields(
     schema: &ResourceFieldSchema,
     site: ModelFieldMintSite<'_>,

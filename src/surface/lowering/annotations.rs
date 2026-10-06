@@ -2020,7 +2020,7 @@ fn loop_resource_declarations(
 /// a contract clause is reached from the function block. A loop binder lives
 /// inside a proof script and is reached only here, at the one place its
 /// declaration is lowered.
-fn loop_resource_with_field_schema(
+pub(in crate::surface) fn loop_resource_with_field_schema(
     resource: &ResourceClause,
     resource_environment: &ResourceEnvironment,
 ) -> Result<ResourceClause, ClickError> {

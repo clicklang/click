@@ -4318,8 +4318,34 @@ fn check_interface_abstraction(
         }
     }
 
+    // A named interface instance carries a model the arms need not agree on.
+    // The successor must hold it with the fresh model this join mints, so
+    // nothing is known of that model beyond what the interface facts state.
+    let mut next_kernel_variable = abstract_then.next_kernel_variable;
+    for spec in interface_resource_specs {
+        let (Some(identity), Some(schema)) = (spec.instance_identity(), spec.instance_schema())
+        else {
+            continue;
+        };
+        let (expected, next) = crate::kernel::functions::interface_join_instance_fields(
+            schema,
+            identity,
+            next_kernel_variable,
+        )
+        .ok_or("a named interface resource could not be given a fresh model")?;
+        let fresh = joined_state
+            .resources()
+            .owned_instance(identity)
+            .is_some_and(|instance| instance.fields == expected);
+        if !fresh {
+            return Err(
+                "the interface successor does not hold a named resource with a fresh model",
+            );
+        }
+        next_kernel_variable = next;
+    }
     Ok(CheckedInterfaceAbstraction {
-        next_kernel_variable: abstract_then.next_kernel_variable,
+        next_kernel_variable,
         arm_interface_resources,
         introduced,
         interface_lowerings,

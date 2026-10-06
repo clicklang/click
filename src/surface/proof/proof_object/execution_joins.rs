@@ -727,6 +727,24 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
         };
+        // A named interface resource is a binder declared inside a proof
+        // script, so it gets its field schema here, where the interface is
+        // lowered, as a loop binder does. The certificate keeps the
+        // assertions as written.
+        let written_assertions = assertions;
+        let assertions = written_assertions
+            .iter()
+            .map(|assertion| match assertion {
+                ProofAssertion::Fact(_) => Ok(assertion.clone()),
+                ProofAssertion::Resource(resource) => {
+                    crate::surface::lowering::loop_resource_with_field_schema(
+                        resource,
+                        context.resource_environment,
+                    )
+                    .map(ProofAssertion::Resource)
+                }
+            })
+            .collect::<Result<Vec<_>, ClickError>>()?;
         // The cases of a proof `if` rejoin where they stand: at the program
         // point both arms reached, not after a C statement.
         let rejoins_cases = proof_case_condition.is_some();
@@ -1115,12 +1133,12 @@ impl<'a> Proof<'a> {
         let step = match proof_case_condition {
             Some(condition) => ProofStep::If {
                 condition,
-                ensuring: Some(assertions),
+                ensuring: Some(written_assertions),
                 then_proof: Box::new(then_view.certificate),
                 else_proof: Box::new(else_view.certificate),
             },
             None => ProofStep::Branch {
-                ensuring: Some(assertions),
+                ensuring: Some(written_assertions),
                 then_proof: Box::new(then_view.certificate),
                 else_proof: Box::new(else_view.certificate),
             },
