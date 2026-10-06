@@ -840,3 +840,21 @@ now prove their two initialized fields. The complete `adler32_slice` extraction
 next reaches unsupported by-value record assignment-operator operands
 (`U32X4`). Support those concrete operands and their moves before continuing
 the original computation and shared checksum proof; do not assume its result.
+
+### Owned record parameters and operator operands
+
+Schema-4 interpretation `click-charon-crate-v3` transports flat records by
+value through kernel aggregate parameters. Callees receive fresh independent
+storage, and checked call metadata distinguishes compiler moves from copies.
+Moves consume the live source; copies require plain scalar/array fields and
+no destructor, and retain a live source. Local copies use the same restrictions.
+Destructor-bearing moved parameters follow the existing compiler Drop CFG.
+Negative regressions cover missing or mismatched metadata, duplicate move
+consumption, and forbidden copies. Existing schema-3 locks retain their
+interpretation; older schema-4 crate envelopes require refresh.
+
+The unchanged adler2 selection now passes by-value U32X4 operator registration
+and next rejects its local constant/global initializer bodies. Add checked
+scalar local constants (`MOD`, `CHUNK_SIZE`) and their use in imported bodies,
+then reassess the untouched compute loop and shared checksum proof. Do not
+assume the checksum result or rewrite the crate to bypass a boundary.

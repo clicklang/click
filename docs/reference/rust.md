@@ -85,7 +85,7 @@ Extraction compiles a private snapshot of those bytes. The aggregate source
 hash covers every input, and configuration hashes bind the root, edition,
 features, and entry points. Ordinary loading rechecks the full closure
 without executing a compiler. Schema-4 artifacts use the versioned
-`click-charon-crate-v2` envelope; existing schema-3 locks keep their identity.
+`click-charon-crate-v3` envelope; existing schema-3 locks keep their identity.
 
 Module definitions and inherent methods retain compiler-resolved identities.
 Proof identifiers encode tagged, length-prefixed path components, so `a::read`,
@@ -99,7 +99,18 @@ Schema 4 supports by-value returns of supported flat records, including owned
 array fields and records with `Drop`. The concrete return layout enters the
 kernel's aggregate-return interface: field values copy into fresh caller
 storage, and Rust live flags transfer ownership once. Reference, array, and
-nested-record returns and by-value aggregate arguments remain unsupported.
+nested-record returns remain unsupported. By-value flat-record parameters use
+the kernel aggregate-parameter interface: each callee receives independent
+storage. Compiler moves consume the caller’s live value; compiler copies
+preserve it. Record copies require plain scalar or supported array fields
+and no destructor. These ownership events are checked at calls as well as
+local assignments. Array parameters by value remain unsupported.
+
+Contracts take owned parameters as `struct <record> input`. Use
+`old(input.field)` for entry values when the body modifies the parameter.
+Its private bytes have internal ownership and cannot be declared as contract
+input resources. Passing a pointer field still requires the pointee's own
+resource clauses; copying a record grants no ownership over its pointees.
 
 Concrete `core::default::Default` implementations on local records execute
 their imported bodies. Dispatch checks the standard diagnostic identity,
@@ -110,9 +121,10 @@ contracts use `struct <qualified-record> <function>(...)` and can state
 can use them.
 
 The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
-`a = 1`, `b = 0`. Selecting the complete checksum loop next rejects a by-value
-record operand of an assignment operator, before publishing an artifact or
-lock. General trait dispatch and arbitrary Rust crates remain outside the
+`a = 1`, `b = 0`. Concrete assignment operators also accept supported
+by-value record operands through the checked call interface. Selecting the
+complete checksum loop next rejects local constant initializers, before
+publishing an artifact or lock. General trait dispatch and arbitrary Rust crates remain outside the
 supported subset.
 
 ## Supported semantics
@@ -292,7 +304,7 @@ length; this does not enable non-byte slices or general library methods.
 Schema-3 single-file imports exclude modules and imports; schema 4 supports
 the locked module closure described above. Macros, semantic attributes,
 dependencies, unsafe code, general traits, type/const generics, heap
-allocation, aggregate parameters, reference returns, and other integer widths
+allocation, nested aggregate parameters, reference returns, and other integer widths
 are outside this slice. Unsupported syntax
 fails during extraction or direct lowering. This is not general Cargo-project
 support.
@@ -479,7 +491,7 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
-by-value aggregate arguments, nested aggregate returns, unstructured control flow, heap owners such
+nested aggregate arguments or returns, unstructured control flow, heap owners such
 as `Box`/`Vec`, and panic unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 

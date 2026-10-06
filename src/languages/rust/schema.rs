@@ -296,6 +296,11 @@ pub enum MirStatement {
         source: String,
         record: String,
     },
+    Copy {
+        target: String,
+        source: String,
+        record: String,
+    },
     EndStorage {
         local: String,
     },
@@ -319,9 +324,20 @@ pub enum MirTerminator {
     Call {
         function: String,
         arguments: Vec<Expression>,
+        #[serde(default)]
+        owned_arguments: Vec<OwnedArgument>,
         destination: String,
         target: usize,
     },
     Return,
     Unreachable,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct OwnedArgument {
+    pub index: usize,
+    pub local: String,
+    pub record: String,
+    pub moved: bool,
 }

@@ -156,7 +156,7 @@ fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
 
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
-fn charon_adler2_locked_crate_reaches_owned_operand_boundary() {
+fn charon_adler2_locked_crate_reaches_constant_initializer_boundary() {
     let p = Project::new("");
     for (name, bytes) in [
         (
@@ -177,7 +177,7 @@ fn charon_adler2_locked_crate_reaches_owned_operand_boundary() {
     })).unwrap()).unwrap();
     let error = refresh_import(&p.config()).unwrap_err();
     assert!(
-        error.contains("assignment operator operand (by-value aggregates remain later work)"),
+        error.contains("local constant/global initializer"),
         "{error}"
     );
     assert!(!p.root.join("crate.ullbc").exists());
@@ -318,6 +318,93 @@ fn charon_adler2_unchanged_constructor_returns_initialized_state() {
     assert!(
         C0VerificationSession::new_program_prepared(
             &proof.replace("result.a == 1", "result.a == 0"),
+            &prepared
+        )
+        .is_err()
+    );
+    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    let cli = p.cli(&["verify"]);
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+}
+
+#[test]
+fn rust_crate_owned_operator_operands_copy_and_move_independently() {
+    let p = Project::new("");
+    let source = r#"
+        #[derive(Copy, Clone)]
+        pub struct Packet { pub words: [u32; 4] }
+        impl core::ops::AddAssign<Self> for Packet {
+            fn add_assign(&mut self, other: Self) {
+                self.words[0] += other.words[0];
+                self.words[1] += other.words[1];
+                self.words[2] += other.words[2];
+                self.words[3] += other.words[3];
+            }
+        }
+        pub fn entry(x: u32) -> u32 {
+            let rhs = Packet { words: [x; 4] };
+            let saved = rhs;
+            let mut lhs = Packet { words: [0; 4] };
+            lhs += rhs;
+            lhs.words[0] = 9;
+            saved.words[3]
+        }
+        pub struct Token { pub n: u32 }
+        impl Drop for Token { fn drop(&mut self) { self.n = 9; } }
+        pub fn consume_token(token: Token) -> u32 { token.n }
+        pub fn drop_argument(x: u32) -> u32 { consume_token(Token { n: x }) }
+        pub struct Value { pub n: u32 }
+        pub fn consume(mut value: Value) -> u32 { value.n = 9; value.n }
+        pub fn moving(x: u32) -> u32 { let value = Value { n: x }; consume(value) }
+        pub fn copy_parameter(mut packet: Packet) -> u32 { packet.words[0] = 9; packet.words[0] }
+        pub fn independent(x: u32) -> u32 {
+            let packet = Packet { words: [x; 4] };
+            let _result = copy_parameter(packet);
+            packet.words[0]
+        }
+    "#;
+    fs::write(p.root.join("lib.rs"), source).unwrap();
+    fs::write(p.config(), serde_json::to_vec(&serde_json::json!({
+        "schema":4,"language":"rust","target":"x86_64-unknown-linux-gnu","source":"lib.rs",
+        "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
+        "crate":{"name":"demo","edition":"2021","features":[],"roots":["demo::entry","demo::moving","demo::independent","demo::drop_argument"],"files":["lib.rs"]}
+    })).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let packet = "__rust_q_I4_demo_I6_Packet";
+    let value = "__rust_q_I4_demo_I5_Value";
+    let operator = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|f| f.name.contains("_add_assign_value_"))
+        .unwrap();
+    let mut clauses = String::from("owns self->words[0..4];");
+    for index in 0..4 {
+        clauses.push_str(&format!("requires self->words[{index}] <= 1000u32; requires other.words[{index}] <= 1000u32; ensures self->words[{index}] == old(self->words[{index}]) + other.words[{index}];"));
+    }
+    let proof = format!(
+        r#"verifying "lib.rs";
+        void {}(struct {packet}* self, struct {packet} other) {{ {clauses} }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I5_entry(uint32 x) {{ requires x <= 1000u32; ensures result == x; }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I7_consume(struct {value} value) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I6_moving(uint32 x) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I14_copy_parameter(struct {packet} packet) {{ ensures result == 9u32; }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I11_independent(uint32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}
+        void __rust_q_I4_demo_I5_Token_drop(struct __rust_q_I4_demo_I5_Token* self) {{ owns self->n; ensures self->n == 9u32; }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I13_consume_token(struct __rust_q_I4_demo_I5_Token token) {{ ensures result == old(token.n); }} by {{ execute(); simp(); }}
+        uint32 __rust_q_I4_demo_I13_drop_argument(uint32 x) {{ ensures result == x; }} by {{ execute(); simp(); }}
+    "#,
+        operator.name
+    );
+    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &proof.replace("result == x", "result != x"),
             &prepared
         )
         .is_err()

@@ -103,3 +103,14 @@ Multi-module regressions prove separate same-named functions and an inherent
 method call, including a false-claim negative. Changes to an unreachable
 module invalidate the lock. Crate configuration changes, missing or extra
 files, path escapes, and symlinks are rejected.
+
+### Owned operator operand follow-up
+
+Schema-4 `click-charon-crate-v3` imports by-value flat-record operator operands
+and preserves compiler Copy/Move events through fresh kernel aggregate
+parameter storage. The unchanged full-loop selection passes operator identity
+registration and next rejects local constant/global initializer bodies
+(`MOD` and `CHUNK_SIZE`), before publishing an artifact or lock. The checksum
+postcondition remains unproved. Constructor proofs continue to pass; synthetic
+four-lane operator and ordinary-call regressions verify values, copy
+independence, moves, and destructor-bearing parameters.

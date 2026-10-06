@@ -958,17 +958,29 @@ impl BodyAdapter<'_, '_> {
                                     .collect::<Result<_, _>>()?,
                             })
                         }
-                        a::Rvalue::Use(a::Operand::Move(source), _)
-                            if self.adapter.ty(&source.ty)? == self.adapter.ty(&p.ty)? =>
-                        {
+                        a::Rvalue::Use(
+                            op @ (a::Operand::Move(source) | a::Operand::Copy(source)),
+                            _,
+                        ) if self.adapter.ty(&source.ty)? == self.adapter.ty(&p.ty)? => {
                             let a::PlaceKind::Local(source) = source.kind else {
                                 return Err(unsupported("partial move"));
                             };
-                            Some(S::Move {
-                                target: self.local(target)?,
-                                source: self.local(source)?,
-                                record: name,
-                            })
+                            if matches!(op, a::Operand::Copy(_)) {
+                                if !self.adapter.crate_mode {
+                                    return Err(unsupported("record copy outside crate imports"));
+                                }
+                                Some(S::Copy {
+                                    target: self.local(target)?,
+                                    source: self.local(source)?,
+                                    record: name,
+                                })
+                            } else {
+                                Some(S::Move {
+                                    target: self.local(target)?,
+                                    source: self.local(source)?,
+                                    record: name,
+                                })
+                            }
                         }
                         _ => return Err(unsupported("record constructor or move")),
                     }
@@ -1144,6 +1156,37 @@ impl BodyAdapter<'_, '_> {
                     let a::PlaceKind::Local(dest) = call.dest.kind else {
                         return Err(unsupported("projected call destination"));
                     };
+                    let mut owned_arguments = Vec::new();
+                    let arguments = call
+                        .args
+                        .iter()
+                        .enumerate()
+                        .map(|(index, op)| {
+                            if let Type::Record { name } = self.adapter.ty(op.ty())? {
+                                if !self.adapter.crate_mode {
+                                    return Err(unsupported(
+                                        "owned call operand outside crate imports",
+                                    ));
+                                }
+                                let (a::Operand::Move(place) | a::Operand::Copy(place)) = op else {
+                                    return Err(unsupported("owned constant call operand"));
+                                };
+                                let a::PlaceKind::Local(local) = place.kind else {
+                                    return Err(unsupported("projected owned call operand"));
+                                };
+                                let local = self.local(local)?;
+                                owned_arguments.push(out::OwnedArgument {
+                                    index,
+                                    local: local.clone(),
+                                    record: name,
+                                    moved: matches!(op, a::Operand::Move(_)),
+                                });
+                                Ok(E::Local { name: local })
+                            } else {
+                                self.operand(op)
+                            }
+                        })
+                        .collect::<Result<_, String>>()?;
                     T::Call {
                         function: self
                             .adapter
@@ -1151,11 +1194,8 @@ impl BodyAdapter<'_, '_> {
                             .get(&id)
                             .ok_or_else(|| unsupported("unmodeled external call"))?
                             .clone(),
-                        arguments: call
-                            .args
-                            .iter()
-                            .map(|op| self.operand(op))
-                            .collect::<Result<_, _>>()?,
+                        arguments,
+                        owned_arguments,
                         destination: self.local(dest)?,
                         target: target.index(),
                     }
@@ -1349,6 +1389,9 @@ pub(super) fn decode_crate(
                 }
                 format!("{}_drop", adapter.records[&rec])
             }
+            a::FunSource::GlobalInitializer(_) => {
+                return Err(unsupported("local constant/global initializer"));
+            }
             _ => return Err(unsupported("function source")),
         };
         if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
@@ -1512,6 +1555,9 @@ pub(super) fn decode_crate(
                 span: span(local.span),
             };
             if param {
+                if !adapter.crate_mode && matches!(place.value_type, Type::Record { .. }) {
+                    return Err(unsupported("owned record parameter outside crate imports"));
+                }
                 parameters.push(place);
             } else {
                 locals.push(place);
