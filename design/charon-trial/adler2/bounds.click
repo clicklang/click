@@ -249,3 +249,80 @@ theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {
         arithmetic() using { a <= 65520 + 255 * n; byte <= 255; }
     }
 }
+
+theorem adler_lane_triangle_successor(n: Integer) {
+    requires 0 <= n;
+    requires n <= 5551;
+    ensures adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1) by {
+        have 1 <= n + 1 by { arithmetic() using { 0 <= n; } }
+        have n + 1 <= 5552 by { arithmetic() using { n <= 5551; } }
+        have 0 <= n + 1 by { arithmetic() using { 0 <= n; } }
+        have 0 <= n * (n + 1) by {
+            arithmetic_certificate special {
+                premise 0: 0 <= n => 0 <= n;
+                premise 1: n <= 5551 => n <= 5551;
+                premise 2: 1 <= n + 1 => 1 <= n + 1;
+                premise 3: n + 1 <= 5552 => n + 1 <= 5552;
+                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= n * (n + 1);
+                conclusion 0;
+            }
+        }
+        have (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1) by {
+            arithmetic_certificate special {
+                integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1);
+                conclusion 0;
+            }
+        }
+        unfold(adler_lane_triangle(n + 1));
+        unfold(adler_lane_triangle(n));
+        rewrite((n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1));
+        arithmetic_certificate special {
+            premise 0: 0 <= n * (n + 1) => 0 <= n * (n + 1);
+            premise 1: 0 <= n + 1 => 0 <= n + 1;
+            integer_quotient_shift bounds [0, 1] => truncating_quotient(n * (n + 1) + 2 * (n + 1), 2) == truncating_quotient(n * (n + 1), 2) + (n + 1);
+            conclusion 0;
+        }
+    }
+}
+
+theorem adler_lane_b_ceiling_successor(n: Integer) {
+    requires 0 <= n;
+    requires n <= 5551;
+    ensures adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1) by {
+        have adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1) by {
+            apply(adler_lane_triangle_successor(n)) using { 0 <= n; n <= 5551; }
+        }
+        unfold(adler_lane_b_ceiling(n + 1));
+        unfold(adler_lane_b_ceiling(n));
+        unfold(adler_lane_a_ceiling(n + 1));
+        rewrite(adler_lane_triangle(n + 1) == adler_lane_triangle(n) + (n + 1));
+        arithmetic_certificate special {
+            integer_polynomial_identity bounds [] => 65520 + 65520 * (n + 1) + 255 * (adler_lane_triangle(n) + (n + 1)) == (65520 + 65520 * n + 255 * adler_lane_triangle(n)) + (65520 + 255 * (n + 1));
+            conclusion 0;
+        }
+    }
+}
+
+theorem adler_lane_b_invariant_step(n: Integer, a: Integer, b: Integer, byte: Integer) {
+    requires 0 <= n;
+    requires n < 5552;
+    requires a <= adler_lane_a_ceiling(n);
+    requires b <= adler_lane_b_ceiling(n);
+    requires byte <= 255;
+    ensures b + (a + byte) <= adler_lane_b_ceiling(n + 1) by {
+        have n <= 5551 by { arithmetic() using { n < 5552; } }
+        have a + byte <= adler_lane_a_ceiling(n + 1) by {
+            apply(adler_lane_a_invariant_step(n, a, byte)) using {
+                a <= adler_lane_a_ceiling(n); byte <= 255;
+            }
+        }
+        have adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1) by {
+            apply(adler_lane_b_ceiling_successor(n)) using { 0 <= n; n <= 5551; }
+        }
+        rewrite(adler_lane_b_ceiling(n + 1) == adler_lane_b_ceiling(n) + adler_lane_a_ceiling(n + 1));
+        arithmetic() using {
+            b <= adler_lane_b_ceiling(n);
+            a + byte <= adler_lane_a_ceiling(n + 1);
+        }
+    }
+}

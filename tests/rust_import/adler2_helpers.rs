@@ -259,7 +259,7 @@ const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click
 #[test]
 fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
     use click::surface::verify_click_theorems;
-    assert_eq!(verify_click_theorems(BOUNDS).unwrap().len(), 19);
+    assert_eq!(verify_click_theorems(BOUNDS).unwrap().len(), 22);
     for (before, after) in [
         ("requires n <= 5552;", "requires n <= 5553;"),
         ("requires n < 5552;", "requires n <= 5552;"),
@@ -281,6 +281,18 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
         (
             "ensures a + byte <= adler_lane_a_ceiling(n + 1)",
             "ensures a + byte <= adler_lane_a_ceiling(n)",
+        ),
+        (
+            "ensures b + (a + byte) <= adler_lane_b_ceiling(n + 1)",
+            "ensures b + (a + byte) <= adler_lane_b_ceiling(n)",
+        ),
+        (
+            "integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 2 * (n + 1)",
+            "integer_polynomial_identity bounds [] => (n + 1) * ((n + 1) + 1) == n * (n + 1) + 3 * (n + 1)",
+        ),
+        (
+            "integer_quotient_shift bounds [0, 1]",
+            "integer_quotient_shift bounds [1, 0]",
         ),
     ] {
         let invalid = BOUNDS.replace(before, after);
@@ -329,6 +341,9 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
         ("adler_lane_step_b", 2),
         ("adler_lane_limit_is_tight", 4),
         ("adler_lane_a_invariant_step", 1),
+        ("adler_lane_triangle_successor", 1),
+        ("adler_lane_b_ceiling_successor", 1),
+        ("adler_lane_b_invariant_step", 1),
     ] {
         for index in 0..ensures {
             let result = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -354,6 +369,6 @@ fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
         click::surface::verify_click_theorems(&expanded)
             .unwrap()
             .len(),
-        19
+        22
     );
 }

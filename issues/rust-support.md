@@ -913,3 +913,24 @@ need checked algebra beyond the current affine arithmetic fragment; do not
 assume those identities or add a generated processed-count variable. Then
 compose byte accounting with the shared Adler-32 specification. Total input
 length is not restricted to one batch by these lemmas.
+
+
+### Checked weighted lane recurrence
+
+The bounds library now proves the triangular successor identity,
+`B(n+1) = B(n) + A(n+1)`, and preservation of the weighted B-bound by
+`b + (a + byte)` for every batch step `0 <= n < 5552`. It composes a bounded
+Integer polynomial-identity certificate with a positive-constant quotient
+shift under explicit nonnegative numerator and increment guards. Quotients,
+machine values, and pure applications remain opaque to ring checking.
+Mathematical Integer equalities can now rewrite the arithmetic spine through
+the existing checked substitution routine. Forged coefficients, negative or
+missing guards, wrong references/polarity, and false successor bounds are
+rejected; work scales independently of unrelated premises and linearly in
+certificate nodes. Expansion rechecks the new certificates.
+
+Both lane-bound update implications are now established. Next connect those
+invariants to the original nested chunks/remainder iterator state and bridge
+Integer observations to native u32 guards. No generated processed-count
+variable, Rust source edit, new import interpretation, checksum postcondition,
+or whole-loop panic-freedom claim is introduced by this increment.

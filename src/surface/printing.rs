@@ -837,6 +837,24 @@ fn write_special_arithmetic_certificate(
                     .join(", "),
                 source_click_proposition(result)
             ),
+            SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => format!(
+                "integer_polynomial_identity bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
+            SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => format!(
+                "integer_quotient_shift bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,

@@ -1302,6 +1302,8 @@ impl<'a> Proof<'a> {
                     | SpecialArithmeticNode::IntegerDivisionBounds { .. }
                     | SpecialArithmeticNode::IntegerBoundExclusion { .. }
                     | SpecialArithmeticNode::IntegerRelationTransport { .. }
+                    | SpecialArithmeticNode::IntegerPolynomialIdentity { .. }
+                    | SpecialArithmeticNode::IntegerQuotientShift { .. }
                     | SpecialArithmeticNode::IntegerCastIdentity { .. }
             )
         });
@@ -1392,6 +1394,30 @@ impl<'a> Proof<'a> {
                         result: self.lower_integer_surface_proposition(
                             result,
                             "integer relation transport bound result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerPolynomialIdentity { bounds, result } => {
+                    KernelNode::IntegerPolynomialIdentity {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer polynomial identity result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerQuotientShift { bounds, result } => {
+                    KernelNode::IntegerQuotientShift {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer quotient shift result",
                         )?,
                     }
                 }
@@ -3141,6 +3167,13 @@ fn describe_special_arithmetic_check_error(
         ),
         Error::InvalidIntegerRelationTransport(index) => format!(
             "node {index} requires exactly an Integer equality and an equality or non-strict bound, then replaces one relation operand with its exact equal"
+        ),
+        Error::IntegerPolynomialLimitExceeded => "Integer polynomial identity exceeds its structural limits: 256 ring DAG nodes, 256 monomials, degree 16, or 4096-bit coefficients".to_string(),
+        Error::InvalidIntegerPolynomialIdentity(index) => format!(
+            "node {index} requires a true Integer polynomial identity and an empty bounds list (at most 256 ring DAG nodes, 256 monomials, degree 16, and 4096-bit coefficients)"
+        ),
+        Error::InvalidIntegerQuotientShift(index) => format!(
+            "node {index} requires quotient(x + d * k, d) == quotient(x, d) + k, a positive constant d, and exactly the named bounds 0 <= x and 0 <= k"
         ),
         Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
         Error::InvalidNodeReference(index) => {
