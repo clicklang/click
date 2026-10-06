@@ -610,6 +610,18 @@ have regression coverage. Undefined operand arithmetic still fails even with
 a trivial postcondition. `!=` is also admitted for the existing 32/64-bit
 scalar profile.
 
+The `wide-narrowing` fixture proves when existing C++ modulo casts preserve
+full mathematical values. The explicit `integer_cast_identity` special
+arithmetic certificate consumes two named constant-endpoint bounds on the
+source observation, checking both against the destination range. Both signed
+and unsigned 128-bit values narrow to signed/unsigned 32/64-bit results.
+The rule also checks native quotient/remainder narrowing under their existing
+definedness guards and stated result bounds. Out-of-range casts still wrap;
+missing range premises, false results, and undefined operands are refused.
+Modular caller framing, offline loading, expansion, and retained audit have
+coverage. This adds proof support without changing the schema or trusting
+conversion bounds. See [Integer certificates](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
+
 Wide pointers, references, record fields, arrays, negation,
 addition, subtraction, and unsigned multiplication remain unsupported. Both
 the live exporter and serialized artifact validator reject these operations.

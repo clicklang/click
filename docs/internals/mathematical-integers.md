@@ -521,3 +521,35 @@ work over growing explicit operation counts. C++ schema 40 admits these
 comparisons and requires refreshing older source locks; ordinary C and Rust
 frontend admission remains separate. Source verification, expansion, offline
 artifacts, and retained audit use the shared kernel behavior.
+
+
+## Range-checked modulo cast identities
+
+The explicit `integer_cast_identity` node in the special arithmetic certificate
+family proves that a typed modulo cast preserves its mathematical value.
+Its result equates the cast's full-width Integer observation with the exact
+source observation, in either direction. Two named premises must have the
+forms `lo <= source` and `source <= hi`, with constant endpoints in that order.
+The kernel checks that the interval is ordered and entirely inside the
+cast destination's signed or unsigned range. Stronger intervals are allowed.
+
+The rule checks the cast's source and destination metadata, operand format,
+observation type, proposition polarity, referenced premises, and selected
+conclusion. It reads only the two named premises. Integer node identities
+avoid ambient searches, and endpoint comparisons charge numeric bit lengths.
+Regressions check boundary modulo oracles, forged formats and payloads,
+missing or altered bounds, unrelated equality claims, constant checking work
+with growing unused premise populations, and linear work with certificate nodes.
+
+This is a shared proof rule, not a change to C++ conversion semantics or an
+automatic range inference rule. Outside the destination range, native modulo
+casts remain defined and may change the mathematical value. Ordinary C signed
+conversion and proof-side checked conversions retain their existing range
+obligations. The certificate does not establish that its source arithmetic is
+defined: observing a native quotient or remainder still requires its nonzero
+and signed overflow guards.
+
+C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
+32/64-bit values, explicit casts and implicit returns, guarded native quotient
+and remainder narrowing, modular caller framing, offline artifacts, expansion,
+and retained audit. The source profile and schema remain 40.

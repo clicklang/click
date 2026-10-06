@@ -1295,13 +1295,16 @@ impl<'a> Proof<'a> {
             SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticCheckError,
             SpecialArithmeticNode as KernelNode,
         };
-        let has_integer_product = certificate
-            .nodes
-            .iter()
-            .any(|node| matches!(node, SpecialArithmeticNode::IntegerProductBounds { .. }));
+        let has_integer_nodes = certificate.nodes.iter().any(|node| {
+            matches!(
+                node,
+                SpecialArithmeticNode::IntegerProductBounds { .. }
+                    | SpecialArithmeticNode::IntegerCastIdentity { .. }
+            )
+        });
         let mut premises = Vec::with_capacity(certificate.premises.len());
         for premise in &certificate.premises {
-            let lowered = if has_integer_product {
+            let lowered = if has_integer_nodes {
                 self.lower_integer_surface_proposition(
                     premise,
                     "special arithmetic certificate premise",
@@ -1329,6 +1332,18 @@ impl<'a> Proof<'a> {
         let mut nodes = Vec::with_capacity(certificate.nodes.len());
         for node in &certificate.nodes {
             let lowered = match node {
+                SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
+                    KernelNode::IntegerCastIdentity {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer cast identity result",
+                        )?,
+                    }
+                }
                 SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
                     KernelNode::IntegerProductBounds {
                         bounds: bounds
@@ -3073,6 +3088,9 @@ fn describe_special_arithmetic_check_error(
 ) -> String {
     use crate::kernel::proof::arithmetic_special::SpecialArithmeticCheckError as Error;
     match error {
+        Error::InvalidIntegerCastIdentity(index) => format!(
+            "node {index} requires an exact typed cast observation and two non-strict constant bounds on its source value, in lower/upper order, within the destination range"
+        ),
         Error::InvalidIntegerProductBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"
         ),

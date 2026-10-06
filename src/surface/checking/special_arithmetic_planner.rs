@@ -199,6 +199,12 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                     result: goal.clone(),
                 }
             }
+            KernelNode::IntegerCastIdentity { bounds, .. } => {
+                SpecialArithmeticNode::IntegerCastIdentity {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::IntegerProductBounds { bounds, .. } => {
                 SpecialArithmeticNode::IntegerProductBounds {
                     bounds: bounds.clone(),

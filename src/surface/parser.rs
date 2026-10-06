@@ -6747,6 +6747,14 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
                 }
+                "integer_cast_identity" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds = self.parse_certificate_index_list("integer cast bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerCastIdentity { bounds, result });
+                }
                 "integer_product_bounds" => {
                     self.expect_ident_spelling("bounds")?;
                     let bounds =

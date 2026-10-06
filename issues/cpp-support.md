@@ -482,12 +482,24 @@ audit have coverage. The existing narrow scalar profile now admits `!=` too.
 Kernel regressions compare signed/unsigned endpoints against a full-width
 ordering oracle and check ambient-fact and explicit-operation scaling.
 
-Next cover checked narrowing and the remaining wide rounding operations
-(addition/subtraction and negation as needed) for the unchanged
-`FeeFrac::Mul`/`Div` path. Keep mathematical Integer semantics
-separate, especially its planned Euclidean division. The library `Assume`
-annotation remains an explicit contract/assumption boundary to resolve before
-the upstream fee proof.
+Range-checked narrowing proofs are delivered through the shared explicit
+`integer_cast_identity` certificate. Two named bounds establish that a typed
+modulo cast preserves its full mathematical observation; the kernel checks
+both endpoints against the destination range, operand identities and formats,
+polarity, references, and the conclusion. This neither assumes conversion
+bounds nor changes out-of-range C++ wrapping. Signed/unsigned 128-to-32/64-bit
+casts, implicit returns, native quotient/remainder narrowing, modular caller
+framing, offline verification, expansion, retained audit, hostile certificates,
+and deterministic scaling have coverage. Artifact schema remains 40.
+
+Next freeze the unchanged `FeeFrac::Mul`/`Div` proofs and establish their
+arithmetic and conversion bounds. The actual wide `Div` narrows the quotient
+and remainder before applying its correction, so wide addition/subtraction
+and negation should be added only if the selected source requires them.
+Resolve the library `Assume` annotation as an explicit contract/assumption
+boundary before the upstream fee proof. Keep mathematical Integer semantics
+separate, especially its planned Euclidean division. General automatic range
+inference and the complete rounding theorem remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false
