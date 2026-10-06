@@ -1016,6 +1016,28 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 born.imported_member_delta_since_entry(&description),
                 observed.combined_delta()
             );
+            let retired = born
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &quantity,
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            let remaining = retired.observe_symbolic(&description).unwrap();
+            assert_eq!(remaining.delta, 3, "numerical custody survives retirement");
+            assert_eq!(remaining.symbolic_delta, None);
+            assert!(retired.owns_population_member(&description));
+            assert_eq!(
+                retired.0.opaque_holders.get(&retired.0.opaque_actor),
+                born.0
+                    .opaque_holders
+                    .get(&born.0.opaque_actor)
+                    .map(|rights| rights - 1)
+                    .as_ref()
+            );
             let child = born.enter_call();
             let sent = child
                 .transfer_call_fact(&born, &child, &description, true)
@@ -4944,5 +4966,222 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
     assert_eq!(
         full.observe_symbolic(&description).unwrap().entry_count,
         Bitvector32Term::Constant(i32::MAX as u32)
+    );
+}
+
+#[test]
+fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated_state() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let first_quantity = Bitvector32Term::Variable(Variable(992_001));
+    let second_quantity = Bitvector32Term::Variable(Variable(992_002));
+    let total = Bitvector32Term::add(first_quantity.clone(), second_quantity.clone());
+    let samples = [16, 64, 256].map(|size| {
+        let mut entry = CreationEvents::new();
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("repeated-symbolic-unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(993_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ),
+                true,
+            );
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(Bitvector32Term::Constant(0)),
+                None,
+                None,
+            )
+            .unwrap();
+        for quantity in [&first_quantity, &second_quantity] {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+                true,
+            );
+        }
+        let child = entry.enter_call();
+        let authorized = child
+            .transfer_call_fact(&entry, &child, &description, true)
+            .unwrap();
+        let first = authorized
+            .checked_member_exchange_quantity(&block, &description, true, &first_quantity, &facts)
+            .unwrap()
+            .0;
+        assert_eq!(
+            first
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &second_quantity,
+                    &facts,
+                )
+                .unwrap_err(),
+            CreationRefusal::InvalidQuantity,
+            "nonnegative quantities alone do not establish a non-wrapping total"
+        );
+        let current = Bitvector32Term::add(Bitvector32Term::Constant(0), first_quantity.clone());
+        facts = facts.assume_condition(
+            ConditionTerm::signed_add_overflows(current, second_quantity.clone()),
+            false,
+        );
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let born = first
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &second_quantity,
+                    &facts,
+                )
+                .unwrap()
+                .0;
+            assert_eq!(
+                born.observe_symbolic(&description).unwrap().symbolic_delta,
+                Some((true, total.clone()))
+            );
+            assert_eq!(
+                born.0.opaque_holders.get(&child.0.opaque_actor),
+                Some(&2),
+                "the coalesced batch is one right beside the authority"
+            );
+            assert_eq!(
+                born.transfer_call_fact_quantity(
+                    &child,
+                    &entry,
+                    &description,
+                    false,
+                    &first_quantity,
+                    &facts,
+                )
+                .unwrap_err(),
+                CreationRefusal::InvalidQuantity,
+                "a coalesced batch cannot silently split"
+            );
+            let sent = born
+                .transfer_call_fact_quantity(&child, &entry, &description, false, &total, &facts)
+                .unwrap();
+            assert!(
+                sent.checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    true,
+                    &second_quantity,
+                    &facts,
+                )
+                .is_err(),
+                "authority alone cannot extend another actor's batch"
+            );
+            assert_eq!(
+                sent.transfer_call_fact_quantity(
+                    &child,
+                    &entry,
+                    &description,
+                    false,
+                    &total,
+                    &facts,
+                )
+                .unwrap_err(),
+                CreationRefusal::MissingMembers
+            );
+            let returned = sent
+                .transfer_call_fact(&child, &entry, &description, true)
+                .unwrap()
+                .finish_call(&entry)
+                .unwrap();
+            assert!(returned.owns_population_authority(&description));
+            assert!(returned.owns_population_member(&description));
+            assert_eq!(
+                returned
+                    .observe_symbolic(&description)
+                    .unwrap()
+                    .symbolic_delta,
+                Some((true, total.clone()))
+            );
+            facts = facts.assume_condition(
+                ConditionTerm::signed_greater_equal(total.clone(), Bitvector32Term::Constant(0)),
+                true,
+            );
+            assert!(
+                returned
+                    .checked_member_exchange_quantity(
+                        &block,
+                        &description,
+                        false,
+                        &first_quantity,
+                        &facts,
+                    )
+                    .is_err(),
+                "a whole batch cannot be partially retired"
+            );
+            let consumer = returned.enter_call();
+            assert!(
+                consumer
+                    .checked_member_exchange_quantity(&block, &description, false, &total, &facts,)
+                    .is_err(),
+                "consumption requires transferred authority"
+            );
+            let authorized = consumer
+                .transfer_call_fact(&returned, &consumer, &description, true)
+                .unwrap()
+                .transfer_call_fact_quantity(
+                    &returned,
+                    &consumer,
+                    &description,
+                    false,
+                    &total,
+                    &facts,
+                )
+                .unwrap();
+            let spent = authorized
+                .checked_member_exchange_quantity(&block, &description, false, &total, &facts)
+                .unwrap()
+                .0;
+            assert_eq!(
+                spent.observe_symbolic(&description).unwrap().symbolic_delta,
+                None
+            );
+            assert_eq!(
+                spent.0.opaque_holders.get(&consumer.0.opaque_actor),
+                Some(&1)
+            );
+            assert!(
+                spent
+                    .checked_member_exchange_quantity(&block, &description, false, &total, &facts,)
+                    .is_err(),
+                "retirement cannot be repeated"
+            );
+            let finished = spent
+                .transfer_call_fact(&consumer, &returned, &description, true)
+                .unwrap()
+                .finish_call(&returned)
+                .unwrap();
+            assert!(finished.owns_population_authority(&description));
+            assert!(!finished.owns_population_member(&description));
+        });
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
     );
 }
