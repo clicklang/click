@@ -1261,7 +1261,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_variable("x")),
         }],
@@ -1352,7 +1352,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         right: SpecExpression::CExpression(c_int32_literal(0)),
     };
     let returns_one = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("result")),
+        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::CExpression(c_int32_literal(1)),
     };
@@ -1489,7 +1489,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_variable("p")),
         }],
@@ -1558,7 +1558,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_variable("x")),
         }],
@@ -1617,7 +1617,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_variable("x")),
         }],
@@ -1779,7 +1779,7 @@ fn verified_function_rule_rejects_unclaimed_contract_obligations() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -1889,7 +1889,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
 #[test]
 fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let normal_ensure = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("result")),
+        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::Value(int32(5)),
     };
@@ -2120,7 +2120,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(99)),
         }],
@@ -2502,11 +2502,11 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
         resource_state_dependent: true,
         name: "positive".to_string(),
         arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-            c_variable("result"),
+            c_variable(C_CONTRACT_RESULT_NAME),
         ))],
     };
     let positive_body = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("result")),
+        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::GreaterEqual,
         right: SpecExpression::Value(int32(1)),
     };
@@ -2852,7 +2852,7 @@ fn contract_certification_reuses_complementary_checked_entry_partitions() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::NotEqual,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -2953,7 +2953,7 @@ fn contract_certification_reuses_definitionally_equal_entry_resources() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -3063,7 +3063,7 @@ fn contract_claim_rejects_same_source_function_with_a_different_contract() {
     let stronger = c_function(CType::Int32, "contract_identity", Vec::new(), body).with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(1)),
         }],
@@ -3440,7 +3440,7 @@ fn contract_claim_rejects_caller_supplied_false_entry_fact() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(1)),
         }],
@@ -4839,7 +4839,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         right: SpecExpression::CExpression(c_int32_literal(0)),
     };
     let returns_one = SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("result")),
+        left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
         operator: CComparisonOperator::Equal,
         right: SpecExpression::CExpression(c_int32_literal(1)),
     };
@@ -4921,7 +4921,7 @@ fn drain_with_expression_measure() -> CFunction {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_int32_literal(0)),
         }],
@@ -5043,7 +5043,7 @@ fn an_anchor_ranks_only_calls_to_the_function_it_names() {
     .with_contract(
         Vec::new(),
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("result")),
+            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::CExpression(c_int32_literal(0)),
         }],

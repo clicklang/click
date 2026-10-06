@@ -2473,10 +2473,11 @@ Existing unqualified references and `verifying "file.c";` remain unchanged.
 `c(name)` explicitly refers to the binding named `name` in the verified C
 program. It is distinct from Click built-ins and contract bindings with the
 same spelling. In particular, bare `result` is the function's contract result,
-while `c(result)` is a C parameter or local named `result`. Where the contract
-result is in scope (a postcondition, or a proof fact after function exit),
-`c(result)` is refused; read the C binding through a snapshot such as
-`old(c(result))` or `at(statement(N).entry, c(result))`.
+while `c(result)` is a C parameter or local named `result`. The contract return
+value has a separate internal binding, so a postcondition can use both names.
+After function exit, a parameter reference denotes its logical input value.
+Use `old(c(result))` or `at(function.entry, c(result))` to refer explicitly to
+the parameter's entry value.
 
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded program point:

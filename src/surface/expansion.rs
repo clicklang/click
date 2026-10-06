@@ -1192,11 +1192,9 @@ const UNSPELLABLE_POINTER_FORMS: [&str; 6] = [
 ];
 
 /// Reports why a rendered expansion is not Click. A composite resource's
-/// existential witness is bound to a kernel pointer with no source spelling
-/// (the language reference states that a witness needs no syntax at fold or
-/// unfold), so a certificate that has to cite the witness cannot be written
-/// at all. Naming the witness reports the language gap; the parse error does
-/// not.
+/// existential witness may have no usable source spelling in this scope.
+/// When no checked alias names that pointer, report the missing witness
+/// name rather than the parse error from diagnostic-only pointer text.
 fn unparseable_expansion_error(
     click_source: &str,
     sources: &CSourceContext<'_>,

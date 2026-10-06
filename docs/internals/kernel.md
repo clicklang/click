@@ -1092,6 +1092,12 @@ its own permission. Historical field reads resolve the object's address in the
 selected entry snapshot. Materialized aggregate results belong to the caller
 and survive the callee's exit.
 
+The contract return value uses an internal binding that no C identifier can
+spell. Bare `result` lowers to it, while `c(result)` resolves the source C
+binding, including inside casts, field projections, and array indices.
+Kernel post-state reconstruction and fixed-state proof lowering use
+that separate return binding, preserving a same-named parameter's value.
+
 The positive field, array, shallow-pointer, and aggregate-return checks are in
 `mdtests/aggregate_parameter_value_fields.md`. The output-pointer, explicit
 address-taking, and pointer-bearing return regressions are the other

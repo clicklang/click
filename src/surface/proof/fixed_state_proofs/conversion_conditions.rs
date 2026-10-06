@@ -733,7 +733,8 @@ fn walk_written_expressions(
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceWildcard
         | ContractExpression::ResourceCount(_) => {}
-        ContractExpression::Negate(inner)
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::Negate(inner)
         | ContractExpression::BitwiseNot(inner)
         | ContractExpression::Old(inner)
         | ContractExpression::At {

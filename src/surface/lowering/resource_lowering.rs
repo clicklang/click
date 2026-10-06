@@ -2047,7 +2047,8 @@ fn evaluate_resource_argument_with_snapshot(
             Ok(direct)
         };
     }
-    crate::surface::proof::evaluate_resource_fragment_through_kernel(
+    crate::surface::proof::evaluate_resource_argument_through_kernel(
+        original,
         lowered,
         assumptions,
         values,
@@ -2292,6 +2293,10 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
             lowered: expression,
             ..
         }
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::CFragment(expression) => Ok(expression.clone()),
         ContractExpression::Field { lowered, .. } => Ok(lowered.clone()),
         ContractExpression::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
@@ -2383,17 +2388,31 @@ fn lower_resource_segment_with_values(
     let assumptions = PureFactContext::new()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads();
-    let evaluate = |expression: &CExpression| {
-        crate::surface::proof::evaluate_resource_fragment_through_kernel(
+    let (surface_base, surface_start, surface_end) = match &segment.surface {
+        ContractSegmentSurface::Range { base, start, end } => (Some(base), Some(start), Some(end)),
+        _ => (None, None, None),
+    };
+    let evaluate = |expression: &CExpression, original: Option<&ContractExpression>| match original
+    {
+        Some(original) => crate::surface::proof::evaluate_resource_argument_through_kernel(
+            original,
             expression,
             &assumptions,
             values,
             array_refs,
             state,
             result,
-        )
+        ),
+        None => crate::surface::proof::evaluate_resource_fragment_through_kernel(
+            expression,
+            &assumptions,
+            values,
+            array_refs,
+            state,
+            result,
+        ),
     };
-    let base = evaluate(&segment.base).map_err(|message| {
+    let base = evaluate(&segment.base, surface_base).map_err(|message| {
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message} (segment {})",
             super::super::diagnostics::describe_contract_segment(segment)
@@ -2405,7 +2424,7 @@ fn lower_resource_segment_with_values(
         )));
     };
     let base = base.into_pointer();
-    let start = evaluate(&segment.start).map_err(|message| {
+    let start = evaluate(&segment.start, surface_start).map_err(|message| {
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message}"
         ))
@@ -2415,7 +2434,7 @@ fn lower_resource_segment_with_values(
             "could not lower `{resource_name}` resource: segment start did not evaluate to int32"
         )));
     };
-    let end = evaluate(&segment.end).map_err(|message| {
+    let end = evaluate(&segment.end, surface_end).map_err(|message| {
         ClickError::new(format!(
             "could not lower `{resource_name}` resource: {message}"
         ))
@@ -2834,7 +2853,10 @@ pub(in crate::surface) fn contract_segment_element_width_for_result_type(
     if let Some(element_width) = segment.field_element_width() {
         return element_width;
     }
-    if matches!(&segment.base, CExpression::Variable(name) if name == "result")
+    if matches!(&segment.base, CExpression::Variable(name)
+        if name == crate::kernel::C_CONTRACT_RESULT_NAME
+            || (name == "result" && !matches!(&segment.surface,
+                ContractSegmentSurface::Range { base: ContractExpression::CBinding(_), .. })))
         && let Some(element_width) = result_type
             .and_then(CType::pointee_type)
             .map(CType::byte_width)

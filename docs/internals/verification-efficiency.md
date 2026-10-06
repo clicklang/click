@@ -86,6 +86,18 @@ charged to visible semantic output rather than hidden ambient state:
 - A source branch can create two paths. Repeated branching may create many
   paths, but verification should share common prefixes and cost no more than
   the explicit path structure it checks.
+  Path certificate merging advances borrowed cursors through checked steps
+  and case offsets, then builds control nodes from checked children. It
+  charges prefix comparisons, copied steps, and case traversal; it does not
+  convert or revalidate every remaining subtree at each case level. The
+  `path_certificate_merge_work_is_bounded_by_its_input_steps` regression
+  bounds this work by the supplied steps and cases at 4, 64, and 1,024 leaves
+  and checks that selecting every merged leaf recovers its original proof.
+  Checked loop exits share immutable fact lists when copied into the loop
+  rule; construction charges each fact and the rule charges each copied exit
+  handle. `checked_loop_exit_copies_share_their_fact_storage` checks both
+  exit forms at 4, 64, and 1,024 facts, alongside the full loop-exit scaling
+  regression.
 - A finite quantified proof may enumerate its declared finite range. The range
   and its bound must be explicit and enforced.
 - Unfolding or folding may visit every member of the named definition, but not
@@ -202,6 +214,14 @@ charged to visible semantic output rather than hidden ambient state:
   slot: a declaration's initializer records its whole object, so dropping
   the runs it seeded is one covering query each, whatever their length
   (`a_declared_object_makes_dropping_its_runs_one_query`).
+  A symbolic store invalidates a compact constant-value run by its possible index window,
+  or forgets the whole run when the index is unplaced. It keeps values outside
+  a proven window and records dropped initialized bytes per interval; it does
+  not ask every logical element for extra separation facts. The regression
+  `symbolic_stores_into_compact_arrays_scale_with_represented_cells` measures
+  bounded and unbounded stores at 4, 1,024, and 1,000,000 elements. A constant
+  store checks partial coverage at live-interval endpoints, also charging the
+  intervals rather than walking all overwritten slots.
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work

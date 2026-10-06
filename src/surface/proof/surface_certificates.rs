@@ -4255,7 +4255,7 @@ pub(super) fn contract_expression_mentions_c_local(
 ) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contract_expression_mentions_c_local(inner, parameter_names)
         }
         ContractExpression::ResourceField(_) => false,
@@ -4294,11 +4294,12 @@ pub(super) fn contract_expression_mentions_c_local(
             base,
             indexes,
             lowered,
+            ..
         } => {
             contract_expression_mentions_c_local(base, parameter_names)
                 || indexes
                     .iter()
-                    .any(|index| c_expression_mentions_c_local(index, parameter_names))
+                    .any(|index| contract_expression_mentions_c_local(index, parameter_names))
                 || (!matches!(base.as_ref(), ContractExpression::QualifiedC { .. })
                     && c_expression_mentions_c_local(lowered, parameter_names))
         }

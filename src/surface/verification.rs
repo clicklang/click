@@ -1043,10 +1043,15 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
         if function.signature.name != *target_name {
             continue;
         }
-        if function.grouped_proof.is_some() {
-            function.grouped_proof = Some(SourceProof::Default);
-        }
-        for ensure in &mut function.ensures {
+        // Expansion may make the implicit grouped proof explicit.
+        function.grouped_proof = None;
+        // A grouped proof supplies both normal and exceptional clauses.
+        // Erase their proof annotations together, retaining the contracts.
+        for ensure in function
+            .ensures
+            .iter_mut()
+            .chain(&mut function.exceptional_ensures)
+        {
             ensure.proof = SourceProof::Default;
         }
         for clause in &mut function.structural_clauses {
@@ -7153,16 +7158,38 @@ pub(in crate::surface) fn function_resource_summary(
         } else {
             CResourceSnapshot::Post
         };
+        let result_binding = BTreeMap::from([(
+            "result".to_string(),
+            ContractExpression::CFragment(CExpression::Variable(
+                crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+            )),
+        )]);
+        let result_substitutions = ContractSubstitutions::for_contract_result(&result_binding);
+        let lowered_resource = if ensure.borrowed() {
+            // Borrowed clauses were written at entry; `result` there can be
+            // a C parameter, and the return value has no entry binding.
+            std::borrow::Cow::Borrowed(resource)
+        } else {
+            std::borrow::Cow::Owned(
+                substitute_resource_clause_for_summary_in(resource, &result_substitutions)
+                    .map_err(ClickError::new)?,
+            )
+        };
         let specs = resource_clause_to_resource_specs_with_metadata(
-            resource,
+            &lowered_resource,
             parsed_function.parameters(),
-            Some(parsed_function.return_type().to_kernel_type()),
+            (!ensure.borrowed()).then(|| parsed_function.return_type().to_kernel_type()),
             role,
             snapshot,
         )?;
         let guard = ensure
             .condition()
             .map(|condition| {
+                let condition = crate::surface::lowering::substitute_click_proposition_in(
+                    condition,
+                    &result_substitutions,
+                )
+                .map_err(ClickError::new)?;
                 crate::surface::lowering::elaborate_requirement_proposition(
                     parsed_function.parameters(),
                     guard_entry_state.get_or_init(|| {
@@ -7171,7 +7198,7 @@ pub(in crate::surface) fn function_resource_summary(
                             &parsed_function.to_kernel_function(),
                         )
                     }),
-                    condition,
+                    &condition,
                     predicate_environment,
                     click_function_environment,
                 )
@@ -7203,8 +7230,20 @@ pub(in crate::surface) fn function_resource_constructors(
         .constructs()
         .iter()
         .map(|resource| {
-            resource_clause_to_resource_spec_with_metadata(
+            let result_binding = BTreeMap::from([(
+                "result".to_string(),
+                ContractExpression::CFragment(CExpression::Variable(
+                    crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
+                )),
+            )]);
+            let resource = substitute_resource_clause_for_summary_in(
                 resource,
+                &ContractSubstitutions::for_contract_result(&result_binding),
+            )
+            .map_err(ClickError::new)?;
+
+            resource_clause_to_resource_spec_with_metadata(
+                &resource,
                 &[],
                 None,
                 CResourceTransferRole::Produce,
@@ -8068,6 +8107,9 @@ pub(in crate::surface) fn substitute_contract_segment(
     segment: &ContractSegment,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractSegment, String> {
+    if substitutions.is_contract_result_binding() && segment.state == ContractSegmentState::Old {
+        return Ok(segment.clone());
+    }
     let surface = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end } => ContractSegmentSurface::Range {
             base: substitute_contract_expression_in(base, substitutions)?,
@@ -8076,6 +8118,27 @@ pub(in crate::surface) fn substitute_contract_segment(
         },
         surface => surface.clone(),
     };
+    // Preserve resolved C spellings unless a component actually refers to
+    // the return name. Its surface form then distinguishes `c(result)`.
+    if substitutions.is_contract_result_binding()
+        && let ContractSegmentSurface::Range { base, start, end } = &surface
+    {
+        let lower = |original: &CExpression, source: &ContractExpression| {
+            let rewritten = substitute_c_fragment_in(original, substitutions)?;
+            if rewritten == *original {
+                return Ok(original.clone());
+            }
+            crate::surface::lowering::resource_argument_to_c_expression(source)
+                .map_err(|error| error.message().to_string())
+        };
+        return Ok(ContractSegment {
+            state: segment.state,
+            base: lower(&segment.base, base)?,
+            start: lower(&segment.start, start)?,
+            end: lower(&segment.end, end)?,
+            surface,
+        });
+    }
     Ok(ContractSegment {
         state: segment.state,
         base: substitute_c_fragment_in(&segment.base, substitutions)?,
@@ -8205,9 +8268,17 @@ pub(in crate::surface) fn check_signature(
                 "signature mismatch for `{}` parameter {} in `{source_path}`: .click has {} {}, C has {} {}",
                 signature.name(),
                 index + 1,
-                describe_parameter_type(expected.c_type(), expected.struct_name()),
+                describe_parameter_type(
+                    expected.c_type(),
+                    expected.struct_name(),
+                    expected.pointee_is_constant(),
+                ),
                 expected.name(),
-                describe_parameter_type(actual.c_type(), actual.struct_name()),
+                describe_parameter_type(
+                    actual.c_type(),
+                    actual.struct_name(),
+                    actual.pointee_is_constant(),
+                ),
                 actual.name()
             ))
             .with_kind(ClickErrorKind::Type));
@@ -8220,11 +8291,17 @@ pub(in crate::surface) fn check_signature(
 pub(in crate::surface) fn describe_parameter_type(
     c_type: C0Type,
     struct_name: Option<&str>,
+    pointee_constant: bool,
 ) -> String {
-    match struct_name {
+    let parameter_type = match struct_name {
         Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
         Some(name) => format!("struct {name}*"),
         None => format!("{c_type:?}"),
+    };
+    if pointee_constant {
+        format!("const {parameter_type}")
+    } else {
+        parameter_type
     }
 }
 

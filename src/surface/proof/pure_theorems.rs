@@ -2877,7 +2877,8 @@ pub(super) fn click_function_applications(
     ) {
         match term {
             ContractExpression::IntegerLiteral(_) => {}
-            ContractExpression::Negate(inner) => expression(inner, known_facts, applications),
+            ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),
             ContractExpression::ResourceField(_)
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_) => {}

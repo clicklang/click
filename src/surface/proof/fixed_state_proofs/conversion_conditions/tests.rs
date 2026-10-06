@@ -263,7 +263,10 @@ fn fold_defining_equation() -> ClickProposition {
         base: Box::new(ContractExpression::CFragment(CExpression::Variable(
             "p".to_string(),
         ))),
-        indexes: vec![CExpression::Variable("k".to_string())],
+        indexes: vec![ContractExpression::CFragment(CExpression::Variable(
+            "k".to_string(),
+        ))],
+        dimensions: vec![1],
         lowered: CExpression::TypedLoad {
             pointer: Box::new(CExpression::Add(
                 Box::new(CExpression::Variable("p".to_string())),

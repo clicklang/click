@@ -204,10 +204,12 @@ mod pointee_const_return_tests {
         let function = function(true);
         let value = symbolic_function_result(&function, Variable(911));
         assert!(matches!(&value, CValue::Pointer(pointer) if pointer.pointee_constant()));
-        let mut state = CState::new();
+        let parameter = int32(7);
+        let mut state = CState::new().with_local("result", parameter.clone());
         set_function_result(&mut state, &function, value);
+        assert_eq!(state.locals().get("result"), Some(&parameter));
         assert!(
-            matches!(state.locals.binding("result"), Some(CLocalBinding::Object {
+            matches!(state.locals.binding(C_CONTRACT_RESULT_NAME), Some(CLocalBinding::Object {
             value: CValue::Pointer(pointer), pointee_constant: true, ..
         }) if pointer.pointee_constant())
         );
@@ -15205,14 +15207,14 @@ fn set_contract_result(state: &mut CState, interface: &CFunctionContractInterfac
             },
         );
         state.locals.set_aggregate_object_at(
-            "result".to_string(),
+            C_CONTRACT_RESULT_NAME.to_string(),
             layout.clone(),
             pointer.pointer().clone(),
         );
         return;
     }
     state.locals.set_typed_with_all_qualifiers(
-        "result".to_string(),
+        C_CONTRACT_RESULT_NAME.to_string(),
         value.with_pointer_pointee_constant(interface.return_pointee_is_constant()),
         interface.return_type(),
         false,
@@ -18244,13 +18246,25 @@ mod aggregate_union_copy_tests {
                 Some(CValue::UInt32(7u32.into()))
             );
             samples.push(work);
-            // Forget a known whole-field footprint while retaining initialized
-            // bytes. Symbolic-index invalidation has its own filed scaling bug.
-            let forgotten = changed.without_possible_aliasing_cells(
-                &source,
-                count * 4,
-                &PureFactContext::new(),
+            // An unplaced store invalidates the compact source run and its
+            // concrete last-lane override. The immutable copy is disjoint,
+            // and every forgotten source byte remains initialized.
+            let unplaced =
+                source.offset_by_elements(Bitvector32Term::Variable(Variable(925_002)), 4);
+            let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                changed.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
+            });
+            assert_eq!(forgotten.known_value(&source), None);
+            assert_eq!(
+                forgotten.known_value(&source.offset_by_bytes((count - 1) * 4)),
+                None
             );
+            assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
+            assert_eq!(
+                forgotten.known_value(&last),
+                Some(CValue::UInt32(7u32.into()))
+            );
+            samples.push(work);
             let (unknown, work) = crate::instrumentation::measure_deterministic_work(|| {
                 copy_aggregate_fields_checked(forgotten, &source, &destination, &layout).unwrap()
             });
@@ -26129,9 +26143,11 @@ pub(super) fn function_return_resources_definitionally_established(
     // Preserve checked body consumption evidence when reconstructing the exit.
     post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != CType::Void {
-        post_state
-            .locals
-            .set_typed("result".to_string(), value.clone(), function.return_type());
+        post_state.locals.set_typed(
+            C_CONTRACT_RESULT_NAME.to_string(),
+            value.clone(),
+            function.return_type(),
+        );
     }
     let mut budget = ExecutionBudget::beside_live_state();
     if check_mutex_helper_body_return(

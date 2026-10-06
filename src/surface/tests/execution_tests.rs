@@ -1362,7 +1362,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     }],
                     vec![SpecProposition::Comparison {
                         left: SpecExpression::CExpression(CExpression::Variable(
-                            "result".to_string(),
+                            crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                         )),
                         operator: CComparisonOperator::Equal,
                         right: SpecExpression::Value(int32(2)),
@@ -1405,6 +1405,43 @@ fn signature_mismatch_reports_direct_error() {
         "{}",
         error.message()
     );
+}
+
+#[test]
+fn pointer_constness_signature_mismatch_displays_both_qualifiers() {
+    for (pointer_type, rendered_type) in [
+        ("struct Value*", "struct Value*"),
+        ("int32*", "Int32Pointer"),
+    ] {
+        for (click_const, c_const) in [("", "const "), ("const ", "")] {
+            let c_source = format!(
+                "struct Value {{ int32 value; }}; int32 read({c_const}{pointer_type} self) {{ return 0; }}"
+            );
+            let click_source = format!(
+                "verifying \"read.c\"; int32 read({click_const}{pointer_type} self) {{ ensures result == 0; }}"
+            );
+            let error = verify_c0_sources(&click_source, &[("read.c", &c_source)])
+                .expect_err("different pointee qualifiers must still fail signature checking");
+            assert_eq!(error.kind(), ClickErrorKind::Type);
+            assert!(
+                error.message().contains(&format!(
+                    ".click has {click_const}{rendered_type} self, C has {c_const}{rendered_type} self"
+                )),
+                "{}",
+                error.message()
+            );
+        }
+        for qualifier in ["", "const "] {
+            let c_source = format!(
+                "struct Value {{ int32 value; }}; int32 read({qualifier}{pointer_type} self) {{ return 0; }}"
+            );
+            let click_source = format!(
+                "verifying \"read.c\"; int32 read({qualifier}{pointer_type} self) {{ ensures result == 0; }}"
+            );
+            verify_c0_sources(&click_source, &[("read.c", &c_source)])
+                .expect("matching pointee qualifiers must still verify");
+        }
+    }
 }
 
 #[test]
