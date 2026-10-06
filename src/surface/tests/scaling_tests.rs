@@ -5799,3 +5799,48 @@ fn failing_simp_bound_selection_stays_linear_along_a_variable_chain() {
         );
     }
 }
+
+/// simp offers its goal as a transport from function entry and from a fixed
+/// number of recently recorded program points, not from every point the
+/// path recorded. A path records a point per statement it ran, so offering
+/// them all cost each early-return path work linear in its length: 112k of
+/// the 254k units this fan-out took at 64 returns on 2026-10-05. Bounded,
+/// the search costs each path the same, so its total is linear in the
+/// returns.
+///
+/// The whole verification is not yet linear in the returns
+/// (`bugs/early-return-paths-store-facts-whole.md` lists what remains), so
+/// only this search's own work is asserted.
+#[test]
+fn simp_snapshot_transport_search_is_linear_in_early_returns() {
+    std::thread::Builder::new()
+        .name("fan-out-transport".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            const TRANSPORT: &str = "operation `simp closure: snapshot transport`";
+            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
+            let mut transport = Vec::new();
+            for returns in [4, 8, 16, 32, 64] {
+                let c = early_return_fan_out(returns);
+                let (verified, sample) = scaling_sample(returns, || {
+                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!("fan-out of {returns} returns failed: {}", error.message())
+                });
+                transport.push(ScalingSample {
+                    size: returns,
+                    work: *sample.named_work.get(TRANSPORT).unwrap_or_else(|| {
+                        panic!("simp did not try a snapshot transport: {sample:?}")
+                    }),
+                    named_work: BTreeMap::new(),
+                });
+            }
+            eprintln!("fan-out snapshot transport work: {transport:?}");
+            assert_near_linear_scaling("simp's snapshot transport search", &transport);
+        })
+        .expect("spawn the fan-out thread")
+        .join()
+        .expect("fan-out thread");
+}
