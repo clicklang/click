@@ -36,5 +36,5 @@ int32 run() { ensures result == 0; } by {
 ```
 
 ```expect
-fail: named member fold/unfold at imported authority entries is not supported yet
+fail: did not retain a complete proof
 ```

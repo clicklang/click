@@ -14727,6 +14727,61 @@ fn authority_population_certification_expands_every_smart_site() {
 }
 
 #[test]
+fn authority_callback_count_refinement_expands_every_smart_site() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("authority_callback_count_refinement.md"),
+        include_str!("../../../mdtests/authority_callback_count_refinement.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "population.click",
+            [ClickModuleSource::new("population.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        })
+    };
+    let project = project_for(source);
+    verify_c0_project(&project, &c_sources).expect("the callback Count refinement verifies");
+    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    assert!(!sites.is_empty());
+    for site in sites {
+        let position = c0_project_tactic_source_position(
+            &project,
+            &c_sources,
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
+        let expanded = expand_c0_project_tactic_source_at(
+            &project,
+            &c_sources,
+            position.line,
+            position.column,
+        )
+        .unwrap();
+        verify_c0_project(&project_for(&expanded), &c_sources).unwrap_or_else(|error| {
+            panic!(
+                "{} site {} ({}) lost its checked resource transition: {}",
+                site.claim_label,
+                site.source_index,
+                site.tactic_name,
+                error.message()
+            )
+        });
+    }
+}
+
+#[test]
 fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     let valid_source = "resource cell(p: int32*) { owns p[0..1]; }
         verifying \"keep.c\";

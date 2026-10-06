@@ -200,9 +200,9 @@ ordinary resources, and exact member observations. A control can package two
 same-anchor authorities with counter facts; direct and nested checkout preserve
 that control and caller-retained slots. No new parameter syntax is needed.
 
-The original bounded-pool sidecar and local/preserving named-member identity
-are complete. Named-member helper lifecycle effects, remaining sequential
-groups, mutex/worker migration, and the default switch remain unfinished.
+The original bounded-pool sidecar, named-member identity and checked lifecycle
+helpers, and all remaining sequential groups are complete. Mutex/worker migration
+and the default switch remain unfinished.
 Earlier checkpoint numbers 0–5 correspond to the completed
 foundation; unfinished checkpoint 6–12 work is reorganized below. Detailed
 historical evidence belongs in the inventory, not a second competing roadmap.
@@ -352,15 +352,63 @@ surface syntax or changes to existing C were needed. The full `scripts/check.sh`
 gate passed 4,723 unit/integration tests and 190 fixture tests; all 48 new
 named-member expansion-audit sites passed.
 
-**Explicit remaining boundaries:** Named-member creation/consumption through
-helpers with explicit authority still needs checked lifecycle effects. Calls
-cannot silently remove or add a tracked member without updating the ledger;
-unsupported transitions are rejected. Symbolic quantities of heterogeneous
+**Milestone 2 boundary:** Named-member helper lifecycle effects were deferred
+here and are completed by Milestone 3 below. Calls cannot silently remove or
+add a tracked member without updating the ledger. Symbolic quantities of heterogeneous
 instances and general sums over fields are not implemented. List-valued field
 descriptions are supported by the Milestone 3 slice. Local lifecycle operations and preserving helpers are supported.
 These limits do not restrict ordinary uncounted named resources.
 
-### Milestone 3: Migrate remaining sequential accounting (3–4 chunks)
+### Milestone 3: Migrate remaining sequential accounting (complete)
+
+**Closing slice:** Named births and deaths now cross direct and nested verified
+helpers under their explicit governing authority. Checked resource partitions
+retain exact identity, fields, private storage, and framed occurrences. Unary
+and wildcard imports keep arbitrary entry totals; births require increment
+bounds, and only consumed entry occurrences establish entry-count lower bounds.
+A birth followed by consumption does not invent an entry member. Indexed exact
+counts retain concrete selections and refuse unresolved neighboring effects.
+Repeated birth/death, absent authority or birth, false totals, and spent-instance
+reuse remain rejected. Authority-mode returns use the authority ledger without
+legacy population-transition fallback. Multi-size kernel checks cover unrelated
+imports and growing related death receipts.
+
+The two scalar logical callback controls now use authority mode and explicit
+ordinary resource models, preserving their scalar signatures, exact-one logical
+claim, and model-local false-result refusal. This follows the resolved decision
+to retire integer-only global populations. Pointer-anchored Count preservation
+remains covered by the existing named callback fixtures and the Count-specific
+refinement/model-local companions. Targeted execution-theorem expansion retains
+the project mode, so its independently checked certificate agrees with ordinary
+verification. Ordinary named models
+can cross preserving assumed interfaces without an artificial population anchor;
+assumed interfaces still cannot perform named population lifecycle effects.
+
+**Recovery closure:** The owned-count and predicate recoveries are superseded by
+landed, checked replacements. The pool-member recovery's private-memory consumption frontier now verifies
+as a repository fixture with its original C preserved. Its never-green implicit
+stack-body transfer proposal is retained as an unchanged-C refusal at the
+existing local-storage ownership boundary; a separate explicit-storage helper
+checks cross-pool model transfer and a caller-framed occurrence. Earlier local/private/member refusal probes have
+named-field replacements. No Milestone 3 implementation or regression depends on
+an uncommitted recovery worktree. The unrelated C++/snapshot experiments remain
+preserved in the original recovery archive; they are not migration dependencies.
+
+**Exit gate:** All sequential population-consumer groups have authority-mode
+replacements, including their diagnostic and negative controls. The loop/pure
+expression search hits and ordinary child-model equations do not observe resource
+populations. The retained negative-quantity legacy fixture is an explicit
+Milestone 6 control with a checked authority replacement. Mutex and worker groups
+remain listed for Milestones 4 and 5. Symbolic heterogeneous named batches,
+general sums over fields, and assumed named lifecycle interfaces remain outside
+this milestone's supported boundary.
+
+**Completion validation:** The full `scripts/check.sh --no-fail-fast` gate
+passed 5,074 unit/integration tests and 368 fixture tests, with 23 configured
+skips. All 54 closing smart sites passed expansion, retained/cold certificate
+rechecking, and fixed-point audits. The callback Count refinement has a
+source-backed regression for authority-mode targeted expansion. Existing C
+and C++ fences remain byte-for-byte unchanged.
 
 **Preserving named authority imports:** Unary and wildcard field-bearing
 authorities import an arbitrary total without anonymous member rights. Named identity and fields
@@ -369,11 +417,11 @@ that custody and authority. Count recovers the declared field schema through
 an immutable indexed import map. Regressions retain two distinct members with
 equal arguments, and forward-declared List functions preserve Count observations
 across calls. Negatives reject missing authority, exact totals invented from
-local ownership, and unsupported imported named lifecycle operations. Kernel checks enforce
-read-only imports and bounded lookup work beside growing unrelated populations.
+local ownership, and unauthorized imported named lifecycle operations. Kernel checks enforce
+preserving imports and bounded lookup work beside growing unrelated populations.
 Wildcard helpers preserve aggregate and exact observations while other named
 members stay framed; an authority-only helper preserves them with all members
-framed. Regressions reject invented aggregate/exact totals and lifecycle changes.
+framed. Regressions reject invented aggregate/exact totals and unauthorized lifecycle changes.
 External and named callback contracts now build entry contexts in the selected
 resource semantics. Assumed interfaces may preserve explicitly owned authority
 and named occurrences through the shared checked call engine. They cannot birth
@@ -399,16 +447,16 @@ certificates check the requested direction and independently recheck body facts
 and the ledger; repeated folds remain rejected. Kernel regressions cover
 identity, duplicate death, equal-field distinct occurrences, no anonymous
 custody, and logarithmic indexed work beside 16/64/256 unrelated imports.
-Named creation, wildcard named lifecycle operations, and caller-side named
-consumption transfers remain guarded. This does not close milestone three.
+This standalone slice left named creation, wildcard lifecycle operations, and
+caller-side consumption guarded. The closing slice below replaces those guards
+with checked effects.
 
 **List-valued named fields:** Protected resource types and named member lowering
 now share checked algebraic field schemas. A private-memory preserving helper
 proof retains two distinct List values while authority is closed, and observes
 counts after reopening it. Negatives reject anonymous field-bearing quantities,
 missing count authority, and incorrect model types. The original field-count controls now use authority with preserving external
-interfaces; imported body opening beyond standalone unary consumption still needs
-checked lifecycle effects. Unary and wildcard preserving authority imports are supported
+interfaces; imported body opening and lifecycle effects use the closing slice below. Unary and wildcard preserving authority imports are supported
 by the slice above. This slice does not add named helper
 lifecycle effects or sums over model fields.
 
@@ -469,9 +517,9 @@ before publishing a wrapped count. The original numeric caller verifies
 independently with its exact `3 + 4 == 7` total. Companion fixtures admit a
 single large symbolic birth and a numeric total exactly at `2147483647`, and
 reject a further numerical birth. All twelve positive expansion sites audit.
-Repeated births without an exact numeric quantity remain unsupported,
-even when their sum is bounded;
-this migrates the overflow refusal, not that broader ledger capability.
+This initial slice migrated the overflow refusal without adding general
+repeated symbolic births; the later composable-birth slice supplies that
+broader ledger capability.
 
 **Exactly known batch slice:** A symbolic quantity pinned by a recorded exact
 integer equality now uses the numeric birth ledger. The original repeated-birth
@@ -602,11 +650,12 @@ increment, an untouched sibling counter, or a nonfinal counter cleared to zero.
 The missing-write case owns count authority but only views C memory, and fails
 on the store itself. Every original C program and refusal obligation is retained.
 
+The original four migration groups below are complete:
+
 1. Migrate remaining numeric/symbolic quantity groups and local contribution
    consumption, retaining scope-close and return single-spend checks.
-   Before migrating named-member lifecycle helpers, extend their checked
-   authority effects for explicit helper birth/consumption; milestone two
-   supports preserving transport and local lifecycle operations only.
+   The closing slice adds checked named-member helper birth/consumption
+   effects beyond milestone two’s preserving transport and local lifecycle.
 2. Migrate predicates, loops, current/old snapshots, and contract observation
    boundaries without permitting count facts to manufacture authority.
 3. Migrate sequential exact-two accounting and dependent helper groups.

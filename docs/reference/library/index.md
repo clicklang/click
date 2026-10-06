@@ -127,10 +127,14 @@ Preserving helpers take a named member through ordinary `owns` contracts and
 retain its proof fields through explicit postconditions. They can unfold and
 restore its private body while the caller keeps the authority control closed;
 the same population occurrence stays reserved across the preserving call. A
-member alone does not permit observing `count(...)`. Helper creation or
-consumption of named population members needs a checked authority-effect
-boundary and remains unsupported. Symbolic quantities of heterogeneous named
-instances are also unsupported. Legacy mode retains its field-count restriction.
+member alone does not permit observing `count(...)`. Verified helpers can
+create or consume named members when their checked input partition supplies the
+governing authority. Creation needs an increment bound; consumption needs the
+exact owned occurrence. Unary and wildcard imports preserve arbitrary entry
+totals and record relative effects without anonymous member rights. Assumed
+interfaces may preserve named ownership but cannot perform these lifecycle
+effects. Symbolic quantities of heterogeneous named instances remain unsupported.
+Legacy mode retains its field-count restriction.
 
 **Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
 
