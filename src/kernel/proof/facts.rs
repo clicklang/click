@@ -1330,17 +1330,15 @@ impl ProofFacts {
         let mut batch = self.prioritized.as_deref();
         while let Some(current) = batch {
             for fact in current.facts.iter() {
-                let owned = crate::kernel::clone_proposition_iteratively(fact);
-                if seen.insert(crate::kernel::clone_proposition_iteratively(fact)) {
-                    ordered.push(owned);
+                if seen.insert(fact) {
+                    ordered.push(crate::kernel::clone_proposition_iteratively(fact));
                 }
             }
             batch = current.parent.as_deref();
         }
         for fact in self.ordered.iter() {
-            let owned = crate::kernel::clone_proposition_iteratively(fact);
-            if seen.insert(crate::kernel::clone_proposition_iteratively(fact)) {
-                ordered.push(owned);
+            if seen.insert(fact) {
+                ordered.push(crate::kernel::clone_proposition_iteratively(fact));
             }
         }
         #[cfg(test)]
@@ -1869,7 +1867,7 @@ fn collect_proposition_bitvector_atoms(
         }
         Proposition::CResourceSeparate { left, right } => {
             for resource in [left, right] {
-                if let CResource::Memory(range) = resource {
+                if let CResource::Memory(range) = &**resource {
                     collect_pointer_offset_bitvector_atoms(&range.base.offset, atoms);
                     collect_bitvector_atoms(&range.start, atoms);
                     collect_bitvector_atoms(&range.end, atoms);
@@ -2520,8 +2518,8 @@ mod integer_equality_fact_index_tests {
             ))
         };
         let separation = Proposition::CResourceSeparate {
-            left: range("a"),
-            right: range("b"),
+            left: Box::new(range("a")),
+            right: Box::new(range("b")),
         };
         let bound = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(

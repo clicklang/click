@@ -60,9 +60,9 @@ impl MutexTransitionError {
             Self::MissingLive(mutex) => super::CRuntimeError::MissingMutexLive { mutex },
             Self::MissingUse(mutex) => super::CRuntimeError::MissingMutexUse { mutex },
             Self::MissingGuard(mutex) => super::CRuntimeError::MissingMutexGuard { mutex },
-            Self::MissingInvariant(resource) => {
-                super::CRuntimeError::MissingMutexInvariant { resource }
-            }
+            Self::MissingInvariant(resource) => super::CRuntimeError::MissingMutexInvariant {
+                resource: Box::new(resource),
+            },
             Self::Refusal(message) => super::CRuntimeError::FunctionContract(message.into()),
         }
     }
@@ -441,8 +441,8 @@ fn ledger_storage_write_refusal(
             )
         {
             return Some(super::CRuntimeError::MutexStorageWrite {
-                write: write.clone(),
-                storage,
+                write: Box::new(write.clone()),
+                storage: Box::new(storage),
             });
         }
     }
@@ -883,7 +883,7 @@ pub(super) fn initialization_storage_refusal(
                 .owns_storage_access(mutex, bytes, assumptions))
     {
         return Some(super::CRuntimeError::MissingResource {
-            resource: CResourceFact::own_memory(range),
+            resource: Box::new(CResourceFact::own_memory(range)),
         });
     }
     if assumptions.decide(&ConditionTerm::pointer_aligned(
@@ -905,7 +905,7 @@ pub(super) fn initialization_storage_refusal(
             assumptions,
             super::LoanRefusalOperation::MemoryAccess,
         )
-        .map(super::CRuntimeError::LoanRefusal)
+        .map(|refusal| super::CRuntimeError::LoanRefusal(Box::new(refusal)))
 }
 
 /// A storage release must not leave a live initialization behind. Abstract
@@ -2077,8 +2077,8 @@ impl MutexLedger {
             })();
             let stated_separation =
                 assumptions.proves_exact(&super::Proposition::CResourceSeparate {
-                    left: allocation_resource.clone(),
-                    right: storage.clone(),
+                    left: Box::new(allocation_resource.clone()),
+                    right: Box::new(storage.clone()),
                 }) || (allocation.element_width() == 1
                     && allocation.start().as_const() == Some(0)
                     && allocation.end().as_const().is_some_and(|extent| {
@@ -2097,13 +2097,13 @@ impl MutexLedger {
                     }
                 } else {
                     super::CRuntimeError::MutexStorageSeparationRequired {
-                        allocation: allocation.clone(),
-                        storage: super::CMemoryRange::new_with_element_width(
+                        allocation: Box::new(allocation.clone()),
+                        storage: Box::new(super::CMemoryRange::new_with_element_width(
                             mutex.clone(),
                             0u32.into(),
                             (*bytes).into(),
                             1,
-                        ),
+                        )),
                     }
                 });
             }
@@ -2929,7 +2929,7 @@ mod tests {
         assert_eq!(
             error.into_runtime_error(&mutex(0)),
             super::super::CRuntimeError::MissingMutexInvariant {
-                resource: protected
+                resource: Box::new(protected)
             }
         );
         assert_eq!(held.state(), &before);
@@ -3389,20 +3389,20 @@ mod tests {
             .unwrap()
             .into_state();
         let outcomes = [
-            CStatementOutcome::Normal(state.clone()),
-            CStatementOutcome::Break(state.clone()),
-            CStatementOutcome::Continue(state.clone()),
+            CStatementOutcome::Normal(Box::new(state.clone())),
+            CStatementOutcome::Break(Box::new(state.clone())),
+            CStatementOutcome::Continue(Box::new(state.clone())),
             CStatementOutcome::Return {
                 value: int32(0),
-                state: state.clone(),
+                state: Box::new(state.clone()),
             },
             CStatementOutcome::Throw {
                 value: int32(0),
-                state: state.clone(),
+                state: Box::new(state.clone()),
             },
             CStatementOutcome::Jump {
                 target: CControlTargetId(1),
-                state: state.clone(),
+                state: Box::new(state.clone()),
             },
         ];
         for outcome in outcomes {
@@ -3681,8 +3681,8 @@ mod tests {
         let separated = assumptions
             .clone()
             .assume_proposition(Proposition::CResourceSeparate {
-                left: CResource::Memory(write.clone()),
-                right: CResource::Memory(storage_range(&address, 40)),
+                left: Box::new(CResource::Memory(write.clone())),
+                right: Box::new(CResource::Memory(storage_range(&address, 40))),
             });
         assert!(storage_write_refusal(context.state(), &write, &separated).is_none());
     }
@@ -3702,8 +3702,8 @@ mod tests {
         let separated = assumptions
             .clone()
             .assume_proposition(Proposition::CResourceSeparate {
-                left: CResource::Memory(storage_range(&requested, 40)),
-                right: CResource::Memory(storage_range(&held, 40)),
+                left: Box::new(CResource::Memory(storage_range(&requested, 40))),
+                right: Box::new(CResource::Memory(storage_range(&held, 40))),
             });
         assert!(abstract_guard_acquisition_refusal(&state, &requested, &separated).is_none());
 
@@ -4300,8 +4300,8 @@ mod tests {
         let allocation = allocation_range(base, 48);
         let storage = allocation_range(symbolic.clone(), 40);
         let expected = Some(CRuntimeError::MutexStorageSeparationRequired {
-            allocation: allocation.clone(),
-            storage: storage.clone(),
+            allocation: Box::new(allocation.clone()),
+            storage: Box::new(storage.clone()),
         });
         let assumptions = PureFactContext::new();
         assert_eq!(
@@ -4320,8 +4320,8 @@ mod tests {
         let separated = assumptions
             .clone()
             .assume_proposition(Proposition::CResourceSeparate {
-                left: CResource::Memory(allocation.clone()),
-                right: CResource::Memory(storage),
+                left: Box::new(CResource::Memory(allocation.clone())),
+                right: Box::new(CResource::Memory(storage)),
             });
         assert!(storage_retirement_refusal(context.state(), &allocation, &separated).is_none());
         let destroyed = context.destroy(&symbolic, &assumptions).unwrap();
@@ -4931,7 +4931,7 @@ mod tests {
             }
         }
         match path.outcome {
-            CStatementOutcome::Normal(state) => Ok(state),
+            CStatementOutcome::Normal(state) => Ok(*state),
             CStatementOutcome::RuntimeError(error) => Err(error),
             other => panic!("unexpected mutex call outcome: {other:?}"),
         }

@@ -6280,9 +6280,9 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
-            outcome: CStatementOutcome::Normal(state),
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
+            outcome: CStatementOutcome::Normal(Box::new(state)),
         }
     );
 }
@@ -6332,11 +6332,11 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, true)),
                     Box::new(Proposition::CStatementExecutes {
-                        state: state.clone(),
-                        statement: c_max_body(),
+                        state: Box::new(state.clone()),
+                        statement: Box::new(c_max_body()),
                         outcome: CStatementOutcome::Return {
                             value: int32(Bitvector32Term::Variable(b)),
-                            state,
+                            state: Box::new(state),
                         },
                     }),
                 ),
@@ -6368,11 +6368,11 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(condition, false)),
                     Box::new(Proposition::CStatementExecutes {
-                        state: state.clone(),
-                        statement: c_max_body(),
+                        state: Box::new(state.clone()),
+                        statement: Box::new(c_max_body()),
                         outcome: CStatementOutcome::Return {
                             value: int32(Bitvector32Term::Variable(a)),
-                            state,
+                            state: Box::new(state),
                         },
                     }),
                 ),
@@ -6418,8 +6418,8 @@ fn repeated_resolution_queries_do_not_repay_their_search() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(left.clone(), 0, 1)),
-            right: CResource::Memory(memory_range(right.clone(), 0, 1)),
+            left: Box::new(CResource::Memory(memory_range(left.clone(), 0, 1))),
+            right: Box::new(CResource::Memory(memory_range(right.clone(), 0, 1))),
         });
     let _scope = assumptions.enter_id_scope();
 

@@ -1466,7 +1466,7 @@ pub(super) fn route_throw_to_handler(
         );
         facts = transition.pure_facts.clone();
         introduced_facts.extend(transition.introduced_facts.iter().cloned());
-        state = next_state;
+        state = *next_state;
     }
     *available_pure_facts = facts;
     execution.core.state = state.clone().into();
@@ -1815,7 +1815,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
         function_block,
         prepared.statement_index,
         ProgramPointKind::Exit,
-        next_state.clone(),
+        *next_state.clone(),
     );
 
     if is_throw {
@@ -1895,7 +1895,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
 
     *available_pure_facts = transition.pure_facts.clone();
     execution.core.frontier.execution_start_state = Some(prepared.execution_start_state.clone());
-    execution.core.state = next_state.clone().into();
+    execution.core.state = (*next_state.clone()).into();
     let remaining = if let Some(remaining) = prepared.continuation_remaining.clone() {
         execution.core.frontier.next_statement_index = prepared.continuation_index;
         Some(remaining)
@@ -1912,7 +1912,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 function_block,
                 execution.core.frontier.next_statement_index,
                 ProgramPointKind::Entry,
-                next_state,
+                *next_state,
             );
         }
         None if finish_exhausted_region(&mut execution.core.frontier) => {}
@@ -2838,7 +2838,7 @@ fn execute_step_from_frontier_position_selecting_path(
             function_block,
             loop_index,
             ProgramPointKind::Exit,
-            state.clone(),
+            *state.clone(),
         );
     }
     let mut outcome = outcome;
@@ -2854,7 +2854,7 @@ fn execute_step_from_frontier_position_selecting_path(
         | CStatementOutcome::Return { state, .. }
         | CStatementOutcome::Throw { state, .. }
         | CStatementOutcome::Jump { state, .. } => {
-            *state = execution
+            **state = execution
                 .core
                 .record_automatic_lifetime_end(state, ended)
                 .map_err(|error| {
@@ -2885,7 +2885,7 @@ fn execute_step_from_frontier_position_selecting_path(
             function_block,
             statement_index,
             ProgramPointKind::Exit,
-            statement_exit_state,
+            *statement_exit_state,
         );
         if let Some(loop_index) = loop_index
             && !matches!(outcome, CStatementOutcome::Normal(_))
@@ -2901,7 +2901,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     | CStatementOutcome::Continue(state)
                     | CStatementOutcome::Jump { state, .. }
                     | CStatementOutcome::Return { state, .. }
-                    | CStatementOutcome::Throw { state, .. } => state.clone(),
+                    | CStatementOutcome::Throw { state, .. } => *state.clone(),
                     CStatementOutcome::UndefinedBehavior(_)
                     | CStatementOutcome::RuntimeError(_)
                     | CStatementOutcome::VerificationDiverges => unreachable!(),
@@ -2925,7 +2925,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     function_block,
                     exited,
                     ProgramPointKind::Exit,
-                    next_state.clone(),
+                    *next_state.clone(),
                 );
             }
             let remaining = if let Some(remaining) = remaining {
@@ -2936,7 +2936,7 @@ fn execute_step_from_frontier_position_selecting_path(
             };
             *available_pure_facts = successor_pure_facts;
             execution.core.frontier.execution_start_state = Some(execution_start_state);
-            execution.core.state = next_state.clone().into();
+            execution.core.state = (*next_state.clone()).into();
             match remaining {
                 Some(remaining) => {
                     execution.core.frontier.position = FrontierPosition::StatementEntry {
@@ -2947,7 +2947,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         function_block,
                         execution.core.frontier.next_statement_index,
                         ProgramPointKind::Entry,
-                        next_state,
+                        *next_state,
                     );
                 }
                 None if finish_exhausted_region(&mut execution.core.frontier) => {
@@ -2959,7 +2959,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         function_block,
                         source_region.continuation_node,
                         ProgramPointKind::Entry,
-                        next_state,
+                        *next_state,
                     );
                 }
                 None => {
@@ -3059,7 +3059,7 @@ fn execute_step_from_frontier_position_selecting_path(
             // own continuation.
             *available_pure_facts = successor_pure_facts;
             execution.core.frontier.execution_start_state = Some(execution_start_state);
-            execution.core.state = next_state.into();
+            execution.core.state = (*next_state).into();
         }
         CStatementOutcome::Jump {
             target,
@@ -3072,7 +3072,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.frontier.position = FrontierPosition::RegionBoundary;
                 execution.core.frontier.loop_control = Default::default();
                 execution.core.frontier.execution_start_state = Some(execution_start_state);
-                execution.core.state = next_state.into();
+                execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
             }
             if execution.core.frontier.natural_exit_target == Some(target)
@@ -3083,7 +3083,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.frontier.loop_control =
                     crate::kernel::proof::LoopControlExit::NaturalExit(target);
                 execution.core.frontier.execution_start_state = Some(execution_start_state);
-                execution.core.state = next_state.into();
+                execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
             }
             let target_id = target;
@@ -3114,9 +3114,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 function_block,
                 target_statement_index,
                 ProgramPointKind::Entry,
-                next_state.clone(),
+                *next_state.clone(),
             );
-            execution.core.state = next_state.into();
+            execution.core.state = (*next_state).into();
         }
         CStatementOutcome::VerificationDiverges => {
             let mut completed_execution_facts = execution_pure_facts;

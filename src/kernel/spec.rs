@@ -1587,7 +1587,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 algebraic_bindings,
                 budget,
-                |left, right| Proposition::CResourceSeparate { left, right },
+                |left, right| Proposition::CResourceSeparate {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
             )
         }
         SpecProposition::ResourceContains { parent, child } => {
@@ -1599,7 +1602,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 algebraic_bindings,
                 budget,
-                |parent, child| Proposition::CResourceContains { parent, child },
+                |parent, child| Proposition::CResourceContains {
+                    parent: Box::new(parent),
+                    child: Box::new(child),
+                },
             )
         }
         SpecProposition::MemoryLoadable {

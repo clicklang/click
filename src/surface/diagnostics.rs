@@ -1038,14 +1038,14 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::MutexStorageSeparationRequired { allocation, storage } =>
             format!("Requires {}; initialized mutex storage must remain live",
                 describe_pure_fact(&Proposition::CResourceSeparate {
-                    left: CResource::Memory(allocation.clone()),
-                    right: CResource::Memory(storage.clone()),
+                    left: Box::new(CResource::Memory(*allocation.clone())),
+                    right: Box::new(CResource::Memory(*storage.clone())),
                 }, parameters, arguments)),
         crate::kernel::CRuntimeError::MutexStorageWrite { write, storage } =>
             format!("Requires {}; initialized mutex storage is reserved until pthread_mutex_destroy",
                 describe_pure_fact(&Proposition::CResourceSeparate {
-                    left: CResource::Memory(write.clone()),
-                    right: CResource::Memory(storage.clone()),
+                    left: Box::new(CResource::Memory(*write.clone())),
+                    right: Box::new(CResource::Memory(*storage.clone())),
                 }, parameters, arguments)),
         crate::kernel::CRuntimeError::MissingMutexStorageAlignment { mutex, alignment } =>
             format!("Requires aligned({}, {alignment})", describe_mutex_pointer(mutex, parameters, arguments)),

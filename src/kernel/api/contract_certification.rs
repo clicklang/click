@@ -1951,8 +1951,8 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                     let effect_facts = memory_effect_execution_facts(&path.facts);
                     let facts = public_execution_pure_facts(&path.facts);
                     let proposition = Proposition::CFunctionVerifies {
-                        state: state.clone(),
-                        function: function.clone(),
+                        state: Box::new(state.clone()),
+                        function: Box::new(function.clone()),
                         arguments: arguments.clone(),
                         outcome: path.outcome,
                     };
@@ -2067,8 +2067,8 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
         } => (state, function, arguments, outcome, true),
         _ => return None,
     };
-    if state != specification.state()
-        || proved_function != &function
+    if **state != *specification.state()
+        || **proved_function != function
         || arguments != specification.arguments()
         || outcome != specification.outcome()
     {
@@ -2078,12 +2078,12 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
     let requires = specification.requires().to_vec();
     let conclusion = if verifies {
         Proposition::CFunctionPartiallySatisfiesSpecification {
-            function,
+            function: Box::new(function),
             specification: Box::new(specification),
         }
     } else {
         Proposition::CFunctionSatisfiesSpecification {
-            function,
+            function: Box::new(function),
             specification: Box::new(specification),
         }
     };
@@ -2131,7 +2131,7 @@ fn certified_function_path_parts<'a>(
         } => (state, function, arguments, outcome),
         _ => return None,
     };
-    if proved_function != function {
+    if **proved_function != *function {
         return None;
     }
     // `path.assumptions` contains only entry premises. Execution facts are

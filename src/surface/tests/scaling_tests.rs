@@ -1506,8 +1506,8 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     };
     let separate =
         |block: String, variable: u64, start: u32, end: u32| Proposition::CResourceSeparate {
-            left: range(at(block.clone(), variable), start, end),
-            right: range(at(block, variable + 1), start, end),
+            left: Box::new(range(at(block.clone(), variable), start, end)),
+            right: Box::new(range(at(block, variable + 1), start, end)),
         };
     let address = Pointer {
         block: "goal".into(),

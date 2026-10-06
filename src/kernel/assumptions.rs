@@ -4128,13 +4128,9 @@ impl PureFactContext {
     fn proposition_memory_separation(
         proposition: &Proposition,
     ) -> Option<(CMemoryRange, CMemoryRange)> {
-        match proposition {
-            Proposition::CResourceSeparate {
-                left: CResource::Memory(left),
-                right: CResource::Memory(right),
-            } => Some((left.clone(), right.clone())),
-            _ => None,
-        }
+        proposition
+            .memory_separation()
+            .map(|(left, right)| (left.clone(), right.clone()))
     }
 
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition, insert: bool) {
@@ -7439,13 +7435,13 @@ impl ExecutionPureFact {
             },
             public: false,
             certified: true,
-            certified_store: Some(CertifiedMemoryStore {
+            certified_store: Some(Box::new(CertifiedMemoryStore {
                 before,
                 after,
                 pointer,
                 value,
                 authorized_range,
-            }),
+            })),
             transport: None,
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
@@ -7475,7 +7471,7 @@ impl ExecutionPureFact {
     }
 
     pub(crate) fn with_generated_load_binding(mut self, binding: GeneratedLoadBinding) -> Self {
-        self.generated_load_binding = Some(binding);
+        self.generated_load_binding = Some(Box::new(binding));
         self
     }
 
@@ -7501,7 +7497,10 @@ impl ExecutionPureFact {
             public: false,
             certified: true,
             certified_store: None,
-            transport: Some(CertifiedExecutionFactTransport { source, theorem }),
+            transport: Some(Box::new(CertifiedExecutionFactTransport {
+                source,
+                theorem,
+            })),
             generated_load_binding: None,
             generated_load_source_events: Default::default(),
         }
@@ -7516,7 +7515,7 @@ impl ExecutionPureFact {
     }
 
     pub(crate) fn generated_load_binding(&self) -> Option<&GeneratedLoadBinding> {
-        self.generated_load_binding.as_ref()
+        self.generated_load_binding.as_deref()
     }
 
     pub fn condition(condition: ConditionTerm, value: bool) -> Self {
@@ -7536,7 +7535,7 @@ impl ExecutionPureFact {
     }
 
     pub(super) fn certified_store_data(&self) -> Option<&CertifiedMemoryStore> {
-        self.certified_store.as_ref()
+        self.certified_store.as_deref()
     }
 }
 

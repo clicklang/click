@@ -712,7 +712,7 @@ fn advance_execution_proof_statement(
                     environment.function_block,
                     CodeRegion::Statement(statement_index),
                     ProgramPointKind::Exit,
-                    exit_state.clone(),
+                    *exit_state.clone(),
                 );
             }
             if matches!(statement, CStatement::While { .. }) {
@@ -744,14 +744,14 @@ fn advance_execution_proof_statement(
                         region: CodeRegionRef::Loop(loop_index),
                         kind: ProgramPointKind::Exit,
                     };
-                    recorded_snapshots.insert(exit_point.clone(), exit_state.clone());
+                    recorded_snapshots.insert(exit_point.clone(), *exit_state.clone());
                     for label in &loop_labels {
                         recorded_snapshots.insert(
                             ProgramPointRef {
                                 region: CodeRegionRef::Label(label.clone()),
                                 kind: ProgramPointKind::Exit,
                             },
-                            exit_state.clone(),
+                            *exit_state.clone(),
                         );
                     }
                     if let Some(loop_clause) = environment
@@ -797,7 +797,7 @@ fn advance_execution_proof_statement(
             }
             match transition.outcome {
                 CStatementOutcome::Normal(state) => advanced.push(PlanningExecutionContext {
-                    state,
+                    state: *state,
                     pure_facts: transition.pure_facts,
                     surface_propositions,
                     recorded_snapshots,
@@ -811,7 +811,7 @@ fn advance_execution_proof_statement(
                         ClickError::new("execution proof traversal produced an unknown goto target")
                     })?;
                     advanced.push(PlanningExecutionContext {
-                        state,
+                        state: *state,
                         pure_facts: transition.pure_facts,
                         surface_propositions,
                         recorded_snapshots,

@@ -9,7 +9,7 @@ fn normal(state: CState, statement: CStatement) -> CState {
     else {
         panic!("{:?}", theorem.proposition());
     };
-    after.clone()
+    *after.clone()
 }
 
 fn outcome(state: &CState, expression: CExpression) -> CExpressionOutcome {
