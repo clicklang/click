@@ -255,7 +255,8 @@ CI uses these internal modes for code-affecting changes:
   all selected test binaries. It does not execute tests or quality checks.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
   without compiling Click or either exporter. Six deterministic nextest
-  hash partitions cover the unit and import tests; mdtests run on three
+  hash partitions cover the unit, C, and C++ import tests, and two more cover
+  the Rust import tests, which alone need Charon; mdtests run on three
   runners, each taking every third file by `MDTEST_PARTITION`; examples have
   one. The build job takes about six of the ten minutes, so a shard has to
   finish in under four.
@@ -283,13 +284,15 @@ runners restore those files instead of reinstalling Clang. Native Rust
 extraction uses the compiler/runtime identity in
 `src/languages/rust/charon-profile.json`; `scripts/charon-toolchain.sh` derives
 its runtime paths from that profile. Preparation bundles `rustc` and its runtime
-libraries with the tests using `scripts/charon-runtime.sh`; consumers validate the
-compiler, target, and toolchain identity and restore those libraries before
-setup, so missing caches do not prevent test execution. Ordinary
-archive consumers require the runtime files and unpack both Charon executables
-from `charon.tar`, without installing another compiler or mdBook. Preparation
-installs the pinned compiler with `rustc-dev` and `rust-src`, builds Charon once,
-and archives it alongside Click's tests. The compiled-in profile owns extractor
+libraries using `scripts/charon-runtime.sh` and both Charon executables in
+`charon.tar.gz`, as a second artifact, `rust-toolchain`, apart from the test
+binaries: together they are nearly half of the build output, and only the Rust
+import tests start the compiler. The `rust` shards download that artifact,
+validate the compiler, target, and toolchain identity, and restore those
+libraries before setup, so missing caches do not prevent test execution; every
+other shard downloads the test binaries alone. No shard installs another
+compiler or mdBook. Preparation installs the pinned compiler with `rustc-dev`
+and `rust-src`, builds Charon once, and archives it. The compiled-in profile owns extractor
 pins, flags, and versioned adapter interpretations; the build script reads the
 same profile. Cargo's extractor dependency pin is checked against it.
 

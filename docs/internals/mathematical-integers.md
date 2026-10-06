@@ -817,3 +817,27 @@ The unchanged Bitcoin fee-division proof uses this rule twice to establish
 checking both narrowing casts. This reconstruction equation is a foundation
 for the remaining exact rounding contract.
 
+Exact Integer congruence also preserves unrelated native expression syntax.
+It does not fold a native cast or a known conditional just because the walker
+visits it: native observations are opaque affine atoms whose identities must
+still match the available checked facts. Integer payloads that contain the
+cited term continue to rewrite.
+
+For a native correction, first rewrite its checked mathematical addition
+identity, then replace the observed quotient. A native division expression can
+itself contain the mathematical quotient; reversing that equality before
+removing the native addition may also substitute inside the native expression.
+
+<!-- verified-example: mdtests/integer_observed_quotient_correction.md -->
+```click
+theorem observed_quotient_correction(q: int64, quotient: Integer) {
+    requires defined(q + 1i64);
+    requires to_integer(q) == quotient;
+    ensures to_integer(q + 1i64) == quotient + 1 by {
+        apply(int64_add_to_integer(q, 1i64));
+        rewrite(to_integer(q + 1i64) == to_integer(q) + 1);
+        rewrite(to_integer(q) == quotient);
+        simp();
+    }
+}
+```

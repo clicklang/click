@@ -2235,6 +2235,77 @@ mod tests {
     }
 
     #[test]
+    fn integer_equality_rewrite_preserves_unrelated_native_observation_syntax() {
+        let x = IntegerTerm::var(Variable(193_041));
+        let y = IntegerTerm::var(Variable(193_042));
+        let cited = integer_equality(x.clone(), y.clone());
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        // These raw native forms are valid opaque observation identities.
+        // Congruence must not fold them while rewriting an unrelated Integer.
+        let terms = [
+            Bitvector32Term::MachineIntegerCast {
+                value: Box::new(Bitvector32Term::Constant(1)),
+                source: MachineIntegerType::Int32,
+                destination: MachineIntegerType::Int64,
+            },
+            Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::UInt32From64(Box::new(
+                Bitvector32Term::UInt64Constant(1),
+            )))),
+            Bitvector32Term::If {
+                condition: Box::new(ConditionTerm::Constant(true)),
+                then_term: Box::new(Bitvector32Term::Int64Constant(1)),
+                else_term: Box::new(Bitvector32Term::Int64Constant(2)),
+            },
+        ];
+        for term in terms {
+            let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int64,
+                Bitvector32Term::Int64Add(
+                    Box::new(Bitvector32Term::Variable(Variable(193_043))),
+                    Box::new(term),
+                ),
+            ));
+            let goal = integer_equality(observed.clone(), IntegerTerm::add(x.clone(), x.clone()));
+            let expected =
+                integer_equality(observed.clone(), IntegerTerm::add(y.clone(), y.clone()));
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&goal, &cited)
+                    .unwrap()
+                    .proposition(),
+                &expected
+            );
+            assert!(
+                facts
+                    .check_equality_rewrite(&integer_equality(observed.clone(), observed), &cited)
+                    .is_err()
+            );
+        }
+        // A payload that actually contains the cited Integer still rewrites,
+        // while its surrounding native cast remains an exact cast node.
+        let cast = |value: IntegerTerm| {
+            IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int64,
+                Bitvector32Term::MachineIntegerCast {
+                    value: Box::new(Bitvector32Term::IntegerToMachine {
+                        value: value.into(),
+                        destination: MachineIntegerType::Int32,
+                    }),
+                    source: MachineIntegerType::Int32,
+                    destination: MachineIntegerType::Int64,
+                },
+            ))
+        };
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&integer_equality(cast(x), y.clone()), &cited)
+                .unwrap()
+                .proposition(),
+            &integer_equality(cast(y.clone()), y)
+        );
+    }
+
+    #[test]
     fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
         let x = IntegerTerm::var(Variable(193_021));
         let y = IntegerTerm::var(Variable(193_022));
