@@ -72,8 +72,15 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             export MDTEST_PARTITION="$partition"
             ;;
         examples)
+            # The example-project harness takes every n-th example by
+            # `EXAMPLE_PARTITION`; the binary's other tests run on the first
+            # shard only.
             filter='binary(examples)'
+            if [[ "$partition" != 1/* ]]; then
+                filter='binary(examples) & test(=example_projects)'
+            fi
             nextest_args=(--no-capture)
+            export EXAMPLE_PARTITION="$partition"
             ;;
         nightly)
             # Everything the budgeted gate leaves out: ignored tests, the
