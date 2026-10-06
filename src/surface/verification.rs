@@ -8268,9 +8268,17 @@ pub(in crate::surface) fn check_signature(
                 "signature mismatch for `{}` parameter {} in `{source_path}`: .click has {} {}, C has {} {}",
                 signature.name(),
                 index + 1,
-                describe_parameter_type(expected.c_type(), expected.struct_name()),
+                describe_parameter_type(
+                    expected.c_type(),
+                    expected.struct_name(),
+                    expected.pointee_is_constant(),
+                ),
                 expected.name(),
-                describe_parameter_type(actual.c_type(), actual.struct_name()),
+                describe_parameter_type(
+                    actual.c_type(),
+                    actual.struct_name(),
+                    actual.pointee_is_constant(),
+                ),
                 actual.name()
             ))
             .with_kind(ClickErrorKind::Type));
@@ -8283,11 +8291,17 @@ pub(in crate::surface) fn check_signature(
 pub(in crate::surface) fn describe_parameter_type(
     c_type: C0Type,
     struct_name: Option<&str>,
+    pointee_constant: bool,
 ) -> String {
-    match struct_name {
+    let parameter_type = match struct_name {
         Some(name) if matches!(c_type, C0Type::UInt8Array(_)) => format!("struct {name}"),
         Some(name) => format!("struct {name}*"),
         None => format!("{c_type:?}"),
+    };
+    if pointee_constant {
+        format!("const {parameter_type}")
+    } else {
+        parameter_type
     }
 }
 

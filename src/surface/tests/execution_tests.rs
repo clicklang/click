@@ -1408,6 +1408,43 @@ fn signature_mismatch_reports_direct_error() {
 }
 
 #[test]
+fn pointer_constness_signature_mismatch_displays_both_qualifiers() {
+    for (pointer_type, rendered_type) in [
+        ("struct Value*", "struct Value*"),
+        ("int32*", "Int32Pointer"),
+    ] {
+        for (click_const, c_const) in [("", "const "), ("const ", "")] {
+            let c_source = format!(
+                "struct Value {{ int32 value; }}; int32 read({c_const}{pointer_type} self) {{ return 0; }}"
+            );
+            let click_source = format!(
+                "verifying \"read.c\"; int32 read({click_const}{pointer_type} self) {{ ensures result == 0; }}"
+            );
+            let error = verify_c0_sources(&click_source, &[("read.c", &c_source)])
+                .expect_err("different pointee qualifiers must still fail signature checking");
+            assert_eq!(error.kind(), ClickErrorKind::Type);
+            assert!(
+                error.message().contains(&format!(
+                    ".click has {click_const}{rendered_type} self, C has {c_const}{rendered_type} self"
+                )),
+                "{}",
+                error.message()
+            );
+        }
+        for qualifier in ["", "const "] {
+            let c_source = format!(
+                "struct Value {{ int32 value; }}; int32 read({qualifier}{pointer_type} self) {{ return 0; }}"
+            );
+            let click_source = format!(
+                "verifying \"read.c\"; int32 read({qualifier}{pointer_type} self) {{ ensures result == 0; }}"
+            );
+            verify_c0_sources(&click_source, &[("read.c", &c_source)])
+                .expect("matching pointee qualifiers must still verify");
+        }
+    }
+}
+
+#[test]
 fn struct_name_signature_mismatch_reports_direct_error() {
     let c_source = r#"
         struct actual {
