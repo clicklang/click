@@ -3257,6 +3257,14 @@ mod loop_exit_resource_agreement_tests {
             assert!(loop_exit_resources_agree(&derived, &plain, &assumptions));
             assert!(loop_exit_resources_agree(&plain, &derived, &assumptions));
         }
+        let nontrivial = plain
+            .clone()
+            .with_cached_supported_expansion(&owner, vec![own("b")]);
+        assert!(!loop_exit_resources_agree(
+            &nontrivial,
+            &plain,
+            &assumptions
+        ));
         let other_view = plain
             .clone()
             .unchecked_with_supported_facts(&owner, vec![view("b")]);
@@ -3750,6 +3758,30 @@ mod contract_exit_join_tests {
             ambient_work.iter().all(|work| *work <= ambient_work[0] * 2),
             "{ambient_work:?}"
         );
+    }
+
+    #[test]
+    fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("shared".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new().with_block("shared", 4);
+        let zero = CValue::Float32(Bitvector32Term::Constant(0));
+        let load = symbolic_storage_cell_value(&memory, &pointer, CType::Float32, true).unwrap();
+        // This equation also permits a negative-zero representation. Filling
+        // the cache with positive-zero bits would make a later bitwise read false.
+        let facts = [ExecutionPureFact::new(
+            c_value_comparison_proposition(&load, CComparisonOperator::Equal, &zero).unwrap(),
+        )];
+        let mut states = vec![
+            CState::new().with_memory(memory.clone().store(pointer.clone(), zero)),
+            CState::new().with_memory(memory),
+        ];
+        retain_proven_loop_exit_cells(&mut states, &[&[], &facts], &PureFactContext::new(), true)
+            .unwrap();
+        assert!(states[1].memory().known_value(&pointer).is_none());
     }
 
     #[test]
