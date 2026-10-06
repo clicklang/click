@@ -9170,6 +9170,31 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     }
 
     #[test]
+    fn private_aggregate_parameters_can_lend_ownership_to_helpers() {
+        let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; } uint32 entry(uint32 x) { struct packet p = {x}; uint32 ignored = consume(p); return p.n; }";
+        let proof = r#"verifying "reader.c";
+            void change(uint32* n) { owns n[0..1]; ensures *n == 9u32; } by { execute(); simp(); }
+            uint32 consume(struct packet p) { ensures result == old(p.n); } by { execute(); simp(); }
+            uint32 entry(uint32 x) { ensures result == x; } by { execute(); simp(); }
+        "#;
+        verify_sources(proof, source).unwrap();
+        assert!(verify_sources(&proof.replace("result == x", "result != x"), source).is_err());
+        assert!(
+            verify_sources(proof, &source.replace("change(&p.n)", "change(&p.n + 1)")).is_err()
+        );
+        assert!(
+            verify_sources(
+                &proof.replace(
+                    "ensures result == old(p.n)",
+                    "owns p.n; ensures result == old(p.n)"
+                ),
+                source
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn unsigned_array_field_returns_preserve_values_in_c_callers() {
         let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
         let proof = r#"verifying "reader.c";

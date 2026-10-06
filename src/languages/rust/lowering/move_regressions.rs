@@ -9,7 +9,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
     )
     .unwrap();
     let sidecar = include_str!("../../../../examples/rust-move-drop/guard.click");
-    for corruption in 0..4 {
+    for corruption in 0..5 {
         let mut export = original.clone();
         let mir = export
             .functions
@@ -26,7 +26,7 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
             .unwrap()
             .name
             .clone();
-        if corruption == 0 || corruption == 3 {
+        if corruption == 0 || corruption == 3 || corruption == 4 {
             let statements = &mut mir
                 .blocks
                 .iter_mut()
@@ -39,6 +39,20 @@ fn rust_kernel_rejects_duplicate_move_drop_and_missing_cleanup() {
                 .unwrap();
             let extra = if corruption == 0 {
                 statements[index].clone()
+            } else if corruption == 4 {
+                let S::Move {
+                    target,
+                    source,
+                    record,
+                } = &statements[index]
+                else {
+                    unreachable!()
+                };
+                S::Copy {
+                    target: target.clone(),
+                    source: source.clone(),
+                    record: record.clone(),
+                }
             } else {
                 let S::Move { source, record, .. } = &statements[index] else {
                     unreachable!()

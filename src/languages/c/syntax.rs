@@ -4024,6 +4024,12 @@ impl C0StructField {
 }
 
 impl C0Parameter {
+    pub(crate) fn with_struct_value(mut self, name: String, layout: C0StructLayout) -> Self {
+        self.c_type = struct_value_type(&layout);
+        self.struct_name = Some(name);
+        self.struct_layout = Some(layout);
+        self
+    }
     pub(crate) fn new(c_type: C0Type, name: String, struct_name: Option<String>) -> Self {
         Self {
             c_type,

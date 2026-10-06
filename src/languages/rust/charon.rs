@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod constants;
 mod constructors;
 mod protocol;
 mod shared_arrays;
@@ -711,6 +712,9 @@ impl BodyAdapter<'_, '_> {
     }
     fn constant(&self, c: &a::ConstantExpr) -> Result<E, String> {
         Ok(match c.kind() {
+            a::ConstantExprKind::Global(reference) => {
+                return self.adapter.constant_read(reference, c.ty());
+            }
             a::ConstantExprKind::Bool(value) => E::Boolean { value: *value },
             a::ConstantExprKind::Integer(a::IntegerValue::Signed(a::IntTy::I32, value)) => {
                 E::Integer {
@@ -737,6 +741,9 @@ impl BodyAdapter<'_, '_> {
     fn operand(&self, op: &a::Operand) -> Result<E, String> {
         match op {
             a::Operand::Copy(p) | a::Operand::Move(p) => {
+                if let a::PlaceKind::Global(reference) = &p.kind {
+                    return self.adapter.constant_read(reference, &p.ty);
+                }
                 if matches!(self.adapter.ty(&p.ty)?, Type::Record { .. }) {
                     return Err(unsupported("aggregate operand without a move event"));
                 }
@@ -958,17 +965,29 @@ impl BodyAdapter<'_, '_> {
                                     .collect::<Result<_, _>>()?,
                             })
                         }
-                        a::Rvalue::Use(a::Operand::Move(source), _)
-                            if self.adapter.ty(&source.ty)? == self.adapter.ty(&p.ty)? =>
-                        {
+                        a::Rvalue::Use(
+                            op @ (a::Operand::Move(source) | a::Operand::Copy(source)),
+                            _,
+                        ) if self.adapter.ty(&source.ty)? == self.adapter.ty(&p.ty)? => {
                             let a::PlaceKind::Local(source) = source.kind else {
                                 return Err(unsupported("partial move"));
                             };
-                            Some(S::Move {
-                                target: self.local(target)?,
-                                source: self.local(source)?,
-                                record: name,
-                            })
+                            if matches!(op, a::Operand::Copy(_)) {
+                                if !self.adapter.crate_mode {
+                                    return Err(unsupported("record copy outside crate imports"));
+                                }
+                                Some(S::Copy {
+                                    target: self.local(target)?,
+                                    source: self.local(source)?,
+                                    record: name,
+                                })
+                            } else {
+                                Some(S::Move {
+                                    target: self.local(target)?,
+                                    source: self.local(source)?,
+                                    record: name,
+                                })
+                            }
                         }
                         _ => return Err(unsupported("record constructor or move")),
                     }
@@ -1144,6 +1163,37 @@ impl BodyAdapter<'_, '_> {
                     let a::PlaceKind::Local(dest) = call.dest.kind else {
                         return Err(unsupported("projected call destination"));
                     };
+                    let mut owned_arguments = Vec::new();
+                    let arguments = call
+                        .args
+                        .iter()
+                        .enumerate()
+                        .map(|(index, op)| {
+                            if let Type::Record { name } = self.adapter.ty(op.ty())? {
+                                if !self.adapter.crate_mode {
+                                    return Err(unsupported(
+                                        "owned call operand outside crate imports",
+                                    ));
+                                }
+                                let (a::Operand::Move(place) | a::Operand::Copy(place)) = op else {
+                                    return Err(unsupported("owned constant call operand"));
+                                };
+                                let a::PlaceKind::Local(local) = place.kind else {
+                                    return Err(unsupported("projected owned call operand"));
+                                };
+                                let local = self.local(local)?;
+                                owned_arguments.push(out::OwnedArgument {
+                                    index,
+                                    local: local.clone(),
+                                    record: name,
+                                    moved: matches!(op, a::Operand::Move(_)),
+                                });
+                                Ok(E::Local { name: local })
+                            } else {
+                                self.operand(op)
+                            }
+                        })
+                        .collect::<Result<_, String>>()?;
                     T::Call {
                         function: self
                             .adapter
@@ -1151,11 +1201,8 @@ impl BodyAdapter<'_, '_> {
                             .get(&id)
                             .ok_or_else(|| unsupported("unmodeled external call"))?
                             .clone(),
-                        arguments: call
-                            .args
-                            .iter()
-                            .map(|op| self.operand(op))
-                            .collect::<Result<_, _>>()?,
+                        arguments,
+                        owned_arguments,
                         destination: self.local(dest)?,
                         target: target.index(),
                     }
@@ -1247,6 +1294,7 @@ pub(super) fn decode_crate(
             .iter()
             .map(|d| &d.item_meta)
             .chain(krate.fun_decls.iter().map(|d| &d.item_meta))
+            .chain(krate.global_decls.iter().map(|d| &d.item_meta))
             .chain(krate.trait_decls.iter().map(|d| &d.item_meta))
             .chain(krate.trait_impls.iter().map(|d| &d.item_meta));
         for meta in metadata.filter(|m| m.is_local) {
@@ -1348,6 +1396,9 @@ pub(super) fn decode_crate(
                     return Err(unsupported("duplicate destructor"));
                 }
                 format!("{}_drop", adapter.records[&rec])
+            }
+            a::FunSource::GlobalInitializer(reference) => {
+                adapter.constant_initializer_name(id, f, reference)?
             }
             _ => return Err(unsupported("function source")),
         };
@@ -1512,6 +1563,10 @@ pub(super) fn decode_crate(
                 span: span(local.span),
             };
             if param {
+                if !adapter.crate_mode && matches!(place.value_type, Type::Record { .. }) {
+                    // Preserve the schema-3 value boundary and its existing diagnostic.
+                    return Err("Rust value type outside direct scalar/reference lowering".into());
+                }
                 parameters.push(place);
             } else {
                 locals.push(place);
