@@ -20,7 +20,7 @@ int32 witness_zero(int32 n) {
     requires 0 < n;
     ensures found_zero: (0..n).any(|k| { k == result }) by {
         execute();
-        witness { k: 0 };
+        witness { k: 0 }
         simp();
     }
 }
@@ -29,14 +29,14 @@ int32 choose_requirement(int32 x) {
     requires exists (k: int32) { k == x };
     ensures found_again_first: exists (j: int32) { j == x } by {
         execute();
-        obtain (k: int32) { k == x };
-        witness { j: k };
+        obtain (k: int32) { k == x }
+        witness { j: k }
         simp();
     }
     ensures found_again_second: exists (j: int32) { j == x } by {
         execute();
-        obtain (k: int32) { k == x };
-        witness { j: k };
+        obtain (k: int32) { k == x }
+        witness { j: k }
         simp();
     }
 }

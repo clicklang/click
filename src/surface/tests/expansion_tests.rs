@@ -916,11 +916,11 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 /// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
 #[test]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
-    let anchor = "witness { len: found_len };\n        simp();";
+    let anchor = "witness { len: found_len }\n        simp();";
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/cstr_stdlib.md",
         anchor,
-        "witness { len: found_len };\n        ".len(),
+        "witness { len: found_len }\n        ".len(),
     );
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }

@@ -638,7 +638,7 @@ function reaches its return frontier:
 ```click
 execute();
 have exists (k: int32) { k == result } by {
-    witness { k: result };
+    witness { k: result }
     simp();
 }
 simp();
@@ -2335,7 +2335,7 @@ For a symbolic `.any`, the range item name is the existential binder:
 ```click
 ensures found: (lo..hi).any(|k| { p[k] == result }) by {
     execute();
-    witness { k: lo };
+    witness { k: lo }
     simp();
 }
 ```
@@ -2663,7 +2663,7 @@ let k: int32 where k == x;
 
 ensures result == k by {
     execute();
-    witness { k: x };
+    witness { k: x }
     simp();
 }
 ```

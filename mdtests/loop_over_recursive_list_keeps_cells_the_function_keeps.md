@@ -109,7 +109,7 @@ int32 keep_flag(struct cell* node, int32* flag, int32 n) {
         transport(
             at(pre, flag[0]) == at(pre, flag[0]),
             flag[0] == at(pre, flag[0])
-        ) using { };
+        ) using { }
     }
     have at(pre, flag[0]) == 5 by simp;
     have flag[0] == 5 by {

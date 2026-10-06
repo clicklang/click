@@ -92,7 +92,7 @@ int32 caller(struct node* p, struct node* q) {
         transport(
             at(before, next->value) == at(before, next->value),
             next->value == at(before, next->value)
-        ) using { };
+        ) using { }
     }
     have next->value == 0 by simp;
     unfold(hop(p));

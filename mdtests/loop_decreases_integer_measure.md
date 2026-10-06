@@ -71,10 +71,10 @@ int32 drain(int32 n) {
                 }
                 simp() using {
                     to_integer(n - 1) == to_integer(n) - to_integer(1);
-                };
+                }
             }
             step();
-            close_invariants by { simp(); };
+            close_invariants by { simp(); }
         }
     }
     step();

@@ -35,7 +35,7 @@ void caller(int32 *left, int32 *visited, int32 n) {
             old(left[k]) == old(left[k]);
             0 <= k; k < n;
             separate(memory(left[0..n]), memory(visited[0..n]));
-        };
+        }
         assumption();
     }
     execute(); simp();
