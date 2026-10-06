@@ -78,6 +78,19 @@ a cell it cannot prove untouched stays at its pre-step snapshot; an explicit
 frame reasoning. The user-facing statement of this rule is
 [What a step carries](../concepts/proof-state.md#what-a-step-carries).
 
+Logical reads through opaque pointers select an admitted footprint's address
+coordinates through the composition's existing class and interval indexes.
+Only producer-published footprints enter this selection index; admitting raw
+composition provenance still shares its persistent storage without a scan.
+Admitting a composition or pointer equality advances only its prepared index
+delta at that producer. Selection aligns one supplier occurrence against the
+trusted graph; it does not enumerate pointer spellings, scan composition
+frames, or resolve older snapshots. Address alignment grants no read authority
+or value preservation. The regression
+`logical_read_address_uses_class_index_without_scanning_aliases_or_frames`
+varies unrelated compositions and equivalent pointer spellings at 4, 64,
+and 1,024 entries, including field offsets zero, four, and eight.
+
 ## Output-sensitive exceptions
 
 Some verification work is inherently larger than one lookup. Its cost must be
@@ -98,6 +111,24 @@ charged to visible semantic output rather than hidden ambient state:
   handle. `checked_loop_exit_copies_share_their_fact_storage` checks both
   exit forms at 4, 64, and 1,024 facts, alongside the full loop-exit scaling
   regression.
+- A loop exit join reconciles contract-call epochs through changed marker
+  entries, retaining common history and one fresh marker. It does not union
+  every branch's epoch into a successor that every exit must then scan. The
+  deterministic kernel regression measures 72, 780, and 12,300 work units
+  for 4, 64, and 1,024 exits, including all residual checks, and varies
+  unrelated cached cells independently. Checked load equations are consulted
+  only for changed concrete cells, using a load already named at the exact
+  snapshot and address and indexed equality evidence. A missing name declines
+  the optional cache reconciliation; it never walks unrelated store history
+  to construct one. Each exit's fact context is built lazily once. Compact
+  cached runs are not enumerated by this reconciliation.
+- A contract-less inline helper never symbolically expands an undecidable
+  loop guard into continuing iterations. It returns a local refusal at that
+  guard, so accumulated histories cannot grow with the unroll allowance.
+  `symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance`
+  checks 30 deterministic work units at allowances of 4, 64, and 1,024, exactly
+  one consumed iteration, and one diagnostic path. Concrete unrolling and
+  restoration of the enclosing call context on errors are checked separately.
 - A finite quantified proof may enumerate its declared finite range. The range
   and its bound must be explicit and enforced.
 - Unfolding or folding may visit every member of the named definition, but not
@@ -435,6 +466,15 @@ explicit:
   attempt, so the memo changes a failing search's cost, never its outcome
   (`mdtests/simp_frame_failure_through_region_arena_is_prompt.md`, pinned
   below the default budget by the mdtest harness).
+- **Keep fallback candidates finite.** An indexed equality-rewrite candidate
+  may unfold a function and descend through logical structure, but that descent
+  cannot restart an equality-rewrite or function-unfold fallback already active
+  on the candidate. The outer search retains its equality chain and closing
+  probes. Implications and universals run these fallbacks on their introduced
+  bodies. Candidate scopes restore on both misses and errors, so later goals
+  get their own search. False list-position claims are checked below the
+  ordinary smart budget, beside increasing unrelated fact sets and against
+  the unchanged `rb_next` proof.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a

@@ -880,6 +880,30 @@ impl EqualityGraph {
         })
     }
 
+    /// Preserve a supplier's base spelling for a constant byte displacement.
+    /// The trusted affine class relation answers without enumerating names;
+    /// keeping the base first also preserves external-argument object tokens.
+    pub(in crate::kernel) fn pointer_at_constant_base(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> Option<Pointer> {
+        let state = self.state.lock().expect("equality graph");
+        let point = state.canonical(pointer)?;
+        let origin = state.canonical(base)?;
+        if point.representative != origin.representative {
+            return None;
+        }
+        let displacement = i64::try_from(point.offset.constant_difference(&origin.offset)?).ok()?;
+        Some(Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::add(
+                base.offset.clone(),
+                PointerOffsetTerm::Constant(displacement),
+            ),
+        })
+    }
+
     /// Align the explicit address expression to a supplier's base. A term
     /// such as q + i retains i when the graph knows q = p, including when
     /// p and q are offsets within the same external-argument block. Work is

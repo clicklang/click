@@ -2374,6 +2374,18 @@ impl<'a> Proof<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
+        // The structural closer introduces these binders and searches their
+        // bodies with the guard or fresh variable available. Unfolding the
+        // whole binder would repeat that same search for every candidate.
+        if matches!(
+            self.goal(),
+            Some(Proposition::Implies(..) | Proposition::ForAll { .. })
+        ) {
+            return Ok(None);
+        }
+        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::FunctionUnfold) else {
+            return Ok(None);
+        };
         let Some(surface_goal) = self.surface_goal() else {
             return Ok(None);
         };
@@ -4170,6 +4182,13 @@ impl<'a> Proof<'a> {
         exclude_goal_fact: bool,
         allow_function_unfold: bool,
     ) -> Option<Self> {
+        if matches!(
+            self.goal(),
+            Some(Proposition::Implies(..) | Proposition::ForAll { .. })
+        ) {
+            return None;
+        }
+        let _scope = SimpFallbackScope::enter(SimpFallback::EqualityRewrite)?;
         // A judgment stated at an execution frontier (a `have` inside an
         // `open` scope, before the outcome) reads its spellings from the
         // execution's surface map, anchored at the current statement entry.
@@ -7538,6 +7557,40 @@ impl<'a> Proof<'a> {
 /// How many variables simp's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.
 const MAX_BOUND_VARIABLES: usize = 8;
+
+thread_local! {
+    static ACTIVE_SIMP_FALLBACKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+#[derive(Clone, Copy)]
+enum SimpFallback {
+    EqualityRewrite = 1,
+    FunctionUnfold = 2,
+}
+
+/// A candidate can try the other fallback and descend through logical
+/// structure, but cannot restart a fallback already evaluating that candidate.
+/// The outer rewrite search still owns its equality chain and closing probes.
+struct SimpFallbackScope(SimpFallback);
+
+impl SimpFallbackScope {
+    fn enter(fallback: SimpFallback) -> Option<Self> {
+        ACTIVE_SIMP_FALLBACKS.with(|active| {
+            let bit = fallback as u8;
+            if active.get() & bit != 0 {
+                return None;
+            }
+            active.set(active.get() | bit);
+            Some(Self(fallback))
+        })
+    }
+}
+
+impl Drop for SimpFallbackScope {
+    fn drop(&mut self) {
+        ACTIVE_SIMP_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
+    }
+}
 
 /// How deeply one upper-bound split may nest inside another's arms.
 const MAX_UPPER_BOUND_SPLIT_DEPTH: usize = 2;

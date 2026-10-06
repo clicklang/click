@@ -146,6 +146,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
+    let pointer = logical_memory_load_address(pointer, assumptions);
     if assumptions.should_keep_spec_loads_symbolic() {
         let _assumptions_id_scope = assumptions.enter_id_scope();
         let mut paths = evaluate_c_memory_load_paths_with_alias_cache(
@@ -237,6 +238,27 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
             obligations: obligations.clone(),
         })
         .collect()
+}
+
+/// Use a published footprint only to select coordinates for this logical
+/// address. Equality of the address grants no access or snapshot transport.
+fn logical_memory_load_address(pointer: Pointer, assumptions: &PureFactContext) -> Pointer {
+    // Only opaque logical binders need a new coordinate spelling. Concrete
+    // and external addresses already name their storage; loaded pointers
+    // retain their exact typed read definition for explicit rewrites.
+    let PointerBlock::Symbolic(variable) = &pointer.block else {
+        return pointer;
+    };
+    if crate::kernel::is_load_variable(variable) {
+        return pointer;
+    }
+    // Select a published footprint spelling by the trusted address class. The
+    // footprint is only a coordinate anchor: this grants no read authority
+    // and says nothing about whether this snapshot's value was preserved.
+    assumptions
+        .composition_object_resources
+        .memory_address_spelling(&pointer, assumptions)
+        .unwrap_or(pointer)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -4030,6 +4052,55 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
 /// does; a caller that declared it for a whole array
 /// ([`declare_symbolic_array_access_widths`]) passes `false`. An object
 /// pointer's load retains the same typed definition as a logical read.
+/// Reuse only a load already named at this exact snapshot and address.
+/// An optional cell-cache reconciliation must not canonicalize a cold load
+/// by walking its unrelated memory history. Missing names give no evidence.
+pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
+    memory: &CMemory,
+    pointer: &Pointer,
+    c_type: CType,
+) -> Option<CValue> {
+    let (kind, wrap): (LoadKind, fn(Bitvector32Term) -> CValue) = match c_type {
+        CType::Int8 => (LoadKind::Int8, CValue::Int8),
+        CType::Int16 => (LoadKind::Int16, CValue::Int16),
+        CType::Int32 => (LoadKind::Bits32, CValue::Int32),
+        CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),
+        CType::UInt16 => (LoadKind::UInt16, CValue::UInt16),
+        CType::UInt32 => (LoadKind::Bits32, CValue::UInt32),
+        CType::Int64 => (LoadKind::Bits64, CValue::Int64),
+        CType::UInt64 => (LoadKind::Bits64, CValue::UInt64),
+        _ if c_type.is_object_pointer() => {
+            let load = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                LoadKind::Bits32,
+            );
+            return LOAD_VARIABLE_CACHE.with(|cache| {
+                let variable = cache.borrow().get(&load)?.0;
+                Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type))
+            });
+        }
+        _ => return None,
+    };
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory.clone()),
+        Box::new(pointer.clone()),
+        kind,
+    );
+    crate::instrumentation::record_deterministic_work(1);
+    TERM_CACHE
+        .with(|cache| cache.borrow().get(&load).cloned())
+        .or_else(|| {
+            LOAD_VARIABLE_CACHE.with(|cache| {
+                cache
+                    .borrow()
+                    .get(&load)
+                    .map(|(variable, _)| Bitvector32Term::Variable(*variable))
+            })
+        })
+        .map(wrap)
+}
+
 pub(in crate::kernel) fn symbolic_storage_cell_value(
     memory: &CMemory,
     pointer: &Pointer,
@@ -4791,6 +4862,95 @@ mod tests {
             panic!("pointer value expected");
         };
         value.pointer().clone()
+    }
+
+    #[test]
+    fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int64(
+                Bitvector32Term::Variable(Variable(95_000)),
+                1,
+                false,
+            ),
+        };
+        let alias = Pointer::symbolic(Variable(95_001));
+        let empty = PureFactContext::new();
+        let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                owner.clone(),
+                0u32.into(),
+                3u32.into(),
+                4,
+            )),
+        );
+        let before = empty.assume_proposition(Proposition::CResourceComposition(resources));
+        let mut memory = CMemory::new();
+        for offset in [0, 4, 8] {
+            memory = memory.store(owner.offset_by_bytes(offset), int32(7));
+        }
+        let mut samples = Vec::new();
+        for size in [4u64, 64, 1024] {
+            let mut context = before.clone().assume_condition(
+                ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
+                true,
+            );
+            for i in 0..size {
+                // Unrelated admitted frames and many names of the selected
+                // address must not become a spelling search at the read.
+                let frame = ResourceContext::new_with_equalities(&context).unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                        Pointer::symbolic(Variable(196_000 + i)),
+                        0u32.into(),
+                        1u32.into(),
+                        4,
+                    )),
+                );
+                context = context
+                    .assume_proposition(Proposition::CResourceComposition(frame))
+                    .assume_condition(
+                        ConditionTerm::pointer_equal(
+                            alias.clone(),
+                            Pointer::symbolic(Variable(297_000 + i)),
+                        ),
+                        true,
+                    );
+            }
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    for offset in [0, 4, 8] {
+                        assert_eq!(
+                            logical_memory_load_address(alias.offset_by_bytes(offset), &context),
+                            owner.offset_by_bytes(offset)
+                        );
+                        let paths = evaluate_logical_memory_load_paths(
+                            &memory,
+                            alias.offset_by_bytes(offset),
+                            CType::Int32,
+                            Vec::new(),
+                            Vec::new(),
+                            &context,
+                        );
+                        assert_eq!(paths.len(), 1);
+                        assert_eq!(paths[0].outcome, CExpressionOutcome::Value(int32(7)));
+                        assert!(paths[0].facts.is_empty());
+                        assert!(paths[0].obligations.is_empty());
+                    }
+                })
+            });
+            samples.push((work, map_work));
+            assert_eq!(logical_memory_load_address(alias.clone(), &before), alias);
+        }
+        assert!(
+            samples[2].0 <= samples[0].0 * 3 + 128,
+            "address lookup scanned aliases or frames: {samples:?}"
+        );
+        assert!(
+            samples[2].1 <= samples[0].1 * 4 + 256,
+            "address lookup copied unrelated indexes: {samples:?}"
+        );
+        eprintln!("logical read address work: {samples:?}");
     }
 
     #[test]

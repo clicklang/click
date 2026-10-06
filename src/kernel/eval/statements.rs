@@ -3762,6 +3762,36 @@ pub(in crate::kernel) fn execute_c_while_paths(
                 obligations: Vec::new(),
             }]
         };
+        if let Some(helper) = &budget.inline_call_name {
+            let mut may_continue = false;
+            let mut may_exit = false;
+            for path in &condition_paths {
+                crate::instrumentation::record_deterministic_work(1);
+                if let CExpressionOutcome::Value(value) = &path.outcome {
+                    for truth in c_truthiness_paths(
+                        value.clone(),
+                        path.facts.clone(),
+                        path.obligations.clone(),
+                        &loop_assumptions,
+                    ) {
+                        may_continue |= truth.is_true;
+                        may_exit |= !truth.is_true;
+                    }
+                }
+            }
+            if may_continue && may_exit {
+                paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                        format!("inline helper `{helper}`: loop guard cannot be decided at the call site; give the helper a Click contract with a checked loop proof"),
+                    )),
+                    facts: accumulated_facts,
+                    obligations: accumulated_obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            }
+        }
         for condition_path in condition_paths {
             let Some((condition_facts, condition_obligations)) =
                 merge_execution_pure_facts_and_obligations(

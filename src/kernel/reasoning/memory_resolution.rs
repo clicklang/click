@@ -81,6 +81,33 @@ fn resolution_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     assert!(ResolutionQueryGuard::enter(first).is_some());
 }
 
+#[cfg(test)]
+#[test]
+fn structural_slot_distinctness_does_not_depend_on_recursive_query_availability() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Pointer {
+        block: PointerBlock::Symbolic(Variable(1000001)),
+        offset: PointerOffsetTerm::Constant(16),
+    };
+    let read = Pointer {
+        offset: PointerOffsetTerm::Constant(12),
+        ..slot.clone()
+    };
+    let _outer =
+        ResolutionQueryGuard::enter(ResolutionQuery::PointerDistinct(slot.clone(), read.clone()))
+            .unwrap();
+    assert!(pointers_proven_distinct_for_memory_resolution(
+        &slot,
+        &read,
+        &PureFactContext::new()
+    ));
+    assert!(!pointers_proven_distinct_for_memory_resolution(
+        &slot,
+        &slot,
+        &PureFactContext::new()
+    ));
+}
+
 /// Whether the verification deadline has passed, noted as a truncation so
 /// the memo does not cache the answer the deadline cut short.
 pub(in crate::kernel) fn resolution_interrupted() -> bool {
@@ -607,6 +634,15 @@ pub(in crate::kernel) fn pointers_proven_distinct_for_memory_resolution(
     right: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
+    // Structural separation needs no recursive premise query. In particular,
+    // a compact run's slot check may ask this while the same query is active.
+    if left.blocks_proven_distinct(right)
+        || (left.block == right.block
+            && matches!((&left.offset, &right.offset),
+                (PointerOffsetTerm::Constant(a), PointerOffsetTerm::Constant(b)) if a != b))
+    {
+        return true;
+    }
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
         let (left, right) = if left <= right {
             (left.clone(), right.clone())

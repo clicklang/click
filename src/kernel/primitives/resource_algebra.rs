@@ -5519,6 +5519,51 @@ impl ResourceContext {
         false
     }
 
+    /// Forget only observations and identity expansions of a memory owner.
+    /// Neither carries a capability beyond that same owner. Live loan-bound
+    /// views and nontrivial supported descriptions remain distinct.
+    pub(in crate::kernel) fn without_redundant_owned_memory_views(mut self) -> Self {
+        let entries = self
+            .storage
+            .supported_by
+            .iter()
+            .filter_map(|(entry, support)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let CResourceFact::View(CResource::Memory(range)) = self.fact(*entry) else {
+                    return None;
+                };
+                let owned = support.memory_own_range()?;
+                let occurrence = self.occurrence(*entry);
+                (owned == range
+                    && support
+                        .owned_quantity_term()
+                        .is_some_and(|q| q.as_const() == Some(1))
+                    && self.loan_dependency(occurrence).is_none())
+                .then_some(*entry)
+            })
+            .collect::<Vec<_>>();
+        for entry in entries {
+            self.remove_entry(entry);
+        }
+        let identity_expansions = self
+            .storage
+            .expansions_by_support_occurrence
+            .iter()
+            .filter_map(|(occurrence, expansion)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let entry = self.storage.entry_by_occurrence.get(occurrence)?;
+                let support = self.fact(*entry);
+                (support.memory_own_range().is_some()
+                    && expansion.as_slice() == std::slice::from_ref(support))
+                .then_some(*occurrence)
+            })
+            .collect::<Vec<_>>();
+        for occurrence in identity_expansions {
+            self = self.without_cached_supported_expansion_for_occurrence(occurrence);
+        }
+        self
+    }
+
     pub(in crate::kernel) fn normalized(mut self, assumptions: &PureFactContext) -> Self {
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()

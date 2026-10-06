@@ -2534,7 +2534,7 @@ int32 client(int32 x) {
 }
 
 #[test]
-fn specification_pointer_load_equality_expands_to_a_checked_graph_query() {
+fn specification_pointer_load_equality_expands_to_checked_normalization() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/egraph_resource_pointer_load_alias.md");
     let fixture = crate::cli::read_mdtest(&path).expect("pointer-load fixture");
@@ -2548,12 +2548,12 @@ fn specification_pointer_load_equality_expands_to_a_checked_graph_query() {
     let position = position_at_offset(source, tactic);
     let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
         .expect("logical load equality should expand");
-    assert!(expanded.contains("normalize() using {"), "{expanded}");
+    assert!(expanded.contains("normalize();"), "{expanded}");
     assert!(
         !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).expect("expanded graph query independently verifies");
+    verify_c0_sources(&expanded, &sources).expect("expanded normalization independently verifies");
 }
 
 #[test]
