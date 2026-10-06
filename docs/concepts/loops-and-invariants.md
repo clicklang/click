@@ -847,6 +847,14 @@ leaves the arm open and is refused by the proposition as written
 constructors survive: the region splits, each arm certifies its own path, and
 the preservation certificate is reassembled as the `match` that produced them.
 
+Write what the arms share once, after the `match`. An arm needs only the
+steps that depend on its constructor; the tactics after the `match` are the
+rest of every live arm's iteration and run on each arm's path, with that
+arm's facts and resources and with any name every arm bound
+(`mdtests/loop_body_proof_match_shared_continuation.md`). Repeating that
+tail inside each arm proves the same thing and multiplies the proof's length
+by the number of arms at every nested `match`.
+
 The invariants and the loop condition are the head's premises, so they also
 refute arms. A premise that contradicts an arm's own binding-free fact says
 the binder's model is not that constructor, and the body gets that as an
