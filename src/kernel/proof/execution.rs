@@ -5415,6 +5415,31 @@ pub(crate) struct ExecutionFrontier {
     pub(crate) natural_exit_target: Option<crate::kernel::CControlTargetId>,
 }
 
+impl ExecutionFrontier {
+    /// Whether two frontiers that split from one stand at the same program
+    /// point: the same statement to run next, in the same region, with the
+    /// same enclosing continuations still owed.
+    pub(crate) fn at_same_program_point(&self, other: &Self) -> bool {
+        self.region == other.region
+            && self.entry_member_prefix == other.entry_member_prefix
+            && self.next_statement_index == other.next_statement_index
+            && self.in_loop_body == other.in_loop_body
+            && self.loop_control == other.loop_control
+            && self.natural_backedge_target == other.natural_backedge_target
+            && self.natural_exit_target == other.natural_exit_target
+            && self.continuations.len() == other.continuations.len()
+            && match (&self.position, &other.position) {
+                (FrontierPosition::FunctionEntry, FrontierPosition::FunctionEntry)
+                | (FrontierPosition::RegionBoundary, FrontierPosition::RegionBoundary) => true,
+                (
+                    FrontierPosition::StatementEntry { remaining: left },
+                    FrontierPosition::StatementEntry { remaining: right },
+                ) => Arc::ptr_eq(left, right) || left == right,
+                _ => false,
+            }
+    }
+}
+
 /// One entered `try` body tracked for evidence order validation: the
 /// handler to resume at if unwinding reaches it, and the source tail after
 /// the `try` for normal completion.

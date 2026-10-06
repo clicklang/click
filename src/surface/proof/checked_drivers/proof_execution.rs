@@ -117,19 +117,14 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     )
 }
 
-/// Whether a proof region is a straight run of tactics that relate facts and
-/// resources where they stand: no C step and no nested split.
-fn region_only_reasons(region: &InternalProofNode) -> bool {
+/// Whether a proof region is one straight run of tactics with no nested
+/// split. Such an arm is cheap to run on its own before asking whether it
+/// rejoins its sibling.
+fn region_is_straight_line(region: &InternalProofNode) -> bool {
     match region {
         InternalProofNode::Done => true,
-        InternalProofNode::Linear {
-            tactics,
-            continuation,
-        } => {
+        InternalProofNode::Linear { continuation, .. } => {
             matches!(continuation.as_ref(), InternalProofNode::Done)
-                && tactics
-                    .iter()
-                    .all(|indexed| bridges_without_executing(&indexed.tactic))
         }
         _ => false,
     }
@@ -1490,15 +1485,16 @@ fn try_check_structural_function_proof_inner<'a>(
                 } else {
                     proof.split_focused_execution_if(condition.clone())?
                 };
-                // Arms that only reason are rejoined, so what follows the
-                // `if` is checked once and not once per case. An arm that
-                // runs C or changes the state is not rejoined here yet; its
-                // case still runs the continuation itself, below.
+                // Straight-line arms that end at one program point in one
+                // state are rejoined, so what follows the `if` is checked
+                // once and not once per case. Arms that do not rejoin, or
+                // that nest another split, still run the continuation
+                // themselves, below.
                 if !consumed_leading_steps
                     && staged_expansion_capture.is_none()
                     && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_only_reasons(then_branch)
-                    && region_only_reasons(else_branch)
+                    && region_is_straight_line(then_branch)
+                    && region_is_straight_line(else_branch)
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in
@@ -3232,13 +3228,13 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 } else {
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
-                // As at the top level: arms that only reason are rejoined,
-                // and the continuation is checked once.
+                // As at the top level: straight-line arms that rejoin are
+                // joined, and the continuation is checked once.
                 if !consumed_leading_steps
                     && expansion_capture.is_none()
                     && !matches!(continuation.as_ref(), InternalProofNode::Done)
-                    && region_only_reasons(then_branch)
-                    && region_only_reasons(else_branch)
+                    && region_is_straight_line(then_branch)
+                    && region_is_straight_line(else_branch)
                 {
                     let mut reasoned = Some(split.clone());
                     for (take_then, branch) in

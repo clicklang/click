@@ -2103,8 +2103,8 @@ impl<'a> Proof<'a> {
     /// continues once, from one state, with the facts both arms established.
     ///
     /// `None` when the arms cannot be rejoined here: one of them reached
-    /// function exit, or advanced the C program, or changed the state. The
-    /// caller then keeps the cases separate.
+    /// function exit, they ended at different program points or in different
+    /// states, or one proved a loop. The caller then keeps the cases separate.
     pub(in crate::surface::proof) fn try_join_focused_execution_if(
         &self,
         record: &ExecutionProofCaseSplit<'a>,
@@ -2150,10 +2150,11 @@ impl<'a> Proof<'a> {
         .map(Some)
     }
 
-    /// The merge law for a logical two-arm join whose arms only reasoned.
-    /// The kernel checks the arms against the partition they entered and
-    /// decides which facts survive; the frontier and the state are the
-    /// split's own, because no arm moved them.
+    /// The merge law for a logical two-arm join. The kernel checks the arms
+    /// against the partition they entered, that they end at one program
+    /// point in one state, and decides which facts survive. Arms that ran C
+    /// ran the same statements from the same state, so the frontier, the
+    /// state, and the effect facts are either arm's.
     fn merge_case_execution_join(
         &self,
         parent_facts: &ProofFacts,
@@ -2167,11 +2168,29 @@ impl<'a> Proof<'a> {
         };
         if arms.iter().any(|arm| {
             arm.execution.core.frontier.is_at_function_exit()
-                || !arm.introduced_effect_facts.is_empty()
                 || !arm.introduced_derivations.is_empty()
                 || !arm.introduced_loop_clauses.is_empty()
                 || !arm.introduced_loop_rules.is_empty()
+                || arm
+                    .execution
+                    .presentation
+                    .planned_statement_transitions
+                    .len()
+                    != parent_execution
+                        .presentation
+                        .planned_statement_transitions
+                        .len()
         }) {
+            return Ok(None);
+        }
+        if !arms[0]
+            .execution
+            .core
+            .frontier
+            .at_same_program_point(&arms[1].execution.core.frontier)
+            || *arms[0].execution.core.state != *arms[1].execution.core.state
+            || arms[0].introduced_effect_facts != arms[1].introduced_effect_facts
+        {
             return Ok(None);
         }
         let mut execution = parent_execution.clone();
@@ -2187,7 +2206,44 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         if changed_execution {
-            return Ok(None);
+            // The arms ran the same statements, so the points they recorded
+            // on the way are common to both; a point only one arm named is
+            // not carried.
+            let Some(snapshots) = arms[0]
+                .execution
+                .presentation
+                .recorded_snapshots
+                .common_descendant(
+                    &arms[1].execution.presentation.recorded_snapshots,
+                    &parent_execution.presentation.recorded_snapshots,
+                )
+            else {
+                return Ok(None);
+            };
+            let Ok(loan_evidence) = join_arm_loan_evidence(
+                parent_execution,
+                [arms[0].execution, arms[1].execution],
+                "proof `if` join",
+            ) else {
+                return Ok(None);
+            };
+            execution.presentation.recorded_snapshots = snapshots;
+            execution.core.loan_evidence = loan_evidence;
+            execution.core.state = arms[0].execution.core.state.clone();
+            execution.core.frontier = arms[0].execution.core.frontier.clone();
+            execution.core.has_empty_execution_branch_leaf |= arms
+                .iter()
+                .any(|arm| arm.execution.core.has_empty_execution_branch_leaf);
+            execution.core.has_structured_branch_history |= arms
+                .iter()
+                .any(|arm| arm.execution.core.has_structured_branch_history);
+            append_execution_effect_facts(
+                &mut execution.core.effect_facts,
+                &arms[0].introduced_effect_facts,
+            );
+            execution.presentation.resource_unfolded =
+                arms[0].execution.presentation.resource_unfolded
+                    && arms[1].execution.presentation.resource_unfolded;
         }
         self.merge_branch_surface_facts(
             &mut execution,
