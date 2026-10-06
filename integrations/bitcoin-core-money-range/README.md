@@ -248,17 +248,19 @@ Trivial initialization and destruction are checked compiler properties; runtime
 pointers, arbitrary conversions and cleanup effects remain rejected.
 
 The integration verifies that a missing condition still fails at the named
-library obligation. A positive narrow divisor alone still fails the wide
-nonzero guard; explicitly supplied wide guards then reach the unbounded narrow
-correction, including for a zero numerator observation. These failures remain
+library obligation. Plain execution from a positive narrow divisor still
+requires the wide nonzero guard. An explicit checked proof now bridges
+`1 <= d` to Integer and excludes `0` and `-1` to derive both wide guards
+from `d > 0`; it reaches the unbounded narrow correction, including for a
+zero numerator observation. These failures remain
 bounded and cannot be hidden with a trivial postcondition. The shared arithmetic
 foundation now includes explicit quotient/remainder
 interval bounds and equality transport. Standalone C++ narrowing proofs derive
 their bounds from operand ranges and compose them with exact native observations
 and checked cast identities; they are pattern coverage, not a proof of this
 Bitcoin helper. The general
-`FeeFrac::Div` theorem is not proved. Next establish native division and
-quotient/remainder observations, both narrowing identities, and the **narrow**
+`FeeFrac::Div` theorem is not proved. Next compose quotient/remainder
+observations, both narrowing identities, and the **narrow**
 correction bounds. The general rounding theorem and `EvaluateFeeDown/Up` remain
 open.
 

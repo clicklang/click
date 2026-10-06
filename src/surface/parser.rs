@@ -6777,6 +6777,15 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::IntegerDivisionBounds { bounds, result });
                 }
+                "integer_bound_exclusion" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer bound exclusion premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerBoundExclusion { bounds, result });
+                }
                 "integer_relation_transport" => {
                     self.expect_ident_spelling("bounds")?;
                     let bounds = self

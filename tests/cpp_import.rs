@@ -10009,3 +10009,55 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
         }
     }
 }
+
+#[test]
+fn positive_integer_divisor_bounds_discharge_native_wide_guards() {
+    for name in ["signed_quotient", "signed_remainder"] {
+        let project = Project::with_fixture("wide.cpp", name, WIDE_DIVISION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            r#"verifying "wide.cpp";
+int128 {name}(int128 a, int128 b) {{
+    requires 1 <= to_integer(b);
+    ensures 0 == 0;
+}} by {{
+    have to_integer(b) != 0 by {{ arithmetic_certificate special {{
+        premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
+        integer_bound_exclusion bounds [0] => to_integer(b) != 0; conclusion 0;
+    }} }}
+    have to_integer(b) != -1 by {{ arithmetic_certificate special {{
+        premise 0: 1 <= to_integer(b) => 1 <= to_integer(b);
+        integer_bound_exclusion bounds [0] => to_integer(b) != -1; conclusion 0;
+    }} }}
+    execute(); simp();
+}}"#
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+        for hostile in [
+            source.replace("requires 1 <= to_integer(b);", ""),
+            source.replace(
+                "requires 1 <= to_integer(b);",
+                "requires 0 <= to_integer(b);",
+            ),
+            source.replace(
+                "integer_bound_exclusion bounds [0]",
+                "integer_bound_exclusion bounds [1]",
+            ),
+            source.replace(
+                "integer_bound_exclusion bounds [0]",
+                "integer_bound_exclusion bounds [0, 0]",
+            ),
+            source.replace("ensures 0 == 0;", "ensures 0 == 1;"),
+            source.replace("1 <= to_integer(b)", "0 <= to_integer(b)"),
+            source.replace("to_integer(b) != 0", "to_integer(b) == 0"),
+        ] {
+            let path = project.directory.join("false.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().len() < 8000, "bounded refusal");
+        }
+    }
+}

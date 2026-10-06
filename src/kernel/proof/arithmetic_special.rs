@@ -497,6 +497,10 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
             ConditionTerm::IntegerEqual(right_first, right_second),
         )
         | (
+            ConditionTerm::IntegerNotEqual(left_first, left_second),
+            ConditionTerm::IntegerNotEqual(right_first, right_second),
+        )
+        | (
             ConditionTerm::IntegerLessEqual(left_first, left_second),
             ConditionTerm::IntegerLessEqual(right_first, right_second),
         ) => left_first == right_first && left_second == right_second,
@@ -569,6 +573,10 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerBoundExclusion {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     IntegerRelationTransport {
         bounds: Vec<usize>,
         result: Proposition,
@@ -638,6 +646,7 @@ pub(crate) struct SpecialArithmeticCertificate {
 pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerProductBounds(usize),
     InvalidIntegerDivisionBounds(usize),
+    InvalidIntegerBoundExclusion(usize),
     InvalidIntegerRelationTransport(usize),
     InvalidIntegerCastIdentity(usize),
     InvalidPremise(usize),
@@ -701,6 +710,9 @@ impl SpecialArithmeticCertificate {
             }
             SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
                 super::integer_division_bounds::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => {
+                super::integer_bound_exclusion::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
                 super::integer_relation_transport::check(index, bounds, premises, result)
@@ -1096,6 +1108,7 @@ impl SpecialArithmeticNode {
             Self::UnsignedSumBound { result, .. }
             | Self::IntegerProductBounds { result, .. }
             | Self::IntegerDivisionBounds { result, .. }
+            | Self::IntegerBoundExclusion { result, .. }
             | Self::IntegerRelationTransport { result, .. }
             | Self::IntegerCastIdentity { result, .. }
             | Self::PointerTranslation { result, .. }

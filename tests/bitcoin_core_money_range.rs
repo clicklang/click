@@ -177,6 +177,41 @@ fn check_upstream_cpp(
                 assert!(error.message().contains("literal constructor"));
             }
         }
+        // Derive the wide observer guards from the real narrow divisor
+        // precondition. Execution must advance to the still-unproved narrow
+        // correction; no wide guard is assumed in the contract.
+        let guard_proof = r#"verifying "bitcoin-src/src/util/feefrac.h";
+int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
+    requires d > 0;
+    ensures 0 == 0;
+} by {
+    have 1 <= d by { arithmetic() using { d > 0; } }
+    apply(int32_less_equal_to_integer(1, d));
+    have to_integer(d) != 0 by { arithmetic_certificate special {
+        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
+        integer_bound_exclusion bounds [0] => to_integer(d) != 0;
+        conclusion 0;
+    } }
+    have to_integer(d) != -1 by { arithmetic_certificate special {
+        premise 0: 1 <= to_integer(d) => 1 <= to_integer(d);
+        integer_bound_exclusion bounds [0] => to_integer(d) != -1;
+        conclusion 0;
+    } }
+    execute(); simp();
+}"#;
+        let parsed = read_click_project(&sidecar, guard_proof).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("signed overflow"),
+            "{}",
+            error.message()
+        );
+        assert!(
+            !error.message().contains("division by zero"),
+            "{}",
+            error.message()
+        );
+        assert!(error.message().len() < 8000);
         fs::remove_dir_all(root).unwrap();
         return;
     }

@@ -851,6 +851,12 @@ fn expand_declared_resource_certificate(
                                 result: proposition(result)?,
                             }
                         }
+                        SpecialArithmeticNode::IntegerBoundExclusion { bounds, result } => {
+                            SpecialArithmeticNode::IntegerBoundExclusion {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
                             SpecialArithmeticNode::IntegerRelationTransport {
                                 bounds,

@@ -579,6 +579,29 @@ native division guards, exact quotient/remainder observations, and
 [division-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md).
 
 
+## Bounds excluding constants
+
+The explicit `integer_bound_exclusion bounds [i] => P` special certificate
+excludes a constant strictly outside one named non-strict Integer bound. From
+`lo <= x` it can establish `x != c` when `c < lo`; from `x <= hi` it can
+establish `x != c` when `hi < c`. Equality at the endpoint is refused. The
+result may reverse the disequality operands; a false equality has the same
+meaning, while a true equality or false disequality is refused.
+
+The checker reads one premise and compares shared Integer operand identities.
+It accepts nonlinear operands without collecting affine terms. Endpoint and
+excluded-constant comparison work is charged from their bit lengths before the
+comparison. Unused facts do not change checking work, and certificate checking
+scales linearly with its node count. This rule supplies no implicit machine
+range or evaluation guard.
+
+For a positive `int32` divisor, first prove `1 <= d` and use the existing
+`int32_less_equal_to_integer` bridge. Excluding `0` and `-1` from
+`1 <= to_integer(d)` then proves the wide signed division guards without adding
+them to the contract. See the checked
+[bound-exclusion fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_bound_exclusion.md).
+
+
 ## Range-checked modulo cast identities
 
 The explicit `integer_cast_identity` node in the special arithmetic certificate
