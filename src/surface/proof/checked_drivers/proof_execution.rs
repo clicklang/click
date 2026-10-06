@@ -1821,6 +1821,39 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
             ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
+            // With an interface the arms rejoin inside the body, as the arms
+            // of a `branch` do, and what follows the `match` is checked
+            // once on the one path that leaves it.
+            if proof_match.ensuring.is_some() {
+                let Some(joined) = advance_execution_match(
+                    proof,
+                    proof_match,
+                    arms,
+                    continuation,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: proof `match` did not rejoin as a checked preservation operation"
+                    )));
+                };
+                return advance_preservation_region(
+                    joined,
+                    continuation,
+                    pending,
+                    expansion_capture,
+                    proof_site,
+                    owning_source_index,
+                    claim_label,
+                    leaves,
+                    refuted_match_paths,
+                    unfinished,
+                    Some((*index, "match")),
+                );
+            }
             let plan = proof.plan_execution_match(proof_match, |index| {
                 execution_region_leading_tactic(&arms[index])
                     .map_or(usize::MAX, |tactic| tactic.source_index)
@@ -2055,13 +2088,55 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
         }
         InternalProofNode::If {
             index,
+            source_index,
             condition,
+            ensuring,
             then_branch,
             else_branch,
             continuation,
-            ..
         } => {
             let proof = proof.with_execution_tactic_index(*index)?;
+            // With an interface the cases rejoin inside the body, as the
+            // arms of a `branch` do, and what follows the `if` is checked
+            // once on the one path that leaves it.
+            if ensuring.is_some() {
+                let alone = InternalProofNode::If {
+                    index: *index,
+                    source_index: *source_index,
+                    condition: condition.clone(),
+                    ensuring: ensuring.clone(),
+                    then_branch: then_branch.clone(),
+                    else_branch: else_branch.clone(),
+                    continuation: Box::new(InternalProofNode::Done),
+                };
+                let Some(joined) = advance_focused_execution_region(
+                    proof,
+                    None,
+                    &alone,
+                    expansion_capture.as_deref_mut(),
+                    proof_site,
+                    owning_source_index,
+                    0,
+                )?
+                else {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {index}: proof `if` did not rejoin as a checked preservation operation"
+                    )));
+                };
+                return advance_preservation_region(
+                    joined,
+                    continuation,
+                    pending,
+                    expansion_capture,
+                    proof_site,
+                    owning_source_index,
+                    claim_label,
+                    leaves,
+                    refuted_match_paths,
+                    unfinished,
+                    Some((*index, "if")),
+                );
+            }
             // An expanded C branch is the checked execution split it spells,
             // exactly as in a function body: a decided branch keeps its
             // infeasible arm empty, and reading that as a logical case split

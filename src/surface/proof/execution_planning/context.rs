@@ -627,6 +627,9 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
     ) -> Result<(), ClickError> {
         for tactic in tactics {
             match tactic {
+                ProofTactic::If(proof_if) if proof_if.ensuring.is_some() => {
+                    selected.push(tactic.clone());
+                }
                 ProofTactic::If(proof_if) => {
                     // A `branch` whose guard the path already decided is
                     // certified as a proof `if` with one empty arm: it is the
@@ -666,6 +669,13 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                         selected,
                         offsets,
                     )?;
+                }
+                // A split that rejoins through an interface is one step of
+                // the path that leaves it, not a case the path took: its
+                // arms are checked inside it. Keep it whole and charge no
+                // case.
+                ProofTactic::Match(proof_match) if proof_match.ensuring.is_some() => {
+                    selected.push(tactic.clone());
                 }
                 ProofTactic::Match(proof_match) => {
                     offsets.push(selected.len());

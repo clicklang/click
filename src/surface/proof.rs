@@ -806,6 +806,7 @@ struct IndexedTactic {
     tactic: ProofTactic,
 }
 
+#[derive(Clone)]
 enum InternalProofNode {
     Done,
     Match {

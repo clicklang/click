@@ -8225,7 +8225,9 @@ impl ExecutionProofCore {
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state);
-        self.evidence_source = first.evidence_source.clone();
+        // An arm that ran no C has recorded no source of its own yet; what
+        // remains for it is what its frontier says.
+        self.evidence_source = first.current_source_shared(function);
         self.evidence_try_stack = first.evidence_try_stack.clone();
         self.evidence_completed = false;
         Ok(changed_execution)
@@ -8275,7 +8277,9 @@ impl ExecutionProofCore {
         self.execution_evidence = vec![trace].into();
         self.checked_call_events = parent.checked_call_events.clone();
         self.evidence_state = Some(joined_state.clone());
-        self.evidence_source = arms[0].0.evidence_source.clone();
+        // An arm that ran no C has recorded no source of its own yet; what
+        // remains for it is what its frontier says.
+        self.evidence_source = arms[0].0.current_source_shared(function);
         self.evidence_try_stack = arms[0].0.evidence_try_stack.clone();
         self.evidence_completed = false;
         Ok(effect_facts)
