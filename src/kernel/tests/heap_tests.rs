@@ -884,11 +884,12 @@ fn standalone_view_cannot_authorize_free() {
     assert!(matches!(
         paths.as_slice(),
         [CStatementExecutionPath {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                resource: CResourceFact::Own(CResource::Memory(missing), _),
-            }),
+            outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { resource }),
             ..
-        }] if missing == &complete_access
+        }] if matches!(
+            &**resource,
+            CResourceFact::Own(CResource::Memory(missing), _) if missing == &complete_access
+        )
     ));
 }
 
@@ -925,7 +926,7 @@ fn persistent_composite_view_blocks_free_locally() {
                     CRuntimeError::StaleResourceAfterFree { resource }
                 ),
                 ..
-            }] if resource == &persistent
+            }] if **resource == persistent
         ),
         "unexpected free result for {persistent:#?}: {paths:#?}"
     );
@@ -1314,7 +1315,7 @@ fn free_null_needs_no_allocation_resources() {
         [CStatementExecutionPath {
             outcome: CStatementOutcome::Normal(after),
             ..
-        }] if after == &state
+        }] if **after == state
     ));
 }
 

@@ -2259,11 +2259,11 @@ fn read_c_lvalue_paths_without_ranges(
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![CExpressionPath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource: CResourceFact::view_memory(CMemoryRange::new(
+                            resource: Box::new(CResourceFact::view_memory(CMemoryRange::new(
                                 pointer.clone(),
                                 Bitvector32Term::Constant(0),
                                 Bitvector32Term::Constant(1),
-                            )),
+                            ))),
                         }),
                         facts,
                         obligations,

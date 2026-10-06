@@ -4750,12 +4750,12 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state,
-            function: function.clone(),
+            state: Box::new(state),
+            function: Box::new(function.clone()),
             arguments: arguments.clone(),
             outcome: CFunctionOutcome::Return {
                 value: int32(42),
-                state: expected_state,
+                state: Box::new(expected_state),
             },
         }
     );
@@ -4773,8 +4773,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(
         overflow.proposition(),
         &Proposition::CFunctionExecutes {
-            state: max_state,
-            function: function.clone(),
+            state: Box::new(max_state),
+            function: Box::new(function.clone()),
             arguments,
             outcome: CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
         }

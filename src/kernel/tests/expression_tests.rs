@@ -305,7 +305,7 @@ fn floating_point_constant_conversions_round_in_integer_space() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -336,7 +336,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -354,7 +354,7 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
             }
@@ -861,7 +861,7 @@ fn signed_add_overflow_is_native_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression: c_add(c_int32_literal(2_147_483_647), c_int32_literal(1)),
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
         }
@@ -987,7 +987,7 @@ fn condition_evaluation_certifies_c_truthiness_directly() {
             .proposition()
             .peel_implications(),
         &Proposition::CConditionEvaluates {
-            state,
+            state: Box::new(state),
             condition,
             outcome: CConditionOutcome::Value(true),
         }
@@ -1011,7 +1011,7 @@ fn void_truthiness_is_an_explicit_type_error() {
             .proposition()
             .peel_implications(),
         &Proposition::CConditionEvaluates {
-            state: state.clone(),
+            state: Box::new(state.clone()),
             condition,
             outcome: CConditionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
         }
@@ -1027,7 +1027,7 @@ fn void_truthiness_is_an_explicit_type_error() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
             }
@@ -1107,11 +1107,11 @@ fn int32_subtraction_is_native() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(5),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1149,7 +1149,7 @@ fn signed_subtract_overflow_is_native_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression: c_subtract(c_int32_literal(2_147_483_648), c_int32_literal(1)),
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
         }
@@ -1181,7 +1181,7 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -1224,7 +1224,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -1417,7 +1417,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -1430,7 +1430,7 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression: invalid,
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
         }
@@ -1483,7 +1483,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -1517,7 +1517,7 @@ fn logical_and_or_short_circuit_right_operand() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(expected),
             }
@@ -1554,7 +1554,7 @@ fn untyped_pointer_operations_report_indeterminate_pointee_type() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: CState::new(),
+                state: Box::new(CState::new()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType,),
             }
@@ -1585,7 +1585,7 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
             }
@@ -1627,11 +1627,11 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             .proposition()
             .peel_implications(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement: statement.clone(),
+            state: Box::new(state.clone()),
+            statement: Box::new(statement.clone()),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state: state.clone(),
+                state: Box::new(state.clone()),
             },
         }
     );
@@ -1645,11 +1645,11 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             .proposition()
             .peel_implications(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(0),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1670,11 +1670,11 @@ fn if_uses_c_int32_truthiness() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1692,11 +1692,11 @@ fn if_uses_c_int32_truthiness() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(0),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1714,11 +1714,11 @@ fn assignment_and_sequence_update_native_state() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(2),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -1750,11 +1750,11 @@ fn store_then_load_threads_native_memory() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(9),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -1778,8 +1778,8 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 // The symbolic read is canonical at creation: its load
                 // variable, which names this load.
@@ -1788,7 +1788,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32,
                 ))),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1823,11 +1823,11 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(9),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -1852,15 +1852,15 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Bits32
                 ))),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1892,24 +1892,26 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(23),
-                state: CState::new()
-                    .with_local(
-                        "p",
-                        CValue::pointer(Pointer {
-                            block: "block".into(),
-                            offset: PointerOffsetTerm::Constant(0),
-                        }),
-                    )
-                    .with_memory(
-                        CMemory::new()
-                            .with_block("block", 16)
-                            .store(second, int32(23),),
-                    )
-                    .with_resource_context(resources),
+                state: Box::new(
+                    CState::new()
+                        .with_local(
+                            "p",
+                            CValue::pointer(Pointer {
+                                block: "block".into(),
+                                offset: PointerOffsetTerm::Constant(0),
+                            }),
+                        )
+                        .with_memory(
+                            CMemory::new()
+                                .with_block("block", 16)
+                                .store(second, int32(23),),
+                        )
+                        .with_resource_context(resources)
+                ),
             },
         }
     );
@@ -1932,7 +1934,7 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
         }
@@ -2001,7 +2003,7 @@ fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
         }
@@ -2029,7 +2031,7 @@ fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
         }
@@ -2057,7 +2059,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::Value(CValue::pointer(result)),
         }
@@ -2084,7 +2086,7 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
         }
@@ -2108,7 +2110,7 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic,),
         }
@@ -2144,7 +2146,7 @@ fn pointer_relational_comparison_orders_same_block_elements() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::Value(int32(expected)),
             }
@@ -2173,7 +2175,7 @@ fn pointer_subtraction_returns_same_block_element_distance() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::Value(int32(2)),
         }
@@ -2207,7 +2209,7 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::Value(int32(3)),
         }
@@ -2235,7 +2237,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::Value(CValue::pointer(result)),
         }
@@ -2263,7 +2265,7 @@ fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
         }
@@ -2291,7 +2293,7 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CExpressionEvaluates {
-            state,
+            state: Box::new(state),
             expression,
             outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
         }
@@ -2374,7 +2376,7 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
         assert_eq!(
             theorem.proposition(),
             &Proposition::CExpressionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 expression,
                 outcome: CExpressionOutcome::UndefinedBehavior(
                     CUndefinedBehavior::PointerArithmetic,
@@ -2574,15 +2576,15 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(derived),
                     crate::kernel::LoadKind::Bits32,
                 ))),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -2654,11 +2656,11 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(3),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );

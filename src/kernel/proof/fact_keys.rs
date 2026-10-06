@@ -12,8 +12,8 @@ use crate::kernel::{
 };
 use crate::kernel::{
     Bitvector32Term, CComparisonOperator, CFloatBinaryOperator, CFloatClassification,
-    CFloatCondition, CMemoryRange, CResource, ConditionTerm, Pointer, PointerBlock,
-    PointerOffsetTerm, Proposition, Variable,
+    CFloatCondition, CMemoryRange, ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm,
+    Proposition, Variable,
 };
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
@@ -333,13 +333,15 @@ fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlin
         Proposition::Not(body) => {
             SnapshotBlindPropositionKey::Not(Box::new(snapshot_blind_proposition_key(body)))
         }
-        Proposition::CResourceSeparate {
-            left: CResource::Memory(left),
-            right: CResource::Memory(right),
-        } => SnapshotBlindPropositionKey::MemorySeparate(
-            snapshot_blind_memory_range_key(left),
-            snapshot_blind_memory_range_key(right),
-        ),
+        Proposition::CResourceSeparate { .. } if proposition.memory_separation().is_some() => {
+            let (left, right) = proposition
+                .memory_separation()
+                .expect("the guard matched a memory separation");
+            SnapshotBlindPropositionKey::MemorySeparate(
+                snapshot_blind_memory_range_key(left),
+                snapshot_blind_memory_range_key(right),
+            )
+        }
         proposition => SnapshotBlindPropositionKey::Exact(proposition.clone()),
     }
 }

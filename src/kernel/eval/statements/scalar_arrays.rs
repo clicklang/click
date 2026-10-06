@@ -108,7 +108,7 @@ pub(super) fn execute(
             {
                 paths.push(path(
                     CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: required,
+                        resource: Box::new(required),
                     }),
                     facts,
                     obligations,
@@ -145,7 +145,7 @@ pub(super) fn execute(
                         ));
                     paths.push(path(
                         CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                            resource,
+                            resource: Box::new(resource),
                         }),
                         facts,
                         obligations,
@@ -183,7 +183,7 @@ pub(super) fn execute(
                             &mut next, target, &value, &selected,
                         );
                     }
-                    CStatementOutcome::Normal(next)
+                    CStatementOutcome::Normal(Box::new(next))
                 }
                 Err(error) => CStatementOutcome::RuntimeError(error),
             };

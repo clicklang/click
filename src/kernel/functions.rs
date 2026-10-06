@@ -907,19 +907,19 @@ fn recover_candidate_stable_view_resources(
         ));
     };
     let Some(actual_ledger) = callee_state.loan_ledger() else {
-        return Err(CRuntimeError::LoanRefusal(
+        return Err(CRuntimeError::LoanRefusal(Box::new(
             LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Recovery),
-        ));
+        )));
     };
     if actual_ledger != &plan.ledger {
-        return Err(CRuntimeError::LoanRefusal(
+        return Err(CRuntimeError::LoanRefusal(Box::new(
             LoanRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery),
-        ));
+        )));
     }
     if callee_state.loan_participant() != Some(plan.callee_participant()) {
-        return Err(CRuntimeError::LoanRefusal(
+        return Err(CRuntimeError::LoanRefusal(Box::new(
             LoanRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery),
-        ));
+        )));
     }
     // A call with nothing lent still has step 7 work when it consumed a
     // borrowing composite (its hold is released) or produced one (its
@@ -1028,7 +1028,7 @@ fn recover_candidate_stable_view_resources(
         .map_err(|error| {
             error
                 .loan_diagnostic(LoanRefusalOperation::Recovery)
-                .map(CRuntimeError::LoanRefusal)
+                .map(|refusal| CRuntimeError::LoanRefusal(Box::new(refusal)))
                 .unwrap_or_else(|| {
                     CRuntimeError::FunctionContract("stable-view call recovery refused".to_string())
                 })
@@ -1046,10 +1046,10 @@ fn recover_candidate_stable_view_resources(
     recovery
         .recheck_transitions(actual_ledger, plan.caller_participant())
         .map_err(|error| {
-            CRuntimeError::LoanRefusal(error.diagnostic_with_subject(
+            CRuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
                 LoanRefusalOperation::Recovery,
                 recovery.diagnostic_subject(),
-            ))
+            )))
         })?;
     let recovered_ledger = recovery.ledger;
     let mut residual = return_resources;
@@ -1057,7 +1057,7 @@ fn recover_candidate_stable_view_resources(
         residual = residual
             .without_fact_delaying_normalization(fact, assumptions)
             .ok_or_else(|| CRuntimeError::MissingResource {
-                resource: fact.clone(),
+                resource: Box::new(fact.clone()),
             })?;
     }
 
@@ -1132,7 +1132,7 @@ fn recover_candidate_stable_view_resources(
         );
         if !returned_input && !preserved_outer && !projected_from_owner && !intrinsic_read_only {
             return Err(CRuntimeError::UnbackedReturnedView {
-                view: (*fact).clone(),
+                view: Box::new((*fact).clone()),
             });
         }
     }
@@ -3272,7 +3272,7 @@ mod authority_helper_admission_tests {
                 candidate_caller,
                 candidate_function,
                 candidate_arguments,
-                CStatementOutcome::Normal(caller.clone()),
+                CStatementOutcome::Normal(Box::new(caller.clone())),
                 Vec::new(),
                 &PureFactContext::new(),
                 &mut ExecutionBudget::beside_live_state(),
@@ -3290,7 +3290,7 @@ mod authority_helper_admission_tests {
                 candidate_arguments,
                 &CFunctionOutcome::Return {
                     value: int32(0),
-                    state: caller.clone(),
+                    state: Box::new(caller.clone()),
                 },
                 Some(&receipt),
                 &PureFactContext::new(),
@@ -4323,7 +4323,7 @@ pub(crate) fn apply_verified_tactic_rule(
         }
     }
     Ok(TacticRuleTransition {
-        state: after,
+        state: *after,
         facts: path.facts.clone(),
         next_kernel_variable: budget.next_kernel_variable(),
     })
@@ -4922,7 +4922,9 @@ fn execute_verified_function_applications_with_suspension(
             })
         }) {
             paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                    diagnostic,
+                ))),
                 facts,
                 obligations,
 
@@ -4994,7 +4996,9 @@ fn execute_verified_function_applications_with_suspension(
                 })
         }) {
             paths.push(CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                    diagnostic,
+                ))),
                 facts,
                 obligations,
                 loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -5475,7 +5479,7 @@ fn execute_verified_function_applications_with_suspension(
                         return Ok(vec![CFunctionPath {
                             outcome: CFunctionOutcome::RuntimeError(
                                 CRuntimeError::MissingResource {
-                                    resource: authority,
+                                    resource: Box::new(authority),
                                 },
                             ),
                             facts,
@@ -6345,7 +6349,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = CFunctionOutcome::Return {
             value: result,
-            state: return_state,
+            state: Box::new(return_state),
         };
         if let Some(function) = evidence {
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
@@ -6433,7 +6437,7 @@ fn exceptional_direct_function_path(
     );
     let outcome = CFunctionOutcome::Throw {
         value: payload,
-        state: throw_state,
+        state: Box::new(throw_state),
     };
     append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
     Ok(CFunctionPath {
@@ -6667,7 +6671,7 @@ fn checked_contract_control_read_state(
         let without_head = resources
             .without_fact_incrementally(&owned, assumptions)
             .ok_or_else(|| CRuntimeError::MissingResource {
-                resource: fact.clone(),
+                resource: Box::new(fact.clone()),
             })?;
         let children = children
             .into_iter()
@@ -6881,7 +6885,9 @@ fn prepare_verified_function_call<'a>(
                 {
                     None
                 }
-                Ok(expected) => Some(CRuntimeError::MissingResource { resource: expected }),
+                Ok(expected) => Some(CRuntimeError::MissingResource {
+                    resource: Box::new(expected),
+                }),
                 Err(error) => Some(error),
             };
             if let Some(error) = error {
@@ -7342,23 +7348,28 @@ fn prepare_verified_function_call<'a>(
                         );
                     }
                     match &requirement_path.proposition {
-                            Proposition::ConditionIs(condition, value) => {
-                                path_assumptions.proves_exact(&requirement_path.proposition)
-                                    || path_assumptions
-                                        .has_matching_condition_fact_for_memory_resolution(
-                                            condition, *value,
-                                        )
-                            }
-                            Proposition::CResourceSeparate {
-                                left: CResource::Memory(left),
-                                right: CResource::Memory(right),
-                            } => path_assumptions.proves_exact(&requirement_path.proposition)
+                        Proposition::ConditionIs(condition, value) => {
+                            path_assumptions.proves_exact(&requirement_path.proposition)
                                 || path_assumptions
-                                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                                        left, right,
-                                    ),
-                            proposition => path_assumptions.proves_exact(proposition),
+                                    .has_matching_condition_fact_for_memory_resolution(
+                                        condition, *value,
+                                    )
                         }
+                        Proposition::CResourceSeparate { .. }
+                            if requirement_path.proposition.memory_separation().is_some() =>
+                        {
+                            let (left, right) = requirement_path
+                                .proposition
+                                .memory_separation()
+                                .expect("the guard matched a memory separation");
+                            path_assumptions.proves_exact(&requirement_path.proposition)
+                                    || path_assumptions
+                                        .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                                            left, right,
+                                        )
+                        }
+                        proposition => path_assumptions.proves_exact(proposition),
+                    }
                 },
             );
             if requirement_is_proven {
@@ -7641,7 +7652,9 @@ fn prepare_verified_function_call<'a>(
                     CandidateMemoryRangeRelation::Disjoint => unreachable!(),
                 };
                 return Ok(Err(CFunctionPath {
-                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                        diagnostic,
+                    ))),
                     facts,
                     obligations,
                     loan_evidence: empty_checked_loan_evidence_sequence(),
@@ -7879,10 +7892,10 @@ fn separation_requirement_parts_are_established(
             required_obligation_is_exactly_discharged(assumptions, proposition)
                 || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
         }
-        Proposition::CResourceSeparate {
-            left: CResource::Memory(left),
-            right: CResource::Memory(right),
-        } => {
+        Proposition::CResourceSeparate { .. } if proposition.memory_separation().is_some() => {
+            let (left, right) = proposition
+                .memory_separation()
+                .expect("the guard matched a memory separation");
             required_obligation_is_exactly_discharged(assumptions, proposition)
                 || assumptions
                     .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
@@ -9993,10 +10006,10 @@ fn matched_instance_body_ownership(
     let ranges = projection
         .into_iter()
         .filter_map(|fact| match fact {
-            Proposition::CResourceContains {
-                child: CResource::Memory(range),
-                ..
-            } => Some(range),
+            Proposition::CResourceContains { child, .. } => match *child {
+                CResource::Memory(range) => Some(range),
+                _ => None,
+            },
             _ => None,
         })
         .collect();
@@ -14752,7 +14765,7 @@ fn refuse_retiring_a_lent_allocation(
         LoanRefusalOperation::MemoryAccess,
     ) {
         Some(diagnostic) => Err(VerifiedAllocationDeltaError::Runtime(
-            CRuntimeError::LoanRefusal(diagnostic),
+            CRuntimeError::LoanRefusal(Box::new(diagnostic)),
         )),
         None => Ok(()),
     }
@@ -15003,7 +15016,7 @@ fn apply_verified_heap_allocation_delta(
                 ) {
                     return Err(VerifiedAllocationDeltaError::Runtime(
                         CRuntimeError::StaleResourceAfterFree {
-                            resource: resource.clone(),
+                            resource: Box::new(resource.clone()),
                         },
                     ));
                 }
@@ -15046,7 +15059,7 @@ fn apply_verified_heap_allocation_delta(
         ) {
             return Err(VerifiedAllocationDeltaError::Runtime(
                 CRuntimeError::StaleResourceAfterFree {
-                    resource: resource.clone(),
+                    resource: Box::new(resource.clone()),
                 },
             ));
         }
@@ -18750,9 +18763,9 @@ fn prepare_contract_resource_transfer(
     if purpose.lends()
         && caller_state.loan_ledger().is_some() != caller_state.loan_participant().is_some()
     {
-        return Ok(Err(CRuntimeError::LoanRefusal(
+        return Ok(Err(CRuntimeError::LoanRefusal(Box::new(
             LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Plan),
-        )));
+        ))));
     }
     // In particular, preparing several pure callback interfaces must not
     // repeatedly enumerate the caller's unrelated resource frame.
@@ -18892,7 +18905,7 @@ fn prepare_contract_resource_transfer(
         };
         let Some(source) = caller_state.resolve_named_mutex_authority(actual) else {
             return Ok(Err(CRuntimeError::MissingResource {
-                resource: checked.fact.clone(),
+                resource: Box::new(checked.fact.clone()),
             }));
         };
         checked.selected_mutex_source = Some(std::sync::Arc::new((actual, source.clone())));
@@ -19327,7 +19340,7 @@ fn prepare_contract_resource_transfer(
                                     message,
                                 ) => CRuntimeError::FunctionContract(message.into()),
                                 _ => CRuntimeError::MissingResource {
-                                    resource: use_plan.source_resource().clone(),
+                                    resource: Box::new(use_plan.source_resource().clone()),
                                 },
                             }));
                         }
@@ -19336,7 +19349,7 @@ fn prepare_contract_resource_transfer(
                 for use_plan in &plan.mutex_uses {
                     if use_plan.check_protected_type(assumptions).is_err() {
                         return Ok(Err(CRuntimeError::MissingResource {
-                            resource: use_plan.required_resource(),
+                            resource: Box::new(use_plan.required_resource()),
                         }));
                     }
                 }
@@ -19369,11 +19382,13 @@ fn prepare_contract_resource_transfer(
                 ) {
                     return Ok(Err(match error {
                         super::loans::StableViewPlanError::MissingResource(resource) => {
-                            CRuntimeError::MissingResource { resource }
+                            CRuntimeError::MissingResource {
+                                resource: Box::new(resource),
+                            }
                         }
                         error => error
                             .loan_diagnostic(LoanRefusalOperation::Plan)
-                            .map(CRuntimeError::LoanRefusal)
+                            .map(|refusal| CRuntimeError::LoanRefusal(Box::new(refusal)))
                             .unwrap_or_else(|| {
                                 CRuntimeError::FunctionContract(
                                     "local view loan could not be checked".to_string(),
@@ -19382,9 +19397,9 @@ fn prepare_contract_resource_transfer(
                     }));
                 }
                 if let Err(error) = plan.recheck_entry(&ledger) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(
+                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(
                         error.diagnostic(LoanRefusalOperation::Entry),
-                    )));
+                    ))));
                 }
                 Some(plan)
             }
@@ -19397,11 +19412,11 @@ fn prepare_contract_resource_transfer(
                     && resource.is_own()
                 {
                     return Ok(Err(CRuntimeError::MissingResource {
-                        resource: resource.clone(),
+                        resource: Box::new(resource.clone()),
                     }));
                 }
                 if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(diagnostic)));
+                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(diagnostic))));
                 }
                 return Ok(Err(CRuntimeError::FunctionContract(
                     "stable-view call transition refused".to_string(),
@@ -19448,7 +19463,7 @@ fn prepare_contract_resource_transfer(
                     assumptions,
                     LoanRefusalOperation::Plan,
                 ) {
-                    return Ok(Err(CRuntimeError::LoanRefusal(diagnostic)));
+                    return Ok(Err(CRuntimeError::LoanRefusal(Box::new(diagnostic))));
                 }
             }
         }
@@ -19586,7 +19601,7 @@ fn prepare_contract_resource_transfer(
                     && !local_view_range_within_block(range, callee_state.memory())
         ) {
             return Ok(Err(CRuntimeError::MissingResource {
-                resource: intrinsic_view.fact.clone(),
+                resource: Box::new(intrinsic_view.fact.clone()),
             }));
         }
         if !callee_resources.satisfies_fact(&intrinsic_view.fact, assumptions) {
@@ -19726,7 +19741,7 @@ fn prepare_contract_resource_transfer(
             assumptions,
         ) else {
             return Ok(Err(CRuntimeError::MissingResource {
-                resource: resource.clone(),
+                resource: Box::new(resource.clone()),
             }));
         };
         return_resources = resources;
@@ -19768,7 +19783,7 @@ fn prepare_contract_resource_transfer(
             let authority = CResourceFact::own(CResource::PopulationAuthority(scope));
             if !required_resources.satisfies_fact(&authority, assumptions) {
                 return Ok(Err(CRuntimeError::MissingResource {
-                    resource: authority,
+                    resource: Box::new(authority),
                 }));
             }
             return Ok(Err(CRuntimeError::FunctionContract(
@@ -20126,7 +20141,7 @@ fn evaluate_contract_return_resource_context(
                     resources.without_fact_incrementally(&checked.fact, assumptions)
                 else {
                     return Ok(Err(CRuntimeError::MissingResource {
-                        resource: checked.fact.clone(),
+                        resource: Box::new(checked.fact.clone()),
                     }));
                 };
                 let missing = children
@@ -20956,7 +20971,7 @@ mod committed_population_return_tests {
                 &function,
                 CStatementOutcome::Return {
                     value: CValue::Void,
-                    state: body.clone(),
+                    state: Box::new(body.clone()),
                 },
                 vec![],
                 &PureFactContext::new(),
@@ -23324,8 +23339,8 @@ fn matched_resource_instance_case_read_projection(
     for fact in evaluation.resources.facts() {
         if let Some(child) = fact.owned_resource() {
             read_projection.push(Proposition::CResourceContains {
-                parent: CResource::Instance(instance.clone()),
-                child: child.clone(),
+                parent: Box::new(CResource::Instance(instance.clone())),
+                child: Box::new(child.clone()),
             });
         }
     }
@@ -25058,8 +25073,8 @@ fn expand_all_composite_resource_facts_and_propositions_with_state(
             for child in children {
                 if let Some(owned) = child.owned_resource() {
                     relations.push(Proposition::CResourceContains {
-                        parent: composite.resource().clone(),
-                        child: owned.clone(),
+                        parent: Box::new(composite.resource().clone()),
+                        child: Box::new(owned.clone()),
                     });
                 }
             }
@@ -25502,8 +25517,8 @@ pub(super) fn evaluate_composite_resource_relation_propositions(
     }
     for child in &children {
         propositions.push(Proposition::CResourceContains {
-            parent: composite.resource().clone(),
-            child: child.clone(),
+            parent: Box::new(composite.resource().clone()),
+            child: Box::new(child.clone()),
         });
     }
     Some(propositions)
@@ -26077,7 +26092,9 @@ fn check_mutex_helper_body_return(
                 )
             })??;
             if expected != actual {
-                return Err(CRuntimeError::MissingResource { resource: expected });
+                return Err(CRuntimeError::MissingResource {
+                    resource: Box::new(expected),
+                });
             }
         }
         HelperEffect::Release => {
@@ -26501,8 +26518,8 @@ pub(crate) fn contract_entry_partition_facts(
                 continue;
             }
             let fact = Proposition::CResourceSeparate {
-                left: CResource::Memory((*owned).clone()),
-                right: CResource::Memory(viewed.clone()),
+                left: Box::new(CResource::Memory((*owned).clone())),
+                right: Box::new(CResource::Memory(viewed.clone())),
             };
             if seen.insert(fact.clone()) {
                 facts.push(fact);
@@ -28560,7 +28577,7 @@ fn resource_clause_cycle_runtime_error(
 fn resource_context_runtime_error(error: ResourceContextValidityError) -> CRuntimeError {
     match error {
         ResourceContextValidityError::DuplicateOwnedResourceFact(resource) => {
-            CRuntimeError::DuplicateResource { resource }
+            CRuntimeError::DuplicateResource { resource: Box::new(resource) }
         }
         ResourceContextValidityError::InvalidExclusiveAccess(_) => CRuntimeError::FunctionContract(
             "field-bearing resource instances and mutex guards require exclusive ownership with quantity one".into(),
@@ -29880,7 +29897,7 @@ fn unreturned_allocation_obligation(
             checked_return_frontier = checked_return_frontier
                 .without_fact_incrementally(fact, assumptions)
                 .ok_or_else(|| CRuntimeError::MissingResource {
-                    resource: fact.clone(),
+                    resource: Box::new(fact.clone()),
                 })?
                 .unchecked_with_fact(supporting.clone());
         }
@@ -30753,8 +30770,8 @@ fn function_outcome_from_body_with_resource_transfer(
             let hint = counted_population_leak_hint(function);
             return Ok((
                 CFunctionOutcome::RuntimeError(CRuntimeError::LiveAllocationLeak {
-                    allocation,
-                    resource,
+                    allocation: Box::new(allocation),
+                    resource: resource.map(Box::new),
                     hint,
                 }),
                 obligations,
@@ -30802,7 +30819,7 @@ fn function_outcome_from_body_with_resource_transfer(
     Ok((
         CFunctionOutcome::Return {
             value,
-            state: return_state,
+            state: Box::new(return_state),
         },
         obligations,
         loan_evidence,
@@ -30928,7 +30945,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                     Ok(resources) => resources,
                     Err(error) => return Ok(Err(resource_context_runtime_error(error))),
                 };
-                state = state.with_resource_context(resources);
+                state = Box::new(state.with_resource_context(resources));
             } else if state.resources.validity_error(assumptions).is_some()
                 || !state.loan_bindings_are_consistent()
             {
@@ -31526,7 +31543,7 @@ pub(super) fn function_outcome_from_body(
             (
                 CFunctionOutcome::Return {
                     value,
-                    state: caller_state,
+                    state: Box::new(caller_state),
                 },
                 obligations,
             )
@@ -31595,7 +31612,7 @@ pub(super) fn function_outcome_from_body(
             (
                 CFunctionOutcome::Throw {
                     value,
-                    state: caller_state,
+                    state: Box::new(caller_state),
                 },
                 obligations,
             )
@@ -33304,7 +33321,7 @@ mod stable_view_call_tests {
             &function,
             CStatementOutcome::Return {
                 value: int32(7),
-                state: callee,
+                state: Box::new(callee),
             },
             vec![unresolved],
             &PureFactContext::new(),
@@ -33868,7 +33885,7 @@ mod stable_view_call_tests {
             Bitvector32Term::Constant(2),
         ));
         assert!(
-            matches!(&error, CRuntimeError::UnbackedReturnedView { view } if *view == carried),
+            matches!(&error, CRuntimeError::UnbackedReturnedView { view } if **view == carried),
             "unexpected refusal: {error:?}"
         );
     }

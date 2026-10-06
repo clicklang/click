@@ -2010,8 +2010,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     function: proved_function,
                     arguments: proved_arguments,
                     ..
-                } if state == pre_state
-                    && proved_function == function
+                } if **state == *pre_state
+                    && **proved_function == *function
                     && proved_arguments == arguments =>
                 {
                     Ok(())
@@ -4726,8 +4726,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &crate::kernel::CRuntimeError::LiveAllocationLeak {
-                                                allocation: obligation.allocation().clone(),
-                                                resource: obligation.holder().cloned(),
+                                                allocation: Box::new(
+                                                    obligation.allocation().clone()
+                                                ),
+                                                resource: obligation
+                                                    .holder()
+                                                    .cloned()
+                                                    .map(Box::new),
                                                 hint: None,
                                             },
                                             parsed_function.parameters(),

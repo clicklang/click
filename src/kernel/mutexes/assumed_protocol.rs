@@ -1181,7 +1181,7 @@ mod tests {
                 &state,
                 &function,
                 &[],
-                CStatementOutcome::Normal(exit),
+                CStatementOutcome::Normal(Box::new(exit)),
                 vec![],
                 &assumptions,
                 &mut ExecutionBudget::default(),

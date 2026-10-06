@@ -73,7 +73,7 @@ fn normal_state(paths: &[CStatementExecutionPath]) -> CState {
     else {
         panic!("expected one normal execution path: {paths:?}");
     };
-    state.clone()
+    *state.clone()
 }
 
 fn assert_loan_write_rejected(outcome: &CStatementOutcome) {
@@ -578,11 +578,11 @@ fn concrete_max_executes_without_list_encoding() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement: c_max_body(),
+            state: Box::new(state.clone()),
+            statement: Box::new(c_max_body()),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -604,12 +604,12 @@ fn concrete_max_function_call_preserves_caller_locals() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state: state.clone(),
-            function,
+            state: Box::new(state.clone()),
+            function: Box::new(function),
             arguments,
             outcome: CFunctionOutcome::Return {
                 value: int32(1),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -649,12 +649,12 @@ fn symbolic_max_function_call_reports_branch_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition.clone(), true)),
             Box::new(Proposition::CFunctionExecutes {
-                state: state.clone(),
-                function: function.clone(),
+                state: Box::new(state.clone()),
+                function: Box::new(function.clone()),
                 arguments: arguments.clone(),
                 outcome: CFunctionOutcome::Return {
                     value: int32(b_bits),
-                    state: state.clone(),
+                    state: Box::new(state.clone()),
                 },
             }),
         )
@@ -673,12 +673,12 @@ fn symbolic_max_function_call_reports_branch_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, false)),
             Box::new(Proposition::CFunctionExecutes {
-                state: state.clone(),
-                function,
+                state: Box::new(state.clone()),
+                function: Box::new(function),
                 arguments,
                 outcome: CFunctionOutcome::Return {
                     value: int32(a_bits),
-                    state,
+                    state: Box::new(state),
                 },
             }),
         )
@@ -693,30 +693,34 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     let other_range = memory_range(arc_pointer(4), 0, 1);
     let left = CFunctionOutcome::Return {
         value: int32(0),
-        state: CState::new().with_memory(base.clone().with_call_memory_havoc(
-            Variable(41),
-            std::slice::from_ref(&first_range),
-            &assumptions,
-            None,
-        )),
+        state: Box::new(
+            CState::new().with_memory(base.clone().with_call_memory_havoc(
+                Variable(41),
+                std::slice::from_ref(&first_range),
+                &assumptions,
+                None,
+            )),
+        ),
     };
     let equivalent = CFunctionOutcome::Return {
         value: int32(0),
-        state: CState::new().with_memory(base.clone().with_call_memory_havoc(
-            Variable(42),
-            std::slice::from_ref(&first_range),
-            &assumptions,
-            None,
-        )),
+        state: Box::new(
+            CState::new().with_memory(base.clone().with_call_memory_havoc(
+                Variable(42),
+                std::slice::from_ref(&first_range),
+                &assumptions,
+                None,
+            )),
+        ),
     };
     let different = CFunctionOutcome::Return {
         value: int32(0),
-        state: CState::new().with_memory(base.with_call_memory_havoc(
+        state: Box::new(CState::new().with_memory(base.with_call_memory_havoc(
             Variable(43),
             &[other_range],
             &assumptions,
             None,
-        )),
+        ))),
     };
 
     assert!(
@@ -776,12 +780,12 @@ fn function_call_threads_memory_but_discards_callee_locals() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state,
-            function,
+            state: Box::new(state),
+            function: Box::new(function),
             arguments,
             outcome: CFunctionOutcome::Return {
                 value: int32(9),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -824,11 +828,11 @@ fn function_call_does_not_inherit_undeclared_resources() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionExecutes {
-            state,
-            function: caller,
+            state: Box::new(state),
+            function: Box::new(caller),
             arguments,
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
-                resource: own_memory_fact(pointer, 0, 1),
+                resource: Box::new(own_memory_fact(pointer, 0, 1)),
             }),
         }
     );
@@ -843,7 +847,7 @@ fn concrete_function_specification_is_native_theorem() {
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(1),
-            state: CState::new(),
+            state: Box::new(CState::new()),
         },
     );
     let theorem = prove_c_function_satisfies_specification(
@@ -856,7 +860,7 @@ fn concrete_function_specification_is_native_theorem() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CFunctionSatisfiesSpecification {
-            function,
+            function: Box::new(function),
             specification: Box::new(specification)
         }
     );
@@ -879,7 +883,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
         vec![Proposition::ConditionIs(condition.clone(), true)],
         CFunctionOutcome::Return {
             value: int32(Bitvector32Term::Variable(b)),
-            state: CState::new(),
+            state: Box::new(CState::new()),
         },
     );
     let theorem = prove_c_function_satisfies_specification(
@@ -894,7 +898,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, true)),
             Box::new(Proposition::CFunctionSatisfiesSpecification {
-                function,
+                function: Box::new(function),
                 specification: Box::new(specification)
             }),
         )
@@ -915,7 +919,7 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(Bitvector32Term::Variable(b)),
-            state: CState::new(),
+            state: Box::new(CState::new()),
         },
     );
 
@@ -952,11 +956,11 @@ fn call_assign_uses_function_environment() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(42),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -989,11 +993,11 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: state.clone(),
-            statement,
+            state: Box::new(state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Throw {
                 value: int32(7),
-                state,
+                state: Box::new(state),
             },
         }
     );
@@ -1654,8 +1658,8 @@ fn unknown_call_assign_is_runtime_error() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::RuntimeError(CRuntimeError::UnknownFunction(
                 "missing".to_string(),
             )),
@@ -1723,11 +1727,11 @@ fn while_loop_executes_concrete_countdown() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(0),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -1920,9 +1924,9 @@ fn while_invariant_is_proof_obligation() {
         &Proposition::Implies(
             Box::new(invariant),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement,
-                outcome: CStatementOutcome::Normal(state),
+                state: Box::new(state.clone()),
+                statement: Box::new(statement),
+                outcome: CStatementOutcome::Normal(Box::new(state)),
             }),
         )
     );

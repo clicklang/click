@@ -1349,8 +1349,8 @@ mod tests {
             ))
         };
         let goal = Proposition::CResourceSeparate {
-            left: fixed.clone(),
-            right: range(source.clone(), source_len.clone()),
+            left: Box::new(fixed.clone()),
+            right: Box::new(range(source.clone(), source_len.clone())),
         };
         let length_equality = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(Box::new(source_len), Box::new(target_len.clone())),
@@ -1372,8 +1372,8 @@ mod tests {
         assert_eq!(
             replaced,
             Proposition::CResourceSeparate {
-                left: fixed,
-                right: range(target, target_len),
+                left: Box::new(fixed),
+                right: Box::new(range(target, target_len)),
             }
         );
     }

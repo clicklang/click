@@ -499,7 +499,7 @@ fn apply_pool_transition(state: &CState, function: &CFunction, pool: u32, object
     let arguments = vec![c_int32_literal(pool), c_int32_literal(object)];
     let outcome = CFunctionOutcome::Return {
         value: CValue::Void,
-        state: state.clone(),
+        state: Box::new(state.clone()),
     };
     let (outcome, obligations) = apply_c_function_contract_resource_transition(
         state,
@@ -513,7 +513,7 @@ fn apply_pool_transition(state: &CState, function: &CFunction, pool: u32, object
     let CFunctionOutcome::Return { state, .. } = outcome else {
         panic!("resource transition did not return");
     };
-    state
+    *state
 }
 
 fn pool_count(state: &CState, pool: u32) -> Bitvector32Term {
@@ -599,11 +599,11 @@ fn local_declaration_allocates_stack_object_for_address_of() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state,
-            statement,
+            state: Box::new(state),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(5),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -688,11 +688,11 @@ fn symbolic_execution_reports_branch_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition.clone(), true)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement: c_max_body(),
+                state: Box::new(state.clone()),
+                statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
                     value: int32(Bitvector32Term::Variable(b)),
-                    state: state.clone(),
+                    state: Box::new(state.clone()),
                 },
             }),
         )
@@ -711,11 +711,11 @@ fn symbolic_execution_reports_branch_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(condition, false)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement: c_max_body(),
+                state: Box::new(state.clone()),
+                statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
                     value: int32(Bitvector32Term::Variable(a)),
-                    state,
+                    state: Box::new(state),
                 },
             }),
         )
@@ -750,14 +750,14 @@ fn symbolic_execution_reports_overflow_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(overflow.clone(), false)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement: statement.clone(),
+                state: Box::new(state.clone()),
+                statement: Box::new(statement.clone()),
                 outcome: CStatementOutcome::Return {
                     value: int32(Bitvector32Term::Add(
                         Box::new(left_bits),
                         Box::new(right_bits)
                     )),
-                    state: state.clone(),
+                    state: Box::new(state.clone()),
                 },
             }),
         )
@@ -776,8 +776,8 @@ fn symbolic_execution_reports_overflow_facts() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(overflow, true)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement,
+                state: Box::new(state.clone()),
+                statement: Box::new(statement),
                 outcome: CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
             }),
         )
@@ -804,14 +804,14 @@ fn symbolic_execution_uses_no_overflow_fact() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(no_overflow, false)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement,
+                state: Box::new(state.clone()),
+                statement: Box::new(statement),
                 outcome: CStatementOutcome::Return {
                     value: int32(Bitvector32Term::Add(
                         Box::new(left_bits),
                         Box::new(right_bits)
                     )),
-                    state,
+                    state: Box::new(state),
                 },
             }),
         )
@@ -878,14 +878,14 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
         &Proposition::Implies(
             Box::new(Proposition::ConditionIs(x_lt_int_max, true)),
             Box::new(Proposition::CStatementExecutes {
-                state: state.clone(),
-                statement,
+                state: Box::new(state.clone()),
+                statement: Box::new(statement),
                 outcome: CStatementOutcome::Return {
                     value: int32(Bitvector32Term::Add(
                         Box::new(x_bits),
                         Box::new(Bitvector32Term::Constant(1)),
                     )),
-                    state,
+                    state: Box::new(state),
                 },
             }),
         )
@@ -1059,11 +1059,11 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::CStatementExecutes {
-            state: CState::new(),
-            statement,
+            state: Box::new(CState::new()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(5),
-                state: final_state,
+                state: Box::new(final_state),
             },
         }
     );
@@ -1236,7 +1236,7 @@ fn symbolic_path_can_only_certify_its_exact_function_specification() {
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(1),
-            state: CState::new(),
+            state: Box::new(CState::new()),
         },
     );
 
@@ -1660,7 +1660,7 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
 
     let (second_execution, _) =
         prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-            first_state.clone(),
+            *first_state.clone(),
             c_call_assign("second", "opaque_identity", vec![c_int32_literal(7)]),
             PureFactContext::new(),
             environment,
@@ -1854,7 +1854,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
 
     let throw_outcome = CFunctionOutcome::Throw {
         value: int32(7),
-        state: CState::new(),
+        state: Box::new(CState::new()),
     };
     let goals = c_function_exceptional_ensure_goals(
         &function,
@@ -3103,12 +3103,12 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         true,
     ));
     let proposition = Proposition::CFunctionExecutes {
-        state: state.clone(),
-        function: function.clone(),
+        state: Box::new(state.clone()),
+        function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
             value: int32(0),
-            state,
+            state: Box::new(state),
         },
     };
     let path = SymbolicCExecutionPath {
@@ -3177,12 +3177,12 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     );
     let state = CState::new();
     let proposition = Proposition::CFunctionExecutes {
-        state: state.clone(),
-        function: function.clone(),
+        state: Box::new(state.clone()),
+        function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
             value: int32(0),
-            state,
+            state: Box::new(state),
         },
     };
     let unproved = ProofObligation::verification_condition(Proposition::ConditionIs(
@@ -3291,12 +3291,12 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let fact = ExecutionPureFact::new(guard.clone());
     let obligation = ProofObligation::verification_condition(guard);
     let proposition = Proposition::CFunctionExecutes {
-        state: state.clone(),
-        function: function.clone(),
+        state: Box::new(state.clone()),
+        function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
             value: int32(0),
-            state,
+            state: Box::new(state),
         },
     };
     let path = SymbolicCExecutionPath {
@@ -3547,8 +3547,8 @@ fn early_return_inputs(
         vec![(function_outcome, Vec::new(), obligations)],
     );
     let theorem = Theorem::new(Proposition::CStatementVerifies {
-        state: entry_state,
-        statement: branch,
+        state: Box::new(entry_state),
+        statement: Box::new(branch),
         outcome,
     });
     let mut trace = crate::kernel::proof::PersistentSequence::default();
@@ -3620,7 +3620,7 @@ fn completion_accepts_a_return_that_leaves_source_behind_it() {
     .expect("entry state");
     let returning = CStatementOutcome::Return {
         value: int32(0),
-        state: entry_state,
+        state: Box::new(entry_state),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
     let _ = crate::kernel::api::take_checked_function_body_execution_count();
@@ -3656,7 +3656,7 @@ fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
     // A `Normal` outcome for the `if` leaves `return 1` unexecuted: no
     // retained theorem covers it, so the path has no completed outcome.
     let (candidates, function, trace) =
-        early_return_inputs(CStatementOutcome::Normal(entry_state.clone()));
+        early_return_inputs(CStatementOutcome::Normal(Box::new(entry_state.clone())));
     assert_eq!(
         complete_early_return(&candidates, &function, trace).err(),
         Some("a trace does not reach a return")
@@ -3665,16 +3665,16 @@ fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
     // A trace that continues past its returning statement is refused too.
     let returning = CStatementOutcome::Return {
         value: int32(0),
-        state: entry_state.clone(),
+        state: Box::new(entry_state.clone()),
     };
     let (candidates, function, mut trace) = early_return_inputs(returning);
     trace.push(crate::kernel::proof::CheckedExecutionEvent::Statement(
         Theorem::new(Proposition::CStatementVerifies {
-            state: entry_state.clone(),
-            statement: c_return(c_int32_literal(1)),
+            state: Box::new(entry_state.clone()),
+            statement: Box::new(c_return(c_int32_literal(1))),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state: entry_state,
+                state: Box::new(entry_state),
             },
         }),
     ));
@@ -3710,7 +3710,7 @@ fn early_return_inputs_with_facts(
         .expect("a parameterless function binds its entry state");
     let outcome = CStatementOutcome::Return {
         value: int32(0),
-        state: entry_state.clone(),
+        state: Box::new(entry_state.clone()),
     };
     let (function_outcome, obligations) = c_function_outcome_from_statement_outcome(
         &caller_state,
@@ -3730,8 +3730,8 @@ fn early_return_inputs_with_facts(
         )],
     );
     let conclusion = Proposition::CStatementVerifies {
-        state: entry_state,
-        statement: branch,
+        state: Box::new(entry_state),
+        statement: Box::new(branch),
         outcome,
     };
     let theorem = Theorem::new(
@@ -3811,7 +3811,7 @@ fn skip_inputs(
     let caller_state = CState::new();
     let outcome = CStatementOutcome::Return {
         value: int32(1),
-        state: caller_state.clone(),
+        state: Box::new(caller_state.clone()),
     };
     let (function_outcome, obligations) = c_function_outcome_from_statement_outcome(
         &caller_state,
@@ -3836,9 +3836,9 @@ fn skip_inputs(
 fn skip_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEvent {
     crate::kernel::proof::CheckedExecutionEvent::Statement(Theorem::new(
         Proposition::CStatementVerifies {
-            state: state.clone(),
-            statement: CStatement::Skip,
-            outcome: CStatementOutcome::Normal(state),
+            state: Box::new(state.clone()),
+            statement: Box::new(CStatement::Skip),
+            outcome: CStatementOutcome::Normal(Box::new(state)),
         },
     ))
 }
@@ -3846,11 +3846,11 @@ fn skip_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEvent {
 fn return_one_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEvent {
     crate::kernel::proof::CheckedExecutionEvent::Statement(Theorem::new(
         Proposition::CStatementVerifies {
-            state: state.clone(),
-            statement: c_return(c_int32_literal(1)),
+            state: Box::new(state.clone()),
+            statement: Box::new(c_return(c_int32_literal(1))),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state,
+                state: Box::new(state),
             },
         },
     ))
@@ -3905,7 +3905,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     .expect("entry state");
     let returning = CStatementOutcome::Return {
         value: int32(0),
-        state: entry_state,
+        state: Box::new(entry_state),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
     let root = crate::kernel::proof::ProofFacts::default();
@@ -4004,7 +4004,7 @@ fn contract_exit_rule_is_the_plain_outcome_without_resources() {
     let entry_state = c_function_entry_state(&caller_state, &function, &[]).expect("entry");
     let returning = CStatementOutcome::Return {
         value: int32(3),
-        state: entry_state,
+        state: Box::new(entry_state),
     };
     let (plain, _) = c_function_outcome_from_statement_outcome(
         &caller_state,
@@ -4167,11 +4167,11 @@ fn recording_complete_sequence_requires_exact_remaining_source() {
             crate::kernel::proof::ExecutionFrontier::default(),
         );
         let evidence = Theorem::new(Proposition::CStatementVerifies {
-            state: entry.clone(),
-            statement,
+            state: Box::new(entry.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(0),
-                state: entry.clone(),
+                state: Box::new(entry.clone()),
             },
         });
         let recorded = core.record_statement_transition(
@@ -4208,11 +4208,11 @@ fn recording_statement_evidence_checks_it_advances_the_frontier() {
     let entry_state = c_function_entry_state(&CState::new(), &function, &[])
         .expect("a parameterless function binds its entry state");
     let verifies = |state: CState, statement: CStatement| Proposition::CStatementVerifies {
-        state: state.clone(),
-        statement,
+        state: Box::new(state.clone()),
+        statement: Box::new(statement),
         outcome: CStatementOutcome::Return {
             value: int32(0),
-            state,
+            state: Box::new(state),
         },
     };
     let record = |theorem: Theorem, context: PureFactContext| {
@@ -4294,7 +4294,7 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
         .expect("a parameterless function binds its entry state");
     let evaluates =
         |state: CState, condition: crate::kernel::CExpression| Proposition::CConditionEvaluates {
-            state,
+            state: Box::new(state),
             condition,
             outcome: crate::kernel::CConditionOutcome::Value(true),
         };
@@ -4372,7 +4372,9 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
             &returning,
             &[],
             Theorem::new(Proposition::CConditionEvaluates {
-                state: c_function_entry_state(&CState::new(), &returning, &[]).expect("entry"),
+                state: Box::new(
+                    c_function_entry_state(&CState::new(), &returning, &[]).expect("entry")
+                ),
                 condition: c_less_than(c_int32_literal(0), c_int32_literal(1)),
                 outcome: crate::kernel::CConditionOutcome::Value(true),
             }),
@@ -4411,7 +4413,7 @@ fn condition_evidence_cannot_decide_a_do_while_before_its_body() {
             &function,
             &[],
             Theorem::new(Proposition::CConditionEvaluates {
-                state: entry_state,
+                state: Box::new(entry_state),
                 condition: c_int32_literal(0),
                 outcome: crate::kernel::CConditionOutcome::Value(false),
             }),
@@ -4448,7 +4450,7 @@ fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
         &function,
         &[],
         Theorem::new(Proposition::CConditionEvaluates {
-            state: entry_state.clone(),
+            state: Box::new(entry_state.clone()),
             condition,
             outcome: crate::kernel::CConditionOutcome::Value(true),
         }),
@@ -4466,11 +4468,11 @@ fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
     core.state = drifted.clone().into();
     let returning = |state: CState| {
         Theorem::new(Proposition::CStatementVerifies {
-            state: state.clone(),
-            statement: tail.clone(),
+            state: Box::new(state.clone()),
+            statement: Box::new(tail.clone()),
             outcome: CStatementOutcome::Return {
                 value: int32(1),
-                state,
+                state: Box::new(state),
             },
         })
     };
@@ -4532,11 +4534,11 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
         .expect("a parameterless function binds its entry state");
     let returning = |statement: CStatement, value: u32| {
         Theorem::new(Proposition::CStatementVerifies {
-            state: entry_state.clone(),
-            statement,
+            state: Box::new(entry_state.clone()),
+            statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
                 value: int32(value),
-                state: entry_state.clone(),
+                state: Box::new(entry_state.clone()),
             },
         })
     };
@@ -4549,7 +4551,7 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
         &function,
         &[],
         Theorem::new(Proposition::CConditionEvaluates {
-            state: entry_state.clone(),
+            state: Box::new(entry_state.clone()),
             condition,
             outcome: crate::kernel::CConditionOutcome::Value(false),
         }),
@@ -4617,9 +4619,9 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
             &function,
             &[],
             Theorem::new(Proposition::CStatementVerifies {
-                state: entry.clone(),
-                statement: CStatement::Skip,
-                outcome: CStatementOutcome::Normal(entry.clone()),
+                state: Box::new(entry.clone()),
+                statement: Box::new(CStatement::Skip),
+                outcome: CStatementOutcome::Normal(Box::new(entry.clone())),
             }),
             PureFactContext::new(),
             &[],
@@ -4631,7 +4633,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
             &function,
             CStatementOutcome::Return {
                 value: CValue::Void,
-                state: entry,
+                state: Box::new(entry),
             },
             Vec::new(),
             &PureFactContext::new(),
@@ -4669,7 +4671,7 @@ fn a_completed_proof_object_yields_its_checked_execution() {
     .expect("entry state");
     let returning = CStatementOutcome::Return {
         value: int32(0),
-        state: entry_state.clone(),
+        state: Box::new(entry_state.clone()),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
     let theorem = match trace.to_vec().into_iter().next() {
@@ -4710,9 +4712,9 @@ fn a_completed_proof_object_yields_its_checked_execution() {
         &function,
         &[],
         Theorem::new(Proposition::CStatementVerifies {
-            state: entry_state.clone(),
-            statement: CStatement::Skip,
-            outcome: CStatementOutcome::Normal(entry_state),
+            state: Box::new(entry_state.clone()),
+            statement: Box::new(CStatement::Skip),
+            outcome: CStatementOutcome::Normal(Box::new(entry_state)),
         }),
         PureFactContext::new(),
         &[],

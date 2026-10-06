@@ -22,7 +22,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         | Proposition::CFunctionPartiallySatisfiesSpecification {
             function: proved_function,
             specification: proved_specification,
-        } if proved_function == function && proved_specification.as_ref() == specification => {}
+        } if **proved_function == *function && proved_specification.as_ref() == specification => {}
         _ => {
             return Err(
                 "the completion theorem does not certify the requested specification".to_string(),
@@ -38,8 +38,8 @@ pub(crate) fn c_checked_function_proposition_with_reason(
             function: proved_function,
             arguments,
             outcome,
-        } if state == specification.state()
-            && proved_function == function
+        } if **state == *specification.state()
+            && **proved_function == *function
             && arguments == specification.arguments()
             && outcome == specification.outcome() => {}
         _ => {
@@ -1000,7 +1000,7 @@ fn prepare_function_claim_path(
                         )
                     })?;
                 let mut state = state.clone();
-                state = state.with_resource_context(resources);
+                state = Box::new(state.with_resource_context(resources));
                 Some(CFunctionOutcome::Return {
                     value: value.clone(),
                     state,
@@ -1283,7 +1283,7 @@ fn prepare_function_claim_path(
         caller_state: caller_state.clone(),
         arguments: arguments.to_vec(),
         outcome: outcome.clone(),
-        exit_state: Some(claim_exit_state),
+        exit_state: Some(*claim_exit_state),
         entry_state,
         required_resources,
         checked_required_resources,
@@ -2971,7 +2971,7 @@ mod checked_proposition_index_tests {
                 Vec::new(),
                 CFunctionOutcome::Return {
                     value: CValue::Void,
-                    state: CState::new(),
+                    state: Box::new(CState::new()),
                 },
             );
             CCheckedFunctionProposition {
@@ -3015,12 +3015,12 @@ mod checked_proposition_index_tests {
         );
         let state = CState::new();
         let proposition = Proposition::CFunctionExecutes {
-            state: state.clone(),
-            function: function.clone(),
+            state: Box::new(state.clone()),
+            function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: CFunctionOutcome::Return {
                 value: CValue::Int32(Bitvector32Term::Constant(0)),
-                state,
+                state: Box::new(state),
             },
         };
         let fact = ExecutionPureFact::new(body_fact.clone());
@@ -3087,11 +3087,11 @@ mod heap_status_equality_tests {
 
         let left = CFunctionOutcome::Return {
             value: CValue::Int32(Bitvector32Term::Constant(0)),
-            state: CState::new().with_memory(base),
+            state: Box::new(CState::new().with_memory(base)),
         };
         let right = CFunctionOutcome::Return {
             value: CValue::Int32(Bitvector32Term::Constant(0)),
-            state: CState::new().with_memory(other),
+            state: Box::new(CState::new().with_memory(other)),
         };
         assert!(!c_function_outcomes_program_state_definitionally_equal(
             &left,

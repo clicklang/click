@@ -1658,19 +1658,19 @@ mod tests {
         );
         let separation = |left_start: u32, left_end: u32, cell_memory: &CMemory| {
             Proposition::CResourceSeparate {
-                left: CResource::Memory(CMemoryRange::new(
+                left: Box::new(CResource::Memory(CMemoryRange::new(
                     owner_base.clone(),
                     Bitvector32Term::Constant(left_start),
                     Bitvector32Term::Constant(left_end),
-                )),
-                right: CResource::Memory(CMemoryRange::new(
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: cell_element_offset(cell_memory),
                     },
                     Bitvector32Term::Constant(0),
                     Bitvector32Term::Constant(1),
-                )),
+                ))),
             }
         };
         let required = separation(0, 4, &folded);
@@ -2100,16 +2100,8 @@ fn separations_equal_modulo_proven_snapshots(
     right: &Proposition,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (
-        Proposition::CResourceSeparate {
-            left: CResource::Memory(left_a),
-            right: CResource::Memory(left_b),
-        },
-        Proposition::CResourceSeparate {
-            left: CResource::Memory(right_a),
-            right: CResource::Memory(right_b),
-        },
-    ) = (left, right)
+    let (Some((left_a, left_b)), Some((right_a, right_b))) =
+        (left.memory_separation(), right.memory_separation())
     else {
         return false;
     };

@@ -890,7 +890,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         LoanRefusalSubject::for_resource(selected),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(diagnostic),
+        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
         &[],
         &[],
     );
@@ -919,7 +919,7 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         LoanRefusalSubject::for_range(range),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::CRuntimeError::LoanRefusal(diagnostic),
+        &crate::kernel::CRuntimeError::LoanRefusal(Box::new(diagnostic)),
         &[],
         &[],
     );
@@ -1070,7 +1070,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let pre_state = CState::new().with_memory(before.clone());
     let outcome = CFunctionOutcome::Return {
         value: int32(0),
-        state: CState::new().with_memory(after.clone()),
+        state: Box::new(CState::new().with_memory(after.clone())),
     };
     let aliases_global =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);

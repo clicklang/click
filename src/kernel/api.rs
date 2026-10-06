@@ -3714,7 +3714,7 @@ pub fn prove_c_expression_evaluation(state: CState, expression: CExpression) -> 
     let mut budget = ExecutionBudget::for_new_execution().with_c_expression_cost(&expression);
     let outcome = evaluate_c_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
     Some(Theorem::new(Proposition::CExpressionEvaluates {
-        state,
+        state: Box::new(state),
         expression,
         outcome,
     }))
@@ -3769,7 +3769,7 @@ pub fn prove_symbolic_c_condition_evaluation(
         .map(|(outcome, facts, obligations)| {
             let facts = public_execution_pure_facts(&facts);
             let proposition = Proposition::CConditionEvaluates {
-                state: state.clone(),
+                state: Box::new(state.clone()),
                 condition: condition.clone(),
                 outcome,
             };
@@ -3954,14 +3954,14 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
             let facts = public_execution_pure_facts(&path.facts);
             let proposition = if execution_semantics == CExecutionSemantics::EXECUTE_BODIES {
                 Proposition::CStatementExecutes {
-                    state: state.clone(),
-                    statement: statement.clone(),
+                    state: Box::new(state.clone()),
+                    statement: Box::new(statement.clone()),
                     outcome: path.outcome,
                 }
             } else {
                 Proposition::CStatementVerifies {
-                    state: state.clone(),
-                    statement: statement.clone(),
+                    state: Box::new(state.clone()),
+                    statement: Box::new(statement.clone()),
                     outcome: path.outcome,
                 }
             };
@@ -4245,8 +4245,8 @@ fn symbolic_c_statement_execution_with_loop_rule(
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             let proposition = Proposition::CStatementVerifies {
-                state: state.clone(),
-                statement: statement.clone(),
+                state: Box::new(state.clone()),
+                statement: Box::new(statement.clone()),
                 outcome: path.outcome,
             };
             let theorem = Theorem::new(wrap_proof_facts(
@@ -4467,15 +4467,15 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
             let facts = public_execution_pure_facts(&path.facts);
             let proposition = if execution_semantics == CExecutionSemantics::EXECUTE_BODIES {
                 Proposition::CFunctionExecutes {
-                    state: state.clone(),
-                    function: function.clone(),
+                    state: Box::new(state.clone()),
+                    function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: path.outcome,
                 }
             } else {
                 Proposition::CFunctionVerifies {
-                    state: state.clone(),
-                    function: function.clone(),
+                    state: Box::new(state.clone()),
+                    function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: path.outcome,
                 }
@@ -5098,11 +5098,11 @@ mod proof_case_evidence_tests {
             c_function_entry_state(&CState::new(), &function, &[]).expect("entry state");
         let skip_return = |value: u32| {
             Theorem::new(Proposition::CStatementVerifies {
-                state: entry_state.clone(),
-                statement: CStatement::Skip,
+                state: Box::new(entry_state.clone()),
+                statement: Box::new(CStatement::Skip),
                 outcome: CStatementOutcome::Return {
                     value: int32(value),
-                    state: entry_state.clone(),
+                    state: Box::new(entry_state.clone()),
                 },
             })
         };
@@ -5555,13 +5555,13 @@ fn checked_execution_at_definitionally_equal_entry_state(
                 function: proved_function,
                 arguments,
                 outcome,
-            } if proved_state == &checked.state
-                && proved_function == function
+            } if **proved_state == checked.state
+                && **proved_function == *function
                 && arguments == &checked.arguments =>
             {
                 Proposition::CFunctionExecutes {
-                    state: state.clone(),
-                    function: function.clone(),
+                    state: Box::new(state.clone()),
+                    function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: outcome.clone(),
                 }
@@ -5571,13 +5571,13 @@ fn checked_execution_at_definitionally_equal_entry_state(
                 function: proved_function,
                 arguments,
                 outcome,
-            } if proved_state == &checked.state
-                && proved_function == function
+            } if **proved_state == checked.state
+                && **proved_function == *function
                 && arguments == &checked.arguments =>
             {
                 Proposition::CFunctionVerifies {
-                    state: state.clone(),
-                    function: function.clone(),
+                    state: Box::new(state.clone()),
+                    function: Box::new(function.clone()),
                     arguments: arguments.clone(),
                     outcome: outcome.clone(),
                 }
@@ -6065,8 +6065,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             || reuse_assumptions.states_required_goal(premise))
                     })
                     .flat_map(|premise| match premise {
-                        Proposition::CResourceContains { parent, .. } => vec![parent],
-                        Proposition::CResourceSeparate { left, right } => vec![left, right],
+                        Proposition::CResourceContains { parent, .. } => vec![*parent],
+                        Proposition::CResourceSeparate { left, right } => vec![*left, *right],
                         _ => Vec::new(),
                     })
                     .filter(|resource| {
@@ -6100,9 +6100,9 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     };
                     for proposition in propositions {
                         if let Proposition::CResourceContains { child, .. } = &proposition
-                            && matches!(child, CResource::Composite { .. })
+                            && matches!(&**child, CResource::Composite { .. })
                         {
-                            composites.push(CResourceFact::own(child.clone()));
+                            composites.push(CResourceFact::own(*child.clone()));
                         }
                         reuse_assumptions = reuse_assumptions.assume_proposition(proposition);
                     }
@@ -6474,7 +6474,7 @@ pub fn prove_c_function_satisfies_specification_with_environment(
     let requires = specification.requires().to_vec();
     let proposition = requires.iter().rev().fold(
         Proposition::CFunctionSatisfiesSpecification {
-            function,
+            function: Box::new(function),
             specification: Box::new(specification),
         },
         |body, requirement| Proposition::Implies(Box::new(requirement.clone()), Box::new(body)),
@@ -6500,7 +6500,7 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
     if outcome
         != (CStatementOutcome::Return {
             value: b_value,
-            state: state.clone(),
+            state: Box::new(state.clone()),
         })
     {
         return None;
@@ -6513,8 +6513,8 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, true)),
                 Box::new(Proposition::CStatementExecutes {
-                    state,
-                    statement: c_max_body(),
+                    state: Box::new(state),
+                    statement: Box::new(c_max_body()),
                     outcome,
                 }),
             ),
@@ -6535,7 +6535,7 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
     if outcome
         != (CStatementOutcome::Return {
             value: a_value,
-            state: state.clone(),
+            state: Box::new(state.clone()),
         })
     {
         return None;
@@ -6548,8 +6548,8 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
             Proposition::Implies(
                 Box::new(Proposition::ConditionIs(condition, false)),
                 Box::new(Proposition::CStatementExecutes {
-                    state,
-                    statement: c_max_body(),
+                    state: Box::new(state),
+                    statement: Box::new(c_max_body()),
                     outcome,
                 }),
             ),

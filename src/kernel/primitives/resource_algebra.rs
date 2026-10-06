@@ -6683,8 +6683,8 @@ fn same_family_separate_facts(facts: &[&CResourceFact]) -> Vec<Proposition> {
                 continue;
             }
             propositions.push(Proposition::CResourceSeparate {
-                left: owned[i].clone(),
-                right: (*right).clone(),
+                left: Box::new(owned[i].clone()),
+                right: Box::new((*right).clone()),
             });
         }
     }
@@ -8324,8 +8324,8 @@ impl CResourceFact {
         // search rather than resource theory.
         let right = self.resource().clone();
         assumptions.proves_exact(&Proposition::CResourceSeparate {
-            left: allocation_memory.clone(),
-            right: right.clone(),
+            left: Box::new(allocation_memory.clone()),
+            right: Box::new(right.clone()),
         }) || assumptions.proves_resource_separate(&allocation_memory, &right)
     }
 
