@@ -803,3 +803,24 @@ inherent methods, and concrete trait implementations next; verify reachable
 constructor and operator bodies rather than summarizing the checksum result.
 Only after that adapter boundary passes should the unchanged implementation
 be proved against the shared Adler-32 specification.
+
+### Locked crate inputs and qualified declarations
+
+Schema 4 now locks an explicit crate root, edition, features, selected roots,
+and the complete compiler-observed file closure from rustc dep-info. Extraction
+uses a private snapshot and rejects environment-dependent source macros,
+escaping paths, symlinks, missing files, and extra inputs. All input bytes enter
+the prepared identity, including modules with no translated body. Existing
+schema-3 configurations and locks retain their one-file interpretation.
+
+Module definitions and inherent methods use qualified, injective proof names;
+call resolution keeps Charon declaration IDs. Assignment-operator implementations
+retain their declaration/signature checks inside module namespaces. Positive
+proofs cover same-named module functions and an inherent method call, with
+false-claim and changed-input negatives.
+
+The unchanged adler2 Rust-2021/std trial passes the former source-lock boundary
+and reaches the concrete `Default` implementation. That constructor remains
+unsupported, so adaptation publishes neither artifact nor lock. The next
+checksum increment must execute and verify reachable concrete constructor
+bodies, followed by the remaining original computation and checksum proof.

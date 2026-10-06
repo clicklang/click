@@ -1,6 +1,6 @@
 # Experimental Rust imports
 
-Click accepts a small safe, monomorphic subset of Rust 2024. Its Rust importer
+Click accepts a small safe, monomorphic subset of Rust 2021 and 2024. Its Rust importer
 uses pinned, unmodified [Charon](https://github.com/AeneasVerif/charon) after rustc
 type and borrow checking. Every imported body follows the native ULLBC control
 flow path into Click's shared execution, memory, and certificate rules.
@@ -50,6 +50,57 @@ Schema 2 is rejected with a migration diagnostic. The normal example gate
 checks locked native inputs offline, while the required live Charon gate
 refreshes and verifies all 16 original Rust fixtures.
 
+## Locked crates and qualified declarations
+
+Schema 3 retains the existing one-file Rust 2024 interface. Schema 4 adds an
+explicit crate root and compiler configuration:
+
+```json
+{
+  "schema": 4,
+  "language": "rust",
+  "target": "x86_64-unknown-linux-gnu",
+  "source": "src/lib.rs",
+  "exporter": "../../../target/charon/debug/charon",
+  "artifact": "crate.ullbc",
+  "crate": {
+    "name": "adler2",
+    "edition": "2021",
+    "features": ["std"],
+    "roots": ["adler2::adler32_slice"],
+    "files": ["src/lib.rs", "src/algo.rs"]
+  }
+}
+```
+
+This invokes rustc directly; it does not execute Cargo manifests or build
+scripts, resolve third-party dependencies, or enable features implicitly.
+Editions 2021 and 2024 are supported. Roots are explicit qualified paths.
+All compiler-read inputs, including unused modules and included data, must
+appear exactly once in `files`. rustc dep-info checks that closure. Files must
+be regular, use normalized relative paths, and stay inside the configuration
+directory without symlinks. Environment-dependent source macros are rejected.
+
+Extraction compiles a private snapshot of those bytes. The aggregate source
+hash covers every input, and configuration hashes bind the root, edition,
+features, and entry points. Ordinary loading rechecks the full closure
+without executing a compiler. Schema-4 artifacts use the versioned
+`click-charon-crate-v1` envelope; existing schema-3 locks keep their identity.
+
+Module definitions and inherent methods retain compiler-resolved identities.
+Proof identifiers encode tagged, length-prefixed path components, so `a::read`,
+`b::read`, and `a_read` remain distinct even when their leaf names overlap.
+Inherent methods include their resolved receiver type. Calls still follow
+Charon's declaration IDs and execute imported bodies; names never grant a
+library summary. Concrete assignment operators retain their trait,
+implementation, signature, and associated-item checks across module paths.
+
+The unchanged adler2 trial now accepts its two-file input closure, Rust 2021,
+`std`, and selected root. It stops at the unsupported concrete `Default`
+constructor before publishing an artifact or lock. This is progress through
+the crate boundary, not a checksum proof. General trait dispatch and arbitrary
+Rust crates remain outside the supported subset.
+
 ## Supported semantics
 
 The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
@@ -85,7 +136,7 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 It does not establish checksum-library support;
-crate extraction remains outstanding.
+whole-checksum adaptation and verification remain outstanding.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click

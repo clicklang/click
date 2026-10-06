@@ -83,3 +83,19 @@ or assuming the checksum result would bypass the trial's purpose.
 Only after the original reachable computation adapts can sidecars establish
 access bounds, no panic, byte preservation, termination, and the shared
 Adler-32 specification described in the [checksum assessment](../../rust-checksum-assessment.md).
+
+## Follow-up: locked crate inputs
+
+Schema 4 now provides the crate root, edition, features, selected roots, and
+complete rustc dep-info closure. The `charon_adler2_locked_crate_reaches_checked_trait_boundary`
+live regression runs these original sources with Rust 2021 and `std`. The
+source lock and qualified record/function identities pass; adaptation next
+rejects `source trait method outside Drop and assignment operators` at the
+concrete `Default` constructor. No artifact or lock is published and no
+checksum contract is assumed. The earlier result record above remains the
+historical single-file trial.
+
+Multi-module regressions prove separate same-named functions and an inherent
+method call, including a false-claim negative. Changes to an unreachable
+module invalidate the lock. Crate configuration changes, missing or extra
+files, path escapes, and symlinks are rejected.
