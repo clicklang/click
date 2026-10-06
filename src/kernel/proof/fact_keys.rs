@@ -1181,6 +1181,20 @@ enum AlphaConditionBinaryOp {
     MultiplyOverflows,
     DivideOverflows,
     ShiftLeftOverflows,
+    Int64SignedLessThan,
+    Int64SignedLessEqual,
+    Int64SignedGreaterThan,
+    Int64SignedGreaterEqual,
+    Int64UnsignedLessThan,
+    Int64UnsignedLessEqual,
+    Int64UnsignedGreaterThan,
+    Int64UnsignedGreaterEqual,
+    Int64Equal,
+    Int64SignedAddOverflows,
+    Int64SignedSubtractOverflows,
+    Int64SignedMultiplyOverflows,
+    Int64SignedDivideOverflows,
+    Int64SignedShiftLeftOverflows,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2457,6 +2471,60 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
         ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, right) => {
             binary(AlphaConditionBinaryOp::ShiftLeftOverflows, left, right)?
         }
+        ConditionTerm::Bitvector64SignedLessThan(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64SignedLessThan, left, right)?
+        }
+        ConditionTerm::Bitvector64SignedLessEqual(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64SignedLessEqual, left, right)?
+        }
+        ConditionTerm::Bitvector64SignedGreaterThan(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64SignedGreaterThan, left, right)?
+        }
+        ConditionTerm::Bitvector64SignedGreaterEqual(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64SignedGreaterEqual, left, right)?
+        }
+        ConditionTerm::Bitvector64UnsignedLessThan(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64UnsignedLessThan, left, right)?
+        }
+        ConditionTerm::Bitvector64UnsignedLessEqual(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64UnsignedLessEqual, left, right)?
+        }
+        ConditionTerm::Bitvector64UnsignedGreaterThan(left, right) => binary(
+            AlphaConditionBinaryOp::Int64UnsignedGreaterThan,
+            left,
+            right,
+        )?,
+        ConditionTerm::Bitvector64UnsignedGreaterEqual(left, right) => binary(
+            AlphaConditionBinaryOp::Int64UnsignedGreaterEqual,
+            left,
+            right,
+        )?,
+        ConditionTerm::Bitvector64Equal(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64Equal, left, right)?
+        }
+        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
+            binary(AlphaConditionBinaryOp::Int64SignedAddOverflows, left, right)?
+        }
+        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => binary(
+            AlphaConditionBinaryOp::Int64SignedSubtractOverflows,
+            left,
+            right,
+        )?,
+        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => binary(
+            AlphaConditionBinaryOp::Int64SignedMultiplyOverflows,
+            left,
+            right,
+        )?,
+        ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => binary(
+            AlphaConditionBinaryOp::Int64SignedDivideOverflows,
+            left,
+            right,
+        )?,
+        ConditionTerm::Bitvector64SignedShiftLeftOverflows(left, right) => binary(
+            AlphaConditionBinaryOp::Int64SignedShiftLeftOverflows,
+            left,
+            right,
+        )?,
         ConditionTerm::PointerOffsetEqual(left, right) => AlphaConditionKey::PointerOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
@@ -4516,5 +4584,51 @@ mod snapshot_alpha_tests {
         for pair in work.windows(2) {
             assert!(pair[1] <= pair[0] * 3 + 32, "snapshot alpha work: {work:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod machine_quantifier_identity_tests {
+    use super::*;
+
+    #[test]
+    fn wide_quantified_keys_rename_binders_without_erasing_width_or_high_bits() {
+        let quantified = |variable, wide, bound| Proposition::Exists {
+            name: "x".into(),
+            var: Variable(variable),
+            sort: Sort::CInt64,
+            body: Box::new(Proposition::ConditionIs(
+                if wide {
+                    ConditionTerm::Bitvector64Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(variable))),
+                        Box::new(Bitvector32Term::Int64Constant(bound)),
+                    )
+                } else {
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(variable))),
+                        Box::new(Bitvector32Term::Constant(bound as u32)),
+                    )
+                },
+                true,
+            )),
+        };
+        let wide = quantified(1, true, 1i64 << 32);
+        let renamed = quantified(2, true, 1i64 << 32);
+        assert!(quantified_equivalence_index_key(&wide).is_some());
+        assert!(propositions_are_alpha_equal(&wide, &renamed));
+        assert!(!propositions_are_alpha_equal(
+            &wide,
+            &quantified(2, true, 0)
+        ));
+        assert!(!propositions_are_alpha_equal(
+            &wide,
+            &quantified(2, false, 1i64 << 32)
+        ));
+        let mut unsigned = renamed;
+        let Proposition::Exists { sort, .. } = &mut unsigned else {
+            unreachable!()
+        };
+        *sort = Sort::CMachineInteger(MachineIntegerType::UInt64);
+        assert!(!propositions_are_alpha_equal(&wide, &unsigned));
     }
 }

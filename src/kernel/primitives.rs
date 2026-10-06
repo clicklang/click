@@ -202,6 +202,7 @@ pub enum Sort {
     CType,
     CInt32,
     CInt64,
+    CMachineInteger(MachineIntegerType),
     CPointer(CType),
     CValue,
     Sequence(Option<CType>),
@@ -210,6 +211,25 @@ pub enum Sort {
     CState,
     CStatementOutcome,
     CFunctionOutcome,
+}
+
+impl Sort {
+    pub fn machine_integer(integer_type: MachineIntegerType) -> Self {
+        match integer_type {
+            MachineIntegerType::Int32 => Self::CInt32,
+            MachineIntegerType::Int64 => Self::CInt64,
+            other => Self::CMachineInteger(other),
+        }
+    }
+
+    pub fn machine_integer_type(&self) -> Option<MachineIntegerType> {
+        match self {
+            Self::CInt32 => Some(MachineIntegerType::Int32),
+            Self::CInt64 => Some(MachineIntegerType::Int64),
+            Self::CMachineInteger(integer_type) => Some(*integer_type),
+            _ => None,
+        }
+    }
 }
 
 /// What a load term reads at its address: how many bytes, and how the term
@@ -2240,6 +2260,12 @@ pub enum SpecProposition {
         variable: Variable,
         body: Box<SpecProposition>,
     },
+    ForAllMachineInteger {
+        name: String,
+        variable: Variable,
+        integer_type: MachineIntegerType,
+        body: Box<SpecProposition>,
+    },
     ForAllInteger {
         name: String,
         variable: Variable,
@@ -2260,6 +2286,12 @@ pub enum SpecProposition {
     ExistsInt32 {
         name: String,
         variable: Variable,
+        body: Box<SpecProposition>,
+    },
+    ExistsMachineInteger {
+        name: String,
+        variable: Variable,
+        integer_type: MachineIntegerType,
         body: Box<SpecProposition>,
     },
     ExistsInteger {

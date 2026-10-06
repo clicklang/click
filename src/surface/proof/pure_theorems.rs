@@ -1286,6 +1286,15 @@ pub(super) fn pure_theorem_context(
     // both directions agree. The zip above has already paired the principals
     // with their source clauses, and a guard has no source clause of its own.
     let mut requires = requires;
+    // A narrow machine parameter's range is part of its typed domain. Keep
+    // these guards in the exported premises as well as the proof context.
+    for value in values.values() {
+        for fact in crate::kernel::c_narrow_integer_range_facts(value).unwrap_or_default() {
+            if !requires.contains(&fact) {
+                requires.push(fact);
+            }
+        }
+    }
     for guard in requires
         .iter()
         .flat_map(crate::kernel::stated_loadable_extent_guards)

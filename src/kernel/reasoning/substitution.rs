@@ -1287,8 +1287,10 @@ fn collect_spec_proposition_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match proposition {
-        SpecProposition::ForAllInt32 { variable, body, .. }
+        SpecProposition::ForAllMachineInteger { variable, body, .. }
+        | SpecProposition::ForAllInt32 { variable, body, .. }
         | SpecProposition::ForAllPointer { variable, body, .. }
+        | SpecProposition::ExistsMachineInteger { variable, body, .. }
         | SpecProposition::ExistsInt32 { variable, body, .. }
         | SpecProposition::ExistsPointer { variable, body, .. } => {
             variables.insert(*variable);
@@ -2142,7 +2144,11 @@ fn validate_integer_pure_proposition(
         Proposition::ForAll { var, sort, body } => {
             if !matches!(
                 sort,
-                Sort::Integer | Sort::CInt32 | Sort::CInt64 | Sort::CPointer(_)
+                Sort::Integer
+                    | Sort::CInt32
+                    | Sort::CInt64
+                    | Sort::CMachineInteger(_)
+                    | Sort::CPointer(_)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -2154,7 +2160,11 @@ fn validate_integer_pure_proposition(
         } => {
             if !matches!(
                 sort,
-                Sort::Integer | Sort::CInt32 | Sort::CInt64 | Sort::CPointer(_)
+                Sort::Integer
+                    | Sort::CInt32
+                    | Sort::CInt64
+                    | Sort::CMachineInteger(_)
+                    | Sort::CPointer(_)
             ) {
                 return Err(IntegerPureSubstitutionError::UnsupportedSort);
             }
@@ -2452,7 +2462,10 @@ fn queue_integer_quantifier_rewrite<'a>(
     tasks: &mut Vec<IntegerPropositionRewriteTask<'a>>,
 ) -> Result<(), IntegerPureSubstitutionError> {
     let is_integer = *sort == Sort::Integer;
-    let is_c = matches!(sort, Sort::CInt32 | Sort::CInt64 | Sort::CPointer(_));
+    let is_c = matches!(
+        sort,
+        Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::CPointer(_)
+    );
     if !is_integer && !is_c {
         return Err(IntegerPureSubstitutionError::UnsupportedSort);
     }
@@ -7570,6 +7583,19 @@ fn substitute_pointer_variable_in_spec_proposition(
                 right, from, to,
             )),
         ),
+        SpecProposition::ForAllMachineInteger {
+            name,
+            variable,
+            integer_type,
+            body,
+        } => SpecProposition::ForAllMachineInteger {
+            name: name.clone(),
+            variable: *variable,
+            integer_type: *integer_type,
+            body: Box::new(substitute_pointer_variable_in_spec_proposition(
+                body, from, to,
+            )),
+        },
         SpecProposition::ForAllInt32 {
             name,
             variable,
@@ -7614,6 +7640,19 @@ fn substitute_pointer_variable_in_spec_proposition(
             name: name.clone(),
             variable: *variable,
             algebraic_type: algebraic_type.clone(),
+            body: Box::new(substitute_pointer_variable_in_spec_proposition(
+                body, from, to,
+            )),
+        },
+        SpecProposition::ExistsMachineInteger {
+            name,
+            variable,
+            integer_type,
+            body,
+        } => SpecProposition::ExistsMachineInteger {
+            name: name.clone(),
+            variable: *variable,
+            integer_type: *integer_type,
             body: Box::new(substitute_pointer_variable_in_spec_proposition(
                 body, from, to,
             )),

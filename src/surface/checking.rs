@@ -372,7 +372,9 @@ pub(super) fn apply_witness_tactic(
     }
 
     let expected = match &sort {
-        Sort::CInt32 => Some(CType::Int32),
+        sort if sort.machine_integer_type().is_some() => {
+            Some(sort.machine_integer_type().unwrap().c_type())
+        }
         Sort::CPointer(c_type) => Some(*c_type),
         _ => None,
     };
@@ -405,7 +407,20 @@ pub(super) fn apply_witness_tactic(
     }
 
     let result = match (sort, witness_value) {
-        (Sort::CInt32, CValue::Int32(value)) => {
+        (sort, value) if sort.machine_integer_type().is_some() => {
+            let value = match value {
+                CValue::Int8(v)
+                | CValue::Int16(v)
+                | CValue::Int32(v)
+                | CValue::UInt8(v)
+                | CValue::UInt16(v)
+                | CValue::UInt32(v)
+                | CValue::Int64(v)
+                | CValue::UInt64(v)
+                | CValue::Int128(v)
+                | CValue::UInt128(v) => v,
+                _ => unreachable!("witness type was checked above"),
+            };
             substitute_int32_variable_in_proposition(&body, var, value)
         }
         (Sort::CPointer(expected), CValue::Pointer(pointer))

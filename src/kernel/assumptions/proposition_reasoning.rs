@@ -535,7 +535,10 @@ impl PureFactContext {
         if alpha {
             return true;
         }
-        if !matches!(sort, Sort::CInt32 | Sort::Bitvector32) {
+        if !matches!(
+            sort,
+            Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::Bitvector32
+        ) {
             return false;
         }
         let mut conjuncts = Vec::new();
@@ -543,10 +546,24 @@ impl PureFactContext {
         let bound = Bitvector32Term::Variable(var);
         let mut witnesses = Vec::new();
         for conjunct in &conjuncts {
-            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
-                conjunct
-            else {
-                continue;
+            let (left, right) = match (sort, conjunct) {
+                (
+                    Sort::CInt64 | Sort::CMachineInteger(MachineIntegerType::UInt64),
+                    Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true),
+                ) => (left, right),
+                (
+                    Sort::CInt32
+                    | Sort::Bitvector32
+                    | Sort::CMachineInteger(
+                        MachineIntegerType::Int8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::UInt16
+                        | MachineIntegerType::UInt32,
+                    ),
+                    Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true),
+                ) => (left, right),
+                _ => continue,
             };
             for (side, other) in [(left, right), (right, left)] {
                 let mentions_var =

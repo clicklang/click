@@ -704,8 +704,10 @@ fn lower_spec_universal_chain_in(
     let mut binders = Vec::new();
     let mut body = proposition;
     let mut quantified_state = None;
+    let mut quantified_assumptions = assumptions.clone();
 
     loop {
+        let quantifier = body;
         let (binder, next_body) = match body {
             SpecProposition::ForAllInteger {
                 name,
@@ -736,20 +738,30 @@ fn lower_spec_universal_chain_in(
                 },
                 body.as_ref(),
             ),
-            SpecProposition::ForAllInt32 {
+            SpecProposition::ForAllMachineInteger {
+                name,
+                variable,
+                body,
+                ..
+            }
+            | SpecProposition::ForAllInt32 {
                 name,
                 variable,
                 body,
             } => {
+                let integer_type = match quantifier {
+                    SpecProposition::ForAllMachineInteger { integer_type, .. } => *integer_type,
+                    _ => MachineIntegerType::Int32,
+                };
                 let quantified_state = quantified_state.get_or_insert_with(|| state.clone());
                 quantified_state
                     .locals
-                    .set(name.clone(), int32(Bitvector32Term::Variable(*variable)));
+                    .set(name.clone(), integer_type.symbolic_value(*variable));
                 (
                     SpecUniversalBinder {
                         name: name.clone(),
                         variable: *variable,
-                        sort: Sort::CInt32,
+                        sort: Sort::machine_integer(integer_type),
                         pointer: false,
                         integer: false,
                     },
@@ -784,6 +796,10 @@ fn lower_spec_universal_chain_in(
             }
             _ => break,
         };
+        for fact in machine_quantifier_range_facts(&binder.sort, binder.variable) {
+            quantified_assumptions =
+                quantified_assumptions.assume_proposition(fact.proposition().clone());
+        }
         binders.push(binder);
         body = next_body;
     }
@@ -797,7 +813,7 @@ fn lower_spec_universal_chain_in(
         body_state,
         body,
         loop_entry_state,
-        assumptions,
+        &quantified_assumptions,
         algebraic_bindings,
         budget,
     )?;
@@ -810,10 +826,22 @@ fn lower_spec_universal_chain_in(
     Ok(Some(paths))
 }
 
+fn machine_quantifier_range_facts(sort: &Sort, variable: Variable) -> Vec<ExecutionPureFact> {
+    sort.machine_integer_type()
+        .and_then(|ty| super::api::c_narrow_integer_range_facts(&ty.symbolic_value(variable)))
+        .unwrap_or_default()
+        .into_iter()
+        .map(ExecutionPureFact::certified)
+        .collect()
+}
+
 fn wrap_spec_universal_path(
-    path: SpecPropositionPath,
+    mut path: SpecPropositionPath,
     binder: &SpecUniversalBinder,
 ) -> SpecPropositionPath {
+    let mut range_facts = machine_quantifier_range_facts(&binder.sort, binder.variable);
+    range_facts.append(&mut path.facts);
+    path.facts = range_facts;
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
         name: binder.name.clone(),
@@ -1312,25 +1340,45 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }
         })
         .collect()),
-        SpecProposition::ForAllInt32 {
+        SpecProposition::ForAllMachineInteger {
+            name,
+            variable,
+            body,
+            ..
+        }
+        | SpecProposition::ForAllInt32 {
             name,
             variable,
             body,
         } => {
+            let integer_type = match proposition {
+                SpecProposition::ForAllMachineInteger { integer_type, .. } => *integer_type,
+                _ => MachineIntegerType::Int32,
+            };
+            let range_facts =
+                machine_quantifier_range_facts(&Sort::machine_integer(integer_type), *variable);
+            let mut quantified_assumptions = assumptions.clone();
+            for fact in &range_facts {
+                quantified_assumptions =
+                    quantified_assumptions.assume_proposition(fact.proposition().clone());
+            }
             let mut state = state.clone();
             state
                 .locals
-                .set(name.clone(), int32(Bitvector32Term::Variable(*variable)));
+                .set(name.clone(), integer_type.symbolic_value(*variable));
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 &state,
                 body,
                 loop_entry_state,
-                assumptions,
+                &quantified_assumptions,
                 algebraic_bindings,
                 budget,
             )?
             .into_iter()
-            .map(|path| {
+            .map(|mut path| {
+                let mut facts = range_facts.clone();
+                facts.append(&mut path.facts);
+                path.facts = facts;
                 let (body, guards) =
                     wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
                 let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
@@ -1344,7 +1392,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 SpecPropositionPath {
                     proposition: Proposition::ForAll {
                         var: *variable,
-                        sort: Sort::CInt32,
+                        sort: Sort::machine_integer(integer_type),
                         body: Box::new(body),
                     },
                     // Path facts may mention the bound variable. They are
@@ -1357,7 +1405,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         .map(|obligation| {
                             obligation.map_proposition(|proposition| Proposition::ForAll {
                                 var: *variable,
-                                sort: Sort::CInt32,
+                                sort: Sort::machine_integer(integer_type),
                                 body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                             })
                         })
@@ -1496,54 +1544,76 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 obligations: Vec::new(),
             }])
         }
-        SpecProposition::ExistsInt32 {
+        SpecProposition::ExistsMachineInteger {
+            name,
+            variable,
+            body,
+            ..
+        }
+        | SpecProposition::ExistsInt32 {
             name,
             variable,
             body,
         } => {
+            let integer_type = match proposition {
+                SpecProposition::ExistsMachineInteger { integer_type, .. } => *integer_type,
+                _ => MachineIntegerType::Int32,
+            };
+            let range_facts =
+                machine_quantifier_range_facts(&Sort::machine_integer(integer_type), *variable);
+            let mut quantified_assumptions = assumptions.clone();
+            for fact in &range_facts {
+                quantified_assumptions =
+                    quantified_assumptions.assume_proposition(fact.proposition().clone());
+            }
             let mut state = state.clone();
             state
                 .locals
-                .set(name.clone(), int32(Bitvector32Term::Variable(*variable)));
+                .set(name.clone(), integer_type.symbolic_value(*variable));
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 &state,
                 body,
                 loop_entry_state,
-                assumptions,
+                &quantified_assumptions,
                 algebraic_bindings,
                 budget,
             )?
             .into_iter()
-            .map(|path| SpecPropositionPath {
-                // The head chain records the nodes an introduction reaches
-                // before any other step. Nothing under this binder is one
-                // of them until a `witness` names the bound value, so the
-                // chain stops at the existential; the guards below belong
-                // to the body, not to this head.
-                introductions: Vec::new(),
-                proposition: Proposition::Exists {
-                    name: name.clone(),
-                    var: *variable,
-                    sort: Sort::CInt32,
-                    body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
-                },
-                // Path facts may mention the bound variable, so they are
-                // guards on the quantified body, exactly as under a
-                // universal. Publishing them here would leave the binder's
-                // variable free in the surrounding context.
-                facts: Vec::new(),
-                obligations: path
-                    .obligations
-                    .into_iter()
-                    .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::Exists {
-                            name: name.clone(),
-                            var: *variable,
-                            sort: Sort::CInt32,
-                            body: Box::new(guard_quantified_witness(proposition, &path.facts)),
+            .map(|mut path| {
+                let mut facts = range_facts.clone();
+                facts.append(&mut path.facts);
+                path.facts = facts;
+                SpecPropositionPath {
+                    // The head chain records the nodes an introduction reaches
+                    // before any other step. Nothing under this binder is one
+                    // of them until a `witness` names the bound value, so the
+                    // chain stops at the existential; the guards below belong
+                    // to the body, not to this head.
+                    introductions: Vec::new(),
+                    proposition: Proposition::Exists {
+                        name: name.clone(),
+                        var: *variable,
+                        sort: Sort::machine_integer(integer_type),
+                        body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
+                    },
+                    // Path facts may mention the bound variable, so they are
+                    // guards on the quantified body, exactly as under a
+                    // universal. Publishing them here would leave the binder's
+                    // variable free in the surrounding context.
+                    facts: Vec::new(),
+                    obligations: path
+                        .obligations
+                        .into_iter()
+                        .map(|obligation| {
+                            obligation.map_proposition(|proposition| Proposition::Exists {
+                                name: name.clone(),
+                                var: *variable,
+                                sort: Sort::machine_integer(integer_type),
+                                body: Box::new(guard_quantified_witness(proposition, &path.facts)),
+                            })
                         })
-                    })
-                    .collect(),
+                        .collect(),
+                }
             })
             .collect())
         }

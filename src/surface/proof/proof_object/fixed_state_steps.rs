@@ -749,7 +749,10 @@ impl<'a> Proof<'a> {
         };
         let chosen_variable = Variable(self.state().locals().next_choice_variable);
         let chosen = match sort {
-            Sort::CInt32 => CValue::Int32(Bitvector32Term::Variable(chosen_variable)),
+            sort if sort.machine_integer_type().is_some() => sort
+                .machine_integer_type()
+                .unwrap()
+                .symbolic_value(chosen_variable),
             Sort::CPointer(c_type @ CType::FunctionPointer(_)) => {
                 CValue::typed_pointer(Pointer::symbolic_function(chosen_variable), c_type)
             }
@@ -759,9 +762,16 @@ impl<'a> Proof<'a> {
             _ => return Err(self.step_error("unsupported existential choice sort")),
         };
         let chosen_fact = match &chosen {
-            CValue::Int128(_) | CValue::UInt128(_) => unreachable!("unsupported choice sort above"),
-
-            CValue::Int32(value) => {
+            CValue::Int8(value)
+            | CValue::Int16(value)
+            | CValue::Int32(value)
+            | CValue::UInt8(value)
+            | CValue::UInt16(value)
+            | CValue::UInt32(value)
+            | CValue::Int64(value)
+            | CValue::UInt64(value)
+            | CValue::Int128(value)
+            | CValue::UInt128(value) => {
                 substitute_int32_variable_in_proposition(&body, var, value.clone())
             }
             CValue::Pointer(pointer) => crate::kernel::substitute_pointer_variable_in_proposition(
@@ -769,21 +779,7 @@ impl<'a> Proof<'a> {
                 var,
                 pointer.pointer(),
             ),
-            CValue::Int8(_) => {
-                unreachable!("unsupported choice sort above")
-            }
-            CValue::Void
-            | CValue::Bool(_)
-            | CValue::Int16(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-            | CValue::Int64(_)
-            | CValue::UInt64(_)
-            | CValue::Float32(_)
-            | CValue::Float64(_) => {
-                unreachable!("unsupported choice sort above")
-            }
+            _ => unreachable!("unsupported choice sort above"),
         };
         let mut locals = self.state().locals().clone();
         locals.values = locals.values.with_inserted(
@@ -896,12 +892,14 @@ impl<'a> Proof<'a> {
                         ),
                     );
                 }
-                Sort::CInt32 => {
+                sort if sort.machine_integer_type().is_some() => {
                     locals.values = locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                            Bitvector32Term::Variable(variable),
-                        ))),
+                        ContractExpression::CFragment(CExpression::Value(
+                            sort.machine_integer_type()
+                                .unwrap()
+                                .symbolic_value(variable),
+                        )),
                     );
                 }
                 Sort::CPointer(c_type) => {
@@ -982,7 +980,10 @@ impl<'a> Proof<'a> {
         };
         let (name, _) = &binding.bindings[0];
         let chosen = match sort {
-            Sort::CInt32 => CValue::Int32(Bitvector32Term::Variable(chosen_variable)),
+            sort if sort.machine_integer_type().is_some() => sort
+                .machine_integer_type()
+                .unwrap()
+                .symbolic_value(chosen_variable),
             Sort::CPointer(c_type) => {
                 let pointer = if matches!(c_type, CType::FunctionPointer(_)) {
                     Pointer::symbolic_function(chosen_variable)
@@ -1190,9 +1191,19 @@ impl<'a> Proof<'a> {
         // body before substitution. Build the substituted body from the
         // selected requirement, preserving the original binder identity.
         let instantiated = match (&checked_source, chosen) {
-            (Proposition::Exists { var, body, .. }, CValue::Int32(value)) => {
-                substitute_int32_variable_in_proposition(body, *var, value.clone())
-            }
+            (
+                Proposition::Exists { var, body, .. },
+                CValue::Int8(value)
+                | CValue::Int16(value)
+                | CValue::Int32(value)
+                | CValue::UInt8(value)
+                | CValue::UInt16(value)
+                | CValue::UInt32(value)
+                | CValue::Int64(value)
+                | CValue::UInt64(value)
+                | CValue::Int128(value)
+                | CValue::UInt128(value),
+            ) => substitute_int32_variable_in_proposition(body, *var, value.clone()),
             (Proposition::Exists { var, body, .. }, CValue::Pointer(pointer)) => {
                 crate::kernel::substitute_pointer_variable_in_proposition(
                     body,
@@ -1468,7 +1479,7 @@ impl<'a> Proof<'a> {
                     ..
                 } => self.apply_pure_algebraic_witness(witness),
                 Proposition::Exists {
-                    sort: Sort::CInt32 | Sort::CPointer(_),
+                    sort: Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) | Sort::CPointer(_),
                     ..
                 } => self.apply_pure_machine_witness(witness),
                 _ => self.apply_pure_integer_witness(witness),
@@ -1708,9 +1719,9 @@ impl<'a> Proof<'a> {
         };
         if let Some(actual) = non_machine_type {
             let expected = match &goal {
-                Proposition::Exists {
-                    sort: Sort::CInt32, ..
-                } => CType::Int32,
+                Proposition::Exists { sort, .. } if sort.machine_integer_type().is_some() => {
+                    sort.machine_integer_type().unwrap().c_type()
+                }
                 Proposition::Exists {
                     sort: Sort::CPointer(c_type),
                     ..

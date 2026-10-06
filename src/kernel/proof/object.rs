@@ -800,7 +800,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             };
             if !matches!(
                 sort,
-                Sort::Integer | Sort::CInt32 | Sort::CPointer(_) | Sort::Algebraic(_)
+                Sort::Integer
+                    | Sort::CInt32
+                    | Sort::CInt64
+                    | Sort::CMachineInteger(_)
+                    | Sort::CPointer(_)
+                    | Sort::Algebraic(_)
             ) {
                 return Err(PropositionCloseError::IntegerChoiceWrongSort);
             }
@@ -827,11 +832,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     )
                     .map_err(|_| PropositionCloseError::IntegerChoiceFresheningExhausted)?
                 }
-                Sort::CInt32 => crate::kernel::substitute_int32_variable_in_proposition(
-                    &body,
-                    var,
-                    crate::kernel::Bitvector32Term::Variable(chosen),
-                ),
+                Sort::CInt32 | Sort::CInt64 | Sort::CMachineInteger(_) => {
+                    crate::kernel::substitute_int32_variable_in_proposition(
+                        &body,
+                        var,
+                        crate::kernel::Bitvector32Term::Variable(chosen),
+                    )
+                }
                 Sort::CPointer(c_type) => {
                     let pointer = if matches!(c_type, crate::kernel::CType::FunctionPointer(_)) {
                         crate::kernel::Pointer::symbolic_function(chosen)

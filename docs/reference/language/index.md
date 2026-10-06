@@ -736,6 +736,16 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
+Machine-integer `forall` and `exists` binders retain their declared width and
+signedness, including `int64` and `uint8`. `intro`, `obtain`, and `witness`
+preserve that type; a witness must have the exact binder type. Narrow integer
+ranges stay inside the quantifier: they guard universal bodies and constrain
+existential witnesses. A `uint8` witness therefore lies in `0..255`, and an
+`int64` witness keeps its high bits. After introducing a narrow universal
+binder, use further `intro()` steps to introduce its range guards before
+`witness`. Arithmetic in quantified bodies still
+requires its ordinary definedness checks.
+
 Integer and mixed C/Integer quantifiers support checked introduction and
 instantiation over their logical, unbounded domains. Integer range folds support
 typed scalar bodies and checked empty and append laws for `Int32` and `Integer`;
