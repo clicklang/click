@@ -265,9 +265,11 @@ memory.
 
 [`FeeFracDivBounded.click`](FeeFracDivBounded.click) now proves complete
 execution safety and both Integer/native output bounds of the unchanged pinned
-helper. Its numerator lies in
-`[-9223372036854775806, 9223372036854775806]` (absolute value at most
-`INT64_MAX - 1`), and `0 < d <= 2147483647` admits every positive int32 divisor.
+helper. Its joint input bounds are `-K * d <= n <= K * d`, with
+`K = 9223372036854775806` (`INT64_MAX - 1`), and
+`0 < d <= 2147483647` admits every positive int32 divisor. For large divisors,
+this admits int128 numerators far outside int64. Scaled quotient bounds prove
+the narrowing and retain one unit of correction margin.
 For either value of `round_down`, the result lies in
 `[-9223372036854775807, 9223372036854775807]`.
 
@@ -298,8 +300,8 @@ connects the corrected product; affine certificates keep complete nonlinear
 terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
-This completes mathematical rounding on the stated bounded profile. Next admit
-wider numerators through bounds derived jointly from the caller and divisor;
+This completes mathematical rounding on the stated joint bounded profile.
+Next address sign-dependent correction endpoint cases and caller-derived bounds;
 the full 96/32 contract and `EvaluateFeeDown/Up` remain open.
 
 ## CompactSize encoded length

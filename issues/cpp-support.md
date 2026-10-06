@@ -667,10 +667,18 @@ inequalities, omitted reconstruction/remainder or correction premises, missing
 evaluation guards, expansion/reverification,
 retained audit and deterministic scaling have coverage.
 
-Next admit wider int128 numerators through quotient/correction bounds derived
-jointly from the caller and divisor; the current interval profile does not cover the
-full 96/32 fee-division contract. These exact values and product inequalities
-still require the bounded numerator profile. The selected source narrows `n / d`
+The joint numerator/divisor profile now admits wider int128 numerators:
+`-K * d <= n <= K * d`, where Bitcoin's `K = INT64_MAX - 1` and every positive
+int32 divisor is supported. Shared explicit `integer_quotient_bound` certificates
+and proof-backed lower/upper lemmas derive quotient bounds from these scaled
+premises, including negative and symbolic bounds. The unchanged upstream
+sidecar and synthetic modular caller retain exact correction values, both
+rounding product inequalities, native safety and memory framing. Rejection,
+expansion/reverification and deterministic local-work tests cover the rule.
+
+Next handle sign-dependent quotient/correction endpoint cases and derive the
+joint bounds through the real `EvaluateFeeDown/Up` callers. The margin profile
+does not yet cover the full 96/32 contract. The selected source narrows `n / d`
 to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful

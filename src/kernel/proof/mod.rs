@@ -24,6 +24,7 @@ mod integer_cast_identity;
 mod integer_division_bounds;
 mod integer_polynomial_identity;
 mod integer_product_bounds;
+mod integer_quotient_bound;
 mod integer_quotient_shift;
 mod integer_relation_transport;
 mod object;

@@ -10152,8 +10152,8 @@ fn check_fee_rounding_pattern(name: &str, rejections: bool) {
         proof.push_str(
             r#"
 int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
-requires -100 <= to_integer(n);
-requires to_integer(n) <= 100;
+requires -100 * to_integer(d) <= to_integer(n);
+requires to_integer(n) <= 100 * to_integer(d);
 requires d > 0;
 requires d <= 100;
 owns untouched[0..1];
@@ -10208,8 +10208,10 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
                 "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
             ),
 
-        proof.replace("requires -100 <= to_integer(n);", ""),
-        proof.replace("requires to_integer(n) <= 100;", ""),
+        proof.replace("requires -100 * to_integer(d) <= to_integer(n);", ""),
+        proof.replace("requires to_integer(n) <= 100 * to_integer(d);", ""),
+        proof.replace("requires -100 * to_integer(d) <= to_integer(n);", "requires -101 * to_integer(d) <= to_integer(n);"),
+        proof.replace("requires to_integer(n) <= 100 * to_integer(d);", "requires to_integer(n) <= 101 * to_integer(d);"),
         proof.replace("requires d > 0;", ""),
         proof.replace("requires d <= 100;", ""),
         proof.replace("requires d > 0;", "requires d == 0;"),

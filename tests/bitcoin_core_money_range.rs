@@ -330,8 +330,14 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 "round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n)",
                 "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
             ),
-            source.replace("requires -9223372036854775806 <= to_integer(n);", ""),
-            source.replace("requires to_integer(n) <= 9223372036854775806;", ""),
+            source.replace(
+                "requires -9223372036854775806 * to_integer(d) <= to_integer(n);",
+                "",
+            ),
+            source.replace(
+                "requires to_integer(n) <= 9223372036854775806 * to_integer(d);",
+                "",
+            ),
             source.replace("requires d > 0;", ""),
             source.replace("requires d <= 2147483647;", ""),
             source.replace("requires d > 0;", "requires d == 0;"),

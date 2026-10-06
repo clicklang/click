@@ -880,6 +880,15 @@ theorem use_integer_to_uint64_round_trip(z: Integer) {
     ensures to_integer(to_uint64(z)) == z by { apply(integer_to_uint64_round_trip(z)); }
 }
 
+theorem use_scaled_quotient(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound * d <= n;
+    requires n <= bound * d;
+    ensures bound <= truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_lower(n, d, bound)); }
+    ensures truncating_quotient(n, d) <= bound by { apply(integer_positive_divisor_quotient_upper(n, d, bound)); }
+}
+
 ```
 
 ```expect
