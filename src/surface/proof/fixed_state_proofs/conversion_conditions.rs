@@ -305,6 +305,15 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
         ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
             Some(Bitvector32Term::Multiply(left.clone(), right.clone()))
         }
+        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Add(left.clone(), right.clone()))
+        }
+        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Subtract(left.clone(), right.clone()))
+        }
+        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Multiply(left.clone(), right.clone()))
+        }
         _ => None,
     }
 }
