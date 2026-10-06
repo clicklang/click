@@ -14668,6 +14668,7 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
 }
 
 #[test]
+#[ignore = "nightly: 44 s, over the gate's per-test budget (2026-10-06)"]
 fn authority_population_certification_expands_every_smart_site() {
     let fixture = crate::cli::parse_mdtest(
         std::path::Path::new("shared_heap_population_certification.md"),

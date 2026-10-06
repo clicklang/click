@@ -150,6 +150,7 @@ fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
 }
 
 #[test]
+#[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_loop_headers_tools_recheck_expanded_certificates() {
     for (name, claims) in [
         (

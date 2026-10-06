@@ -91,6 +91,13 @@ fn canonical_charon_examples_verify_locked_inputs() {
     assert_eq!(checked, 16);
 }
 
+/// Examples the ten-minute gate leaves to the nightly run, with the
+/// measurement that put each one here.
+const NIGHTLY: &[(&str, &str)] = &[(
+    "rbtree-insert",
+    "verifies in about 118 s on 20 cores, most of the gate's budget alone (2026-10-06)",
+)];
+
 #[test]
 fn example_projects() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -114,6 +121,21 @@ fn example_projects() {
         .collect::<Vec<_>>();
     projects.sort();
 
+    // The gate has a ten-minute budget. An example that takes most of it
+    // alone runs in the nightly gate (`scripts/check.sh --nightly`), or on
+    // request by name.
+    if requested.is_none() && std::env::var_os("CLICK_NIGHTLY").is_none() {
+        projects.retain(|path| {
+            let name = path.file_name().and_then(|name| name.to_str());
+            match name.and_then(|name| NIGHTLY.iter().find(|(nightly, _)| *nightly == name)) {
+                Some((name, reason)) => {
+                    println!("SKIPPING nightly example `{name}`: {reason}");
+                    false
+                }
+                None => true,
+            }
+        });
+    }
     if !run_quarantined {
         projects.retain(|path| {
             let name = path.file_name().and_then(|name| name.to_str());

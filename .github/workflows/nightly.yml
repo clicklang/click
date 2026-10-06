@@ -1,0 +1,49 @@
+name: nightly
+
+# Everything the ten-minute gate leaves out: tests marked
+# `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in the
+# import tests, and the live Charon re-extraction. It has no time budget.
+on:
+  schedule:
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/tools
+          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest
+          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+      - name: Locate pinned Charon compiler runtime
+        id: rust_runtime
+        run: |
+          source scripts/charon-toolchain.sh
+          echo "path=$CHARON_SYSROOT" >> "$GITHUB_OUTPUT"
+          echo "update_hash=$CHARON_UPDATE_HASH" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.rust_runtime.outputs.path }}
+            ${{ steps.rust_runtime.outputs.update_hash }}
+          key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/charon-toolchain.sh', 'src/languages/rust/charon-profile.json') }}
+      - name: Set up full test environment
+        run: scripts/setup-environment.sh
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the nightly gate
+        run: scripts/check.sh --nightly --no-fail-fast
