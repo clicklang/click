@@ -3154,7 +3154,44 @@ fn authority_mode_release_retires_control(
     .map(|result| result.map(|returned| !returned))
 }
 
+/// An acquiring or releasing helper moves one guard and the protected state
+/// between its caller and the mutex. Its standalone body cannot open an
+/// acquired authority-bearing state, so it changes no population; the caller
+/// applies the checked runtime exchange. Any other clause leaves this subset.
+fn authority_mode_mutex_helper_contract(interface: &CFunctionContractInterface) -> bool {
+    let Ok(Some(helper)) = super::mutexes::helper_contracts::classify(interface) else {
+        return false;
+    };
+    let mut accesses = 0;
+    let mut guards = 0;
+    let mut payloads = 0;
+    for spec in interface
+        .resource_requires()
+        .iter()
+        .chain(interface.resource_ensures())
+    {
+        if spec.term() == helper.access.term()
+            && spec.role() == helper.access.role()
+            && spec.mutex_authority_binding() == helper.access.mutex_authority_binding()
+        {
+            accesses += 1;
+        } else if spec == &helper.guard {
+            guards += 1;
+        } else if helper.payload.as_ref() == Some(spec) {
+            payloads += 1;
+        } else {
+            return false;
+        }
+    }
+    accesses == 2 && guards == 1 && payloads == usize::from(helper.payload.is_some())
+}
+
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
+    if interface.resource_constructors().is_empty()
+        && authority_mode_mutex_helper_contract(interface)
+    {
+        return true;
+    }
     if !interface.resource_constructors().is_empty()
         || interface
             .resource_requires()
@@ -10854,8 +10891,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
         for spec in contains {
             // Abstract tokens own no memory, regardless of their quantity.
             // Footprint discovery need not prove that quantity nonnegative;
-            // the actual resource exchange still checks it.
-            if matches!(spec.term(), CResourceTerm::Token { .. }) {
+            // the actual resource exchange still checks it. A population
+            // authority is likewise exclusive custody without bytes.
+            if matches!(
+                spec.term(),
+                CResourceTerm::Token { .. } | CResourceTerm::PopulationAuthority { .. }
+            ) {
                 continue;
             }
             let Ok(Ok(fact)) = evaluate_function_resource_spec(

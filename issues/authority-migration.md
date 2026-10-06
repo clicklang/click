@@ -198,7 +198,7 @@ holds only the plan.
 | 1. Bounded pool | Complete | Original pool C verifies initialization, checkout/return, resize, transfer, and cleanup |
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
-| 4. Mutex-held authority controls | Chunk 1 complete; 3 chunks | Ordinary protected controls replace counted-population mutex custody |
+| 4. Mutex-held authority controls | Chunks 1–2 complete; 2 chunks | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | 4 chunks | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
@@ -259,7 +259,11 @@ milestone 7. The inventory names every file.
    unlock through existing `owns`/`consumes`/`produces`, including replacement
    state and lifetime holds. Count observations after an acquisition or a
    helper return are fresh; earlier facts remain historical only. Reject stale
-   observations, wrong mutexes, and missing state.
+   observations, wrong mutexes, and missing state. **Complete** for helpers that move the
+   guard and control between the mutex and their caller. A helper that opens
+   the acquired control itself, such as a locked retain or release, needs a
+   fresh opaque population per acquisition and a caller-side member delta.
+   That is split out of this chunk; milestone 6 chunk 4 depends on it.
 3. **Protected bodies and local conservation.** Migrate the six
    `mutex_population_*` fixtures and both `population_conservation_local_mutex*`
    fixtures. These also use `guarded_by`, so they migrate both concerns at
