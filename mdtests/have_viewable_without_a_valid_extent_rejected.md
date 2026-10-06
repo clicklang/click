@@ -21,7 +21,6 @@ theorem range_without_a_valid_extent(v: int32[], lo: int32, hi: int32) {
         have 0 < hi by { arithmetic() using { 0 <= lo; lo < hi; } }
         have lo <= hi - 1 by { arithmetic() using { lo < hi; 0 < hi; } }
         have hi - 1 < hi by { arithmetic() using { 0 < hi; } }
-        extract(viewable(v[lo..hi]));
         transport(viewable(v[lo..hi]), viewable(v[lo..hi - 1])) using {
             viewable(v[lo..hi]);
             lo <= hi - 1;

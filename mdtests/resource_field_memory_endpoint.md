@@ -83,7 +83,6 @@ void claim(int32* data, int32 capacity, int32 start) {
         intro();
         intro();
         extract(old(before.start) + 1 <= k);
-        extract(k < capacity);
         apply(int32_increment_strictly_increases(old(before.start), capacity)) using {
             old(before.start) < capacity;
         }

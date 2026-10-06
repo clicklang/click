@@ -92,7 +92,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(start <= k);
                 extract(k < at(opened, i) + 1);
                 if k < at(opened, i) {
                     have k < m by simp;

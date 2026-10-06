@@ -18,3 +18,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [A verified two-to-one quantity contract cannot be applied at a call](a-verified-two-to-one-quantity-contract-cannot-be-applied.md)
+- [An explicit proof of a function's early returns hits proof nesting bounds](explicit-proof-of-early-returns-hits-nesting-bounds.md)
+- [A failing `simp` retries its closure once per fact in its context](failing-simp-retries-its-closure-per-context-fact.md)

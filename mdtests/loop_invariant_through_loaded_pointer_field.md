@@ -85,13 +85,11 @@ int32 probe_contract(struct job *j) {
                 intro();
                 intro();
                 if k < i {
-                    extract(j->lo <= k);
                     instantiate(at(statement(3).entry, forall (k: int32) {
                         j->lo <= k and k < i implies j->p[k] == j->v
                     }), k) using { j->lo <= k; k < i; }
                     simp();
                 } else {
-                    extract(k <= i);
                     have k == i by {
                         apply(int32_le_and_not_lt_implies_eq(k, i)) using { k <= i; not (k < i); }
                     }

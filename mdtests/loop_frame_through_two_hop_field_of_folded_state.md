@@ -98,8 +98,6 @@ void mark_run(struct region* region, int32 start, int32 end) {
                 have forall (k: int32) { 0 <= k and k < start implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(k < start);
                     transport(old(region->arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
                         0 <= k;
                         k < start;
@@ -111,8 +109,6 @@ void mark_run(struct region* region, int32 start, int32 end) {
                 have forall (k: int32) { 0 <= k and k < start implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(k < start);
                     transport(old(region->arena->occupied[k]) == old(region->arena->occupied[k]), region->arena->occupied[k] == old(region->arena->occupied[k])) using {
                         0 <= k;
                         k < start;
@@ -154,8 +150,6 @@ void mark_run(struct region* region, int32 start, int32 end) {
             have forall (k: int32) { start <= k and k < (at(opened, i) + 1) implies arena->occupied[k] == 1 } by {
                 intro();
                 intro();
-                extract(start <= k);
-                extract(k < (at(opened, i) + 1));
                 if k < at(opened, i) {
                     have k < m by {
                         rewrite(at(statement(6).entry, m) == at(statement(6).entry, i));
@@ -204,8 +198,6 @@ void mark_run(struct region* region, int32 start, int32 end) {
             have forall (k: int32) { 0 <= k and k < start implies region->arena->occupied[k] == old(region->arena->occupied[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
                 have at(opened, region->arena->occupied[k]) == old(region->arena->occupied[k]) by {
                     instantiate(forall (j: int32) { at(opened, 0) <= at(opened, j) and at(opened, j) < at(opened, start) implies at(opened, region->arena->occupied[j]) == old(region->arena->occupied[j]) }, k) using {
                         0 <= k;
