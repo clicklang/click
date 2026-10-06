@@ -573,6 +573,10 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerMultiplyOrder {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     IntegerQuotientBound {
         bounds: Vec<usize>,
         result: Proposition,
@@ -658,6 +662,7 @@ pub(crate) struct SpecialArithmeticCertificate {
 pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerProductBounds(usize),
     InvalidIntegerDivisionBounds(usize),
+    InvalidIntegerMultiplyOrder(usize),
     InvalidIntegerQuotientBound(usize),
     InvalidIntegerBoundExclusion(usize),
     InvalidIntegerRelationTransport(usize),
@@ -726,6 +731,9 @@ impl SpecialArithmeticCertificate {
             }
             SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
                 super::integer_division_bounds::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result } => {
+                super::integer_multiply_order::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => {
                 super::integer_quotient_bound::check(index, bounds, premises, result)
@@ -1133,6 +1141,7 @@ impl SpecialArithmeticNode {
             Self::UnsignedSumBound { result, .. }
             | Self::IntegerProductBounds { result, .. }
             | Self::IntegerDivisionBounds { result, .. }
+            | Self::IntegerMultiplyOrder { result, .. }
             | Self::IntegerQuotientBound { result, .. }
             | Self::IntegerBoundExclusion { result, .. }
             | Self::IntegerRelationTransport { result, .. }

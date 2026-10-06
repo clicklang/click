@@ -927,6 +927,22 @@ theorem use_upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Intege
     ensures q <= bound + -1 by { apply(integer_upper_correction_bound(n, d, q, r, bound)); }
 }
 
+theorem use_multiply_orders(a: Integer, b: Integer, c: Integer) {
+ requires a <= b; requires 0 <= c;
+ ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a, b, c)); }
+}
+theorem use_reverse_multiply_order(a: Integer, b: Integer, c: Integer) {
+ requires a <= b; requires c <= 0;
+ ensures b * c <= a * c by { apply(integer_multiply_order_nonpositive(a, b, c)); }
+}
+theorem use_scaled_product(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+ requires lower <= value; requires value <= upper;
+ requires lower <= 0; requires 0 <= upper;
+ requires 0 <= amount; requires amount <= size;
+ ensures lower * size <= value * amount by { apply(integer_scaled_product_bounds(value, amount, size, lower, upper)); }
+ ensures value * amount <= upper * size by { apply(integer_scaled_product_bounds(value, amount, size, lower, upper)); }
+}
+
 ```
 
 ```expect

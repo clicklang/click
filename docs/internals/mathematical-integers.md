@@ -987,3 +987,25 @@ magnitude is accepted only directly after unary minus: the positive suffixed
 literal remains out of range. Negating the minimum is a separate native
 operation and still requires definedness. See the
 [minimum-literal fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_int64_minimum_literal.md).
+
+
+### Explicit multiplication ordering
+
+`integer_multiply_order bounds [i, j] => a * factor <= b * factor;`
+reads exactly `a <= b` and `0 <= factor`. With `factor <= 0` as the
+second premise it instead checks `b * factor <= a * factor`. Each product
+may put its factor on either side. Root-local constant, zero and one folding
+is matched without traversing opaque operands; constant multiplication work
+is charged before computing it. Negated/strict premises, mismatched operands,
+missing signs and reversed conclusions are rejected. The checker reads two
+selected premises and performs no ambient search or native range inference.
+
+The proof-backed `integer_multiply_order_nonnegative` and
+`integer_multiply_order_nonpositive` lemmas expose those cases.
+`integer_scaled_product_bounds` composes them: if `lower <= value <= upper`,
+`lower <= 0 <= upper`, and `0 <= amount <= size`, then
+`lower * size <= value * amount <= upper * size`.
+This establishes the fee caller's joint numerator/divisor profile for a full
+int64 fee, but native multiplication observations, conversions, safety and
+the caller's fast paths remain separate obligations. See the
+[checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_multiply_order.md).

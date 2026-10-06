@@ -1018,6 +1018,79 @@ mod tests {
     }
 
     #[test]
+    fn multiply_order_and_fee_bounds_expand_and_reject_missing_evidence() {
+        let fixture = include_str!("../../mdtests/integer_multiply_order.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "checked_integer_multiply_order_nonnegative.ensures_0",
+            "checked_integer_multiply_order_nonpositive.ensures_0",
+            "checked_integer_scaled_product_bounds.ensures_0",
+            "checked_integer_scaled_product_bounds.ensures_1",
+            "fee_caller_division_bounds.ensures_0",
+            "fee_caller_division_bounds.ensures_1",
+            "fee_caller_division_bounds.ensures_2",
+            "fee_caller_division_bounds.ensures_3",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        let guarded = "theorem use_order(a: Integer, b: Integer, c: Integer) { requires a <= b; requires 0 <= c; ensures a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)); } }";
+        verify_c0_sources(guarded, &[]).unwrap();
+        for bad in [
+            guarded.replace("requires a <= b;", ""),
+            guarded.replace("requires 0 <= c;", ""),
+            guarded.replace("requires 0 <= c;", "requires c <= 0;"),
+            guarded.replace("ensures a * c <= b * c", "ensures b * c <= a * c"),
+        ] {
+            assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+        }
+        for requirement in [
+            "requires -9223372036854775808 <= fee;",
+            "requires fee <= 9223372036854775807;",
+            "requires 0 <= at_size;",
+            "requires at_size <= size;",
+        ] {
+            assert!(
+                verify_c0_sources(&source.replace(requirement, ""), &[]).is_err(),
+                "{requirement}"
+            );
+        }
+    }
+
+    #[test]
+    fn multiply_order_applications_scale_with_explicit_inputs() {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem order(a: Integer,b: Integer,c: Integer,z: Integer) { requires a <= b; requires 0 <= c; ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str("ensures a * c <= b * c by { ");
+            for _ in 0..size {
+                source.push_str("have a * c <= b * c by { apply(integer_multiply_order_nonnegative(a,b,c)) using { a <= b; 0 <= c; } } ");
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap();
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn scaled_quotient_derivations_expand_reverify_and_preserve_guards() {
         let fixture = include_str!("../../mdtests/integer_quotient_bound.md");
         let source = fixture

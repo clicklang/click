@@ -6910,6 +6910,15 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::IntegerDivisionBounds { bounds, result });
                 }
+                "integer_multiply_order" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds =
+                        self.parse_certificate_index_list("integer multiply order premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result });
+                }
                 "integer_quotient_bound" => {
                     self.expect_ident_spelling("bounds")?;
                     let bounds =

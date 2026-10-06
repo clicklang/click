@@ -686,8 +686,19 @@ A reproduced Integer arithmetic rendering failure for equality from normalized
 opposite bounds is fixed, with ordinary verification and expanded certificate
 regressions. No C++ arithmetic axiom or source edit is introduced.
 
-Next derive the joint bounds through `EvaluateFeeDown/Up`, including their
-fast paths, and cover the broader mode-specific result-fit precondition. The
+Shared explicit `integer_multiply_order` certificates now preserve or reverse
+Integer product order using an exact ordered pair and multiplier-sign premise.
+Proof-backed nonnegative/nonpositive multiplication lemmas and
+`integer_scaled_product_bounds` derive the joint Div input envelope from the
+full int64 fee bounds and `0 <= at_size <= size`. A checked caller-bound fixture
+also derives the int64 truncating-quotient bounds, with hostile missing-premise,
+expansion/reverification, signed endpoint oracle and local-work scaling checks.
+This is a shared arithmetic prerequisite; it does not yet prove the upstream
+`EvaluateFeeDown/Up` implementations or their unsigned fast paths.
+
+Next apply the joint bounds through the unchanged `EvaluateFeeDown/Up` source,
+including their fast paths, and cover the broader mode-specific result-fit
+precondition. The
 full 96/32 fee-division contract remains open; the current joint range ensures
 both rounding modes fit. The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.

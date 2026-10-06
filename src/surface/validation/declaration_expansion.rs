@@ -874,6 +874,12 @@ fn expand_declared_resource_certificate(
                                 result: proposition(result)?,
                             }
                         }
+                        SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result } => {
+                            SpecialArithmeticNode::IntegerMultiplyOrder {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::IntegerQuotientBound { bounds, result } => {
                             SpecialArithmeticNode::IntegerQuotientBound {
                                 bounds,

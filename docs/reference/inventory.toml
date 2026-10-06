@@ -3302,3 +3302,15 @@ path = "reference/library/index.md#integer_lower_correction_bound"
 [[item]]
 id = "stdlib.theorem.integer_upper_correction_bound"
 path = "reference/library/index.md#integer_upper_correction_bound"
+
+[[item]]
+id = "stdlib.theorem.integer_multiply_order_nonnegative"
+path = "reference/library/index.md#integer_multiply_order_nonnegative"
+
+[[item]]
+id = "stdlib.theorem.integer_multiply_order_nonpositive"
+path = "reference/library/index.md#integer_multiply_order_nonpositive"
+
+[[item]]
+id = "stdlib.theorem.integer_scaled_product_bounds"
+path = "reference/library/index.md#integer_scaled_product_bounds"

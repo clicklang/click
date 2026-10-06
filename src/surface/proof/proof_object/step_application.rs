@@ -1333,6 +1333,7 @@ impl<'a> Proof<'a> {
                 node,
                 SpecialArithmeticNode::IntegerProductBounds { .. }
                     | SpecialArithmeticNode::IntegerDivisionBounds { .. }
+                    | SpecialArithmeticNode::IntegerMultiplyOrder { .. }
                     | SpecialArithmeticNode::IntegerQuotientBound { .. }
                     | SpecialArithmeticNode::IntegerBoundExclusion { .. }
                     | SpecialArithmeticNode::IntegerRelationTransport { .. }
@@ -1404,6 +1405,18 @@ impl<'a> Proof<'a> {
                         result: self.lower_integer_surface_proposition(
                             result,
                             "integer division bound result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerMultiplyOrder { bounds, result } => {
+                    KernelNode::IntegerMultiplyOrder {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer multiply order result",
                         )?,
                     }
                 }
@@ -3158,6 +3171,9 @@ fn describe_special_arithmetic_check_error(
         ),
         Error::InvalidIntegerDivisionBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the truncating quotient/remainder operands, in numerator-lower/upper then divisor-lower/upper order, with the divisor interval excluding zero"
+        ),
+        Error::InvalidIntegerMultiplyOrder(index) => format!(
+            "node {index} requires exactly a <= b followed by 0 <= factor (preserving order) or factor <= 0 (reversing order), with exact Integer product operands"
         ),
         Error::InvalidIntegerQuotientBound(index) => format!(
             "node {index} requires an exact scaled numerator bound (bound * d <= n or n <= bound * d), followed by 1 <= d, for the claimed truncating quotient bound"
