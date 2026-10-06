@@ -412,6 +412,24 @@ fn assign_call_result(
     Ok(())
 }
 
+/// The modeled mutex operations transfer ordinary resources, including an
+/// authority-bearing control, and change no population. Thread creation and
+/// join still need the worker authority protocol before authority mode admits them.
+fn is_modeled_pthread_mutex_call(function_name: &str, environment: &CExecutionEnvironment) -> bool {
+    environment
+        .modeled_pthread_binding
+        .as_ref()
+        .is_some_and(|binding| {
+            [
+                binding.mutex_init_name,
+                binding.mutex_lock_name,
+                binding.mutex_unlock_name,
+                binding.mutex_destroy_name,
+            ]
+            .contains(&function_name)
+        })
+}
+
 fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
     CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
@@ -435,6 +453,7 @@ pub(super) fn execute_c_call_assign_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if state.uses_population_authority_semantics()
+        && !is_modeled_pthread_mutex_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
@@ -733,6 +752,7 @@ pub(super) fn execute_c_call_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if state.uses_population_authority_semantics()
+        && !is_modeled_pthread_mutex_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
