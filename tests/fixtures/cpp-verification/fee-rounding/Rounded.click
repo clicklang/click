@@ -159,6 +159,16 @@ int64 rounded(int128 n, int32 d, bool round_down) {
         -100 <= to_integer(quot);
         to_integer(quot) <= 100;
     } }
+    have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+        rewrite(to_integer(quot + 1i64) == to_integer(quot) + 1);
+        rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
+        simp();
+    }
+    have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+        rewrite(to_integer(quot + -1i64) == to_integer(quot) + -1);
+        rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
+        simp();
+    }
     execute();
     have -101 <= to_integer(result) by simp;
     have to_integer(result) <= 101 by simp;

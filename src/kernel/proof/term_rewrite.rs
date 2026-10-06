@@ -2452,12 +2452,21 @@ impl<'a> TermRewrite<'a> {
                 // `to_integer(1)` beside the `1` a reader wrote, and the two
                 // are the same Integer. This folds one already-decided
                 // observation, never a symbolic expression.
-                IntegerTerm::from_machine(value.ty(), bits.clone()).unwrap_or_else(|| {
+                if self.integer_exact.is_some() {
+                    // Preserve the observation's carrier and cast syntax even
+                    // when an explicit Integer payload was substituted.
                     IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                         value.ty(),
                         bits,
                     ))
-                })
+                } else {
+                    IntegerTerm::from_machine(value.ty(), bits.clone()).unwrap_or_else(|| {
+                        IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
+                            value.ty(),
+                            bits,
+                        ))
+                    })
+                }
             }
             // Rewriting preserves the symbolic DAG. In particular, it must
             // not fold a repeated symbolic expression into a giant literal.
@@ -3821,7 +3830,20 @@ impl<'a> TermRewrite<'a> {
                 value,
                 source,
                 destination,
-            } => Bitvector32Term::machine_integer_cast(*source, *destination, self.bits(value)),
+            } => {
+                let value = self.bits(value);
+                if self.integer_exact.is_some() {
+                    // Exact Integer congruence preserves native syntax. Folding
+                    // an unrelated cast changes the opaque observation's ID.
+                    Bitvector32Term::MachineIntegerCast {
+                        value: Box::new(value),
+                        source: *source,
+                        destination: *destination,
+                    }
+                } else {
+                    Bitvector32Term::machine_integer_cast(*source, *destination, value)
+                }
+            }
 
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)
@@ -3939,7 +3961,14 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::UInt64From32(v) => {
                 Bitvector32Term::UInt64From32(Box::new(self.bits(v)))
             }
-            Bitvector32Term::UInt32From64(v) => Bitvector32Term::uint32_from_64(self.bits(v)),
+            Bitvector32Term::UInt32From64(v) => {
+                let value = self.bits(v);
+                if self.integer_exact.is_some() {
+                    Bitvector32Term::UInt32From64(Box::new(value))
+                } else {
+                    Bitvector32Term::uint32_from_64(value)
+                }
+            }
             Bitvector32Term::Int64FromUInt32(v) => {
                 Bitvector32Term::Int64FromUInt32(Box::new(self.bits(v)))
             }
@@ -3975,8 +4004,15 @@ impl<'a> TermRewrite<'a> {
                 // of its arms: `Bitvector32Term::if_then_else` would never
                 // have built it, so leaving it standing is a term that no
                 // lowering of the same source produces.
-                let condition = folded_machine_condition(self.condition(condition));
-                if let ConditionTerm::Constant(value) = condition {
+                let condition = self.condition(condition);
+                let condition = if self.integer_exact.is_some() {
+                    condition
+                } else {
+                    folded_machine_condition(condition)
+                };
+                if self.integer_exact.is_none()
+                    && let ConditionTerm::Constant(value) = condition
+                {
                     return self.bits(if value { then_term } else { else_term });
                 }
                 Bitvector32Term::If {

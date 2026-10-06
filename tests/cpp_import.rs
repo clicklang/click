@@ -10194,6 +10194,14 @@ int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
                 "integer_cast_identity bounds [0, 1]",
                 "integer_cast_identity bounds [1, 0]",
             ),
+            proof.replace(
+                "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+                "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 2",
+            ),
+            proof.replace(
+                "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+                "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            ),
         ] {
             fs::write(&path, &hostile).unwrap();
             let parsed = read_click_project(&path, &hostile).unwrap();
