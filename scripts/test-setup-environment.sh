@@ -77,6 +77,8 @@ fi
 source "$repository/scripts/charon-toolchain.sh"
 mkdir -p "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib"
 touch "$CHARON_SYSROOT/lib/librustc_driver-mock.so"
+mkdir -p "$CHARON_SYSROOT/bin"
+cp "$directory/bin/rustup" "$CHARON_SYSROOT/bin/rustc"
 export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.143'
 cp "$directory/cached-nextest" "$directory/bin/cargo-nextest"
 cat > "$directory/bin/rustup" <<'EOF'
@@ -101,15 +103,23 @@ chmod +x "$directory/bin/llvm-config-19" "$directory/bin/uname"
 "$repository/scripts/charon-runtime.sh" pack "$directory/runtime.tar.gz"
 cached_runtime="$CHARON_SYSROOT"
 export RUSTUP_HOME="$directory/cold-rustup"
-source "$repository/scripts/rust-exporter-toolchain.sh"
+source "$repository/scripts/charon-toolchain.sh"
 if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
-    echo "error: setup accepted a missing exporter runtime" >&2
+    echo "error: setup accepted a missing Charon runtime" >&2
     exit 1
 fi
 "$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
 [[ -f "$CHARON_SYSROOT/lib/librustc_driver-mock.so" ]]
-[[ ! -d "$CHARON_SYSROOT/bin" ]]
+[[ -x "$CHARON_SYSROOT/bin/rustc" ]]
 "$repository/scripts/setup-environment.sh" --test-runner >/dev/null
+
+# Libraries alone cannot satisfy Charon's pinned rustc version check.
+rm "$CHARON_SYSROOT/bin/rustc"
+if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
+    echo "error: setup accepted a runtime without pinned rustc" >&2
+    exit 1
+fi
+"$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
 
 # Refuse mismatched identities before creating the destination runtime.
 printf 'wrong compiler identity\n' > "$directory/click-rust-runtime.identity"

@@ -257,8 +257,8 @@ metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
 runners restore those files instead of reinstalling Clang. Native Rust
 extraction uses the compiler/runtime identity in
 `src/languages/rust/charon-profile.json`; `scripts/charon-toolchain.sh` derives
-its runtime paths from that profile. Preparation bundles the runtime libraries
-with the tests using `scripts/charon-runtime.sh`; consumers validate the
+its runtime paths from that profile. Preparation bundles `rustc` and its runtime
+libraries with the tests using `scripts/charon-runtime.sh`; consumers validate the
 compiler, target, and toolchain identity and restore those libraries before
 setup, so missing caches do not prevent test execution. Ordinary
 archive consumers require the runtime files and unpack both Charon executables

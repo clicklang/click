@@ -73,7 +73,8 @@ if [[ "$docs_only" != true ]]; then
     if [[ "$test_runner" != true ]]; then
         rustup toolchain install "$CHARON_TOOLCHAIN" --profile minimal \
             --component rustc-dev --component rust-src --target "$CHARON_TARGET"
-    elif [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
+    elif [[ ! -x "$CHARON_SYSROOT/bin/rustc" ]] || \
+        [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
         ! compgen -G "$CHARON_SYSROOT/lib/librustc_driver*" >/dev/null; then
         echo "error: restore the pinned Charon compiler runtime at $CHARON_SYSROOT before setting up a test runner" >&2
         exit 1

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the compiler libraries needed by the already-built Charon.
+# Ship the pinned rustc and libraries needed by the already-built Charon.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/charon-toolchain.sh
@@ -9,9 +9,10 @@ archive="${2:?usage: charon-runtime.sh pack|restore ARCHIVE}"
 identity="$(printf '%s\n' "$CHARON_TOOLCHAIN" "$CHARON_TARGET" "$CHARON_COMPILER_COMMIT")"
 
 check_runtime() {
-    if [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
+    if [[ ! -x "$CHARON_SYSROOT/bin/rustc" ]] || \
+        [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
         ! compgen -G "$CHARON_SYSROOT/lib/librustc_driver*" >/dev/null; then
-        echo "error: pinned Charon runtime libraries are missing at $CHARON_SYSROOT" >&2
+        echo "error: pinned Charon compiler/runtime files are missing at $CHARON_SYSROOT" >&2
         exit 1
     fi
 }
@@ -22,7 +23,7 @@ case "$mode" in
         metadata="$(mktemp -d)"
         trap 'rm -rf "$metadata"' EXIT
         printf '%s\n' "$identity" > "$metadata/click-rust-runtime.identity"
-        tar -czf "$archive" -C "$CHARON_SYSROOT" lib \
+        tar -czf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc \
             -C "$metadata" click-rust-runtime.identity
         ;;
     restore)
@@ -32,7 +33,7 @@ case "$mode" in
             exit 1
         fi
         mkdir -p "$CHARON_SYSROOT"
-        tar -xzf "$archive" -C "$CHARON_SYSROOT" lib
+        tar -xzf "$archive" -C "$CHARON_SYSROOT" lib bin/rustc
         check_runtime
         ;;
     *) echo "error: expected pack or restore" >&2; exit 2 ;;
