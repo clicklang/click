@@ -265,9 +265,11 @@ memory.
 
 [`FeeFracDivBounded.click`](FeeFracDivBounded.click) now proves complete
 execution safety and both Integer/native output bounds of the unchanged pinned
-helper. Its numerator lies in
-`[-9223372036854775806, 9223372036854775806]` (absolute value at most
-`INT64_MAX - 1`), and `0 < d <= 2147483647` admits every positive int32 divisor.
+helper. Its joint input bounds are `-K * d <= n <= K * d`, with
+`K = 9223372036854775806` (`INT64_MAX - 1`), and
+`0 < d <= 2147483647` admits every positive int32 divisor. For large divisors,
+this admits int128 numerators far outside int64. Scaled quotient bounds prove
+the narrowing and retain one unit of correction margin.
 For either value of `round_down`, the result lies in
 `[-9223372036854775807, 9223372036854775807]`.
 
@@ -283,12 +285,24 @@ Full proof expansion reverifies; retained audit and hostile omitted input
 bounds, zero divisor, false result claims and swapped cast-certificate references
 have coverage. The standalone fixture retains the same correction pattern and
 verifies native output bounds and unrelated memory through a modular caller.
-These output bounds do not identify a mathematical floor/ceiling result.
+The sidecar also proves the exact corrected quotient in each remainder-sign
+case, including zero, and the defining mathematical product inequalities:
 
-The general `FeeFrac::Div` rounding theorem is not proved. Next connect the exact quotient/remainder observations and signed correction
-to a mathematical floor/ceiling specification, then admit wider numerators
-through bounds derived jointly from the caller and divisor. `EvaluateFeeDown/Up`
-remain open.
+- Floor (`round_down != 0`): `result * d <= n < (result + 1) * d`.
+- Ceiling (`round_down == 0`): `(result - 1) * d < n <= result * d`.
+
+These specifications use `to_integer` observations and Integer arithmetic, so
+their products and successor/predecessor expressions have no native overflow.
+The shared proof-backed `integer_floor_from_remainder` and
+`integer_ceiling_from_remainder` lemmas combine reconstruction, positive-divisor
+remainder bounds and exact correction values. Explicit Integer distributivity
+connects the corrected product; affine certificates keep complete nonlinear
+terms opaque. The modular caller exports the same four inequalities and frames
+untouched memory. Strict claims that fail on exact division are rejected.
+
+This completes mathematical rounding on the stated joint bounded profile.
+Next address sign-dependent correction endpoint cases and caller-derived bounds;
+the full 96/32 contract and `EvaluateFeeDown/Up` remain open.
 
 ## CompactSize encoded length
 

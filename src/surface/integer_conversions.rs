@@ -786,6 +786,103 @@ mod tests {
         }
     }
     #[test]
+    fn rounded_integer_library_derivations_expand_and_reverify() {
+        let fixture = include_str!("../../mdtests/integer_rounded_product_bounds.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "derived_floor_from_remainder.ensures_0",
+            "derived_floor_from_remainder.ensures_1",
+            "derived_ceiling_from_remainder.ensures_0",
+            "derived_ceiling_from_remainder.ensures_1",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+    }
+
+    #[test]
+    fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
+        let goal = "q * d <= n";
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem bound(n: Integer, q: Integer, d: Integer, r: Integer, z: Integer) { requires n == q * d + r; requires 0 <= r; ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str(&format!("ensures {goal} by {{ "));
+            for _ in 0..size {
+                source.push_str(&format!(
+                    "have {goal} by {{ arithmetic() using {{ n == q * d + r; 0 <= r; }} }} "
+                ));
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn integer_multiply_add_rechecks_application_and_expansion() {
+        let source = "theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer_multiply_add(a, b, c)); } }";
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[], "distribute.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for invalid in [
+            source.replace("a * c + b * c", "a * c + b"),
+            source.replace("multiply_add(a, b, c)", "multiply_add(a, c, b)"),
+            source.replace("multiply_add(a, b, c)", "multiply_add(a, b)"),
+            source.replace(": Integer", ": int32"),
+        ] {
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
+        let goal = "(a + b) * c == a * c + b * c";
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem distribute(a: Integer, b: Integer, c: Integer, z: Integer) { ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str(&format!("ensures {goal} by {{ "));
+            for _ in 0..size {
+                source.push_str(&format!(
+                    "have {goal} by {{ apply(integer_multiply_add(a, b, c)); }} "
+                ));
+            }
+            source.push_str("assumption(); } }");
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn integer_truncation_applications_recheck_guards_claims_and_expansion() {
         for (name, requirements, goal) in [
             (
@@ -852,6 +949,62 @@ mod tests {
                 verify_c0_sources(&source, &[])
             });
             result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn scaled_quotient_derivations_expand_reverify_and_preserve_guards() {
+        let fixture = include_str!("../../mdtests/integer_quotient_bound.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "checked_quotient_lower.ensures_0",
+            "checked_quotient_upper.ensures_0",
+            "use_scaled_quotient.ensures_0",
+            "use_scaled_quotient.ensures_1",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        let guarded = "theorem lower(x: int64, d: Integer) { requires defined(x + 1i64); requires d != 0; requires 1 <= d; requires -100 * d <= to_integer(x) + 1; ensures -100 <= truncating_quotient(to_integer(x + 1i64), d) by { apply(int64_add_to_integer(x, 1i64)); have -100 * d <= to_integer(x + 1i64) by { rewrite(to_integer(x + 1i64) == to_integer(x) + 1); assumption(); } apply(integer_positive_divisor_quotient_lower(to_integer(x + 1i64), d, -100)); } }";
+        verify_c0_sources(guarded, &[]).unwrap();
+        for bad in [
+            guarded.replace("requires defined(x + 1i64);", ""),
+            guarded.replace("requires d != 0;", ""),
+            guarded.replace("to_integer(x + 1i64)", "x + 1i64"),
+        ] {
+            assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+        }
+    }
+    #[test]
+    fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem lower(n: Integer, d: Integer, b: Integer, z: Integer) { requires d != 0; requires 1 <= d; requires b * d <= n; ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str("ensures b <= truncating_quotient(n, d) by { ");
+            for _ in 0..size {
+                source.push_str("have b <= truncating_quotient(n, d) by { apply(integer_positive_divisor_quotient_lower(n, d, b)) using { d != 0; 1 <= d; b * d <= n; } } ");
+            }
+            source.push_str("assumption(); } }");
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
             samples.push(work);
         }
         for pair in samples.windows(2) {

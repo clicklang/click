@@ -18,6 +18,9 @@ enum Expression {
     Subtract(Box<Self>, Box<Self>),
     Negate(Box<Self>),
     Twice(Box<Self>),
+    Product(Box<Self>, Box<Self>),
+    Quotient3(Box<Self>),
+    Remainder3(Box<Self>),
 }
 
 impl Expression {
@@ -37,6 +40,13 @@ impl Expression {
             Self::Negate(value) => {
                 IntegerTerm::Negate(crate::kernel::SharedIntegerTerm::from(value.term()))
             }
+            Self::Product(left, right) => IntegerTerm::multiply(left.term(), right.term()),
+            Self::Quotient3(value) => {
+                IntegerTerm::truncating_quotient(value.term(), IntegerTerm::constant_i64(3))
+            }
+            Self::Remainder3(value) => {
+                IntegerTerm::truncating_remainder(value.term(), IntegerTerm::constant_i64(3))
+            }
             Self::Twice(value) => IntegerTerm::Multiply(
                 crate::kernel::SharedIntegerTerm::from(IntegerTerm::constant_i64(2)),
                 crate::kernel::SharedIntegerTerm::from(value.term()),
@@ -53,6 +63,9 @@ impl Expression {
             Self::Subtract(left, right) => left.evaluate(x, y) - right.evaluate(x, y),
             Self::Negate(value) => -value.evaluate(x, y),
             Self::Twice(value) => 2 * value.evaluate(x, y),
+            Self::Product(left, right) => left.evaluate(x, y) * right.evaluate(x, y),
+            Self::Quotient3(value) => value.evaluate(x, y) / 3,
+            Self::Remainder3(value) => value.evaluate(x, y) % 3,
         }
     }
 }
@@ -76,6 +89,10 @@ fn cases() -> Vec<Case> {
             Add(Box::new(Y), Box::new(Constant(1))),
         ),
     ];
+    cases_from_pairs(pairs)
+}
+
+fn cases_from_pairs(pairs: impl IntoIterator<Item = (Expression, Expression)>) -> Vec<Case> {
     let mut result = Vec::new();
     for (left, right) in pairs {
         for comparison in 0..6 {
@@ -123,7 +140,32 @@ fn cases() -> Vec<Case> {
 
 #[test]
 fn integer_certificate_comparison_normalization_preserves_small_models() {
-    let cases = cases();
+    assert!(check_comparison_normalization(cases()) > 100);
+}
+
+#[test]
+fn opaque_integer_atoms_preserve_nonlinear_small_models() {
+    use Expression::{Add, Constant, Product, Quotient3, Remainder3, X, Y};
+    let accepted = check_comparison_normalization(cases_from_pairs([
+        (Product(Box::new(X), Box::new(Y)), Constant(0)),
+        (Product(Box::new(Y), Box::new(X)), Constant(0)),
+        (Quotient3(Box::new(X)), Y),
+        (Remainder3(Box::new(X)), Constant(0)),
+        (
+            Add(
+                Box::new(Product(Box::new(X), Box::new(Y))),
+                Box::new(Remainder3(Box::new(X))),
+            ),
+            Y,
+        ),
+    ]));
+    assert!(
+        accepted >= 40,
+        "nonlinear matrix must exercise successful certificates: {accepted}"
+    );
+}
+
+fn check_comparison_normalization(cases: Vec<Case>) -> usize {
     let all_assignments = (1u64 << 49) - 1;
     let mut accepted = 0;
     for goal in &cases {
@@ -182,10 +224,7 @@ fn integer_certificate_comparison_normalization_preserves_small_models() {
             }
         }
     }
-    assert!(
-        accepted > 100,
-        "the matrix must exercise successful certificates"
-    );
+    accepted
 }
 
 // Partition the exhaustive matrix by left-expression family and rule. Every

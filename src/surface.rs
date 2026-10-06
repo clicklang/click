@@ -5397,6 +5397,10 @@ pub enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
+    IntegerQuotientBound {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     IntegerBoundExclusion {
         bounds: Vec<usize>,
         result: ClickProposition,

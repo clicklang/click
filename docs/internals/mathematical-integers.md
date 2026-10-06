@@ -122,8 +122,12 @@ would permit an irrelevant witness to establish the existential claim.
 
 The supported arithmetic automation is linear: addition, subtraction, order,
 and multiplication by constants, together with explicit machine-conversion
-and checked C-arithmetic laws. General multiplication is a valid Integer term,
-but there is no promise of general nonlinear automation.
+and checked C-arithmetic laws. Complete symbolic products, truncating quotients
+and remainders are opaque affine atoms keyed by exact shared Integer identity.
+Linear certificates can add, subtract, scale and compare those values using
+explicit premises, without opening their operands or deriving nonlinear laws.
+Evaluation guards remain mandatory before a term can enter a proposition or
+certificate. There is no promise of general nonlinear automation.
 
 Arithmetic planning emits explicit, inspectable evidence. The kernel validates
 operators, coefficients, terms, premises, and range claims independently;
@@ -519,7 +523,8 @@ divisors are supported by the identity and sign laws. These are kernel laws of
 the builtin Integer operations; reserved declarations are checked against their
 exact parameter types, guards and conclusions. They establish no native
 operation or narrowing safety. General affine reasoning still does not open
-symbolic truncation or multiply two symbolic Integers.
+symbolic truncation or derive identities between distinct symbolic products.
+Their complete values can participate as opaque affine atoms.
 
 <!-- verified-example: mdtests/integer_truncation_laws.md -->
 ```click
@@ -851,11 +856,72 @@ needed.
 
 The unchanged Bitcoin and synthetic fee-division sidecars now use this lemma
 to relate native remainder cases to the mathematical truncating remainder.
-Within the established bounded numerator and positive-divisor profile, they
+Within the joint numerator/divisor bounds described below, they
 prove all four exact result formulas. Floor mode returns the truncating quotient
 minus one precisely for a negative remainder; ceiling mode returns it plus one
 precisely for a positive remainder. A zero remainder leaves the quotient
 unchanged in both modes. The synthetic modular caller exports the same
 formulas while framing its untouched memory. These guarantees retain the
-nonzero divisor and narrowing/overflow evidence. Product-inequality
-characterizations and the wider 96/32 input profile remain separate work.
+nonzero divisor and narrowing/overflow evidence. The product-inequality characterizations follow below; the full 96/32 input
+profile remains open.
+
+
+## Rounded quotient product intervals
+
+`integer_multiply_add(a, b, c)` is the exact Integer distributivity law
+`(a + b) * c == a * c + b * c`. It is a proof-backed library lemma using the
+shared bounded `integer_polynomial_identity` certificate, with no new axiom.
+It establishes no native multiplication safety and does not expand products
+during ordinary affine normalization.
+
+`integer_floor_from_remainder(n, d, q, r, value)` and
+`integer_ceiling_from_remainder(n, d, q, r, value)` are proof-backed library
+lemmas. Each requires a positive divisor, reconstruction `n == q * d + r`,
+and `1 - d <= r <= d - 1`. Floor additionally requires `value == q - 1` when
+`r < 0` and `value == q` otherwise; ceiling requires `value == q + 1` when
+`r > 0` and `value == q` otherwise. They prove the defining intervals
+`value * d <= n < (value + 1) * d` and
+`(value - 1) * d < n <= value * d`, respectively. The zero remainder satisfies
+both unchanged-quotient cases.
+
+The unchanged Bitcoin `FeeFrac::Div` and synthetic modular caller apply these
+shared lemmas to fixed-state native observations and the explicit truncating
+quotient/remainder. Their four mode-guarded product inequalities use mathematical
+Integer arithmetic, including successor/predecessor operations, and retain all
+previous native evaluation, narrowing and correction guards. This uses the joint scaled numerator/divisor profile described below; the
+full 96/32 contract remains open.
+
+Opaque atom collection stops at the product, quotient or remainder root, using
+shared node identity without traversing its operands. Distinct source terms
+remain distinct atoms; only an explicit checked equality can connect them.
+Kernel oracle and mutation tests, missing-domain and native-definedness fixtures,
+expansion/reverification and multi-size deterministic scaling regressions pin
+that boundary.
+
+
+## Scaled positive-divisor quotient bounds
+
+`integer_quotient_bound bounds [i, j] => b <= truncating_quotient(n, d);`
+checks exactly two named Integer premises: `b * d <= n`, followed by
+`1 <= d`. The upper form checks `n <= b * d` and concludes
+`truncating_quotient(n, d) <= b`. The bound `b` may be negative or symbolic.
+For a positive divisor, truncating division is monotone in its dividend and
+an exact integer multiple divides to its factor. No rectangular interval or
+ambient fact search is needed. Product operands must match the constructor's
+normalized order; the checker does not search for polynomial equivalents.
+
+The proof-backed `integer_positive_divisor_quotient_lower` and
+`integer_positive_divisor_quotient_upper` library lemmas expose the rule.
+Division's nonzero guard and all native evaluation/narrowing guards remain
+separate obligations. The node reads two premise indices and shared operand
+identities; its work does not grow with unrelated premises or shared DAG depth.
+Opaque operands are never cloned; constant-product folding is charged before
+computation.
+See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_quotient_bound.md).
+
+The unchanged C++ rounding sidecars now use joint guards
+`-K * to_integer(d) <= to_integer(n) <= K * to_integer(d)` (two clauses).
+For Bitcoin, `K = INT64_MAX - 1` and every positive int32 divisor is admitted.
+This includes int128 numerators outside int64 while preserving the correction
+margin and the existing exact floor/ceiling guarantees. It does not cover the
+full 96/32 fee-division contract or every safe endpoint case.
