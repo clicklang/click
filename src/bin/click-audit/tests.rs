@@ -1461,6 +1461,37 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
 }
 
 #[test]
+fn nested_call_outcomes_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "mdtests/outcomes_routes_a_throw_that_leaves_the_function.md",
+        "mdtests/grouped_proof_closes_claims_across_two_throwing_calls.md",
+        "mdtests/execute_splits_a_throwing_call_inside_a_c_if.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(!sites.is_empty(), "{relative} must have tactic sites");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| {
+                panic!(
+                    "{relative}:{}:{}: {message}",
+                    site.position.line, site.position.column
+                )
+            });
+        }
+    }
+}
+
+#[test]
 fn exceptional_call_paths_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for (relative, expected_sites) in [

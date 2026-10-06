@@ -887,29 +887,48 @@ impl ProofExecutionView<'_> {
         // been skipped, so every path through more than one surface `if`
         // reported no branch path at all and its closer was stitched onto
         // every leaf instead of its own.
-        let mut decisions = self
-            .outcome_provenance
-            .get(path_index)?
-            .branch_decisions
-            .iter();
+        let provenance = self.outcome_provenance.get(path_index)?;
+        let mut decisions = provenance.branch_decisions.iter();
+        let mut call_routes = provenance.call_routes.iter();
         let mut path = Vec::new();
         let mut current = tactics;
         loop {
-            let Some(proof_if) = current.iter().rev().find_map(|tactic| match tactic {
-                ProofTactic::If(proof_if) => Some(proof_if),
-                _ => None,
-            }) else {
+            let Some(branch) = current
+                .iter()
+                .rev()
+                .find(|tactic| matches!(tactic, ProofTactic::If(_) | ProofTactic::CallOutcomes(_)))
+            else {
                 return Some(path);
             };
-            let selected_then = decisions
-                .find(|decision| decision.condition == proof_if.condition)?
-                .value;
-            path.push(selected_then);
-            current = if selected_then {
-                &proof_if.then_tactics
-            } else {
-                &proof_if.else_tactics
+            let (selected, next) = match branch {
+                ProofTactic::If(proof_if) => {
+                    let selected = decisions
+                        .find(|decision| decision.condition == proof_if.condition)?
+                        .value;
+                    (
+                        selected,
+                        if selected {
+                            &proof_if.then_tactics
+                        } else {
+                            &proof_if.else_tactics
+                        },
+                    )
+                }
+                ProofTactic::CallOutcomes(outcomes) => {
+                    let returned = *call_routes.next()?;
+                    (
+                        returned,
+                        if returned {
+                            &outcomes.returned_tactics
+                        } else {
+                            &outcomes.threw_tactics
+                        },
+                    )
+                }
+                _ => unreachable!(),
             };
+            path.push(selected);
+            current = next;
         }
     }
 }

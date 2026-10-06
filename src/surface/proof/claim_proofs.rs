@@ -2152,38 +2152,31 @@ pub(super) fn finish_ordered_proof<'a>(
                         .deferred_tactic_capture
                         .as_ref()
                     {
-                        match &outcome {
-                            CFunctionOutcome::Return {
-                                value: result,
-                                state: post_state,
-                            } => direct_view
-                                .surface_branch_path(path_index, &deferred.branch_skeleton)
-                                .or_else(|| {
-                                    surface_branch_path_for_outcome(
-                                        &deferred.branch_skeleton,
-                                        &path_requirements,
-                                        parsed_function.parameters(),
-                                        arguments,
-                                        pre_state,
-                                        post_state,
-                                        result,
-                                        &proof_execution.presentation.recorded_snapshots,
-                                        predicate_environment,
-                                        click_function_environment,
-                                    )
-                                    // A compatibility post-join path may carry no
-                                    // pre-join guard facts and therefore cannot decide
-                                    // the surface branches. A completed Proof uses its
-                                    // retained typed split provenance above.
-                                    .ok()
-                                }),
-                            _ if deferred.branch_skeleton.is_empty() => Some(Vec::new()),
-                            _ => {
-                                return Err(ClickError::new(format!(
-                                    "execution proof failed for `{proof_label}` path {path_index}: selected post-execution tactic has no return outcome for its proof branch"
-                                )));
-                            }
-                        }
+                        // Call-arm provenance applies to both returned and
+                        // thrown outcomes, including paths that never reach
+                        // the selected source occurrence. Only legacy return
+                        // paths need the post-state guard fallback.
+                        direct_view
+                            .surface_branch_path(path_index, &deferred.branch_skeleton)
+                            .or_else(|| match &outcome {
+                                CFunctionOutcome::Return {
+                                    value: result,
+                                    state: post_state,
+                                } => surface_branch_path_for_outcome(
+                                    &deferred.branch_skeleton,
+                                    &path_requirements,
+                                    parsed_function.parameters(),
+                                    arguments,
+                                    pre_state,
+                                    post_state,
+                                    result,
+                                    &proof_execution.presentation.recorded_snapshots,
+                                    predicate_environment,
+                                    click_function_environment,
+                                )
+                                .ok(),
+                                _ => None,
+                            })
                     } else {
                         Some(Vec::new())
                     };
