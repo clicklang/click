@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 40;
+its documented application invariant. The typed artifact schema is now 41;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -1135,3 +1135,44 @@ no proof runs against the imported bodies yet.
 A successful lock operation exits 0. Invalid configuration, missing inputs,
 compiler failure, an exceeded bound, or an output-write failure exits nonzero
 with a diagnostic. Ordinary verification never rewrites a lock or artifact.
+
+
+C++ imports may explicitly assume a narrow external library assertion contract
+with the optional `library_assertions` config field. For example (replace the
+hash with the SHA-256 of the actual header bytes):
+
+```json
+"library_assertions": [{
+  "kind": "checked_boolean_statement",
+  "function": "library::check",
+  "header": "gate.h",
+  "sha256": "<64 lowercase hexadecimal digits>"
+}]
+```
+
+The header must be in the explicit `dependencies` inventory and the locked
+preprocessor closure. Entries have unique, sorted qualified function names;
+the inventory is limited to 64. Header hashes are checked during refresh and
+offline loading. The resolved callee declaration, and its definition when
+present, must belong to that header. Config, artifact, compiler command, and
+input closure are part of the import identity. A changed pin requires an
+explicit config edit and lock refresh.
+
+This is an **assumed library contract**, not verification of its implementation.
+It states that, when its Boolean argument is true, the call returns normally
+without changing caller-visible memory. Each admitted call evaluates that
+argument and generates an obligation to prove it true. It neither adds an
+unproved condition to the proof context nor admits the library's false-input,
+abort, or exception behavior. The diagnostic names the contract and header
+hash; normal cleanup still runs. A function merely named `Assume` retains
+ordinary call semantics without a matching explicit contract.
+
+The first slice accepts only a direct standalone discarded-result call to a free,
+non-template, non-variadic function with one Boolean value parameter and a
+void or Boolean value return type. Its argument must be a total scalar
+Boolean condition without memory reads, mutation, calls, or partial arithmetic.
+Reference parameters or returns, metadata arguments, temporary-object cleanup,
+and using the result are unsupported. In particular, Bitcoin's evaluated
+`inline_assertion_check<false>` with source-location and string-view arguments
+remains rejected. It needs a further explicit contract slice for those
+arguments; it is not Clang's unevaluated `__builtin_assume`.

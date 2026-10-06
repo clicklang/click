@@ -220,7 +220,10 @@ return quot + ((mod > 0) - (mod && round_down));
 ```
 
 A refusal regression keeps this source out of the admitted profile until its
-library call is modeled. Bitcoin's `Assume` expands to
+library call is modeled. The importer now has an explicit pinned, assumed
+Boolean-only statement contract, with a caller obligation to prove the
+condition true. That foundation does not yet admit this template/reference
+signature or its evaluated metadata arguments. Bitcoin's `Assume` expands to
 `inline_assertion_check<false>` in `util/check.h`, with source-location and
 string-view arguments and a build-dependent abort policy. It is an evaluated
 library call, not Clang's unevaluated `__builtin_assume`. No condition or abort

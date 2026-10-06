@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::schema::{
-    CppExceptionBehavior, CppExport, CppPreprocessorFile, CppProfile, EXPORT_SCHEMA, LANGUAGE,
-    MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
+    CppExceptionBehavior, CppExport, CppLibraryAssertion, CppPreprocessorFile, CppProfile,
+    CppStatement, EXPORT_SCHEMA, LANGUAGE, MAX_PREPROCESSOR_FILES, STANDARD, TARGET,
 };
 use crate::languages::compiler_process::{CompilerLimits, run_compiler};
 
@@ -75,6 +75,8 @@ struct Config {
     logical_source: String,
     dependencies: Vec<String>,
     function: String,
+    #[serde(default)]
+    library_assertions: Vec<CppLibraryAssertion>,
     artifact: String,
     #[serde(skip)]
     directory: PathBuf,
@@ -150,6 +152,7 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
     let logical_source_before =
         read_stable(&logical_source, MAX_SOURCE_BYTES, "C++ logical source")?;
     let dependency_bytes_before = read_dependencies(&dependencies)?;
+    validate_library_pins(&config, &dependency_bytes_before)?;
     let arguments = vec![
         "--logical-source".into(),
         config.logical_source.clone(),
@@ -165,6 +168,9 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
         compilation_database.to_string_lossy().into_owned(),
         "--exception-behavior".into(),
         config.exception_behavior.as_str().into(),
+        "--library-assertions".into(),
+        serde_json::to_string(&config.library_assertions)
+            .map_err(|error| format!("encode C++ library contracts: {error}"))?,
     ];
     let check_inputs = || -> Result<(), String> {
         if read_stable(&source, MAX_SOURCE_BYTES, "C++ source")? != source_before {
@@ -200,6 +206,7 @@ fn refresh_import_inner(config_path: &Path) -> Result<(), String> {
     check_inputs()?;
     let export = decode_artifact(&artifact, &config)?;
     let preprocessor_files_before = read_preprocessor_files(&export.preprocessor_files)?;
+    validate_library_headers(&config, &dependencies, &preprocessor_files_before)?;
     let repeated = run_cpp_exporter(
         &exporter,
         &arguments,
@@ -341,7 +348,9 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
         return Err("C++ logical source differs from the import lock; refresh it".into());
     }
     let dependencies = resolve_dependencies(&config, &working_directory)?;
-    let dependency_digests = read_dependencies(&dependencies)?
+    let dependency_bytes = read_dependencies(&dependencies)?;
+    validate_library_pins(&config, &dependency_bytes)?;
+    let dependency_digests = dependency_bytes
         .into_iter()
         .map(|(path, bytes)| (path, hex_digest(&bytes)))
         .collect::<BTreeMap<_, _>>();
@@ -360,7 +369,9 @@ fn load_import_inner(config_path: &Path) -> Result<PreparedCppImport, String> {
     if lock.profile != export.profile {
         return Err("C++ semantic artifact profile differs from the import lock".into());
     }
-    if lock.preprocessor_files != read_preprocessor_files(&export.preprocessor_files)? {
+    let preprocessor_files = read_preprocessor_files(&export.preprocessor_files)?;
+    validate_library_headers(&config, &dependencies, &preprocessor_files)?;
+    if lock.preprocessor_files != preprocessor_files {
         return Err(
             "C++ preprocessor input inventory differs from the import lock; refresh it".into(),
         );
@@ -401,7 +412,98 @@ fn decode_artifact(bytes: &[u8], config: &Config) -> Result<CppExport, String> {
         config.rtti,
         &config.dependencies,
     )?;
+    // One explicit statement walk; contract lookup never scans the inventory per site.
+    let contracts: BTreeMap<_, _> = config
+        .library_assertions
+        .iter()
+        .map(|contract| (contract.function.as_str(), contract))
+        .collect();
+    let mut pending = vec![export.function.body.as_slice()];
+    pending.extend(
+        export
+            .reachable_functions
+            .iter()
+            .map(|function| function.body.as_slice()),
+    );
+    while let Some(statements) = pending.pop() {
+        for statement in statements {
+            crate::instrumentation::record_deterministic_work(1);
+            match statement {
+                CppStatement::LibraryAssert { contract, .. } => {
+                    if contracts.get(contract.function.as_str()).copied() != Some(contract) {
+                        return Err("C++ artifact library assertion differs from its configured assumed contract".into());
+                    }
+                }
+                CppStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    pending.push(then_branch);
+                    pending.push(else_branch);
+                }
+                CppStatement::Scope { body, .. } => pending.push(body),
+                CppStatement::TryCatchInt32 {
+                    try_body, handler, ..
+                } => {
+                    pending.push(try_body);
+                    pending.push(handler);
+                }
+                _ => {}
+            }
+        }
+    }
     Ok(export)
+}
+
+fn validate_library_pins(
+    config: &Config,
+    dependencies: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), String> {
+    let mut digests = BTreeMap::new();
+    for contract in &config.library_assertions {
+        let bytes = dependencies
+            .get(&contract.header)
+            .ok_or("C++ assumed library assertion header is missing from dependencies")?;
+        let digest = digests
+            .entry(contract.header.as_str())
+            .or_insert_with(|| hex_digest(bytes));
+        if *digest != contract.sha256 {
+            return Err(format!(
+                "C++ assumed library contract `{}` header hash differs from its explicit pin",
+                contract.function
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_library_headers(
+    config: &Config,
+    dependencies: &[(String, PathBuf)],
+    files: &BTreeMap<String, LockedPreprocessorFile>,
+) -> Result<(), String> {
+    if config.library_assertions.is_empty() {
+        return Ok(());
+    }
+    let dependencies: BTreeMap<_, _> = dependencies
+        .iter()
+        .map(|(name, path)| (name.as_str(), path))
+        .collect();
+    let observed: BTreeMap<_, _> = files
+        .values()
+        .map(|file| (file.canonical_path.as_str(), file.sha256.as_str()))
+        .collect();
+    for contract in &config.library_assertions {
+        let path = dependencies[contract.header.as_str()].to_string_lossy();
+        if observed.get(path.as_ref()).copied() != Some(contract.sha256.as_str()) {
+            return Err(
+                "C++ assumed library contract header must be in the locked preprocessor closure"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
 }
 
 fn semantic_identity(
@@ -487,6 +589,24 @@ fn validate_config(config: &Config) -> Result<(), String> {
             return Err("C++ dependencies must be unique sorted relative paths".into());
         }
         previous_dependency = Some(dependency);
+    }
+    if config.library_assertions.len() > 64 {
+        return Err("C++ assumed library assertion inventory exceeds its size limit".into());
+    }
+    let mut previous_contract: Option<&str> = None;
+    for contract in &config.library_assertions {
+        contract.validate()?;
+        if previous_contract.is_some_and(|previous| previous >= contract.function.as_str()) {
+            return Err(
+                "C++ assumed library assertions must have unique sorted function names".into(),
+            );
+        }
+        if config.dependencies.binary_search(&contract.header).is_err() {
+            return Err(
+                "C++ assumed library assertion header must be an explicit dependency".into(),
+            );
+        }
+        previous_contract = Some(&contract.function);
     }
     if Path::new(&config.source)
         .extension()

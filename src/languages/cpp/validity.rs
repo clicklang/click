@@ -320,6 +320,15 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::LibraryAssert {
+                    condition,
+                    contract,
+                    span,
+                } => {
+                    contract.validate()?;
+                    self.expression(condition)?;
+                    span
+                }
                 CppStatement::ReturnCall {
                     callee,
                     arguments,

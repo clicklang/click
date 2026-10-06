@@ -166,8 +166,8 @@ conditions, conditional execution, constant reachability, normal destruction,
 expansion/reverification, retained audit, forged artifacts, and growing statement
 inventories. Ordinary user-named `Assume` calls remain ordinary calls. This is
 the obligation mechanism prerequisite; Bitcoin's library `Assume` macro still
-needs separate support. Artifact schema is now 40 and earlier locks require
-an explicit refresh. The unchanged Bitcoin fee source remains unsupported.
+needs separate support. Artifact schema is now 41 and earlier locks require
+an explicit refresh. The unchanged Bitcoin division helper remains unsupported.
 
 ## Required invariant
 
@@ -206,7 +206,7 @@ field restrictions stay position-specific. New boundary tests check scalar
 qualification, unsupported widths, and literal ranges. Offline source proofs
 cover Boolean widening and uint64-to-int64 bit preservation, including expansion,
 retained audit, and false claims. Existing arithmetic/proof fixtures are unchanged;
-artifact schema is now 40. The full `__int128` path remains a prerequisite for the
+artifact schema is now 41. The full `__int128` path remains a prerequisite for the
 full fee arithmetic milestone, rather than another isolated family of type matches.
 
 The inventory validity/profile/budget slice is delivered. The single-record and
@@ -251,7 +251,7 @@ work, proofs, expansion, audit, malformed exit lists, and atomic budget failures
 The three-scope restore proof records restoration at each boundary with explicit
 steps; its C++ source is unchanged. Multiple trivial aggregates, deeper scopes,
 overlapping outer/sibling combinations, and the existing conditional/exception
-arrangement restrictions remain semantic-profile limitations. Current schema 40
+arrangement restrictions remain semantic-profile limitations. Current schema 41
 requires an explicit refresh of earlier locks.
 
 Recursive function metadata validity is delivered in its own module. Before a
@@ -398,7 +398,7 @@ mutable locals, full-width compiler constants, C++20 integral casts, Boolean
 conversion of all bits, and checked signed multiplication. The existing scalar
 interpretation maps directly to shared formats and kernel types; no C++ numeric
 carrier was introduced. Function boundaries also admit by-value wide scalars, as described below.
-Exporter and schema both reject unsupported wide operations. Current schema 40
+Exporter and schema both reject unsupported wide operations. Current schema 41
 requires refreshing older artifacts. High-bit products and modulo casts verify
 through execute/simp, expansion, and retained audit; narrow and wide overflow
 remain obligations even under a trivial postcondition. Shared wide-to-Boolean
@@ -416,7 +416,7 @@ both destination bounds. Negative full-range literals retain their Integer
 context through reverse conversions. Regressions cover extrema, hostile
 high-bit claims, cast round trips, modular calls with framed narrow memory,
 expansion/reverification, audit, and deterministic signature scaling at
-2/8/32/128 parameters. Current schema 40 requires refreshing earlier locks.
+2/8/32/128 parameters. Current schema 41 requires refreshing earlier locks.
 
 The nested-call regression records a bounded search limitation: `simp` closes
 a direct observer equality but does not chain two Integer equalities. Keep
@@ -490,7 +490,7 @@ polarity, references, and the conclusion. This neither assumes conversion
 bounds nor changes out-of-range C++ wrapping. Signed/unsigned 128-to-32/64-bit
 casts, implicit returns, native quotient/remainder narrowing, modular caller
 framing, offline verification, expansion, retained audit, hostile certificates,
-and deterministic scaling have coverage. Artifact schema remains 40.
+and deterministic scaling have coverage. That narrowing slice used artifact schema 40.
 
 The unchanged upstream `FeeFrac::Mul` is now proved on the pinned wide profile.
 Scalar brace initialization retains Clang's resolved semantic conversion for
@@ -499,11 +499,27 @@ that discharge native 128-bit overflow guards. The shared kernel exposes the
 normal result's exact mathematical product, with native guards retained in
 pure observation and capture. Fresh upstream export, false products, missing
 bounds, modular caller framing, expansion/reverification, retained audit, and
-ambient-fact scaling have coverage. Schema remains 40.
+ambient-fact scaling have coverage. That product slice used artifact schema 40.
 
-Next model the library `Assume` boundary for the frozen unchanged
-`FeeFrac::Div`. The pinned archive and a refusal regression keep its exact
-source selected: it narrows `n / d` to int64 and `n % d` to int32 **before**
+The first explicit library-contract slice now admits pinned, assumed
+Boolean-only statement contracts. The config names a qualified function and
+header SHA-256; the artifact retains that descriptor and offline loading checks
+its authority, dependency bytes, and preprocessor closure. The call requires a
+proof that its evaluated condition is true before using the assumed normal,
+no-memory-effects behavior. Ordinary same-named functions retain call semantics.
+Missing or false conditions, unsafe signatures/arguments, altered pins,
+expansion/reverification, cleanup, modular framing, offline authority, and
+deterministic statement scaling have coverage. Artifact schema is 41.
+
+Next extend that boundary for the frozen unchanged `FeeFrac::Div`. Its template,
+Boolean rvalue reference, discarded reference result, and **evaluated metadata**
+are still refused. Model source-location evaluation, literal string-view
+construction, and temporary cleanup explicitly; never erase arbitrary
+constructors or argument effects by name or by constant-expression eligibility.
+Pin and expose the additional library assumptions.
+
+The pinned archive and a refusal regression keep its exact source selected:
+it narrows `n / d` to int64 and `n % d` to int32 **before**
 its narrow correction. `Assume` expands to an evaluated
 `inline_assertion_check<false>` call with source-location/string-view arguments
 and a build-dependent abort policy; it must not be recognized by spelling or

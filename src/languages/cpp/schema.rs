@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 40;
+pub(crate) const EXPORT_SCHEMA: u32 = 41;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -77,6 +77,44 @@ pub struct CppExport {
     pub records: Vec<CppRecord>,
     pub function: CppFunction,
     pub reachable_functions: Vec<CppFunction>,
+}
+
+/// An explicitly assumed external contract, not a verified implementation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppLibraryAssertion {
+    pub kind: CppLibraryAssertionKind,
+    pub function: String,
+    pub header: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CppLibraryAssertionKind {
+    CheckedBooleanStatement,
+}
+
+impl CppLibraryAssertion {
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if !self.function.split("::").all(super::import::is_identifier)
+            || self.function.len() > 256
+            || !valid_relative_source_path(&self.header)
+            || self.header.len() > 1024
+            || self
+                .header
+                .split('/')
+                .any(|part| part.is_empty() || part == "." || part == "..")
+            || self.sha256.len() != 64
+            || !self
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err("invalid C++ assumed library assertion contract".into());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -433,6 +471,11 @@ pub enum CppStatement {
     },
     Assume {
         condition: CppExpression,
+        span: CppSpan,
+    },
+    LibraryAssert {
+        condition: CppExpression,
+        contract: CppLibraryAssertion,
         span: CppSpan,
     },
     TryCatchInt32 {
@@ -1719,6 +1762,20 @@ impl CppStatement {
                 }
                 Ok(())
             }
+            Self::LibraryAssert {
+                condition,
+                contract,
+                span,
+            } => {
+                contract.validate()?;
+                span.validate(logical_source)?;
+                condition.validate(places, records, logical_source)?;
+                require_bool(condition.value_type(), false, "library assertion condition")?;
+                if !total_assumption_condition(condition, places) {
+                    return Err("C++ library assertion requires a total scalar condition without memory reads or side effects".into());
+                }
+                Ok(())
+            }
             Self::Throw { value, span } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
@@ -2553,6 +2610,7 @@ impl CppStatement {
             | Self::Store { .. }
             | Self::MemberStore { .. }
             | Self::Assume { .. }
+            | Self::LibraryAssert { .. }
             | Self::Call { .. } => false,
         }
     }
@@ -2813,6 +2871,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             }
             CppStatement::Throw { .. }
             | CppStatement::Assume { .. }
+            | CppStatement::LibraryAssert { .. }
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. } => {}
@@ -3164,6 +3223,9 @@ fn validate_statement_constant_references(
             | CppStatement::Return { value, .. }
             | CppStatement::Throw { value, .. }
             | CppStatement::Assume {
+                condition: value, ..
+            }
+            | CppStatement::LibraryAssert {
                 condition: value, ..
             } => {
                 value.validate_constant_references(

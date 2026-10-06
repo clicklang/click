@@ -428,6 +428,22 @@ impl LoweringContext<'_> {
                     span.file, span.start_line, span.start_column
                 ),
             )),
+            CppStatement::LibraryAssert {
+                condition,
+                contract,
+                span,
+            } => Ok(crate::kernel::c_labeled_assert(
+                self.lower_expression(condition)?,
+                format!(
+                    "C++ assumed library contract `{}` [{} sha256:{}] at {}:{}:{}",
+                    contract.function,
+                    contract.header,
+                    contract.sha256,
+                    span.file,
+                    span.start_line,
+                    span.start_column
+                ),
+            )),
             CppStatement::Return { .. }
             | CppStatement::ReturnCall { .. }
             | CppStatement::Throw { .. }

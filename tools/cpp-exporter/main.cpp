@@ -62,6 +62,7 @@ struct Options {
   std::string dependency_root;
   std::string compilation_database;
   std::string exception_behavior = "normal_only";
+  std::map<std::string, llvm::json::Value> library_assertions;
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
@@ -94,6 +95,23 @@ std::optional<Options> parse_options(int argc, const char **argv) {
       result.dependency_root = value;
     } else if (option == "--compilation-database") {
       result.compilation_database = value;
+    } else if (option == "--library-assertions") {
+      auto parsed = llvm::json::parse(value);
+      if (!parsed || !parsed->getAsArray() || parsed->getAsArray()->size() > 64) {
+        llvm::errs() << "error: invalid library assertion inventory\n";
+        if (!parsed) llvm::consumeError(parsed.takeError());
+        return std::nullopt;
+      }
+      for (auto &entry : *parsed->getAsArray()) {
+        const auto *object = entry.getAsObject();
+        if (!object || !object->getString("function") ||
+            !object->getString("header") || !object->getString("sha256") ||
+            object->getString("kind") != "checked_boolean_statement" ||
+            !result.library_assertions.emplace(object->getString("function")->str(), std::move(entry)).second) {
+          llvm::errs() << "error: invalid or duplicate library assertion contract\n";
+          return std::nullopt;
+        }
+      }
     } else if (option == "--exception-behavior") {
       if (value != "normal_only" && value != "scalar_int32") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
@@ -142,6 +160,7 @@ public:
                    std::string compilation_file,
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
+                   const std::map<std::string, llvm::json::Value> &library_assertions,
                    ExportState &state)
       : context_(context), source_manager_(context.getSourceManager()),
         logical_source_(std::move(logical_source)),
@@ -151,7 +170,8 @@ public:
         compilation_directory_(std::move(compilation_directory)),
         compilation_file_(std::move(compilation_file)),
         compilation_command_(std::move(compilation_command)),
-        exception_behavior_(std::move(exception_behavior)), state_(state) {}
+        exception_behavior_(std::move(exception_behavior)),
+        library_assertions_(library_assertions), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
@@ -245,7 +265,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 40;
+    artifact["schema"] = 41;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -668,6 +688,41 @@ private:
     return Json(std::move(result));
   }
 
+  std::optional<Json> lower_library_assertion(
+      const clang::CallExpr *call, const clang::FunctionDecl *callee,
+      const clang::FunctionDecl *function, const llvm::json::Value &contract) {
+    const auto *object = contract.getAsObject();
+    const std::string header = object->getString("header")->str();
+    auto declaration_header = dependency_source(callee->getLocation());
+    const auto *definition = callee->getDefinition();
+    if (!declaration_header || *declaration_header != header ||
+        (definition && dependency_source(definition->getLocation()) != declaration_header)) {
+      fail(call->getExprLoc(), "C++ assumed library assertion declaration differs from its pinned header");
+      return std::nullopt;
+    }
+    if (llvm::isa<clang::CXXMethodDecl>(callee) || callee->getPrimaryTemplate() ||
+        callee->isVariadic() || callee->getNumParams() != 1 || call->getNumArgs() != 1 ||
+        !callee->getParamDecl(0)->getType()->isBooleanType() ||
+        callee->getParamDecl(0)->getType().isVolatileQualified() ||
+        !(callee->getReturnType()->isVoidType() || callee->getReturnType()->isBooleanType()) ||
+        !call->getArg(0)->getType()->isBooleanType() ||
+        !total_assumption_condition(call->getArg(0), function)) {
+      fail(call->getExprLoc(), "C++ assumed library assertion requires a free bool-by-value function, discarded void/bool result, and one total scalar Boolean argument; metadata arguments and templates are unsupported");
+      return std::nullopt;
+    }
+    auto condition = lower_expression(call->getArg(0), function);
+    if (!condition) return std::nullopt;
+    dependency_sources_.insert(header);
+    llvm::json::Object result;
+    result["kind"] = "library_assert";
+    result["condition"] = std::move(*condition);
+    result["contract"] = contract;
+    result["span"] = span(clang::SourceRange(
+        source_manager_.getExpansionLoc(call->getBeginLoc()),
+        source_manager_.getExpansionLoc(call->getEndLoc())));
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
@@ -732,6 +787,12 @@ private:
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
       const auto *callee = call->getDirectCallee();
+      if (callee != nullptr) {
+        auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
+        if (contract != library_assertions_.end()) {
+          return lower_library_assertion(call, callee, function, contract->second);
+        }
+      }
       if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
         if (call->getNumArgs() != 1 || !total_assumption_condition(call->getArg(0), function)) {
           fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
@@ -3012,6 +3073,7 @@ private:
   std::string compilation_file_;
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
+  const std::map<std::string, llvm::json::Value> &library_assertions_;
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
@@ -3043,7 +3105,7 @@ public:
                   options.function, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  state) {}
+                  options.library_assertions, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());
