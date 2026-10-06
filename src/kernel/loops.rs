@@ -3091,7 +3091,19 @@ fn join_loop_exits(
     let (exit_state, restatements, mismatch) = if invariant_state_unchanged {
         (exit_state, unchanged(), None)
     } else {
-        match abstract_loop_exit_states(head, binders, &states, assumptions, variables, budget) {
+        let facts = exits
+            .iter()
+            .map(|(_, facts, _, _)| facts.as_slice())
+            .collect::<Vec<_>>();
+        match abstract_loop_exit_states(
+            head,
+            binders,
+            &states,
+            &facts,
+            assumptions,
+            variables,
+            budget,
+        ) {
             Ok((state, restatements)) => (state, restatements, None),
             Err(mismatch) => (exit_state, unchanged(), Some(mismatch)),
         }
@@ -3227,6 +3239,32 @@ mod loop_exit_resource_agreement_tests {
         // Different owned quantities of one resource.
         assert!(!agree(&context([token(1)]), &context([token(2)])));
         assert!(!agree(&context([token(1)]), &context([token(1), token(1)])));
+    }
+
+    #[test]
+    fn exits_agree_on_a_memory_owner_with_its_own_observation_cache() {
+        let owner = own("a");
+        let plain = context([owner.clone()]);
+        let expanded = plain
+            .clone()
+            .with_cached_supported_expansion(&owner, vec![owner.clone()]);
+        let observed = expanded
+            .clone()
+            .unchecked_with_supported_facts(&owner, vec![view("a")]);
+        let assumptions = PureFactContext::new();
+        for derived in [expanded, observed] {
+            assert_ne!(derived, plain);
+            assert!(loop_exit_resources_agree(&derived, &plain, &assumptions));
+            assert!(loop_exit_resources_agree(&plain, &derived, &assumptions));
+        }
+        let other_view = plain
+            .clone()
+            .unchecked_with_supported_facts(&owner, vec![view("b")]);
+        assert!(!loop_exit_resources_agree(
+            &other_view,
+            &plain,
+            &assumptions
+        ));
     }
 }
 
@@ -3450,10 +3488,12 @@ mod loop_invariant_correspondence_tests {
 /// Cost is the loop's own binders, the locals the exits disagree on, and the
 /// cells they disagree on; no unrelated project-wide or path-wide state is
 /// scanned, and a component every exit agrees on is compared once and kept.
+#[allow(clippy::too_many_arguments)]
 fn abstract_loop_exit_states(
     head: &CLoopHead,
     binders: &[CLoopBinder],
     states: &[&CState],
+    exit_facts: &[&[ExecutionPureFact]],
     assumptions: &PureFactContext,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
@@ -3467,6 +3507,7 @@ fn abstract_loop_exit_states(
             }
         }
     }
+    retain_proven_loop_exit_cells(&mut rebound, exit_facts, assumptions, binders.is_empty())?;
     let mut successor = rebound[0].clone();
     let mut restatements = vec![LoopExitRestatement::default(); rebound.len()];
     let uninitialized = abstract_loop_exit_initialization(&mut successor, &rebound);
@@ -3526,6 +3567,235 @@ fn abstract_loop_exit_states(
         return Err(mismatch);
     }
     Ok((successor, restatements))
+}
+
+/// Fill only changed concrete cache entries whose exact typed value every
+/// exit already proves. A load equation is evidence for a cache entry, never
+/// for a C store, initialization, or additional memory authority.
+fn retain_proven_loop_exit_cells(
+    states: &mut [CState],
+    facts: &[&[ExecutionPureFact]],
+    assumptions: &PureFactContext,
+    no_binders: bool,
+) -> Result<(), String> {
+    let candidates = states
+        .iter()
+        .skip(1)
+        .flat_map(|state| {
+            states[0]
+                .memory
+                .cells
+                .differing_cells(&state.memory.cells)
+                .pointers
+        })
+        .collect::<BTreeSet<_>>();
+    let mut contexts = (0..states.len()).map(|_| None).collect::<Vec<_>>();
+    for pointer in candidates {
+        let Some(value) = states
+            .iter()
+            .find_map(|state| state.memory.known_value(&pointer))
+        else {
+            continue;
+        };
+        // Numerical floating equality does not establish equal stored bits
+        // (the signs of zero differ). Boolean reads normalize their byte.
+        if matches!(
+            value,
+            CValue::Bool(_) | CValue::Float32(_) | CValue::Float64(_)
+        ) {
+            continue;
+        }
+        let mut agrees = true;
+        for (index, state) in states.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(held) = state.memory.known_value(&pointer) {
+                agrees &= held == value;
+                continue;
+            }
+            let Some(load) =
+                symbolic_storage_cell_value(state.memory(), &pointer, value.c_type(), true)
+            else {
+                agrees = false;
+                continue;
+            };
+            let Some(equality) =
+                c_value_comparison_proposition(&load, CComparisonOperator::Equal, &value)
+            else {
+                agrees = false;
+                continue;
+            };
+            let context = contexts[index].get_or_insert_with(|| {
+                assumptions_with_path_context(assumptions, facts[index], &[])
+            });
+            if !context.proves_atomic_without_search(&equality) {
+                agrees = false;
+                if no_binders
+                    && c_value_comparison_proposition(&load, CComparisonOperator::NotEqual, &value)
+                        .is_some_and(|different| context.proves_atomic_without_search(&different))
+                {
+                    return Err(format!(
+                        "the cell in `{}` that the exits write differently is owned by no loop binder",
+                        pointer.block
+                    ));
+                }
+            }
+        }
+        if agrees {
+            for state in states.iter_mut() {
+                let memory = state
+                    .memory()
+                    .clone()
+                    .materialize_named_cell(pointer.clone(), value.clone());
+                *state = state.clone().with_memory(memory);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
+    block.starts_with("havoc:")
+        || block.starts_with("call-havoc:")
+        || block.starts_with("call-write-set:")
+}
+
+#[cfg(test)]
+mod contract_exit_join_tests {
+    use super::*;
+
+    fn marker_exits(count: usize, ambient: usize) -> Vec<CState> {
+        let mut memory = CMemory::new()
+            .with_block("shared", (ambient * 4) as u32)
+            .with_block("havoc:10000000", 0);
+        for index in 0..ambient {
+            memory = memory.store(
+                Pointer {
+                    block: PointerBlock::Concrete("shared".into()),
+                    offset: PointerOffsetTerm::Constant((index * 4) as i64),
+                },
+                int32(index as u32),
+            );
+        }
+        (0..count)
+            .map(|index| {
+                CState::new().with_memory(
+                    memory
+                        .clone()
+                        .with_block(format!("call-havoc:{}", index + 20000000).as_str(), 0),
+                )
+            })
+            .collect()
+    }
+
+    fn measured_join(exits: &[CState]) -> (CState, usize) {
+        let mut successor = exits[0].clone();
+        let mut variables =
+            KernelVariableGenerator::fresh_for_execution(BTreeSet::from([Variable(30000000)]));
+        let mut budget = ExecutionBudget::default();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let bookkeeping = join_loop_exit_storage_bookkeeping(
+                &mut successor,
+                exits,
+                &mut variables,
+                &mut budget,
+            )?;
+            let abstracted = LoopExitAbstraction {
+                locals: &[],
+                uninitialized: &[],
+                cells: &BTreeSet::new(),
+                bookkeeping,
+            };
+            for state in exits {
+                if let Some(difference) = loop_exit_residual_difference(
+                    &successor,
+                    state,
+                    &abstracted,
+                    &[],
+                    &PureFactContext::new(),
+                ) {
+                    return Err(difference);
+                }
+            }
+            Ok(())
+        });
+        result.unwrap();
+        (successor, work)
+    }
+
+    #[test]
+    fn contract_exit_marker_join_work_is_linear_in_exits_and_skips_ambient_cells() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut samples = Vec::new();
+        for count in [4usize, 64, 1024] {
+            let exits = marker_exits(count, 4);
+            let (successor, work) = measured_join(&exits);
+            samples.push((count, work));
+            assert!(work > 0 && work <= count * 30 + 32, "{samples:?}");
+            assert_eq!(successor.memory.cells, exits[0].memory.cells);
+            assert_eq!(
+                crate::kernel::reasoning::memory_resolution::havoc_marker_blocks(
+                    &successor.memory.blocks
+                )
+                .count(),
+                2
+            );
+        }
+        eprintln!("(exits, marker join work): {samples:?}");
+        let mut ambient_work = Vec::new();
+        for ambient in [4usize, 64, 1024] {
+            let (_, work) = measured_join(&marker_exits(4, ambient));
+            ambient_work.push(work);
+        }
+        assert!(
+            ambient_work.iter().all(|work| *work <= ambient_work[0] * 2),
+            "{ambient_work:?}"
+        );
+    }
+
+    #[test]
+    fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let exits = marker_exits(2, 4);
+        let (successor, _) = measured_join(&exits);
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("unknown".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let old_load =
+            symbolic_storage_cell_value(exits[0].memory(), &pointer, CType::Int32, true).unwrap();
+        let new_load =
+            symbolic_storage_cell_value(successor.memory(), &pointer, CType::Int32, true).unwrap();
+        let zero = int32(0);
+        let old_fact =
+            c_value_comparison_proposition(&old_load, CComparisonOperator::Equal, &zero).unwrap();
+        let new_fact =
+            c_value_comparison_proposition(&new_load, CComparisonOperator::Equal, &zero).unwrap();
+        assert!(
+            !PureFactContext::new()
+                .assume_proposition(old_fact)
+                .proves_atomic_without_search(&new_fact)
+        );
+        let changed = exits[1]
+            .clone()
+            .with_memory(exits[1].memory().clone().with_block("shared", 8));
+        let abstracted = LoopExitAbstraction {
+            locals: &[],
+            uninitialized: &[],
+            cells: &BTreeSet::new(),
+            bookkeeping: true,
+        };
+        assert!(
+            loop_exit_residual_difference(
+                &successor,
+                &changed,
+                &abstracted,
+                &[],
+                &PureFactContext::new()
+            )
+            .unwrap()
+            .contains("memory")
+        );
+    }
 }
 
 /// What one loop exit owes about the successor the join exports.
@@ -3898,7 +4168,7 @@ fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -
     uninitialized
 }
 
-/// Joins what the exits recorded about automatic storage, when they differ.
+/// Joins automatic-storage records and call snapshot epochs when they differ.
 ///
 /// A path that called a function with a local holds a tombstone for that
 /// local's ended block, a forget mark from retiring its cell, and a larger
@@ -3912,11 +4182,16 @@ fn abstract_loop_exit_initialization(successor: &mut CState, exits: &[CState]) -
 /// - **Lifetime counter: the maximum,** so the next re-entered declaration
 ///   gets an identity no exit has used. The branch join takes the same
 ///   maximum. A smaller counter would reissue an ended block's identity.
+/// - **Call epochs: common history plus one fresh marker.** Branch-local
+///   havoc and checked write-set markers describe different snapshots, not
+///   physical blocks. Retain their common history and mint one new epoch,
+///   avoiding a union that each residual check would have to scan.
 /// - **Snapshot identity: fresh.** A forget mark says a memory is not known
 ///   to be the memory it forgot from. When the exits' marks differ, the
 ///   successor's memory keeps only what every exit agrees on (the cells the
 ///   join has already made common) and is marked as forgetting from a
-///   snapshot minted here, which no exit's memory and no earlier snapshot
+///   snapshot minted here when forget marks or call epochs differ, which no
+///   exit's memory and no earlier snapshot
 ///   is, with no derivation recorded. A load after the loop of a cell the
 ///   successor does not hold is therefore related to no load before or
 ///   inside the loop. That relation is what this gives up.
@@ -3942,18 +4217,48 @@ fn join_loop_exit_storage_bookkeeping(
     let counters_differ = exits
         .iter()
         .any(|state| state.next_local_lifetime != successor.next_local_lifetime);
-    if !forgotten_differ && !counters_differ {
+    let mut marker_delta = BTreeSet::new();
+    for state in exits {
+        for change in state.memory.blocks.diff(&successor.memory.blocks) {
+            crate::instrumentation::record_deterministic_work(1);
+            if is_loop_exit_snapshot_marker(change.key()) {
+                marker_delta.insert(change.key().clone());
+            }
+        }
+    }
+    let markers_differ = !marker_delta.is_empty();
+    if !forgotten_differ && !counters_differ && !markers_differ {
         return Ok(false);
     }
     successor.next_local_lifetime = counter;
-    if forgotten_differ {
+    if forgotten_differ || markers_differ {
         let mut memory = successor.memory.clone();
+        for key in marker_delta {
+            std::sync::Arc::make_mut(&mut memory.blocks).remove(&key);
+        }
         let ended = exits
             .iter()
             .flat_map(|state| state.memory.forgotten.ended_local_blocks.iter().cloned())
             .collect::<crate::kernel::SnapshotSet<_>>();
         std::sync::Arc::make_mut(&mut memory.forgotten).ended_local_blocks = ended;
         let marker = variables.next_in(budget).map_err(exhausted_identities)?;
+        if markers_differ {
+            // Keep the common history and mint one new epoch. A union of all
+            // branch-local markers would cost exits squared at the residual
+            // checks, and no old epoch may stand for this joined memory.
+            let prefix = if exits
+                .iter()
+                .any(|state| state.memory.has_call_memory_havoc())
+            {
+                "call-havoc"
+            } else {
+                "havoc"
+            };
+            std::sync::Arc::make_mut(&mut memory.blocks).insert(
+                PointerBlock::Concrete(format!("{prefix}:{}", marker.0)),
+                CBlock::new(0),
+            );
+        }
         let minted = crate::kernel::intern_c_memory(
             CMemory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
         );
@@ -4268,6 +4573,22 @@ fn loop_exit_residual_difference(
     if bookkeeping {
         witness.next_local_lifetime = seated.next_local_lifetime;
         witness.memory.forgotten = seated.memory.forgotten.clone();
+        let changes = witness
+            .memory
+            .blocks
+            .diff(&seated.memory.blocks)
+            .map(|change| change.key().clone())
+            .filter(is_loop_exit_snapshot_marker)
+            .collect::<Vec<_>>();
+        for key in changes {
+            crate::instrumentation::record_deterministic_work(1);
+            let blocks = std::sync::Arc::make_mut(&mut witness.memory.blocks);
+            if let Some(block) = seated.memory.blocks.get(&key) {
+                blocks.insert(key, block.clone());
+            } else {
+                blocks.remove(&key);
+            }
+        }
     }
     for (name, c_type) in locals {
         let value = seated.locals().get(name)?.clone();
@@ -4304,15 +4625,23 @@ fn loop_exit_residual_difference(
 }
 
 /// Whether two exits hold the same resources: structurally, or after each
-/// context is normalized once. Normalization merges only descriptions the
-/// resource algebra says are one authority, so a view against none, a view
-/// against an owner, or two owned quantities stay different.
+/// context drops only its exact owner-supported observations and identity
+/// expansion caches, then is normalized once. An independent view, a live
+/// loan-bound view, a nontrivial expansion, or different quantities stay distinct.
 fn loop_exit_resources_agree(
     left: &ResourceContext,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
-    left == right || left.clone().normalized(assumptions) == right.clone().normalized(assumptions)
+    left == right
+        || left
+            .clone()
+            .without_redundant_owned_memory_views()
+            .normalized(assumptions)
+            == right
+                .clone()
+                .without_redundant_owned_memory_views()
+                .normalized(assumptions)
 }
 
 /// What two loop exit states disagree about, named for a refusal.
@@ -4328,8 +4657,9 @@ fn loop_exit_resources_agree(
 ///   `ResourceContext::normalized` already gives two contexts before the
 ///   kernel compares an unfolded body with its expected one. It merges only
 ///   what the resource algebra says is one authority (an unbound view held
-///   twice, an owner and its own unbound view) and never a loan-bound or
-///   supported description.
+///   twice, an owner and its own unbound view), including an exact
+///   owner-supported observation and identity cache, but never a loan-bound
+///   view or a nontrivial supported description.
 ///
 /// Both are exact: a byte, a value, an owned or viewed fact, a quantity, a
 /// read-only block, a heap lifetime or a loan dependency that differs still

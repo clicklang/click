@@ -446,6 +446,17 @@ else is looked through: a block, a read-only status, a heap lifetime, or an
 owned or lent resource still has to agree
 (`mdtests/loop_break_exit_differing_ownership_rejected.md`).
 
+A contracted call may return a cell as a checked load equation rather than
+a cached store. When every exit proves the same exact integer or pointer
+value, the join retains that value, including a call on one exit and a direct
+store on another (`mdtests/loop_break_exit_contract_call_joins_a_direct_store.md`).
+An owner's own observation and identity expansion cache do not add authority;
+loan-bound views and nontrivial resource descriptions still have to agree.
+Different stored values remain a named join refusal
+(`mdtests/loop_break_exit_contract_call_different_store_rejected.md`). Numerical
+floating equality and normalized Boolean reads do not establish identical
+stored bits and are not used to fill the cell cache.
+
 Exits can also disagree about bookkeeping no C expression observes after the
 loop, and the join reconciles each piece in the direction that claims less:
 
@@ -459,7 +470,8 @@ loop, and the join reconciles each piece in the direction that claims less:
   (`mdtests/loop_break_exit_stale_alias_after_join_is_not_read.md`).
 - The counter that names re-entered declarations takes the largest value any
   exit reached, so no ended block's identity is issued again.
-- When the exits' memories disagree on what they have forgotten, the
+- When the exits' memories disagree on what they have forgotten or on their
+  contract-call snapshot epochs, the
   successor's memory keeps the cells every exit holds and takes a freshly
   minted identity with no recorded history
   (`mdtests/loop_break_exit_after_a_call_with_a_local_joins.md`). A load after

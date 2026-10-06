@@ -86,6 +86,14 @@ charged to visible semantic output rather than hidden ambient state:
 - A source branch can create two paths. Repeated branching may create many
   paths, but verification should share common prefixes and cost no more than
   the explicit path structure it checks.
+- A loop exit join reconciles contract-call epochs through changed marker
+  entries, retaining common history and one fresh marker. It does not union
+  every branch's epoch into a successor that every exit must then scan. The
+  deterministic kernel regression measures 72, 780, and 12,300 work units
+  for 4, 64, and 1,024 exits, including all residual checks, and varies
+  unrelated cached cells independently. Checked load equations are consulted
+  only for changed concrete cells; each exit's fact context is built lazily
+  once. Compact cached runs are not enumerated by this reconciliation.
 - A finite quantified proof may enumerate its declared finite range. The range
   and its bound must be explicit and enforced.
 - Unfolding or folding may visit every member of the named definition, but not
