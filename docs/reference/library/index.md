@@ -1189,6 +1189,58 @@ order between unrelated machine values.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int32_less_equal_of_to_integer`
+
+```click
+theorem int32_less_equal_of_to_integer(left: int32, right: int32) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+A proved non-strict order between exact signed observations establishes the native order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_less_equal_to_integer`
+
+```click
+theorem int64_less_equal_to_integer(left: int64, right: int64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right);
+}
+```
+
+The exact signed mathematical observation preserves native non-strict order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_less_equal_of_to_integer`
+
+```click
+theorem int64_less_equal_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right;
+}
+```
+
+A proved non-strict order between exact signed observations establishes the native order. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+### `int64_equal_of_to_integer`
+
+```click
+theorem int64_equal_of_to_integer(left: int64, right: int64) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+Equal exact signed observations identify the same native value, including full-width extrema. The named requirement is necessary; no ambient machine range or overflow fact is inferred.
+
+**Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
 ### `int32_add_nonnegative_right_is_at_least_left`
 
 ```click

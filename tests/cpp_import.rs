@@ -10061,3 +10061,79 @@ int128 {name}(int128 a, int128 b) {{
         }
     }
 }
+
+#[test]
+fn wide_narrowing_integer_ranges_reflect_into_native_correction_bounds() {
+    for (name, ty, suffix) in [
+        ("ss32", "int32", ""),
+        ("ss64", "int64", "i64"),
+        ("relay", "int64", "i64"),
+    ] {
+        let project = Project::with_fixture("narrow.cpp", name, WIDE_NARROWING_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let cert = cast_identity_certificate("to_integer(a)", "-100", "100");
+        let helper = if name == "relay" { "ss64" } else { name };
+        let mut proof = format!(
+            r#"verifying "narrow.cpp";
+{ty} {helper}(int128 a) {{
+    requires -100 <= to_integer(a);
+    requires to_integer(a) <= 100;
+    ensures -100{suffix} <= result;
+    ensures result <= 100{suffix};
+}} by {{
+    execute();
+    have to_integer(result) == to_integer(a) by {{ {cert} }}
+    have -100 <= to_integer(result) by {{ arithmetic_certificate special {{
+        premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
+        premise 1: -100 <= to_integer(a) => -100 <= to_integer(a);
+        integer_relation_transport bounds [0, 1] => -100 <= to_integer(result); conclusion 0;
+    }} }}
+    have to_integer(result) <= 100 by {{ arithmetic_certificate special {{
+        premise 0: to_integer(result) == to_integer(a) => to_integer(result) == to_integer(a);
+        premise 1: to_integer(a) <= 100 => to_integer(a) <= 100;
+        integer_relation_transport bounds [0, 1] => to_integer(result) <= 100; conclusion 0;
+    }} }}
+    apply({ty}_less_equal_of_to_integer(-100{suffix}, result));
+    apply({ty}_less_equal_of_to_integer(result, 100{suffix}));
+    simp();
+}}"#
+        );
+        if name == "relay" {
+            proof.push_str(
+                r#"
+int64 relay(int128 a, int32* untouched) {
+    requires -100 <= to_integer(a);
+    requires to_integer(a) <= 100;
+    owns untouched[0..1];
+    ensures -100i64 <= result;
+    ensures result <= 100i64;
+    ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#,
+            );
+            check_return_call_sidecar(&project, &import, &proof);
+        } else {
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+        for hostile in [
+            proof.replace("requires -100 <= to_integer(a);", ""),
+            proof.replace("requires to_integer(a) <= 100;", ""),
+            proof.replace(
+                &format!("ensures result <= 100{suffix};"),
+                &format!("ensures result <= 99{suffix};"),
+            ),
+            proof.replace(
+                "integer_relation_transport bounds [0, 1]",
+                "integer_relation_transport bounds [1, 0]",
+            ),
+        ] {
+            let path = project.directory.join("false.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+            assert!(error.message().len() < 8000);
+        }
+    }
+}

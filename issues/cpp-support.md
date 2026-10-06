@@ -565,6 +565,16 @@ retain expansion/reverification and audit; signed endpoint oracles, hostile
 certificates, magnitude budgets, and fact/node scaling cover the shared rule.
 No automatic range inference or frontend schema change is introduced.
 
+The standard-library signed observation bridges now preserve and reflect
+non-strict order for int32/int64, and int64 has the same observation-injectivity
+bridge as int32. Checked wide-to-narrow cast identities and explicit Integer
+bound transport can therefore establish native correction bounds without
+assuming them. Complete proofs on the unchanged narrowing fixture cover both
+widths and a modular caller that frames unrelated memory, with expansion,
+reverification, retained audit, and hostile claims. Independent boundary models
+and forged standard-theorem declarations cover the shared kernel laws.
+The actual Bitcoin correction and complete rounding theorem remain open.
+
 Next compose quotient/remainder observations, both narrowing identities, and the
 **narrow** correction bounds in the complete unchanged `FeeFrac::Div` proof. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.

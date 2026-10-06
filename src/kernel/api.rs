@@ -8319,18 +8319,57 @@ pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term)
 /// Every int32 bit pattern has an Integer interpretation, so this law needs
 /// only the corresponding C order premise and no definedness side condition.
 pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
+}
+
+/// Reflect mathematical order into native signed int32 order.
+pub fn prove_int32_less_equal_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
+}
+
+/// Preserve native signed int64 order in its mathematical observation.
+pub fn prove_int64_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
+}
+
+/// Reflect mathematical order into native signed int64 order.
+pub fn prove_int64_less_equal_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
+}
+
+fn prove_signed_integer_order_bridge(
+    ty: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+    reverse: bool,
+) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("typed signed operands have exact Integer interpretations")
     };
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
+    let native = match ty {
+        MachineIntegerType::Int32 => ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+        MachineIntegerType::Int64 => {
+            ConditionTerm::int64_signed_less_equal(left.clone(), right.clone())
+        }
+        _ => unreachable!("signed order bridges admit only int32/int64"),
+    };
+    let native = Proposition::ConditionIs(native, true);
+    let integer = Proposition::ConditionIs(
         ConditionTerm::IntegerLessEqual(observe(left).into(), observe(right).into()),
         true,
     );
+    let (premise, conclusion) = if reverse {
+        (integer, native)
+    } else {
+        (native, integer)
+    };
     Theorem::new(Proposition::Implies(
         Box::new(premise),
         Box::new(conclusion),
@@ -8341,22 +8380,35 @@ pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
 /// have the same 32-bit pattern. No overflow premise or conversion back is
 /// needed, since every signed int32 pattern has one exact Integer value.
 pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_equality_bridge(MachineIntegerType::Int32, left, right)
+}
+
+/// Signed int64 observation is injective, including the full 64-bit extrema.
+pub fn prove_int64_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    prove_signed_integer_equality_bridge(MachineIntegerType::Int64, left, right)
+}
+
+fn prove_signed_integer_equality_bridge(
+    ty: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
     let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
-            .expect("every int32 bit pattern has a mathematical interpretation")
+        IntegerTerm::from_machine(ty, value)
+            .expect("typed signed operands have exact Integer interpretations")
+    };
+    let integer = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(observe(left.clone()).into(), observe(right.clone()).into()),
+        true,
+    );
+    let native = match ty {
+        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
+        MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
+        _ => unreachable!("signed equality bridges admit only int32/int64"),
     };
     Theorem::new(Proposition::Implies(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(
-                observe(left.clone()).into(),
-                observe(right.clone()).into(),
-            ),
-            true,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(left, right),
-            true,
-        )),
+        Box::new(integer),
+        Box::new(Proposition::ConditionIs(native, true)),
     ))
 }
 

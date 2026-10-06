@@ -65,6 +65,23 @@ theorem integer_equality_bridge(left: int32, right: int32) {
     }
 }
 
+theorem reflect32(left: int32, right: int32) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right by { apply(int32_less_equal_of_to_integer(left, right)); }
+}
+theorem preserve64(left: int64, right: int64) {
+    requires left <= right;
+    ensures to_integer(left) <= to_integer(right) by { apply(int64_less_equal_to_integer(left, right)); }
+}
+theorem reflect64(left: int64, right: int64) {
+    requires to_integer(left) <= to_integer(right);
+    ensures left <= right by { apply(int64_less_equal_of_to_integer(left, right)); }
+}
+theorem equal64(left: int64, right: int64) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right by { apply(int64_equal_of_to_integer(left, right)); }
+}
+
 theorem integer_order_bridge(left: int32, right: int32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {

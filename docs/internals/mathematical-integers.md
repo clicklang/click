@@ -579,6 +579,30 @@ native division guards, exact quotient/remainder observations, and
 [division-bound fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_division_bounds.md).
 
 
+## Restoring signed native facts
+
+Signed `int32` and `int64` observations preserve and reflect non-strict order.
+The standard-library `int32_less_equal_of_to_integer` and
+`int64_less_equal_of_to_integer` lemmas restore native order from an exact
+Integer comparison. `int64_less_equal_to_integer` supplies the forward direction,
+matching the existing int32 bridge. `int64_equal_of_to_integer` extends the
+existing int32 injectivity bridge to the full signed 64-bit carrier.
+
+These are width-specific kernel standard theorems with checked declaration
+shape, parameter types, premise and conclusion. They require no overflow fact
+because an already-existing signed bit pattern has one exact Integer value.
+They infer neither implicit ranges nor narrowing identities. Prove the cast
+identity and transport its Integer bounds before applying the reverse order
+bridge to the narrowed native result. The C++ regression uses a range strictly
+smaller than either native carrier, retains expansion/reverification and audit,
+and frames unrelated memory through a modular caller.
+
+Boundary models include both signs and full-width extrema; forged declarations,
+missing/reversed premises, wrong carriers, false native bounds, and incorrect
+certificate references are refused. See the checked
+[signed bridge fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
+
+
 ## Bounds excluding constants
 
 The explicit `integer_bound_exclusion bounds [i] => P` special certificate

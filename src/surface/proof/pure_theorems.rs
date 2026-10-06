@@ -2351,6 +2351,10 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_subtract_defined_by_integer_bounds"
                 | "int32_equal_of_to_integer"
                 | "int32_add_to_integer"
+                | "int32_less_equal_of_to_integer"
+                | "int64_less_equal_to_integer"
+                | "int64_less_equal_of_to_integer"
+                | "int64_equal_of_to_integer"
                 | "int32_less_equal_to_integer"
                 | "int32_subtract_to_integer"
                 | "int32_increment_upper_bound"
@@ -2422,6 +2426,10 @@ fn verify_kernel_standard_theorem_axiom(
             (2, 2)
         }
         "int32_add_to_integer"
+        | "int32_less_equal_of_to_integer"
+        | "int64_less_equal_to_integer"
+        | "int64_less_equal_of_to_integer"
+        | "int64_equal_of_to_integer"
         | "int32_less_equal_to_integer"
         | "int32_subtract_to_integer"
         | "int32_equal_of_to_integer" => (2, 1),
@@ -2506,6 +2514,31 @@ fn verify_kernel_standard_theorem_axiom(
             )));
         };
         crate::kernel::prove_integer_machine_round_trip(value.clone(), destination)
+    } else if theorem.name().starts_with("int64_") {
+        let parameter = |index: usize| {
+            let parameter = &theorem.parameters()[index];
+            match context.values.get(parameter.name()) {
+                Some(CValue::Int64(value)) => Ok(value.clone()),
+                _ => Err(ClickError::new(format!(
+                    "`{claim_label}` kernel parameter `{}` must be int64",
+                    parameter.name()
+                ))),
+            }
+        };
+        let left = parameter(0)?;
+        let right = parameter(1)?;
+        match theorem.name() {
+            "int64_less_equal_to_integer" => {
+                crate::kernel::prove_int64_less_equal_to_integer(left, right)
+            }
+            "int64_less_equal_of_to_integer" => {
+                crate::kernel::prove_int64_less_equal_of_to_integer(left, right)
+            }
+            "int64_equal_of_to_integer" => {
+                crate::kernel::prove_int64_equal_of_to_integer(left, right)
+            }
+            _ => unreachable!("only registered int64 bridges"),
+        }
     } else if theorem.name().starts_with("uint32_") {
         let uint32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
@@ -2587,6 +2620,9 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "int32_equal_of_to_integer" => {
                 crate::kernel::prove_int32_equal_of_to_integer(value, int32_parameter(1)?)
+            }
+            "int32_less_equal_of_to_integer" => {
+                crate::kernel::prove_int32_less_equal_of_to_integer(value, int32_parameter(1)?)
             }
             "int32_less_equal_to_integer" => {
                 crate::kernel::prove_int32_less_equal_to_integer(value, int32_parameter(1)?)
@@ -3735,6 +3771,56 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 verify_standard_declaration(&invalid).is_err(),
                 "invalid order axiom declaration was accepted: {invalid}"
             );
+        }
+    }
+    #[test]
+    fn signed_integer_order_bridge_declarations_reject_wrong_guards_types_and_goals() {
+        for (name, ty, premise, goal) in [
+            (
+                "int32_less_equal_of_to_integer",
+                "int32",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_less_equal_to_integer",
+                "int64",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "int64_less_equal_of_to_integer",
+                "int64",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_equal_of_to_integer",
+                "int64",
+                "to_integer(left) == to_integer(right)",
+                "left == right",
+            ),
+        ] {
+            let source = format!(
+                "theorem {name}(left: {ty}, right: {ty}) {{ requires {premise}; ensures {goal}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {premise};"), ""),
+                source.replace(&format!("requires {premise};"), "requires left < right;"),
+                source.replace(&format!("ensures {goal};"), "ensures left > right;"),
+                source.replace(&format!(": {ty}"), ": uint64"),
+                source.replace(
+                    &format!(": {ty}"),
+                    if ty == "int64" { ": int32" } else { ": int64" },
+                ),
+                source.replace("; ensures", "; requires left == right; ensures"),
+            ] {
+                assert!(
+                    verify_standard_declaration(&invalid).is_err(),
+                    "forged declaration: {invalid}"
+                );
+            }
         }
     }
 }

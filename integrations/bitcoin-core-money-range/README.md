@@ -258,7 +258,10 @@ foundation now includes explicit quotient/remainder
 interval bounds and equality transport. Standalone C++ narrowing proofs derive
 their bounds from operand ranges and compose them with exact native observations
 and checked cast identities; they are pattern coverage, not a proof of this
-Bitcoin helper. The general
+Bitcoin helper. Signed int32/int64 order reflection now restores native bounds
+from proved Integer comparisons; standalone checked narrowing proofs compose
+this bridge with cast identities and preserve a modular caller's unrelated
+memory. The general
 `FeeFrac::Div` theorem is not proved. Next compose quotient/remainder
 observations, both narrowing identities, and the **narrow**
 correction bounds. The general rounding theorem and `EvaluateFeeDown/Up` remain

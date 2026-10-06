@@ -638,4 +638,78 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn signed_integer_order_bridges_recheck_source_guards_and_expansion() {
+        for (name, ty, guard, goal) in [
+            (
+                "int32_less_equal_of_to_integer",
+                "int32",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_less_equal_to_integer",
+                "int64",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "int64_less_equal_of_to_integer",
+                "int64",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+            (
+                "int64_equal_of_to_integer",
+                "int64",
+                "to_integer(left) == to_integer(right)",
+                "left == right",
+            ),
+        ] {
+            let source = format!(
+                "theorem bridge(left: {ty}, right: {ty}) {{ requires {guard}; ensures {goal} by {{ apply({name}(left, right)); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "bridge.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {guard};"), ""),
+                source.replace(&format!("ensures {goal}"), "ensures left > right"),
+            ] {
+                assert!(verify_c0_sources(&invalid, &[]).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn signed_integer_order_bridge_applications_scale_with_steps_and_unused_bounds() {
+        for ty in ["int32", "int64"] {
+            let mut samples = Vec::new();
+            for size in [4usize, 16, 64, 256] {
+                let mut source = format!(
+                    "theorem bridge(x: {ty}, y: {ty}, z: {ty}) {{ requires to_integer(x) <= to_integer(y); "
+                );
+                for i in 0..size {
+                    source.push_str(&format!("requires to_integer(z) <= {i}; "));
+                }
+                source.push_str("ensures x <= y by { ");
+                for _ in 0..size {
+                    source.push_str(&format!("have x <= y by {{ apply({ty}_less_equal_of_to_integer(x, y)) using {{ to_integer(x) <= to_integer(y); }} }} "));
+                }
+                source.push_str("assumption(); } }");
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    verify_c0_sources(&source, &[])
+                });
+                result.unwrap_or_else(|error| panic!("{ty}/{size}: {}", error.message()));
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(
+                    pair[1] <= pair[0] * 6,
+                    "bridge work grew faster than the proof: {ty}: {samples:?}"
+                );
+            }
+        }
+    }
 }
