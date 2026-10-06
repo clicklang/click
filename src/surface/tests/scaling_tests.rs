@@ -5940,3 +5940,50 @@ fn explicit_early_return_proof_is_near_linear_in_its_returns() {
         .join()
         .expect("fan-out thread");
 }
+
+/// simp spells only the premises its derivation's recorded path names, not
+/// every fact the derivation's selection held. On path `k` of the
+/// early-return fan-out the selection holds all `k` conditions about `a`
+/// while the equality path names one, and a derivation that only selects a
+/// disjunct spells none: its disjunct is proved on its own goal. Spelling
+/// the whole selection cost each path work linear in its length (the three
+/// spelling sites charged 15.8k units at 64 returns on 2026-10-06); now the
+/// spelling is linear in the returns.
+///
+/// The selection itself still reads all `k` conditions
+/// (`bugs/early-return-paths-store-facts-whole.md`), so only the spelling is
+/// asserted.
+#[test]
+fn simp_premise_spelling_is_linear_in_early_returns() {
+    std::thread::Builder::new()
+        .name("fan-out-spelling".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            const SPELLING: &str = "operation `simp closure: premise spelling`";
+            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
+            let mut spelling = Vec::new();
+            for returns in [4, 8, 16, 32, 64] {
+                let c = early_return_fan_out(returns);
+                let (verified, sample) = scaling_sample(returns, || {
+                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
+                });
+                verified.unwrap_or_else(|error| {
+                    panic!("fan-out of {returns} returns failed: {}", error.message())
+                });
+                spelling.push(ScalingSample {
+                    size: returns,
+                    work: *sample
+                        .named_work
+                        .get(SPELLING)
+                        .unwrap_or_else(|| panic!("simp spelled no premise: {sample:?}")),
+                    named_work: BTreeMap::new(),
+                });
+            }
+            eprintln!("fan-out premise spelling work: {spelling:?}");
+            assert_near_linear_scaling("simp's premise spelling", &spelling);
+        })
+        .expect("spawn the fan-out thread")
+        .join()
+        .expect("fan-out thread");
+}

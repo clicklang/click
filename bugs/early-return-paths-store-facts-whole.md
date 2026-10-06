@@ -40,7 +40,9 @@ proportional to a path's length once per path. Measured on 2026-10-05 at 4,
 | total, before | 7727 | 14947 | 33347 | 85907 | 254003 |
 | total, transport search bounded | 6991 | 12739 | 25987 | 59411 | 153907 |
 | total, terminal joins also fixed | 6811 | 12199 | 24151 | 52679 | 128167 |
-| `simp`, now | 2070 | 4196 | 9456 | 24008 | 69240 |
+| total, premise spelling also fixed | 6703 | 11873 | 23053 | 48693 | 113029 |
+| `simp`, before premise spelling fix | 2070 | 4196 | 9456 | 24008 | 69240 |
+| `simp`, now | 1962 | 3870 | 8358 | 20022 | 54102 |
 | `execute`, before | 4054 | 7138 | 13906 | 29762 | 70690 |
 | `execute`, now | 3874 | 6598 | 12070 | 23030 | 44950 |
 
@@ -61,6 +63,13 @@ Fixed:
   carries them; `executing_a_fan_out_is_near_linear_in_its_length` now runs
   to 64 returns.
 
+- simp spelled every fact its derivation's selection held as a premise,
+  all `k` conditions about `a` on path `k`, before a closer said which it
+  cites. It now spells only the premises a recorded equality or
+  signed-order path names, falling back to the whole selection when that
+  closer misses, and spells none for a derivation that only selects a
+  disjunct; `simp_premise_spelling_is_linear_in_early_returns` pins it.
+
 Remaining. The proof written with simple tactics only is near linear in
 the range it can be written: 6261, 10723, and 20159 units at 4, 8, and 16
 returns (`explicit_early_return_proof_is_near_linear_in_its_returns`). Its
@@ -72,17 +81,11 @@ by the work each source charged at 32 and then 64 returns on 2026-10-05:
 
 - simp's dependency selection. On path `k` the goal mentions `a`, so the
   selection reads every fact connected to `a`, all `k` of the path's
-  `a != j` conditions, although only `a == k` is needed. It then builds a
-  restricted context from them, keys them, and spells each as a premise
-  before the derivation says which it uses. One root cause, charged at
-  `proposition_search.rs:1874` and `assumptions.rs:3617` (1056 then 4160
-  each), `assumptions.rs:5161` (2883 then 9827), `fact_keys.rs`
-  `alpha_work_checkpoint` (4224 then 16640),
-  `surface_propositions.rs:1141` (1250 then 4546),
-  `cursor_execution.rs:1289` (1290 then 4618), and the deadline checks at
-  `surface/proof.rs:130` (2313 then 6665). Spelling only the premises the
-  derivation uses would remove the last three; the selection itself is a
-  smart-search breadth question.
+  `a != j` conditions, although only `a == k` is needed, and builds and keys
+  a restricted context from them. Charged at `proposition_search.rs:1874`
+  and `assumptions.rs:3617` (1056 then 4160 each), `assumptions.rs:5161`
+  (2387 then 7811), and `fact_keys.rs` `alpha_work_checkpoint` (4224 then
+  16640). This is a smart-search breadth question.
 - Each path's outcome goal re-adds the path's conditions to the root facts
   (`outcomes_and_focus.rs`, the `with_kernel_checked_fact` loop): 957 then
   2925. The arm that reached the return already held those facts.
