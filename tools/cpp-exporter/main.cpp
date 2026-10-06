@@ -16,6 +16,7 @@
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclTemplate.h"
@@ -828,8 +829,8 @@ private:
         call->getNumArgs() == 0 || call->getNumArgs() > (forwarding ? 9u : 1u) ||
         !valid_parameter || !valid_return || !argument || !argument->getType()->isBooleanType() ||
         (parameter->isRValueReferenceType() && !argument->isPRValue()) ||
-        !total_assumption_condition(argument, function)) {
-      fail(call->getExprLoc(), "C++ assumed library assertion requires a supported Boolean statement signature and one total scalar Boolean condition");
+        !checked_boolean_condition(argument, function, true)) {
+      fail(call->getExprLoc(), "C++ assumed library assertion requires a supported Boolean statement signature and one supported scalar Boolean condition (field reads are checked during evaluation)");
       return std::nullopt;
     }
     llvm::json::Array metadata;
@@ -860,10 +861,27 @@ private:
     return Json(std::move(result));
   }
 
+  const clang::Stmt *without_branch_weights(const clang::Stmt *statement) {
+    while (const auto *attributed = llvm::dyn_cast<clang::AttributedStmt>(statement)) {
+      // These attributes affect optimization weights only. Other statement
+      // attributes can alter execution contracts and must not be erased.
+      for (const auto *attribute : attributed->getAttrs()) {
+        if (!llvm::isa<clang::LikelyAttr, clang::UnlikelyAttr>(attribute)) {
+          fail(attribute->getLocation(), "unsupported C++ statement attribute; only likely/unlikely branch weights are admitted");
+          return nullptr;
+        }
+      }
+      statement = attributed->getSubStmt();
+    }
+    return statement;
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
                                       bool allow_nested_scope) {
+    statement = without_branch_weights(statement);
+    if (!statement) return std::nullopt;
     if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
       const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
       const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
@@ -946,7 +964,7 @@ private:
         }
       }
       if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
-        if (call->getNumArgs() != 1 || !total_assumption_condition(call->getArg(0), function)) {
+        if (call->getNumArgs() != 1 || !checked_boolean_condition(call->getArg(0), function, false)) {
           fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
           return std::nullopt;
         }
@@ -1770,31 +1788,34 @@ private:
            !expression->getType().isVolatileQualified();
   }
 
-  // The builtin does not evaluate its operand. Only total, side-effect-free
-  // scalar conditions can be checked as an obligation without adding an
-  // evaluation effect or hiding undefined behavior on another argument order.
-  bool total_assumption_condition(const clang::Expr *expression,
-                                  const clang::FunctionDecl *caller) const {
+  // Evaluated library assertions may read supported fields; the unevaluated
+  // builtin must remain total without memory reads. Both reject calls, effects
+  // and partial arithmetic. Ordinary expression lowering checks field places.
+  bool checked_boolean_condition(const clang::Expr *expression,
+                                  const clang::FunctionDecl *caller, bool field_reads) const {
     expression = expression->IgnoreParens();
     if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
       if (cast->getCastKind() == clang::CK_IntegralToBoolean ||
           cast->getCastKind() == clang::CK_NoOp)
-        return total_assumption_condition(cast->getSubExpr(), caller);
+        return checked_boolean_condition(cast->getSubExpr(), caller, field_reads);
     }
     if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
       const auto *value = scalar_list_initializer(list);
-      return value != nullptr && total_assumption_condition(value, caller);
+      return value != nullptr && checked_boolean_condition(value, caller, field_reads);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() == clang::BO_LAnd)
-        return total_assumption_condition(binary->getLHS(), caller) &&
-               total_assumption_condition(binary->getRHS(), caller);
+        return checked_boolean_condition(binary->getLHS(), caller, field_reads) &&
+               checked_boolean_condition(binary->getRHS(), caller, field_reads);
       if (binary->isComparisonOp())
-        return stable_scalar_argument(binary->getLHS(), caller) &&
-               stable_scalar_argument(binary->getRHS(), caller);
+        return (stable_scalar_argument(binary->getLHS(), caller) ||
+                (field_reads && field_scalar_argument(binary->getLHS()))) &&
+               (stable_scalar_argument(binary->getRHS(), caller) ||
+                (field_reads && field_scalar_argument(binary->getRHS())));
       return false;
     }
-    return stable_scalar_argument(expression, caller);
+    return stable_scalar_argument(expression, caller) ||
+           (field_reads && field_scalar_argument(expression));
   }
 
   std::optional<LoweredCall>
@@ -2016,6 +2037,8 @@ private:
     if (statement == nullptr) {
       return result;
     }
+    statement = without_branch_weights(statement);
+    if (!statement) return std::nullopt;
     if (const auto *compound = llvm::dyn_cast<clang::CompoundStmt>(statement)) {
       bool has_direct_destructible_object = false;
       for (const clang::Stmt *member : compound->body()) {

@@ -1180,16 +1180,19 @@ ordinary call semantics without a matching explicit contract.
 
 The `checked_boolean_statement` kind accepts a direct standalone discarded-result
 call to a free, non-template, non-variadic function with one Boolean value
-parameter and a void or Boolean value return type. Its argument must be a total
-scalar Boolean condition without memory reads, mutation, calls, or partial
-arithmetic. This kind does not admit metadata, references, or templates.
+parameter and a void or Boolean value return type. Its argument may compare
+supported scalar values and nonvolatile data fields, and combine those conditions
+with `&&`. Field reads are evaluated with ordinary memory authority and
+initialized-value obligations; the library contract does not grant access to
+them. Mutation, calls, general pointer dereferences, and partial arithmetic are
+refused. This kind does not admit metadata, references, or templates.
 
 The separate `checked_boolean_statement_with_consteval_metadata` kind adds
 resolved templates using the existing Boolean/scalar template-argument profile,
 a Boolean rvalue-reference parameter, and a discarded Boolean rvalue-reference
 return. A reference condition must bind a Boolean prvalue, rather than a caller
-lvalue or cast-to-reference expression. The same total-condition proof obligation
-applies. The assumed library behavior must hold for every admitted specialization
+lvalue or cast-to-reference expression. The same checked-condition proof obligation
+applies, including memory authority for evaluated field reads. The assumed library behavior must hold for every admitted specialization
 and metadata value; metadata contents are not proved or used to establish the
 condition.
 
@@ -1259,3 +1262,12 @@ string-view constructor. This imports and lowers the complete unchanged
 `FeeFrac::Div`; missing condition, wide arithmetic guards, and narrow correction
 bounds still fail verification. Its general division/rounding theorem remains
 open.
+
+
+C++ statement attributes `[[likely]]` and `[[unlikely]]` affect optimization
+weights only and preserve the checked branch or statement behavior. The exporter
+unwraps those attributes before lowering the original statement or branch body;
+other statement attributes, including `[[clang::musttail]]`, are rejected.
+The unevaluated `__builtin_assume` continues to require a total scalar condition
+without memory reads. Evaluated, explicitly pinned library assertions use the
+separate field-reading boundary described above.

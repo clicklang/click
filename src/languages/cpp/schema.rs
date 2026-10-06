@@ -1911,7 +1911,7 @@ impl CppStatement {
                 span.validate(logical_source)?;
                 condition.validate(places, records, logical_source)?;
                 require_bool(condition.value_type(), false, "assumption condition")?;
-                if !total_assumption_condition(condition, places) {
+                if !checked_boolean_condition(condition, places, false) {
                     return Err("C++ __builtin_assume requires a total scalar condition without memory reads or side effects".into());
                 }
                 Ok(())
@@ -1927,8 +1927,8 @@ impl CppStatement {
                 span.validate(logical_source)?;
                 condition.validate(places, records, logical_source)?;
                 require_bool(condition.value_type(), false, "library assertion condition")?;
-                if !total_assumption_condition(condition, places) {
-                    return Err("C++ library assertion requires a total scalar condition without memory reads or side effects".into());
+                if !checked_boolean_condition(condition, places, true) {
+                    return Err("C++ library assertion requires a supported scalar condition without side effects or partial arithmetic; field reads require normal memory authority".into());
                 }
                 Ok(())
             }
@@ -2190,7 +2190,11 @@ fn stable_scalar_argument(expression: &CppExpression, places: &ValidationPlaces<
     }
 }
 
-fn total_assumption_condition(expression: &CppExpression, places: &ValidationPlaces<'_>) -> bool {
+fn checked_boolean_condition(
+    expression: &CppExpression,
+    places: &ValidationPlaces<'_>,
+    field_reads: bool,
+) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
         CppExpression::Binary {
@@ -2198,7 +2202,10 @@ fn total_assumption_condition(expression: &CppExpression, places: &ValidationPla
             left,
             right,
             ..
-        } => total_assumption_condition(left, places) && total_assumption_condition(right, places),
+        } => {
+            checked_boolean_condition(left, places, field_reads)
+                && checked_boolean_condition(right, places, field_reads)
+        }
         CppExpression::Binary {
             operator:
                 CppBinaryOperator::Equal
@@ -2210,13 +2217,20 @@ fn total_assumption_condition(expression: &CppExpression, places: &ValidationPla
             left,
             right,
             ..
-        } => stable_scalar_argument(left, places) && stable_scalar_argument(right, places),
+        } => {
+            (stable_scalar_argument(left, places) || (field_reads && field_scalar_argument(left)))
+                && (stable_scalar_argument(right, places)
+                    || (field_reads && field_scalar_argument(right)))
+        }
         CppExpression::IntegralCast {
             value,
             value_type: CppType::Boolean { .. },
             ..
-        } => total_assumption_condition(value, places),
-        _ => stable_scalar_argument(expression, places),
+        } => checked_boolean_condition(value, places, field_reads),
+        _ => {
+            stable_scalar_argument(expression, places)
+                || (field_reads && field_scalar_argument(expression))
+        }
     }
 }
 

@@ -696,9 +696,21 @@ expansion/reverification, signed endpoint oracle and local-work scaling checks.
 This is a shared arithmetic prerequisite; it does not yet prove the upstream
 `EvaluateFeeDown/Up` implementations or their unsigned fast paths.
 
-Next apply the joint bounds through the unchanged `EvaluateFeeDown/Up` source,
-including their fast paths, and cover the broader mode-specific result-fit
-precondition. The
+Both unchanged `EvaluateFeeDown/Up` entry points now export their complete
+reachable graph: the resolved Boolean template instance, Mul and Div. Evaluated,
+explicitly pinned library assertions admit supported nonvolatile field reads
+with normal authority/initialization checks, while the unevaluated builtin
+continues to reject memory reads. Optimization-only `likely`/`unlikely`
+statement attributes preserve their underlying branches; other attributes are
+refused. Concrete fast-path caller proofs establish `7 * 2 / 3` as 4 downward
+and 5 upward and preserve the receiver fields, with ordinary verification,
+expansion/reverification, hostile field/size/amount/result claims and bounded
+work-scaling regressions. This is source admission and concrete fast-path
+coverage, not a symbolic caller proof.
+
+Next apply the joint bounds through the unchanged wide fallback and prove the
+unsigned fast paths for symbolic inputs, then cover the broader mode-specific
+result-fit precondition. The
 full 96/32 fee-division contract remains open; the current joint range ensures
 both rounding modes fit. The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.

@@ -332,3 +332,18 @@ This is part of the compiler trust boundary, not a standard-library proof.
 The gate checks ordinary verification, expansion/reverification, retained audit,
 and false length claims for each range. It does not prove serialization bytes,
 parsing, or round trips.
+
+
+The hermetic gate now also selects the unchanged `FeeFrac::EvaluateFeeDown`
+and `EvaluateFeeUp` entry points. Export retains each compiler-resolved Boolean
+template instance and both wide helpers, rather than removing the fallback.
+Bitcoin's evaluated `Assume(size > 0)` reads its receiver field under ordinary
+memory authority; its header and literal constructor remain explicitly pinned.
+`[[likely]]` preserves both branch outcomes. The gate combines the existing
+verified Mul/Div sidecars with concrete caller contracts: fee 7, size 3 and
+at_size 2 return 4 downward and 5 upward, preserving both receiver fields.
+It checks ordinary verification, caller expansion/reverification, and rejection
+of false results, missing field authority and missing size/amount premises.
+These concrete fast-path claims are admission regressions, not a symbolic
+`EvaluateFeeDown/Up` contract. Applying the scaled bounds through the wide
+fallback and proving the unsigned fast paths for symbolic inputs remain open.
