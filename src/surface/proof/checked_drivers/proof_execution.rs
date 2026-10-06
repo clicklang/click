@@ -117,6 +117,24 @@ fn bridges_without_executing(tactic: &ProofTactic) -> bool {
     )
 }
 
+/// Whether a proof region is a straight run of tactics that relate facts and
+/// resources where they stand: no C step and no nested split.
+fn region_only_reasons(region: &InternalProofNode) -> bool {
+    match region {
+        InternalProofNode::Done => true,
+        InternalProofNode::Linear {
+            tactics,
+            continuation,
+        } => {
+            matches!(continuation.as_ref(), InternalProofNode::Done)
+                && tactics
+                    .iter()
+                    .all(|indexed| bridges_without_executing(&indexed.tactic))
+        }
+        _ => false,
+    }
+}
+
 fn linear_execution_proof_step(tactic: &ProofTactic) -> Option<ProofStep> {
     match tactic {
         ProofTactic::Mark(name) => Some(ProofStep::Mark(name.clone())),
@@ -1472,6 +1490,44 @@ fn try_check_structural_function_proof_inner<'a>(
                 } else {
                     proof.split_focused_execution_if(condition.clone())?
                 };
+                // Arms that only reason are rejoined, so what follows the
+                // `if` is checked once and not once per case. An arm that
+                // runs C or changes the state is not rejoined here yet; its
+                // case still runs the continuation itself, below.
+                if !consumed_leading_steps
+                    && staged_expansion_capture.is_none()
+                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                    && region_only_reasons(then_branch)
+                    && region_only_reasons(else_branch)
+                {
+                    let mut reasoned = Some(split.clone());
+                    for (take_then, branch) in
+                        [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
+                    {
+                        let Some(current_proof) = reasoned.take() else {
+                            break;
+                        };
+                        let focused = current_proof.focus_execution_if_arm(&record, take_then)?;
+                        reasoned = advance_focused_execution_region(
+                            focused,
+                            None,
+                            branch,
+                            None,
+                            proof_site.as_ref(),
+                            owning_source_index,
+                            1,
+                        )?
+                        .filter(|next| !next.is_at_function_exit());
+                    }
+                    if let Some(reasoned) = reasoned
+                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
+                    {
+                        proof = joined;
+                        saw_structure = true;
+                        current = continuation;
+                        continue;
+                    }
+                }
                 let mut advanced = split;
                 let mut consumed_continuation = false;
                 for (take_then, branch) in
@@ -3176,6 +3232,42 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 } else {
                     proof_at_if.split_focused_execution_if(condition.clone())?
                 };
+                // As at the top level: arms that only reason are rejoined,
+                // and the continuation is checked once.
+                if !consumed_leading_steps
+                    && expansion_capture.is_none()
+                    && !matches!(continuation.as_ref(), InternalProofNode::Done)
+                    && region_only_reasons(then_branch)
+                    && region_only_reasons(else_branch)
+                {
+                    let mut reasoned = Some(split.clone());
+                    for (take_then, branch) in
+                        [(true, then_branch.as_ref()), (false, else_branch.as_ref())]
+                    {
+                        let Some(current_proof) = reasoned.take() else {
+                            break;
+                        };
+                        let focused = current_proof.focus_execution_if_arm(&record, take_then)?;
+                        reasoned = advance_focused_execution_region(
+                            focused,
+                            enclosing_record,
+                            branch,
+                            None,
+                            proof_site,
+                            owning_source_index,
+                            depth + 1,
+                        )?
+                        .filter(|next| !next.is_at_function_exit());
+                    }
+                    if let Some(reasoned) = reasoned
+                        && let Some(joined) = reasoned.try_join_focused_execution_if(&record)?
+                    {
+                        proof = joined.restore_execution_tactic_attribution(&owner)?;
+                        region = continuation;
+                        branch_continuation = None;
+                        continue;
+                    }
+                }
                 let mut advanced = split;
                 let mut consumed_continuation = false;
                 for (take_then, branch) in
