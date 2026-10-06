@@ -53,10 +53,18 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     suite="${3:?usage: scripts/check.sh --ci-shard ARTIFACTS SUITE [SHARD/TOTAL]}"
     partition="${4:-1/1}"
     nextest_args=()
+    needs_charon=""
     case "$suite" in
         unit)
-            filter='not (binary(mdtests) | binary(examples))'
+            filter='not (binary(mdtests) | binary(examples) | binary(rust_import))'
             nextest_args=(--partition "hash:$partition")
+            ;;
+        rust)
+            # The only tests that run Charon, and so the only shards that
+            # download the pinned compiler runtime and the Charon binaries.
+            filter='binary(rust_import)'
+            nextest_args=(--partition "hash:$partition")
+            needs_charon=1
             ;;
         mdtests)
             filter='binary(mdtests)'
@@ -74,8 +82,9 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             filter='all()'
             nextest_args=(--run-ignored all --no-fail-fast --profile nightly)
             export CLICK_NIGHTLY=1
+            needs_charon=1
             ;;
-        *) echo "error: CI suite must be unit, mdtests, examples, or nightly" >&2; exit 2 ;;
+        *) echo "error: CI suite must be unit, rust, mdtests, examples, or nightly" >&2; exit 2 ;;
     esac
 
     # A few expansion regressions recurse deeply enough to overflow the
@@ -93,12 +102,17 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         echo "error: shared C++ exporter is missing at $CLICK_CPP_EXPORTER" >&2
         exit 1
     fi
-    mkdir -p target/charon/debug
-    tar -xf "$artifacts/charon.tar" -C target/charon/debug
-    export CLICK_CHARON="$PWD/target/charon/debug/charon"
-    if [[ ! -x "$CLICK_CHARON" ]]; then
-        echo "error: shared Charon extractor is missing at $CLICK_CHARON" >&2
-        exit 1
+    # Charon and its compiler runtime are a separate artifact under `rust/`,
+    # about half of the whole build output, fetched only by the shards whose
+    # tests start the Rust compiler.
+    if [[ -n "$needs_charon" ]]; then
+        mkdir -p target/charon/debug
+        tar -xzf "$artifacts/rust/charon.tar.gz" -C target/charon/debug
+        export CLICK_CHARON="$PWD/target/charon/debug/charon"
+        if [[ ! -x "$CLICK_CHARON" ]]; then
+            echo "error: shared Charon extractor is missing at $CLICK_CHARON" >&2
+            exit 1
+        fi
     fi
 
     # Extract at the checkout root so compile-time CARGO_BIN_EXE paths still
@@ -179,9 +193,10 @@ if [[ -n "$ci_artifacts" ]]; then
         --archive-file "$ci_artifacts/tests.tar.zst"
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
-    tar -cf "$ci_artifacts/charon.tar" \
+    mkdir -p "$ci_artifacts/rust"
+    tar -czf "$ci_artifacts/rust/charon.tar.gz" \
         -C "$(dirname "$CLICK_CHARON")" "$(basename "$CLICK_CHARON")" charon-driver
-    scripts/charon-runtime.sh pack "$ci_artifacts/rust-runtime.tar.gz"
+    scripts/charon-runtime.sh pack "$ci_artifacts/rust/rust-runtime.tar.gz"
     exit 0
 fi
 

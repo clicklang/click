@@ -104,18 +104,21 @@ chmod +x "$directory/bin/llvm-config-19" "$directory/bin/uname"
 cached_runtime="$CHARON_SYSROOT"
 export RUSTUP_HOME="$directory/cold-rustup"
 source "$repository/scripts/charon-toolchain.sh"
-if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
+# An ordinary test runner starts no compiler and needs no runtime; a Rust
+# test runner does.
+"$repository/scripts/setup-environment.sh" --test-runner >/dev/null
+if "$repository/scripts/setup-environment.sh" --rust-test-runner > "$directory/output" 2>&1; then
     echo "error: setup accepted a missing Charon runtime" >&2
     exit 1
 fi
 "$repository/scripts/charon-runtime.sh" restore "$directory/runtime.tar.gz"
 [[ -f "$CHARON_SYSROOT/lib/librustc_driver-mock.so" ]]
 [[ -x "$CHARON_SYSROOT/bin/rustc" ]]
-"$repository/scripts/setup-environment.sh" --test-runner >/dev/null
+"$repository/scripts/setup-environment.sh" --rust-test-runner >/dev/null
 
 # Libraries alone cannot satisfy Charon's pinned rustc version check.
 rm "$CHARON_SYSROOT/bin/rustc"
-if "$repository/scripts/setup-environment.sh" --test-runner > "$directory/output" 2>&1; then
+if "$repository/scripts/setup-environment.sh" --rust-test-runner > "$directory/output" 2>&1; then
     echo "error: setup accepted a runtime without pinned rustc" >&2
     exit 1
 fi

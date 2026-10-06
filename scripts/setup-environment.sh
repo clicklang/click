@@ -6,15 +6,20 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 usage() {
-    echo "Usage: scripts/setup-environment.sh [--docs-only|--test-runner]" >&2
+    echo "Usage: scripts/setup-environment.sh [--docs-only|--test-runner|--rust-test-runner]" >&2
 }
 
+# A test runner executes an already-built test archive and installs no
+# compiler. Only a Rust test runner, whose tests start Charon, also needs the
+# pinned compiler runtime restored first.
 docs_only=false
 test_runner=false
+rust_test_runner=false
 case "${1:-}" in
     "") ;;
     --docs-only) docs_only=true ;;
     --test-runner) test_runner=true ;;
+    --rust-test-runner) test_runner=true; rust_test_runner=true ;;
     *) usage; exit 2 ;;
 esac
 
@@ -73,10 +78,10 @@ if [[ "$docs_only" != true ]]; then
     if [[ "$test_runner" != true ]]; then
         rustup toolchain install "$CHARON_TOOLCHAIN" --profile minimal \
             --component rustc-dev --component rust-src --target "$CHARON_TARGET"
-    elif [[ ! -x "$CHARON_SYSROOT/bin/rustc" ]] || \
+    elif [[ "$rust_test_runner" == true ]] && { [[ ! -x "$CHARON_SYSROOT/bin/rustc" ]] || \
         [[ ! -d "$CHARON_SYSROOT/lib/rustlib/$CHARON_TARGET/lib" ]] || \
-        ! compgen -G "$CHARON_SYSROOT/lib/librustc_driver*" >/dev/null; then
-        echo "error: restore the pinned Charon compiler runtime at $CHARON_SYSROOT before setting up a test runner" >&2
+        ! compgen -G "$CHARON_SYSROOT/lib/librustc_driver*" >/dev/null; }; then
+        echo "error: restore the pinned Charon compiler runtime at $CHARON_SYSROOT before setting up a Rust test runner" >&2
         exit 1
     fi
     needs_llvm=false
