@@ -3490,7 +3490,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "proof-match",
-        syntax: "match value { Type::Variant(fields)",
+        syntax: "match value [ensuring { ... }] { Type::Variant(fields)",
         class: "control",
     },
     PublicTacticForm {
