@@ -1094,13 +1094,19 @@ impl MutexContext {
             definition,
             assumptions,
         )?;
-        interface.population = population::PopulationCustody::select(
-            &self.state,
-            instance,
-            definition,
-            definitions,
-            assumptions,
-        )?;
+        // Authority mode deposits an ordinary control: its population is
+        // governed by the authority it owns, never by mutex custody.
+        interface.population = if self.state.uses_population_authority_semantics() {
+            None
+        } else {
+            population::PopulationCustody::select(
+                &self.state,
+                instance,
+                definition,
+                definitions,
+                assumptions,
+            )?
+        };
         self.publish_with_interface(
             interface.mutex().clone(),
             CResourceFact::own(CResource::Instance(instance.clone())),

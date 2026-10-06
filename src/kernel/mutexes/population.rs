@@ -321,6 +321,57 @@ mod tests {
     }
 
     #[test]
+    fn authority_mode_publication_takes_no_population_custody() {
+        let (context, instance, definitions, body) = fixture(0, 3);
+        let context = MutexContext::new(context.state.with_population_creation_tracking());
+        let assumptions = PureFactContext::new();
+        let mutex = Pointer::symbolic(Variable(70));
+        let unit = CResourceFact::Own(body, Box::new(2u32.into()));
+        let no_custody = |state: &CState| {
+            state
+                .mutex_ledger
+                .as_ref()
+                .is_none_or(|ledger| ledger.storage.populations.is_empty())
+                && state.resources.satisfies_fact(&unit, &assumptions)
+        };
+        let published = context
+            .publish_declared(&mutex, instance.identity(), &definitions, &assumptions, 40)
+            .unwrap();
+        assert!(no_custody(&published.state));
+        let Some(MutexEntry::Unlocked {
+            interface: Some(interface),
+            ..
+        }) = published.state.mutex_ledger.as_ref().unwrap().get(&mutex)
+        else {
+            panic!("authority-mode publication deposits a declared invariant");
+        };
+        assert!(interface.declaration.population.is_none());
+        assert_eq!(
+            super::super::missing_population_guard(&published.state, &unit, &assumptions),
+            None
+        );
+        let (held, guard) = published.acquire(&mutex, &assumptions).unwrap();
+        assert!(no_custody(&held.state));
+        let released = held
+            .release(
+                guard,
+                CResourceFact::own(CResource::Instance(instance.clone())),
+                &assumptions,
+            )
+            .unwrap();
+        assert!(no_custody(&released.state));
+        let recovered = released.destroy(&mutex, &assumptions).unwrap();
+        assert!(no_custody(&recovered.state));
+        assert!(
+            recovered
+                .state
+                .resources
+                .owned_instance(instance.identity())
+                .is_some()
+        );
+    }
+
+    #[test]
     fn publication_revokes_units_and_destroy_restores_the_same_population() {
         let (context, instance, definitions, body) = fixture(0, 3);
         let assumptions = PureFactContext::new();

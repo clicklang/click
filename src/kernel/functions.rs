@@ -22967,7 +22967,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
-        || definition.counted_population
+        || (definition.counted_population && !state.uses_population_authority_semantics())
         || !definition.witnesses.is_empty()
         || definition.parameters.len() != instance.arguments.len()
         || instance
@@ -23195,6 +23195,43 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         }
     }
     let assumptions = &quantity_assumptions;
+    // A contained authority is exclusive custody, not a readable footprint.
+    // Name it from its declared type; the fold below consumes the caller's
+    // actual authority, and an unfold returns the one this instance holds.
+    let (authority_specs, body_specs): (Vec<&CResourceSpec>, Vec<&CResourceSpec>) = body_specs
+        .iter()
+        .partition(|spec| matches!(spec.term(), CResourceTerm::PopulationAuthority { .. }));
+    let body_specs = body_specs.into_iter().cloned().collect::<Vec<_>>();
+    let mut authorities = Vec::with_capacity(authority_specs.len());
+    for spec in authority_specs {
+        if !state.uses_population_authority_semantics()
+            || spec.access() != CResourceAccessMode::Own
+            || spec.quantity() != &CResourceQuantity::One
+            || spec.guard().is_some()
+        {
+            return Err("an instance body authority requires authority mode".into());
+        }
+        let authority = evaluate_population_authority_candidate(
+            &evaluation,
+            &evaluation,
+            spec,
+            assumptions,
+            &mut budget,
+        )
+        .map_err(|_| "instance body authority evaluation exceeded its budget")?
+        .map_err(|_| "could not evaluate instance body authority")?;
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            return Err("could not evaluate instance body authority".into());
+        };
+        if !state.recognizes_population_authority(description) {
+            return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+                "Requires owns authority({}(...))",
+                description.family()
+            )));
+        }
+        authorities.push(authority);
+    }
+    let body_specs = &body_specs[..];
     let mut body = evaluate_function_resource_context_with_normalization(
         &evaluation,
         body_specs,
@@ -23214,6 +23251,11 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         )),
         _ => ResourceRewriteRefusal::Message("could not evaluate instance memory body"),
     })?;
+    if !authorities.is_empty() {
+        body = body
+            .try_compose_into_valid_context_delaying_normalization(authorities, assumptions)
+            .map_err(|_| "instance body repeats an authority")?;
+    }
     // Only the immediate declared memory justifies child-argument loads, not
     // the ambient frame or a child that has not been constructed. On fold,
     // check and consume that memory before allowing it in this scratch view.
@@ -24129,10 +24171,10 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 | ResourceFamily::MutexGuard
                 | ResourceFamily::MutexLive
                 | ResourceFamily::MutexUse => true,
-                ResourceFamily::Composite | ResourceFamily::Token => true,
-                ResourceFamily::PopulationAuthority
-                | ResourceFamily::Instance
-                | ResourceFamily::GuardedPopulation => false,
+                ResourceFamily::Composite
+                | ResourceFamily::Token
+                | ResourceFamily::PopulationAuthority => true,
+                ResourceFamily::Instance | ResourceFamily::GuardedPopulation => false,
             }
     })
 }

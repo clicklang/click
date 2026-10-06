@@ -980,3 +980,31 @@ occurrences, no anonymous custody, and deterministic work alongside
 16/64/256 unrelated imports. The closing slice extends this to named creation,
 wildcard lifecycle changes, and caller-side transfers. The original unary
 helper-call refusal retains its C and now reaches reuse of the spent occurrence.
+
+### Milestone 4: mutex-held authority controls
+
+**Chunk 1, deposit and acquisition:** This chunk adds a capability and
+migrates no legacy group. Authority mode now admits the four modeled mutex
+calls; thread creation and join remain refused until milestone 6. A control
+that owns its counter cell and `authority(reference(obj))` declares a proof
+field, so it is a named instance. Its fold and unfold use the ordinary
+named-instance exchange, which now admits one contained authority in
+authority mode; the certificate checker requires the creation ledger to be
+unchanged. Initialization deposits that control without selecting
+counted-population custody, lock returns it, and unlock requires it folded
+with its facts true at the current total.
+
+Positive: `authority_mutex_control_deposit.md` (establish, deposit, lock, member
+birth with a count observation, unlock, destroy, spend, retire, free) and
+`authority_mutex_control_sequential.md` (the same control without a mutex).
+Negative: `authority_mutex_control_unlock_open_rejected.md`,
+`authority_mutex_control_bad_increment_rejected.md`,
+`authority_mutex_member_alone_rejected.md`,
+`authority_mutex_control_wrong_mutex_rejected.md`,
+`authority_mutex_control_stale_initialization_rejected.md`, and
+`authority_control_instance_duplicate_authority_rejected.md`. The kernel test
+`authority_mode_publication_takes_no_population_custody` checks publication,
+acquisition, release, and destruction. `click verify` and `click audit` pass
+on the deposit fixture, and the audit expands and reverifies its three smart
+sites.
+
