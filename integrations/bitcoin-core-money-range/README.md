@@ -220,25 +220,42 @@ return quot + ((mod > 0) - (mod && round_down));
 ```
 
 The missing-contract refusal keeps this source out of the admitted profile.
-A second opt-in regression pins `util/check.h` (SHA-256
+A consteval-only regression pins `util/check.h` (SHA-256
 `82705f6150e57b4de9123d22b3820f60f6f75f58c1c8b9fbff78863afca816a7`)
-and declares the explicit, assumed
-`checked_boolean_statement_with_consteval_metadata` contract. It admits the real
-template and Boolean temporary, discarded reference return, and forced
-`std::source_location::current()`, then rejects metadata argument 2: the runtime
-string-view construction. Both regressions use the unchanged source, archive,
-and compiler command. `FeeFrac::Div` is still neither admitted nor proved.
+and admits the real template, Boolean temporary, discarded reference return,
+and forced `std::source_location::current()`, then rejects the runtime
+string-view argument.
+
+The new `checked_boolean_statement_with_literal_metadata` opt-in regression
+imports and lowers the complete unchanged `FeeFrac::Div`. Its separate
+`literal_constructor` descriptor names
+`std::basic_string_view::basic_string_view` and pins the unchanged sysroot header
+`sysroot/usr/include/c++/12/string_view` to SHA-256
+`9b1a575ffad1e8575cd6fc1c9a24b0cdde3793275be431726cc9c1b178a8733c`.
+The artifact retains `"d > 0"`, the resolved `std::basic_string_view<char>` type,
+by-value binding, and constructor provenance. The source, archive, 320-file
+closure, and real compiler command remain unchanged.
 
 Bitcoin's `Assume` expands to `inline_assertion_check<false>` in `util/check.h`,
 with source-location and string-view arguments and a build-dependent abort
-policy. It is an evaluated library call, not Clang's unevaluated
-`__builtin_assume`. The explicit library contract requires a proof that the
+policy. It is an evaluated library call, separate from Clang's unevaluated
+`__builtin_assume`. The explicit assertion contract requires proof that the
 condition is true and assumes defined normal behavior without caller-visible
-memory changes under that condition; it does not prove the library itself or
-admit false-input behavior. Next model literal string-view construction and its
-parameter lifetime, then prove native division and both narrowing bounds, and
-bound the subsequent **narrow** correction. The general rounding theorem and
-`EvaluateFeeDown/Up` remain open.
+memory changes under that condition. The independently pinned constructor
+contract assumes defined normal construction from admitted literals without
+caller-visible memory changes. Neither library implementation is verified.
+Trivial initialization and destruction are checked compiler properties; runtime
+pointers, arbitrary conversions and cleanup effects remain rejected.
+
+The integration verifies that a missing condition still fails at the named
+library obligation. A positive narrow divisor alone still fails the wide
+nonzero guard; explicitly supplied wide guards then reach the unbounded narrow
+correction, including for a zero numerator observation. These failures remain
+bounded and cannot be hidden with a trivial postcondition. The general
+`FeeFrac::Div` theorem is not proved. Next establish native division and
+quotient/remainder observations, both narrowing identities, and the **narrow**
+correction bounds. The general rounding theorem and `EvaluateFeeDown/Up` remain
+open.
 
 ## CompactSize encoded length
 

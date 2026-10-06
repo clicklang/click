@@ -56,7 +56,7 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 42;
+pub(crate) const EXPORT_SCHEMA: u32 = 43;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -83,6 +83,8 @@ pub struct CppExport {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CppLibraryAssertion {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub literal_constructor: Option<CppLiteralConstructor>,
     pub kind: CppLibraryAssertionKind,
     pub function: String,
     pub header: String,
@@ -94,6 +96,89 @@ pub struct CppLibraryAssertion {
 pub enum CppLibraryAssertionKind {
     CheckedBooleanStatement,
     CheckedBooleanStatementWithConstevalMetadata,
+    CheckedBooleanStatementWithLiteralMetadata,
+}
+
+/// Assumes defined, normally returning construction from a narrow string literal,
+/// with no caller-visible memory effects. Does not verify the implementation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppLiteralConstructor {
+    pub function: String,
+    pub header: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CppLiteralMetadata {
+    pub constructor: CppLiteralConstructor,
+    pub declaration_file: String,
+    pub record: String,
+    pub record_type: String,
+    pub literal: String,
+    pub binding: CppLiteralMetadataBinding,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CppLiteralMetadataBinding {
+    Value,
+    ConstReference,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CppLibraryMetadata {
+    Consteval(CppConstevalMetadata),
+    Literal(CppLiteralMetadata),
+}
+
+impl CppLibraryMetadata {
+    pub(crate) fn declaration_file(&self) -> &str {
+        match self {
+            Self::Consteval(metadata) => &metadata.declaration_file,
+            Self::Literal(metadata) => &metadata.declaration_file,
+        }
+    }
+
+    fn validate(&self, contract: &CppLibraryAssertion) -> Result<(), String> {
+        match self {
+            Self::Consteval(metadata) => metadata.validate(),
+            Self::Literal(metadata) => {
+                if contract.kind
+                    != CppLibraryAssertionKind::CheckedBooleanStatementWithLiteralMetadata
+                    || contract.literal_constructor.as_ref() != Some(&metadata.constructor)
+                    || !metadata
+                        .record
+                        .split("::")
+                        .all(super::import::is_identifier)
+                    || metadata.record.len() > 256
+                    || metadata.constructor.function
+                        != format!(
+                            "{}::{}",
+                            metadata.record,
+                            metadata.record.rsplit("::").next().unwrap_or_default()
+                        )
+                    || !valid_metadata_file(&metadata.declaration_file)
+                    || metadata.record_type.is_empty()
+                    || metadata.record_type.len() > 1024
+                    || !metadata.record_type.is_ascii()
+                    || metadata.record_type.as_bytes().contains(&0)
+                    || metadata.literal.len() > 4096
+                    || !metadata.literal.is_ascii()
+                    || metadata.literal.as_bytes().contains(&0)
+                {
+                    return Err("invalid C++ literal metadata contract or provenance".into());
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn valid_metadata_file(file: &str) -> bool {
+    Path::new(file).is_absolute() && file.len() <= 4096 && !file.as_bytes().contains(&0)
 }
 
 /// Forced compile-time metadata; no runtime call or nontrivial cleanup is erased.
@@ -108,9 +193,7 @@ impl CppConstevalMetadata {
     pub(crate) fn validate(&self) -> Result<(), String> {
         if !self.function.split("::").all(super::import::is_identifier)
             || self.function.len() > 256
-            || !Path::new(&self.declaration_file).is_absolute()
-            || self.declaration_file.len() > 4096
-            || self.declaration_file.as_bytes().contains(&0)
+            || !valid_metadata_file(&self.declaration_file)
         {
             return Err("invalid C++ consteval metadata provenance".into());
         }
@@ -120,7 +203,7 @@ impl CppConstevalMetadata {
 
 pub(super) fn validate_library_assertion_metadata(
     contract: &CppLibraryAssertion,
-    metadata: &[CppConstevalMetadata],
+    metadata: &[CppLibraryMetadata],
     specialization: &Option<String>,
 ) -> Result<(), String> {
     contract.validate()?;
@@ -136,28 +219,50 @@ pub(super) fn validate_library_assertion_metadata(
         );
     }
     for argument in metadata {
-        argument.validate()?;
+        argument.validate(contract)?;
     }
     Ok(())
 }
 
 impl CppLibraryAssertion {
+    pub(crate) fn pins(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        std::iter::once((
+            self.function.as_str(),
+            self.header.as_str(),
+            self.sha256.as_str(),
+        ))
+        .chain(self.literal_constructor.iter().map(|pin| {
+            (
+                pin.function.as_str(),
+                pin.header.as_str(),
+                pin.sha256.as_str(),
+            )
+        }))
+    }
+
     pub(crate) fn validate(&self) -> Result<(), String> {
-        if !self.function.split("::").all(super::import::is_identifier)
-            || self.function.len() > 256
-            || !valid_relative_source_path(&self.header)
-            || self.header.len() > 1024
-            || self
-                .header
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-            || self.sha256.len() != 64
-            || !self
-                .sha256
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        if (self.kind == CppLibraryAssertionKind::CheckedBooleanStatementWithLiteralMetadata)
+            != self.literal_constructor.is_some()
         {
-            return Err("invalid C++ assumed library assertion contract".into());
+            return Err(
+                "C++ literal metadata requires its own constructor contract and kind".into(),
+            );
+        }
+        for (function, header, sha256) in self.pins() {
+            if !function.split("::").all(super::import::is_identifier)
+                || function.len() > 256
+                || !valid_relative_source_path(header)
+                || header.len() > 1024
+                || header
+                    .split('/')
+                    .any(|part| part.is_empty() || part == "." || part == "..")
+                || sha256.len() != 64
+                || !sha256
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                return Err("invalid C++ assumed library assertion or constructor contract".into());
+            }
         }
         Ok(())
     }
@@ -523,7 +628,7 @@ pub enum CppStatement {
         condition: CppExpression,
         contract: CppLibraryAssertion,
         #[serde(default)]
-        metadata: Vec<CppConstevalMetadata>,
+        metadata: Vec<CppLibraryMetadata>,
         specialization: Option<String>,
         span: CppSpan,
     },
