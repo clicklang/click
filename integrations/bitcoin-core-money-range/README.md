@@ -186,6 +186,49 @@ upstream `FeeFrac::Div` or `EvaluateFeeDown/Up`: this pinned compiler profile
 uses `__int128` for the former and a templated unsigned fast path for the latter.
 
 
+## Wide fee product
+
+[`FeeFracMul.click`](FeeFracMul.click) selects the unchanged `FeeFrac::Mul`
+from the same v31.1 header, archive, and x86-64 Linux compilation command.
+Its header SHA-256 remains
+`213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9`.
+The actual body is `return __int128{a} * b;`; the wide path is selected by
+`__SIZEOF_INT128__`, with no fallback or source rewrite.
+
+The sidecar explicitly states the complete signed 64-bit and 32-bit observer
+ranges. Two `integer_product_bounds` certificates then establish the native
+128-bit product bounds before execution. The result equals the exact
+mathematical product `to_integer(a) * to_integer(b)`, rather than the
+potentially overflowing narrow machine expression `to_integer(a * b)`.
+These requirements cover the full input ranges; the proof currently states
+those type bounds instead of inferring them automatically.
+
+The hermetic gate checks the 320-file closure, fresh semantic export, ordinary
+verification, expansion/reverification, and retained audit. It rejects false
+products, missing named bounds, and execution without native product bounds.
+The [synthetic modular caller](../../tests/fixtures/cpp-verification/scalar-braces/braces.cpp)
+uses the same helper body and preserves unrelated owned narrow memory.
+It is caller-composition coverage, not an added Bitcoin wrapper.
+
+The next selected upstream helper is the unchanged `FeeFrac::Div`:
+
+```cpp
+Assume(d > 0);
+int64_t quot = n / d;
+int32_t mod = n % d;
+return quot + ((mod > 0) - (mod && round_down));
+```
+
+A refusal regression keeps this source out of the admitted profile until its
+library call is modeled. Bitcoin's `Assume` expands to
+`inline_assertion_check<false>` in `util/check.h`, with source-location and
+string-view arguments and a build-dependent abort policy. It is an evaluated
+library call, not Clang's unevaluated `__builtin_assume`. No condition or abort
+behavior is silently assumed. Next work must state the compiler/library
+boundary explicitly, prove native division and both narrowing bounds, and
+bound the subsequent **narrow** correction. The general rounding theorem and
+`EvaluateFeeDown/Up` remain open.
+
 ## CompactSize encoded length
 
 The same pinned v31.1 archive and unchanged `feerate.cpp` compilation command

@@ -8941,3 +8941,131 @@ int64 relay(int128 a, int32* untouched) {{
     );
     check_return_call_sidecar(&project, &import, &proof);
 }
+
+const SCALAR_BRACES_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/scalar-braces/braces.cpp");
+
+#[test]
+fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
+    for (name, ty, params, post) in [
+        ("signed32", "int32", "int32 n", "result == n"),
+        ("signed64", "int64", "int64 n", "result == n"),
+        ("unsigned32", "uint32", "uint32 n", "result == n"),
+        ("unsigned64", "uint64", "uint64 n", "result == n"),
+        (
+            "signed128",
+            "int128",
+            "int128 n",
+            "to_integer(result) == to_integer(n)",
+        ),
+        (
+            "unsigned128",
+            "uint128",
+            "uint128 n",
+            "to_integer(result) == to_integer(n)",
+        ),
+        ("widen", "int64", "int32 n", "result == n"),
+        ("truth", "bool", "", "result == 1"),
+        ("constant", "int64", "", "result == 2147483648i64"),
+    ] {
+        let project = Project::with_fixture("braces.cpp", name, SCALAR_BRACES_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"braces.cpp\"; {ty} {name}({params}) {{ ensures {post}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn scalar_braces_do_not_convert_narrowing_or_unsupported_initializers_into_casts() {
+    for (params, value) in [
+        ("long n", "int{n}"),
+        ("int n", "U32{n}"),
+        ("int n", "bool{n}"),
+        ("int n", "int{n, 1}"),
+        ("int n", "int{}"),
+        ("int n", "char{1}"),
+        ("int n", "int{1.0}"),
+        ("int n", "int{missing()}"),
+        ("int n", "int{++n}"),
+    ] {
+        let cpp = format!(
+            "using U32 = unsigned; int missing() noexcept; int refused({params}) noexcept {{ return {value}; }}"
+        );
+        let project = Project::with_fixture("braces.cpp", "refused", &cpp);
+        refresh_import(&project.config())
+            .expect_err("unsupported initialization must remain refused");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}
+
+#[test]
+fn scalar_braces_compose_verified_fee_products_and_frame_memory() {
+    let project = Project::with_fixture("braces.cpp", "relay", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helper = include_str!("../integrations/bitcoin-core-money-range/FeeFracMul.click")
+        .replace("bitcoin-src/src/util/feefrac.h", "braces.cpp");
+    let source = format!(
+        r#"{helper}
+int128 relay(int64 a, int32 b, int32* untouched) {{
+    requires -9223372036854775808 <= to_integer(a);
+    requires to_integer(a) <= 9223372036854775807;
+    requires -2147483648 <= to_integer(b);
+    requires to_integer(b) <= 2147483647;
+    owns untouched[0..1];
+    ensures to_integer(result) == to_integer(a) * to_integer(b);
+    ensures untouched[0] == old(untouched[0]);
+}} by {{ execute(); simp(); }}
+"#
+    );
+    check_return_call_sidecar(&project, &import, &source);
+    let hostile = source.replace(
+        "ensures to_integer(result) == to_integer(a) * to_integer(b);",
+        "ensures to_integer(result) == to_integer(a) * to_integer(b) + 1;",
+    );
+    let path = project.directory.join("false.click");
+    fs::write(&path, &hostile).unwrap();
+    let parsed = read_click_project(&path, &hostile).unwrap();
+    verify_program_prepared_project(&parsed, &import).expect_err("false product claims must fail");
+}
+
+#[test]
+fn scalar_braces_keep_argument_and_assumption_effect_restrictions() {
+    let project = Project::with_fixture("braces.cpp", "argument", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"braces.cpp\"; int64 identity(int64 n) { ensures result == n; } by { execute(); simp(); } int64 argument(int32 n) { ensures result == n; } by { execute(); simp(); }";
+    check_return_call_sidecar(&project, &import, proof);
+    let project = Project::with_fixture("braces.cpp", "guarded", SCALAR_BRACES_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = "verifying \"braces.cpp\"; int32 guarded(int32 n) { requires n > 0; ensures result == n; } by { execute(); simp(); }";
+    check_arithmetic_sidecar(&project, &import, proof);
+    let path = project.directory.join("missing.click");
+    let missing = proof.replace("requires n > 0;", "");
+    fs::write(&path, &missing).unwrap();
+    let parsed = read_click_project(&path, &missing).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .expect_err("braces cannot discharge an assumption");
+    for cpp in [
+        "long identity(long n) noexcept { return n; } long argument(int n) noexcept { return identity(long{++n}); }",
+        "int guarded(int n) noexcept { __builtin_assume(bool{++n > 0}); return n; }",
+        "int guarded(int n) noexcept { __builtin_assume(bool{n + 1 > 0}); return n; }",
+    ] {
+        let name = if cpp.starts_with("long") {
+            "argument"
+        } else {
+            "guarded"
+        };
+        let project = Project::with_fixture("braces.cpp", name, cpp);
+        refresh_import(&project.config())
+            .expect_err("braces must not hide effects or partial arithmetic");
+        assert!(!project.artifact().exists());
+        assert!(!project.lock().exists());
+    }
+}

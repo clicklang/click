@@ -943,10 +943,20 @@ fn apply_c_int128_multiply(
             .expect("exact wide format")
     } else {
         Bitvector32Term::IntegerToMachine {
-            value: product.into(),
+            value: product.clone().into(),
             destination,
         }
     };
+    // Both range guards hold on this normal path, so observation of the
+    // representable native product preserves the exact Integer product.
+    // Keep this relation explicit, as for guarded quotient/remainder results.
+    let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
+    let definition = ConditionTerm::integer_equal(observed, product);
+    if definition != ConditionTerm::Constant(true) {
+        facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+            definition, true,
+        )));
+    }
     paths.push(CExpressionPath {
         outcome: CExpressionOutcome::Value(CValue::Int128(term)),
         facts,

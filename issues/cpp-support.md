@@ -492,14 +492,28 @@ casts, implicit returns, native quotient/remainder narrowing, modular caller
 framing, offline verification, expansion, retained audit, hostile certificates,
 and deterministic scaling have coverage. Artifact schema remains 40.
 
-Next freeze the unchanged `FeeFrac::Mul`/`Div` proofs and establish their
-arithmetic and conversion bounds. The actual wide `Div` narrows the quotient
-and remainder before applying its correction, so wide addition/subtraction
-and negation should be added only if the selected source requires them.
-Resolve the library `Assume` annotation as an explicit contract/assumption
-boundary before the upstream fee proof. Keep mathematical Integer semantics
-separate, especially its planned Euclidean division. General automatic range
-inference and the complete rounding theorem remain open.
+The unchanged upstream `FeeFrac::Mul` is now proved on the pinned wide profile.
+Scalar brace initialization retains Clang's resolved semantic conversion for
+`__int128{a}`; explicit full-width observer bounds feed two product certificates
+that discharge native 128-bit overflow guards. The shared kernel exposes the
+normal result's exact mathematical product, with native guards retained in
+pure observation and capture. Fresh upstream export, false products, missing
+bounds, modular caller framing, expansion/reverification, retained audit, and
+ambient-fact scaling have coverage. Schema remains 40.
+
+Next model the library `Assume` boundary for the frozen unchanged
+`FeeFrac::Div`. The pinned archive and a refusal regression keep its exact
+source selected: it narrows `n / d` to int64 and `n % d` to int32 **before**
+its narrow correction. `Assume` expands to an evaluated
+`inline_assertion_check<false>` call with source-location/string-view arguments
+and a build-dependent abort policy; it must not be recognized by spelling or
+silently treated as the unevaluated compiler builtin. Establish the selected
+library contract/assumptions and their provenance, then prove arithmetic and
+conversion bounds for division and correction. Add wide addition/subtraction
+or negation only if selected source requires them. Keep mathematical Integer
+semantics separate, especially its planned Euclidean division. Automatic
+machine observer ranges, general range inference, and the complete rounding
+theorem remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false

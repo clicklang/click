@@ -573,6 +573,20 @@ product afterwards cannot remove its original overflow obligation. High-bit
 products, signed extrema, symbolic cast round trips, source-width overflow,
 wide overflow, expansion, and retained audit have regression coverage.
 
+The `scalar-braces` fixture admits one Clang-resolved integer or Boolean
+brace initializer, including `__int128{a}` and `long value{n}`. It preserves
+the semantic child's resolved conversion through the existing expression
+model, including argument stability and compiler-assumption checks. C++
+narrowing list initialization remains a compiler error; empty lists,
+unsupported scalar widths, and unsupported effects remain refused. This
+normalization adds no artifact node or schema version.
+
+On a normal wide multiplication path, after both native range guards hold,
+the shared kernel certifies the result's mathematical observation as the
+exact Integer product. Pure Integer observation and capture retain the native
+guards but do not demand that a certified result definition be supplied as
+another assumption. False product claims and missing guards remain refused.
+
 The `wide-contracts` fixture adds by-value wide parameters, results, and
 matching-width call captures. Contracts spell these types `int128` and
 `uint128`; `to_integer(value)` observes their full mathematical value.
@@ -625,9 +639,12 @@ conversion bounds. See [Integer certificates](../../internals/mathematical-integ
 Wide pointers, references, record fields, arrays, negation,
 addition, subtraction, and unsigned multiplication remain unsupported. Both
 the live exporter and serialized artifact validator reject these operations.
-Schema 40 requires refreshing older locks. The unchanged Bitcoin fee arithmetic
-helpers still need wide rounding operations, checked narrowing bounds, and an
-explicit treatment of the library `Assume` boundary.
+Schema 40 requires refreshing older locks. The unchanged Bitcoin fee
+division helper still needs quotient/remainder and narrowing bounds plus an
+explicit treatment of the library `Assume` boundary. The unchanged
+`FeeFrac::Mul` now has an exact product proof under explicit full-width
+operand observer bounds in the
+[Bitcoin integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#wide-fee-product).
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
 same-type arithmetic/comparisons now use the common unsigned kernel types.

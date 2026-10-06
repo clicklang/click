@@ -1465,6 +1465,21 @@ private:
     return true;
   }
 
+  const clang::Expr *
+  scalar_list_initializer(const clang::InitListExpr *list) const {
+    const auto *syntax = list->getSyntacticForm();
+    if (syntax == nullptr)
+      syntax = list;
+    const auto type = list->getType();
+    if (!list->isSemanticForm() || !type->isIntegerType() ||
+        (!type->isBooleanType() && context_.getTypeSize(type) != 32 &&
+         context_.getTypeSize(type) != 64 && context_.getTypeSize(type) != 128) ||
+        list->getNumInits() != 1 || syntax->getNumInits() != 1 ||
+        !context_.hasSameUnqualifiedType(type, list->getInit(0)->getType()))
+      return nullptr;
+    return list->getInit(0);
+  }
+
   bool stable_scalar_argument(const clang::Expr *expression,
                               const clang::FunctionDecl *caller) const {
     expression = expression->IgnoreParens();
@@ -1481,6 +1496,10 @@ private:
       default:
         return false;
       }
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && stable_scalar_argument(value, caller);
     }
     if (llvm::isa<clang::IntegerLiteral>(expression) ||
         llvm::isa<clang::CXXBoolLiteralExpr>(expression) ||
@@ -1529,6 +1548,10 @@ private:
       default: return false;
       }
     }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && field_scalar_argument(value);
+    }
     return llvm::isa<clang::MemberExpr>(expression) &&
            expression->getType()->isIntegerType() &&
            !expression->getType().isVolatileQualified();
@@ -1544,6 +1567,10 @@ private:
       if (cast->getCastKind() == clang::CK_IntegralToBoolean ||
           cast->getCastKind() == clang::CK_NoOp)
         return total_assumption_condition(cast->getSubExpr(), caller);
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && total_assumption_condition(value, caller);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() == clang::BO_LAnd)
@@ -2044,6 +2071,18 @@ private:
     if (const auto *parentheses =
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
       return lower_expression(parentheses->getSubExpr(), function);
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      // Retain the semantic conversion checked by Clang; substituting a
+      // modulo cast of the written initializer would admit C++ narrowing.
+      const auto *value = scalar_list_initializer(list);
+      if (value == nullptr) {
+        fail(list->getExprLoc(),
+             "supported C++ scalar brace initialization requires one "
+             "Clang-resolved integer or Boolean initializer");
+        return std::nullopt;
+      }
+      return lower_expression(value, function);
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {

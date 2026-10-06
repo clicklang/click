@@ -254,6 +254,15 @@ use `int128` / `uint128` for full-width scalar values. C++ admits the bounded
 Rust source admission remain separate. Reverse conversion arguments supply
 Integer context even to negative literals beyond the 64-bit range.
 
+Native signed wide multiplication certifies the equality between its result
+observation and the exact Integer product only after both native range guards
+hold. Overflow paths carry no result definition. This matches native wide
+quotient/remainder result observations and is shared by all kernel clients.
+Integer observation keeps unproved path guards and every proof obligation in
+its domain, while kernel-certified consequences describe the evaluated value.
+Capturing that value therefore requires the guards, without an additional
+assumption restating the certified result definition.
+
 ## Truncating machine constant division
 
 `MachineIntegerConstant::truncating_div_rem` computes a quotient and remainder
