@@ -484,6 +484,24 @@ The regressions are `authority_mutex_control_deposit.md`,
 `authority_control_instance_duplicate_authority_rejected.md`. The kernel test
 `authority_mode_publication_takes_no_population_custody` checks that
 publication, acquisition, release, and destruction create no custody.
-Helpers that acquire or release such a control, fresh observations after a
-helper return, and worker transfer are later chunks of
-`issues/authority-migration.md`.
+
+The acquiring and releasing helpers described earlier on this page also carry
+an authority-bearing control. Authority mode admits exactly that contract
+shape: one preserved typed `mutex_use`, one produced or consumed guard, and
+the matching protected state, with no other clause. The caller applies the
+checked runtime exchange, so the control moves between the mutex and the
+caller without any population change. Each acquisition returns a fresh
+instance whose fields are unknown. The control's facts tie it to the current
+population total, so a count observed before an earlier critical section
+remains historical. A helper's own proof cannot open the control it
+acquires: its population is not recognized there, so the helper can neither
+observe nor change it. The caller that established the population opens the
+returned control. The regressions are `authority_mutex_control_helpers.md`,
+`authority_mutex_control_helper_stale_count_rejected.md`,
+`authority_mutex_control_helper_missing_state_rejected.md`,
+`authority_mutex_control_helper_wrong_mutex_rejected.md`, and
+`authority_mutex_control_helper_open_rejected.md`.
+
+Helpers that open an acquired control themselves, such as a locked retain
+that creates a member before unlocking, and worker transfer are later work
+in `issues/authority-migration.md`.

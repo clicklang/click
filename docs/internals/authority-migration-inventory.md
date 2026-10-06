@@ -1008,3 +1008,19 @@ acquisition, release, and destruction. `click verify` and `click audit` pass
 on the deposit fixture, and the audit expands and reverifies its three smart
 sites.
 
+**Chunk 2, acquiring and releasing helpers:** This chunk also adds a
+capability and migrates no legacy group. Authority mode admits the classified
+mutex helper contract when it has exactly one preserved typed `mutex_use`, one
+produced or consumed guard, and the matching protected state. The caller
+applies the checked runtime exchange; the helper's own proof cannot open the
+acquired control, so it changes no population. The protected footprint
+derivation now treats a contained authority as owning no bytes.
+
+Positive: `authority_mutex_control_helpers.md` (two critical sections through
+the helpers; the second observes the current count, spends the member, and
+restores the control). Negative:
+`authority_mutex_control_helper_stale_count_rejected.md`,
+`authority_mutex_control_helper_missing_state_rejected.md`,
+`authority_mutex_control_helper_wrong_mutex_rejected.md`, and
+`authority_mutex_control_helper_open_rejected.md`.
+
