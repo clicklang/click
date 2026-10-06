@@ -2046,31 +2046,39 @@ impl CreationEvents {
         // Imported entry custody and batches held by another actor remain
         // indivisible; a count observation cannot substitute for that custody.
         let symbolic_delta = if import.symbolic_delta.is_some() {
-            if !produce
-                || !import.has_composable_symbolic_birth()
+            if !import.has_composable_symbolic_birth()
                 || import.symbolic_member_holder != Some(self.0.opaque_actor)
-            {
-                return Err(CreationRefusal::InvalidQuantity);
-            }
-            let current = self
-                .observe_symbolic(description)
-                .and_then(|count| {
-                    Some(Bitvector32Term::add(
-                        count.entry_count.clone(),
-                        count.combined_delta()?.1,
-                    ))
-                })
-                .ok_or(CreationRefusal::MissingAuthority)?;
-            if assumptions.exact_condition_value(
-                &crate::kernel::ConditionTerm::signed_add_overflows(current, quantity.clone()),
-            ) != Some(false)
             {
                 return Err(CreationRefusal::InvalidQuantity);
             }
             let Some((true, prior)) = &import.symbolic_delta else {
                 return Err(CreationRefusal::InvalidQuantity);
             };
-            Some((true, Bitvector32Term::add(prior.clone(), quantity.clone())))
+            if produce {
+                let current = self
+                    .observe_symbolic(description)
+                    .and_then(|count| {
+                        Some(Bitvector32Term::add(
+                            count.entry_count.clone(),
+                            count.combined_delta()?.1,
+                        ))
+                    })
+                    .ok_or(CreationRefusal::MissingAuthority)?;
+                if assumptions.exact_condition_value(
+                    &crate::kernel::ConditionTerm::signed_add_overflows(current, quantity.clone()),
+                ) != Some(false)
+                {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
+                Some((true, Bitvector32Term::add(prior.clone(), quantity.clone())))
+            } else {
+                if !same_quantity(prior, quantity, assumptions) {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
+                // Retiring the entire owned birth cancels only its symbolic delta.
+                // Entry observations and separately held numerical members remain.
+                None
+            }
         } else {
             Some((produce, quantity.clone()))
         };
@@ -2084,7 +2092,8 @@ impl CreationEvents {
             if import.owned_members != 0 || import.entry_symbolic_members.is_some() {
                 return Err(CreationRefusal::MissingMembers);
             }
-        } else if import.entry_symbolic_members.as_ref() != Some(quantity)
+        } else if (import.entry_symbolic_members.as_ref() != Some(quantity)
+            && !import.has_composable_symbolic_birth())
             || import.symbolic_member_holder != Some(self.0.opaque_actor)
         {
             return Err(CreationRefusal::MissingMembers);

@@ -312,6 +312,12 @@ transfer, another actor's custody, and deterministic work with 16/64/256
 unrelated facts and populations. This does not admit splitting a coalesced
 symbolic batch, extending imported entry custody, or separate helper births
 while the caller frames an earlier symbolic batch.
+`authority_symbolic_batch_retirement.md` passes the whole returned symbolic
+batch to a consuming helper and proves the caller's population returns to zero.
+Retirement requires authority and exact complete-batch custody, cancels only
+that birth delta, and rejects partial or repeated consumption. Its false-total
+control remains negative; the same deterministic kernel regression checks
+retirement across the three unrelated-state sizes.
 Kernel regressions check custody, overflow, negative quantities, the range-only
 boundary, and lookup work beside 16/64/256 unrelated facts and populations.
 The existing maximum-count increment negative now reports

@@ -1016,6 +1016,28 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 born.imported_member_delta_since_entry(&description),
                 observed.combined_delta()
             );
+            let retired = born
+                .checked_member_exchange_quantity(
+                    &block,
+                    &description,
+                    false,
+                    &quantity,
+                    &assumptions,
+                )
+                .unwrap()
+                .0;
+            let remaining = retired.observe_symbolic(&description).unwrap();
+            assert_eq!(remaining.delta, 3, "numerical custody survives retirement");
+            assert_eq!(remaining.symbolic_delta, None);
+            assert!(retired.owns_population_member(&description));
+            assert_eq!(
+                retired.0.opaque_holders.get(&retired.0.opaque_actor),
+                born.0
+                    .opaque_holders
+                    .get(&born.0.opaque_actor)
+                    .map(|rights| rights - 1)
+                    .as_ref()
+            );
             let child = born.enter_call();
             let sent = child
                 .transfer_call_fact(&born, &child, &description, true)
@@ -5094,6 +5116,66 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                     .symbolic_delta,
                 Some((true, total.clone()))
             );
+            facts = facts.assume_condition(
+                ConditionTerm::signed_greater_equal(total.clone(), Bitvector32Term::Constant(0)),
+                true,
+            );
+            assert!(
+                returned
+                    .checked_member_exchange_quantity(
+                        &block,
+                        &description,
+                        false,
+                        &first_quantity,
+                        &facts,
+                    )
+                    .is_err(),
+                "a whole batch cannot be partially retired"
+            );
+            let consumer = returned.enter_call();
+            assert!(
+                consumer
+                    .checked_member_exchange_quantity(&block, &description, false, &total, &facts,)
+                    .is_err(),
+                "consumption requires transferred authority"
+            );
+            let authorized = consumer
+                .transfer_call_fact(&returned, &consumer, &description, true)
+                .unwrap()
+                .transfer_call_fact_quantity(
+                    &returned,
+                    &consumer,
+                    &description,
+                    false,
+                    &total,
+                    &facts,
+                )
+                .unwrap();
+            let spent = authorized
+                .checked_member_exchange_quantity(&block, &description, false, &total, &facts)
+                .unwrap()
+                .0;
+            assert_eq!(
+                spent.observe_symbolic(&description).unwrap().symbolic_delta,
+                None
+            );
+            assert_eq!(
+                spent.0.opaque_holders.get(&consumer.0.opaque_actor),
+                Some(&1)
+            );
+            assert!(
+                spent
+                    .checked_member_exchange_quantity(&block, &description, false, &total, &facts,)
+                    .is_err(),
+                "retirement cannot be repeated"
+            );
+            let finished = spent
+                .transfer_call_fact(&consumer, &returned, &description, true)
+                .unwrap()
+                .finish_call(&returned)
+                .unwrap();
+            assert!(finished.owns_population_authority(&description));
+            assert!(!finished.owns_population_member(&description));
         });
         work
     });
