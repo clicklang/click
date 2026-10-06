@@ -211,6 +211,19 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
         };
         return instrumentation::with_tactic_work_limits(limits, || run_mdtest(path));
     }
+    if !budgets_disabled
+        && path
+            .file_name()
+            .is_some_and(|name| name == "simp_false_list_position_is_prompt.md")
+    {
+        return instrumentation::with_tactic_work_limits(
+            instrumentation::TacticWorkLimits {
+                smart: 100_000,
+                ..instrumentation::TacticWorkLimits::default()
+            },
+            || run_mdtest(path),
+        );
+    }
     run_mdtest(path)
 }
 

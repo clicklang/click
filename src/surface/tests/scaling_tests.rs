@@ -6067,3 +6067,97 @@ fn simp_premise_spelling_is_linear_in_early_returns() {
         .join()
         .expect("fan-out thread");
 }
+
+#[test]
+#[ignore = "nightly: unchanged rb_next proof checked at four postconditions exceeds ten seconds"]
+fn rb_next_false_list_postconditions_fail_below_the_smart_budget() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/rb_next.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let correct =
+        "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), node, result) == 1;";
+    assert_eq!(source.matches(correct).count(), 1);
+    let limits = crate::instrumentation::TacticWorkLimits {
+        smart: 500_000,
+        ..crate::instrumentation::TacticWorkLimits::default()
+    };
+    crate::instrumentation::with_tactic_work_limits(limits, || {
+        crate::surface::verify_c0_sources_functions(source, &sources, ["rb_next".to_string()])
+            .expect("the original successor proof must still verify");
+        for wrong in [
+            "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), result, node) == 1;",
+            "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), node, node) == 1;",
+            "rb_list_starts_with(rb_inorder(plug(old(c.model), old(t.model))), result) == 1;",
+        ] {
+            let changed = source.replace(correct, wrong);
+            let error = crate::surface::verify_c0_sources_functions(
+                &changed,
+                &sources,
+                ["rb_next".to_string()],
+            )
+            .expect_err("a wrong list position is not a successor proof");
+            let message = error.message();
+            assert!(message.contains("ensures"), "{message}");
+            assert!(!message.contains("budget"), "{message}");
+            assert!(!message.contains("exhausted"), "{message}");
+        }
+    });
+}
+
+#[test]
+fn list_position_simp_search_stays_bounded_beside_unrelated_facts() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/simp_false_list_position_is_prompt.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let original = fixture.click_source.as_deref().unwrap();
+    let mut counts = Vec::new();
+    for size in [4, 16, 64] {
+        let parameters = (0..size)
+            .map(|i| format!(", u{i}: int32"))
+            .collect::<String>();
+        let facts = (0..size)
+            .map(|i| format!("    requires u{i} == 0;\n"))
+            .collect::<String>();
+        let source = original
+            .replace("flag: int32)", &format!("flag: int32{parameters})"))
+            .replace("    requires xs", &format!("{facts}    requires xs"));
+        let (error, events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::with_tactic_work_limits(
+                crate::instrumentation::TacticWorkLimits {
+                    smart: 100_000,
+                    ..crate::instrumentation::TacticWorkLimits::default()
+                },
+                || verify_click_theorems(&source),
+            )
+            .expect_err("the reversed position remains unproved")
+        });
+        assert!(
+            error.message().contains("could not establish"),
+            "{}",
+            error.message()
+        );
+        assert!(!error.message().contains("budget"), "{}", error.message());
+        counts.push(events.iter().filter(|event| matches!(event,
+            crate::instrumentation::VerificationEvent::OperationFinished { name, work, .. }
+                if name == "simp closure: indexed goal equality rewrite" && *work > 0
+        )).count());
+        // A declined candidate must restore the search scope: a subsequent
+        // invocation still closes the known position through an unfold.
+        let right = source
+            .replace(
+                "List<int32>::Cons(first, tail)",
+                "List<int32>::Cons(first, List<int32>::Cons(second, tail))",
+            )
+            .replace("    requires adjacent(xs, first, second) == 1;\n", "")
+            .replace("adjacent(xs, second, first)", "adjacent(xs, first, second)");
+        verify_click_theorems(&right).expect("a later true position must still close");
+    }
+    eprintln!("list-position nonempty rewrite searches: {counts:?}");
+    assert!(counts.iter().all(|count| *count <= 8), "{counts:?}");
+    assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
+}

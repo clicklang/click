@@ -466,6 +466,15 @@ explicit:
   attempt, so the memo changes a failing search's cost, never its outcome
   (`mdtests/simp_frame_failure_through_region_arena_is_prompt.md`, pinned
   below the default budget by the mdtest harness).
+- **Keep fallback candidates finite.** An indexed equality-rewrite candidate
+  may unfold a function and descend through logical structure, but that descent
+  cannot restart an equality-rewrite or function-unfold fallback already active
+  on the candidate. The outer search retains its equality chain and closing
+  probes. Implications and universals run these fallbacks on their introduced
+  bodies. Candidate scopes restore on both misses and errors, so later goals
+  get their own search. False list-position claims are checked below the
+  ordinary smart budget, beside increasing unrelated fact sets and against
+  the unchanged `rb_next` proof.
 - **Decide an overlap before searching for a separation.** A walk across a
   call asks whether each cell it names is separate from the callee's write
   set. A cell the write set contains, such as a field of an object that a
