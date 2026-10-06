@@ -9,9 +9,7 @@ the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
-- [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
-- [A verified two-to-one quantity contract cannot be applied at a call](a-verified-two-to-one-quantity-contract-cannot-be-applied.md)
 - [An explicit proof of a function's early returns hits proof nesting bounds](explicit-proof-of-early-returns-hits-nesting-bounds.md)

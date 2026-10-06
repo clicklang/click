@@ -26,6 +26,15 @@ semantics, do not rewrite otherwise-correct implementation code merely to make
 a proof easier. Keep the original source pattern in the regression and put the
 adaptation or fix in the contract, proof, language, verifier, or kernel.
 
+Ordinary failure reports use source names and Click expressions for goals and
+recent facts. A historical read is shown as `at(point, expression)` only when
+that exact recorded state and the read's type can be recovered; it is never
+silently rewritten as a current read. Facts without an exact surface spelling
+are omitted with one bounded explanation per context. Transport failures keep
+the written source and target and name stores that may have changed the cell.
+An explicitly requested `--trace-proof` can additionally show bounded internal
+facts and snapshot identities for debugging.
+
 ## Explain the program requirement first
 
 When adding or repairing a diagnostic, lead with the C operation or contract

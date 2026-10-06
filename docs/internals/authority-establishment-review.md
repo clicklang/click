@@ -46,6 +46,17 @@ independently of the order of companion clauses. Borrowing one reference and
 producing another preserves the borrowed reference and increases the total by
 one. A returned control exposes its invariant at the updated population state.
 
+An empty member family also supports a checked quantity exchange such as
+`consumes 2 of reference(p); produces reference(p);`. Call admission requires
+the whole consumed quantity from the caller's custody, including units held
+as separate facts. Independent helper certification checks the declared net
+population change, and the return partition checks the produced custody.
+Historical arguments are matched to the consumed population's authenticated
+identity before returning members to the caller. A global count never supplies
+missing owned units. The `authority_two_to_one_quantity_*` fixtures cover the
+exchange and its rejection cases; `shared_heap_two_parent_quantity_exchange.md`
+keeps the existing two-parent C and proof unchanged with that quantity contract.
+
 A function boundary retains the resource bindings checked at entry. If C clears
 `p->kid`, a borrowed `reference(p->kid)` still returns the reference actually
 received; it is not evaluated again against the cleared field. Entry observations

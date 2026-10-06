@@ -166,14 +166,12 @@ fn spell_condition(
     if let Proposition::ConditionIs(condition, true) = condition
         && let Some((side, value, bound)) = conversion_bound(condition)
     {
-        // A mathematical `Integer` has no source-name reconstruction, so its
-        // term prints in the verifier's own value names. Saying which side of
-        // which range is missing is the part the reader acts on.
+        // The bound remains actionable even when this lowering supplied no
+        // exact source names for the converted Integer value.
         return SpelledCondition {
             requirement: format!(
                 "the Integer converted back to a machine type must fit it: its {side} bound \
-                 `{bound}` is not established for the converted value, written here in the \
-                 verifier's own Integer value names as `{value}`"
+                 `{bound}` is not established for the converted value: `{value}`"
             ),
             subterm: None,
             repair: Some(format!(
@@ -306,6 +304,15 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
         }
         ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
             Some(Bitvector32Term::Multiply(left.clone(), right.clone()))
+        }
+        ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Add(left.clone(), right.clone()))
+        }
+        ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Subtract(left.clone(), right.clone()))
+        }
+        ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
+            Some(Bitvector32Term::Int64Multiply(left.clone(), right.clone()))
         }
         _ => None,
     }

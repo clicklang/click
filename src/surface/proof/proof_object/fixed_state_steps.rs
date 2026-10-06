@@ -341,33 +341,41 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let application = self.resolve_theorem_application(application)?;
+        let resolved_application = self.resolve_theorem_application(application)?;
         let surface_premises = surface_premises
             .iter()
             .map(|premise| self.substitute_fixed_state_locals_in_proposition(premise))
             .collect::<Result<Vec<_>, _>>()?;
-        match self.context.as_ref() {
-            ProofContext::Pure(context) => {
-                self.apply_pure_theorem_using(context, &application, &surface_premises)
+        crate::surface::proof::theorem_application::with_application_source(application, || {
+            match self.context.as_ref() {
+                ProofContext::Pure(context) => {
+                    self.apply_pure_theorem_using(context, &resolved_application, &surface_premises)
+                }
+                ProofContext::FixedState(context) => self.apply_fixed_state_theorem_using(
+                    &FixedStateOperationView::from_fixed_state(context),
+                    &resolved_application,
+                    &surface_premises,
+                ),
+                // A focused branch function-outcome goal applies theorems through the
+                // fixed-state checker, reading its data from the goal; the effect
+                // context is the frontier-wide set required by theorem checking.
+                ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
+                    let view = self
+                        .outcome_fixed_state_view_with_effects(OutcomeEffectContext::Frontier)
+                        .expect("a focused outcome judgment resolves its fixed-state view");
+                    self.apply_fixed_state_theorem_using(
+                        &view,
+                        &resolved_application,
+                        &surface_premises,
+                    )
+                }
+                ProofContext::Execution(context) => self.apply_execution_theorem_using(
+                    context,
+                    &resolved_application,
+                    &surface_premises,
+                ),
             }
-            ProofContext::FixedState(context) => self.apply_fixed_state_theorem_using(
-                &FixedStateOperationView::from_fixed_state(context),
-                &application,
-                &surface_premises,
-            ),
-            // A focused branch function-outcome goal applies theorems through the
-            // fixed-state checker, reading its data from the goal; the effect
-            // context is the frontier-wide set required by theorem checking.
-            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
-                let view = self
-                    .outcome_fixed_state_view_with_effects(OutcomeEffectContext::Frontier)
-                    .expect("a focused outcome judgment resolves its fixed-state view");
-                self.apply_fixed_state_theorem_using(&view, &application, &surface_premises)
-            }
-            ProofContext::Execution(context) => {
-                self.apply_execution_theorem_using(context, &application, &surface_premises)
-            }
-        }
+        })
     }
 
     pub(super) fn apply_pure_theorem_using(

@@ -961,7 +961,12 @@ type OutcomeObligation = FunctionOutcomeObligation<Arc<OutcomeProofData>>;
 
 /// Opaque diagnostic view over the same persistent kernel handle used by the
 /// checker. Formatting happens only when the terminal error message is read.
-struct ProofDiagnosticProofState(KernelProofHandle, Arc<ProofNode>, Vec<(Variable, String)>);
+struct ProofDiagnosticProofState(
+    KernelProofHandle,
+    Arc<ProofNode>,
+    Vec<(Variable, String)>,
+    Option<SurfacePropositionMap>,
+);
 
 fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
     match value {
@@ -1017,12 +1022,20 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
         {
+            labels.register_current_state(&execution.core.state);
             for (name, value) in execution.core.state.locals().object_values() {
                 if let Some(variable) = diagnostic_value_variable(value) {
                     labels.source_name(variable, name.to_string());
                 }
             }
         }
+    }
+
+    fn source_fact(&self, fact: &Proposition) -> Option<String> {
+        // Pure theorem parameters are immutable. Execution spellings require
+        // a checked snapshot mapping and must not be reused as current reads.
+        let surface = self.3.as_ref()?.surfaces(fact).next()?;
+        Some(crate::surface::printing::source_click_proposition(surface))
     }
 
     fn source_goal(&self) -> Option<String> {
@@ -1413,7 +1426,18 @@ impl Proof<'_> {
                 .collect(),
             ProofContext::FixedState(_) | ProofContext::Execution(_) => Vec::new(),
         };
-        ProofDiagnosticProofState(self.state.clone(), self.node.clone(), source_names)
+        let surface_facts = match self.context.as_ref() {
+            ProofContext::Pure(context) => {
+                Some(context.theorem_context.surface_requirements.clone())
+            }
+            _ => None,
+        };
+        ProofDiagnosticProofState(
+            self.state.clone(),
+            self.node.clone(),
+            source_names,
+            surface_facts,
+        )
     }
 }
 

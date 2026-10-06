@@ -237,7 +237,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         let project = read_click_project(path, &source)?;
         return verify_c0_project(&project, &[])
             .map(|_| ())
-            .map_err(|error| error.message().to_string());
+            .map_err(|error| error.report());
     }
     let mdtest = read_mdtest(path)?;
     let click_source = mdtest
@@ -251,7 +251,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         .ok_or_else(|| format!("`{}` is missing a ```expect block", path.display()))?;
 
     let project = read_mdtest_project_if_needed(path, click_source, &inputs)?;
-    let verify = || -> Result<(), String> {
+    let verify = || -> Result<(), (String, String)> {
         match (&inputs, &project) {
             (CInput::Bundle(sources), Some(project)) => {
                 verify_c0_project(project, &source_refs(sources)).map(|_| ())
@@ -266,7 +266,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
                 unreachable!("every prepared mdtest input reads a Click project")
             }
         }
-        .map_err(|error| error.message().to_string())
+        .map_err(|error| (error.message().to_string(), error.report()))
     };
 
     let (result, samples) = tactic_work::measure(verify);
@@ -316,19 +316,38 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
 fn check_expectation(
     path: &Path,
     expectation: &MdTestExpectation,
-    result: Result<(), String>,
+    result: Result<(), (String, String)>,
 ) -> Result<(), String> {
     match (expectation, result) {
         (MdTestExpectation::Pass, Ok(())) => Ok(()),
-        (MdTestExpectation::Pass, Err(message)) => Err(format!(
-            "`{}` expected pass, but failed: {message}",
+        (MdTestExpectation::Pass, Err((_, report))) => Err(format!(
+            "`{}` expected pass, but failed: {report}",
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Ok(())) => Err(format!(
             "`{}` expected failure containing `{expected}`, but passed",
             path.display()
         )),
-        (MdTestExpectation::FailContains(expected), Err(message)) => {
+        (MdTestExpectation::FailContains(expected), Err((message, report))) => {
+            if let Some(internal) = ["snapshot#", "snapshot<", "load A=", "pointer(pointer "]
+                .into_iter()
+                .find(|internal| report.contains(internal))
+            {
+                return Err(format!(
+                    "`{}` leaked `{internal}` in its proof report: {report}",
+                    path.display()
+                ));
+            }
+            if report
+                .split("value ")
+                .skip(1)
+                .any(|tail| tail.as_bytes().first().is_some_and(u8::is_ascii_uppercase))
+            {
+                return Err(format!(
+                    "`{}` leaked an anonymous value in its proof report: {report}",
+                    path.display()
+                ));
+            }
             if message.contains(expected) {
                 Ok(())
             } else {

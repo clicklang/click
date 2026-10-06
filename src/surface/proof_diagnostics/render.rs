@@ -16,6 +16,8 @@ use crate::kernel::{
 use std::collections::HashMap;
 use std::fmt::Write;
 
+mod surface;
+
 const MAX_BYTES: usize = 32 * 1024;
 const MAX_NODES: usize = 4096;
 const MAX_DEPTH: usize = 96;
@@ -38,7 +40,9 @@ const MAX_SNAPSHOT_LABELS: usize = 32;
 #[derive(Default)]
 pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
+    source_memories: Vec<(CMemory, String, std::rc::Rc<NamingTables>)>,
     source_names: HashMap<Variable, String>,
+    source_types: HashMap<Variable, crate::kernel::CType>,
     anonymous_names: HashMap<Variable, String>,
     /// The parameters or locals a diagnostic spells addresses through, with
     /// their values, when the caller has them.
@@ -71,10 +75,61 @@ impl SnapshotLabels {
             };
             if let Bitvector32Term::Variable(variable) = term {
                 labels.source_name(*variable, parameter.name().to_string());
+                labels.source_types.insert(*variable, value.c_type());
             }
         }
         labels.naming = Some(std::rc::Rc::new((parameters.to_vec(), arguments.to_vec())));
         labels
+    }
+
+    /// Current locals take precedence over entry values. This is diagnostic
+    /// data only; no proof decision consults these names.
+    pub(crate) fn with_state(
+        parameters: &[crate::languages::c::syntax::C0Parameter],
+        arguments: &[crate::kernel::CExpression],
+        state: &CState,
+    ) -> Self {
+        let mut labels = Self::naming(parameters, arguments);
+        labels.register_current_state(state);
+        labels
+    }
+
+    pub(crate) fn register_current_state(&mut self, state: &CState) {
+        let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
+        let current = Self::naming(&names, &values);
+        // A reassigned parameter's entry value is not its current value.
+        for (variable, name) in &mut self.source_names {
+            if names.iter().any(|local| local.name() == name)
+                && !current.source_names.contains_key(variable)
+            {
+                *name = format!("at(function.entry, {name})");
+            }
+        }
+        self.source_types.extend(current.source_types);
+        for (variable, name) in current.source_names {
+            self.source_names.entry(variable).or_insert(name);
+        }
+        self.naming = current.naming;
+        self.source_state(state, "current".into());
+    }
+
+    pub(crate) fn source_state(&mut self, state: &CState, point: String) {
+        if self.source_memories.len() < MAX_SNAPSHOT_LABELS {
+            let tables = crate::surface::diagnostics::local_naming_tables(state);
+            self.source_memories
+                .push((state.memory().clone(), point, std::rc::Rc::new(tables)));
+        }
+    }
+
+    fn source_memory_context(&self, memory: &CMemory) -> Option<(&str, &NamingTables)> {
+        self.source_memories
+            .iter()
+            .find_map(|(known, point, naming)| {
+                // Exact storage roots identify a state without walking memory.
+                known
+                    .same_storage_roots(memory)
+                    .then_some((point.as_str(), naming.as_ref()))
+            })
     }
 
     /// Labels naming what the function being verified declares, when one is.
@@ -87,12 +142,26 @@ impl SnapshotLabels {
         labels
     }
 
+    pub(crate) fn naming_tables(
+        &self,
+    ) -> Option<(
+        &[crate::languages::c::syntax::C0Parameter],
+        &[crate::kernel::CExpression],
+    )> {
+        self.naming
+            .as_ref()
+            .map(|tables| (tables.0.as_slice(), tables.1.as_slice()))
+    }
+
     pub(crate) fn source_name(&mut self, variable: Variable, name: String) {
         self.source_names.entry(variable).or_insert(name);
     }
 
     fn source_name_for(&self, variable: Variable) -> Option<&str> {
-        self.source_names.get(&variable).map(String::as_str)
+        self.source_names
+            .get(&variable)
+            .map(String::as_str)
+            .filter(|name| name.len() <= 256)
     }
 
     fn variable_name(&mut self, variable: Variable, kind: &str) -> String {
@@ -132,64 +201,14 @@ impl SnapshotLabels {
     }
 }
 
-/// A deliberately small, exact Click spelling for facts whose operands are
-/// named source values. Historical loads and generated values do not qualify:
-/// printing those as a current source read would erase the snapshot distinction
-/// the diagnostic is meant to explain.
+/// Exact Click spelling for a bounded fact whose operands are named source
+/// values. Historical reads require their own recorded state's names and an
+/// explicit `at(...)`; unknown states and generated values do not qualify.
 pub(crate) fn render_simple_click_fact_labeled(
     proposition: &Proposition,
     labels: &SnapshotLabels,
 ) -> Option<String> {
-    let Proposition::ConditionIs(condition, polarity) = proposition else {
-        return None;
-    };
-    fn operand(term: &Bitvector32Term, labels: &SnapshotLabels) -> Option<String> {
-        match term {
-            Bitvector32Term::Variable(variable) if !crate::kernel::is_load_variable(variable) => {
-                Some(labels.source_name_for(*variable)?.to_owned())
-            }
-            Bitvector32Term::Constant(value) => Some(value.to_string()),
-            _ => None,
-        }
-    }
-    let (left, right, positive, negative) = match condition {
-        ConditionTerm::Bitvector32Equal(left, right) => (left, right, "==", "!="),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, "<", ">="),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, "<=", ">"),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (left, right, ">", "<="),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right, ">=", "<"),
-        _ => return None,
-    };
-    let operator = if *polarity { positive } else { negative };
-    // A 32-bit unsigned order is the signed order of both operands with
-    // their sign bit flipped, a constant operand arriving already flipped.
-    // It is spelled as the unsigned comparison it means.
-    const SIGN_BIT: u32 = 0x8000_0000;
-    let flipped = |term: &Bitvector32Term| match term {
-        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
-            if sign.as_const() == Some(SIGN_BIT) =>
-        {
-            operand(value, labels)
-        }
-        _ => None,
-    };
-    let unflipped = |term: &Bitvector32Term| {
-        flipped(term).or_else(|| term.as_const().map(|value| (value ^ SIGN_BIT).to_string()))
-    };
-    let ordered = !matches!(condition, ConditionTerm::Bitvector32Equal(_, _));
-    let unsigned = match (flipped(left), flipped(right)) {
-        _ if !ordered => None,
-        (Some(left), Some(right)) => Some((left, right)),
-        (Some(left), None) => unflipped(right).map(|right| (left, right)),
-        (None, Some(right)) => unflipped(left).map(|left| (left, right)),
-        (None, None) => None,
-    };
-    if let Some((left, right)) = unsigned {
-        return Some(format!("{left} {operator} {right} (unsigned)"));
-    }
-    let left = operand(left, labels)?;
-    let right = operand(right, labels)?;
-    Some(format!("{left} {operator} {right}"))
+    surface::render(proposition, labels)
 }
 
 fn alphabetic_label(mut index: usize) -> String {
@@ -275,9 +294,18 @@ pub(crate) fn render_resource_fact_labeled(
     renderer.output
 }
 
-/// [`render_proposition`] sharing one report's snapshot labels, so the same
-/// memory reads as the same `snapshot#n` in every line of that report.
+/// A source-facing fact using one report's names and recorded program points.
+/// An unspellable fact gets a bounded explanation, never kernel notation.
 pub(crate) fn render_proposition_labeled(
+    proposition: &Proposition,
+    labels: &mut SnapshotLabels,
+) -> String {
+    render_simple_click_fact_labeled(proposition, labels)
+        .unwrap_or_else(|| "fact has no exact Click spelling at this frontier".to_owned())
+}
+
+/// Developer-only notation for an explicitly requested proof trace.
+pub(crate) fn render_internal_proposition_labeled(
     proposition: &Proposition,
     labels: &mut SnapshotLabels,
 ) -> String {
@@ -309,20 +337,8 @@ pub(crate) fn render_proposition_labeled(
 /// elimination, so its `Debug` reaches the same datatype schemas a
 /// proposition's does.
 pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
-    let mut labels = SnapshotLabels::ambient();
-    let mut renderer = Renderer {
-        output: String::with_capacity(128),
-        nodes: 0,
-        depth: 0,
-        truncated: false,
-        labels: &mut labels,
-        bound_names: Vec::new(),
-    };
-    renderer.integer(term);
-    if renderer.truncated {
-        renderer.output.push('…');
-    }
-    renderer.output
+    surface::integer(term, &SnapshotLabels::ambient())
+        .unwrap_or_else(|| "Integer term has no exact Click spelling at this frontier".into())
 }
 
 /// Render `left operator right` under one set of labels, so two distinct
@@ -334,22 +350,14 @@ pub(crate) fn render_integer_comparison(
     operator: &str,
     right: &IntegerTerm,
 ) -> String {
-    let mut labels = SnapshotLabels::ambient();
-    let mut renderer = Renderer {
-        output: String::with_capacity(128),
-        nodes: 0,
-        depth: 0,
-        truncated: false,
-        labels: &mut labels,
-        bound_names: Vec::new(),
-    };
-    renderer.integer(left);
-    renderer.push(&format!(" {operator} "));
-    renderer.integer(right);
-    if renderer.truncated {
-        renderer.output.push('…');
+    let labels = SnapshotLabels::ambient();
+    match (
+        surface::integer(left, &labels),
+        surface::integer(right, &labels),
+    ) {
+        (Some(left), Some(right)) => format!("{left} {operator} {right}"),
+        _ => "Integer comparison has no exact Click spelling at this frontier".into(),
     }
-    renderer.output
 }
 
 /// Compact binder sort spelling shared by traces and ordinary diagnostics.
@@ -375,6 +383,13 @@ pub(crate) fn render_sort(sort: &Sort) -> String {
 /// Describe a refused Integer capture: which written subterm carries an
 /// evaluation condition, and which condition the proof context is missing.
 pub(crate) fn describe_spec_capture_refusal(refusal: &SpecCaptureRefusal) -> String {
+    describe_spec_capture_refusal_labeled(refusal, &mut SnapshotLabels::ambient())
+}
+
+pub(crate) fn describe_spec_capture_refusal_labeled(
+    refusal: &SpecCaptureRefusal,
+    labels: &mut SnapshotLabels,
+) -> String {
     match refusal {
         SpecCaptureRefusal::Message(message) => message.clone(),
         SpecCaptureRefusal::Undischarged {
@@ -383,7 +398,7 @@ pub(crate) fn describe_spec_capture_refusal(refusal: &SpecCaptureRefusal) -> Str
         } => format!(
             "{} denotes this value only where `{}` holds, and that is not available here",
             subterm.describe(),
-            render_proposition(proposition)
+            render_proposition_labeled(proposition, labels)
         ),
     }
 }
@@ -1584,8 +1599,13 @@ impl Renderer<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::render_internal_proposition_labeled as render_proposition_labeled;
     use super::*;
     use crate::kernel::SharedIntegerTerm;
+
+    fn render_proposition(proposition: &Proposition) -> String {
+        render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())
+    }
 
     #[test]
     fn renders_integer_fold_and_scope() {

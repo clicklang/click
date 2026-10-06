@@ -1369,10 +1369,13 @@ impl<'a> Proof<'a> {
             }
         }
         if !append_missing.is_empty() {
+            let (names, values) = self.diagnostic_naming_tables();
+            let mut labels =
+                crate::surface::proof_diagnostics::render::SnapshotLabels::naming(&names, &values);
             return Err(self.step_error(format!(
                 "`unfold({name}(...)) using` found no listed guard that decides the range. The empty-range equation needs {}; the append-last-cell equation needs {}.",
-                describe_missing_fold_guards(&empty_missing),
-                describe_missing_fold_guards(&append_missing)
+                describe_missing_fold_guards(&empty_missing, &mut labels),
+                describe_missing_fold_guards(&append_missing, &mut labels)
             )));
         }
         if !predecessor_equality {
@@ -2483,7 +2486,10 @@ fn collect_conjunctive_premises<'a>(
 /// states them. A defining-equation premise is never listed: the step
 /// produces those itself, so naming one would point the reader at evidence
 /// they cannot write.
-fn describe_missing_fold_guards(missing: &[Proposition]) -> String {
+fn describe_missing_fold_guards(
+    missing: &[Proposition],
+    labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
+) -> String {
     let rendered = missing
         .iter()
         .filter(|premise| {
@@ -2495,7 +2501,9 @@ fn describe_missing_fold_guards(missing: &[Proposition]) -> String {
         .map(|premise| {
             format!(
                 "`{}`",
-                crate::surface::proof_diagnostics::render::render_proposition(premise)
+                crate::surface::proof_diagnostics::render::render_proposition_labeled(
+                    premise, labels
+                )
             )
         })
         .collect::<Vec<_>>();

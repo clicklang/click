@@ -1,9 +1,9 @@
 # an unestablished conversion condition names which machine bound is missing
 
 Converting a mathematical `Integer` back to `int32` requires both ends of the
-`int32` range. A mathematical value has no reconstruction into source names, so
-the refusal says which end of which range is missing, prints the converted value
-in the verifier's own value names, and says that is what it is doing.
+`int32` range. The refusal says which end of which range is missing. If this
+lowering has no exact source spelling for the mathematical value, it gives a
+bounded explanation instead of inventing an internal value name.
 
 ```click
 theorem back_to_int32(n: Integer) {
@@ -13,5 +13,5 @@ theorem back_to_int32(n: Integer) {
 ```
 
 ```expect
-fail: not established: the Integer converted back to a machine type must fit it: its lower bound `-2147483648` is not established for the converted value, written here in the verifier's own Integer value names as `(integer A+1)`
+fail: not established: the Integer converted back to a machine type must fit it: its lower bound `-2147483648` is not established for the converted value: `Integer term has no exact Click spelling at this frontier`
 ```

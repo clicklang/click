@@ -809,7 +809,11 @@ fn transfer_population_call_facts<'a>(
             )
             .map_err(|refusal| {
                 CRuntimeError::FunctionContract(format!(
-                    "population call transfer refused: {refusal:?}"
+                    "population call transfer refused: {refusal:?}; declared {} of {}",
+                    quantity
+                        .as_const()
+                        .map_or_else(|| "quantity".into(), |quantity| quantity.to_string()),
+                    description.family(),
                 ))
             })?;
     }
@@ -2666,10 +2670,69 @@ fn authority_mode_two_control_births(
     Some(members.into_iter().map(|member| (true, member)).collect())
 }
 
+/// A quantity exchange within one empty member family. The input partition
+/// authenticates the whole consumed quantity, the return partition checks the
+/// produced custody, and certification checks their net ledger change. This
+/// is distinct from a unit move between populations.
+fn authority_mode_quantity_exchange_effects(
+    interface: &CFunctionContractInterface,
+) -> Option<Vec<(bool, &CResourceSpec)>> {
+    if !interface.resource_constructors().is_empty() {
+        return None;
+    }
+    let families = authority_mode_protected_families(interface);
+    let select = |spec: &&CResourceSpec, role| {
+        spec.role() == role
+            && matches!(spec.term(), CResourceTerm::Composite { name, .. } if families.contains(name.as_str()))
+    };
+    let mut inputs = interface
+        .resource_requires()
+        .iter()
+        .filter(|spec| select(spec, CResourceTransferRole::Consume));
+    let input = inputs.next()?;
+    if inputs.next().is_some() {
+        return None;
+    }
+    let mut outputs = interface
+        .resource_ensures()
+        .iter()
+        .filter(|spec| select(spec, CResourceTransferRole::Produce));
+    let output = outputs.next()?;
+    if outputs.next().is_some() {
+        return None;
+    }
+    let CResourceTerm::Composite {
+        name: input_name, ..
+    } = input.term()
+    else {
+        return None;
+    };
+    let CResourceTerm::Composite {
+        name: output_name, ..
+    } = output.term()
+    else {
+        return None;
+    };
+    if input_name != output_name
+        || (!matches!(input.quantity(), CResourceQuantity::Count(_))
+            && !matches!(output.quantity(), CResourceQuantity::Count(_)))
+        || !authority_mode_member_quantity_admitted(interface, input)
+        || !authority_mode_member_quantity_admitted(interface, output)
+        || !interface
+            .composite_resource_definition(input_name)?
+            .contains()
+            .is_empty()
+    {
+        return None;
+    }
+    Some(vec![(false, input), (true, output)])
+}
+
 fn authority_mode_checked_member_effects(
     interface: &CFunctionContractInterface,
 ) -> Vec<(bool, &CResourceSpec)> {
-    if let Some(effects) = authority_mode_exchange_effects(interface)
+    if let Some(effects) = authority_mode_quantity_exchange_effects(interface)
+        .or_else(|| authority_mode_exchange_effects(interface))
         .or_else(|| authority_mode_two_control_births(interface))
     {
         effects
@@ -2681,7 +2744,8 @@ fn authority_mode_checked_member_effects(
 }
 
 fn authority_mode_exchanges_member_contract(interface: &CFunctionContractInterface) -> bool {
-    authority_mode_exchange_effects(interface).is_some()
+    (authority_mode_quantity_exchange_effects(interface).is_some()
+        || authority_mode_exchange_effects(interface).is_some())
         && authority_mode_member_companions_admitted(interface)
 }
 
@@ -2691,7 +2755,9 @@ fn authority_mode_exchanges_member_contract(interface: &CFunctionContractInterfa
 fn authority_mode_consumed_control(
     interface: &CFunctionContractInterface,
 ) -> Option<&CResourceSpec> {
-    let (produce, member) = authority_mode_member_effect(interface)?;
+    let (produce, member) = authority_mode_quantity_exchange_effects(interface)
+        .and_then(|effects| effects.into_iter().find(|(produce, _)| !produce))
+        .or_else(|| authority_mode_member_effect(interface))?;
     if produce {
         return None;
     }
@@ -2910,9 +2976,12 @@ fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterf
                 continue;
             }
             if is_control(spec) && spec.role() != CResourceTransferRole::Borrow {
-                // Control replacement/retirement belongs to the single-member
-                // rule. A move only borrows its two explicit authorities.
-                if effects.len() != 1 || input && spec.guard().is_some() {
+                // A single-member effect or same-population quantity exchange
+                // can replace control. A unit move borrows its authorities.
+                if (effects.len() != 1
+                    && authority_mode_quantity_exchange_effects(interface).is_none())
+                    || (input && spec.guard().is_some())
+                {
                     return false;
                 }
                 continue;
@@ -2979,6 +3048,12 @@ pub(super) fn check_wildcard_consumption_at_return(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(), CRuntimeError>> {
+    if entry.uses_population_authority_semantics()
+        && authority_mode_quantity_exchange_effects(interface).is_some()
+        && authority_mode_member_companions_admitted(interface)
+    {
+        return check_quantity_exchange_at_return(entry, exit, interface, assumptions, budget);
+    }
     if !entry.uses_population_authority_semantics()
         || !(authority_mode_consumes_member_contract(interface)
             || authority_mode_exchanges_member_contract(interface))
@@ -3047,6 +3122,121 @@ pub(super) fn check_wildcard_consumption_at_return(
         }
     }
     Ok(Ok(()))
+}
+
+/// Check the net effect of a same-population quantity exchange. Both custody
+/// partitions are checked separately; this compares only the authenticated
+/// ledger delta and never turns a population count into owned members.
+fn check_quantity_exchange_at_return(
+    entry: &CState,
+    exit: &CState,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<(), CRuntimeError>> {
+    let effects = authority_mode_quantity_exchange_effects(interface).expect("quantity exchange");
+    let Some(values) = interface
+        .parameters()
+        .iter()
+        .map(|parameter| entry.locals().get(parameter.name()).cloned())
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "quantity exchange lost its entry argument bindings".into(),
+        )));
+    };
+    // A function exit has discarded its C locals. Use the same contract-only
+    // parameter views as ordinary boundary evaluation, retaining the entry
+    // memory for old(...) and never treating these read views as custody.
+    let entry_view = with_contract_interface_argument_views(entry, interface, &values);
+    let exit_view = with_contract_interface_argument_views(exit, interface, &values);
+    let mut members = Vec::with_capacity(2);
+    for (produce, spec) in effects {
+        let state = if produce { &exit_view } else { &entry_view };
+        match evaluate_function_resource_spec_with_entry(
+            &entry_view,
+            state,
+            spec,
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => members.push(fact),
+            Err(error) => return Ok(Err(error)),
+        }
+    }
+    if let Some(input) = entry
+        .resources()
+        .directly_supporting_fact(&members[0], assumptions)
+    {
+        members[0] = CResourceFact::own_quantity(
+            input.resource().clone(),
+            members[0]
+                .owned_quantity_term()
+                .expect("owned input")
+                .clone(),
+        );
+    }
+    let [input, output] = members.as_slice() else {
+        unreachable!("one input and one output")
+    };
+    let matches = match (input, output) {
+        (
+            CResourceFact::Own(CResource::Composite { name, arguments }, consumed),
+            CResourceFact::Own(
+                CResource::Composite {
+                    name: output_name,
+                    arguments: output_arguments,
+                },
+                produced,
+            ),
+        ) if name == output_name
+            && arguments.len() == output_arguments.len()
+            && arguments
+                .iter()
+                .zip(output_arguments.iter())
+                .all(|(left, right)| {
+                    crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
+                }) =>
+        {
+            let description = ResourceDescription::new(
+                name.clone(),
+                arguments.clone(),
+                ResourceFieldSchema::new(vec![]).expect("empty schema"),
+            );
+            exit.population_effects
+                .creation
+                .as_ref()
+                .and_then(|events| events.imported_member_delta_since_entry(&description))
+                .is_some_and(|(produce, actual)| {
+                    let actual = if produce {
+                        actual
+                    } else {
+                        Bitvector32Term::Subtract(
+                            Box::new(Bitvector32Term::Constant(0)),
+                            Box::new(actual),
+                        )
+                    };
+                    crate::kernel::quantity_condition_holds(
+                        assumptions,
+                        ConditionTerm::Bitvector32Equal(
+                            Box::new(actual),
+                            Box::new(Bitvector32Term::Subtract(
+                                Box::new((**produced).clone()),
+                                Box::new((**consumed).clone()),
+                            )),
+                        ),
+                    )
+                })
+        }
+        _ => false,
+    };
+    if matches {
+        Ok(Ok(()))
+    } else {
+        Ok(Err(CRuntimeError::FunctionContract(
+            "consumes/produces member quantities do not establish the declared net population change".into()
+        )))
+    }
 }
 
 fn authority_mode_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
@@ -3211,6 +3401,208 @@ fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterf
 #[cfg(test)]
 mod authority_helper_admission_tests {
     use super::*;
+
+    #[test]
+    fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
+        let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
+            let pointer = CValue::typed_pointer(
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CType::Int32Pointer,
+            );
+            let description = ResourceDescription::new(
+                "member".into(),
+                vec![pointer.clone().into()].into(),
+                ResourceFieldSchema::new(vec![]).unwrap(),
+            );
+            let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+            let resource = CResource::Composite {
+                name: "member".into(),
+                arguments: vec![pointer.clone().into()].into(),
+            };
+            let member = CResourceFact::own_quantity(resource, Bitvector32Term::Constant(amount));
+            let mut entry = CState::new()
+                .with_population_creation_tracking()
+                .with_local("p", pointer)
+                .with_resource_context(
+                    ResourceContext::new()
+                        .unchecked_with_facts([authority.clone(), member.clone()]),
+                )
+                .import_opaque_population_quantity(&authority, &member)
+                .unwrap();
+            for index in 1..=unrelated {
+                let other = ResourceDescription::new(
+                    "unrelated".into(),
+                    vec![
+                        CValue::pointer(Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: PointerOffsetTerm::Variable(Variable(950_000 + index as u64)),
+                        })
+                        .into(),
+                    ]
+                    .into(),
+                    ResourceFieldSchema::new(vec![]).unwrap(),
+                );
+                let authority = CResourceFact::own(CResource::PopulationAuthority(other));
+                entry = entry
+                    .clone()
+                    .with_resource_context(
+                        entry
+                            .resources()
+                            .clone()
+                            .unchecked_with_fact(authority.clone()),
+                    )
+                    .import_opaque_population(&authority, 0)
+                    .unwrap();
+            }
+            let member_spec = CResourceSpec::composite(
+                CResourceAccessMode::Own,
+                "member".into(),
+                vec![c_variable("p")],
+                vec![CType::Int32Pointer],
+            );
+            let authority_spec = CResourceSpec::new(
+                CResourceTerm::PopulationAuthority {
+                    protected: Box::new(CResourceTypeSpec {
+                        resource: Box::new(member_spec.clone()),
+                        schema: ResourceFieldSchema::new(vec![]).unwrap(),
+                    }),
+                    population_arity: None,
+                    snapshot: CResourceSnapshot::Current,
+                },
+                CResourceAccessMode::Own,
+                CResourceQuantity::One,
+                CResourceTransferRole::Borrow,
+                CResourceSnapshot::Entry,
+            )
+            .unwrap();
+            let consumed = CResourceSpec::new(
+                member_spec.term().clone(),
+                CResourceAccessMode::Own,
+                CResourceQuantity::Count(c_int32_literal(amount)),
+                CResourceTransferRole::Consume,
+                CResourceSnapshot::Entry,
+            )
+            .unwrap();
+            let produced = CResourceSpec::new(
+                member_spec.term().clone(),
+                CResourceAccessMode::Own,
+                CResourceQuantity::Count(c_int32_literal(amount - 1)),
+                CResourceTransferRole::Produce,
+                CResourceSnapshot::Post,
+            )
+            .unwrap();
+            let function = c_function(
+                CType::Void,
+                "shrink",
+                vec![c_parameter("p", CType::Int32Pointer)],
+                c_return(c_void_value()),
+            )
+            .with_resource_summary(
+                vec![authority_spec.clone(), consumed],
+                vec![authority_spec, produced],
+            )
+            .with_composite_resource_definitions(vec![
+                CCompositeResourceDefinition::new(
+                    "member",
+                    vec![c_parameter("p", CType::Int32Pointer)],
+                    None,
+                    false,
+                    vec![],
+                    vec![],
+                ),
+            ]);
+            assert!(authority_mode_supports_resource_contract(
+                function.contract_interface()
+            ));
+            assert!(!authority_mode_preserves_assumed_resource_contract(
+                function.contract_interface()
+            ));
+            let events = entry.population_effects.creation.as_ref().unwrap();
+            let count = events.observe_symbolic(&description).unwrap().entry_count;
+            let assumptions = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(
+                        count.clone(),
+                        Bitvector32Term::Constant(amount),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        count,
+                        Bitvector32Term::Constant((i32::MAX - 1) as u32),
+                    ),
+                    true,
+                );
+            let (exit, work) = crate::persistent::measure_persistent_work(|| {
+                let spent = events
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &description,
+                        false,
+                        &Bitvector32Term::Constant(amount),
+                        &assumptions,
+                    )
+                    .unwrap()
+                    .0;
+                let returned = spent
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &description,
+                        true,
+                        &Bitvector32Term::Constant(amount - 1),
+                        &assumptions,
+                    )
+                    .unwrap()
+                    .0;
+                let mut exit = entry.clone();
+                Arc::make_mut(&mut exit.population_effects).creation = Some(returned);
+                check_quantity_exchange_at_return(
+                    &entry,
+                    &exit,
+                    function.contract_interface(),
+                    &assumptions,
+                    &mut ExecutionBudget::beside_live_state(),
+                )
+                .unwrap()
+                .unwrap();
+                exit
+            });
+            assert_eq!(
+                exit.population_effects
+                    .creation
+                    .as_ref()
+                    .unwrap()
+                    .observe_symbolic(&description)
+                    .unwrap()
+                    .delta,
+                -1
+            );
+            assert!(
+                check_quantity_exchange_at_return(
+                    &entry,
+                    &entry,
+                    function.contract_interface(),
+                    &assumptions,
+                    &mut ExecutionBudget::beside_live_state()
+                )
+                .unwrap()
+                .is_err(),
+                "an unchanged ledger cannot certify the claimed decrement"
+            );
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        // Each sample quadruples the indexed population count. Permit bounded
+        // tree-path growth while excluding work proportional to either the
+        // unrelated population count or the exchanged quantity.
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 96 * index, "{samples:?}");
+        }
+    }
 
     #[test]
     fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
@@ -5881,7 +6273,7 @@ fn execute_verified_function_applications_with_suspension(
                 || authority_mode_exchanges_member_contract(interface))
         {
             for (produce, member_spec) in authority_mode_checked_member_effects(interface) {
-                let produced_member = if produce {
+                let mut produced_member = if produce {
                     match evaluate_function_resource_spec_with_entry(
                         &entry_contract_state,
                         &post_state,
@@ -5903,6 +6295,41 @@ fn execute_verified_function_applications_with_suspension(
                 } else {
                     None
                 };
+                if let Some(output) = &mut produced_member
+                    && let Some(effects) = authority_mode_quantity_exchange_effects(interface)
+                {
+                    let input_spec = effects[0].1;
+                    let input = interface
+                        .resource_requires()
+                        .iter()
+                        .position(|spec| std::ptr::eq(spec, input_spec))
+                        .and_then(|index| {
+                            transfer
+                                .consumed_inputs
+                                .iter()
+                                .find(|checked| checked.section_index == Some(index))
+                        });
+                    let Some(input) = input else {
+                        paths.push(resource_call_failure(
+                            "quantity exchange has no checked consumed member",
+                        ));
+                        continue 'arguments;
+                    };
+                    if !crate::kernel::c_resources_directly_match(
+                        input.fact.resource(),
+                        output.resource(),
+                        &effective_assumptions,
+                    ) {
+                        paths.push(resource_call_failure(
+                            "quantity exchange must return members of the same population",
+                        ));
+                        continue 'arguments;
+                    }
+                    *output = CResourceFact::own_quantity(
+                        input.fact.resource().clone(),
+                        output.owned_quantity_term().expect("owned output").clone(),
+                    );
+                }
                 let consumed_member = if produce {
                     None
                 } else {
@@ -19231,6 +19658,13 @@ fn prepare_contract_resource_transfer(
     }
     let mut canonical_population_owners = Vec::new();
     if caller_state.uses_population_authority_semantics() {
+        let quantity_input =
+            authority_mode_quantity_exchange_effects(interface).and_then(|effects| {
+                interface
+                    .resource_requires()
+                    .iter()
+                    .position(|spec| std::ptr::eq(spec, effects[0].1))
+            });
         for checked in &mut checked_required_resources {
             let CResource::Composite { name, .. } = checked.fact.resource() else {
                 continue;
@@ -19254,6 +19688,20 @@ fn prepare_contract_resource_transfer(
             let Some(source) = caller_state
                 .resources()
                 .directly_supporting_fact(&checked.fact, assumptions)
+                .or_else(|| {
+                    // Two units may be held as separate facts. A unit supplier
+                    // identifies their exact population, not the requested
+                    // quantity: ordinary partitioning and ledger transfer still
+                    // require the full original input quantity below.
+                    if quantity_input == checked.section_index && quantity_input.is_some() {
+                        caller_state.resources().directly_supporting_fact(
+                            &CResourceFact::own(checked.fact.resource().clone()),
+                            assumptions,
+                        )
+                    } else {
+                        None
+                    }
+                })
             else {
                 continue;
             };
@@ -20610,6 +21058,26 @@ fn evaluate_contract_return_resource_context(
     } else {
         ResourceContext::new_with_equalities(assumptions)
     };
+    // A produced member of a checked quantity exchange retains the exact
+    // population of its consumed input. Canonicalize before composition and
+    // ledger return, so a historical field spelling cannot strand the new
+    // member under an alias. Only identity is reused; the output quantity is
+    // still evaluated and its net effect independently certified.
+    let quantity_output = authority_mode_quantity_exchange_effects(interface).and_then(|effects| {
+        let input_index = interface
+            .resource_requires()
+            .iter()
+            .position(|spec| std::ptr::eq(spec, effects[0].1))?;
+        let input = entry_clauses.iter().find(|checked| {
+            checked.section_index == Some(input_index)
+                && checked.role == CResourceTransferRole::Consume
+        })?;
+        let canonical = canonical_by_checked
+            .get(&input.fact)
+            .and_then(|facts| facts.front())
+            .unwrap_or(&input.fact);
+        Some((effects[1].1, canonical.resource().clone()))
+    });
     // Evaluates one returned clause that has no checked entry borrow against
     // the cells the contract makes readable, including the unmatched bodies
     // of the field-bearing instances already returned beside it.
@@ -20669,7 +21137,26 @@ fn evaluate_contract_return_resource_context(
                 Ok(resource) => resource,
                 Err(error) => return Ok(Err(error)),
             };
-            let evaluated = if resource.role() == CResourceTransferRole::Produce {
+            let evaluated = if let Some((output, population)) = &quantity_output
+                && std::ptr::eq(resource, *output)
+            {
+                if !crate::kernel::c_resources_directly_match(
+                    population,
+                    evaluated.resource(),
+                    assumptions,
+                ) {
+                    return Ok(Err(CRuntimeError::FunctionContract(
+                        "quantity exchange must return members of the same population".into(),
+                    )));
+                }
+                CResourceFact::own_quantity(
+                    population.clone(),
+                    evaluated
+                        .owned_quantity_term()
+                        .expect("owned output")
+                        .clone(),
+                )
+            } else if resource.role() == CResourceTransferRole::Produce {
                 match consumed_control_frontier.directly_supporting_fact(&evaluated, assumptions) {
                     Some(source) if source.is_own() => {
                         let CResourceFact::Own(_, quantity) = &evaluated else {
@@ -31549,8 +32036,23 @@ fn contract_exit_outcome_with_boundary_transfer(
                 }
             }
         }
+        let quantity_exchange =
+            authority_mode_quantity_exchange_effects(function.contract_interface()).is_some();
+        if quantity_exchange
+            && let Err(error) = check_quantity_exchange_at_return(
+                &callee_state,
+                state,
+                function.contract_interface(),
+                assumptions,
+                budget,
+            )?
+        {
+            return Ok(Err(error));
+        }
         for (produce, member_spec) in
             authority_mode_checked_member_effects(function.contract_interface())
+                .into_iter()
+                .filter(|_| !quantity_exchange)
         {
             let checked_member = if !produce {
                 checked_transfer.and_then(|receipt| {

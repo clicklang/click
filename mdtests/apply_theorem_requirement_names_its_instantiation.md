@@ -43,5 +43,5 @@ int32 raise_head(int32 box[1]) {
 ```
 
 ```expect
-fail: requirement 2 `a[0] < 1` with a = old(box) instantiates to int32 <(
+fail: requirement 2 `a[0] < 1` with a = old(box) instantiates to old(box)[0] < 1
 ```
