@@ -287,6 +287,19 @@ pub(crate) fn capture_spec_integer_value(
     entry_state: Option<&CState>,
     assumptions: &PureFactContext,
 ) -> Result<IntegerTerm, SpecCaptureRefusal> {
+    capture_spec_integer_value_with_guards(state, expression, entry_state, assumptions)
+        .map(|(value, _)| value)
+}
+
+/// Retain non-certified guards and obligations carried by the captured path.
+/// Conditions already discharged during evaluation may no longer occur here;
+/// consumers must recheck argument capture with the selected explicit evidence.
+pub(crate) fn capture_spec_integer_value_with_guards(
+    state: &CState,
+    expression: &SpecIntegerExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
     let paths = evaluate_spec_integer_expression_paths_in(
         state,
         expression,
@@ -339,7 +352,21 @@ pub(crate) fn capture_spec_integer_value(
             proposition: proposition.clone(),
         });
     }
-    Ok(path.value.clone())
+    if crate::instrumentation::deadline_exceeded_with_work(
+        path.facts.len().saturating_add(path.obligations.len()),
+    ) {
+        return Err(SpecCaptureRefusal::Message(
+            "Integer capture guard retention exceeded its work limit".into(),
+        ));
+    }
+    let guards = path
+        .facts
+        .iter()
+        .filter(|fact| !fact.is_certified())
+        .map(|fact| fact.proposition().clone())
+        .chain(path.obligations.iter().map(|o| o.proposition().clone()))
+        .collect();
+    Ok((path.value.clone(), guards))
 }
 
 /// Which written subterm contributed `proposition` to a capture path.

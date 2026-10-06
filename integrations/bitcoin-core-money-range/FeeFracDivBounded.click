@@ -107,6 +107,17 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
     } }
     apply(int32_less_equal_of_to_integer(-2147483646, mod));
     apply(int32_less_equal_of_to_integer(mod, 2147483646));
+    apply(integer_truncation_identity(to_integer(n), to_integer(d)));
+    have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { arithmetic_certificate special {
+        premise 0: to_integer(quot) == to_integer(n / (int128)d) => to_integer(quot) == to_integer(n / (int128)d);
+        premise 1: to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d)) => to_integer(n / (int128)d) == truncating_quotient(to_integer(n), to_integer(d));
+        integer_relation_transport bounds [0, 1] => to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)); conclusion 0;
+    } }
+    have to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)) by { arithmetic_certificate special {
+        premise 0: to_integer(mod) == to_integer(n % (int128)d) => to_integer(mod) == to_integer(n % (int128)d);
+        premise 1: to_integer(n % (int128)d) == truncating_remainder(to_integer(n), to_integer(d)) => to_integer(n % (int128)d) == truncating_remainder(to_integer(n), to_integer(d));
+        integer_relation_transport bounds [0, 1] => to_integer(mod) == truncating_remainder(to_integer(n), to_integer(d)); conclusion 0;
+    } }
     have defined(quot + 0i64) by simp;
     have defined(quot + 1i64) by simp;
     have defined(quot + -1i64) by simp;

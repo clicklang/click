@@ -1633,6 +1633,29 @@ impl CLocalEnvironment {
             })
     }
 
+    /// Read one local array's pointer and element type without scanning the frame.
+    pub fn array_object_value(&self, name: &str) -> Option<(CValue, CType)> {
+        let CLocalBinding::ArrayObject {
+            element_type,
+            slot,
+            constant,
+            ..
+        } = self.bindings.get(name)?
+        else {
+            return None;
+        };
+        Some((
+            CValue::typed_pointer_with_pointee_constant(
+                slot.clone(),
+                element_type
+                    .pointer_to()
+                    .expect("array element type has a pointer type"),
+                *constant,
+            ),
+            *element_type,
+        ))
+    }
+
     pub fn array_object_values(&self) -> impl Iterator<Item = (&str, CValue, CType)> + '_ {
         self.bindings
             .iter()

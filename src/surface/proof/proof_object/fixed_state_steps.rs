@@ -3192,7 +3192,9 @@ impl<'a> Proof<'a> {
     ///
     /// One place, so a diagnostic that wants to name a fact the way the proof
     /// wrote it reads the record premise selection already reads.
-    fn context_surface_propositions(&self) -> Option<&SurfacePropositionMap> {
+    pub(in crate::surface::proof) fn context_surface_propositions(
+        &self,
+    ) -> Option<&SurfacePropositionMap> {
         match self.context.as_ref() {
             ProofContext::Pure(context) => Some(&context.theorem_context.surface_requirements),
             ProofContext::FixedState(context) => Some(context.surface_propositions),

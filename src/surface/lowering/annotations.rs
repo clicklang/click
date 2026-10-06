@@ -559,6 +559,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
         };
         let entry_state = CState::new();
         let mut lowerer = AnnotationLowerer {
+            capture_referenced_names: None,
             structural_clauses: &[],
             implicit_contract_mutable_segments: &[],
             loop_resources: BTreeMap::new(),
@@ -614,6 +615,7 @@ fn lower_kernel_pure_function_definition(
 ) -> Option<crate::kernel::CPureFunctionDefinition> {
     let entry_state = CState::new();
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -700,6 +702,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
     };
     let entry_state = CState::new();
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -781,6 +784,7 @@ pub(in crate::surface) fn lower_composite_resource_facts_with_bindings(
         .expect("only composite definitions have logical facts");
     let entry_state = CState::new();
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -963,6 +967,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
         contract_mutable.as_slice()
     };
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: function_block.structural_clauses(),
         implicit_contract_mutable_segments,
         loop_resources: BTreeMap::new(),
@@ -1205,6 +1210,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<SpecProposition, ClickError> {
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -1274,6 +1280,7 @@ fn fixed_state_elaboration<'a>(
     parameter_pointer_element_widths: BTreeMap<String, u32>,
 ) -> (AnnotationLowerer<'a>, SpecElaborationContext) {
     let lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         predicate_environment,
         click_function_environment,
@@ -1499,6 +1506,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_
         }
     }
     context.integer_values = referenced_integer_values.clone();
+    lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
 
     // Fold binders allocate from the fixed-state elaborator's local range.
     // Reserve identities already present in captured Integer arguments so a
@@ -1619,6 +1627,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<SpecProposition, String> {
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -1682,6 +1691,7 @@ pub(in crate::surface) fn function_contract_summary(
         &parsed_function.to_kernel_function(),
     );
     let mut lowerer = AnnotationLowerer {
+        capture_referenced_names: None,
         structural_clauses: function_block.structural_clauses(),
         implicit_contract_mutable_segments: &[],
         loop_resources: BTreeMap::new(),
@@ -2056,6 +2066,7 @@ struct LoopResourceDeclaration {
 }
 
 struct AnnotationLowerer<'a> {
+    capture_referenced_names: Option<BTreeSet<String>>,
     structural_clauses: &'a [StructuralClause],
     implicit_contract_mutable_segments: &'a [CMemorySegment],
     /// Resources declared by each loop, keyed by loop index. A loop with a
@@ -3015,7 +3026,7 @@ impl AnnotationLowerer<'_> {
                 selector,
                 proposition,
             } => {
-                if let Some(snapshot) = self.snapshot_environment(selector, environment) {
+                if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
                     return self.click_proposition_to_spec_proposition(proposition, &snapshot);
                 }
                 match self.resolve_visit_selector(selector)? {
@@ -3992,7 +4003,7 @@ impl AnnotationLowerer<'_> {
                 expression,
             } => {
                 let snapshot = self
-                    .snapshot_environment(selector, environment)
+                    .snapshot_environment(selector, environment)?
                     .ok_or_else(|| "Integer values require a recorded program point".to_string())?;
                 return self.lower_contract_integer_to_spec(expression, &snapshot);
             }
@@ -5349,7 +5360,7 @@ impl AnnotationLowerer<'_> {
                 selector,
                 expression,
             } => {
-                let snapshot = self.snapshot_environment(selector, environment).ok_or_else(|| {
+                let snapshot = self.snapshot_environment(selector, environment)?.ok_or_else(|| {
                     "algebraic values at unresolved program points are not supported in this slice"
                         .to_string()
                 })?;
@@ -5725,7 +5736,7 @@ impl AnnotationLowerer<'_> {
                 selector,
                 expression,
             } => {
-                if let Some(snapshot) = self.snapshot_environment(selector, environment) {
+                if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
                     return self.lower_contract_sequence_to_spec(expression, &snapshot);
                 }
                 match self.resolve_visit_selector(selector)? {
@@ -5824,8 +5835,10 @@ impl AnnotationLowerer<'_> {
         &self,
         selector: &SnapshotSelector,
         environment: &SpecElaborationContext,
-    ) -> Option<SpecElaborationContext> {
-        let state = self.snapshots?.get(selector)?;
+    ) -> Result<Option<SpecElaborationContext>, String> {
+        let Some(state) = self.snapshots.and_then(|snapshots| snapshots.get(selector)) else {
+            return Ok(None);
+        };
         let mut values = environment.values.clone();
         // A parameter reads as its entry value at any snapshot that does not
         // bind it as a local, which is every snapshot taken before its first
@@ -5836,12 +5849,21 @@ impl AnnotationLowerer<'_> {
                 .iter()
                 .map(|(name, value)| (name.clone(), SpecExpression::Value(value.clone()))),
         );
-        values.extend(
-            state
-                .locals()
-                .object_values()
-                .map(|(name, value)| (name.to_string(), SpecExpression::Value(value.clone()))),
-        );
+        if let Some(names) = &self.capture_referenced_names {
+            for name in names {
+                check_integer_lowering_work(1)?;
+                if let Some(value) = state.locals().get(name) {
+                    values.insert(name.clone(), SpecExpression::Value(value.clone()));
+                }
+            }
+        } else {
+            values.extend(
+                state
+                    .locals()
+                    .object_values()
+                    .map(|(name, value)| (name.to_string(), SpecExpression::Value(value.clone()))),
+            );
+        }
         let mut array_refs = environment
             .array_refs
             .iter()
@@ -5856,19 +5878,35 @@ impl AnnotationLowerer<'_> {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        array_refs.extend(state.locals().array_object_values().map(
-            |(name, value, element_type)| {
-                (
-                    name.to_string(),
-                    SpecArrayRef {
-                        memory: SpecMemory::Fixed(state.memory().clone()),
-                        pointer: SpecExpression::Value(value.clone()),
-                        element_type,
-                    },
-                )
-            },
-        ));
-        Some(SpecElaborationContext {
+        if let Some(names) = &self.capture_referenced_names {
+            for name in names {
+                check_integer_lowering_work(1)?;
+                if let Some((value, element_type)) = state.locals().array_object_value(name) {
+                    array_refs.insert(
+                        name.clone(),
+                        SpecArrayRef {
+                            memory: SpecMemory::Fixed(state.memory().clone()),
+                            pointer: SpecExpression::Value(value),
+                            element_type,
+                        },
+                    );
+                }
+            }
+        } else {
+            array_refs.extend(state.locals().array_object_values().map(
+                |(name, value, element_type)| {
+                    (
+                        name.to_string(),
+                        SpecArrayRef {
+                            memory: SpecMemory::Fixed(state.memory().clone()),
+                            pointer: SpecExpression::Value(value),
+                            element_type,
+                        },
+                    )
+                },
+            ));
+        }
+        Ok(Some(SpecElaborationContext {
             values,
             integer_values: environment.integer_values.clone(),
             algebraic_values: environment.algebraic_values.clone(),
@@ -5882,7 +5920,7 @@ impl AnnotationLowerer<'_> {
             at_function_entry: false,
             snapshot_state: Some(state.clone()),
             contract_result_in_scope: environment.contract_result_in_scope,
-        })
+        }))
     }
 
     fn lower_at_expression_to_spec(
@@ -5891,7 +5929,7 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
-        if let Some(snapshot) = self.snapshot_environment(selector, environment) {
+        if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
             return self.lower_contract_expression_to_spec(expression, &snapshot);
         }
         match self.resolve_visit_selector(selector)? {
@@ -6405,7 +6443,7 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecArrayRef, String> {
-        if let Some(snapshot) = self.snapshot_environment(selector, environment) {
+        if let Some(snapshot) = self.snapshot_environment(selector, environment)? {
             return self.lower_array_ref_to_spec(expression, &snapshot);
         }
         match self.resolve_visit_selector(selector)? {
