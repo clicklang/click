@@ -991,3 +991,13 @@ polarity matching. Regressions reverify expanded certificates and reject missing
 evidence, unequal observations, altered operands, and opposite conclusions.
 This removes a proof-interface mismatch encountered while connecting the derived
 iterator index; it does not establish the original nested-loop invariants.
+
+
+### Original four-byte constructor range guarantees
+
+The unchanged `U32X4::from` body now proves that each returned native u32 lane
+is at most 255, alongside its existing exact byte correspondence. The guarantees
+are available at the helper-call boundary with only the four-byte shared view
+and length prerequisite. Regressions reject 254 as the universal bound for each
+lane. This supplies the native byte range needed by the proposed lane invariants;
+instantiating their Integer observations over the nested loops remains next.

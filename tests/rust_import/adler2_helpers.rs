@@ -102,6 +102,10 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
         0,
         &[
             ("result._0[3] == bytes[3]", "result._0[3] == bytes[2]"),
+            ("result._0[0] <= 255u32", "result._0[0] <= 254u32"),
+            ("result._0[1] <= 255u32", "result._0[1] <= 254u32"),
+            ("result._0[2] <= 255u32", "result._0[2] <= 254u32"),
+            ("result._0[3] <= 255u32", "result._0[3] <= 254u32"),
             ("requires bytes_len >= 4u64;", "requires bytes_len >= 3u64;"),
             ("views bytes[0..4];", "views bytes[0..3];"),
         ],

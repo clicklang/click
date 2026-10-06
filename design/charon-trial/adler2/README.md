@@ -28,7 +28,7 @@ and native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
-| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte |
+| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255 |
 | `AddAssign<Self>` | Each widened lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand |
 | `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |

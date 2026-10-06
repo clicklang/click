@@ -10,6 +10,19 @@ is ready to merge. Do not push development branches or changes directly to the
 upstream repository, even with write or admin access. Maintainers integrate
 reviewed changes through pull requests.
 
+One exception applies to agent sessions that cannot push to a fork, such as
+hosted sandboxes whose credentials cover only `clicklang/click`. Such a session
+may push its task branch to `clicklang/click` instead, within these limits:
+
+- push only a branch that the session created for its task, never `master` or
+  another contributor's branch;
+- keep at most one such branch per task thread, carrying that thread's one
+  open pull request;
+- delete the branch as soon as its pull request merges or closes; and
+- before starting new work, delete any upstream branch the thread left behind.
+
+Local agents and humans keep using forks.
+
 Each task thread, whether a human working session or one agent, has at most
 one open pull request at a time. While it is open, add each further coherent
 green increment to that same branch and pull request, even when the increment

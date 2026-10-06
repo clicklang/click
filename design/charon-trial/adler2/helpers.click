@@ -7,6 +7,10 @@ struct __rust_q_I6_adler2_I4_algo_I5_U32X4 __rust_q_I6_adler2_I4_algo_T35___rust
     ensures result._0[1] == bytes[1];
     ensures result._0[2] == bytes[2];
     ensures result._0[3] == bytes[3];
+    ensures result._0[0] <= 255u32;
+    ensures result._0[1] <= 255u32;
+    ensures result._0[2] <= 255u32;
+    ensures result._0[3] <= 255u32;
 } by { execute(); simp(); }
 
 void __rust_q_I6_adler2_I4_algo_I5_U32X4_add_assign_value_35__rust_q_I6_adler2_I4_algo_I5_U32X4(struct __rust_q_I6_adler2_I4_algo_I5_U32X4* self, struct __rust_q_I6_adler2_I4_algo_I5_U32X4 other) {

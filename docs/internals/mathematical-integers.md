@@ -776,9 +776,44 @@ unused premise population.
 
 `rewrite` accepts exact available mathematical Integer equalities as well as
 machine equalities. Integer substitution follows the arithmetic spine through
-products and quotients, keeps function arguments and binding constructs opaque,
+products and quotients and pure-function arguments, refuses entry into internal binders,
 and uses the existing equality-admission and binder-capture checks. It does
 not infer an equality or rewrite ambient facts. Together these rules prove
 adler2's triangular successor and weighted lane-bound recurrence without
 changing its Rust source. See the
 [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_polynomial_and_quotient_shift.md).
+## Checked equality rewriting
+
+`rewrite(a == b)` accepts mathematical Integer equality alongside native,
+pointer and algebraic equalities. Its equality must be an exact available fact,
+in either orientation. The kernel refines the selected goal by substituting
+exact occurrences of `a` with `b`; the remaining goal still needs a proof.
+Products and sums therefore need no nonlinear arithmetic search just to replace
+one proved-equal operand. Truncating quotient/remainder terms, negations,
+differences, pure-function arguments and explicit machine conversion payloads
+use the same sort-preserving walker.
+
+The walker memoizes shared Integer nodes, preserves machine widths and load
+snapshots, and never recursively rewrites its replacement. Work follows the
+selected logical DAG rather than its expanded paths or ambient facts. Successful
+rewrites do not build diagnostic naming tables or scan unrelated locals; refusal
+constructs names for the selected proof state. Logical quantifiers are traversed only when neither side of the equality mentions their
+binder. Entering an internal fold or match binder is currently refused; replacing
+an exact whole fold does not enter that binder and remains supported.
+
+<!-- verified-example: mdtests/integer_equality_rewrite.md -->
+```click
+theorem integer_product_congruence(a: Integer, b: Integer, d: Integer) {
+    requires a == b;
+    ensures a * d + a == b * d + b by {
+        rewrite(a == b);
+        simp();
+    }
+}
+```
+
+The unchanged Bitcoin fee-division proof uses this rule twice to establish
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after
+checking both narrowing casts. This reconstruction equation is a foundation
+for the remaining exact rounding contract.
+

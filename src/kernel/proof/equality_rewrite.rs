@@ -601,6 +601,26 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
 
+    if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = equality {
+        let mut rewrite = super::term_rewrite::TermRewrite::for_integer_exact(left, right);
+        let rewritten = rewrite.proposition(goal);
+        match rewrite.refusal() {
+            Some(super::term_rewrite::RewriteRefusal::WorkExhausted) => {
+                return Err(
+                    "`rewrite` exhausted its work budget while rewriting Integer terms".into(),
+                );
+            }
+            Some(super::term_rewrite::RewriteRefusal::UnsupportedScope) => {
+                return Err("`rewrite` cannot substitute an Integer equality through an internal fold or match binder".into());
+            }
+            None => {}
+        }
+        if !rewrite.changed {
+            return Err("`rewrite` equality does not occur in the current goal".into());
+        }
+        return Ok(rewritten);
+    }
+
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = equality {
         let mut rewrite = super::term_rewrite::TermRewrite::new(left, right);
         let rewritten = match goal {
@@ -1284,15 +1304,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         return Ok(rewritten);
     }
-    if let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) = equality {
-        // Only the mathematical arithmetic spine is rewritten. Opaque function
-        // arguments, machine values, and binding constructs remain untouched.
-        return crate::kernel::substitute_integer_term_in_proposition(goal, left, right)
-            .ok_or_else(|| {
-                "`rewrite` Integer equality does not occur on the arithmetic spine of this goal"
-                    .to_string()
-            });
-    }
     let (left, right) = match equality {
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
             (left, right)
@@ -1300,11 +1311,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
         Proposition::ConditionIs(ConditionTerm::Bitvector64Equal(left, right), true) => {
             (left, right)
         }
-        _ => {
-            return Err(
-                "`rewrite` expects an Integer, 32-bit, or 64-bit integer equality".to_string(),
-            );
-        }
+        _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".to_string()),
+
     };
     fn rewrite_term(
         term: &Bitvector32Term,
@@ -1953,6 +1961,325 @@ mod tests {
             ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
             true,
         )
+    }
+
+    fn integer_equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+    }
+
+    #[test]
+    fn integer_equality_rewrite_checks_exact_authority_direction_and_compound_terms() {
+        let x = IntegerTerm::var(Variable(193_001));
+        let y = IntegerTerm::var(Variable(193_002));
+        let z = IntegerTerm::var(Variable(193_003));
+        let source = IntegerTerm::truncating_quotient(x.clone(), z.clone());
+        let cited = integer_equality(source.clone(), y.clone());
+        let compound = |a| IntegerTerm::add(IntegerTerm::multiply(a, z.clone()), x.clone());
+        let goal = integer_equality(compound(source.clone()), z.clone());
+        let expected = integer_equality(compound(y.clone()), z.clone());
+        let empty = ProofFacts::default();
+        assert!(empty.check_equality_rewrite(&goal, &cited).is_err());
+        for evidence in [cited.clone(), integer_equality(y.clone(), source.clone())] {
+            let facts = empty.with_fact(evidence);
+            let mut checked = facts.check_equality_rewrite(&goal, &cited).unwrap();
+            assert_eq!(checked.proposition(), &expected);
+            assert!(!checked.try_present_as(&integer_equality(compound(y.clone()), x.clone())));
+            assert_eq!(checked.proposition(), &expected);
+            let reverse = integer_equality(y.clone(), source.clone());
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&expected, &reverse)
+                    .unwrap()
+                    .proposition(),
+                &goal
+            );
+            assert!(
+                facts
+                    .check_equality_rewrite(&integer_equality(x.clone(), z.clone()), &cited)
+                    .is_err()
+            );
+        }
+        let false_cited = Proposition::Not(Box::new(cited.clone()));
+        assert!(
+            empty
+                .with_fact(false_cited.clone())
+                .check_equality_rewrite(&goal, &false_cited)
+                .is_err()
+        );
+        let mut false_polarity = cited.clone();
+        if let Proposition::ConditionIs(_, truth) = &mut false_polarity {
+            *truth = false;
+        }
+        assert!(
+            empty
+                .with_fact(false_polarity.clone())
+                .check_equality_rewrite(&goal, &false_polarity)
+                .is_err()
+        );
+        assert_eq!(
+            empty
+                .check_equality_rewrite(&goal, &integer_equality(x.clone(), x.clone()))
+                .unwrap()
+                .proposition(),
+            &goal
+        );
+        // Substitution preserves relation polarity rather than proving its result.
+        let negative = Proposition::Not(Box::new(goal));
+        assert_eq!(
+            empty
+                .with_fact(cited.clone())
+                .check_equality_rewrite(&negative, &cited)
+                .unwrap()
+                .proposition(),
+            &Proposition::Not(Box::new(expected))
+        );
+    }
+
+    #[test]
+    fn integer_equality_rewrite_preserves_scopes_and_machine_carriers() {
+        let x = IntegerTerm::var(Variable(193_011));
+        let y = IntegerTerm::var(Variable(193_012));
+        let cited = integer_equality(x.clone(), y.clone());
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let goal = integer_equality(IntegerTerm::multiply(x.clone(), x.clone()), y.clone());
+        for variable in [Variable(193_011), Variable(193_012)] {
+            let quantified = Proposition::ForAll {
+                var: variable,
+                sort: Sort::Integer,
+                body: Box::new(goal.clone()),
+            };
+            assert!(facts.check_equality_rewrite(&quantified, &cited).is_err());
+        }
+        let unrelated = Proposition::ForAll {
+            var: Variable(193_013),
+            sort: Sort::Integer,
+            body: Box::new(goal.clone()),
+        };
+        let expected = Proposition::ForAll {
+            var: Variable(193_013),
+            sort: Sort::Integer,
+            body: Box::new(integer_equality(
+                IntegerTerm::multiply(y.clone(), y.clone()),
+                y.clone(),
+            )),
+        };
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&unrelated, &cited)
+                .unwrap()
+                .proposition(),
+            &expected
+        );
+        let fold = IntegerTerm::range_fold(
+            IntegerRangeFoldIndex::Integer {
+                start: IntegerTerm::constant_i64(0).into(),
+                end: IntegerTerm::constant_i64(2).into(),
+            },
+            IntegerTerm::constant_i64(0),
+            Variable(193_012),
+            Variable(193_014),
+            x.clone(),
+        );
+        let refused =
+            facts.check_equality_rewrite(&integer_equality(fold.clone(), y.clone()), &cited);
+        assert!(
+            refused
+                .err()
+                .unwrap()
+                .contains("internal fold or match binder")
+        );
+        // A whole fold is still a valid exact occurrence: no binder is entered.
+        let fold_cited = integer_equality(fold.clone(), y.clone());
+        assert_eq!(
+            facts
+                .with_fact(fold_cited.clone())
+                .check_equality_rewrite(&integer_equality(fold, x.clone()), &fold_cited)
+                .unwrap()
+                .proposition(),
+            &integer_equality(y.clone(), x.clone())
+        );
+        for destination in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::Int128,
+        ] {
+            let cast = |value: IntegerTerm| {
+                Term::Bitvector32(Bitvector32Term::IntegerToMachine {
+                    value: value.into(),
+                    destination,
+                })
+            };
+            let native_goal = Proposition::Equal(cast(x.clone()), cast(y.clone()));
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&native_goal, &cited)
+                    .unwrap()
+                    .proposition(),
+                &Proposition::Equal(cast(y.clone()), cast(y.clone()))
+            );
+        }
+        let application = |value: IntegerTerm| {
+            IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                "opaque_integer".into(),
+                vec![PureFunctionArgument::Integer(value.into())],
+            ))
+        };
+        let application_goal = integer_equality(application(x.clone()), y.clone());
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&application_goal, &cited)
+                .unwrap()
+                .proposition(),
+            &integer_equality(application(y.clone()), y.clone())
+        );
+        let expanded = IntegerTerm::add(x.clone(), x.clone());
+        let self_reference = integer_equality(x.clone(), expanded.clone());
+        assert_eq!(
+            facts
+                .with_fact(self_reference.clone())
+                .check_equality_rewrite(&integer_equality(x.clone(), y.clone()), &self_reference)
+                .unwrap()
+                .proposition(),
+            &integer_equality(expanded, y.clone())
+        );
+        // One bitvector carrier can be observed at several widths and signs.
+        // Equalities between its int64 observations grant no cross-type match.
+        let observe = |ty| {
+            IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(193_015))).unwrap()
+        };
+        let wide = integer_equality(observe(MachineIntegerType::Int64), y.clone());
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+        ] {
+            let wrong_carrier =
+                integer_equality(IntegerTerm::multiply(observe(ty), x.clone()), y.clone());
+            assert!(
+                facts
+                    .with_fact(wide.clone())
+                    .check_equality_rewrite(&wrong_carrier, &wide)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn integer_equality_rewrite_keeps_snapshot_identity_and_checks_work_budget() {
+        let _session = VerificationSession::enter();
+        let pointer = Pointer {
+            block: "integer-rewrite-snapshot".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new().with_block("integer-rewrite-snapshot", 8);
+        let after = before.clone().store(
+            pointer.clone(),
+            CValue::Int64(Bitvector32Term::Int64Constant(9)),
+        );
+        let observe = |memory: CMemory| {
+            IntegerTerm::from_machine(
+                MachineIntegerType::Int64,
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(memory),
+                    Box::new(pointer.clone()),
+                    LoadKind::Bits64,
+                ),
+            )
+            .unwrap()
+        };
+        let x = observe(before);
+        let changed = observe(after);
+        let y = IntegerTerm::var(Variable(193_031));
+        let cited = integer_equality(x.clone(), y.clone());
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let compound = |a| integer_equality(IntegerTerm::multiply(a, y.clone()), y.clone());
+        assert!(
+            facts
+                .check_equality_rewrite(&compound(changed), &cited)
+                .is_err()
+        );
+        assert_eq!(
+            facts
+                .check_equality_rewrite(&compound(x.clone()), &cited)
+                .unwrap()
+                .proposition(),
+            &compound(y.clone())
+        );
+        let limits = crate::instrumentation::TacticWorkLimits {
+            simple: 0,
+            smart: 0,
+            control: 0,
+        };
+        let result = crate::instrumentation::with_tactic_work_limits(limits, || {
+            crate::instrumentation::collect(|| {
+                let tactic = crate::instrumentation::TacticEvent {
+                    claim: "Integer equality rewrite".into(),
+                    tactic_index: 0,
+                    tactic_name: "rewrite".into(),
+                    class: "simple".into(),
+                    statement_index: 0,
+                    source_index: 0,
+                };
+                crate::instrumentation::emit(
+                    crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
+                );
+                let result = facts.check_equality_rewrite(&compound(x), &cited);
+                crate::instrumentation::emit(
+                    crate::instrumentation::VerificationEvent::TacticFailed(tactic),
+                );
+                result.err().unwrap()
+            })
+            .0
+        });
+        assert!(result.contains("work budget"), "{result}");
+    }
+
+    #[test]
+    fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
+        let x = IntegerTerm::var(Variable(193_021));
+        let y = IntegerTerm::var(Variable(193_022));
+        let cited = integer_equality(x.clone(), y.clone());
+        let mut costs = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut facts = ProofFacts::default().with_fact(cited.clone());
+            for i in 0..size {
+                facts = facts.with_fact(integer_equality(
+                    IntegerTerm::var(Variable(194_000 + i as u64)),
+                    IntegerTerm::constant_i64(i as i64),
+                ));
+            }
+            let small = integer_equality(IntegerTerm::multiply(x.clone(), x.clone()), y.clone());
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&small, &cited)
+            });
+            checked.unwrap();
+            costs.push(work);
+            // Repeated squaring has exponentially many paths but a linear DAG.
+            let mut term: SharedIntegerTerm = x.clone().into();
+            for _ in 0..size {
+                term = IntegerTerm::Multiply(term.clone(), term).into();
+            }
+            let goal = integer_equality(term.as_ref().clone(), y.clone());
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &cited)
+            });
+            let checked = checked.unwrap();
+            assert!(work <= 20 * size + 100, "size {size}: {work}");
+            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(mut root, _), true) =
+                checked.proposition().clone()
+            else {
+                unreachable!()
+            };
+            for _ in 0..size {
+                let IntegerTerm::Multiply(a, b) = root.as_ref() else {
+                    unreachable!()
+                };
+                assert_eq!(a.id(), b.id());
+                root = a.clone();
+            }
+            assert_eq!(root.as_ref(), &y);
+        }
+        assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
     }
 
     #[test]
