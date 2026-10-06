@@ -5247,6 +5247,82 @@ fn loop_exit_join_scaling_on_this_thread() {
     assert_near_linear_scaling("loop exits joined", &samples);
 }
 
+/// A function proof with `count` proof-level `if`s in a row between two C
+/// statements. Each `if` only reasons: both arms prove the same fact.
+fn sequential_reasoning_ifs_project(count: usize) -> (String, String) {
+    let c_source =
+        "int32 bump(int32 x) {\n    int32 a;\n    a = 0;\n    a = a + 1;\n    return a;\n}\n"
+            .to_string();
+    let mut click_source = String::from(
+        "verifying \"ifs.c\";\n\nint32 bump(int32 x) {\n    ensures result == 1;\n} by {\n    step();\n    step();\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!(
+            "    if x <= {index} {{\n        have x <= {index} or x > {index} by {{ simp(); }}\n    }} else {{\n        have x <= {index} or x > {index} by {{ simp(); }}\n    }}\n"
+        ));
+    }
+    click_source.push_str("    step();\n    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// A proof-level `if` whose arms only reason rejoins, so what follows it is
+/// checked once. Before the join each case ran the rest of the proof itself,
+/// and `n` such `if`s in a row cost `2^n` runs of the tail; twenty of them
+/// would not finish.
+#[test]
+fn sequential_proof_ifs_rejoin_instead_of_doubling_the_rest_of_the_proof() {
+    let samples = [5, 10, 20, 40]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = sequential_reasoning_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("sequential proof-level ifs", &samples);
+}
+
+/// A function of `count` assignments, proved with one proof-level `if`
+/// around each: both arms step the assignment and prove the same fact.
+fn sequential_stepping_ifs_project(count: usize) -> (String, String) {
+    let mut c_source = String::from("int32 bump(int32 x) {\n    int32 a;\n");
+    let mut click_source = String::from(
+        "verifying \"ifs.c\";\n\nint32 bump(int32 x) {\n    ensures result == 0;\n} by {\n    step();\n",
+    );
+    for index in 0..count {
+        c_source.push_str("    a = 0;\n");
+        click_source.push_str(&format!(
+            "    if x <= {index} {{\n        step();\n        have x <= {index} or x > {index} by {{ simp(); }}\n    }} else {{\n        step();\n        have x <= {index} or x > {index} by {{ simp(); }}\n    }}\n"
+        ));
+    }
+    c_source.push_str("    return a;\n}\n");
+    click_source.push_str("    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// Arms that run the same C statement end at one program point in one
+/// state, so they rejoin as arms that only reason do.
+#[test]
+fn sequential_proof_ifs_that_step_c_rejoin_instead_of_doubling() {
+    let samples = [5, 10, 20, 40]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = sequential_stepping_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("sequential proof-level ifs that step C", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{

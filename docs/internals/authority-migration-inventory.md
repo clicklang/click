@@ -21,9 +21,9 @@ consumption. Disjoint private bodies can be updated through preserving ordinary
 helper contracts while the caller's authority control remains closed.
 Negatives cover overlapping memory, duplicate helper inputs, missing authority
 for counts or lifecycle changes, late establishment, and premature retirement.
-Named-member helper creation/consumption with explicit authority, heterogeneous
-symbolic instance batches and general sums over fields remain outside
-the implemented boundary. List-valued field descriptions are covered by the
+Named-member helper creation/consumption with explicit authority is completed
+by the Milestone 3 closing slice. Heterogeneous symbolic instance batches and
+general sums over fields remain outside the implemented boundary. List-valued field descriptions are covered by the
 Milestone 3 slice below. Milestone 2 is complete
 for this boundary: the full gate passed 4,723 unit/integration tests and 190
 fixture tests; all 48 new named-member expansion-audit sites passed.
@@ -85,8 +85,8 @@ unchanged total promised for a birth. `authority_wildcard_contained_object`
 covers the built-in `owns object(p)` form. The kernel checks the exact body
 exchange, and helper custody follows only the explicit contained-resource
 frontier, without scanning the caller frame.
-The bounded-pool sidecar remains on its existing path; this group supplies
-one prerequisite without migrating it.
+This discovery group preceded the bounded-pool migration recorded above;
+the original sidecar now selects authority semantics.
 
 The `authority_wildcard_exact_count*` fixtures distinguish exact member counts
 from wildcard totals, including creation and consumption helper contracts,
@@ -239,6 +239,41 @@ including all 2,569 mdtests and the frozen shared-heap example checks.
 
 ## Sequential mdtest dependency groups
 
+**Milestone 3 exit:** Every sequential population-consumer row below now has an
+authority-mode replacement. `c_contract_executes_resource_count.md` preserves
+its exact-one logical model through a checked callback refinement;
+`c_step_contract_resource_count_is_model_local.md` retains the unchanged scalar
+C and rejects the false result using the alternative model's zero remainder.
+The integer-only global populations in those controls follow the prior retirement
+decision. `authority_callback_count_refinement.md` retains actual Count coverage
+at the checked final-implication boundary, and
+`authority_callback_count_model_local.md` rejects evaluating the alternative
+transition's count guarantee in Keep's unchanged population model.
+
+`authority_named_import_creation.md` and its wildcard companion check direct
+and nested births, fields, and retained occurrences. Missing-birth, missing-bound,
+and false-total companions reject the corresponding obligations. The caller
+consumption and wildcard consumption fixtures check exact deaths across nested
+calls; the original lifecycle refusals now reach spent-instance reuse and false
+count claims. Private creation retains a neighboring private member and explicit
+memory preservation. Birth-then-death checks do not infer a positive entry count.
+Authority-mode returns never select the legacy counted-population transition.
+
+The recovery review maps the three saved migration frontiers as follows:
+
+| Recovery frontier | Checked repository replacement |
+| --- | --- |
+| Owned-count authentication and freshness | `authority_owned_count_*` fixtures and authenticated contract-entry bound kernel checks |
+| Predicate entry/current model and contained tokens | Authority predicate precondition positive/false-zero controls, snapshot/predicate fixtures, and contained-resource exchange checks |
+| Named pool member lifecycle and private memory | `authority_pool_named_member_helper_consumption.md` verifies unchanged C; `authority_pool_member_transfer.md` retains the original never-green stack-body proposal as a precise implicit-storage refusal. `authority_named_import_cross_pool_transfer.md` verifies explicit private ownership and framed custody |
+| Earlier local named/private-member probes | `authority_named_field_*` positives and authority, alias, overlap, duplicate-input, and premature-retirement refusals |
+
+The migration no longer depends on uncommitted recovery state. Original archives
+remain preserved, including unrelated C++ and snapshot experiments; those are
+outside the Milestone 3 consumer inventory. The fork commit and this inventory
+are sufficient to resume the migration elsewhere.
+
+
 The milestone-three constant-quantity slice migrates
 `let_bound_constant_quantity.md` and `fold_rejects_a_negative_quantity.md` to
 authority semantics. The former retains the let-bound contract quantity and
@@ -287,12 +322,10 @@ original C while independently verifying the numeric caller's exact total of
 seven. `authority_large_symbolic_population_total.md` admits the first large
 symbolic birth; the numeric maximum/overflow pair admits the exact signed
 maximum and rejects a further birth. These use the existing checked engine.
-Repeated births without an exact numeric quantity remain unsupported even for
-bounded totals, so the
-overflow negative is not evidence of that capability. Only the two scalar
-logical callback controls in the sequential inventory still use legacy mode;
-named body-opening/lifecycle effects and recovered-prototype review remain
-unfinished.
+The overflow negative alone does not establish repeated symbolic-birth support;
+that capability is covered by the later repeated-birth slice. The scalar logical
+callback controls, named lifecycle effects, and recovered-prototype review are
+completed by the closing slice below.
 
 `authority_exact_symbolic_population_total.md` retains the original C and
 verifies two births whose variable quantity is exactly one billion. The checked
@@ -456,8 +489,9 @@ including equal-argument members and ownership framed by the caller. Negatives
 reject invented aggregate/exact totals, another anchor, duplicate binders, absent
 authority, and imported lifecycle changes. Both import shapes have deterministic
 lookup scaling checks. Unary consumption inside a standalone helper is supported as described below.
-Named creation, wildcard lifecycle effects, caller-side lifecycle transfers,
-and external named lifecycle contract interfaces remain unsupported.
+The closing slice supports named creation, wildcard lifecycle effects, and
+caller-side lifecycle transfers. Assumed named lifecycle interfaces remain
+unsupported because they supply no body certificate for that population effect.
 
 The `authority_external_named_*` group exercises preserving assumed interfaces.
 External and named callback preparation now receives the selected resource mode;
@@ -467,8 +501,9 @@ List-valued count function use the existing checked call boundary. Assumed
 interfaces cannot create or consume named members or replace their identity.
 Negatives reject missing authority, duplicate member maps, another anchor, and
 named consumption. These are external contract assumptions, not proofs of an
-external C body. The callback regression uses a pointer anchor; the original
-scalar logical callback controls remain legacy. Caller-side imported lifecycle transfers remain unsupported.
+external C body. The callback regression uses a pointer anchor; the scalar logical controls now select authority with ordinary explicitly
+selected models and unchanged C signatures. Caller-side imported lifecycle
+transfers are checked by the closing slice.
 
 `population_symbolic_increment_bounded.md` and
 `population_symbolic_increment_overflow.md` now select authority semantics.
@@ -481,7 +516,9 @@ an arbitrary entry total and refusal to drop the unit delta; kernel regressions
 cover custody, repeated spend, missing authority, and deterministic scaling.
 Regrouped signed sums require all three addition domains at certification.
 
-Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
+All sequential fixtures in the following table now select authority semantics.
+The remaining mutex and worker groups retain legacy semantics until Milestones
+4 and 5. In the refcount row,
 `counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
 `counted_resource_population_body.md`,
@@ -515,7 +552,7 @@ verification and audit evidence above.
 | Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `shared_heap_produced_ensure_transport.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
 | Loop and pure expression sites | `loop_old_count_invariant.md`, `loop_invariant_body.md`, `pure_click_functions.md`, `recursive_call_precondition_bounds_a_decremented_argument.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`: old versus current count in invariants and proof facts, predicate/pure-function evaluation, and diagnostics at recursive calls. |
 
-List-valued named members now use checked algebraic schemas under authority. `authority_named_list_field_private_helper.md` preserves two distinct `List<int32>` models across a private-memory helper while authority is closed, then observes aggregate counts under exposed authority; companion negatives reject counts without exposed authority and a mismatched field type. Early protected-type expansion and later member lowering share one checked schema resolver. `resource_fields_reject_quantity.md` now selects authority semantics and rejects anonymous quantities for missing separately named fields, rather than claiming the family is uncountable. The original `resource_fields_reject_count.md` and `resource_fields_reject_hidden_count.md` now select authority and have converted to positive outcomes. The first retains `count(cell(p)) == 1` as an external precondition, adds explicit authority and named custody, and exercises a heap caller with sealed private memory, List model preservation, and cleanup. The second retains its forward-declared List-valued count function with explicit constructor type arguments. `authority_field_count_function_call.md` exercises the function before and after the same external call; fresh unfoldings use exposed authority. Companion negatives reject direct/hidden observations and external calls under a closed control, including a fresh unfolding after a prior authorized count. The reader contract is an external assumption, not verification of an absent C body. Imported named body opening and lifecycle effects remain unfinished. Unary and wildcard preserving authority imports are supported, as described above. `resource_field_child_equations.md`, `resource_field_child_equation_rejects_other_start.md`, and `resource_unfold_binds_children_and_fields.md` protect distinct field identity and child binding independent of count.
+List-valued named members now use checked algebraic schemas under authority. `authority_named_list_field_private_helper.md` preserves two distinct `List<int32>` models across a private-memory helper while authority is closed, then observes aggregate counts under exposed authority; companion negatives reject counts without exposed authority and a mismatched field type. Early protected-type expansion and later member lowering share one checked schema resolver. `resource_fields_reject_quantity.md` now selects authority semantics and rejects anonymous quantities for missing separately named fields, rather than claiming the family is uncountable. The original `resource_fields_reject_count.md` and `resource_fields_reject_hidden_count.md` now select authority and have converted to positive outcomes. The first retains `count(cell(p)) == 1` as an external precondition, adds explicit authority and named custody, and exercises a heap caller with sealed private memory, List model preservation, and cleanup. The second retains its forward-declared List-valued count function with explicit constructor type arguments. `authority_field_count_function_call.md` exercises the function before and after the same external call; fresh unfoldings use exposed authority. Companion negatives reject direct/hidden observations and external calls under a closed control, including a fresh unfolding after a prior authorized count. The reader contract is an external assumption, not verification of an absent C body. Imported named body opening and lifecycle effects are covered by the closing slice. Unary and wildcard preserving authority imports are supported, as described above. `resource_field_child_equations.md`, `resource_field_child_equation_rejects_other_start.md`, and `resource_unfold_binds_children_and_fields.md` protect distinct field identity and child binding independent of count.
 
 ### Checked-in `expect` outcomes
 
@@ -574,6 +611,6 @@ missing-death controls reject false totals, missing authority, and unchecked
 consumption. Kernel
 coverage checks successor identity, duplicate death, distinct equal-field
 occurrences, no anonymous custody, and deterministic work alongside
-16/64/256 unrelated imports. Named creation, wildcard named lifecycle changes,
-and caller-side named consumption transfers remain unsupported; the original
-unary helper-call refusal retains its C and now reaches that call boundary.
+16/64/256 unrelated imports. The closing slice extends this to named creation,
+wildcard lifecycle changes, and caller-side transfers. The original unary
+helper-call refusal retains its C and now reaches reuse of the spent occurrence.

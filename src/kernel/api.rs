@@ -4926,6 +4926,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
             }
         }
         CheckedExecutionEvent::Branch(branch) => Some(branch.start_state()),
+        CheckedExecutionEvent::ProofCaseJoin(join) => Some(join.start_state()),
     })
 }
 
@@ -4965,6 +4966,17 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                             covered,
                             &mut nested_partitions,
                         ) {
+                            return false;
+                        }
+                    }
+                }
+                // Each live arm begins with its own `ProofCase` event, so
+                // walking the arms records the joined partition's coverage
+                // like any other; the arms are sibling paths.
+                CheckedExecutionEvent::ProofCaseJoin(join) => {
+                    for events in join.live_arm_events() {
+                        let mut nested_partitions = std::collections::BTreeSet::new();
+                        if !collect(events, covered, &mut nested_partitions) {
                             return false;
                         }
                     }
@@ -5121,6 +5133,126 @@ mod proof_case_evidence_tests {
         assert!(!proof_case_partitions_are_exhaustive(&[
             duplicate_then_core.execution_evidence[0].clone(),
             else_core.execution_evidence[0].clone(),
+        ]));
+    }
+
+    /// A core at function entry and its two arms, each having entered its
+    /// case of `partition` and then established `shared` and its own fact.
+    fn joinable_arms(
+        root: &ProofFacts,
+        partition: &Arc<CheckedProofCasePartition>,
+        case_facts: [&Proposition; 2],
+        shared: &Proposition,
+    ) -> (ExecutionProofCore, [(ExecutionProofCore, ProofFacts); 2]) {
+        let parent = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+        let arms = [0, 1].map(|index| {
+            let entered = root.with_fact(case_facts[index].clone());
+            let mut core = parent.clone();
+            assert!(core.record_proof_case_arm(partition.clone(), index, entered.clone()));
+            let own = Proposition::Predicate {
+                name: format!("only_in_arm_{index}"),
+                arguments: Vec::new(),
+            };
+            (core, entered.with_fact(shared.clone()).with_fact(own))
+        });
+        (parent, arms)
+    }
+
+    fn join_test_function() -> CFunction {
+        c_function(
+            CType::Int32,
+            "joined",
+            Vec::new(),
+            c_return(c_int32_literal(0)),
+        )
+    }
+
+    #[test]
+    fn case_join_rejoins_the_arms_and_keeps_only_their_shared_facts() {
+        let root = ProofFacts::default();
+        let (partition, then_fact, else_fact) = case_partition(&root);
+        let shared = Proposition::Predicate {
+            name: "shared".to_string(),
+            arguments: Vec::new(),
+        };
+        let (parent, [(then_core, then_facts), (else_core, else_facts)]) =
+            joinable_arms(&root, &partition, [&then_fact, &else_fact], &shared);
+        let function = join_test_function();
+
+        let mut joined = parent.clone();
+        let (facts, changed_execution) = joined
+            .record_proof_case_join(
+                &parent,
+                &[
+                    Some((&then_core, &then_facts)),
+                    Some((&else_core, &else_facts)),
+                ],
+                &function,
+                &[],
+            )
+            .expect("two arms at one state rejoin");
+
+        assert!(!changed_execution);
+        // What both arms proved survives; a case fact or one arm's own fact
+        // does not.
+        assert!(facts.contains(&shared));
+        assert!(!facts.contains(&then_fact));
+        assert!(!facts.contains(&else_fact));
+        assert!(!facts.contains(&Proposition::Predicate {
+            name: "only_in_arm_0".to_string(),
+            arguments: Vec::new(),
+        }));
+        // The proof is one path again, and that path covers the partition.
+        assert_eq!(joined.execution_evidence.len(), 1);
+        assert!(proof_case_partitions_are_exhaustive(&[joined
+            .execution_evidence[0]
+            .clone()]));
+    }
+
+    #[test]
+    fn case_join_refuses_arms_that_are_not_its_partitions_live_arms() {
+        let root = ProofFacts::default();
+        let (partition, then_fact, else_fact) = case_partition(&root);
+        let shared = Proposition::Predicate {
+            name: "shared".to_string(),
+            arguments: Vec::new(),
+        };
+        let (parent, [(then_core, then_facts), (else_core, else_facts)]) =
+            joinable_arms(&root, &partition, [&then_fact, &else_fact], &shared);
+        let function = join_test_function();
+        let refused = |arms: &[Option<(&ExecutionProofCore, &ProofFacts)>]| {
+            parent
+                .clone()
+                .record_proof_case_join(&parent, arms, &function, &[])
+                .is_err()
+        };
+
+        // A live arm is missing.
+        assert!(refused(&[Some((&then_core, &then_facts)), None]));
+        assert!(refused(&[Some((&then_core, &then_facts))]));
+        // An arm stands in for the other case.
+        assert!(refused(&[
+            Some((&else_core, &else_facts)),
+            Some((&then_core, &then_facts)),
+        ]));
+        assert!(refused(&[
+            Some((&then_core, &then_facts)),
+            Some((&then_core, &then_facts)),
+        ]));
+        // An arm entered a different partition over the same facts.
+        let (other, other_then, _) = case_partition(&root);
+        let mut foreign = parent.clone();
+        let foreign_facts = root.with_fact(other_then);
+        assert!(foreign.record_proof_case_arm(other, 0, foreign_facts.clone()));
+        assert!(refused(&[
+            Some((&foreign, &foreign_facts)),
+            Some((&else_core, &else_facts)),
+        ]));
+        // Facts that are not this arm's: they never entered its case.
+        let unrelated = root.with_fact(shared);
+        assert!(refused(&[
+            Some((&then_core, &unrelated)),
+            Some((&else_core, &else_facts)),
         ]));
     }
 
