@@ -890,3 +890,26 @@ Next establish these helper preconditions from the original nested
 chunks/remainder loop invariants, preserve byte accounting, and connect the
 computation to the common Adler-32 specification. The checksum result and
 whole-loop panic freedom remain unproved.
+
+
+### Deferred-reduction lane ceilings
+
+The adler2 bounds library now verifies the proposed lane ceilings
+`A(n) = 65520 + 255*n` and
+`B(n) = 65520 + 65520*n + 255*n*(n+1)/2` against the full u32 capacity.
+Product and division certificates cover all batch indices through 5552;
+`B(5552) = 4294690200` fits and `B(5553) = 4296171735` does not. Reduced
+initial values satisfy the initial ceilings. The A-bound is preserved by a
+byte update, and both next additions fit when the current lanes satisfy the
+proposed bounds and `n < 5552`. Frozen helper and pure-bound claims verify in
+the same prepared environment. False range, byte, endpoint, certificate, and
+invariant-step claims are rejected, with checked tool expansion.
+
+This proves arithmetic implications, not that the original loop maintains
+them. Next prove the weighted B-bound recurrence, bridge mathematical
+observations to native u32 checks, and connect the batch index to actual
+iterator state. Polynomial identities such as the triangular successor step
+need checked algebra beyond the current affine arithmetic fragment; do not
+assume those identities or add a generated processed-count variable. Then
+compose byte accounting with the shared Adler-32 specification. Total input
+length is not restricted to one batch by these lemmas.

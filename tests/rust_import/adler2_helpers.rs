@@ -253,3 +253,107 @@ fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     C0VerificationSession::new_program_prepared(HELPERS, &load_import(&p.config()).unwrap())
         .unwrap();
 }
+
+const BOUNDS: &str = include_str!("../../design/charon-trial/adler2/bounds.click");
+
+#[test]
+fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
+    use click::surface::verify_click_theorems;
+    assert_eq!(verify_click_theorems(BOUNDS).unwrap().len(), 19);
+    for (before, after) in [
+        ("requires n <= 5552;", "requires n <= 5553;"),
+        ("requires n < 5552;", "requires n <= 5552;"),
+        ("requires byte <= 255;", "requires byte <= 256;"),
+        ("requires b <= adler_lane_b_ceiling(n);", ""),
+        ("requires 0 <= n;", ""),
+        (
+            "integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30830256;",
+            "integer_product_bounds bounds [0, 1, 2, 3] => n * (n + 1) <= 30830255;",
+        ),
+        (
+            "integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15415128;",
+            "integer_division_bounds bounds [0, 1, 2, 3] => truncating_quotient(n * (n + 1), divisor) <= 15415127;",
+        ),
+        (
+            "ensures adler_lane_b_ceiling(5553) > 4294967295",
+            "ensures adler_lane_b_ceiling(5553) <= 4294967295",
+        ),
+        (
+            "ensures a + byte <= adler_lane_a_ceiling(n + 1)",
+            "ensures a + byte <= adler_lane_a_ceiling(n)",
+        ),
+    ] {
+        let invalid = BOUNDS.replace(before, after);
+        assert_ne!(invalid, BOUNDS, "missing mutation: {before}");
+        assert!(
+            verify_click_theorems(&invalid).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[test]
+fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
+    let p = adler2_helpers_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&format!("{HELPERS}\n{BOUNDS}"), &prepared)
+        .unwrap();
+}
+
+#[test]
+fn charon_adler2_lane_bounds_tools_recheck_expanded_certificates() {
+    let p = adler2_helpers_project();
+    fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
+    for command in ["verify", "profile", "audit"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg(command)
+            .arg(p.root.join("bounds.click"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    for (name, ensures) in [
+        ("adler_lane_half_product_5551", 1),
+        ("adler_lane_triangle_5551", 1),
+        ("adler_lane_ceiling_5551", 2),
+        ("adler_lane_half_product_5552", 1),
+        ("adler_lane_triangle_5552", 1),
+        ("adler_lane_ceiling_5552", 2),
+        ("adler_lane_initial_ceiling", 2),
+        ("adler_lane_step_a", 2),
+        ("adler_lane_step_b", 2),
+        ("adler_lane_limit_is_tight", 4),
+        ("adler_lane_a_invariant_step", 1),
+    ] {
+        for index in 0..ensures {
+            let result = Command::new(env!("CARGO_BIN_EXE_click"))
+                .args([
+                    "expand",
+                    "--claim",
+                    &format!("{name}.ensures_{index}"),
+                    "--in-place",
+                ])
+                .arg(p.root.join("bounds.click"))
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{name}: {}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+    }
+    let expanded = fs::read_to_string(p.root.join("bounds.click")).unwrap();
+    assert_eq!(
+        click::surface::verify_click_theorems(&expanded)
+            .unwrap()
+            .len(),
+        19
+    );
+}

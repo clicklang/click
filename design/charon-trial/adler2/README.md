@@ -45,6 +45,33 @@ helpers, and reject false lane claims, short reads, missing safety guards,
 wrapping addition bounds, and mutation under a shared view. CLI verification,
 profiling, auditing, and expanded certificates must agree.
 
+## Lane batch arithmetic
+
+The [bounds library](bounds.click) checks the mathematical ceilings proposed
+for the lane-loop invariants after `n` four-byte vectors since the last
+reduction:
+
+```text
+A(n) = 65520 + 255*n
+B(n) = 65520 + 65520*n + 255*n*(n+1)/2
+```
+
+Checked product and truncating-division certificates establish the triangular
+term's bound for every `n` in the batch range. At `n = 5552`, the ceilings are
+`A = 1481280` and `B = 4294690200`; the latter leaves 277095 below `u32::MAX`.
+At `n = 5553`, `B = 4296171735` exceeds u32. Initial ceilings cover reduced
+lanes, and a byte of at most 255 preserves the `A(n+1)` bound. Given the
+proposed `A(n)` and `B(n)` bounds and `n < 5552`, the next two additions remain
+nonnegative and below the full-batch ceilings. The range is per batch; it
+imposes no bound on the total number of batches in an input.
+
+These are checked mathematical lemmas. They do not yet establish or preserve
+`B(n)` over the original iterator states, transport mathematical observations
+to the native u32 panic guards, or prove checksum correctness. The tests check
+the bounds alongside the actual helper contracts in one prepared environment,
+and reject a larger batch, missing bounds, false endpoints, altered product
+or quotient certificates, and a false invariant step.
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -52,6 +79,7 @@ artifact verifies without extracting again:
 
 ```sh
 target/debug/click verify design/charon-trial/adler2/helpers.click
+target/debug/click verify design/charon-trial/adler2/bounds.click
 ```
 
 Refresh the entire selected crate through the production adapter:
@@ -71,9 +99,10 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
-Compose the helper contracts with the nested chunks/remainder loop invariants,
-including lane bounds and byte accounting, then connect the original computation
-to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
+Establish and preserve the lane invariants over the original chunks/remainder
+iterator states, including the weighted `B(n)` recurrence and native u32
+observation bridges. Then use the helper contracts and byte accounting
+to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
 Successful import and helper proofs alone do not establish checksum correctness
 or whole-loop panic freedom.
 
