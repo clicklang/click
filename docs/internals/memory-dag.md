@@ -152,6 +152,14 @@ loop head: the walk is assumption-free and stops at the head's havoc, while
 the head's copy-back has already kept the cell's value because the checked
 footprint is disjoint from it.
 
+Seeded runs keep their source snapshots, but do not retain named slot values.
+Reading a slot goes through the load-naming cache scoped to the current
+load-origin epoch. A reusable verification session retains the arena and its
+runs across rechecks; returning a slot value cached inside a run would skip
+the mint that refreshes the load's live origin, leaving transport without an
+origin in the current function. The session-wide name remains unchanged,
+while its first observation in each epoch records the live source again.
+
 ## Structural invariants
 
 Every recorded parent identifier is smaller than its child identifier. The
