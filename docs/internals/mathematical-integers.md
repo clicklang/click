@@ -921,7 +921,43 @@ See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests
 
 The unchanged C++ rounding sidecars now use joint guards
 `-K * to_integer(d) <= to_integer(n) <= K * to_integer(d)` (two clauses).
-For Bitcoin, `K = INT64_MAX - 1` and every positive int32 divisor is admitted.
-This includes int128 numerators outside int64 while preserving the correction
-margin and the existing exact floor/ceiling guarantees. It does not cover the
-full 96/32 fee-division contract or every safe endpoint case.
+The initial margin profile used `K = INT64_MAX - 1`; the endpoint proof below
+widens it to `INT64_MIN * d <= n <= INT64_MAX * d`. Both profiles include
+int128 numerators outside int64 and every positive int32 divisor. The broader
+mode-specific result-fit contract and real fee-evaluation callers remain open.
+
+
+## Remainder signs and correction endpoints
+
+`integer_lower_correction_bound(n, d, q, r, lower)` requires `lower <= q`,
+`lower * d <= n`, reconstruction `n == q * d + r`, and `r < 0`. It proves
+`lower + 1 <= q`: equality at the lower endpoint would contradict the scaled
+input bound. The companion `integer_upper_correction_bound` uses `q <= upper`,
+`n <= upper * d` and `0 < r` to prove `q <= upper - 1`. These are proof-backed
+Integer lemmas; no divisor positivity or new arithmetic kernel rule is needed
+once the stated reconstruction and bounds are supplied. Products remain opaque
+until a checked equality substitutes the endpoint. Native correction safety
+remains a separate obligation.
+
+The unchanged Bitcoin and synthetic C++ sidecars apply these lemmas inside the
+remainder-sign branches. This admits the inclusive joint profile
+`INT64_MIN * d <= n <= INT64_MAX * d`, retains both exact correction formulas
+and floor/ceiling product intervals, and includes exact division at both native
+endpoints. The modular caller frames unrelated memory. Neither `quot + 1` nor
+`quot - 1` is asserted to be defined unconditionally at those endpoints.
+See the [checked fixture](https://github.com/clicklang/click/blob/master/mdtests/integer_correction_endpoint_bounds.md).
+
+Integer equality certificates produced from normalized opposite bounds now
+retain the checked goal's spelling at their conclusion. For example, `b <= x`
+and `not (b + 1 <= x)` prove `x == b` even though the source operands are not
+syntactic opposites. The kernel still recomputes every premise and node; this
+adds no search or unchecked equality. Expansion preserves the certificate and
+reverifies, including rejection of forged equality results.
+
+
+The shared parser admits `-9223372036854775808i64` as a native int64
+constant, including when a proof is printed and parsed again. Its extra
+magnitude is accepted only directly after unary minus: the positive suffixed
+literal remains out of range. Negating the minimum is a separate native
+operation and still requires definedness. See the
+[minimum-literal fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_int64_minimum_literal.md).
