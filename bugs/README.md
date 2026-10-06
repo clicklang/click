@@ -8,13 +8,11 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
-- [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
 - [A call to an inline helper with a symbolic loop runs away instead of failing](inline-helper-symbolic-loop-call-runs-away.md)
 - [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)

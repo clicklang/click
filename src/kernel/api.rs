@@ -415,15 +415,17 @@ pub struct CLoopPreservationContext {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopFinalExitCandidate {
     state: CState,
-    pure_facts: Vec<Proposition>,
+    /// A checked exit is copied into the loop rule; its facts stay shared.
+    pure_facts: std::sync::Arc<[Proposition]>,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
 impl CLoopFinalExitCandidate {
     pub(crate) fn new(state: CState, pure_facts: Vec<Proposition>) -> Self {
+        crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
-            pure_facts,
+            pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
     }
@@ -459,15 +461,17 @@ impl CLoopFinalExitCandidate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopBreakExit {
     state: CState,
-    pure_facts: Vec<Proposition>,
+    /// A checked exit is copied into the loop rule; its facts stay shared.
+    pure_facts: std::sync::Arc<[Proposition]>,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
 }
 
 impl CLoopBreakExit {
     pub(crate) fn new(state: CState, pure_facts: Vec<Proposition>) -> Self {
+        crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
-            pure_facts,
+            pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
     }
@@ -490,6 +494,44 @@ impl CLoopBreakExit {
 
     pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
         &self.loan_evidence
+    }
+}
+
+#[cfg(test)]
+mod loop_exit_sharing_tests {
+    use super::*;
+
+    #[test]
+    fn checked_loop_exit_copies_share_their_fact_storage() {
+        for count in [4usize, 64, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); count];
+            let state = CState::new();
+            let (break_exit, break_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    CLoopBreakExit::new(state.clone(), facts.clone())
+                });
+            let (final_exit, final_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    CLoopFinalExitCandidate::new(state.clone(), facts.clone())
+                });
+            assert!(break_work >= count && break_work <= count * 4 + 32);
+            assert!(final_work >= count && final_work <= count * 4 + 32);
+            for _ in 0..16 {
+                let copied_break = break_exit.clone();
+                let copied_final = final_exit.clone();
+                assert!(std::ptr::eq(
+                    break_exit.pure_facts(),
+                    copied_break.pure_facts()
+                ));
+                assert!(std::ptr::eq(
+                    final_exit.pure_facts(),
+                    copied_final.pure_facts()
+                ));
+                assert_eq!(copied_break.pure_facts(), facts);
+                assert_eq!(copied_final.pure_facts(), facts);
+            }
+        }
     }
 }
 
