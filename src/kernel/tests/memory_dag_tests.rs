@@ -697,8 +697,8 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
     let write_range = memory_range(write_base.clone(), 0, 2);
     let load_range = memory_range(load_base.clone(), 0, 2);
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(write_range.clone()),
-        right: CResource::Memory(load_range.clone()),
+        left: Box::new(CResource::Memory(write_range.clone())),
+        right: Box::new(CResource::Memory(load_range.clone())),
     };
     let resources = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_memory(write_range.clone()))
@@ -808,8 +808,8 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     let left_range = memory_range(left.clone(), 0, 1);
     let right_range = memory_range(right.clone(), 0, 1);
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(left_range.clone()),
-        right: CResource::Memory(right_range.clone()),
+        left: Box::new(CResource::Memory(left_range.clone())),
+        right: Box::new(CResource::Memory(right_range.clone())),
     };
     let entry_assumptions = PureFactContext::new().assume_proposition(separation);
     let retained = crate::kernel::memory_provenance::typed_store_separated_ranges_evidence(
@@ -879,8 +879,8 @@ fn equal_range_bases_keep_a_separation_for_disjoint_byte_intervals() {
     let left_range = memory_range(left.clone(), 0, 1);
     let right_range = memory_range(right.clone(), 1, 2);
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(left_range.clone()),
-        right: CResource::Memory(right_range.clone()),
+        left: Box::new(CResource::Memory(left_range.clone())),
+        right: Box::new(CResource::Memory(right_range.clone())),
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(separation)
@@ -911,8 +911,8 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     let write_range = memory_range(write_base.clone(), 0, 3);
     let load_range = memory_range(load_base.clone(), 0, 3);
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(write_range),
-        right: CResource::Memory(load_range),
+        left: Box::new(CResource::Memory(write_range)),
+        right: Box::new(CResource::Memory(load_range)),
     };
     let write_index = Bitvector32Term::Variable(Variable(122));
     let load_index = Bitvector32Term::Variable(Variable(123));
@@ -1471,8 +1471,8 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     crate::kernel::eval::declare_load_access_width(&data, 4);
     let len = Bitvector32Term::Variable(Variable(203));
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(memory_range(owner.clone(), 0, 4)),
-        right: CResource::Memory(memory_range(data.clone(), 0, 16)),
+        left: Box::new(CResource::Memory(memory_range(owner.clone(), 0, 4))),
+        right: Box::new(CResource::Memory(memory_range(data.clone(), 0, 16))),
     };
     let lower_bound = ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), len.clone());
     let assumptions = PureFactContext::new()
@@ -2107,8 +2107,8 @@ fn a_retained_cell_keeps_its_load_variable_across_a_call_havoc() {
         2,
     );
     let separated = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-        left: CResource::Memory(written.clone()),
-        right: CResource::Memory(memory_range(cell.clone(), 0, 2)),
+        left: Box::new(CResource::Memory(written.clone())),
+        right: Box::new(CResource::Memory(memory_range(cell.clone(), 0, 2))),
     });
 
     let load_in = |memory: &CMemory| {

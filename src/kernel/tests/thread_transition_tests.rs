@@ -227,7 +227,7 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
     let CStatementOutcome::Normal(after) = &paths[0].outcome else {
         panic!("unrelated declaration should execute normally");
     };
-    let carried = ThreadContext::new(after.clone()).unwrap();
+    let carried = ThreadContext::new(*after.clone()).unwrap();
     let returned = execute_c_statement_paths(
         carried.parent(),
         &c_return(c_int32_literal(0)),
@@ -480,7 +480,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         let CStatementOutcome::Normal(next) = &paths[0].outcome else {
             panic!("local declaration failed: {:?}", paths[0].outcome);
         };
-        state = next.clone();
+        state = *next.clone();
     }
     let initialized = execute_c_statement_paths(
         &state,
@@ -494,7 +494,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     let CStatementOutcome::Normal(initialized) = &initialized[0].outcome else {
         panic!("prior handle value should initialize");
     };
-    state = initialized.clone();
+    state = *initialized.clone();
     let create = c_call_assign(
         "rc",
         "pthread_create",
@@ -733,7 +733,7 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
         let CStatementOutcome::Normal(next) = &paths[0].outcome else {
             panic!("local declaration should succeed");
         };
-        state = next.clone();
+        state = *next.clone();
     }
     let paths = execute_c_statement_paths(
         &state,
@@ -1791,20 +1791,20 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     assert!(crate::kernel::eval::end_scope_automatic_lifetimes(active.parent(), &names).is_err());
     let state = active.parent();
     for outcome in [
-        CStatementOutcome::Normal(state.clone()),
-        CStatementOutcome::Break(state.clone()),
-        CStatementOutcome::Continue(state.clone()),
+        CStatementOutcome::Normal(Box::new(state.clone())),
+        CStatementOutcome::Break(Box::new(state.clone())),
+        CStatementOutcome::Continue(Box::new(state.clone())),
         CStatementOutcome::Return {
             value: int32(0),
-            state: state.clone(),
+            state: Box::new(state.clone()),
         },
         CStatementOutcome::Throw {
             value: int32(0),
-            state: state.clone(),
+            state: Box::new(state.clone()),
         },
         CStatementOutcome::Jump {
             target: crate::kernel::CControlTargetId(1),
-            state: state.clone(),
+            state: Box::new(state.clone()),
         },
     ] {
         let paths = crate::kernel::eval::paths_after_scope_exit(

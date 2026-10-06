@@ -12769,8 +12769,8 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         let ready_fact = CResourceFact::own_composite("ready".to_string(), Vec::new());
         let permit_view = CResourceFact::view_token("permit".to_string(), Vec::new());
         let contains = Proposition::CResourceContains {
-            parent: ready_fact.resource().clone(),
-            child: permit_fact.resource().clone(),
+            parent: Box::new(ready_fact.resource().clone()),
+            child: Box::new(permit_fact.resource().clone()),
         };
         let joined_execution = joined
             .execution()

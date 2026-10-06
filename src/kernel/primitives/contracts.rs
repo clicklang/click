@@ -2329,7 +2329,7 @@ fn collect_stated_separation_memory_ranges<'a>(
         }
         Proposition::CResourceSeparate { left, right } => {
             for resource in [left, right] {
-                if let CResource::Memory(range) = resource {
+                if let CResource::Memory(range) = &**resource {
                     ranges.push(range);
                 }
             }

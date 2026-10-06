@@ -977,7 +977,7 @@ fn with_tactic_procedures(
 /// at the end of each arm instead.
 fn append_on_every_path(script: &mut Vec<ProofTactic>, suffix: &[ProofTactic]) {
     if let Some(ProofTactic::Match(proof_match)) = script.last_mut() {
-        for arm in &mut proof_match.arms {
+        for arm in &mut std::sync::Arc::make_mut(proof_match).arms {
             append_on_every_path(&mut arm.tactics, suffix);
         }
     } else {

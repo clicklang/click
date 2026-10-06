@@ -1271,104 +1271,110 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
         verified.specification.outcome(),
         &CFunctionOutcome::Return {
             value: int32(2),
-            state: CState::new()
-                .with_memory(final_memory)
-                .with_resource_context(initial_resources),
+            state: Box::new(
+                CState::new()
+                    .with_memory(final_memory)
+                    .with_resource_context(initial_resources)
+            ),
         }
     );
     assert_eq!(
         implication_body(verified.theorem.proposition()),
         &Proposition::CFunctionPartiallySatisfiesSpecification {
-            function: {
-                let parsed = syntax::parse_function(FILL3_C)
-                    .expect("fill3 should parse")
-                    .to_kernel_function();
-                let CStatement::Seq(prefix, suffix) = parsed.body().clone() else {
-                    panic!("fill3 body should have a prefix and suffix");
-                };
-                let CStatement::Seq(loop_statement, result) = suffix.as_ref().clone() else {
-                    panic!("fill3 suffix should contain the loop and return");
-                };
-                let CStatement::While {
-                    condition,
-                    invariant,
-                    invariant_checks,
-                    body,
-                    ..
-                } = loop_statement.as_ref().clone()
-                else {
-                    panic!("fill3 suffix should start with a loop");
-                };
-                c_function(
-                    CType::Int32,
-                    "fill3",
-                    vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
-                    c_seq(
-                        prefix.as_ref().clone(),
+            function: Box::new(
+                {
+                    let parsed = syntax::parse_function(FILL3_C)
+                        .expect("fill3 should parse")
+                        .to_kernel_function();
+                    let CStatement::Seq(prefix, suffix) = parsed.body().clone() else {
+                        panic!("fill3 body should have a prefix and suffix");
+                    };
+                    let CStatement::Seq(loop_statement, result) = suffix.as_ref().clone() else {
+                        panic!("fill3 suffix should contain the loop and return");
+                    };
+                    let CStatement::While {
+                        condition,
+                        invariant,
+                        invariant_checks,
+                        body,
+                        ..
+                    } = loop_statement.as_ref().clone()
+                    else {
+                        panic!("fill3 suffix should start with a loop");
+                    };
+                    c_function(
+                        CType::Int32,
+                        "fill3",
+                        vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
                         c_seq(
-                            c_while_with_invariant_and_effect_checks(
-                                condition,
-                                invariant,
-                                invariant_checks,
-                                vec![
-                                    // A resource-derived frame is lowered without
-                                    // segments; the kernel installs its ranges from
-                                    // the checked entry transition.
-                                    CLoopEffectCheck::new_with_origin(
-                                        CLoopEffect::Mutable(Vec::new()),
-                                        CLoopEffectSpan::Whole,
-                                        CLoopEffectOrigin::InheritedResourceDerived,
-                                        Some("loop 0 inherited owned resource frame".to_string()),
-                                    )
-                                    .with_validated_ranges(
-                                        vec![CMemoryRange::new(
+                            prefix.as_ref().clone(),
+                            c_seq(
+                                c_while_with_invariant_and_effect_checks(
+                                    condition,
+                                    invariant,
+                                    invariant_checks,
+                                    vec![
+                                        // A resource-derived frame is lowered without
+                                        // segments; the kernel installs its ranges from
+                                        // the checked entry transition.
+                                        CLoopEffectCheck::new_with_origin(
+                                            CLoopEffect::Mutable(Vec::new()),
+                                            CLoopEffectSpan::Whole,
+                                            CLoopEffectOrigin::InheritedResourceDerived,
+                                            Some(
+                                                "loop 0 inherited owned resource frame".to_string(),
+                                            ),
+                                        )
+                                        .with_validated_ranges(vec![CMemoryRange::new(
                                             base.clone(),
                                             Bitvector32Term::Constant(0),
                                             Bitvector32Term::Constant(3),
-                                        )],
-                                    ),
-                                ],
-                                body.as_ref().clone(),
+                                        )]),
+                                    ],
+                                    body.as_ref().clone(),
+                                ),
+                                result.as_ref().clone(),
                             ),
-                            result.as_ref().clone(),
                         ),
-                    ),
+                    )
+                    .with_source_body(parsed.source_body().clone())
+                }
+                .with_resource_summary(
+                    vec![CResourceSpec::memory(
+                        CMemorySegment::new(
+                            CExpression::Variable("p".to_string()),
+                            CExpression::Value(int32(0)),
+                            CExpression::Value(int32(3)),
+                        ),
+                        CResourceAccessMode::Own,
+                        CResourceTransferRole::Consume,
+                        CResourceSnapshot::Entry,
+                    )],
+                    Vec::new(),
                 )
-                .with_source_body(parsed.source_body().clone())
-            }
-            .with_resource_summary(
-                vec![CResourceSpec::memory(
-                    CMemorySegment::new(
-                        CExpression::Variable("p".to_string()),
-                        CExpression::Value(int32(0)),
-                        CExpression::Value(int32(3)),
-                    ),
-                    CResourceAccessMode::Own,
-                    CResourceTransferRole::Consume,
-                    CResourceSnapshot::Entry,
-                )],
-                Vec::new(),
-            )
-            .with_contract(
-                vec![SpecProposition::MemoryLoadable {
-                    memory: SpecMemory::Current,
-                    base: SpecExpression::CExpression(CExpression::Variable("p".to_string(),)),
-                    start: SpecExpression::Value(int32(0)),
-                    end: SpecExpression::Value(int32(3)),
-                    element_width: 4,
-                }],
-                vec![SpecProposition::Comparison {
-                    left: SpecExpression::CExpression(CExpression::Variable("result".to_string(),)),
-                    operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(int32(2)),
-                }],
-                // The write footprint is not lowered: the kernel projects it
-                // from the resource clause, so the explicit list stays empty.
-                Vec::new(),
-                vec![CFunctionContractClaim::ensure_proposition(0, 0)],
-                true,
-            )
-            .with_resource_derived_mutable_frame(),
+                .with_contract(
+                    vec![SpecProposition::MemoryLoadable {
+                        memory: SpecMemory::Current,
+                        base: SpecExpression::CExpression(CExpression::Variable("p".to_string(),)),
+                        start: SpecExpression::Value(int32(0)),
+                        end: SpecExpression::Value(int32(3)),
+                        element_width: 4,
+                    }],
+                    vec![SpecProposition::Comparison {
+                        left: SpecExpression::CExpression(CExpression::Variable(
+                            "result".to_string(),
+                        )),
+                        operator: CComparisonOperator::Equal,
+                        right: SpecExpression::Value(int32(2)),
+                    }],
+                    // The write footprint is not lowered: the kernel projects it
+                    // from the resource clause, so the explicit list stays empty.
+                    Vec::new(),
+                    vec![CFunctionContractClaim::ensure_proposition(0, 0)],
+                    true,
+                )
+                .with_resource_derived_mutable_frame()
+            ),
             specification: Box::new(verified.specification.clone()),
         }
     );

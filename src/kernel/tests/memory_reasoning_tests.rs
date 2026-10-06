@@ -266,8 +266,8 @@ fn mixed_width_separation_does_not_block_same_width_coverage() {
         .unchecked_with_fact(CResourceFact::own_memory(int32_range.clone()))
         .unchecked_with_fact(CResourceFact::own_memory(wide_range.clone()));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-        left: CResource::Memory(int32_range),
-        right: CResource::Memory(wide_range),
+        left: Box::new(CResource::Memory(int32_range)),
+        right: Box::new(CResource::Memory(wide_range)),
     });
     let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
         base,
@@ -880,8 +880,8 @@ fn target_directed_transport_preserves_pointer_field_across_disjoint_buffer_writ
         4,
     );
     let separation = Proposition::CResourceSeparate {
-        left: CResource::Memory(memory_range(field_pointer, 0, 1)),
-        right: CResource::Memory(memory_range(written_pointer, 0, 1)),
+        left: Box::new(CResource::Memory(memory_range(field_pointer, 0, 1))),
+        right: Box::new(CResource::Memory(memory_range(written_pointer, 0, 1))),
     };
     let assumptions = PureFactContext::new().assume_proposition(separation.clone());
     let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
@@ -1012,8 +1012,8 @@ fn exact_separation_resolves_contained_symbolic_ranges_without_general_search() 
     let data_range = memory_range(data.clone(), 0, length.clone());
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(owner_range.clone()),
-            right: CResource::Memory(data_range.clone()),
+            left: Box::new(CResource::Memory(owner_range.clone())),
+            right: Box::new(CResource::Memory(data_range.clone())),
         })
         .assume_proposition(Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(2), length.clone()),
@@ -1235,8 +1235,8 @@ fn memory_separation_candidates_ignore_unrelated_propositions() {
     };
     let mut assumptions =
         PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(left.clone(), 0, 1)),
-            right: CResource::Memory(memory_range(right.clone(), 0, 1)),
+            left: Box::new(CResource::Memory(memory_range(left.clone(), 0, 1))),
+            right: Box::new(CResource::Memory(memory_range(right.clone(), 0, 1))),
         });
     for index in 0..128 {
         assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
@@ -1280,8 +1280,8 @@ fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
         .map(|unrelated| {
             let mut assumptions = PureFactContext::new()
                 .assume_proposition(Proposition::CResourceSeparate {
-                    left: CResource::Memory(left_range.clone()),
-                    right: CResource::Memory(right_range.clone()),
+                    left: Box::new(CResource::Memory(left_range.clone())),
+                    right: Box::new(CResource::Memory(right_range.clone())),
                 })
                 .assume_condition(
                     ConditionTerm::signed_less_equal(
@@ -1296,22 +1296,22 @@ fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
                 );
             for fact in 0..unrelated {
                 assumptions = assumptions.assume_proposition(Proposition::CResourceSeparate {
-                    left: CResource::Memory(memory_range(
+                    left: Box::new(CResource::Memory(memory_range(
                         Pointer {
                             block: format!("unrelated-left-{fact}").into(),
                             offset: PointerOffsetTerm::Constant(0),
                         },
                         0,
                         1,
-                    )),
-                    right: CResource::Memory(memory_range(
+                    ))),
+                    right: Box::new(CResource::Memory(memory_range(
                         Pointer {
                             block: format!("unrelated-right-{fact}").into(),
                             offset: PointerOffsetTerm::Constant(0),
                         },
                         0,
                         1,
-                    )),
+                    ))),
                 });
             }
 
@@ -1528,8 +1528,16 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(base.clone(), i_bits.clone(), i_plus_one)),
-            right: CResource::Memory(CMemoryRange::new(base, j_bits.clone(), j_plus_one)),
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                base.clone(),
+                i_bits.clone(),
+                i_plus_one,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                base,
+                j_bits.clone(),
+                j_plus_one,
+            ))),
         })
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before: before_memory.clone(),
@@ -1580,16 +1588,16 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner,
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 data,
                 Bitvector32Term::Constant(0),
                 capacity,
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before: before_memory.clone(),
@@ -1665,16 +1673,16 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 resource_data,
                 Bitvector32Term::Constant(0),
                 capacity,
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before: execution_memory.clone(),
@@ -1741,16 +1749,16 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::signed_less_than(index, length), true)
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner,
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 data,
                 Bitvector32Term::Constant(0),
                 capacity,
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before,
@@ -1919,8 +1927,8 @@ fn explicit_separation_contains_one_element_under_a_positive_length() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(owner_range.clone()),
-            right: CResource::Memory(data_range.clone()),
+            left: Box::new(CResource::Memory(owner_range.clone())),
+            right: Box::new(CResource::Memory(data_range.clone())),
         });
 
     assert!(
@@ -1956,16 +1964,16 @@ fn direct_separation_contains_zero_under_a_constant_lower_bound() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 data.clone(),
                 Bitvector32Term::Constant(0),
                 length,
-            )),
+            ))),
         });
 
     assert!(assumptions.ranges_directly_disjoint_from_pointer(
@@ -2092,8 +2100,8 @@ fn bounded_separation_uses_order_fact_across_equivalent_snapshots() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::signed_less_equal(fact_len, fact_cap), true)
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(owner_range),
-            right: CResource::Memory(owned_data_range),
+            left: Box::new(CResource::Memory(owner_range)),
+            right: Box::new(CResource::Memory(owned_data_range)),
         });
 
     assert!(assumptions.ranges_proven_disjoint_from_pointer(
@@ -2134,16 +2142,16 @@ fn covering_disjoint_fact_handles_shifted_mutable_range() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 dst_base,
                 Bitvector32Term::Constant(0),
                 n_bits.clone(),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 src_base,
                 Bitvector32Term::Constant(0),
                 n_bits.clone(),
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CMemoryEffectSummary {
             before: before_memory.clone(),
@@ -2594,16 +2602,16 @@ fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
     );
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 left.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 right.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CMemoryEffectSummary {
             before,
@@ -2687,16 +2695,16 @@ fn direct_condition_transport_uses_relative_separate_range() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 data_index_from_owner.clone(),
                 Bitvector32Term::add(data_index_from_owner, Bitvector32Term::Constant(2)),
-            )),
+            ))),
         })
         .assume_proposition(effect.clone());
 
@@ -2773,16 +2781,16 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(4),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 owner.clone(),
                 data_index_from_owner.clone(),
                 Bitvector32Term::add(data_index_from_owner, length),
-            )),
+            ))),
         })
         .assume_proposition(effect.clone());
 
@@ -2876,41 +2884,41 @@ fn adjacent_disjoint_fact_ranges_cover_larger_disjoint_goal() {
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 p_base.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(1),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 q_base.clone(),
                 Bitvector32Term::Constant(0),
                 n_bits.clone(),
-            )),
+            ))),
         })
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 p_plus_one,
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(2),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 q_base.clone(),
                 Bitvector32Term::Constant(0),
                 n_bits.clone(),
-            )),
+            ))),
         });
 
     assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: CResource::Memory(CMemoryRange::new(
+        left: Box::new(CResource::Memory(CMemoryRange::new(
             p_base,
             Bitvector32Term::Constant(0),
             Bitvector32Term::Constant(2)
-        )),
-        right: CResource::Memory(CMemoryRange::new(
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new(
             q_base,
             Bitvector32Term::Constant(0),
             n_bits
-        ))
+        )))
     }));
 }
 
@@ -2933,14 +2941,14 @@ fn constant_non_overlapping_ranges_on_one_base_are_separate() {
 
     assert!(
         PureFactContext::new().proves(&Proposition::CResourceSeparate {
-            left: left.clone(),
-            right: right.clone(),
+            left: Box::new(left.clone()),
+            right: Box::new(right.clone()),
         })
     );
     assert!(
         PureFactContext::new().proves(&Proposition::CResourceSeparate {
-            left: right,
-            right: left,
+            left: Box::new(right),
+            right: Box::new(left),
         })
     );
 }
@@ -2957,16 +2965,16 @@ fn symbolic_disjoint_fact_proves_itself() {
         offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(90)), 4),
     };
     let fact = Proposition::CResourceSeparate {
-        left: CResource::Memory(CMemoryRange::new(
+        left: Box::new(CResource::Memory(CMemoryRange::new(
             p_base,
             Bitvector32Term::Constant(0),
             n_bits.clone(),
-        )),
-        right: CResource::Memory(CMemoryRange::new(
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new(
             q_base,
             Bitvector32Term::Constant(0),
             n_bits,
-        )),
+        ))),
     };
     let assumptions = PureFactContext::new().assume_proposition(fact.clone());
 
@@ -3038,8 +3046,12 @@ fn separation_refutes_an_alias_guard_exactly_when_the_index_is_in_range() {
     let capacity_field = PointerOffsetTerm::add(owner_offset, PointerOffsetTerm::Constant(4));
     let unbounded = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(owner, 1, 2)),
-            right: CResource::Memory(memory_range(data_base, 0, capacity.clone())),
+            left: Box::new(CResource::Memory(memory_range(owner, 1, 2))),
+            right: Box::new(CResource::Memory(memory_range(
+                data_base,
+                0,
+                capacity.clone(),
+            ))),
         })
         .assume_condition(
             ConditionTerm::pointer_offset_equal(element, capacity_field),
@@ -3824,8 +3836,8 @@ fn memory_resolution_alias_check_uses_explicit_separation() {
         offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(91)), 4),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-        left: CResource::Memory(memory_range(left_base.clone(), 0, 4)),
-        right: CResource::Memory(memory_range(right_base.clone(), 0, 4)),
+        left: Box::new(CResource::Memory(memory_range(left_base.clone(), 0, 4))),
+        right: Box::new(CResource::Memory(memory_range(right_base.clone(), 0, 4))),
     });
 
     assert!(pointers_proven_distinct_for_memory_resolution(
@@ -3860,12 +3872,12 @@ fn memory_resolution_alias_check_uses_explicit_separation() {
             });
     let normalized_assumptions =
         nonnegative_indices.assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(left_base.clone(), 0, 4)),
-            right: CResource::Memory(memory_range(
+            left: Box::new(CResource::Memory(memory_range(left_base.clone(), 0, 4))),
+            right: Box::new(CResource::Memory(memory_range(
                 left_base.clone(),
                 right_start.clone(),
                 Bitvector32Term::add(right_start, Bitvector32Term::Constant(4)),
-            )),
+            ))),
         });
     assert!(pointers_proven_distinct_for_memory_resolution(
         &left_base.offset_by_int32_elements(Bitvector32Term::Constant(1)),
@@ -4025,8 +4037,8 @@ fn the_entry_partition_pairs_a_transferred_clause_only_with_a_borrowed_one() {
         selected_mutex_source: None,
     };
     let separation = |left: &CMemoryRange, right: &CMemoryRange| Proposition::CResourceSeparate {
-        left: CResource::Memory(left.clone()),
-        right: CResource::Memory(right.clone()),
+        left: Box::new(CResource::Memory(left.clone())),
+        right: Box::new(CResource::Memory(right.clone())),
     };
 
     // The shape `mdtests/const_callback_field.md` needs: `owns object(r)`
@@ -4278,38 +4290,38 @@ fn compact_composition_projects_symbolic_separation_without_pair_facts() {
 
     assert!(
         assumptions.proves(&Proposition::CResourceSeparate {
-            left: CResource::Memory(prefix.clone()),
-            right: CResource::Memory(suffix.clone()),
+            left: Box::new(CResource::Memory(prefix.clone())),
+            right: Box::new(CResource::Memory(suffix.clone())),
         }),
         "the two owned ranges themselves are separate by composition"
     );
     assert!(
         assumptions.proves(&Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 base.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(1),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 base.clone(),
                 len.clone(),
                 Bitvector32Term::add(len, Bitvector32Term::Constant(1)),
-            )),
+            ))),
         }),
         "subranges of distinct owned facts inherit the composition's separation"
     );
     assert!(
         !assumptions.proves(&Proposition::CResourceSeparate {
-            left: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(CMemoryRange::new(
                 base.clone(),
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant(2),
-            )),
-            right: CResource::Memory(CMemoryRange::new(
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 base,
                 Bitvector32Term::Constant(1),
                 Bitvector32Term::Constant(3),
-            )),
+            ))),
         }),
         "overlapping subranges of one owned fact must not become separate"
     );
@@ -4330,8 +4342,12 @@ fn memory_resolution_alias_check_uses_exact_transitive_range_bounds() {
     let capacity = Bitvector32Term::Variable(Variable(96));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(owner.clone(), 0, 4)),
-            right: CResource::Memory(memory_range(data.clone(), 0, capacity.clone())),
+            left: Box::new(CResource::Memory(memory_range(owner.clone(), 0, 4))),
+            right: Box::new(CResource::Memory(memory_range(
+                data.clone(),
+                0,
+                capacity.clone(),
+            ))),
         })
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
@@ -4522,12 +4538,12 @@ fn memory_resolution_separation_transports_unchanged_range_base_loads() {
     };
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(memory_range(owner.clone(), 0, 4)),
-            right: CResource::Memory(CMemoryRange::new(
+            left: Box::new(CResource::Memory(memory_range(owner.clone(), 0, 4))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
                 data_base.clone(),
                 Bitvector32Term::Constant(0),
                 capacity.clone(),
-            )),
+            ))),
         })
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
@@ -5965,8 +5981,14 @@ mod stated_range_guard_derivation {
         let left_end = Bitvector32Term::Variable(Variable(9_200_010));
         let right_end = Bitvector32Term::Variable(Variable(9_200_011));
         let separation = Proposition::CResourceSeparate {
-            left: int32_range_resource(Bitvector32Term::Constant(0), left_end.clone()),
-            right: int32_range_resource(Bitvector32Term::Constant(0), right_end.clone()),
+            left: Box::new(int32_range_resource(
+                Bitvector32Term::Constant(0),
+                left_end.clone(),
+            )),
+            right: Box::new(int32_range_resource(
+                Bitvector32Term::Constant(0),
+                right_end.clone(),
+            )),
         };
         let guards = crate::kernel::stated_separation_extent_guards(&separation);
         for end in [left_end, right_end] {
@@ -5986,11 +6008,14 @@ mod stated_range_guard_derivation {
     #[test]
     fn a_reversed_constant_separation_range_cannot_hold() {
         let separation = Proposition::CResourceSeparate {
-            left: int32_range_resource(
+            left: Box::new(int32_range_resource(
                 Bitvector32Term::Constant(0),
                 Bitvector32Term::Constant((-1i32) as u32),
-            ),
-            right: int32_range_resource(Bitvector32Term::Constant(0), Bitvector32Term::Constant(1)),
+            )),
+            right: Box::new(int32_range_resource(
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )),
         };
         assert!(
             crate::kernel::stated_separation_extent_guards(&separation).contains(
@@ -6058,14 +6083,14 @@ mod stated_range_guard_derivation {
     #[test]
     fn a_separation_of_opaque_resources_carries_nothing() {
         let separation = Proposition::CResourceSeparate {
-            left: CResource::Token {
+            left: Box::new(CResource::Token {
                 name: "t".into(),
                 arguments: Vec::new().into(),
-            },
-            right: CResource::Composite {
+            }),
+            right: Box::new(CResource::Composite {
                 name: "c".into(),
                 arguments: Vec::new().into(),
-            },
+            }),
         };
         assert!(
             crate::kernel::stated_separation_extent_guards(&separation).is_empty(),

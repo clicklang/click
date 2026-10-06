@@ -290,7 +290,7 @@ fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
     else {
         panic!("{:?}", theorem.proposition())
     };
-    assert_eq!(returned, &state);
+    assert_eq!(**returned, state);
     assert_eq!(
         MachineIntegerType::Int128
             .constant_from_value(value)

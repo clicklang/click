@@ -3891,7 +3891,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         .find(|fact| fact.proposition == defining_proposition)
     {
         if existing.generated_load_binding.is_none() || typed_pointer_value.is_some() {
-            existing.generated_load_binding = Some(binding);
+            existing.generated_load_binding = Some(Box::new(binding));
         }
         if let Some(event) = event {
             existing.generated_load_source_events.push(event);

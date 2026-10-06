@@ -310,12 +310,8 @@ impl MemoryDagHopJustification {
                 let authority_checks = match authority {
                     StoreSeparatedRangesAuthority::ExactProposition(proposition) => {
                         assumptions.prop_facts.contains(proposition)
-                            && matches!(
-                                proposition,
-                                Proposition::CResourceSeparate {
-                                    left: CResource::Memory(fact_left),
-                                    right: CResource::Memory(fact_right),
-                                } if fact_left == left && fact_right == right
+                            && proposition.memory_separation().is_some_and(
+                                |(fact_left, fact_right)| fact_left == left && fact_right == right,
                             )
                     }
                     StoreSeparatedRangesAuthority::ResourceComposition(resources) => {

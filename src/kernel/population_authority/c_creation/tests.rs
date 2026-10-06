@@ -20,7 +20,7 @@ fn pending_malloc(state: &CState) -> CState {
     else {
         panic!("expected one pending allocation path");
     };
-    pending.clone()
+    *pending.clone()
 }
 
 fn resolved_malloc(pending: &CState, success: bool) -> CState {

@@ -993,12 +993,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 left: goal_left,
                 right: goal_right,
             } => Proposition::CResourceSeparate {
-                left: rewrite_resource_offset(goal_left, left, right),
-                right: rewrite_resource_offset(goal_right, left, right),
+                left: Box::new(rewrite_resource_offset(goal_left, left, right)),
+                right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
             Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-                parent: rewrite_resource_offset(parent, left, right),
-                child: rewrite_resource_offset(child, left, right),
+                parent: Box::new(rewrite_resource_offset(parent, left, right)),
+                child: Box::new(rewrite_resource_offset(child, left, right)),
             },
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
                 let rewrite_term = |term: &Bitvector32Term| rewrite_term_offset(term, left, right);
@@ -1870,12 +1870,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             left: goal_left,
             right: goal_right,
         } => Proposition::CResourceSeparate {
-            left: rewrite_resource_term(goal_left),
-            right: rewrite_resource_term(goal_right),
+            left: Box::new(rewrite_resource_term(goal_left)),
+            right: Box::new(rewrite_resource_term(goal_right)),
         },
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
-            parent: rewrite_resource_term(parent),
-            child: rewrite_resource_term(child),
+            parent: Box::new(rewrite_resource_term(parent)),
+            child: Box::new(rewrite_resource_term(child)),
         },
         Proposition::CMemoryReadDefined {
             memory,

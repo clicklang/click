@@ -5775,7 +5775,10 @@ impl Parser {
             if self.peek() == Some(&Token::Semicolon) {
                 self.position += 1;
             }
-            return Ok(ProofTactic::Match(Box::new(ProofMatch { scrutinee, arms })));
+            return Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                scrutinee,
+                arms,
+            })));
         }
         if name == "branch" {
             let ensuring = if self.peek_ident() == Some("ensuring") {

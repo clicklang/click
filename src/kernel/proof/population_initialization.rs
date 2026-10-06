@@ -187,8 +187,8 @@ pub(super) fn check(
     // not from a caller-supplied declaration fact.
     for child in body.facts() {
         allowed.push(Proposition::CResourceContains {
-            parent: selected.resource().clone(),
-            child: child.resource().clone(),
+            parent: Box::new(selected.resource().clone()),
+            child: Box::new(child.resource().clone()),
         });
         let range = child
             .memory_range()
