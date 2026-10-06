@@ -4093,6 +4093,101 @@ impl CheckedProofCaseJoin {
     }
 }
 
+/// The resources on both sides of an interface join: what each arm gives up
+/// to the interface, what the successor holds for it, and the successor's
+/// whole resource context.
+struct InterfaceJoinResources {
+    arm_interface_resources: [Vec<CResourceFact>; 2],
+    successor_interface_resources: Vec<CResourceFact>,
+    successor_interface_resource_facts: Vec<Proposition>,
+    /// What neither arm changed, with the interface resources composed in,
+    /// in the one normal form the successor must carry.
+    expected_resources: ResourceContext,
+}
+
+fn interface_join_resources(
+    parent: &ExecutionProofCore,
+    arms: [&ExecutionProofCore; 2],
+    arm_facts: [&ProofFacts; 2],
+    interface_resource_specs: &[CResourceSpec],
+    joined_state: &CState,
+    successor_facts: &ProofFacts,
+) -> Result<InterfaceJoinResources, &'static str> {
+    let mut arm_interface_resources = [Vec::new(), Vec::new()];
+    let mut successor_interface_resources = Vec::new();
+    let mut successor_interface_resource_facts = Vec::new();
+    for spec in interface_resource_specs {
+        for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
+            let fact = evaluate_interface_resource_spec(spec, arm.reached_state(), facts)
+                .ok_or("an interface resource does not lower in a concrete arm")?;
+            arm_interface_resources[index].push(fact);
+        }
+        let fact = evaluate_interface_resource_spec(spec, joined_state, successor_facts)
+            .ok_or("an interface resource does not lower at the abstract successor")?;
+        if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, joined_state) {
+            successor_interface_resource_facts.push(proposition);
+        }
+        successor_interface_resources.push(fact);
+    }
+    let mut arm_residuals = Vec::with_capacity(2);
+    for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
+        let mut remaining = arm.state.resources().clone();
+        // Views are non-consuming. Check them while their owned support
+        // is still present, then consume the owned interface facts in
+        // their source order so consuming a parent cannot erase a view
+        // that the same interface has already established.
+        for required in arm_interface_resources[index]
+            .iter()
+            .filter(|fact| fact.is_view())
+        {
+            if remaining
+                .clone()
+                .without_facts(std::slice::from_ref(required), facts.assumptions())
+                .is_none()
+            {
+                return Err("an interface resource is not owned by one concrete arm");
+            }
+        }
+        for required in arm_interface_resources[index]
+            .iter()
+            .filter(|fact| fact.is_own())
+        {
+            // Consume through the local indexes: giving up one interface
+            // resource must not rewrite the unrelated rest of the context.
+            let Some(next) = remaining
+                .clone()
+                .without_fact_incrementally(required, facts.assumptions())
+            else {
+                return Err("an interface resource is not owned by one concrete arm");
+            };
+            remaining = next;
+        }
+        arm_residuals.push(remaining);
+    }
+    let common_resources = ResourceContext::common_exact_descendant(
+        &arm_residuals[0],
+        &arm_residuals[1],
+        parent.reached_state().resources(),
+    )
+    .ok_or("the interface arm resources do not descend from the branch root")?;
+    let expected_resources = common_resources
+        .try_compose_into_valid_context_delaying_normalization(
+            successor_interface_resources.iter().cloned(),
+            successor_facts.assumptions(),
+        )
+        .map_err(|_| "the interface resources do not form a valid successor context")?
+        .normalized_around_facts(
+            &successor_interface_resources,
+            successor_facts.assumptions(),
+        );
+    Ok(InterfaceJoinResources {
+        arm_interface_resources,
+        successor_interface_resources,
+        successor_interface_resource_facts,
+        expected_resources,
+    })
+}
+
 /// What an explicit join interface makes of two concrete arms: the
 /// abstraction both agree on, the interface resources each arm gives up, the
 /// facts the successor gains, and the checked lowering of every interface
@@ -4172,71 +4267,19 @@ fn check_interface_abstraction(
     if !interface_successor_loans_are_inherited(joined_state, sibling_states) {
         return Err("the interface successor claims a loan dependency no arm held");
     }
-    let mut arm_interface_resources = [Vec::new(), Vec::new()];
-    let mut successor_interface_resources = Vec::new();
-    let mut successor_interface_resource_facts = Vec::new();
-    for spec in interface_resource_specs {
-        for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
-            let fact = evaluate_interface_resource_spec(spec, arm.reached_state(), facts)
-                .ok_or("an interface resource does not lower in a concrete arm")?;
-            arm_interface_resources[index].push(fact);
-        }
-        let fact = evaluate_interface_resource_spec(spec, joined_state, successor_facts)
-            .ok_or("an interface resource does not lower at the abstract successor")?;
-        if let Some(proposition) = interface_resource_intrinsic_fact(spec, &fact, joined_state) {
-            successor_interface_resource_facts.push(proposition);
-        }
-        successor_interface_resources.push(fact);
-    }
-    let mut arm_residuals = Vec::with_capacity(2);
-    for (index, (arm, facts)) in arms.iter().zip(arm_facts).enumerate() {
-        let mut remaining = arm.state.resources().clone();
-        // Views are non-consuming. Check them while their owned support
-        // is still present, then consume the owned interface facts in
-        // their source order so consuming a parent cannot erase a view
-        // that the same interface has already established.
-        for required in arm_interface_resources[index]
-            .iter()
-            .filter(|fact| fact.is_view())
-        {
-            if remaining
-                .clone()
-                .without_facts(std::slice::from_ref(required), facts.assumptions())
-                .is_none()
-            {
-                return Err("an interface resource is not owned by one concrete arm");
-            }
-        }
-        for required in arm_interface_resources[index]
-            .iter()
-            .filter(|fact| fact.is_own())
-        {
-            let Some(next) = remaining
-                .clone()
-                .without_facts(std::slice::from_ref(required), facts.assumptions())
-            else {
-                return Err("an interface resource is not owned by one concrete arm");
-            };
-            remaining = next;
-        }
-        arm_residuals.push(remaining);
-    }
-    let common_resources = ResourceContext::common_exact_descendant(
-        &arm_residuals[0],
-        &arm_residuals[1],
-        parent.reached_state().resources(),
-    )
-    .ok_or("the interface arm resources do not descend from the branch root")?;
-    let expected_resources = common_resources
-        .try_compose_into_valid_context_delaying_normalization(
-            successor_interface_resources.iter().cloned(),
-            successor_facts.assumptions(),
-        )
-        .map_err(|_| "the interface resources do not form a valid successor context")?
-        .normalized_around_facts(
-            &successor_interface_resources,
-            successor_facts.assumptions(),
-        );
+    let InterfaceJoinResources {
+        arm_interface_resources,
+        successor_interface_resources,
+        successor_interface_resource_facts,
+        expected_resources,
+    } = interface_join_resources(
+        parent,
+        arms,
+        arm_facts,
+        interface_resource_specs,
+        joined_state,
+        successor_facts,
+    )?;
     if &expected_resources != joined_state.resources() {
         return Err("the interface successor resource context is not exact");
     }
@@ -6060,10 +6103,56 @@ pub(crate) fn checked_branch_fact_is_available(facts: &ProofFacts, fact: &Propos
                 if left == right)
 }
 
+#[cfg(test)]
 fn checked_evidence_premises_hold(theorem: &Theorem, facts: &ProofFacts) -> bool {
+    checked_evidence_premises_hold_in(theorem, facts.assumptions())
+}
+
+#[cfg(test)]
+fn checked_evidence_premises_hold_in(theorem: &Theorem, context: &PureFactContext) -> bool {
     let mut proposition = theorem.proposition();
     while let Proposition::Implies(premise, body) = proposition {
-        if !facts.assumptions().proves_exact(premise) && !ground_comparison_premise_holds(premise) {
+        if !context.proves_exact(premise) && !ground_comparison_premise_holds(premise) {
+            return false;
+        }
+        proposition = body;
+    }
+    true
+}
+
+/// Whether a retained theorem's premises hold where it stands in a trace.
+///
+/// A premise holds under the facts the stretch ended with, or under the fact
+/// context recorded right after the theorem, which is the context it was
+/// proved under. Facts are not only added along a path: folding and
+/// unfolding replace facts a later state no longer has, so a premise that
+/// held at the theorem can be gone from the stretch's final facts.
+///
+/// One kind of premise comes from neither: comparing two pointers records
+/// that the state holds both of their owners, as a resource composition
+/// read off the state the comparison ran in. That premise holds when the
+/// state the walk has reached holds every resource it names.
+fn checked_evidence_premises_hold_at(
+    theorem: &Theorem,
+    recorded: Option<&PureFactContext>,
+    facts: &ProofFacts,
+    state: &CState,
+) -> bool {
+    let mut proposition = theorem.proposition();
+    while let Proposition::Implies(premise, body) = proposition {
+        let held = facts.assumptions().proves_exact(premise)
+            || recorded.is_some_and(|context| context.proves_exact(premise))
+            || ground_comparison_premise_holds(premise)
+            || matches!(
+                premise.as_ref(),
+                Proposition::CResourceComposition(resources)
+                    if resources.facts().iter().all(|fact| {
+                        state
+                            .resources()
+                            .satisfies_fact(fact, recorded.unwrap_or(facts.assumptions()))
+                    })
+            );
+        if !held {
             return false;
         }
         proposition = body;
@@ -6314,11 +6403,12 @@ fn checked_source_statement_matches(proved: &CStatement, source: &CStatement) ->
 
 fn checked_statement_event(
     theorem: &Theorem,
+    recorded: Option<&PureFactContext>,
     facts: &ProofFacts,
     state: &CState,
     statement: &CStatement,
 ) -> Option<CStatementOutcome> {
-    if !checked_evidence_premises_hold(theorem, facts) {
+    if !checked_evidence_premises_hold_at(theorem, recorded, facts, state) {
         return None;
     }
     let (proved_state, proved_statement, outcome) = match checked_evidence_conclusion(theorem) {
@@ -6340,12 +6430,13 @@ fn checked_statement_event(
 
 fn checked_condition_event(
     theorem: &Theorem,
+    recorded: Option<&PureFactContext>,
     facts: &ProofFacts,
     state: &CState,
     statement: CStatement,
     tail: Option<CStatement>,
 ) -> Option<Option<CStatement>> {
-    if !checked_evidence_premises_hold(theorem, facts) {
+    if !checked_evidence_premises_hold_at(theorem, recorded, facts, state) {
         return None;
     }
     let (proved_state, proved_condition, value) = match checked_evidence_conclusion(theorem) {
@@ -6442,7 +6533,13 @@ fn check_evidence_events_with_call_events(
 ) -> Option<CheckedEvidenceProgress> {
     let mut completed = None;
     let mut current_facts = facts.clone();
-    for event in events {
+    for (position, event) in events.iter().enumerate() {
+        // The fact context recorded right after a theorem is the one it was
+        // proved under.
+        let recorded = match events.get(position + 1) {
+            Some(CheckedExecutionEvent::Context(context)) => Some(context),
+            _ => None,
+        };
         if let Some(CStatementOutcome::Return {
             state: returned, ..
         }) = &mut completed
@@ -6540,11 +6637,45 @@ fn check_evidence_events_with_call_events(
             | CheckedExecutionEvent::Condition(_)
             | CheckedExecutionEvent::Branch(_) => {}
         }
+        // A `Skip` theorem consumes a `Skip` at the head of the source when
+        // there is one and otherwise nothing, exactly as when it was
+        // recorded: the empty arm a condition selected is not kept in the
+        // source, but a proof may still step it.
+        if let CheckedExecutionEvent::Statement(theorem) = event
+            && matches!(
+                checked_evidence_conclusion(theorem),
+                Proposition::CStatementExecutes { statement, .. }
+                | Proposition::CStatementVerifies { statement, .. }
+                    if matches!(**statement, CStatement::Skip)
+            )
+            && !remaining
+                .as_ref()
+                .is_some_and(|source| matches!(*split_shared_source(source).0, CStatement::Skip))
+        {
+            let CStatementOutcome::Normal(next_state) = checked_statement_event(
+                theorem,
+                recorded,
+                &current_facts,
+                &state,
+                &CStatement::Skip,
+            )?
+            else {
+                return None;
+            };
+            state = *next_state;
+            continue;
+        }
         let source = remaining.take()?;
         let (next_statement, tail) = split_checked_evidence_statement(source);
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
-                match checked_statement_event(theorem, &current_facts, &state, &next_statement)? {
+                match checked_statement_event(
+                    theorem,
+                    recorded,
+                    &current_facts,
+                    &state,
+                    &next_statement,
+                )? {
                     CStatementOutcome::Normal(next_state) => {
                         state = *next_state;
                         remaining = tail;
@@ -6565,8 +6696,14 @@ fn check_evidence_events_with_call_events(
                 }
             }
             CheckedExecutionEvent::Condition(theorem) => {
-                remaining =
-                    checked_condition_event(theorem, &current_facts, &state, next_statement, tail)?;
+                remaining = checked_condition_event(
+                    theorem,
+                    recorded,
+                    &current_facts,
+                    &state,
+                    next_statement,
+                    tail,
+                )?;
             }
             CheckedExecutionEvent::Branch(branch) => {
                 let CStatement::If { .. } = &next_statement else {
