@@ -32,15 +32,21 @@ if [[ "${1:-}" == "--ci-quality" ]]; then
     exit 0
 fi
 
-fixture_targets=(
-    --test mdtests
-    --test examples
-    --test compiler_import
-    --test cpp_import
-    --test rust_import
+# The gate has a ten-minute budget, locally and in CI
+# (`docs/internals/testing.md`). A test that takes more than a few seconds is
+# `#[ignore = "nightly: ..."]`, an example that does is in `NIGHTLY` in
+# `tests/examples.rs`, and `click audit` runs in the import tests only under
+# `CLICK_NIGHTLY`. `--nightly` runs all of it with no budget.
+#
+# The two fixture harnesses are single tests that each verify a whole corpus
+# on every core, so they run one at a time. Every other test binary holds
+# ordinary tests and runs with the unit tests, in parallel.
+fixture_targets=(--test mdtests --test examples)
+unit_targets=(
+    --lib --bin click --test documentation --test condition_transport_api
+    --test compiler_import --test cpp_import --test rust_import
     --test bitcoin_core_money_range
 )
-unit_targets=(--lib --bin click --test documentation --test condition_transport_api)
 
 if [[ "${1:-}" == "--ci-shard" ]]; then
     artifacts="${2:?usage: scripts/check.sh --ci-shard ARTIFACTS SUITE [SHARD/TOTAL]}"
@@ -52,15 +58,24 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             filter='not (binary(mdtests) | binary(examples))'
             nextest_args=(--partition "hash:$partition")
             ;;
-        charon-live)
-            filter='binary(rust_import) & test(charon_)'
-            nextest_args=(--run-ignored only --test-threads 2 --no-fail-fast)
+        mdtests)
+            filter='binary(mdtests)'
+            nextest_args=(--no-capture)
+            export MDTEST_PARTITION="$partition"
             ;;
-        mdtests|examples)
-            filter="binary($suite)"
+        examples)
+            filter='binary(examples)'
             nextest_args=(--no-capture)
             ;;
-        *) echo "error: CI suite must be unit, mdtests, examples, or charon-live" >&2; exit 2 ;;
+        nightly)
+            # Everything the budgeted gate leaves out: ignored tests, the
+            # nightly examples, audits in the import tests, and the live
+            # Charon re-extraction.
+            filter='all()'
+            nextest_args=(--run-ignored all --no-fail-fast --profile nightly)
+            export CLICK_NIGHTLY=1
+            ;;
+        *) echo "error: CI suite must be unit, mdtests, examples, or nightly" >&2; exit 2 ;;
     esac
 
     # A few expansion regressions recurse deeply enough to overflow the
@@ -95,18 +110,30 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     exit 0
 fi
 
-# Explicit local counterpart of the required archive-based live CI gate.
+# The live Charon re-extraction alone, for work on the Rust importer. It is
+# part of `--nightly`, not of the budgeted gate.
 if [[ "${1:-}" == "--charon-live" ]]; then
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
     export CLICK_CHARON="${CLICK_CHARON:-$PWD/target/charon/debug/charon}"
     scripts/build-charon.sh
     cargo nextest run --test rust_import --filterset 'test(charon_)' \
-        --run-ignored only --test-threads 2 --no-fail-fast
+        --run-ignored only --test-threads 2 --no-fail-fast --profile nightly
     exit 0
+fi
+
+gate_started=$SECONDS
+nightly=""
+if [[ "${1:-}" == "--nightly" ]]; then
+    shift
+    nightly=1
+    export CLICK_NIGHTLY=1
 fi
 
 ci_artifacts=""
 nextest_args=("$@")
+if [[ -n "$nightly" ]]; then
+    nextest_args+=(--run-ignored all --profile nightly)
+fi
 if [[ "${1:-}" == "--ci-prepare" ]]; then
     ci_artifacts="${2:?usage: scripts/check.sh --ci-prepare ARTIFACTS}"
     nextest_args=()
@@ -166,3 +193,11 @@ cargo nextest run "${unit_targets[@]}" "${nextest_args[@]}"
 # it starts and when it finishes, so a stall is visible as it happens and
 # named.
 cargo nextest run "${fixture_targets[@]}" --test-threads 1 --no-capture "${nextest_args[@]}"
+
+# Report the budget every run, so a gate that has crept past it is seen the
+# day it does and not a week later.
+elapsed=$((SECONDS - gate_started))
+printf 'gate finished in %dm%02ds\n' $((elapsed / 60)) $((elapsed % 60))
+if [[ -z "$nightly" && "$elapsed" -gt 600 ]]; then
+    echo "warning: the gate took longer than its ten-minute budget; move slow tests to the nightly gate (docs/internals/testing.md)" >&2
+fi

@@ -2416,6 +2416,13 @@ impl<'a> Proof<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
+        // Each arm of a split runs the whole closure, which reaches this
+        // split again on the next bound. Along a chain `x0 <= x1 <= ...`
+        // that recursion followed every bound, so a goal no split decides
+        // cost closure runs linear in the chain. Nest a fixed number.
+        let Some(_scope) = UpperBoundSplitScope::enter() else {
+            return Ok(None);
+        };
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
@@ -2492,10 +2499,40 @@ impl<'a> Proof<'a> {
             })
             .collect::<Vec<_>>();
         if bound_sources.is_empty() {
-            bound_sources.extend(self.facts().to_vec().into_iter().filter_map(|bound| {
-                let (variable, _) = kernel_upper_bound_split_candidate(&bound)?;
-                goal_variables.contains(&variable).then_some((bound, None))
-            }));
+            // Read each goal variable's bounds from its indexed bucket; a
+            // scan of every fact for the few that bound these variables
+            // costs work in the whole context at each atomic leaf.
+            let mut seen = BTreeSet::new();
+            for variable in &goal_variables {
+                for (endpoint, other, strict, forward) in self
+                    .facts()
+                    .assumptions()
+                    .signed_order_bound_entries(&Bitvector32Term::Variable(*variable))
+                {
+                    let (left, right) = if forward {
+                        (endpoint, other)
+                    } else {
+                        (other, endpoint)
+                    };
+                    let condition = if strict {
+                        ConditionTerm::Bitvector32SignedLessThan(Box::new(left), Box::new(right))
+                    } else {
+                        ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
+                    };
+                    let fact = Proposition::ConditionIs(condition, true);
+                    for bound in
+                        std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact))
+                    {
+                        if self.facts().contains(&bound)
+                            && kernel_upper_bound_split_candidate(&bound)
+                                .is_some_and(|(bounded, _)| goal_variables.contains(&bounded))
+                            && seen.insert(bound.clone())
+                        {
+                            bound_sources.push((bound, None));
+                        }
+                    }
+                }
+            }
         }
         let candidates = bound_sources
             .into_iter()
@@ -2524,9 +2561,13 @@ impl<'a> Proof<'a> {
                         self.premise_fixed_state_view()
                             .into_iter()
                             .flat_map(|view| {
-                                view.recorded_snapshots.keys().rev().filter_map(|selector| {
-                                    surface_at_snapshot(&direct, selector).ok()
-                                })
+                                view.recorded_snapshots
+                                    .recent(MAX_TRANSPORT_SOURCE_POINTS)
+                                    .into_iter()
+                                    .filter_map(|(selector, _)| {
+                                        surface_at_snapshot(&direct, selector).ok()
+                                    })
+                                    .collect::<Vec<_>>()
                             }),
                     )
                     .find(|surface| {
@@ -2540,9 +2581,11 @@ impl<'a> Proof<'a> {
                 if let Some(view) = self.premise_fixed_state_view() {
                     surface_candidates.extend(
                         view.recorded_snapshots
-                            .keys()
-                            .rev()
-                            .filter_map(|selector| surface_at_snapshot(&direct, selector).ok()),
+                            .recent(MAX_TRANSPORT_SOURCE_POINTS)
+                            .into_iter()
+                            .filter_map(|(selector, _)| {
+                                surface_at_snapshot(&direct, selector).ok()
+                            }),
                     );
                 }
                 let split_surface = surface_candidates.into_iter().find(|surface| {
@@ -7495,6 +7538,32 @@ impl<'a> Proof<'a> {
 /// How many variables simp's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.
 const MAX_BOUND_VARIABLES: usize = 8;
+
+/// How deeply one upper-bound split may nest inside another's arms.
+const MAX_UPPER_BOUND_SPLIT_DEPTH: usize = 2;
+
+thread_local! {
+    static UPPER_BOUND_SPLIT_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct UpperBoundSplitScope;
+
+impl UpperBoundSplitScope {
+    fn enter() -> Option<Self> {
+        UPPER_BOUND_SPLIT_DEPTH.with(|depth| {
+            (depth.get() < MAX_UPPER_BOUND_SPLIT_DEPTH).then(|| {
+                depth.set(depth.get() + 1);
+                UpperBoundSplitScope
+            })
+        })
+    }
+}
+
+impl Drop for UpperBoundSplitScope {
+    fn drop(&mut self) {
+        UPPER_BOUND_SPLIT_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
 
 /// How many recently recorded program points simp offers, beside function
 /// entry, as the source of a transport of its goal.

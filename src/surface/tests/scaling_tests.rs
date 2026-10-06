@@ -5828,14 +5828,20 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
     }
 }
 
-/// simp's bound selection follows bounds from the goal's variables to the
-/// variables they name, but visits a fixed number of variables, and plans
-/// the certificate before spelling any premise. Each selection therefore
-/// costs the same however long the chain `x0 <= x1 <= ... <= xN` is; a
-/// failing `simp` retries its closure a number of times linear in the
-/// chain, so its total work stays linear, not quadratic.
+/// A failing `simp` over a chain `x0 <= x1 <= ... <= xN` does about the same
+/// work however long the chain is. Its bound selection visits a fixed
+/// number of variables and plans the certificate before spelling a premise,
+/// and its upper-bound split nests a fixed number of times, reads its
+/// candidates from the goal variables' bound buckets, and looks for
+/// spellings at a fixed number of program points.
+///
+/// The split used to recurse along the whole chain, each arm running the
+/// whole closure again: 44, 76, 140, and 268 runs of the closure's last
+/// route at 4, 8, 16, and 32, and 127565, 300253, 579237, and 1180213 units
+/// on 2026-10-05. Bounded, the same sizes take 53224, 67088, 68480, and
+/// 71264 units (2026-10-06).
 #[test]
-fn failing_simp_bound_selection_stays_linear_along_a_variable_chain() {
+fn failing_simp_work_is_flat_along_a_variable_chain() {
     let simp_work = |sample: &ScalingSample| {
         sample
             .named_work
@@ -5876,12 +5882,10 @@ fn failing_simp_bound_selection_stays_linear_along_a_variable_chain() {
         work.push(simp_work(&sample));
     }
     assert!(work[0] > 0, "{work:?}");
-    for pair in work.windows(2) {
-        assert!(
-            pair[1] <= pair[0].saturating_mul(3),
-            "failing simp work grew faster than linear along the chain: {work:?}"
-        );
-    }
+    assert!(
+        work[3] <= work[1].saturating_add(work[1] / 4),
+        "a failing simp's work grew with the chain past the bounded sizes: {work:?}"
+    );
 }
 
 /// simp offers its goal as a transport from function entry and from a fixed

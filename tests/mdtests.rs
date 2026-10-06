@@ -81,6 +81,29 @@ fn mdtests() {
         });
     }
     paths.sort();
+    // CI splits the corpus across jobs to stay inside the gate's time
+    // budget: `MDTEST_PARTITION=k/n` keeps every n-th file from the k-th,
+    // over the sorted names, so the shards cover the corpus exactly once.
+    let partitioned = if let Ok(partition) = std::env::var("MDTEST_PARTITION") {
+        let (shard, total) = partition
+            .split_once('/')
+            .and_then(|(shard, total)| {
+                Some((shard.parse::<usize>().ok()?, total.parse::<usize>().ok()?))
+            })
+            .filter(|(shard, total)| (1..=*total).contains(shard))
+            .unwrap_or_else(|| {
+                panic!("MDTEST_PARTITION must be `k/n` with 1 <= k <= n, got `{partition}`")
+            });
+        let mut index = 0;
+        paths.retain(|_| {
+            index += 1;
+            (index - 1) % total == shard - 1
+        });
+        true
+    } else {
+        false
+    };
+    let filtered = filtered || partitioned;
 
     assert!(
         !paths.is_empty(),

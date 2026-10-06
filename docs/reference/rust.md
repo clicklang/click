@@ -47,8 +47,8 @@ extractor or adapter semantics, refresh existing imports. Configurations use
 schema 3 and native `.ullbc` artifacts. Omitting `backend` selects Charon;
 `"charon"` and the historical `"charon-trial"` spelling are also accepted.
 Schema 2 is rejected with a migration diagnostic. The normal example gate
-checks locked native inputs offline, while the required live Charon gate
-refreshes and verifies all 16 original Rust fixtures.
+checks locked native inputs offline, while the nightly gate's live Charon
+tests refresh and verify all 16 original Rust fixtures.
 
 ## Locked crates and qualified declarations
 

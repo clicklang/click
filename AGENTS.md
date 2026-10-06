@@ -132,6 +132,18 @@ reading output, but the verdict comes from an unpiped run. The default `cargo
 test --lib` is also not the gate: it passes while both proof-fixture gates
 fail.
 
+## The gate has a ten-minute budget
+
+`scripts/check.sh` and a CI run each finish in under ten minutes. A test that
+takes more than about ten seconds does not go in the gate: mark it
+`#[ignore = "nightly: <measurement>"]`, or list a slow example in `NIGHTLY`
+in `tests/examples.rs`. `scripts/check.sh --nightly` and the nightly workflow
+run those with no budget. Do not add `click audit` or whole-example tool
+rechecks to gate tests; one `audit` costs tens of seconds where `verify`
+costs under one. The script prints its elapsed time: when your change pushes
+it past ten minutes, move tests to nightly in the same change. See
+`docs/internals/testing.md`.
+
 ## File bugs freely; create issues only when the user explicitly asks
 
 `bugs/` and `issues/` are different lists with different rules.
