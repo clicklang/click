@@ -460,7 +460,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 40;
+its documented application invariant. The typed artifact schema is now 42;
 previous artifacts require an explicit lock refresh.
 
 The offline checker validates recursive function metadata before checking the
@@ -573,6 +573,20 @@ product afterwards cannot remove its original overflow obligation. High-bit
 products, signed extrema, symbolic cast round trips, source-width overflow,
 wide overflow, expansion, and retained audit have regression coverage.
 
+The `scalar-braces` fixture admits one Clang-resolved integer or Boolean
+brace initializer, including `__int128{a}` and `long value{n}`. It preserves
+the semantic child's resolved conversion through the existing expression
+model, including argument stability and compiler-assumption checks. C++
+narrowing list initialization remains a compiler error; empty lists,
+unsupported scalar widths, and unsupported effects remain refused. This
+normalization adds no artifact node or schema version.
+
+On a normal wide multiplication path, after both native range guards hold,
+the shared kernel certifies the result's mathematical observation as the
+exact Integer product. Pure Integer observation and capture retain the native
+guards but do not demand that a certified result definition be supplied as
+another assumption. False product claims and missing guards remain refused.
+
 The `wide-contracts` fixture adds by-value wide parameters, results, and
 matching-width call captures. Contracts spell these types `int128` and
 `uint128`; `to_integer(value)` observes their full mathematical value.
@@ -625,9 +639,12 @@ conversion bounds. See [Integer certificates](../../internals/mathematical-integ
 Wide pointers, references, record fields, arrays, negation,
 addition, subtraction, and unsigned multiplication remain unsupported. Both
 the live exporter and serialized artifact validator reject these operations.
-Schema 40 requires refreshing older locks. The unchanged Bitcoin fee arithmetic
-helpers still need wide rounding operations, checked narrowing bounds, and an
-explicit treatment of the library `Assume` boundary.
+Schema 40 requires refreshing older locks. The unchanged Bitcoin fee
+division helper still needs quotient/remainder and narrowing bounds plus an
+explicit treatment of the library `Assume` boundary. The unchanged
+`FeeFrac::Mul` now has an exact product proof under explicit full-width
+operand observer bounds in the
+[Bitcoin integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#wide-fee-product).
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
 same-type arithmetic/comparisons now use the common unsigned kernel types.
@@ -1118,3 +1135,74 @@ no proof runs against the imported bodies yet.
 A successful lock operation exits 0. Invalid configuration, missing inputs,
 compiler failure, an exceeded bound, or an output-write failure exits nonzero
 with a diagnostic. Ordinary verification never rewrites a lock or artifact.
+
+
+C++ imports may explicitly assume a narrow external library assertion contract
+with the optional `library_assertions` config field. For example (replace the
+hash with the SHA-256 of the actual header bytes):
+
+```json
+"library_assertions": [{
+  "kind": "checked_boolean_statement",
+  "function": "library::check",
+  "header": "gate.h",
+  "sha256": "<64 lowercase hexadecimal digits>"
+}]
+```
+
+The header must be in the explicit `dependencies` inventory and the locked
+preprocessor closure. Entries have unique, sorted qualified function names;
+the inventory is limited to 64. Header hashes are checked during refresh and
+offline loading. The resolved callee declaration, and its definition when
+present, must belong to that header. Definitions in the selected logical
+source still require ordinary verified contracts, including recursive calls.
+Config, artifact, compiler command, and input closure are part of the import identity. A changed pin requires an
+explicit config edit and lock refresh.
+
+This is an **assumed library contract**, not verification of its implementation.
+It states that, when its Boolean argument is true, the call returns normally with defined behavior
+without changing caller-visible memory. Each admitted call evaluates that
+argument and generates an obligation to prove it true. It neither adds an
+unproved condition to the proof context nor admits the library's false-input,
+abort, or exception behavior. The diagnostic names the contract and header
+hash; normal cleanup still runs. A function merely named `Assume` retains
+ordinary call semantics without a matching explicit contract.
+
+The `checked_boolean_statement` kind accepts a direct standalone discarded-result
+call to a free, non-template, non-variadic function with one Boolean value
+parameter and a void or Boolean value return type. Its argument must be a total
+scalar Boolean condition without memory reads, mutation, calls, or partial
+arithmetic. This kind does not admit metadata, references, or templates.
+
+The separate `checked_boolean_statement_with_consteval_metadata` kind adds
+resolved templates using the existing Boolean/scalar template-argument profile,
+a Boolean rvalue-reference parameter, and a discarded Boolean rvalue-reference
+return. A reference condition must bind a Boolean prvalue, rather than a caller
+lvalue or cast-to-reference expression. The same total-condition proof obligation
+applies. The assumed library behavior must hold for every admitted specialization
+and metadata value; metadata contents are not proved or used to establish the
+condition.
+
+Up to eight further arguments may be direct, forced `consteval` call results of
+the exact parameter type. Integer metadata binds by value or const reference.
+Record metadata binds only by const reference and must have a trivial destructor.
+No runtime conversion, record value parameter, nontrivial temporary cleanup, or
+use of the library return is admitted. A `constexpr` function being eligible for
+constant evaluation is insufficient: its runtime execution may have effects.
+Forced compile-time evaluation and harmless materialization are compiler
+semantics under the locked profile, not an assumption that arbitrary metadata
+functions are pure at runtime.
+
+The artifact retains the resolved specialization and each metadata factory's
+qualified name and canonical declaration file. Offline validation checks the
+contract kind, bounded metadata inventory, and declaration-file membership in
+the locked preprocessor closure. Artifact schema 42 requires an explicit refresh
+of earlier locks.
+
+Bitcoin's unchanged `inline_assertion_check<false>` now reaches its third
+argument under this opt-in contract: its Boolean temporary and forced
+`std::source_location::current()` are accepted. The runtime string-view
+construction remains rejected. The pinned integration tests retain both the
+missing-contract refusal and this exact remaining boundary; `FeeFrac::Div` is
+not yet admitted or proved. This evaluated library call is separate from Clang's
+unevaluated `__builtin_assume`.
