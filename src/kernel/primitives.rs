@@ -4685,6 +4685,33 @@ impl Ord for ReadRegionIdentity {
     }
 }
 
+impl CMemory {
+    /// Names the parts in which two memories differ, for a refusal that
+    /// would otherwise only say that they do.
+    pub(crate) fn differing_parts(&self, other: &Self) -> Vec<&'static str> {
+        let mut parts = Vec::new();
+        if self.blocks != other.blocks {
+            parts.push("allocated blocks");
+        }
+        if self.cells != other.cells {
+            parts.push("cell values");
+        }
+        if self.union_cells != other.union_cells {
+            parts.push("union views");
+        }
+        if self.forgotten.ended_local_blocks != other.forgotten.ended_local_blocks {
+            parts.push("ended local lifetimes");
+        }
+        if self.forgotten.forgotten_from != other.forgotten.forgotten_from {
+            parts.push("which earlier memory each forgot values from");
+        }
+        if self.heap != other.heap {
+            parts.push("heap records");
+        }
+        parts
+    }
+}
+
 impl PartialEq for CMemory {
     /// Rejects on the O(1) content hash before any elementwise comparison.
     /// Without that, a candidate that differs only in a later component
