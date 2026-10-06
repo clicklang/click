@@ -243,7 +243,12 @@ charged to visible semantic output rather than hidden ambient state:
   quadratic in `P`: post-execution `simp` and contract certification do
   (`grouped_proof_finalization_reads_each_path_once` pins only the
   finalization check that no longer needs them). Removing this needs path
-  facts shared across the paths that share a prefix.
+  facts shared across the paths that share a prefix. The same function is
+  quadratic in other per-path work that follows the path's length, not its
+  facts; `bugs/early-return-paths-store-facts-whole.md` lists each measured
+  source. The largest, simp offering its goal as a transport from every
+  program point the path recorded, is bounded
+  (`simp_snapshot_transport_search_is_linear_in_early_returns`).
 
 ## Execution capacity follows selected syntax
 

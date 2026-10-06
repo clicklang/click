@@ -29,6 +29,51 @@ Measured on 2026-10-02 with `early_return_fan_out` from
 `grouped_proof_finalization_reads_each_path_once` pins only the implicit
 empty-effect check. Neither bounds the whole verification.
 
+## Measured sources
+
+Stored path facts are one source among several. Each source below does work
+proportional to a path's length once per path. Measured on 2026-10-05 at 4,
+8, 16, 32, and 64 returns, in deterministic work units:
+
+| | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|
+| total, before | 7727 | 14947 | 33347 | 85907 | 254003 |
+| total, transport search bounded | 6991 | 12739 | 25987 | 59411 | 153907 |
+| `simp`, bounded | 2070 | 4196 | 9456 | 24008 | 69240 |
+| `execute` | 4054 | 7138 | 13906 | 29762 | 70690 |
+
+Fixed:
+
+- simp's snapshot-transport search
+  (`try_snapshot_transport_closure_candidates`) offered the goal as a
+  transport from every program point the path recorded, about `2k` attempts
+  on path `k`. It now offers function entry and the eight most recent
+  points; `simp_snapshot_transport_search_is_linear_in_early_returns` pins
+  it.
+
+Remaining, by the work each still charges at 32 and then 64 returns:
+
+- A terminal branch join re-records every enclosing arm's condition
+  spelling into its parent (`merge_branch_surface_facts`,
+  `execution_joins.rs`), so the innermost condition is recorded once per
+  enclosing join: 2244 then 8580 `record_lowering` calls, 5028 then 18212
+  units, with 2514 then 9106 and 1250 then 4546 in the lookups beside it.
+- Alpha-key work in `fact_keys.rs` (`alpha_work_checkpoint`): 4352 then
+  16896.
+- Assumption-context work at `assumptions.rs` near lines 5164 and 3616, the
+  latter with `proposition_search.rs:1874`: 2883 then 9827, and 1088 then
+  4224 each.
+- Step recording at `cursor_execution.rs:1289`: 1290 then 4618.
+- Each path's outcome goal re-adds the path's conditions to the root facts
+  (`outcomes_and_focus.rs`, the `with_kernel_checked_fact` loop): 957 then
+  2925.
+- Kernel contract certification rebuilds each path's assumptions from its
+  flat fact list (`contract_claims.rs`, `assumptions_with_path_context`):
+  693 then 2405 context entries, and a simp route rebuilds a context from
+  its selected premises (`equality_rewrite.rs`, `pure_context`): 528 then
+  2080.
+- `execute` itself grows 2.4 times per doubling.
+
 ## Intended regression
 
 A scaling test over `early_return_fan_out` at 4, 8, 16, and 32 returns that
