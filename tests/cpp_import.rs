@@ -1239,6 +1239,7 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
 }
 
 #[test]
+#[ignore = "nightly: live C++ exporter scaling rechecks measured 34s"]
 fn graph_place_indices_preserve_reference_calls_with_growing_unrelated_places() {
     for size in [4usize, 16, 64] {
         let parameters = (0..size)

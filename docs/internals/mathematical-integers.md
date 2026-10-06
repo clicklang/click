@@ -42,6 +42,23 @@ expressions. A signed machine-addition equality needs evidence that the C
 operation is defined; an unsigned equality must account for modular arithmetic.
 No unconditional conversion distribution rule is sound.
 
+The checked `uint32_less_equal_to_integer` and
+`uint32_less_equal_of_to_integer` laws preserve and reflect unsigned non-strict
+order. Each requires the corresponding order premise. Unlike signed casts,
+these observations retain values above `2147483647` through `4294967295`.
+The proved library theorem `uint32_to_integer_bounds(value)` supplies
+`0 <= to_integer(value) <= 4294967295` from the native unsigned range.
+These laws preserve the value of a wrapping expression as evaluated; they do
+not make its observation equal an unbounded mathematical sum. Observation of
+an undefined expression still requires its definedness prerequisites.
+
+The proved `uint32_less_than_to_integer` theorem transfers strict unsigned
+order through the same exact observation. The checked
+`uint32_remainder_less_than_divisor` rule requires a nonzero native divisor and
+bounds `value % divisor` strictly below it for every u32 dividend. Combining
+these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
+without changing its unsigned meaning or defining division by zero.
+
 ## Exact operations and definedness
 
 Integer literals, unary negation, addition, subtraction, multiplication,

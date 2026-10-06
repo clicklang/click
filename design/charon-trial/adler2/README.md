@@ -28,17 +28,30 @@ and native Charon artifact to prove every lane of these original helpers:
 
 | Body | Contract |
 | --- | --- |
-| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255 |
-| `AddAssign<Self>` | Each widened lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand |
-| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor |
+| `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
+| `AddAssign<Self>` | Each Integer lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand, with exact Integer sum and nonnegative observation |
+| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, is below the divisor, and has an Integer observation in `0..divisor-1` |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |
 
-Mutating helpers require ownership of all four receiver lanes. Addition uses
-`(int64)` contract casts to express the exact Rust overflow guard; it permits
-the full safe u32 domain. Multiplication's disjunction includes a zero multiplier
+Mutating helpers require ownership of all four receiver lanes. Addition accepts
+Integer sum bounds and derives the widened `(int64)` Rust overflow guards;
+it permits the full safe u32 domain. Multiplication's disjunction includes a zero multiplier
 without evaluating division by zero. These proofs establish the access and
 panic prerequisites in the helper bodies, conditional on their contracts.
 They do not establish that the checksum loops satisfy those contracts.
+
+The constructor also exports `0 <= to_integer(lane) <= 255` for each lane.
+Its proof applies checked unsigned-order bridges to the actual returned
+fields, making the byte bounds usable by the Integer lane-step lemmas. The
+bridges retain the full u32 range; signed reinterpretation would be unsound
+for accumulated B lanes above the sign bit.
+
+The remainder helper exports the strict native and Integer divisor bounds
+for all four lanes, along with nonnegative Integer observations. Its original
+`%=` body proves those guarantees for every nonzero u32 divisor. Specializing
+the call to `MOD = 65521` yields the `0..65520` range needed to reset both
+lane ceilings before a new batch. This does not establish the reset or
+preservation over the original outer loop yet.
 
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,
@@ -71,9 +84,12 @@ nonnegative and below the full-batch ceilings. The range is per batch; it
 imposes no bound on the total number of batches in an input.
 
 The native lane-step lemmas now compose those ceilings with unsigned Integer
-observations to establish the exact widened `int64` addition guards used by
-`U32X4::add_assign`. Checked no-wrap bridges prove that the updated native A
-and B lanes have the mathematical sum values and satisfy their successor
+observations to establish the widened `int64` addition guards in the original
+`U32X4::add_assign` body. Its sidecar now accepts the corresponding Integer
+no-wrap bounds and exports exact Integer sums and nonnegative observations
+for all four updated lanes. The checked addition bridge discharges the native
+overflow guards without changing the original body. Checked no-wrap bridges
+prove that the updated native A and B lanes have the mathematical sum values and satisfy their successor
 ceilings. In B's update, the operand is the newly updated native A lane.
 
 These are checked arithmetic implications. They do not yet establish the

@@ -1299,6 +1299,7 @@ pub(super) enum PostExecutionTactic {
         threw_tactics: Vec<DeferredPostExecutionTactic>,
     },
     Simp,
+    SimpUsing(ProofSimpUsing),
 }
 
 #[derive(Clone)]
@@ -1533,7 +1534,7 @@ pub(super) fn post_execution_tactic_timing(
                 "smart"
             },
         ),
-        PostExecutionTactic::Simp => ("simp", "smart"),
+        PostExecutionTactic::Simp | PostExecutionTactic::SimpUsing(_) => ("simp", "smart"),
         PostExecutionTactic::Fold(_) => ("fold", "simple"),
         PostExecutionTactic::Unfold(_) => ("unfold", "simple"),
         PostExecutionTactic::Construct(_) => ("construct", "simple"),

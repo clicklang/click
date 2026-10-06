@@ -9341,3 +9341,138 @@ fn uint32_add_bridges_agree_with_boundary_models() {
         }
     }
 }
+
+#[test]
+fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
+    fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(910) => a,
+            Bitvector32Term::Variable(v) if *v == Variable(911) => b,
+            Bitvector32Term::Constant(v) => *v,
+            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            _ => panic!("unexpected unsigned-order encoding {term:?}"),
+        }
+    }
+    fn holds(p: &Proposition, a: u32, b: u32) -> bool {
+        match p {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                true,
+            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
+                let observe = |term: &IntegerTerm| {
+                    let IntegerTerm::Machine(value) = term else {
+                        panic!("expected exact observation")
+                    };
+                    assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                    num_bigint::BigInt::from(machine(value.value(), a, b))
+                };
+                observe(left) <= observe(right)
+            }
+            _ => panic!("unexpected bridge proposition {p:?}"),
+        }
+    }
+    let left = Bitvector32Term::Variable(Variable(910));
+    let right = Bitvector32Term::Variable(Variable(911));
+    for theorem in [
+        prove_uint32_less_equal_to_integer(left.clone(), right.clone()),
+        prove_uint32_less_equal_of_to_integer(left.clone(), right.clone()),
+    ] {
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("missing guard")
+        };
+        for a in [
+            0,
+            1,
+            255,
+            65520,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x8000_0001,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            for b in [
+                0,
+                1,
+                255,
+                65520,
+                0x7fff_ffff,
+                0x8000_0000,
+                0x8000_0001,
+                u32::MAX - 1,
+                u32::MAX,
+            ] {
+                assert_eq!(holds(premise, a, b), a <= b);
+                assert_eq!(holds(conclusion, a, b), a <= b);
+            }
+        }
+    }
+}
+
+#[test]
+fn uint32_remainder_bound_agrees_with_full_width_models() {
+    fn machine(term: &Bitvector32Term, value: u32, divisor: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(920) => value,
+            Bitvector32Term::Variable(v) if *v == Variable(921) => divisor,
+            Bitvector32Term::Constant(v) => *v,
+            Bitvector32Term::BitwiseXor(a, b) => {
+                machine(a, value, divisor) ^ machine(b, value, divisor)
+            }
+            Bitvector32Term::UnsignedRemainder(a, b) => {
+                machine(a, value, divisor) % machine(b, value, divisor)
+            }
+            _ => panic!("unexpected unsigned remainder term {term:?}"),
+        }
+    }
+    let theorem = prove_uint32_remainder_less_than_divisor(
+        Bitvector32Term::Variable(Variable(920)),
+        Bitvector32Term::Variable(Variable(921)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing nonzero guard")
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), false) = premise.as_ref()
+    else {
+        panic!("wrong guard")
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(left, right), true) =
+        conclusion.as_ref()
+    else {
+        panic!("wrong unsigned order")
+    };
+    for value in [
+        0,
+        1,
+        65520,
+        65521,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        u32::MAX - 1,
+        u32::MAX,
+    ] {
+        for divisor in [
+            0,
+            1,
+            2,
+            4,
+            65521,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x8000_0001,
+            u32::MAX,
+        ] {
+            let guarded = machine(a, value, divisor) != machine(b, value, divisor);
+            assert_eq!(guarded, divisor != 0);
+            if guarded {
+                assert!(u64::from(value) % u64::from(divisor) < u64::from(divisor));
+                assert!(
+                    (machine(left, value, divisor) as i32)
+                        < (machine(right, value, divisor) as i32)
+                );
+            }
+        }
+    }
+}

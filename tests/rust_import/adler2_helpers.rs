@@ -102,14 +102,47 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
         0,
         &[
             ("result._0[3] == bytes[3]", "result._0[3] == bytes[2]"),
-            ("result._0[0] <= 255u32", "result._0[0] <= 254u32"),
-            ("result._0[1] <= 255u32", "result._0[1] <= 254u32"),
-            ("result._0[2] <= 255u32", "result._0[2] <= 254u32"),
-            ("result._0[3] <= 255u32", "result._0[3] <= 254u32"),
             ("requires bytes_len >= 4u64;", "requires bytes_len >= 3u64;"),
             ("views bytes[0..4];", "views bytes[0..3];"),
         ],
     );
+}
+
+fn reject_helper_byte_bounds(lane: usize) {
+    let native = format!("result._0[{lane}] <= 255u32");
+    let false_native = format!("result._0[{lane}] <= 254u32");
+    let upper = format!("to_integer(result._0[{lane}]) <= 255");
+    let false_upper = format!("to_integer(result._0[{lane}]) <= 254");
+    let lower = format!("0 <= to_integer(result._0[{lane}])");
+    let false_lower = format!("1 <= to_integer(result._0[{lane}])");
+    reject_helper_contracts(
+        0,
+        &[
+            (&native, &false_native),
+            (&upper, &false_upper),
+            (&lower, &false_lower),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_0() {
+    reject_helper_byte_bounds(0);
+}
+
+#[test]
+fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_1() {
+    reject_helper_byte_bounds(1);
+}
+
+#[test]
+fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_2() {
+    reject_helper_byte_bounds(2);
+}
+
+#[test]
+fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_3() {
+    reject_helper_byte_bounds(3);
 }
 
 #[test]
@@ -122,17 +155,50 @@ fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
                 "old(self->_0[3]) + other._0[2]",
             ),
             (
-                "requires ((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64;",
+                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
                 "",
             ),
-            ("4294967295i64", "4294967296i64"),
+            ("<= 4294967295;", "<= 4294967296;"),
             (
-                "((int64)self->_0[3] + (int64)other._0[3]) <= 4294967295i64",
-                "self->_0[3] + other._0[3] <= 4294967295u32",
+                "requires to_integer(self->_0[3]) + to_integer(other._0[3]) <= 4294967295;",
+                "requires self->_0[3] + other._0[3] <= 4294967295u32;",
             ),
             ("owns self->_0[0..4];", "views self->_0[0..4];"),
         ],
     );
+}
+
+fn reject_helper_add_observations(lane: usize) {
+    let exact = format!(
+        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{lane}]);"
+    );
+    let wrong = format!(
+        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) + to_integer(other._0[{}]);",
+        (lane + 1) % 4
+    );
+    let lower = format!("ensures 0 <= to_integer(self->_0[{lane}]);");
+    let false_lower = format!("ensures 1 <= to_integer(self->_0[{lane}]);");
+    reject_helper_contracts(1, &[(&exact, &wrong), (&lower, &false_lower)]);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_0() {
+    reject_helper_add_observations(0);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_1() {
+    reject_helper_add_observations(1);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_2() {
+    reject_helper_add_observations(2);
+}
+
+#[test]
+fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
+    reject_helper_add_observations(3);
 }
 
 #[test]
@@ -145,6 +211,43 @@ fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
             ("owns self->_0[0..4];", "views self->_0[0..4];"),
         ],
     );
+}
+
+fn reject_helper_reduction_bounds(lane: usize) {
+    let native = format!("ensures self->_0[{lane}] < quotient;");
+    let false_native = format!("ensures self->_0[{lane}] < quotient - 1u32;");
+    let lower = format!("0 <= to_integer(self->_0[{lane}])");
+    let false_lower = format!("1 <= to_integer(self->_0[{lane}])");
+    let upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient)");
+    let false_upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient) - 1");
+    reject_helper_contracts(
+        2,
+        &[
+            (&native, &false_native),
+            (&lower, &false_lower),
+            (&upper, &false_upper),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_0() {
+    reject_helper_reduction_bounds(0);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_1() {
+    reject_helper_reduction_bounds(1);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_2() {
+    reject_helper_reduction_bounds(2);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_3() {
+    reject_helper_reduction_bounds(3);
 }
 
 #[test]

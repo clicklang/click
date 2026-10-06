@@ -937,7 +937,7 @@ or whole-loop panic-freedom claim is introduced by this increment.
 ### Native u32 lane-step observations and guards
 
 The bounds library now proves the widened `int64` guards required by the
-original `U32X4::add_assign` contract for both lane updates. Under the checked
+original `U32X4::add_assign` body for both lane updates. Under the checked
 A/B ceilings and byte bound, the native additions do not wrap, their unsigned
 Integer observations equal the mathematical sums, and their observations
 satisfy `A(n+1)` and `B(n+1)`. The B update uses the newly updated native A.
@@ -1001,3 +1001,66 @@ are available at the helper-call boundary with only the four-byte shared view
 and length prerequisite. Regressions reject 254 as the universal bound for each
 lane. This supplies the native byte range needed by the proposed lane invariants;
 instantiating their Integer observations over the nested loops remains next.
+
+### Unsigned order and constructor Integer bounds
+
+Checked native-u32/Integer order bridges now preserve and reflect non-strict
+order over the full unsigned domain. Their declarations require the exact
+order premise, type, and conclusion. A proved library range theorem supplies
+nonnegative observations through u32::MAX without assuming signed bounds or
+no-wrap distribution. Boundary models exercise the sign-bit transition and
+maximum; regressions reject missing/reversed guards, changed declarations,
+false signed-range ceilings, wrapping distribution, and undefined arguments.
+
+The unchanged original `U32X4::from` contract now exports all four byte lanes'
+Integer bounds `0..255`, proved by applying those bridges to the returned
+fields. False lower and upper bounds are rejected for each lane. The source,
+locked Charon artifact, and import profile are unchanged. This connects the
+constructor's guarantees to the numeric vocabulary used by the lane-step
+lemmas. Next instantiate the original nested-loop invariants and establish
+helper-call prerequisites from the stored iterator states. Whole-loop panic
+freedom, byte accounting, and checksum correctness remain unproved.
+
+### Original modulo-reduction lane ranges
+
+The unchanged `U32X4::rem_assign` contract now proves, for each of its four
+lanes, the exact original modulo result, native strict divisor bound, and
+nonnegative Integer observation strictly below the divisor. A checked unsigned
+remainder rule requires a nonzero divisor; a proved strict-order bridge uses
+the existing checked non-strict reflection rule. Boundary models include zero
+(excluded), one, MOD, the sign-bit transition, and u32::MAX. Regressions reject
+missing/wrong divisor guards, altered declarations/types, and false tightened
+native and Integer bounds for every lane. With MOD=65521 these guarantees give
+the `0..65520` range required by the next batch's initial lane ceilings.
+
+Original source, locked Charon artifact, and import profile remain unchanged.
+Next instantiate the numeric invariants and helper-call prerequisites over the
+original nested iterators, using the constructor's Integer byte bounds and
+these modulo-reduction guarantees. Original loop preservation, whole-loop
+panic freedom, byte accounting, and checksum correctness remain unproved.
+
+### Original addition helper Integer interface
+
+The unchanged `U32X4::add_assign` contract now accepts each lane's Integer
+sum bound through u32::MAX, establishes the original widened overflow guard,
+and exports both exact native and exact Integer sums plus nonnegative updated
+observations. This connects the helper call to the lane recurrence vocabulary;
+the sidecar does not assume distribution over wrapping addition. Regressions
+reject a missing lane guard, MAX+1, a tautological wrapping guard, changed
+ownership, and false Integer sums and lower bounds on every lane. Original
+source, artifact, and import profile are unchanged. The original nested-loop
+invariants, whole-loop panic freedom, byte accounting, and checksum correctness
+still need proofs.
+
+### Restricted closers at the original computation's exit
+
+An original `Adler32::compute` proof experiment exposed that top-level
+`simp() using { ... }` was not retained after function exit. A minimal C
+reproduction incorrectly blamed an earlier valid `have` as unsupported.
+The ordered outcome driver now retains the restricted closer, checks only
+its listed proposition premises on each returned outcome, and uses the same
+checked resource transition and certificate capture as ordinary `simp`.
+Regressions cover missing/false/irrelevant premises, both return paths,
+grouped ownership and value guarantees, and independent expansion rechecks.
+This repairs proof tooling; it does not prove the original nested loops or
+checksum contract. Original Rust sources and extraction locks are unchanged.

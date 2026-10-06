@@ -2403,6 +2403,9 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_increment_strictly_increases"
                 | "uint32_widened_add_guard_by_integer_bound"
                 | "uint32_add_to_integer"
+                | "uint32_remainder_less_than_divisor"
+                | "uint32_less_equal_to_integer"
+                | "uint32_less_equal_of_to_integer"
                 | "uint32_lt_implies_positive_difference"
                 | "uint32_gt_implies_reversed_lt"
                 | "uint32_lt_implies_reversed_gt"
@@ -2479,7 +2482,11 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_lt_le_transitive"
         | "int32_lt_transitive"
         | "int32_ge_transitive" => (3, 2),
-        "uint32_widened_add_guard_by_integer_bound" | "uint32_add_to_integer" => (2, 1),
+        "uint32_widened_add_guard_by_integer_bound"
+        | "uint32_add_to_integer"
+        | "uint32_less_equal_to_integer"
+        | "uint32_less_equal_of_to_integer"
+        | "uint32_remainder_less_than_divisor" => (2, 1),
         "uint32_positive_predecessor_strictly_decreases" => (1, 1),
         "uint32_increment_upper_bound"
         | "uint32_increment_strictly_increases"
@@ -2588,6 +2595,15 @@ fn verify_kernel_standard_theorem_axiom(
                     value,
                     uint32_parameter(1)?,
                 )
+            }
+            "uint32_less_equal_to_integer" => {
+                crate::kernel::prove_uint32_less_equal_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_less_equal_of_to_integer" => {
+                crate::kernel::prove_uint32_less_equal_of_to_integer(value, uint32_parameter(1)?)
+            }
+            "uint32_remainder_less_than_divisor" => {
+                crate::kernel::prove_uint32_remainder_less_than_divisor(value, uint32_parameter(1)?)
             }
             "uint32_add_to_integer" => {
                 crate::kernel::prove_uint32_add_to_integer(value, uint32_parameter(1)?)
@@ -3814,6 +3830,62 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
             );
         }
     }
+    #[test]
+    fn uint32_integer_order_bridges_check_exact_declarations() {
+        for (name, premise, conclusion) in [
+            (
+                "uint32_less_equal_to_integer",
+                "left <= right",
+                "to_integer(left) <= to_integer(right)",
+            ),
+            (
+                "uint32_less_equal_of_to_integer",
+                "to_integer(left) <= to_integer(right)",
+                "left <= right",
+            ),
+        ] {
+            let source = format!(
+                "theorem {name}(left: uint32, right: uint32) {{ requires {premise}; ensures {conclusion}; }}"
+            );
+            verify_standard_declaration(&source).unwrap();
+            for invalid in [
+                source.replace(&format!("requires {premise};"), ""),
+                source.replace(
+                    &format!("requires {premise};"),
+                    &format!(
+                        "requires {};",
+                        premise
+                            .replace("left", "TEMP")
+                            .replace("right", "left")
+                            .replace("TEMP", "right")
+                    ),
+                ),
+                source.replace(conclusion, "true"),
+                source.replace("left: uint32", "left: int32"),
+                source.replace("right: uint32", "right: uint64"),
+                source.replace("<=", "<"),
+            ] {
+                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+            }
+        }
+    }
+
+    #[test]
+    fn uint32_remainder_bound_checks_exact_declaration() {
+        let source = "theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures value % divisor < divisor; }";
+        verify_standard_declaration(source).unwrap();
+        for invalid in [
+            source.replace("requires divisor != 0u32;", ""),
+            source.replace("requires divisor != 0u32;", "requires value != 0u32;"),
+            source.replace("< divisor;", "<= divisor;"),
+            source.replace("value % divisor", "divisor % value"),
+            source.replace("value: uint32", "value: int32"),
+            source.replace("divisor: uint32", "divisor: uint64"),
+        ] {
+            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+        }
+    }
+
     #[test]
     fn uint32_add_bridges_check_exact_kernel_declarations() {
         for (name, conclusion) in [

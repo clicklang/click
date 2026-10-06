@@ -8564,6 +8564,44 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
     ))
 }
 
+/// An unsigned remainder is strictly below its nonzero divisor.
+/// No upper bound on the dividend is needed; zero division is excluded.
+pub fn prove_uint32_remainder_less_than_divisor(
+    value: Bitvector32Term,
+    divisor: Bitvector32Term,
+) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(divisor.clone(), Bitvector32Term::Constant(0)),
+            false,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(
+                Bitvector32Term::unsigned_remainder(value, divisor.clone()),
+                divisor,
+            ),
+            true,
+        )),
+    ))
+}
+
+/// Preserve native unsigned u32 order in exact mathematical observations.
+/// The unsigned interpretation includes values above the signed sign bit.
+pub fn prove_uint32_less_equal_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, false)
+}
+
+/// Reflect mathematical order into native unsigned u32 order.
+pub fn prove_uint32_less_equal_of_to_integer(
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> Theorem {
+    prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, true)
+}
+
 /// Exact mathematical observation of a defined signed 32-bit addition.
 /// The overflow premise is essential: the machine term alone is modular.
 pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
@@ -8574,7 +8612,7 @@ pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term)
 /// Every int32 bit pattern has an Integer interpretation, so this law needs
 /// only the corresponding C order premise and no definedness side condition.
 pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
+    prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Reflect mathematical order into native signed int32 order.
@@ -8582,12 +8620,12 @@ pub fn prove_int32_less_equal_of_to_integer(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Theorem {
-    prove_signed_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
+    prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
 }
 
 /// Preserve native signed int64 order in its mathematical observation.
 pub fn prove_int64_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
-    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
+    prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
 }
 
 /// Reflect mathematical order into native signed int64 order.
@@ -8595,10 +8633,10 @@ pub fn prove_int64_less_equal_of_to_integer(
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Theorem {
-    prove_signed_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
+    prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
 }
 
-fn prove_signed_integer_order_bridge(
+fn prove_machine_integer_order_bridge(
     ty: MachineIntegerType,
     left: Bitvector32Term,
     right: Bitvector32Term,
@@ -8606,14 +8644,17 @@ fn prove_signed_integer_order_bridge(
 ) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(ty, value)
-            .expect("typed signed operands have exact Integer interpretations")
+            .expect("typed machine operands have exact Integer interpretations")
     };
     let native = match ty {
+        MachineIntegerType::UInt32 => {
+            ConditionTerm::unsigned_less_equal(left.clone(), right.clone())
+        }
         MachineIntegerType::Int32 => ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         MachineIntegerType::Int64 => {
             ConditionTerm::int64_signed_less_equal(left.clone(), right.clone())
         }
-        _ => unreachable!("signed order bridges admit only int32/int64"),
+        _ => unreachable!("order bridges admit only uint32/int32/int64"),
     };
     let native = Proposition::ConditionIs(native, true);
     let integer = Proposition::ConditionIs(
