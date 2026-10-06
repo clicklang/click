@@ -145,6 +145,36 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
             .collect();
         assert_eq!(normals.len(), 1);
         let normal = normals[0];
+        let CExpressionOutcome::Value(value) = &normal.outcome else {
+            unreachable!()
+        };
+        let observed = IntegerTerm::from_machine(
+            MachineIntegerType::Int128,
+            match value {
+                CValue::Int128(term) => term.clone(),
+                _ => panic!("typed wide result"),
+            },
+        )
+        .unwrap();
+        let (product, _) =
+            product_and_bounds(MachineIntegerType::Int128, MachineIntegerType::Int128);
+        let definition =
+            Proposition::ConditionIs(ConditionTerm::integer_equal(observed, product), true);
+        assert!(
+            normal
+                .facts
+                .iter()
+                .any(|fact| fact.proposition() == &definition)
+        );
+        assert!(
+            paths
+                .iter()
+                .filter(|path| matches!(path.outcome, CExpressionOutcome::UndefinedBehavior(_)))
+                .all(|path| path
+                    .facts
+                    .iter()
+                    .all(|fact| fact.proposition() != &definition))
+        );
         for bound in &bounds[provided..] {
             assert!(
                 normal.facts.iter().any(
@@ -323,6 +353,10 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
             )
         });
         assert_eq!(paths.len(), 1);
+        assert!(paths[0].facts.iter().any(|fact| matches!(
+            fact.proposition(),
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(_, _), true)
+        )));
         assert!(work < 4096, "{size}: {work}");
         samples.push(work);
     }

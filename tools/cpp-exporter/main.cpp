@@ -62,6 +62,7 @@ struct Options {
   std::string dependency_root;
   std::string compilation_database;
   std::string exception_behavior = "normal_only";
+  std::map<std::string, llvm::json::Value> library_assertions;
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
@@ -94,6 +95,24 @@ std::optional<Options> parse_options(int argc, const char **argv) {
       result.dependency_root = value;
     } else if (option == "--compilation-database") {
       result.compilation_database = value;
+    } else if (option == "--library-assertions") {
+      auto parsed = llvm::json::parse(value);
+      if (!parsed || !parsed->getAsArray() || parsed->getAsArray()->size() > 64) {
+        llvm::errs() << "error: invalid library assertion inventory\n";
+        if (!parsed) llvm::consumeError(parsed.takeError());
+        return std::nullopt;
+      }
+      for (auto &entry : *parsed->getAsArray()) {
+        const auto *object = entry.getAsObject();
+        if (!object || !object->getString("function") ||
+            !object->getString("header") || !object->getString("sha256") ||
+            (object->getString("kind") != "checked_boolean_statement" &&
+             object->getString("kind") != "checked_boolean_statement_with_consteval_metadata") ||
+            !result.library_assertions.emplace(object->getString("function")->str(), std::move(entry)).second) {
+          llvm::errs() << "error: invalid or duplicate library assertion contract\n";
+          return std::nullopt;
+        }
+      }
     } else if (option == "--exception-behavior") {
       if (value != "normal_only" && value != "scalar_int32") {
         llvm::errs() << "error: unsupported exception behavior `" << value << "`\n";
@@ -142,6 +161,7 @@ public:
                    std::string compilation_file,
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
+                   const std::map<std::string, llvm::json::Value> &library_assertions,
                    ExportState &state)
       : context_(context), source_manager_(context.getSourceManager()),
         logical_source_(std::move(logical_source)),
@@ -151,7 +171,8 @@ public:
         compilation_directory_(std::move(compilation_directory)),
         compilation_file_(std::move(compilation_file)),
         compilation_command_(std::move(compilation_command)),
-        exception_behavior_(std::move(exception_behavior)), state_(state) {}
+        exception_behavior_(std::move(exception_behavior)),
+        library_assertions_(library_assertions), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
     if (declaration->isThisDeclarationADefinition() &&
@@ -245,7 +266,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 40;
+    artifact["schema"] = 42;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -668,10 +689,130 @@ private:
     return Json(std::move(result));
   }
 
+  const clang::Expr *library_argument_value(const clang::Expr *expression) const {
+    expression = expression->IgnoreParens();
+    if (const auto *temporary = llvm::dyn_cast<clang::MaterializeTemporaryExpr>(expression)) {
+      expression = temporary->getSubExpr()->IgnoreParens();
+    }
+    return expression;
+  }
+
+  std::optional<Json> consteval_metadata(const clang::Expr *argument,
+                                        clang::QualType parameter_type, unsigned index) {
+    const clang::Expr *expression = library_argument_value(argument->IgnoreParenImpCasts())->IgnoreParenImpCasts();
+    if (const auto *constant = llvm::dyn_cast<clang::ConstantExpr>(expression)) {
+      expression = constant->getSubExpr()->IgnoreParenImpCasts();
+    }
+    const auto *call = llvm::dyn_cast<clang::CallExpr>(expression);
+    const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
+    const clang::QualType value_type = parameter_type.getNonReferenceType();
+    bool safe_type = value_type->isIntegerType() && !value_type.isVolatileQualified();
+    if (const auto *record_type = value_type->getAs<clang::RecordType>()) {
+      const auto *record = llvm::dyn_cast_or_null<clang::CXXRecordDecl>(record_type->getDecl()->getDefinition());
+      safe_type = parameter_type->isLValueReferenceType() && value_type.isConstQualified() &&
+                  !value_type.isVolatileQualified() && record && record->hasTrivialDestructor();
+    } else if (parameter_type->isReferenceType()) {
+      safe_type = safe_type && parameter_type->isLValueReferenceType() && value_type.isConstQualified();
+    }
+    if (!safe_type || !call || !callee || !callee->isConsteval() ||
+        !call->isPRValue() || !call->isCXX11ConstantExpr(context_) ||
+        !context_.hasSameUnqualifiedType(call->getType(), value_type)) {
+      fail(argument->getExprLoc(), "C++ library metadata argument " + std::to_string(index) + " requires a forced consteval prvalue of the exact parameter type, with trivial cleanup; records bind only to const references");
+      return std::nullopt;
+    }
+    std::filesystem::path file(source_manager_.getFilename(
+        source_manager_.getSpellingLoc(callee->getLocation())).str());
+    if (file.empty()) {
+      fail(argument->getExprLoc(), "C++ consteval metadata requires a file-backed declaration");
+      return std::nullopt;
+    }
+    if (file.is_relative()) file = std::filesystem::path(compilation_directory_) / file;
+    std::error_code error;
+    file = std::filesystem::canonical(file, error);
+    if (error) {
+      fail(argument->getExprLoc(), "could not resolve C++ consteval metadata declaration");
+      return std::nullopt;
+    }
+    llvm::json::Object result;
+    result["function"] = callee->getQualifiedNameAsString();
+    result["declaration_file"] = file.generic_string();
+    return Json(std::move(result));
+  }
+
+  std::optional<Json> lower_library_assertion(
+      const clang::CallExpr *call, const clang::FunctionDecl *callee,
+      const clang::FunctionDecl *function, const llvm::json::Value &contract) {
+    const auto *object = contract.getAsObject();
+    const std::string header = object->getString("header")->str();
+    auto declaration_header = dependency_source(callee->getLocation());
+    const auto *definition = callee->getDefinition();
+    if (definition && is_in_logical_source(definition->getLocation())) {
+      fail(call->getExprLoc(), "selected-source C++ definitions require ordinary verified contracts, not assumed library assertions");
+      return std::nullopt;
+    }
+    if (!declaration_header || *declaration_header != header ||
+        (definition && dependency_source(definition->getLocation()) != declaration_header)) {
+      fail(call->getExprLoc(), "C++ assumed library assertion declaration differs from its pinned header");
+      return std::nullopt;
+    }
+    const bool forwarding = object->getString("kind") == "checked_boolean_statement_with_consteval_metadata";
+    const clang::QualType parameter = callee->getNumParams() == 0 ? clang::QualType{} : callee->getParamDecl(0)->getType();
+    const clang::QualType returned = callee->getReturnType();
+    const clang::Expr *argument = call->getNumArgs() == 0 ? nullptr : library_argument_value(call->getArg(0));
+    const bool valid_parameter = !parameter.isNull() &&
+        (parameter->isBooleanType() || (forwarding && parameter->isRValueReferenceType() && parameter.getNonReferenceType()->isBooleanType())) &&
+        !parameter.getNonReferenceType().isVolatileQualified();
+    const bool valid_return = returned->isVoidType() || returned->isBooleanType() ||
+        (forwarding && returned->isRValueReferenceType() && returned.getNonReferenceType()->isBooleanType());
+    if (llvm::isa<clang::CXXMethodDecl>(callee) || (!forwarding && callee->getPrimaryTemplate()) ||
+        callee->isVariadic() || callee->getNumParams() != call->getNumArgs() ||
+        call->getNumArgs() == 0 || call->getNumArgs() > (forwarding ? 9u : 1u) ||
+        !valid_parameter || !valid_return || !argument || !argument->getType()->isBooleanType() ||
+        (parameter->isRValueReferenceType() && !argument->isPRValue()) ||
+        !total_assumption_condition(argument, function)) {
+      fail(call->getExprLoc(), "C++ assumed library assertion requires a supported Boolean statement signature and one total scalar Boolean condition");
+      return std::nullopt;
+    }
+    llvm::json::Array metadata;
+    for (unsigned index = 1; index < call->getNumArgs(); ++index) {
+      auto value = consteval_metadata(call->getArg(index), callee->getParamDecl(index)->getType(), index);
+      if (!value) return std::nullopt;
+      metadata.push_back(std::move(*value));
+    }
+    auto condition = lower_expression(argument, function);
+    if (!condition) return std::nullopt;
+    dependency_sources_.insert(header);
+    llvm::json::Object result;
+    result["kind"] = "library_assert";
+    result["condition"] = std::move(*condition);
+    result["contract"] = contract;
+    result["metadata"] = std::move(metadata);
+    result["specialization"] = callee->getPrimaryTemplate() ? Json(function_name(callee)) : Json(nullptr);
+    result["span"] = span(clang::SourceRange(
+        source_manager_.getExpansionLoc(call->getBeginLoc()),
+        source_manager_.getExpansionLoc(call->getEndLoc())));
+    return Json(std::move(result));
+  }
+
   std::optional<Json> lower_statement(const clang::Stmt *statement,
                                       const clang::FunctionDecl *function,
                                       bool allow_local_declaration,
                                       bool allow_nested_scope) {
+    if (const auto *cleanups = llvm::dyn_cast<clang::ExprWithCleanups>(statement)) {
+      const auto *call = llvm::dyn_cast<clang::CallExpr>(cleanups->getSubExpr());
+      const auto *callee = call == nullptr ? nullptr : call->getDirectCallee();
+      if (callee) {
+        auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
+        if (contract != library_assertions_.end() &&
+            contract->second.getAsObject()->getString("kind") == "checked_boolean_statement_with_consteval_metadata") {
+          if (cleanups->cleanupsHaveSideEffects()) {
+            fail(cleanups->getExprLoc(), "C++ library assertion cannot erase temporary cleanup effects");
+            return std::nullopt;
+          }
+          return lower_library_assertion(call, callee, function, contract->second);
+        }
+      }
+    }
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(statement)) {
       if (exception_behavior_ != "scalar_int32") {
@@ -732,6 +873,12 @@ private:
     }
     if (const auto *call = llvm::dyn_cast<clang::CallExpr>(statement)) {
       const auto *callee = call->getDirectCallee();
+      if (callee != nullptr) {
+        auto contract = library_assertions_.find(callee->getQualifiedNameAsString());
+        if (contract != library_assertions_.end()) {
+          return lower_library_assertion(call, callee, function, contract->second);
+        }
+      }
       if (callee != nullptr && callee->getBuiltinID() == clang::Builtin::BI__builtin_assume) {
         if (call->getNumArgs() != 1 || !total_assumption_condition(call->getArg(0), function)) {
           fail(call->getExprLoc(), "C++ __builtin_assume requires a total scalar condition without memory reads or side effects");
@@ -1465,6 +1612,21 @@ private:
     return true;
   }
 
+  const clang::Expr *
+  scalar_list_initializer(const clang::InitListExpr *list) const {
+    const auto *syntax = list->getSyntacticForm();
+    if (syntax == nullptr)
+      syntax = list;
+    const auto type = list->getType();
+    if (!list->isSemanticForm() || !type->isIntegerType() ||
+        (!type->isBooleanType() && context_.getTypeSize(type) != 32 &&
+         context_.getTypeSize(type) != 64 && context_.getTypeSize(type) != 128) ||
+        list->getNumInits() != 1 || syntax->getNumInits() != 1 ||
+        !context_.hasSameUnqualifiedType(type, list->getInit(0)->getType()))
+      return nullptr;
+    return list->getInit(0);
+  }
+
   bool stable_scalar_argument(const clang::Expr *expression,
                               const clang::FunctionDecl *caller) const {
     expression = expression->IgnoreParens();
@@ -1481,6 +1643,10 @@ private:
       default:
         return false;
       }
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && stable_scalar_argument(value, caller);
     }
     if (llvm::isa<clang::IntegerLiteral>(expression) ||
         llvm::isa<clang::CXXBoolLiteralExpr>(expression) ||
@@ -1529,6 +1695,10 @@ private:
       default: return false;
       }
     }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && field_scalar_argument(value);
+    }
     return llvm::isa<clang::MemberExpr>(expression) &&
            expression->getType()->isIntegerType() &&
            !expression->getType().isVolatileQualified();
@@ -1544,6 +1714,10 @@ private:
       if (cast->getCastKind() == clang::CK_IntegralToBoolean ||
           cast->getCastKind() == clang::CK_NoOp)
         return total_assumption_condition(cast->getSubExpr(), caller);
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      const auto *value = scalar_list_initializer(list);
+      return value != nullptr && total_assumption_condition(value, caller);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() == clang::BO_LAnd)
@@ -2044,6 +2218,18 @@ private:
     if (const auto *parentheses =
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
       return lower_expression(parentheses->getSubExpr(), function);
+    }
+    if (const auto *list = llvm::dyn_cast<clang::InitListExpr>(expression)) {
+      // Retain the semantic conversion checked by Clang; substituting a
+      // modulo cast of the written initializer would admit C++ narrowing.
+      const auto *value = scalar_list_initializer(list);
+      if (value == nullptr) {
+        fail(list->getExprLoc(),
+             "supported C++ scalar brace initialization requires one "
+             "Clang-resolved integer or Boolean initializer");
+        return std::nullopt;
+      }
+      return lower_expression(value, function);
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
@@ -2973,6 +3159,7 @@ private:
   std::string compilation_file_;
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
+  const std::map<std::string, llvm::json::Value> &library_assertions_;
   std::unordered_map<const clang::FunctionDecl *, unsigned> local_declaration_counts_;
   const clang::VarDecl *active_catch_binding_ = nullptr;
   ExportState &state_;
@@ -3004,7 +3191,7 @@ public:
                   options.function, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  state) {}
+                  options.library_assertions, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());

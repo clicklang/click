@@ -3462,7 +3462,7 @@ fn verify_c0_sources_in_context(
                     |verified| {
                         verification_function_environment
                             .clone()
-                            .with_verified_loop_rules(verified.frontier_loop_rules.clone())
+                            .with_verified_loop_rules(verified.frontier_loop_rules.iter().cloned())
                     },
                 );
                 instrumentation::measure_operation(
@@ -3532,7 +3532,7 @@ fn verify_c0_sources_in_context(
             }
             if let Some(verified) = frontier_loop_artifacts {
                 let mut loop_measures = BTreeMap::new();
-                for clause in &verified.frontier_loop_clauses {
+                for clause in verified.frontier_loop_clauses.iter() {
                     let CodeRegion::Loop(loop_index) = clause.region() else {
                         continue;
                     };

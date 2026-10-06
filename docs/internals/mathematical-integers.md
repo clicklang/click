@@ -254,6 +254,15 @@ use `int128` / `uint128` for full-width scalar values. C++ admits the bounded
 Rust source admission remain separate. Reverse conversion arguments supply
 Integer context even to negative literals beyond the 64-bit range.
 
+Native signed wide multiplication certifies the equality between its result
+observation and the exact Integer product only after both native range guards
+hold. Overflow paths carry no result definition. This matches native wide
+quotient/remainder result observations and is shared by all kernel clients.
+Integer observation keeps unproved path guards and every proof obligation in
+its domain, while kernel-certified consequences describe the evaluated value.
+Capturing that value therefore requires the guards, without an additional
+assumption restating the certified result definition.
+
 ## Truncating machine constant division
 
 `MachineIntegerConstant::truncating_div_rem` computes a quotient and remainder
@@ -494,7 +503,7 @@ the spellings and verifies again; regressions check hostile constants, erased
 guards, full-width signs, native operand obligations, shared aliases, and
 lookup with unrelated facts. The proof notation has mathematical Integer
 semantics; C++ source division/remainder separately retains native guards and
-uses artifact schema 40.
+uses artifact schema 42.
 
 
 ## Full-width native comparisons
@@ -517,7 +526,7 @@ Regressions compare all six operations against a full-width ordering oracle,
 including signed MIN/MAX, unsigned MAX, and values above 64 bits. They cover
 true/false and complementary premises, explicit conversions, hostile operand
 arithmetic, constant work over growing ambient fact populations, and linear
-work over growing explicit operation counts. C++ schema 40 admits these
+work over growing explicit operation counts. C++ schema 42 admits these
 comparisons and requires refreshing older source locks; ordinary C and Rust
 frontend admission remains separate. Source verification, expansion, offline
 artifacts, and retained audit use the shared kernel behavior.
@@ -552,4 +561,4 @@ and signed overflow guards.
 C++ regressions cover signed/unsigned 128-bit values narrowed to signed/unsigned
 32/64-bit values, explicit casts and implicit returns, guarded native quotient
 and remainder narrowing, modular caller framing, offline artifacts, expansion,
-and retained audit. The source profile and schema remain 40.
+and retained audit. The source profile remains unchanged; the current artifact schema is 42.

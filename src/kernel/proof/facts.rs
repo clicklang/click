@@ -33,19 +33,20 @@ pub(crate) fn take_fact_entry_counts() -> (usize, usize) {
 /// adding one fact copies only logarithmic index/context paths.
 #[derive(Clone, Default)]
 pub(crate) struct ProofFacts {
-    ordered: PersistentSequence<Proposition>,
+    ordered: PersistentSequence<Arc<Proposition>>,
     reserved_variables: PersistentSet<Variable>,
     prioritized: Option<Arc<PrioritizedProofFacts>>,
-    top_level_exact: PersistentSet<Proposition>,
-    exact: PersistentSet<Proposition>,
+    top_level_exact: PersistentSet<Arc<Proposition>>,
+    exact: PersistentSet<Arc<Proposition>>,
     /// Every strict subtree of an available top-level conjunction. This is
     /// the exact structural authority for `extract`; top-level facts are not
     /// included merely because they are independently available.
-    proper_conjuncts: PersistentSet<Proposition>,
+    proper_conjuncts: PersistentSet<Arc<Proposition>>,
     /// Atomic exact facts after the same direct-load normalization used by
     /// condition check. This lets a branch reject its opposite path with an
     /// indexed lookup instead of scanning every unrelated fact.
-    by_snapshot_blind: PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<Proposition>>,
+    by_snapshot_blind:
+        PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<Arc<Proposition>>>,
     /// True Integer comparison facts keyed by the typed alpha form of both
     /// operands. This is the bounded equivalence boundary for checked
     /// restatements whose range-fold binders were freshly allocated.
@@ -73,9 +74,10 @@ pub(crate) struct ProofFacts {
     /// Exact algebraic equalities keyed by their root terms.  Goal-local
     /// constructor disequality rewrites need the variable-to-constructor
     /// premise without scanning unrelated proposition facts.
-    algebraic_equalities_by_term: PersistentMap<AlgebraicTerm, PersistentSequence<Proposition>>,
+    algebraic_equalities_by_term:
+        PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
     by_quantified_equivalence:
-        PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Proposition>>,
+        PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
     /// Selected load identities checked while presenting a rewritten goal.
     rewritten_load_evidence: PersistentSequence<CheckedLoadEquality>,
     /// Universal facts introduced specifically by a checked predicate unfold.
@@ -89,7 +91,7 @@ pub(crate) struct ProofFacts {
         PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<ImplicationCandidate>>,
     assumptions: PureFactContext,
     implicit_transport_assumptions: PureFactContext,
-    by_predicate: PersistentMap<String, PersistentSequence<Proposition>>,
+    by_predicate: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
 }
 
 /// A statement transition places its explicitly transported successor facts
@@ -169,7 +171,7 @@ impl PropositionSource for ProofFacts {
         let mut seen = BTreeSet::new();
         std::iter::successors(self.prioritized.as_deref(), |batch| batch.parent.as_deref())
             .flat_map(|batch| batch.facts.iter())
-            .chain(self.ordered.iter())
+            .chain(self.ordered.iter().map(Arc::as_ref))
             .filter(move |fact| seen.insert(*fact))
     }
     fn pure_context(&self) -> PureFactContext {
@@ -185,7 +187,11 @@ impl ProofFacts {
     /// references into the persistent sequence and never materializes the
     /// ambient proof history.
     pub(crate) fn recent_facts(&self, limit: usize) -> Vec<&Proposition> {
-        self.ordered.recent(limit)
+        self.ordered
+            .recent(limit)
+            .into_iter()
+            .map(Arc::as_ref)
+            .collect()
     }
 
     pub(crate) fn fact_count(&self) -> usize {
@@ -352,9 +358,10 @@ impl ProofFacts {
             }
             #[cfg(test)]
             INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
-            ordered.push(crate::kernel::clone_proposition_iteratively(fact));
-            top_level_exact =
-                top_level_exact.with_value(crate::kernel::clone_proposition_iteratively(fact));
+            // The one copy of this fact. Every index below shares it.
+            let fact = &Arc::new(crate::kernel::clone_proposition_iteratively(fact));
+            ordered.push(Arc::clone(fact));
+            top_level_exact = top_level_exact.with_value(Arc::clone(fact));
             by_quantified_equivalence = index_quantified_fact(by_quantified_equivalence, fact);
             (
                 implications_by_consequent,
@@ -365,39 +372,36 @@ impl ProofFacts {
                 fact,
             );
             by_predicate = index_predicate_fact(by_predicate, fact);
-            if matches!(fact, Proposition::And(_, _)) {
+            if matches!(**fact, Proposition::And(_, _)) {
                 proper_conjuncts = index_proper_conjuncts(proper_conjuncts, fact);
                 let mut conjuncts = Vec::new();
                 collect_owned_atomic_conjuncts(fact, &mut conjuncts);
                 for conjunct in conjuncts {
                     let conjunct = Arc::new(conjunct);
-                    by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, conjunct.as_ref());
+                    by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                     by_integer_condition_alpha =
                         index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
                     bitvector_equalities_by_atom =
                         index_bitvector_equality_fact(bitvector_equalities_by_atom, &conjunct);
                     finite_classifications_by_key =
                         index_finite_classification_fact(finite_classifications_by_key, &conjunct);
-                    algebraic_equalities_by_term = index_algebraic_equality_fact(
-                        algebraic_equalities_by_term,
-                        conjunct.as_ref(),
-                    );
-                    exact = exact.with_value(conjunct.as_ref().clone());
+                    algebraic_equalities_by_term =
+                        index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
+                    exact = exact.with_value(conjunct);
                 }
             }
-            let fact = Arc::new(crate::kernel::clone_proposition_iteratively(fact));
             guarded_implications_by_atom =
-                index_guarded_implication_fact(guarded_implications_by_atom, &fact);
-            by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, fact.as_ref());
+                index_guarded_implication_fact(guarded_implications_by_atom, fact);
+            by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, fact);
             by_integer_condition_alpha =
                 index_integer_condition_fact(by_integer_condition_alpha, fact.as_ref());
             bitvector_equalities_by_atom =
-                index_bitvector_equality_fact(bitvector_equalities_by_atom, &fact);
+                index_bitvector_equality_fact(bitvector_equalities_by_atom, fact);
             finite_classifications_by_key =
-                index_finite_classification_fact(finite_classifications_by_key, &fact);
+                index_finite_classification_fact(finite_classifications_by_key, fact);
             algebraic_equalities_by_term =
-                index_algebraic_equality_fact(algebraic_equalities_by_term, fact.as_ref());
-            exact = exact.with_value(crate::kernel::clone_proposition_iteratively(fact.as_ref()));
+                index_algebraic_equality_fact(algebraic_equalities_by_term, fact);
+            exact = exact.with_value(Arc::clone(fact));
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
@@ -458,6 +462,8 @@ impl ProofFacts {
         }
         #[cfg(test)]
         INDEXED_FACT_ENTRIES.with(|count| count.set(count.get() + 1));
+        // The one copy of this fact. Every index below shares it.
+        let fact = Arc::new(fact);
         let mut exact = self.exact.clone();
         let mut proper_conjuncts = self.proper_conjuncts.clone();
         let mut by_snapshot_blind = self.by_snapshot_blind.clone();
@@ -473,13 +479,13 @@ impl ProofFacts {
                 self.implications_by_quantified_consequent.clone(),
                 &fact,
             );
-        if matches!(fact, Proposition::And(_, _)) {
+        if matches!(*fact, Proposition::And(_, _)) {
             proper_conjuncts = index_proper_conjuncts(proper_conjuncts, &fact);
             let mut conjuncts = Vec::new();
             collect_owned_atomic_conjuncts(&fact, &mut conjuncts);
             for conjunct in conjuncts {
                 let conjunct = Arc::new(conjunct);
-                by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, conjunct.as_ref());
+                by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &conjunct);
                 by_integer_condition_alpha =
                     index_integer_condition_fact(by_integer_condition_alpha, conjunct.as_ref());
                 bitvector_equalities_by_atom =
@@ -487,14 +493,13 @@ impl ProofFacts {
                 finite_classifications_by_key =
                     index_finite_classification_fact(finite_classifications_by_key, &conjunct);
                 algebraic_equalities_by_term =
-                    index_algebraic_equality_fact(algebraic_equalities_by_term, conjunct.as_ref());
-                exact = exact.with_value(conjunct.as_ref().clone());
+                    index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
+                exact = exact.with_value(conjunct);
             }
         }
-        let fact = Arc::new(fact);
         let guarded_implications_by_atom =
             index_guarded_implication_fact(self.guarded_implications_by_atom.clone(), &fact);
-        by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, fact.as_ref());
+        by_snapshot_blind = index_snapshot_fact(by_snapshot_blind, &fact);
         by_integer_condition_alpha =
             index_integer_condition_fact(by_integer_condition_alpha, fact.as_ref());
         bitvector_equalities_by_atom =
@@ -502,10 +507,10 @@ impl ProofFacts {
         finite_classifications_by_key =
             index_finite_classification_fact(finite_classifications_by_key, &fact);
         algebraic_equalities_by_term =
-            index_algebraic_equality_fact(algebraic_equalities_by_term, fact.as_ref());
-        exact = exact.with_value(fact.as_ref().clone());
+            index_algebraic_equality_fact(algebraic_equalities_by_term, &fact);
+        exact = exact.with_value(Arc::clone(&fact));
         let mut ordered = self.ordered.clone();
-        ordered.push(fact.as_ref().clone());
+        ordered.push(Arc::clone(&fact));
         let implicit_transport_assumptions = index_implicit_transport_context(
             self.implicit_transport_assumptions.clone(),
             fact.as_ref(),
@@ -518,7 +523,7 @@ impl ProofFacts {
             ordered,
             reserved_variables,
             prioritized: self.prioritized.clone(),
-            top_level_exact: self.top_level_exact.with_value(fact.as_ref().clone()),
+            top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
             exact,
             proper_conjuncts,
             by_snapshot_blind,
@@ -537,7 +542,7 @@ impl ProofFacts {
                 .clone()
                 .assume_proposition(fact.as_ref().clone()),
             implicit_transport_assumptions,
-            by_predicate: index_predicate_fact(self.by_predicate.clone(), fact.as_ref()),
+            by_predicate: index_predicate_fact(self.by_predicate.clone(), &fact),
         }
     }
 
@@ -900,8 +905,8 @@ impl ProofFacts {
         for key in &keys {
             if let Some(bucket) = self.by_snapshot_blind.get(key) {
                 for candidate in bucket.iter() {
-                    if !indexed_candidates.contains(candidate) {
-                        indexed_candidates.push(candidate.clone());
+                    if !indexed_candidates.contains(candidate.as_ref()) {
+                        indexed_candidates.push(candidate.as_ref().clone());
                     }
                 }
             }
@@ -941,6 +946,7 @@ impl ProofFacts {
                 continue;
             };
             for candidate in bucket.iter() {
+                let candidate = candidate.as_ref();
                 if !candidates.contains(candidate) {
                     candidates.push(candidate.clone());
                 }
@@ -976,6 +982,7 @@ impl ProofFacts {
             .and_then(|key| self.by_quantified_equivalence.get(&key))
             .into_iter()
             .flat_map(PersistentSequence::iter)
+            .map(Arc::as_ref)
             .filter(move |candidate| quantified_binder_equivalent(required, candidate))
     }
 
@@ -1212,10 +1219,10 @@ impl ProofFacts {
         let mut equalities = BTreeSet::new();
         for term in terms {
             if let Some(bucket) = self.algebraic_equalities_by_term.get(&term) {
-                equalities.extend(bucket.iter().cloned());
+                equalities.extend(bucket.iter().map(Arc::as_ref));
             }
         }
-        equalities.into_iter().collect()
+        equalities.into_iter().cloned().collect()
     }
 
     /// The exact bitvector equalities attached to terms of this proposition
@@ -1320,7 +1327,7 @@ impl ProofFacts {
         for batch in new_batches.iter().rev() {
             introduced.extend(batch.iter().cloned());
         }
-        introduced.extend(ordered_suffix);
+        introduced.extend(ordered_suffix.iter().map(|fact| fact.as_ref().clone()));
         Some(introduced)
     }
 
@@ -1351,11 +1358,12 @@ impl ProofFacts {
             .get(name)
             .into_iter()
             .flat_map(PersistentSequence::iter)
+            .map(Arc::as_ref)
     }
 
     #[cfg(test)]
     pub(crate) fn lookup_comparisons(&self, fact: &Proposition) -> usize {
-        self.exact.lookup_comparisons(fact)
+        self.exact.lookup_comparisons(&Arc::new(fact.clone()))
     }
 
     #[cfg(test)]
@@ -1533,10 +1541,10 @@ fn highest_universal_witness(variables: impl DoubleEndedIterator<Item = Variable
 fn index_snapshot_fact(
     mut by_snapshot_blind: PersistentMap<
         SnapshotBlindPropositionKey,
-        PersistentSequence<Proposition>,
+        PersistentSequence<Arc<Proposition>>,
     >,
-    fact: &Proposition,
-) -> PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<Proposition>> {
+    fact: &Arc<Proposition>,
+) -> PersistentMap<SnapshotBlindPropositionKey, PersistentSequence<Arc<Proposition>>> {
     for key in [snapshot_blind_proposition_key(fact)] {
         if !key.forgets_a_snapshot() {
             continue;
@@ -1723,10 +1731,10 @@ fn index_finite_classification_fact(
 }
 
 fn index_algebraic_equality_fact(
-    mut index: PersistentMap<AlgebraicTerm, PersistentSequence<Proposition>>,
-    fact: &Proposition,
-) -> PersistentMap<AlgebraicTerm, PersistentSequence<Proposition>> {
-    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = fact else {
+    mut index: PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<AlgebraicTerm, PersistentSequence<Arc<Proposition>>> {
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = fact.as_ref() else {
         return index;
     };
     for term in [left, right]
@@ -2127,9 +2135,9 @@ fn collect_pointer_offset_bitvector_atoms(
 }
 
 fn index_quantified_fact(
-    mut index: PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Proposition>>,
-    fact: &Proposition,
-) -> PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Proposition>> {
+    mut index: PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<QuantifiedEquivalenceKey, PersistentSequence<Arc<Proposition>>> {
     let Some(key) = quantified_equivalence_index_key(fact) else {
         return index;
     };
@@ -2194,9 +2202,9 @@ fn index_implication_consequents(
 }
 
 fn index_proper_conjuncts(
-    mut index: PersistentSet<Proposition>,
+    mut index: PersistentSet<Arc<Proposition>>,
     fact: &Proposition,
-) -> PersistentSet<Proposition> {
+) -> PersistentSet<Arc<Proposition>> {
     let Proposition::And(left, right) = fact else {
         return index;
     };
@@ -2224,7 +2232,7 @@ fn index_proper_conjuncts(
                 }
                 _ => {
                     depths.insert(conjunct as *const Proposition, 1);
-                    index = index.with_value(conjunct.clone());
+                    index = index.with_value(Arc::new(conjunct.clone()));
                 }
             },
             Task::Finish(conjunct) => {
@@ -2240,7 +2248,7 @@ fn index_proper_conjuncts(
                 let depth = 1usize.saturating_add((*left_depth).max(*right_depth));
                 depths.insert(conjunct as *const Proposition, depth);
                 if depth <= MAX_INDEXED_CONJUNCT_DEPTH {
-                    index = index.with_value(conjunct.clone());
+                    index = index.with_value(Arc::new(conjunct.clone()));
                 }
             }
         }
@@ -2263,7 +2271,7 @@ fn index_implicit_transport_context(
 }
 
 fn directly_conflicts_with_normalized_index(
-    exact: &PersistentSet<Proposition>,
+    exact: &PersistentSet<Arc<Proposition>>,
     fact: &Proposition,
 ) -> bool {
     match fact {
@@ -2274,15 +2282,15 @@ fn directly_conflicts_with_normalized_index(
         Proposition::ConditionIs(condition, value) => {
             exact.contains(&Proposition::ConditionIs(condition.clone(), !value))
         }
-        Proposition::Not(body) => exact.contains(body),
+        Proposition::Not(body) => exact.contains(body.as_ref()),
         other => exact.contains(&Proposition::Not(Box::new(other.clone()))),
     }
 }
 
 fn index_predicate_fact(
-    mut index: PersistentMap<String, PersistentSequence<Proposition>>,
-    fact: &Proposition,
-) -> PersistentMap<String, PersistentSequence<Proposition>> {
+    mut index: PersistentMap<String, PersistentSequence<Arc<Proposition>>>,
+    fact: &Arc<Proposition>,
+) -> PersistentMap<String, PersistentSequence<Arc<Proposition>>> {
     let mut names = BTreeSet::new();
     collect_fact_predicate_names(fact, &mut names);
     for name in names {

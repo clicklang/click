@@ -320,6 +320,21 @@ impl Metadata<'_> {
                     self.expression(value)?;
                     span
                 }
+                CppStatement::LibraryAssert {
+                    condition,
+                    contract,
+                    metadata,
+                    specialization,
+                    span,
+                } => {
+                    super::schema::validate_library_assertion_metadata(
+                        contract,
+                        metadata,
+                        specialization,
+                    )?;
+                    self.expression(condition)?;
+                    span
+                }
                 CppStatement::ReturnCall {
                     callee,
                     arguments,
