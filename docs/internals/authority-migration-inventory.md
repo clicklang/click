@@ -448,15 +448,16 @@ fields remain in ordinary checked custody, with no anonymous quantity imported.
 Two equal-argument members preserve different field values across a call, and a
 forward-declared List-valued function preserves its Count observation. The import
 ledger recovers checked schemas through an immutable indexed map. Negatives
-reject absent authority, invented exact totals, and named lifecycle changes.
+reject absent authority, invented exact totals, and unsupported named lifecycle transfers.
 Kernel checks cover unchanged resource context, refused quantity/instance
 exchanges, authority transfer and return, and deterministic lookup scaling.
 Wildcard preserving helpers retain both aggregate and exact Count observations,
 including equal-argument members and ownership framed by the caller. Negatives
 reject invented aggregate/exact totals, another anchor, duplicate binders, absent
 authority, and imported lifecycle changes. Both import shapes have deterministic
-lookup scaling checks. Body opening, birth/consumption through helpers, and
-external named lifecycle contract interfaces remain unsupported.
+lookup scaling checks. Unary consumption inside a standalone helper is supported as described below.
+Named creation, wildcard lifecycle effects, caller-side lifecycle transfers,
+and external named lifecycle contract interfaces remain unsupported.
 
 The `authority_external_named_*` group exercises preserving assumed interfaces.
 External and named callback preparation now receives the selected resource mode;
@@ -467,8 +468,7 @@ interfaces cannot create or consume named members or replace their identity.
 Negatives reject missing authority, duplicate member maps, another anchor, and
 named consumption. These are external contract assumptions, not proofs of an
 external C body. The callback regression uses a pointer anchor; the original
-scalar logical callback controls remain legacy. Imported body opening and
-lifecycle effects remain unsupported.
+scalar logical callback controls remain legacy. Caller-side imported lifecycle transfers remain unsupported.
 
 `population_symbolic_increment_bounded.md` and
 `population_symbolic_increment_overflow.md` now select authority semantics.
@@ -562,3 +562,18 @@ source proof, its positive claim, its corresponding rejection, the selected
 verification path, and verify/expand/audit evidence before removing it from
 legacy. The final switch must also inspect imported summaries, caches, and
 certificates; a successful new proof must never retry through legacy consumers.
+
+Unary named consumption at standalone helper entries now records the exact
+consumed identities and a relative death count. The new
+`authority_named_import_consumption.md` fixture consumes two occurrences without
+asserting that they exhaust the imported population. Neighboring fixtures
+check unfolds before and after C execution, checked body facts, and preservation
+of a framed member. Return-rewrite certificates independently recheck the
+rewrite direction, facts, and ledger. Wrong-total, closed-authority, and
+missing-death controls reject false totals, missing authority, and unchecked
+consumption. Kernel
+coverage checks successor identity, duplicate death, distinct equal-field
+occurrences, no anonymous custody, and deterministic work alongside
+16/64/256 unrelated imports. Named creation, wildcard named lifecycle changes,
+and caller-side named consumption transfers remain unsupported; the original
+unary helper-call refusal retains its C and now reaches that call boundary.

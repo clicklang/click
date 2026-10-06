@@ -18917,10 +18917,89 @@ fn prepare_contract_resource_transfer(
             .composite_resource_definitions()
             .iter()
             .any(CCompositeResourceDefinition::is_recursive);
+    // At a function's own boundary, a checked unfold may already have spent
+    // a declared named input before C execution. Its exact receipt supplies
+    // only input-clause evaluation; it never restores the live resource state.
+    let mut input_evaluation_state = callee_state.clone();
+    if purpose == ResourceTransitionPurpose::FunctionBoundary
+        && caller_state.uses_population_authority_semantics()
+    {
+        input_evaluation_state.resource_bindings = caller_state.resource_bindings.clone();
+    }
+    let mut spent_named_inputs = BTreeSet::new();
+    if purpose == ResourceTransitionPurpose::FunctionBoundary
+        && let Some(events) = &callee_state.population_effects.creation
+    {
+        for spec in interface.resource_requires() {
+            if spec.role() != CResourceTransferRole::Consume {
+                continue;
+            }
+            let CResourceTerm::Instance {
+                identity,
+                schema,
+                resource: inner_term,
+                ..
+            } = spec.term()
+            else {
+                continue;
+            };
+            if input_evaluation_state
+                .owned_resource_instance(*identity)
+                .is_some()
+            {
+                continue;
+            }
+            let inner = CResourceSpec::new(
+                (**inner_term).clone(),
+                CResourceAccessMode::Own,
+                CResourceQuantity::One,
+                spec.role(),
+                spec.snapshot(),
+            )
+            .expect("validated named resource body");
+            let inner = match spec.source_arguments() {
+                Some(arguments) => inner.with_source_arguments(arguments.to_vec()),
+                None => inner,
+            };
+            let fact = match evaluate_function_resource_spec_with_entry(
+                callee_state,
+                callee_state,
+                &inner,
+                assumptions,
+                budget,
+            )? {
+                Ok(fact) => fact,
+                Err(error) => return Ok(Err(error)),
+            };
+            let CResource::Composite { name, arguments } = fact.resource() else {
+                continue;
+            };
+            let description =
+                ResourceDescription::new(name.clone(), arguments.clone(), schema.clone());
+            let actual = input_evaluation_state
+                .resource_bindings
+                .as_ref()
+                .and_then(|bindings| bindings.get(identity))
+                .copied()
+                .unwrap_or(*identity);
+            let Some(instance) = events.consumed_imported_instance(&description, actual) else {
+                continue;
+            };
+            let fact = CResourceFact::own(CResource::Instance(instance.clone()));
+            input_evaluation_state.resources = match input_evaluation_state
+                .resources
+                .try_compose_with_fact(fact, assumptions)
+            {
+                Ok(resources) => resources,
+                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            };
+            spent_named_inputs.insert(actual);
+        }
+    }
     let (mut required_resources, mut checked_required_resources) =
         match super::assumptions::capture_implicit_reasoning_provenance(|| {
             evaluate_function_resource_context_with_metadata(
-                callee_state,
+                &input_evaluation_state,
                 interface.resource_requires(),
                 interface.composite_resource_definitions(),
                 assumptions,
@@ -18930,6 +19009,16 @@ fn prepare_contract_resource_transfer(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(error)),
         };
+    for checked in &checked_required_resources {
+        if checked.role == CResourceTransferRole::Consume
+            && let CResource::Instance(instance) = checked.fact.resource()
+            && spent_named_inputs.contains(&instance.identity())
+        {
+            required_resources = required_resources
+                .without_fact_incrementally(&checked.fact, assumptions)
+                .expect("evaluated consumed named clause");
+        }
+    }
     let mut canonical_population_owners = Vec::new();
     if caller_state.uses_population_authority_semantics() {
         for checked in &mut checked_required_resources {
@@ -30756,10 +30845,49 @@ fn function_outcome_from_body_with_resource_transfer(
             return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
         }
     }
+    let mut named_inputs = transfer
+        .consumed_inputs
+        .iter()
+        .filter_map(|checked| match checked.fact.resource() {
+            CResource::Instance(instance) => Some(instance),
+            _ => None,
+        })
+        .peekable();
+    let has_named_input = named_inputs.peek().is_some();
+    let checked_named_deaths = has_named_input
+        && named_inputs.all(|instance| {
+            state
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| {
+                    events
+                        .consumed_imported_instance(
+                            &ResourceDescription::from_instance(instance),
+                            instance.identity(),
+                        )
+                        .is_some()
+                })
+        });
+    let imported_named_consumption = state.population_effects.creation.as_ref()
+        .is_some_and(|events| transfer.consumed_inputs.iter().any(|checked| {
+            matches!(checked.fact.resource(), CResource::Instance(instance)
+                if events.recognizes_imported_population(&ResourceDescription::from_instance(instance)))
+        }));
+    if imported_named_consumption && !checked_named_deaths {
+        return Ok((
+            CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                "Requires a checked death for every consumed named member".into(),
+            )),
+            obligations,
+            None,
+        ));
+    }
     let population_transition = if caller_state.uses_population_authority_semantics()
         && (authority_mode_consumes_member_contract(function.contract_interface())
             || authority_mode_produces_member_contract(function.contract_interface())
-            || authority_mode_final_release_contract(function.contract_interface()))
+            || authority_mode_final_release_contract(function.contract_interface())
+            || checked_named_deaths)
     {
         CCountedPopulationTransition::default()
     } else {

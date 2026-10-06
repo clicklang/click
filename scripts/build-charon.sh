@@ -2,7 +2,12 @@
 # Pinned compiler dependency for the required live Charon gate.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-readarray -t pins < <(python3 - <<'PYPROFILE'
+# Keep this usable by the system Bash 3.2 on macOS.
+{
+    IFS= read -r revision
+    IFS= read -r toolchain
+    IFS= read -r compiler
+} < <(python3 - <<'PYPROFILE'
 import json
 with open("src/languages/rust/charon-profile.json") as f:
     profile = json.load(f)
@@ -10,11 +15,9 @@ for key in ("extractor_revision", "toolchain", "compiler_commit"):
     print(profile[key])
 PYPROFILE
 )
-revision="${pins[0]}"
-toolchain="${pins[1]}"
-compiler="${pins[2]}"
 if [[ "${1:-}" == "--install-toolchain" ]]; then
-    rustup toolchain install "$toolchain" --profile minimal --component rustc-dev --component rust-src
+    rustup toolchain install "$toolchain" --profile minimal --component rustc-dev --component rust-src \
+        --target x86_64-unknown-linux-gnu
 elif [[ -n "${1:-}" ]]; then
     echo "usage: scripts/build-charon.sh [--install-toolchain]" >&2
     exit 2

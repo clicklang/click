@@ -6884,25 +6884,30 @@ impl CState {
         };
         let description = super::super::ResourceDescription::from_instance(instance);
         let history = if events.tracks_population(&description) {
-            if events.recognizes_imported_population(&description) {
-                return Err(
-                    "named member fold/unfold at imported authority entries is not supported yet"
-                        .into(),
-                );
-            }
             let governing = events
                 .governing_authority(&description)
                 .ok_or("Requires a matching population authority")?;
-            let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
+            let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
             if !before.resources.satisfies_fact(&authority, assumptions) {
                 return Err(format!("Requires owns authority({}(...))", instance.name()));
             }
-            events
-                .checked_instance_exchange(
-                    &super::super::ResourceReference::from_instance(instance),
-                    produce,
-                )
-                .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+            let reference = super::super::ResourceReference::from_instance(instance);
+            if events.recognizes_imported_population(&description) {
+                if produce || governing.population_arity().is_some() {
+                    return Err("named member fold/unfold at imported authority entries is not supported yet".into());
+                }
+                let owned = CResourceFact::own(CResource::Instance(instance.clone()));
+                if !before.resources.satisfies_fact(&owned, assumptions) {
+                    return Err("Requires owning the exact named member before consumption".into());
+                }
+                events
+                    .checked_imported_instance_consumption(instance)
+                    .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+            } else {
+                events
+                    .checked_instance_exchange(&reference, produce)
+                    .map_err(|refusal| format!("named member change refused: {refusal:?}"))?
+            }
         } else if produce {
             let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
             else {

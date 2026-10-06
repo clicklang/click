@@ -615,6 +615,7 @@ impl<'a> Proof<'a> {
                     self.facts(),
                     &selected,
                     &facts,
+                    unfold,
                     selected_children.clone(),
                 )
                 .map_err(|message| self.step_error(message))?;
