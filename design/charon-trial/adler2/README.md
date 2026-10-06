@@ -86,18 +86,17 @@ Adler-32 specification described in the [checksum assessment](../../rust-checksu
 
 ## Follow-up: locked crate inputs
 
-Schema 4 now provides the crate root, edition, features, selected roots, and
-complete rustc dep-info closure. The `charon_adler2_locked_crate_reaches_owned_operand_boundary`
-live regression runs these original sources with Rust 2021 and `std`. The
-source lock, qualified identities, and checked concrete `Default` dispatch pass.
-Adaptation next rejects an assignment-operator operand passed by value as a
-record (`U32X4`). No full-loop artifact or lock is published and no checksum
-contract is assumed. The separate
-`charon_adler2_unchanged_constructor_returns_initialized_state` regression
-selects `Adler32::new`, imports its actual `Default` body, and proves both
-functions return `a = 1`, `b = 0` using ordinary aggregate-return contracts.
-False initialized-field claims are rejected. The earlier result record above remains the
-historical single-file trial.
+Schema 4 provides the crate root, edition, features, selected roots, and
+complete rustc dep-info closure. Earlier crate increments reached the concrete
+`Default` constructor, then by-value `U32X4` operator operands, then scalar
+constant initializers. The current
+`charon_adler2_locked_crate_imports_compute_and_proves_constants` live
+regression imports the complete original selection with Rust 2021 and `std`.
+The separate `charon_adler2_unchanged_constructor_returns_initialized_state`
+regression selects `Adler32::new`, imports its actual `Default` body, and
+proves both functions return `a = 1`, `b = 0` using ordinary aggregate-return
+contracts. False initialized-field claims are rejected. The result record
+above remains the historical single-file trial.
 
 Multi-module regressions prove separate same-named functions and an inherent
 method call, including a false-claim negative. Changes to an unreachable
@@ -108,9 +107,24 @@ files, path escapes, and symlinks are rejected.
 
 Schema-4 `click-charon-crate-v3` imports by-value flat-record operator operands
 and preserves compiler Copy/Move events through fresh kernel aggregate
-parameter storage. The unchanged full-loop selection passes operator identity
-registration and next rejects local constant/global initializer bodies
-(`MOD` and `CHUNK_SIZE`), before publishing an artifact or lock. The checksum
+parameter storage. At that version, the unchanged full-loop selection passed operator identity
+registration and rejected local constant/global initializer bodies
+(`MOD` and `CHUNK_SIZE`) before publishing an artifact or lock. The checksum
 postcondition remains unproved. Constructor proofs continue to pass; synthetic
 four-lane operator and ordinary-call regressions verify values, copy
 independence, moves, and destructor-bearing parameters.
+
+### Checked scalar constant follow-up
+
+Schema-4 `click-charon-crate-v4` imports the unchanged full selection rooted at
+`adler2::adler32_slice`, including `Adler32::compute`, and writes an artifact
+and lock that load as prepared input. The local `MOD` and `CHUNK_SIZE`
+initializers execute their imported scalar CFGs; checked contracts prove
+65521 and 22208, and a false modulus claim is rejected. The vendored Rust
+source remains unchanged. The earlier constant rejection boundary above is
+resolved.
+
+The checksum postcondition remains unproved. Next prove the imported four-lane
+helpers and compose their contracts with nested chunks/remainder loop
+invariants and the common checksum specification. Successful import alone
+does not establish arithmetic safety or checksum correctness.

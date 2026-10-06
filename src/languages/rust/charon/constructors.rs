@@ -226,7 +226,7 @@ mod tests {
                 "ownership mutation {mutation}"
             );
         }
-        for mutation in 0..13 {
+        for mutation in 0..14 {
             let mut artifact: TrialArtifact = serde_json::from_slice(ARTIFACT).unwrap();
             let k = &mut artifact.data.translated;
             let trait_id = k
@@ -286,6 +286,7 @@ mod tests {
                 8 => k.trait_impls[impl_id].impl_trait.generics.types.clear(),
                 9 => artifact.crate_profile = Some("click-charon-crate-v1".into()),
                 12 => artifact.crate_profile = Some("click-charon-crate-v2".into()),
+                13 => artifact.crate_profile = Some("click-charon-crate-v3".into()),
                 10 | 11 => {
                     let output = k.fun_decls[function_id].signature.output.clone();
                     let f = k

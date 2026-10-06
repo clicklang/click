@@ -156,7 +156,7 @@ fn rust_crate_rejects_escape_symlink_and_changed_configuration() {
 
 #[test]
 #[ignore = "requires the pinned live Charon extractor"]
-fn charon_adler2_locked_crate_reaches_constant_initializer_boundary() {
+fn charon_adler2_locked_crate_imports_compute_and_proves_constants() {
     let p = Project::new("");
     for (name, bytes) in [
         (
@@ -175,13 +175,41 @@ fn charon_adler2_locked_crate_reaches_constant_initializer_boundary() {
         "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
         "crate":{"name":"adler2","edition":"2021","features":["std"],"roots":["adler2::adler32_slice"],"files":["lib.rs","algo.rs"]}
     })).unwrap()).unwrap();
-    let error = refresh_import(&p.config()).unwrap_err();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let mut proof = String::from("verifying \"lib.rs\";\n");
+    for (suffix, ty, value) in [
+        ("_I3_MOD", "uint32", "65521u32"),
+        ("_I10_CHUNK_SIZE", "uint64", "22208u64"),
+    ] {
+        let initializer = prepared
+            .export()
+            .functions
+            .iter()
+            .find(|f| f.name.ends_with(suffix))
+            .unwrap();
+        proof.push_str(&format!(
+            "{ty} {}() {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
+            initializer.name
+        ));
+    }
     assert!(
-        error.contains("local constant/global initializer"),
-        "{error}"
+        prepared
+            .export()
+            .functions
+            .iter()
+            .any(|f| f.name.ends_with("_I7_compute") && f.mir.is_some())
     );
-    assert!(!p.root.join("crate.ullbc").exists());
-    assert!(!p.root.join("borrow.click.import.json.lock").exists());
+    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &proof.replace("65521u32", "65520u32"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert!(p.root.join("crate.ullbc").exists());
+    assert!(p.root.join("borrow.click.import.json.lock").exists());
 }
 
 #[test]
@@ -416,4 +444,71 @@ fn rust_crate_owned_operator_operands_copy_and_move_independently() {
         "{}",
         String::from_utf8_lossy(&cli.stderr)
     );
+}
+
+#[test]
+fn rust_crate_scalar_constants_execute_checked_initializers() {
+    let p = Project::new("");
+    let source = r#"
+        pub mod left { pub const MOD: u32 = 65521; pub fn read() -> u32 { MOD } }
+        pub mod right { pub const MOD: u32 = 7; pub fn read() -> u32 { MOD } }
+        pub fn entry() -> usize { const CHUNK_SIZE: usize = 5552 * 4; CHUNK_SIZE }
+        pub fn wide() -> usize { const LIMIT: usize = 4294967296; LIMIT }
+        pub fn small() -> u8 { const N: u8 = 5 * 4; N }
+        pub fn flag() -> bool { const FLAG: bool = true; FLAG }
+    "#;
+    fs::write(p.root.join("lib.rs"), source).unwrap();
+    fs::write(p.config(), serde_json::to_vec(&serde_json::json!({
+        "schema":4,"language":"rust","target":"x86_64-unknown-linux-gnu","source":"lib.rs",
+        "exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
+        "crate":{"name":"demo","edition":"2021","features":[],
+            "roots":["demo::left::read","demo::right::read","demo::entry","demo::wide","demo::small","demo::flag"],"files":["lib.rs"]}
+    })).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let mut proof = String::from("verifying \"lib.rs\";\n");
+    for function in &prepared.export().functions {
+        let (ty, value) = if function.name.contains("_I4_left_") {
+            ("uint32", "65521u32")
+        } else if function.name.contains("_I5_right_") {
+            ("uint32", "7u32")
+        } else if function.name.contains("_I5_entry") {
+            ("uint64", "22208u64")
+        } else if function.name.contains("_I4_wide") {
+            ("uint64", "4294967296u64")
+        } else if function.name.contains("_I5_small") {
+            ("uint8", "20u8")
+        } else if function.name.contains("_I4_flag") {
+            ("bool", "1")
+        } else {
+            panic!("unexpected imported function {}", function.name);
+        };
+        proof.push_str(&format!(
+            "{ty} {}() {{ ensures result == {value}; }} by {{ execute(); simp(); }}\n",
+            function.name
+        ));
+    }
+    assert_eq!(prepared.export().functions.len(), 12);
+    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &proof.replace("result == 22208u64", "result == 22209u64"),
+            &prepared
+        )
+        .is_err()
+    );
+    fs::write(p.root.join("borrow.click"), &proof).unwrap();
+    let cli = p.cli(&["verify"]);
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    // Lock loading checks the initializer's source too.
+    fs::write(
+        p.root.join("lib.rs"),
+        source.replace("5552 * 4", "5553 * 4"),
+    )
+    .unwrap();
+    assert!(load_import(&p.config()).is_err());
 }

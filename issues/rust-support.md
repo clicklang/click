@@ -853,8 +853,22 @@ Negative regressions cover missing or mismatched metadata, duplicate move
 consumption, and forbidden copies. Existing schema-3 locks retain their
 interpretation; older schema-4 crate envelopes require refresh.
 
-The unchanged adler2 selection now passes by-value U32X4 operator registration
-and next rejects its local constant/global initializer bodies. Add checked
-scalar local constants (`MOD`, `CHUNK_SIZE`) and their use in imported bodies,
-then reassess the untouched compute loop and shared checksum proof. Do not
-assume the checksum result or rewrite the crate to bypass a boundary.
+At v3, the unchanged adler2 selection passed by-value U32X4 operator
+registration and rejected its local constant/global initializer bodies. The
+v4 increment below resolves that boundary without assuming the checksum
+result or rewriting the crate.
+
+Schema-4 interpretation `click-charon-crate-v4` imports named local scalar
+constants with straight-line arithmetic initializer CFGs. Declaration, type,
+source closure, initializer link, and qualified identity are checked; reads
+use ordinary verified initializer contracts rather than assumed values or a
+second evaluator. Frozen and live regressions cover duplicate module names,
+`CHUNK_SIZE` arithmetic, full-width usize, narrow scalars, bool, false claims,
+initializer deletion/overflow, changed source, forged reads, corrupt links,
+statics, and cycles. Schema-3 semantics stay unchanged. Constant dependencies,
+branching initializers, trait/generic constants, references and const-fn calls
+remain later work. The unchanged selection rooted at `adler2::adler32_slice`
+now produces and reloads a prepared import including `Adler32::compute`.
+Its MOD and CHUNK_SIZE contracts prove 65521 and 22208. Next prove the
+imported lane helpers and compose nested chunks/remainder invariants with
+the shared checksum specification; checksum correctness remains unproved.

@@ -85,7 +85,7 @@ Extraction compiles a private snapshot of those bytes. The aggregate source
 hash covers every input, and configuration hashes bind the root, edition,
 features, and entry points. Ordinary loading rechecks the full closure
 without executing a compiler. Schema-4 artifacts use the versioned
-`click-charon-crate-v3` envelope; existing schema-3 locks keep their identity.
+`click-charon-crate-v4` envelope; existing schema-3 locks keep their identity.
 
 Module definitions and inherent methods retain compiler-resolved identities.
 Proof identifiers encode tagged, length-prefixed path components, so `a::read`,
@@ -112,6 +112,17 @@ Its private bytes have internal ownership and cannot be declared as contract
 input resources. Passing a pointer field still requires the pointee's own
 resource clauses; copying a record grants no ownership over its pointees.
 
+Schema 4 imports local named scalar constants (`bool`, `i32`, `u8`, `u16`,
+`u32`, and target-width `usize`) with straight-line arithmetic initializers.
+Each initializer retains its qualified identity and executes its imported CFG;
+constant reads call that body through the ordinary checked function interface.
+Sidecars prove an initializer contract before using its value in callers.
+For example, a `CHUNK_SIZE` initializer computing `5552 * 4` needs a verified
+`uint64 <qualified-initializer>() { ensures result == 22208u64; }` contract.
+Overflow and other arithmetic obligations remain checked. Statics, anonymous
+or trait constants, generic constants, references, initializer branches,
+dependencies on other constants, and `const fn` calls remain unsupported.
+
 Concrete `core::default::Default` implementations on local records execute
 their imported bodies. Dispatch checks the standard diagnostic identity,
 qualified trait path, associated method, implementation ID, signatures, and
@@ -123,9 +134,10 @@ can use them.
 The unchanged adler2 trial proves `Adler32::default` and `Adler32::new` return
 `a = 1`, `b = 0`. Concrete assignment operators also accept supported
 by-value record operands through the checked call interface. Selecting the
-complete checksum loop next rejects local constant initializers, before
-publishing an artifact or lock. General trait dispatch and arbitrary Rust crates remain outside the
-supported subset.
+complete checksum loop now produces a locked, prepared import, and its
+`MOD` and `CHUNK_SIZE` initializer contracts verify. The checksum
+postcondition remains unproved. General trait dispatch and arbitrary Rust
+crates remain outside the supported subset.
 
 ## Supported semantics
 

@@ -4,6 +4,7 @@
 mod array_lengths_tests;
 mod assignment_operators;
 mod chunks;
+mod constants;
 mod constructors;
 mod protocol;
 mod shared_arrays;
@@ -711,6 +712,9 @@ impl BodyAdapter<'_, '_> {
     }
     fn constant(&self, c: &a::ConstantExpr) -> Result<E, String> {
         Ok(match c.kind() {
+            a::ConstantExprKind::Global(reference) => {
+                return self.adapter.constant_read(reference, c.ty());
+            }
             a::ConstantExprKind::Bool(value) => E::Boolean { value: *value },
             a::ConstantExprKind::Integer(a::IntegerValue::Signed(a::IntTy::I32, value)) => {
                 E::Integer {
@@ -737,6 +741,9 @@ impl BodyAdapter<'_, '_> {
     fn operand(&self, op: &a::Operand) -> Result<E, String> {
         match op {
             a::Operand::Copy(p) | a::Operand::Move(p) => {
+                if let a::PlaceKind::Global(reference) = &p.kind {
+                    return self.adapter.constant_read(reference, &p.ty);
+                }
                 if matches!(self.adapter.ty(&p.ty)?, Type::Record { .. }) {
                     return Err(unsupported("aggregate operand without a move event"));
                 }
@@ -1287,6 +1294,7 @@ pub(super) fn decode_crate(
             .iter()
             .map(|d| &d.item_meta)
             .chain(krate.fun_decls.iter().map(|d| &d.item_meta))
+            .chain(krate.global_decls.iter().map(|d| &d.item_meta))
             .chain(krate.trait_decls.iter().map(|d| &d.item_meta))
             .chain(krate.trait_impls.iter().map(|d| &d.item_meta));
         for meta in metadata.filter(|m| m.is_local) {
@@ -1389,8 +1397,8 @@ pub(super) fn decode_crate(
                 }
                 format!("{}_drop", adapter.records[&rec])
             }
-            a::FunSource::GlobalInitializer(_) => {
-                return Err(unsupported("local constant/global initializer"));
+            a::FunSource::GlobalInitializer(reference) => {
+                adapter.constant_initializer_name(id, f, reference)?
             }
             _ => return Err(unsupported("function source")),
         };
@@ -1556,7 +1564,8 @@ pub(super) fn decode_crate(
             };
             if param {
                 if !adapter.crate_mode && matches!(place.value_type, Type::Record { .. }) {
-                    return Err(unsupported("owned record parameter outside crate imports"));
+                    // Preserve the schema-3 value boundary and its existing diagnostic.
+                    return Err("Rust value type outside direct scalar/reference lowering".into());
                 }
                 parameters.push(place);
             } else {

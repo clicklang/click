@@ -2,7 +2,7 @@
 
 `lib.rs` was extracted with the pinned Charon/compiler, optimized ULLBC,
 precise drops, reconstructed fallible operations, Rust 2021, and root
-`demo::entry`. The schema-4 envelope binds `click-charon-crate-v3`; source and
+`demo::entry`. The schema-4 envelope binds `click-charon-crate-v4`; source and
 output paths are normalized as in production extraction. This frozen artifact
 supports offline body/return proofs and negative declaration-identity tests.
 
