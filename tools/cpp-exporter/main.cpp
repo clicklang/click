@@ -695,6 +695,10 @@ private:
     const std::string header = object->getString("header")->str();
     auto declaration_header = dependency_source(callee->getLocation());
     const auto *definition = callee->getDefinition();
+    if (definition && is_in_logical_source(definition->getLocation())) {
+      fail(call->getExprLoc(), "selected-source C++ definitions require ordinary verified contracts, not assumed library assertions");
+      return std::nullopt;
+    }
     if (!declaration_header || *declaration_header != header ||
         (definition && dependency_source(definition->getLocation()) != declaration_header)) {
       fail(call->getExprLoc(), "C++ assumed library assertion declaration differs from its pinned header");

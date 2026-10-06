@@ -9374,3 +9374,24 @@ fn assumed_library_assertions_reject_matching_names_from_another_header() {
     assert!(!project.artifact().exists());
     assert!(!project.lock().exists());
 }
+
+#[test]
+fn assumed_library_assertions_cannot_bypass_selected_source_verification() {
+    use sha2::{Digest, Sha256};
+    let cpp = "namespace library { void check(bool value) noexcept { check(value); } }\nint guarded(int n) noexcept { library::check(n > 0); return n; }";
+    let project = library_assertion_fixture("", cpp);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.config()).unwrap()).unwrap();
+    config["dependencies"] = serde_json::json!(["library.cpp"]);
+    config["library_assertions"][0]["header"] = "library.cpp".into();
+    config["library_assertions"][0]["sha256"] =
+        format!("{:x}", Sha256::digest(cpp.as_bytes())).into();
+    fs::write(project.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("selected-source C++ definitions require ordinary verified contracts"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+    assert!(!project.lock().exists());
+}

@@ -1154,7 +1154,9 @@ The header must be in the explicit `dependencies` inventory and the locked
 preprocessor closure. Entries have unique, sorted qualified function names;
 the inventory is limited to 64. Header hashes are checked during refresh and
 offline loading. The resolved callee declaration, and its definition when
-present, must belong to that header. Config, artifact, compiler command, and
+present, must belong to that header. Definitions in the selected logical
+source still require ordinary verified contracts, including recursive calls.
+Config, artifact, compiler command, and
 input closure are part of the import identity. A changed pin requires an
 explicit config edit and lock refresh.
 
