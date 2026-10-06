@@ -91,9 +91,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 have all_le_range(p, 0, j, p[j]) by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(0 <= k);
-                    extract(k < j);
                     if k < (j - 1) {
                         have k != (j - 1) by {
                             apply(int32_lt_implies_neq(k, (j - 1))) using {
@@ -142,8 +139,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
                 close_invariants by {
-                    extract(at(statement(4).entry, j) >= at(statement(4).entry, 0));
-                    extract(at(statement(4).entry, j) <= at(statement(4).entry, 2));
                     both {
                         both {
                             arithmetic_certificate signed_int32 {
@@ -221,9 +216,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 have all_le_range(p, 0, j, p[j]) by {
                     intro();
                     intro();
-                    extract(0 <= k);
-                    extract(0 <= k);
-                    extract(k < j);
                     if k < (j - 1) {
                         have k != (j - 1) by {
                             apply(int32_lt_implies_neq(k, (j - 1))) using {
@@ -275,8 +267,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     }
                 }
                 close_invariants by {
-                    extract(at(statement(4).entry, j) >= at(statement(4).entry, 0));
-                    extract(at(statement(4).entry, j) <= at(statement(4).entry, 2));
                     both {
                         both {
                             arithmetic_certificate signed_int32 {
@@ -448,15 +438,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants by {
                     both {
                         both {
-                            extract(at(statement(12).entry, j) <= at(statement(12).entry, 1));
-                            extract(at(statement(12).entry, j) >= at(statement(12).entry, 0));
                             apply(int32_increment_greater_equal_lower_bound(at(statement(12).entry, j), at(statement(12).entry, 0), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) >= at(statement(12).entry, 0);
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
                             }
                         } and {
-                            extract(at(statement(12).entry, j) <= at(statement(12).entry, 1));
-                            extract(at(statement(12).entry, j) >= at(statement(12).entry, 0));
                             apply(int32_increment_upper_bound(at(statement(12).entry, j), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
                             }
@@ -539,15 +525,11 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 close_invariants by {
                     both {
                         both {
-                            extract(at(statement(12).entry, j) <= at(statement(12).entry, 1));
-                            extract(at(statement(12).entry, j) >= at(statement(12).entry, 0));
                             apply(int32_increment_greater_equal_lower_bound(at(statement(12).entry, j), at(statement(12).entry, 0), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) >= at(statement(12).entry, 0);
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
                             }
                         } and {
-                            extract(at(statement(12).entry, j) <= at(statement(12).entry, 1));
-                            extract(at(statement(12).entry, j) >= at(statement(12).entry, 0));
                             apply(int32_increment_upper_bound(at(statement(12).entry, j), at(statement(12).entry, 1))) using {
                                 at(statement(12).entry, j) < at(statement(12).entry, 1);
                             }

@@ -28,7 +28,6 @@ int32 walk(int32 n) {
     } by {
         intro();
         intro();
-        extract(0 <= j);
         assumption();
     }
     have forall (k: int32) {

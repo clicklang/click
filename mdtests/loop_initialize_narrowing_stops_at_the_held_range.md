@@ -38,7 +38,6 @@ int32 count_up(int32 *a, int32 n) {
             have forall (k: int32) { 0 <= k and k <= n + 1 implies viewable(a[0..k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
                 extract(k <= n + 1);
                 simp();
             }
