@@ -17,3 +17,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A loop exit through a contract call does not join one that stores directly](loop-exit-join-refuses-an-exit-through-a-contract-call.md)
 - [Machine-integer quantifiers only support int32](non-int32-machine-integer-quantifiers-are-unsupported.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
+- [A verified two-to-one quantity contract cannot be applied at a call](a-verified-two-to-one-quantity-contract-cannot-be-applied.md)

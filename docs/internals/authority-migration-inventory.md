@@ -168,9 +168,11 @@ surviving member while consuming one other member. This admits the same two
 input units and returns one with preserved identity; unconditional control
 return is stronger than its earlier guarded return. The weaker candidate that
 consumed two units and produced one, with control guarded by
-`old(count(child_ref(p->kid))) > 1`, remains unsupported: deferred guard
-certification refused Count ownership, and modular application refused the
-explicit two-to-one quantity shape. These limitations are not claimed fixed.
+`old(count(child_ref(p->kid))) > 1`, was unsupported at migration time. A later
+recheck found that the guarded control return now verifies, and that the
+callee proves the two-to-one shape, but callers still cannot apply it. That
+remaining refusal is filed as
+`bugs/a-verified-two-to-one-quantity-contract-cannot-be-applied.md`.
 The main and branch fixtures retain conditional control return and final-free
 coverage. All C and payload claims remain unchanged.
 

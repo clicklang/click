@@ -371,12 +371,15 @@ as unfinished migration work:
   over member fields.
 - Named-member birth or consumption through assumed (bodiless) interfaces,
   which supply no body certificate for the population effect.
-- The shared-parent detach contract that consumes two units, produces one, and
-  returns control guarded by `old(count(child_ref(p->kid))) > 1`. The migrated
-  fixture uses a stronger natural contract; see the inventory.
 
 If an acceptance example or a later project needs one of these, discuss it as
 separate work rather than widening this migration.
+
+The shared-parent detach contract that consumes two units and produces one is
+not in this list: its proof verifies, but no caller can apply it. That is a
+filed defect, [a verified two-to-one quantity contract cannot be applied](../bugs/a-verified-two-to-one-quantity-contract-cannot-be-applied.md),
+not a scope decision. The migrated fixture uses a stronger natural contract in
+the meantime.
 
 ## Small intended regressions
 
