@@ -25,7 +25,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
         forall (k: int32) { 0 <= k and k < n implies a[k] == old(a[k]) }
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(a[k]) == old(a[k]) };
-    };
+    }
     execute();
     simp();
 }

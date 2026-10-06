@@ -4,8 +4,8 @@
 theorem integer_exists_choose_scope(candidate: Integer) {
     requires exists (z: Integer) { z == z };
     ensures exists (k: Integer) { k == k } by {
-        obtain (candidate: Integer) { candidate == candidate };
-        witness { k: candidate };
+        obtain (candidate: Integer) { candidate == candidate }
+        witness { k: candidate }
         assumption();
     }
 }

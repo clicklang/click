@@ -16,7 +16,7 @@ struct node* touch(struct node* p) {
  ensures result == old(p->left);
 } by {
  step();
- have p->left == old(p->left) by { normalize() using {}; }
+ have p->left == old(p->left) by { normalize() using {} }
  execute();
  simp();
 }

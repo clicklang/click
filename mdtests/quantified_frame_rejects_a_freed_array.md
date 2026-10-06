@@ -29,7 +29,7 @@ void dispose(int32 *data, int32 n) {
         forall (k: int32) { 0 <= k and k < n implies data[k] == old(data[k]) }
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(data[k]) == old(data[k]) };
-    };
+    }
     execute();
     simp();
 }

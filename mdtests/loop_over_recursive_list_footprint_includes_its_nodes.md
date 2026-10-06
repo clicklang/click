@@ -125,7 +125,7 @@ int32 overwrite_head(struct cell* node, int32 n) {
                         transport(
                             at(pre, node->value) == at(pre, node->value),
                             node->value == at(pre, node->value)
-                        ) using { };
+                        ) using { }
                     }
                     have at(pre, node->value) == 5 by simp;
                     have node->value == 5 by {
