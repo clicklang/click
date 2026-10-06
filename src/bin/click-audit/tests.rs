@@ -1461,6 +1461,35 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
 }
 
 #[test]
+fn exceptional_call_paths_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (relative, expected_sites) in [
+        ("mdtests/exceptional_call_continuation.md", 2),
+        ("mdtests/exceptional_terminal_call.md", 2),
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert_eq!(
+            sites.len(),
+            expected_sites,
+            "{relative} must audit every helper and caller site"
+        );
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| panic!("{relative}: {message}"));
+        }
+    }
+}
+
+#[test]
 fn result_parameter_postconditions_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for relative in [

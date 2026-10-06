@@ -1043,10 +1043,15 @@ pub(in crate::surface) fn proof_unit_erased_click_file(
         if function.signature.name != *target_name {
             continue;
         }
-        if function.grouped_proof.is_some() {
-            function.grouped_proof = Some(SourceProof::Default);
-        }
-        for ensure in &mut function.ensures {
+        // Expansion may make the implicit grouped proof explicit.
+        function.grouped_proof = None;
+        // A grouped proof supplies both normal and exceptional clauses.
+        // Erase their proof annotations together, retaining the contracts.
+        for ensure in function
+            .ensures
+            .iter_mut()
+            .chain(&mut function.exceptional_ensures)
+        {
             ensure.proof = SourceProof::Default;
         }
         for clause in &mut function.structural_clauses {
