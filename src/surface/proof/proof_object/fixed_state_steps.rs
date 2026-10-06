@@ -2306,8 +2306,9 @@ impl<'a> Proof<'a> {
         );
         let equality =
             Box::new(self.lower_surface_proposition(surface_equality, "`rewrite` equality")?);
-        let (parameters, arguments) = self.diagnostic_naming_tables();
-        self.finish_rewrite(goal, equality, surface_equality, (&parameters, &arguments))
+        self.finish_rewrite(goal, equality, surface_equality, || {
+            self.diagnostic_naming_tables()
+        })
     }
 
     /// The names a diagnostic spells this proof's lowered terms with: a pure
@@ -2423,11 +2424,13 @@ impl<'a> Proof<'a> {
                 self.step_error(format!("could not unfold `rewrite` equality: {message}"))
             })?,
         );
-        let (mut parameters, mut arguments) =
-            crate::surface::diagnostics::local_naming_tables(view.state);
-        parameters.extend(view.parameters.iter().cloned());
-        arguments.extend(view.arguments.iter().cloned());
-        self.finish_rewrite(goal, equality, surface_equality, (&parameters, &arguments))
+        self.finish_rewrite(goal, equality, surface_equality, || {
+            let (mut parameters, mut arguments) =
+                crate::surface::diagnostics::local_naming_tables(view.state);
+            parameters.extend(view.parameters.iter().cloned());
+            arguments.extend(view.arguments.iter().cloned());
+            (parameters, arguments)
+        })
     }
 
     // Keep the by-value goal/equality pair in the rewrite worker rather than
@@ -2438,9 +2441,9 @@ impl<'a> Proof<'a> {
         goal: Box<Proposition>,
         equality: Box<Proposition>,
         surface_equality: &ClickProposition,
-        // The C names a diagnostic spells lowered terms with; empty in a
-        // pure theorem, which has no C parameters.
-        names: (&[syntax::C0Parameter], &[CExpression]),
+        // Naming can scan unrelated locals. Construct these tables only
+        // on refusal, preserving the selected fixed state's diagnostic names.
+        naming_tables: impl FnOnce() -> (Vec<syntax::C0Parameter>, Vec<CExpression>),
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Name both sides: a rewrite that finds nothing to replace is
         // almost always an equality whose left side lowered to a different
@@ -2450,6 +2453,8 @@ impl<'a> Proof<'a> {
             .facts()
             .check_equality_rewrite(&goal, &equality)
             .map_err(|message| {
+                let (parameters, arguments) = naming_tables();
+                let names = (parameters.as_slice(), arguments.as_slice());
                 let spelled_equality = crate::surface::diagnostics::describe_pure_fact_spelled(
                     &equality, names.0, names.1,
                 );

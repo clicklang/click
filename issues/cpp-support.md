@@ -621,11 +621,19 @@ coverage. The unchanged Bitcoin and synthetic proofs apply the shared
 reconstruction law to observed inputs and explicitly connect both narrowed
 locals to their mathematical quotient/remainder terms.
 
-Next add checked Integer equality rewriting or congruence inside compound
-expressions, especially the product and sum in
-`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)`.
-The current `rewrite` tactic accepts native 32/64-bit equalities; explicit
-`integer_relation_transport` substitutes a whole relation operand. Then combine
+Checked shared Integer equality rewriting now substitutes exact occurrences
+inside compound expressions through the existing simple `rewrite` rule. Exact
+available evidence, orientation, types, relation polarity, binder refusal,
+shared DAG work and ambient-fact independence have coverage. Diagnostic names
+are constructed only on refusal, keeping successful rewrites independent of
+unused locals; deterministic multi-size surface checks pin that boundary. Pure and fixed-state
+proofs expand and reverify, with erased evidence and false claims refused. The
+unchanged Bitcoin and synthetic proofs now establish
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after both
+checked narrowing identities. Internal fold/match binders remain an explicit
+shared rewrite boundary; exact whole-fold replacement is supported.
+
+Next combine
 the reconstruction, remainder signs and native short-circuit correction into a
 functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
 Admit wider int128 numerators through quotient/correction bounds derived jointly

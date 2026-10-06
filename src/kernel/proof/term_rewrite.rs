@@ -1195,6 +1195,7 @@ pub(crate) struct CSubstitutionScope {
 pub(crate) struct TermRewrite<'a> {
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
+    integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
@@ -1293,12 +1294,32 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(crate) fn new(from: &'a AlgebraicTerm, to: &'a AlgebraicTerm) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.algebraic = Some((from, to));
+        rewrite
+    }
+
+    /// Exact Integer congruence over the selected logical DAG. Internal
+    /// binder scopes are refused; logical quantifiers are handled by the
+    /// equality-rewrite rule before this atomic walker is entered.
+    pub(crate) fn for_integer_exact(
+        from: &'a SharedIntegerTerm,
+        to: &'a SharedIntegerTerm,
+    ) -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.integer_exact = Some((from, to));
+        rewrite.enforce_integer_work_limit = true;
+        rewrite
+    }
+
+    fn empty() -> Self {
         Self {
             conditions: None,
             equality_graph: None,
             collected_conditions: None,
-            algebraic: Some((from, to)),
+            algebraic: None,
             bitvector: None,
+            integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -1365,6 +1386,7 @@ impl<'a> TermRewrite<'a> {
             collected_conditions: None,
             algebraic: None,
             bitvector: Some((from, to)),
+            integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -1471,6 +1493,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             algebraic: None,
             bitvector: None,
+            integer_exact: None,
             conditions: Some(conditions),
             equality_graph: None,
             collected_conditions: None,
@@ -1524,6 +1547,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             algebraic: None,
             bitvector: None,
+            integer_exact: None,
             pointer_variable: Some((from, to)),
             conditions: None,
             equality_graph: None,
@@ -1603,6 +1627,7 @@ impl<'a> TermRewrite<'a> {
         let mut walker = Self {
             algebraic: None,
             bitvector: None,
+            integer_exact: None,
             pointer_variable: None,
             conditions: None,
             equality_graph: None,
@@ -1776,6 +1801,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             algebraic: None,
             bitvector: None,
+            integer_exact: None,
             pointer_variable: None,
             conditions: None,
             equality_graph: None,
@@ -2369,6 +2395,24 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(shared.as_ref());
         }
+        if let Some((from, to)) = self.integer_exact
+            && shared == from
+        {
+            let work = match to.as_ref() {
+                IntegerTerm::Constant(value) => value.bits() as usize + 1,
+                _ => 1,
+            };
+            self.charge_rewrite_work(work);
+            if self.checked_work_exhausted() {
+                return exhausted_integer(shared.as_ref());
+            }
+            self.changed = true;
+            // Do not recursively rewrite the replacement. Matching uses
+            // interned DAG identities; literal retention was charged above.
+            let result = to.as_ref().clone();
+            self.integer_cache.insert(cache_key, result.clone());
+            return result;
+        }
         let result = match shared.as_ref() {
             IntegerTerm::Constant(value) => {
                 if self.integer_variables.is_some()
@@ -2484,6 +2528,10 @@ impl<'a> TermRewrite<'a> {
         original_item: Variable,
         body: &SharedIntegerTerm,
     ) -> IntegerTerm {
+        if self.integer_exact.is_some() {
+            self.unsupported_integer_scope = true;
+            return IntegerTerm::constant_i64(0);
+        }
         let item_is_integer = matches!(index, IntegerRangeFoldIndex::Integer { .. });
         if !item_is_integer && self.has_composite_bitvector_source() {
             // A composite source can contain variables whose binding status
@@ -2972,6 +3020,10 @@ impl<'a> TermRewrite<'a> {
         bindings: &mut [AlgebraicValue],
         changes: &mut Vec<ScopeChange>,
     ) -> bool {
+        if self.integer_exact.is_some() && !bindings.is_empty() {
+            self.unsupported_integer_scope = true;
+            return false;
+        }
         self.ensure_replacement_carriers();
         for binding in bindings {
             let Some((carrier, variable)) = binding_variable(binding) else {
@@ -3010,7 +3062,7 @@ impl<'a> TermRewrite<'a> {
         variable: Variable,
         changes: &mut Vec<ScopeChange>,
     ) -> Option<Variable> {
-        if self.has_composite_bitvector_source() {
+        if self.integer_exact.is_some() || self.has_composite_bitvector_source() {
             self.unsupported_integer_scope = true;
             return None;
         }
