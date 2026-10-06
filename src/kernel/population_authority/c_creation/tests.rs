@@ -5282,3 +5282,262 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
         assert!(*sample <= work[0] + 96 * index, "{work:?}");
     }
 }
+
+#[test]
+fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports() {
+    for wildcard in [false, true] {
+        let anchor = CValue::pointer(Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        });
+        let schema =
+            ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let mut scope = ResourceDescription::new(
+            "ticket".into(),
+            vec![anchor.clone().into()].into(),
+            schema.clone(),
+        );
+        if wildcard {
+            scope = scope.with_population_arity(2).unwrap();
+        }
+        let member = |identity, tag| {
+            let mut arguments = vec![anchor.clone().into()];
+            if wildcard {
+                arguments.push(int32(tag).into());
+            }
+            ResourceInstance::new(
+                Variable(identity),
+                "ticket".into(),
+                arguments.into(),
+                schema.clone(),
+                vec![int32(7).into()].into(),
+            )
+            .unwrap()
+        };
+        let born = member(997_001, 7);
+        let first = member(997_002, 7);
+        let second = member(997_003, 7);
+        let exact = ResourceDescription::from_instance(&first);
+        let work = [16, 64, 256].map(|size| {
+            let mut entry = CreationEvents::new();
+            for index in 0..size {
+                let unrelated = ResourceDescription::new(
+                    format!("other-{index}"),
+                    scope.arguments().to_vec().into(),
+                    schema.clone(),
+                );
+                entry = entry.import_observable_named_authority(&unrelated).unwrap();
+            }
+            let entry = entry.import_observable_named_authority(&scope).unwrap();
+            let count = entry.observe_symbolic(&scope).unwrap().entry_count;
+            let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::signed_add_overflows(count.clone(), Bitvector32Term::Constant(1)),
+                false,
+            ));
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert!(
+                    entry
+                        .checked_imported_instance_exchange(&born, true, &PureFactContext::new())
+                        .is_err()
+                );
+                assert!(
+                    entry
+                        .enter_call()
+                        .checked_imported_instance_exchange(&born, true, &assumptions)
+                        .is_err()
+                );
+                let one = entry
+                    .checked_imported_instance_exchange(&born, true, &assumptions)
+                    .unwrap();
+                assert_eq!(
+                    one,
+                    entry
+                        .checked_imported_instance_exchange(&born, true, &assumptions)
+                        .unwrap()
+                );
+                assert!(
+                    one.checked_imported_instance_exchange(&born, true, &assumptions)
+                        .is_err()
+                );
+                assert!(!one.owns_population_member(&scope));
+                let zero = one.checked_imported_instance_consumption(&born).unwrap();
+                assert_eq!(
+                    zero.observe_symbolic(&scope).unwrap().combined_delta(),
+                    None
+                );
+                assert_eq!(
+                    zero.observe_symbolic(&scope).unwrap().entry_owned_members,
+                    0,
+                    "a born occurrence is not an entry occurrence"
+                );
+                assert!(zero.checked_imported_instance_consumption(&born).is_err());
+                assert!(
+                    zero.checked_imported_instance_exchange(&born, true, &assumptions)
+                        .is_err()
+                );
+                let spent = zero
+                    .checked_imported_instance_consumption(&first)
+                    .unwrap()
+                    .checked_imported_instance_consumption(&second)
+                    .unwrap();
+                let observed = spent.observe_symbolic(&scope).unwrap();
+                assert_eq!(observed.entry_count, count);
+                assert_eq!(observed.entry_owned_members, 2);
+                assert_eq!(
+                    observed.combined_delta(),
+                    Some((false, Bitvector32Term::Constant(2)))
+                );
+                if wildcard {
+                    let exact_count = spent
+                        .observe_exact_member(&exact, &PureFactContext::new())
+                        .unwrap();
+                    assert_eq!(exact_count.delta, -2);
+                    assert_eq!(exact_count.entry_owned_members, 2);
+                    assert_eq!(
+                        spent
+                            .observe_exact_member(
+                                &ResourceDescription::from_instance(&member(997_004, 8)),
+                                &PureFactContext::new()
+                            )
+                            .unwrap()
+                            .delta,
+                        0
+                    );
+                }
+                assert_eq!(
+                    entry.0.opaque_holders.get(&entry.0.opaque_actor),
+                    spent.0.opaque_holders.get(&spent.0.opaque_actor)
+                );
+            });
+            work
+        });
+        assert!(work[0] > 0);
+        for (index, sample) in work.iter().enumerate() {
+            assert!(*sample <= work[0] + 160 * index, "{work:?}");
+        }
+    }
+}
+
+#[test]
+fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
+    let anchor = CValue::pointer(Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let scope = ResourceDescription::new(
+        "ticket".into(),
+        vec![anchor.clone().into()].into(),
+        schema.clone(),
+    )
+    .with_population_arity(2)
+    .unwrap();
+    let member = |identity, tag| {
+        ResourceInstance::new(
+            Variable(identity),
+            "ticket".into(),
+            vec![
+                anchor.clone().into(),
+                CValue::Int32(Bitvector32Term::Variable(Variable(tag))).into(),
+            ]
+            .into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap()
+    };
+    let first = member(998_001, 998_101);
+    let second = member(998_002, 998_102);
+    let entry = CreationEvents::new()
+        .import_observable_named_authority(&scope)
+        .unwrap();
+    let one = entry.checked_imported_instance_consumption(&first).unwrap();
+    assert_eq!(
+        one.observe_exact_member(
+            &ResourceDescription::from_instance(&first),
+            &PureFactContext::new()
+        )
+        .unwrap()
+        .delta,
+        -1
+    );
+    assert!(
+        one.observe_exact_member(
+            &ResourceDescription::from_instance(&second),
+            &PureFactContext::new()
+        )
+        .is_err()
+    );
+    let two = one.checked_imported_instance_consumption(&second).unwrap();
+    assert_eq!(
+        two.observe_symbolic(&scope).unwrap().combined_delta(),
+        Some((false, Bitvector32Term::Constant(2)))
+    );
+    assert!(
+        two.observe_exact_member(
+            &ResourceDescription::from_instance(&first),
+            &PureFactContext::new()
+        )
+        .is_err(),
+        "the unresolved indices may alias"
+    );
+}
+
+#[test]
+fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
+    let anchor = CValue::pointer(Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let schema =
+        ResourceFieldSchema::new(vec![("serial".into(), ResourceFieldType::C(CType::Int32))])
+            .unwrap();
+    let description = ResourceDescription::new(
+        "ticket".into(),
+        vec![anchor.clone().into()].into(),
+        schema.clone(),
+    );
+    let member = |identity| {
+        ResourceInstance::new(
+            Variable(identity),
+            "ticket".into(),
+            vec![anchor.clone().into()].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap()
+    };
+    let work = [16, 64, 256].map(|size| {
+        let mut state = CreationEvents::new()
+            .import_observable_named_authority(&description)
+            .unwrap();
+        for index in 0..size {
+            state = state
+                .checked_imported_instance_consumption(&member(999_001 + index))
+                .unwrap();
+        }
+        let (next, work) = crate::persistent::measure_persistent_work(|| {
+            state
+                .checked_imported_instance_consumption(&member(999_999))
+                .unwrap()
+        });
+        assert_eq!(
+            next.observe_symbolic(&description)
+                .unwrap()
+                .entry_owned_members,
+            size as u32 + 1
+        );
+        assert!(
+            next.consumed_imported_instance(&description, Variable(999_001))
+                .is_some()
+        );
+        work
+    });
+    assert!(work[0] > 0);
+    for (index, sample) in work.iter().enumerate() {
+        assert!(*sample <= work[0] + 64 * index, "{work:?}");
+    }
+}

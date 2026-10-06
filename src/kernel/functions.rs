@@ -751,6 +751,28 @@ fn transfer_population_call_facts<'a>(
             }
             continue;
         }
+        if let CResourceFact::Own(CResource::Instance(instance), quantity) = fact {
+            let description = ResourceDescription::from_instance(instance);
+            if events.tracks_population(&description)
+                && !events.recognizes_imported_population(&description)
+            {
+                events = events
+                    .transfer_call_fact_quantity(
+                        from_events,
+                        to_events,
+                        &description,
+                        false,
+                        quantity,
+                        assumptions,
+                    )
+                    .map_err(|refusal| {
+                        CRuntimeError::FunctionContract(format!(
+                            "named population call transfer refused: {refusal:?}"
+                        ))
+                    })?;
+            }
+            continue;
+        }
         let (description, authority_fact, quantity) = match fact {
             CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
                 if quantity.as_const() == Some(1) =>
@@ -2780,8 +2802,12 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
 pub(super) fn authority_mode_preserves_assumed_resource_contract(
     interface: &CFunctionContractInterface,
 ) -> bool {
-    if authority_mode_protected_families(interface).is_empty()
-        || !authority_mode_preserves_resource_contract(interface)
+    if !authority_mode_preserves_resource_contract(interface)
+        || authority_mode_protected_families(interface).is_empty()
+            && !interface
+                .resource_requires()
+                .iter()
+                .any(|spec| spec.family() == ResourceFamily::Instance)
     {
         return false;
     }
@@ -3352,6 +3378,17 @@ mod authority_helper_admission_tests {
         assert!(authority_mode_preserves_assumed_resource_contract(
             &interface
         ));
+        let mut logical = interface.clone();
+        logical
+            .resource_requires
+            .retain(|spec| spec.family() == ResourceFamily::Instance);
+        logical
+            .resource_ensures
+            .retain(|spec| spec.family() == ResourceFamily::Instance);
+        assert!(
+            authority_mode_preserves_assumed_resource_contract(&logical),
+            "ordinary named models do not need artificial population authority"
+        );
         for role in [
             CResourceTransferRole::Consume,
             CResourceTransferRole::Produce,
@@ -5466,7 +5503,7 @@ fn execute_verified_function_applications_with_suspension(
                 after
             };
             if resource.role() == CResourceTransferRole::Produce
-                && let Some(events) = &caller_state.population_effects.creation
+                && let Some(events) = &post_state.population_effects.creation
             {
                 let description = ResourceDescription::from_instance(&after);
                 if events.tracks_population(&description) {
@@ -5489,9 +5526,28 @@ fn execute_verified_function_applications_with_suspension(
                             loan_evidence: empty_checked_loan_evidence_sequence(),
                         }]);
                     }
-                    return Ok(vec![resource_call_failure(
-                        "helper creation of named population members requires checked authority effects; this boundary is not supported yet",
-                    )]);
+                    let next = if events.recognizes_imported_population(&description) {
+                        events.checked_imported_instance_exchange(
+                            &after,
+                            true,
+                            &effective_assumptions,
+                        )
+                    } else {
+                        events.checked_instance_exchange(
+                            &ResourceReference::from_instance(&after),
+                            true,
+                        )
+                    };
+                    match next {
+                        Ok(next) => {
+                            Arc::make_mut(&mut post_state.population_effects).creation = Some(next)
+                        }
+                        Err(refusal) => {
+                            return Ok(vec![resource_call_failure(&format!(
+                                "named helper creation refused: {refusal:?}"
+                            ))]);
+                        }
+                    }
                 }
             }
             post_state.resources = match post_state
@@ -5741,6 +5797,41 @@ fn execute_verified_function_applications_with_suspension(
                 };
             }
             Arc::make_mut(&mut post_state.population_effects).creation = Some(retired);
+        }
+        // Named consumption follows the checked input partition. The ordinary
+        // planner removes exact custody; this advances only the population ledger.
+        if caller_state.uses_population_authority_semantics() {
+            for checked in &transfer.consumed_inputs {
+                let CResource::Instance(instance) = checked.fact.resource() else {
+                    continue;
+                };
+                let description = ResourceDescription::from_instance(instance);
+                let Some(events) = post_state.population_effects.creation.as_ref() else {
+                    continue;
+                };
+                if !events.tracks_population(&description) {
+                    continue;
+                }
+                let next = if events.recognizes_imported_population(&description) {
+                    events.checked_imported_instance_consumption(instance)
+                } else {
+                    events.checked_instance_exchange(
+                        &ResourceReference::from_instance(instance),
+                        false,
+                    )
+                };
+                match next {
+                    Ok(next) => {
+                        Arc::make_mut(&mut post_state.population_effects).creation = Some(next)
+                    }
+                    Err(refusal) => {
+                        paths.push(resource_call_failure(&format!(
+                            "named helper consumption refused: {refusal:?}"
+                        )));
+                        continue 'arguments;
+                    }
+                }
+            }
         }
         // Publish the checked population delta before lowering postcondition counts.
         if caller_state.uses_population_authority_semantics()
@@ -20029,9 +20120,8 @@ fn prepare_contract_resource_transfer(
             checked
         })
         .collect();
-    // A preserving named helper may suspend and restore its private body,
-    // but consuming its occurrence is a population effect. Do not silently
-    // remove the resource while leaving its authority ledger unchanged.
+    // Named consumption needs the governing authority in the checked input
+    // partition. Its ledger effect is applied at the checked call successor.
     if purpose.lends()
         && let Some(events) = &caller_state.population_effects.creation
     {
@@ -20055,9 +20145,6 @@ fn prepare_contract_resource_transfer(
                     resource: Box::new(authority),
                 }));
             }
-            return Ok(Err(CRuntimeError::FunctionContract(
-                "helper consumption of named population members requires checked authority effects; this boundary is not supported yet".into(),
-            )));
         }
     }
     let consumed_inputs = checked_required_resources
@@ -30942,12 +31029,7 @@ fn function_outcome_from_body_with_resource_transfer(
             None,
         ));
     }
-    let population_transition = if caller_state.uses_population_authority_semantics()
-        && (authority_mode_consumes_member_contract(function.contract_interface())
-            || authority_mode_produces_member_contract(function.contract_interface())
-            || authority_mode_final_release_contract(function.contract_interface())
-            || checked_named_deaths)
-    {
+    let population_transition = if caller_state.uses_population_authority_semantics() {
         CCountedPopulationTransition::default()
     } else {
         match crate::instrumentation::measure_operation(
