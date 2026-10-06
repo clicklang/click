@@ -8,7 +8,6 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-- [A retained verification session cannot re-verify a caller it already verified](retained-session-cannot-reverify-a-verified-caller.md)
 - [Expansion refuses a witness that has no surface spelling](expansion-needs-unspellable-resource-witness.md)
 - [Expansion is unavailable where a call has an exceptional path](expansion-unavailable-for-exceptional-call-paths.md)
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)

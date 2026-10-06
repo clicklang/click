@@ -8107,6 +8107,12 @@ pub(super) fn c_value_comparison_proposition(
     operator: CComparisonOperator,
     right: &CValue,
 ) -> Option<Proposition> {
+    if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
+        || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
+    {
+        return crate::kernel::eval::wide_integer_comparison_condition(operator, left, right)
+            .map(|condition| Proposition::ConditionIs(condition, true));
+    }
     let pointer_condition = match (left, right) {
         (CValue::Pointer(left), CValue::Pointer(right))
             if left.c_type().pointer_types_compatible(right.c_type())

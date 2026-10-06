@@ -245,7 +245,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 39;
+    artifact["schema"] = 40;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -2223,6 +2223,7 @@ private:
           binary->getOpcode() != clang::BO_LT &&
           binary->getOpcode() != clang::BO_GT &&
           binary->getOpcode() != clang::BO_EQ &&
+          binary->getOpcode() != clang::BO_NE &&
           binary->getOpcode() != clang::BO_Mul &&
           binary->getOpcode() != clang::BO_LE &&
           binary->getOpcode() != clang::BO_GE &&
@@ -2244,9 +2245,14 @@ private:
           (binary->getOpcode() == clang::BO_Div ||
            binary->getOpcode() == clang::BO_Rem);
       const bool supported_wide_arithmetic = signed_wide_product || wide_division;
-      if (wide && !supported_wide_arithmetic) {
+      const bool wide_comparison = wide &&
+          (binary->getOpcode() == clang::BO_EQ || binary->getOpcode() == clang::BO_NE ||
+           binary->getOpcode() == clang::BO_LT ||
+           binary->getOpcode() == clang::BO_GT || binary->getOpcode() == clang::BO_LE ||
+           binary->getOpcode() == clang::BO_GE);
+      if (wide && !supported_wide_arithmetic && !wide_comparison) {
         fail(binary->getOperatorLoc(),
-             "C++ wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only; wide comparisons are unsupported");
+             "C++ wide arithmetic supports checked signed multiplication and signed/unsigned division/remainder only; wide comparisons support ==, !=, <, >, <=, >=");
         return std::nullopt;
       }
       if (binary->getOpcode() == clang::BO_Add ||
@@ -2287,6 +2293,8 @@ private:
         result["operator"] = "greater_than";
       } else if (binary->getOpcode() == clang::BO_EQ) {
         result["operator"] = "equal";
+      } else if (binary->getOpcode() == clang::BO_NE) {
+        result["operator"] = "not_equal";
       } else if (binary->getOpcode() == clang::BO_Mul) {
         result["operator"] = "multiply";
       } else if (binary->getOpcode() == clang::BO_LE) {
