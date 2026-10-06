@@ -4,7 +4,7 @@ use super::arithmetic_special::SpecialArithmeticCheckError as Error;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 type Polynomial = BTreeMap<Vec<u64>, BigInt>;
 const MAX_NODES: usize = 256;
@@ -81,7 +81,11 @@ fn combine(
     Ok(out)
 }
 
-fn expand(root: &SharedIntegerTerm, memo: &mut BTreeMap<u64, Polynomial>) -> Result<(), Error> {
+fn expand(
+    root: &SharedIntegerTerm,
+    memo: &mut BTreeMap<u64, Polynomial>,
+    seen: &mut BTreeSet<u64>,
+) -> Result<(), Error> {
     let mut stack = vec![(root.clone(), false)];
     while let Some((term, ready)) = stack.pop() {
         // Includes bounded memo lookup cost; DAG children are visited once.
@@ -90,7 +94,8 @@ fn expand(root: &SharedIntegerTerm, memo: &mut BTreeMap<u64, Polynomial>) -> Res
             continue;
         }
         if !ready {
-            if memo.len().saturating_add(stack.len()) >= MAX_NODES {
+            seen.insert(term.id());
+            if seen.len() > MAX_NODES {
                 return Err(Error::IntegerPolynomialLimitExceeded);
             }
             stack.push((term.clone(), true));
@@ -145,8 +150,9 @@ pub(super) fn check(
         return Err(Error::InvalidIntegerPolynomialIdentity(node));
     };
     let mut memo = BTreeMap::new();
-    expand(a, &mut memo)?;
-    expand(b, &mut memo)?;
+    let mut seen = BTreeSet::new();
+    expand(a, &mut memo, &mut seen)?;
+    expand(b, &mut memo, &mut seen)?;
     let left = &memo[&a.id()];
     let right = &memo[&b.id()];
     for (key, value) in left.iter().chain(right.iter()) {
@@ -346,6 +352,27 @@ mod tests {
         assert!(
             costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
             "{costs:?}"
+        );
+    }
+    #[test]
+    fn polynomial_identity_counts_distinct_nodes_not_pending_dag_edges() {
+        let mut shared = x();
+        for _ in 0..128 {
+            shared = IntegerTerm::add(shared.clone(), shared);
+        }
+        assert_eq!(check(0, &[], &[], &eq(shared.clone(), shared)), Ok(()));
+        let mut exact = x();
+        for _ in 0..254 {
+            exact = IntegerTerm::add(exact, c(1));
+        }
+        assert_eq!(
+            check(0, &[], &[], &eq(exact.clone(), exact.clone())),
+            Ok(())
+        );
+        let too_many = IntegerTerm::add(exact, c(1));
+        assert_eq!(
+            check(0, &[], &[], &eq(too_many.clone(), too_many)),
+            Err(Error::IntegerPolynomialLimitExceeded)
         );
     }
 }
