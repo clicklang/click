@@ -5371,6 +5371,10 @@ pub enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: ClickProposition,
     },
+    IntegerCastIdentity {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     UnsignedSumBound {
         bounds: Vec<usize>,
         result: ClickProposition,
