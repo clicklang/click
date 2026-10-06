@@ -370,9 +370,9 @@ Other native wide arithmetic, including unsigned wrapping multiplication,
 source aggregate layouts, byte views of wide cells, and callbacks remain
 unsupported. C++ now admits wide scalar locals, parameters, results,
 matching-width call captures, modulo integral casts, Boolean conversions, and
-checked signed multiplication. Contracts observe these values through
-`to_integer` and use checked reverse conversions; native wide comparisons are
-not admitted. Wide source pointers, references, arrays, and record fields
+checked signed multiplication, division/remainder, and comparisons. Contracts
+observe these values through `to_integer` and use checked reverse conversions.
+Wide source pointers, references, arrays, and record fields
 remain unsupported, as do ordinary C and Rust wide source spellings. Internal
 C0 identities model the wider memory profile without granting source admission.
 
@@ -494,4 +494,30 @@ the spellings and verifies again; regressions check hostile constants, erased
 guards, full-width signs, native operand obligations, shared aliases, and
 lookup with unrelated facts. The proof notation has mathematical Integer
 semantics; C++ source division/remainder separately retains native guards and
-uses artifact schema 39.
+uses artifact schema 40.
+
+
+## Full-width native comparisons
+
+All six native comparisons accept matching `Int128` or `UInt128` operands.
+Promotions remain caller-owned. A shared condition constructor observes both
+operands as mathematical Integers with their native signedness, then builds
+an Integer equality, disequality, or ordering node. Execution and pure-spec
+branch transport use this same constructor, so retained source branch proofs
+keep the full relation rather than narrowing it to a legacy word predicate.
+
+Known conditions produce an `Int32` zero or one; unknown conditions retain
+both outcomes with their exact true/false guards. Complementary relations
+have distinct Integer nodes, so execution queries at most two indexed keys
+(the requested relation and its complement). It does not scan unrelated
+premises or assume new facts. Operand runtime errors and undefined behavior
+are preserved before evaluating the comparison.
+
+Regressions compare all six operations against a full-width ordering oracle,
+including signed MIN/MAX, unsigned MAX, and values above 64 bits. They cover
+true/false and complementary premises, explicit conversions, hostile operand
+arithmetic, constant work over growing ambient fact populations, and linear
+work over growing explicit operation counts. C++ schema 40 admits these
+comparisons and requires refreshing older source locks; ordinary C and Rust
+frontend admission remains separate. Source verification, expansion, offline
+artifacts, and retained audit use the shared kernel behavior.
