@@ -1422,3 +1422,40 @@ fn ranked_loops_without_invariants_audit_every_site() {
         }
     }
 }
+
+/// Caller requirements that read seeded arrays must survive both unchanged
+/// retained checks and audit's expanded rewrites, at every tactic site.
+#[test]
+fn callers_with_seeded_array_requirements_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "mdtests/static_array_parity_fixed_multidimensional.md",
+        "mdtests/static_array_parity_multidimensional.md",
+        "mdtests/static_array_parity_scalar.md",
+        "mdtests/static_local_arrays.md",
+        "mdtests/static_local_array_requirement_stated_explicitly.md",
+        "mdtests/cstr_dynamic_indexed_read.md",
+        "mdtests/cstr_source_identity_reordered_requirement.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(!sites.is_empty(), "{relative} must have tactic sites");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| {
+                panic!(
+                    "{relative}:{}:{} {}: {message}",
+                    site.position.line, site.position.column, site.tactic_name
+                )
+            });
+        }
+    }
+}

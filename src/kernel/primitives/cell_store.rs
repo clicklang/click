@@ -279,18 +279,7 @@ pub struct CellRun {
     source: SharedCMemory,
     mode: RunValueMode,
     holes: IndexIntervals,
-    /// Each slot's value, holes included, named on its first need, for a
-    /// run of at most [`CACHED_RUN_VALUES`] slots (empty for a longer one).
-    /// A function of the fields above but the holes, so it is shared by
-    /// every copy of the run, whatever its holes, and left out of equality,
-    /// hashing and ordering.
-    values: std::sync::Arc<[OnceLock<CValue>]>,
 }
-
-/// The longest run whose slot values [`CellRun::value`] names once and keeps.
-/// A longer run names a slot's value each time it is asked, through the load
-/// naming cache.
-const CACHED_RUN_VALUES: u32 = 64;
 
 impl CellRun {
     pub(crate) fn new(
@@ -322,12 +311,6 @@ impl CellRun {
         mode: RunValueMode,
         holes: IndexIntervals,
     ) -> Self {
-        // A constant run's value is its mode's, so it keeps no cache.
-        let cached = if count <= CACHED_RUN_VALUES && !matches!(mode, RunValueMode::Constant(_)) {
-            count
-        } else {
-            0
-        };
         Self {
             base,
             element_width,
@@ -336,12 +319,11 @@ impl CellRun {
             source,
             mode,
             holes,
-            values: (0..cached).map(|_| OnceLock::new()).collect(),
         }
     }
 
     /// This run with `holes` in place of its own: the same slots holding the
-    /// same values, sharing the named-value cache.
+    /// same values.
     pub(crate) fn with_holes(&self, holes: IndexIntervals) -> Self {
         Self {
             holes,
@@ -501,12 +483,11 @@ impl CellRun {
             .filter(|index| !self.holes.contains(*index))
     }
 
-    /// The value every live slot `index` holds.
+    /// The value every live slot `index` holds. Naming goes through the
+    /// per-origin-epoch load cache: retaining a named value in the run would
+    /// skip the mint that refreshes its live origin in a later verification.
     pub(crate) fn value(&self, index: u32) -> CValue {
-        match self.values.get(index as usize) {
-            Some(value) => value.get_or_init(|| self.named_value(index)).clone(),
-            None => self.named_value(index),
-        }
+        self.named_value(index)
     }
 
     /// The value slot `index` holds: the load of its pointer in the source,
@@ -2356,6 +2337,40 @@ mod tests {
     use super::*;
     use crate::kernel::primitives::{CMemory, Variable};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
+        let mut samples = Vec::new();
+        for count in [16, 64, 65, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = source(99);
+            let base = constant(&PointerBlock::from("cell-store-source-99"), 0);
+            let run = run(base.clone(), 4, count, &source);
+            let first = run.value(0);
+            let CValue::Int32(crate::kernel::Bitvector32Term::Variable(variable)) = first else {
+                panic!("a seeded scalar names its source load");
+            };
+            assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_some());
+            crate::kernel::eval::begin_load_origin_epoch();
+            assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_none());
+            assert_eq!(run.value(0), first);
+            assert_eq!(
+                crate::kernel::eval::registered_load_origin_for_variable(&variable),
+                Some((source, base)),
+                "a retained {count}-cell run must observe the load in this epoch"
+            );
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..16 {
+                    assert_eq!(run.value(0), first);
+                }
+            });
+            samples.push((count, work));
+        }
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "repeated seeded reads must use the epoch cache without scanning the run: {samples:?}"
+        );
+    }
 
     fn source(tag: u32) -> SharedCMemory {
         crate::kernel::intern_c_memory(
