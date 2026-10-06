@@ -4030,6 +4030,55 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
 /// does; a caller that declared it for a whole array
 /// ([`declare_symbolic_array_access_widths`]) passes `false`. An object
 /// pointer's load retains the same typed definition as a logical read.
+/// Reuse only a load already named at this exact snapshot and address.
+/// An optional cell-cache reconciliation must not canonicalize a cold load
+/// by walking its unrelated memory history. Missing names give no evidence.
+pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
+    memory: &CMemory,
+    pointer: &Pointer,
+    c_type: CType,
+) -> Option<CValue> {
+    let (kind, wrap): (LoadKind, fn(Bitvector32Term) -> CValue) = match c_type {
+        CType::Int8 => (LoadKind::Int8, CValue::Int8),
+        CType::Int16 => (LoadKind::Int16, CValue::Int16),
+        CType::Int32 => (LoadKind::Bits32, CValue::Int32),
+        CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),
+        CType::UInt16 => (LoadKind::UInt16, CValue::UInt16),
+        CType::UInt32 => (LoadKind::Bits32, CValue::UInt32),
+        CType::Int64 => (LoadKind::Bits64, CValue::Int64),
+        CType::UInt64 => (LoadKind::Bits64, CValue::UInt64),
+        _ if c_type.is_object_pointer() => {
+            let load = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                LoadKind::Bits32,
+            );
+            return LOAD_VARIABLE_CACHE.with(|cache| {
+                let variable = cache.borrow().get(&load)?.0;
+                Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type))
+            });
+        }
+        _ => return None,
+    };
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory.clone()),
+        Box::new(pointer.clone()),
+        kind,
+    );
+    crate::instrumentation::record_deterministic_work(1);
+    TERM_CACHE
+        .with(|cache| cache.borrow().get(&load).cloned())
+        .or_else(|| {
+            LOAD_VARIABLE_CACHE.with(|cache| {
+                cache
+                    .borrow()
+                    .get(&load)
+                    .map(|(variable, _)| Bitvector32Term::Variable(*variable))
+            })
+        })
+        .map(wrap)
+}
+
 pub(in crate::kernel) fn symbolic_storage_cell_value(
     memory: &CMemory,
     pointer: &Pointer,

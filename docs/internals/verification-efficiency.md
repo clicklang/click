@@ -104,8 +104,18 @@ charged to visible semantic output rather than hidden ambient state:
   deterministic kernel regression measures 72, 780, and 12,300 work units
   for 4, 64, and 1,024 exits, including all residual checks, and varies
   unrelated cached cells independently. Checked load equations are consulted
-  only for changed concrete cells; each exit's fact context is built lazily
-  once. Compact cached runs are not enumerated by this reconciliation.
+  only for changed concrete cells, using a load already named at the exact
+  snapshot and address and indexed equality evidence. A missing name declines
+  the optional cache reconciliation; it never walks unrelated store history
+  to construct one. Each exit's fact context is built lazily once. Compact
+  cached runs are not enumerated by this reconciliation.
+- A contract-less inline helper never symbolically expands an undecidable
+  loop guard into continuing iterations. It returns a local refusal at that
+  guard, so accumulated histories cannot grow with the unroll allowance.
+  `symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance`
+  checks 30 deterministic work units at allowances of 4, 64, and 1,024, exactly
+  one consumed iteration, and one diagnostic path. Concrete unrolling and
+  restoration of the enclosing call context on errors are checked separately.
 - A finite quantified proof may enumerate its declared finite range. The range
   and its bound must be explicit and enforced.
 - Unfolding or folding may visit every member of the named definition, but not

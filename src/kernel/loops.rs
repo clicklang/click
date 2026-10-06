@@ -3621,13 +3621,7 @@ fn retain_proven_loop_exit_cells(
                 continue;
             }
             let Some(load) =
-                symbolic_storage_cell_value(state.memory(), &pointer, value.c_type(), true)
-            else {
-                agrees = false;
-                continue;
-            };
-            let Some(equality) =
-                c_value_comparison_proposition(&load, CComparisonOperator::Equal, &value)
+                cached_symbolic_storage_cell_value(state.memory(), &pointer, value.c_type())
             else {
                 agrees = false;
                 continue;
@@ -3635,12 +3629,10 @@ fn retain_proven_loop_exit_cells(
             let context = contexts[index].get_or_insert_with(|| {
                 assumptions_with_path_context(assumptions, facts[index], &[])
             });
-            if !context.proves_atomic_without_search(&equality) {
+            let equality = indexed_loop_exit_load_equality(context, &load, &value);
+            if equality != Some(true) {
                 agrees = false;
-                if no_binders
-                    && c_value_comparison_proposition(&load, CComparisonOperator::NotEqual, &value)
-                        .is_some_and(|different| context.proves_atomic_without_search(&different))
-                {
+                if no_binders && equality == Some(false) {
                     return Err(format!(
                         "the cell in `{}` that the exits write differently is owned by no loop binder",
                         pointer.block
@@ -3659,6 +3651,56 @@ fn retain_proven_loop_exit_cells(
         }
     }
     Ok(())
+}
+
+/// An optional cache reconciliation must not ask the general memory resolver
+/// to prove anything. Consult only exact fact indexes and the trusted graph.
+fn indexed_loop_exit_load_equality(
+    context: &PureFactContext,
+    load: &CValue,
+    value: &CValue,
+) -> Option<bool> {
+    let Proposition::ConditionIs(condition, expected) =
+        c_value_comparison_proposition(load, CComparisonOperator::Equal, value)?
+    else {
+        return None;
+    };
+    if let Some(answer) = context.exact_condition_value(&condition) {
+        return Some(answer == expected);
+    }
+    match &condition {
+        ConditionTerm::Bitvector32Equal(left, right) if expected => {
+            if context.int32_values_known_equal(left, right) {
+                return Some(true);
+            }
+            let constant = |term: &Bitvector32Term| {
+                term.as_const().or_else(|| {
+                    context
+                        .exact_constant_equalities
+                        .get(term)?
+                        .keys()
+                        .find_map(|condition| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            let ConditionTerm::Bitvector32Equal(a, b) = condition else {
+                                return None;
+                            };
+                            if a.as_ref() == term {
+                                b.as_const()
+                            } else if b.as_ref() == term {
+                                a.as_const()
+                            } else {
+                                None
+                            }
+                        })
+                })
+            };
+            Some(constant(left)? == constant(right)?)
+        }
+        ConditionTerm::PointerEqual(left, right) if expected => {
+            context.pointers_known_equal(left, right).then_some(true)
+        }
+        _ => None,
+    }
 }
 
 fn is_loop_exit_snapshot_marker(block: &PointerBlock) -> bool {
@@ -3758,6 +3800,48 @@ mod contract_exit_join_tests {
             ambient_work.iter().all(|work| *work <= ambient_work[0] * 2),
             "{ambient_work:?}"
         );
+    }
+
+    #[test]
+    fn optional_exit_cache_reconciliation_does_not_walk_unrelated_store_history() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "shared".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let other = Pointer {
+            block: "other".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut samples = Vec::new();
+        for count in [4usize, 64, 1024] {
+            let mut memory = CMemory::new()
+                .with_block("shared", 4)
+                .with_block("other", 4);
+            for index in 0..count {
+                memory = memory.store(other.clone(), int32(index as u32));
+            }
+            let mut exits = [
+                CState::new().with_memory(memory.clone().store(pointer.clone(), int32(0))),
+                CState::new().with_memory(memory),
+            ];
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                retain_proven_loop_exit_cells(
+                    &mut exits,
+                    &[&[], &[]],
+                    &PureFactContext::new(),
+                    true,
+                )
+            });
+            result.unwrap();
+            assert!(exits[1].memory().known_value(&pointer).is_none());
+            samples.push(work);
+        }
+        assert!(
+            samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] * 2),
+            "{samples:?}"
+        );
+        eprintln!("optional cache lookup work at 4/64/1024 old stores: {samples:?}");
     }
 
     #[test]
