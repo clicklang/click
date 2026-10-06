@@ -130,8 +130,6 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < 1);
         have k == 0 by { arithmetic() using { 0 <= k; k < 1; } }
         simp() using { k == 0; at(entry, next[0]) == next[0]; }
     }
@@ -141,8 +139,6 @@ void mark(int32 *next, int32 *visited) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < 1);
         have k == 0 by { arithmetic() using { 0 <= k; k < 1; } }
         have at(entry, next[k]) == 0 by {
             rewrite(k == 0);

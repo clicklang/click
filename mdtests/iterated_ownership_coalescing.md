@@ -95,7 +95,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(i + 1 <= k);
-                extract(k < end);
                 apply(int32_increment_strictly_increases(i, end)) using {
                     i < end;
                 }
@@ -140,7 +139,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(at(opened, i) + 1 <= k);
-                extract(k < end);
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
                         at(opened, i) + 1 <= k and k < end implies at(opened, occupied[k]) == 0
@@ -228,7 +226,6 @@ void recycle_ba(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
     } by {
         intro();
         intro();
-        extract(a <= k);
         extract(k < b + 1);
         if a < k {
             if k < b {
@@ -310,7 +307,6 @@ void recycle_ab(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) 
     } by {
         intro();
         intro();
-        extract(a <= k);
         extract(k < b + 1);
         if a < k {
             if k < b {

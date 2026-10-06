@@ -266,8 +266,6 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < capacity);
         instantiate(forall (j: int32) {
             0 <= j and j < i implies occupied[j] == 0
         }, k) using {
@@ -285,8 +283,6 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < arena->capacity);
         have k < capacity by {
             assumption();
         }
@@ -311,9 +307,6 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     } by {
         intro();
         intro();
-        extract(result == 1);
-        extract(0 <= k);
-        extract(k < arena->capacity);
         instantiate(forall (j: int32) {
             0 <= j and j < arena->capacity implies arena->occupied[j] == 0
         }, k) using {

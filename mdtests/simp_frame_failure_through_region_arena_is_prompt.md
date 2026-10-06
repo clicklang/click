@@ -163,8 +163,6 @@ void arena_write(struct region* region, int32 index, int32 value) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < at(w, region->arena->capacity));
         simp();
     }
     let r = fold(arena_region(region), { start: s, end: e });

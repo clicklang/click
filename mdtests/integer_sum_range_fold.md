@@ -90,7 +90,6 @@ int32 sum(int32 a[], int32 n) {
                         have n <= 1073741823 by {
                             assumption();
                         }
-                        extract(n <= 1000);
                         apply(int32_le_and_not_lt_implies_eq(n, 1073741823)) using {
                             n <= 1073741823;
                             not n < 1073741823;
@@ -379,7 +378,6 @@ int32 sum(int32 a[], int32 n) {
                 }
             }
             close_invariants by {
-                extract(n <= 1000);
                 both {
                     assumption();
                 } and {

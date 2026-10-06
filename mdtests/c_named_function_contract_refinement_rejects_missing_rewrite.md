@@ -43,8 +43,6 @@ theorem decrement_is_decrease() {
     ensures Decrease(&decrement) by {
         unfold(Decrease);
         intro();
-        extract(0 < old(*cell));
-        extract(old(*cell) < 100);
         both {
             split();
         } and {

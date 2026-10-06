@@ -82,8 +82,6 @@ int32 count_run(int32 n) {
                 have 2 + run == i by {
                     cases {
                         (i <= 2 and run == 0) => {
-                            extract(i <= 2);
-                            extract(run == 0);
                             have i == 2 by {
                                 apply(int32_le_and_not_lt_implies_eq(i, 2)) using {
                                     i <= 2;

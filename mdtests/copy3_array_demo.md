@@ -61,8 +61,6 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < i);
                 if k < (i - 1) {
                     have k != (i - 1) by {
                         apply(int32_lt_implies_neq(k, (i - 1))) using {
@@ -104,8 +102,6 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 }
             }
             close_invariants by {
-                extract(at(statement(3).entry, i) >= at(statement(3).entry, 0));
-                extract(at(statement(3).entry, i) <= at(statement(3).entry, 3));
                 both {
                     both {
                         arithmetic_certificate signed_int32 {
