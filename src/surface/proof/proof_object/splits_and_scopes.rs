@@ -943,6 +943,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Self, ClickError> {
         self.join_focused_branch(marker, split, ids, |left, right| ProofStep::If {
             condition,
+            ensuring: None,
             then_proof: Box::new(left),
             else_proof: Box::new(right),
         })

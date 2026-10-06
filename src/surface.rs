@@ -3490,7 +3490,7 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     },
     PublicTacticForm {
         id: "proof-match",
-        syntax: "match value { Type::Variant(fields)",
+        syntax: "match value [ensuring { ... }] { Type::Variant(fields)",
         class: "control",
     },
     PublicTacticForm {
@@ -3714,6 +3714,7 @@ impl PartialEq for ProofCertificate {
 pub enum ProofStep {
     Match {
         scrutinee: ContractExpression,
+        ensuring: Option<Vec<ProofAssertion>>,
         arms: Vec<CertificateInductionArm>,
     },
     CloseInvariantsBy(Box<ProofCertificate>),
@@ -3797,6 +3798,7 @@ pub enum ProofStep {
     },
     If {
         condition: ClickProposition,
+        ensuring: Option<Vec<ProofAssertion>>,
         then_proof: Box<ProofCertificate>,
         else_proof: Box<ProofCertificate>,
     },
@@ -4082,6 +4084,7 @@ impl ProofStep {
             },
             ProofTactic::Match(proof_match) => Self::Match {
                 scrutinee: proof_match.scrutinee.clone(),
+                ensuring: proof_match.ensuring.clone(),
                 arms: proof_match
                     .arms
                     .iter()
@@ -4196,6 +4199,7 @@ impl ProofStep {
             },
             ProofTactic::If(proof_if) => Self::If {
                 condition: proof_if.condition.clone(),
+                ensuring: proof_if.ensuring.clone(),
                 then_proof: Box::new(ProofCertificate::from_validated_steps(
                     proof_if
                         .then_tactics
@@ -4319,20 +4323,23 @@ impl ProofStep {
                 parameter: parameter.clone(),
                 hypothesis: hypothesis.clone(),
             },
-            Self::Match { scrutinee, arms } => {
-                ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                    scrutinee: scrutinee.clone(),
-                    arms: arms
-                        .iter()
-                        .map(|arm| ProofInductionArm {
-                            type_name: arm.type_name.clone(),
-                            variant: arm.variant.clone(),
-                            bindings: arm.bindings.clone(),
-                            tactics: arm.proof.to_proof_tactics(),
-                        })
-                        .collect(),
-                }))
-            }
+            Self::Match {
+                scrutinee,
+                ensuring,
+                arms,
+            } => ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                scrutinee: scrutinee.clone(),
+                ensuring: ensuring.clone(),
+                arms: arms
+                    .iter()
+                    .map(|arm| ProofInductionArm {
+                        type_name: arm.type_name.clone(),
+                        variant: arm.variant.clone(),
+                        bindings: arm.bindings.clone(),
+                        tactics: arm.proof.to_proof_tactics(),
+                    })
+                    .collect(),
+            })),
             Self::StructuralInduct {
                 parameter,
                 hypothesis,
@@ -4414,10 +4421,12 @@ impl ProofStep {
             }),
             Self::If {
                 condition,
+                ensuring,
                 then_proof,
                 else_proof,
             } => ProofTactic::If(ProofIf {
                 condition: condition.clone(),
+                ensuring: ensuring.clone(),
                 then_tactics: then_proof.to_proof_tactics(),
                 else_tactics: else_proof.to_proof_tactics(),
             }),
@@ -4964,6 +4973,8 @@ pub struct ProofOpen {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofIf {
     condition: ClickProposition,
+    /// What the rejoined proof keeps when the arms end in different states.
+    ensuring: Option<Vec<ProofAssertion>>,
     then_tactics: Vec<ProofTactic>,
     else_tactics: Vec<ProofTactic>,
 }
@@ -5146,6 +5157,8 @@ pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> ClickProposition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofMatch {
     scrutinee: ContractExpression,
+    /// What the rejoined proof keeps when the arms end in different states.
+    ensuring: Option<Vec<ProofAssertion>>,
     arms: Vec<ProofInductionArm>,
 }
 

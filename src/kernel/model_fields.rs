@@ -68,6 +68,10 @@ pub(crate) enum ModelMint {
     /// Contract/implementation refinement drew one arbitrary model for both
     /// sides of the comparison.
     Refinement,
+    /// A join's `ensuring` interface named the instance. Its arms may hold
+    /// different models, so the rejoined proof holds an arbitrary one and
+    /// knows of it only what the interface's facts state.
+    Join,
     /// The contract's own entry model, which `old(..)` names. This one is
     /// minted on the surface side, where the binder is elaborated.
     ContractEntry,
