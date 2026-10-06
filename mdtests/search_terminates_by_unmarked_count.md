@@ -132,7 +132,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
     step();
     step();
     have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-        witness { fuel: Nat::Zero };
+        witness { fuel: Nat::Zero }
         unfold(walk(next, from, Nat::Zero));
         simp();
     }
@@ -149,7 +149,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         initialize by { simp(); }
         preserve by {
             mark iter;
-            obtain (previous: Nat) { walk(next, from, previous) == cur };
+            obtain (previous: Nat) { walk(next, from, previous) == cur }
             have at(iter, forall (k: int32) {
                 0 <= k and k < n implies 0 <= next[k] and next[k] < n
             }) by { assumption(); }
@@ -192,15 +192,15 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
             ) using {
                 forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k]) };
                 0 <= cur; cur < n;
-            };
+            }
             transport(
                 forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k]) },
                 forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == visited[k] }
-            ) using { forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k]) }; };
+            ) using { forall (k: int32) { 0 <= k and k < cur implies at(iter, visited[k]) == at(iter, visited[k]) }; }
             transport(
                 forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) },
                 forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == visited[k] }
-            ) using { forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) }; };
+            ) using { forall (k: int32) { cur < k and k < n implies at(iter, visited[k]) == at(iter, visited[k]) }; }
             have viewable(visited[0..n]) by { simp(); }
             apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur));
             apply(unmarked_nonnegative(visited, 0, n, n));
@@ -222,7 +222,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                 simp() using { walk(next, from, previous) == at(iter, cur); }
             }
             have exists (fuel: Nat) { walk(next, from, fuel) == cur } by {
-                witness { fuel: Nat::Succ(previous) };
+                witness { fuel: Nat::Succ(previous) }
                 unfold(walk(next, from, Nat::Succ(previous)));
             }
             close_invariants();

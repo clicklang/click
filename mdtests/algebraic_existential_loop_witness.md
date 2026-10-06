@@ -34,13 +34,13 @@ int32 count_to(int32 n) diverges {
         initialize by { simp(); }
         preserve by {
             step();
-            obtain (previous: Nat) { previous == previous };
+            obtain (previous: Nat) { previous == previous }
             apply(nat_reflexive(previous));
             have exists (fuel: Nat) { fuel == fuel } by {
-                witness { fuel: Nat::Succ(previous) };
+                witness { fuel: Nat::Succ(previous) }
                 normalize();
             }
-            close_invariants by { simp(); };
+            close_invariants by { simp(); }
         }
     }
     execute();
