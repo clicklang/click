@@ -667,19 +667,30 @@ inequalities, omitted reconstruction/remainder or correction premises, missing
 evaluation guards, expansion/reverification,
 retained audit and deterministic scaling have coverage.
 
-The joint numerator/divisor profile now admits wider int128 numerators:
-`-K * d <= n <= K * d`, where Bitcoin's `K = INT64_MAX - 1` and every positive
-int32 divisor is supported. Shared explicit `integer_quotient_bound` certificates
+The joint numerator/divisor profile admits wider int128 numerators and every
+positive int32 divisor. Shared explicit `integer_quotient_bound` certificates
 and proof-backed lower/upper lemmas derive quotient bounds from these scaled
 premises, including negative and symbolic bounds. The unchanged upstream
 sidecar and synthetic modular caller retain exact correction values, both
 rounding product inequalities, native safety and memory framing. Rejection,
 expansion/reverification and deterministic local-work tests cover the rule.
 
-Next handle sign-dependent quotient/correction endpoint cases and derive the
-joint bounds through the real `EvaluateFeeDown/Up` callers. The margin profile
-does not yet cover the full 96/32 contract. The selected source narrows `n / d`
-to int64 and `n % d` to int32 before correcting.
+The correction endpoint cases are now proved on the inclusive joint profile
+`INT64_MIN * d <= n <= INT64_MAX * d`. Both exact endpoint quotients are
+admitted. Shared proof-backed lower/upper correction lemmas use reconstruction
+and the remainder sign to exclude the endpoint only in the branch that needs
+a correction; native `+1`/`-1` safety is proved there. The unchanged upstream
+helper and synthetic modular caller retain exact correction values, floor and
+ceiling product intervals, full int64 output bounds, and memory framing.
+A reproduced Integer arithmetic rendering failure for equality from normalized
+opposite bounds is fixed, with ordinary verification and expanded certificate
+regressions. No C++ arithmetic axiom or source edit is introduced.
+
+Next derive the joint bounds through `EvaluateFeeDown/Up`, including their
+fast paths, and cover the broader mode-specific result-fit precondition. The
+full 96/32 fee-division contract remains open; the current joint range ensures
+both rounding modes fit. The selected source narrows `n / d` to int64 and
+`n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful
 shared lemmas; do not edit Bitcoin or infer unproved ranges. `Assume` remains

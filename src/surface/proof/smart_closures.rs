@@ -367,9 +367,17 @@ pub(super) fn integer_plan_to_surface_certificate(
                 (surface, certificate)
             }
             IntegerArithmeticNode::EqualityFromBounds { lower, upper, .. } => {
-                let lower_surface = node_surfaces.get(*lower)?;
-                let upper_surface = node_surfaces.get(*upper)?;
-                let surface = integer_surface_equality_from_bounds(lower_surface, upper_surface)?;
+                // The kernel compares normalized affine bounds. Their source
+                // spellings need not be syntactic opposites (for example,
+                // b <= x and not (b + 1 <= x)). At the conclusion, retain
+                // the caller's equality; certificate checking recomputes it.
+                let surface = if node_index == plan.conclusion {
+                    surface_goal.clone()
+                } else {
+                    let lower_surface = node_surfaces.get(*lower)?;
+                    let upper_surface = node_surfaces.get(*upper)?;
+                    integer_surface_equality_from_bounds(lower_surface, upper_surface)?
+                };
                 let certificate = IntegerCertificateNode::EqualityFromBounds {
                     lower: *lower,
                     upper: *upper,

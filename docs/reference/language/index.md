@@ -675,7 +675,9 @@ generic arguments, resource fields and patterns, and typed range folds.
 Applications support exact Integer guards, explicit `using` premises, and
 mixed Integer/C parameters. Unsuffixed decimal literals take their type from
 an Integer expression, including values larger than 64 bits.
-Machine variables and suffixed machine literals require explicit conversions.
+Machine variables and suffixed machine literals require explicit conversions. The signed int64 minimum is
+`-9223372036854775808i64`: its magnitude is admitted only directly after
+unary minus. The positive magnitude and values below this minimum are rejected.
 `to_integer(value)` preserves the numeric value of each supported machine
 integer type: `int8`, `int16`, `int32`, `uint8`, `uint16`, `uint32`, `int64`, and `uint64`.
 Signed `-1` and unsigned `4294967295u32` therefore produce different Integers.

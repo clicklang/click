@@ -215,6 +215,7 @@ enum Token {
     UInt8Number(u8),
     UInt32Number(u32),
     Int64Number(i64),
+    Int64MinimumMagnitude,
     UInt64Number(u64),
     CharLiteral(u8),
     String(String),
@@ -274,6 +275,9 @@ impl Token {
             Self::UInt8Number(value) => format!("uint8 number `{value}u8`"),
             Self::UInt32Number(value) => format!("uint32 number `{value}u32`"),
             Self::Int64Number(value) => format!("int64 number `{value}i64`"),
+            Self::Int64MinimumMagnitude => {
+                "int64 minimum magnitude `9223372036854775808i64`".into()
+            }
             Self::UInt64Number(value) => format!("uint64 number `{value}u64`"),
             Self::CharLiteral(value) => {
                 format!("character literal `{}`", (*value as char).escape_default())
@@ -293,6 +297,7 @@ impl Token {
             | Self::UInt8Number(_)
             | Self::UInt32Number(_)
             | Self::Int64Number(_)
+            | Self::Int64MinimumMagnitude
             | Self::UInt64Number(_)
             | Self::CharLiteral(_)
             | Self::String(_) => "",
@@ -8854,6 +8859,12 @@ impl Parser {
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
+                self.position += 2;
+                return Ok(ContractExpression::CFragment(CExpression::Value(
+                    CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+                )));
+            }
             self.position += 1;
             return Ok(ContractExpression::Negate(Box::new(
                 self.parse_contract_unary_at_depth(depth + 1)?,
@@ -9669,6 +9680,9 @@ impl Parser {
             Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
                 CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value))),
             )),
+            Some(Token::Int64MinimumMagnitude) => Err(self.error(
+                "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
+            )),
             Some(Token::Int64Number(value)) => Ok(ContractExpression::CFragment(
                 CExpression::Value(CValue::Int64(Bitvector32Term::Int64Constant(value))),
             )),
@@ -10082,6 +10096,10 @@ impl Parser {
     fn parse_ensure_unary_at_depth(&mut self, depth: usize) -> Result<C0Expression, ClickError> {
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
+            if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
+                self.position += 2;
+                return Ok(C0Expression::Int64Literal(i64::MIN));
+            }
             if let Some(value) = self.peek_next().and_then(negatable_int32_magnitude) {
                 self.position += 2;
                 return Ok(C0Expression::Int32Literal(0u32.wrapping_sub(value)));
@@ -10151,6 +10169,9 @@ impl Parser {
             Some(Token::Number(value)) => Ok(C0Expression::Int32Literal(value)),
             Some(Token::UInt8Number(value)) => Ok(C0Expression::UInt8Literal(value)),
             Some(Token::UInt32Number(value)) => Ok(C0Expression::UInt32Literal(value)),
+            Some(Token::Int64MinimumMagnitude) => Err(self.error(
+                "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
+            )),
             Some(Token::Int64Number(value)) => Ok(C0Expression::Int64Literal(value)),
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(C0Expression::UInt8Literal(value)),

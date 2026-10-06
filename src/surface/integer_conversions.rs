@@ -1072,4 +1072,209 @@ mod tests {
             assert!(pair[1] <= pair[0] * 6, "{samples:?}");
         }
     }
+
+    #[test]
+    fn correction_endpoint_lemmas_expand_and_reject_missing_evidence() {
+        let fixture = include_str!("../../mdtests/integer_correction_endpoint_bounds.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        verify_c0_sources(source, &[]).unwrap();
+        for label in [
+            "derived_lower_correction_bound.ensures_0",
+            "derived_upper_correction_bound.ensures_0",
+            "use_lower_correction_bound.ensures_0",
+            "use_upper_correction_bound.ensures_0",
+        ] {
+            let expanded = expand_c0_claim_source_by_label(source, &[], label).unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+        }
+        for (which, bound, scaled, sign, goal) in [
+            (
+                "lower",
+                "bound <= q",
+                "bound * d <= n",
+                "r < 0",
+                "bound + 1 <= q",
+            ),
+            (
+                "upper",
+                "q <= bound",
+                "n <= bound * d",
+                "0 < r",
+                "q <= bound + -1",
+            ),
+        ] {
+            let premises = [bound, scaled, "n == q * d + r", sign];
+            let source = format!(
+                "theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, bound: Integer) {{ {} ensures {goal} by {{ apply(integer_{which}_correction_bound(n, d, q, r, bound)); }} }}",
+                premises
+                    .iter()
+                    .map(|p| format!("requires {p}; "))
+                    .collect::<String>()
+            );
+            verify_c0_sources(&source, &[]).unwrap();
+            for premise in premises {
+                let bad = source.replace(&format!("requires {premise};"), "");
+                assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+            }
+            for bad in [
+                source.replace(&format!("requires {sign};"), "requires r == 0;"),
+                source.replace("n == q * d + r", "n == q * d + -r"),
+            ] {
+                assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
+            }
+        }
+    }
+
+    #[test]
+    fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem correction(n: Integer, d: Integer, q: Integer, r: Integer, b: Integer, z: Integer) { requires b <= q; requires b * d <= n; requires n == q * d + r; requires r < 0; ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str("ensures b + 1 <= q by { ");
+            for _ in 0..size {
+                source.push_str("have b + 1 <= q by { apply(integer_lower_correction_bound(n, d, q, r, b)) using { b <= q; b * d <= n; n == q * d + r; r < 0; } } ");
+            }
+            source.push_str("assumption(); } }");
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn normalized_opposite_bounds_print_and_reverify_equality_certificates() {
+        for (bounds, goal) in [
+            ("requires b <= x; requires not (b + 1 <= x);", "x == b"),
+            ("requires x <= b; requires not (x <= b + -1);", "x == b"),
+            ("requires b <= x; requires x < b + 1;", "x == b"),
+        ] {
+            let source = format!(
+                "theorem pinned(x: Integer, b: Integer) {{ {bounds} ensures {goal} by {{ arithmetic() using {{ {}; }} }} }}",
+                bounds.replace("requires ", "").trim_end_matches(';')
+            );
+            verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "pinned.ensures_0").unwrap();
+            assert!(expanded.contains("eq_from_bounds"), "{expanded}");
+            verify_c0_sources(&expanded, &[]).unwrap();
+            assert!(
+                verify_c0_sources(&source.replace("ensures x == b", "ensures x == b + 1"), &[])
+                    .is_err()
+            );
+            assert!(
+                verify_c0_sources(&expanded.replace("=> x == b;", "=> x == b + 1;"), &[]).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn signed_int64_minimum_literal_preserves_type_and_round_trips() {
+        let source = "theorem minimum() { ensures to_integer(-9223372036854775808i64) == -9223372036854775808 by { normalize(); } }";
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(source, &[], "minimum.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for literal in [
+            "9223372036854775808i64",
+            "-9223372036854775809i64",
+            "9223372036854775809i64",
+        ] {
+            assert!(
+                verify_c0_sources(&source.replace("-9223372036854775808i64", literal), &[])
+                    .is_err(),
+                "{literal}"
+            );
+        }
+        assert!(
+            verify_c0_sources(
+                "theorem bad() { ensures defined(0i64 - 9223372036854775808i64) by { normalize(); } }",
+                &[]
+            )
+            .is_err()
+        );
+        assert!(
+            verify_c0_sources(
+                "theorem bad() { ensures defined(-(-9223372036854775808i64)) by { normalize(); } }",
+                &[]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn fee_correction_endpoint_oracle_checks_both_modes_and_overflow_neighbors() {
+        let lower = i128::from(i64::MIN);
+        let upper = i128::from(i64::MAX);
+        for d in [1i128, 2, 3, 17, i128::from(i32::MAX)] {
+            for q in [lower, lower + 1, -2, -1, 0, 1, 2, upper - 1, upper] {
+                for offset in [1 - d, -1, 0, 1, d - 1] {
+                    let n = q * d + offset;
+                    if !(lower * d <= n && n <= upper * d) {
+                        continue;
+                    }
+                    for round_down in [false, true] {
+                        let quotient = i64::try_from(n / d).unwrap();
+                        let r = n % d;
+                        let correction = i64::from(r > 0) - i64::from(r != 0 && round_down);
+                        let actual = i128::from(quotient.checked_add(correction).unwrap());
+                        let expected = if round_down {
+                            n.div_euclid(d)
+                        } else {
+                            -(-n).div_euclid(d)
+                        };
+                        assert_eq!(actual, expected, "{n}/{d}, down={round_down}");
+                    }
+                }
+            }
+            if d > 1 {
+                let above = upper * d + 1;
+                let below = lower * d - 1;
+                assert!(i64::try_from(above / d).unwrap().checked_add(1).is_none());
+                assert!(i64::try_from(below / d).unwrap().checked_add(-1).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let mut source = String::from(
+                "theorem pinned(x: Integer, b: Integer, z: Integer) { requires b <= x; requires not (b + 1 <= x); ",
+            );
+            for i in 0..size {
+                source.push_str(&format!("requires z <= {i}; "));
+            }
+            source.push_str("ensures x == b by { ");
+            for _ in 0..size {
+                source.push_str(
+                    "have x == b by { arithmetic() using { b <= x; not (b + 1 <= x); } } ",
+                );
+            }
+            source.push_str("assumption(); } }");
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 6, "{samples:?}");
+        }
+    }
 }

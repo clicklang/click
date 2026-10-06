@@ -284,7 +284,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         let false_source = source
             .replace("ensures 0 == 0;", "ensures 0 == 1;")
             .replace(
-                "ensures -9223372036854775807 <= to_integer(result);",
+                "ensures -9223372036854775808 <= to_integer(result);",
                 "ensures 9223372036854775807 <= to_integer(result);",
             )
             .replace("ensures result ==", "ensures result !=")
@@ -331,18 +331,18 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
                 "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
             ),
             source.replace(
-                "requires -9223372036854775806 * to_integer(d) <= to_integer(n);",
+                "requires -9223372036854775808 * to_integer(d) <= to_integer(n);",
                 "",
             ),
             source.replace(
-                "requires to_integer(n) <= 9223372036854775806 * to_integer(d);",
+                "requires to_integer(n) <= 9223372036854775807 * to_integer(d);",
                 "",
             ),
             source.replace("requires d > 0;", ""),
             source.replace("requires d <= 2147483647;", ""),
             source.replace("requires d > 0;", "requires d == 0;"),
             source.replace(
-                "ensures -9223372036854775807 <= to_integer(result);",
+                "ensures -9223372036854775808 <= to_integer(result);",
                 "ensures to_integer(result) == 9223372036854775808;",
             ),
             source.replace(

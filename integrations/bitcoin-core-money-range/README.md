@@ -265,18 +265,21 @@ memory.
 
 [`FeeFracDivBounded.click`](FeeFracDivBounded.click) now proves complete
 execution safety and both Integer/native output bounds of the unchanged pinned
-helper. Its joint input bounds are `-K * d <= n <= K * d`, with
-`K = 9223372036854775806` (`INT64_MAX - 1`), and
-`0 < d <= 2147483647` admits every positive int32 divisor. For large divisors,
-this admits int128 numerators far outside int64. Scaled quotient bounds prove
-the narrowing and retain one unit of correction margin.
-For either value of `round_down`, the result lies in
-`[-9223372036854775807, 9223372036854775807]`.
+helper. Its joint input bounds are
+`INT64_MIN * d <= n <= INT64_MAX * d`, with `0 < d <= 2147483647`.
+This admits every positive int32 divisor, int128 numerators far outside int64,
+and exact division at both int64 endpoints. For either value of `round_down`,
+the result lies in the full native range `[INT64_MIN, INT64_MAX]`.
 
 Both narrowing identities are derived from quotient/remainder intervals. The
 remainder interval uses the divisor's maximum magnitude, so it stays inside
-int32 even for the wider numerator range. After proving native definedness,
-the shared `int64_add_to_integer` bridge bounds each possible corrected sum;
+int32 even for the wider numerator range. A positive remainder excludes
+`INT64_MAX` for the quotient, and a negative
+remainder excludes `INT64_MIN`: reconstruction would otherwise contradict the
+scaled input bound. Shared proof-backed `integer_upper_correction_bound` and
+`integer_lower_correction_bound` lemmas establish one unit of margin only in
+the relevant branch. After proving native definedness there, the shared
+`int64_add_to_integer` bridge bounds each possible corrected sum;
 order reflection transfers those Integer bounds back to the returned native
 value. No output range is assumed. The sidecar retains the explicit pinned
 library assumptions described above.
@@ -301,8 +304,9 @@ terms opaque. The modular caller exports the same four inequalities and frames
 untouched memory. Strict claims that fail on exact division are rejected.
 
 This completes mathematical rounding on the stated joint bounded profile.
-Next address sign-dependent correction endpoint cases and caller-derived bounds;
-the full 96/32 contract and `EvaluateFeeDown/Up` remain open.
+Next derive the bounds through `EvaluateFeeDown/Up` and address the broader
+mode-specific result-fit contract. Those callers and the full 96/32 contract
+remain open.
 
 ## CompactSize encoded length
 

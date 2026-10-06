@@ -245,13 +245,19 @@ pub(super) fn tokenize(
                             chars[index + 3]
                         )));
                     }
-                    let value = i64::try_from(value).map_err(|_| {
-                        ClickError::new(format!(
-                            "{position}: int64 literal `{form}i64` is outside 0..{}",
-                            i64::MAX
-                        ))
-                    })?;
-                    tokens.push(Token::Int64Number(value));
+                    // Reserve the one extra magnitude for unary minus; the
+                    // parser rejects it in every positive-expression position.
+                    if value == (1u64 << 63) {
+                        tokens.push(Token::Int64MinimumMagnitude);
+                    } else {
+                        let value = i64::try_from(value).map_err(|_| {
+                            ClickError::new(format!(
+                                "{position}: int64 literal `{form}i64` is outside 0..{}",
+                                i64::MAX
+                            ))
+                        })?;
+                        tokens.push(Token::Int64Number(value));
+                    }
                     index += 3;
                 } else if chars.get(index) == Some(&'u')
                     && chars.get(index + 1) == Some(&'6')
