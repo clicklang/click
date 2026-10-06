@@ -15196,3 +15196,51 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
         });
     }
 }
+
+#[test]
+fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
+    let (source, _) = mdtest_sources("mdtests/integer_equality_rewrite.md");
+    verify_c0_sources(&source, &[]).expect("Integer compound rewrites should verify");
+    for claim in 0..4 {
+        let expanded = expand_c0_claim_source_by_label(
+            &source,
+            &[],
+            &format!("integer_compound_rewrite.ensures_{claim}"),
+        )
+        .expect("Integer rewrite should expand");
+        assert!(expanded.contains("rewrite("));
+        verify_c0_sources(&expanded, &[]).expect("expanded Integer rewrite should recheck");
+        let forged = expanded.replace("requires a == b;", "");
+        let error = verify_c0_sources(&forged, &[]).expect_err("erased Integer evidence must fail");
+        assert!(error.message().len() < 8000);
+    }
+    for hostile in [
+        source.replace("rewrite(a == b);", "rewrite(a == d);"),
+        source.replace(
+            "ensures a * d + a == b * d + b",
+            "ensures a * d + a == b * d + b + 1",
+        ),
+        source.replace("requires d != 0;", "requires d == 0;"),
+    ] {
+        let error =
+            verify_c0_sources(&hostile, &[]).expect_err("hostile Integer rewrite must fail");
+        assert!(error.message().len() < 8000);
+    }
+    let c_source = "int64 identity(int64 x, int64 y) { return x; }";
+    let source = r#"
+verifying "identity.c";
+int64 identity(int64 x, int64 y) {
+    requires to_integer(x) == to_integer(y);
+    ensures to_integer(result) * 3 + to_integer(result) == to_integer(y) * 3 + to_integer(y);
+} by {
+    execute();
+    rewrite(to_integer(x) == to_integer(y));
+    simp();
+}
+"#;
+    let inputs = [("identity.c", c_source)];
+    verify_c0_sources(source, &inputs).expect("fixed-state observed Integer rewrite should verify");
+    let expanded = expand_c0_claim_source_by_label(source, &inputs, "identity.ensures_0").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .expect("fixed-state observed Integer rewrite should recheck");
+}
