@@ -3352,15 +3352,21 @@ fn run_slots_kept_by_load_reduction_set(
 /// slot they meet is dropped, and forgotten unless the store covers all of
 /// it, and every other slot keeps its value, being a different address whose
 /// bytes the gap clears. A store the facts place outside the run's whole
-/// extent leaves every slot. Anything else is asked slot by slot. Keeping a
-/// slot needs a proof its bytes are missed, which each branch has; dropping
-/// one is always sound and only forgets.
+/// extent leaves every slot. For a constant-value run, a bounded symbolic
+/// store forgets its possible window at once; an unplaced store forgets the
+/// whole run. Runs carrying symbolic loads retain their per-slot separation
+/// search, which lets proofs transport individual source loads. Keeping a
+/// slot needs a proof its bytes are missed; dropping one only forgets.
 pub(in crate::kernel) fn run_slots_kept_by_store(
     run: &CellRun,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> (SlotSet, bool) {
+    let constant_run = matches!(
+        run.value_mode(),
+        crate::kernel::primitives::RunValueMode::Constant(_)
+    );
     match run_access(run, pointer) {
         RunAccess::DistinctBlock => (SlotSet::All, false),
         RunAccess::Shift(shift) => {
@@ -3374,9 +3380,15 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
                 let start = i64::from(index) * width;
                 shift <= start && start + value_width <= shift + i64::from(bytes)
             };
-            let forgot = (low..high)
-                .filter(|index| !run.holes().contains(*index))
-                .any(|index| !covered(index));
+            // Coverage is an interval, so its endpoints decide each live
+            // interval. Walking logical slots here also made a known whole-
+            // array store cost the array's extent despite its compact form.
+            let forgot = run.holes().gap_intervals(run.count()).any(|(start, end)| {
+                crate::instrumentation::record_deterministic_work(1);
+                let first = start.max(low);
+                let end = end.min(high);
+                first < end && (!covered(first) || !covered(end - 1))
+            });
             (SlotSet::Except(low, high), forgot)
         }
         RunAccess::Scaled { .. } | RunAccess::Other => {
@@ -3392,7 +3404,9 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
             }
             // The facts bound a scaled index: the store's bytes lie within
             // what the index's extremes reach, and every slot outside those
-            // keeps its value. The slots inside are asked one by one.
+            // keeps its value. Forget the possible window as one interval,
+            // including any slots a more precise per-cell search might keep.
+            // The caller records their initialized bytes in compact form.
             if let RunAccess::Scaled {
                 index,
                 scale,
@@ -3411,9 +3425,20 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
                 if low >= high {
                     return (SlotSet::All, false);
                 }
-                return (SlotSet::AskWithin(low, high), false);
+                return if constant_run {
+                    (
+                        SlotSet::Except(low, high),
+                        !run.holes().covers_range(low, high),
+                    )
+                } else {
+                    (SlotSet::AskWithin(low, high), false)
+                };
             }
-            (SlotSet::PerSlot, false)
+            if constant_run {
+                (SlotSet::Nothing, !run.holes().covers_range(0, run.count()))
+            } else {
+                (SlotSet::PerSlot, false)
+            }
         }
     }
 }

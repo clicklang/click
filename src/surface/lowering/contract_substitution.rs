@@ -838,6 +838,7 @@ fn collect_contract_expression_binding_names(
         | ContractExpression::At {
             expression: base, ..
         }
+        | ContractExpression::CUnary { operand: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::BitwiseNot(base) => {
             collect_contract_expression_binding_names(base, names);
@@ -1369,6 +1370,19 @@ fn rewrite_contract_expression_exact(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::IntegerLiteral(_) => (expression.clone(), false),
+        ContractExpression::CUnary { operand, lowered } => {
+            let (operand, changed) = unary(operand);
+            let Some(fragment) = contract_expression_as_c_fragment(&operand) else {
+                return (expression.clone(), false);
+            };
+            (
+                ContractExpression::CUnary {
+                    lowered: c_unary_with_operand(lowered, fragment),
+                    operand: Box::new(operand),
+                },
+                changed,
+            )
+        }
         ContractExpression::Negate(inner) => {
             let (inner, changed) = unary(inner);
             (ContractExpression::Negate(Box::new(inner)), changed)
@@ -1438,6 +1452,27 @@ fn rewrite_contract_expression_exact(
                 changed,
             )
         }
+        ContractExpression::CFragment(
+            lowered @ CExpression::Cast {
+                expression: operand,
+                ..
+            },
+        ) => {
+            let (operand, changed) = unary(&ContractExpression::CFragment((**operand).clone()));
+            if !changed {
+                return (expression.clone(), false);
+            }
+            let Some(fragment) = contract_expression_as_c_fragment(&operand) else {
+                return (expression.clone(), false);
+            };
+            (
+                ContractExpression::CUnary {
+                    operand: Box::new(operand),
+                    lowered: c_unary_with_operand(lowered, fragment),
+                },
+                changed,
+            )
+        }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CFragment(_)
         | ContractExpression::Field { .. }
@@ -1446,23 +1481,68 @@ fn rewrite_contract_expression_exact(
         ContractExpression::ArrayIndex {
             base,
             indexes,
+            dimensions,
             lowered,
         } => {
-            let (base, changed) = unary(base);
+            let (base, base_changed) = unary(base);
+            let mut indexes_changed = false;
+            let indexes = indexes
+                .iter()
+                .map(|index| {
+                    let (index, rewritten) = unary(index);
+                    indexes_changed |= rewritten;
+                    index
+                })
+                .collect::<Vec<_>>();
+            let changed = base_changed || indexes_changed;
             if !changed {
                 return (expression.clone(), false);
             }
             let Some(lowered_base) = contract_expression_as_c_fragment(&base) else {
                 return (expression.clone(), false);
             };
-            let CExpression::Index(_, offset) = lowered else {
+            let Some(lowered_indexes) = indexes
+                .iter()
+                .map(contract_expression_as_c_fragment)
+                .collect::<Option<Vec<_>>>()
+            else {
                 return (expression.clone(), false);
+            };
+            let offset = if indexes_changed {
+                crate::surface::parser::flatten_array_indices(lowered_indexes, dimensions)
+            } else {
+                match lowered {
+                    CExpression::Index(_, offset) => (**offset).clone(),
+                    CExpression::Add(_, stride) => {
+                        let CExpression::Multiply(offset, _) = stride.as_ref() else {
+                            return (expression.clone(), false);
+                        };
+                        (**offset).clone()
+                    }
+                    _ => return (expression.clone(), false),
+                }
+            };
+            let lowered = match lowered {
+                CExpression::Index(_, _) => {
+                    CExpression::Index(Box::new(lowered_base), Box::new(offset))
+                }
+                CExpression::Add(_, stride) => {
+                    let CExpression::Multiply(_, width) = stride.as_ref() else {
+                        return (expression.clone(), false);
+                    };
+                    CExpression::Add(
+                        Box::new(lowered_base),
+                        Box::new(CExpression::Multiply(Box::new(offset), width.clone())),
+                    )
+                }
+                _ => return (expression.clone(), false),
             };
             (
                 ContractExpression::ArrayIndex {
                     base: Box::new(base),
-                    indexes: indexes.clone(),
-                    lowered: CExpression::Index(Box::new(lowered_base), offset.clone()),
+                    indexes,
+                    dimensions: dimensions.clone(),
+                    lowered,
                 },
                 changed,
             )
@@ -2285,7 +2365,8 @@ pub(in crate::surface) fn collect_contract_expression_referenced_names(
                     pending.push(right);
                     pending.push(left);
                 }
-                ContractExpression::Negate(inner)
+                ContractExpression::CUnary { operand: inner, .. }
+                | ContractExpression::Negate(inner)
                 | ContractExpression::Old(inner)
                 | ContractExpression::BitwiseNot(inner)
                 | ContractExpression::At {
@@ -2340,6 +2421,10 @@ fn collect_contract_expression_referenced_names_one(
             lowered: expression,
             ..
         }
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::CFragment(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
@@ -2349,7 +2434,7 @@ fn collect_contract_expression_referenced_names_one(
         ContractExpression::ArrayIndex { base, indexes, .. } => {
             collect_contract_expression_referenced_names(base, names);
             for index in indexes {
-                collect_c_expression_referenced_names(index, names);
+                collect_contract_expression_referenced_names(index, names);
             }
         }
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
@@ -2572,6 +2657,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_c_fragment`).
     body_fields_as_c_names: bool,
+    contract_result_only: bool,
 }
 
 impl<'a> ContractSubstitutions<'a> {
@@ -2581,7 +2667,23 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
             body_fields_as_c_names: false,
+            contract_result_only: false,
         }
+    }
+
+    /// Bind the postcondition return value without changing source C bindings
+    /// or expressions read in historical states.
+    pub(in crate::surface) fn for_contract_result(
+        values: &'a BTreeMap<String, ContractExpression>,
+    ) -> Self {
+        Self {
+            contract_result_only: true,
+            ..Self::new(values)
+        }
+    }
+
+    pub(in crate::surface) fn is_contract_result_binding(&self) -> bool {
+        self.contract_result_only
     }
 
     /// Value substitutions that also spell each scalar field of the resource
@@ -2607,6 +2709,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(instance_renames),
             body_fields_as_c_names: false,
+            contract_result_only: false,
         }
     }
 
@@ -2652,6 +2755,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Owned(values),
             instance_renames,
             body_fields_as_c_names: self.body_fields_as_c_names,
+            contract_result_only: self.contract_result_only,
         }
     }
 }
@@ -2669,11 +2773,102 @@ pub(in crate::surface) fn substitute_contract_expression<'a>(
     substitute_contract_expression_in(expression, &substitutions.into())
 }
 
+pub(in crate::surface) fn contract_expression_has_explicit_c_result_reference(
+    expression: &ContractExpression,
+) -> bool {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        match expression {
+            ContractExpression::CBinding(name) if name == "result" => return true,
+            ContractExpression::CUnary { operand, .. }
+            | ContractExpression::Field { base: operand, .. }
+            | ContractExpression::Negate(operand)
+            | ContractExpression::BitwiseNot(operand) => pending.push(operand),
+            ContractExpression::ArrayIndex { base, indexes, .. } => {
+                pending.push(base);
+                pending.extend(indexes.iter());
+            }
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right)
+            | ContractExpression::Divide(left, right)
+            | ContractExpression::Remainder(left, right)
+            | ContractExpression::ShiftLeft(left, right)
+            | ContractExpression::ShiftRight(left, right)
+            | ContractExpression::BitwiseAnd(left, right)
+            | ContractExpression::BitwiseOr(left, right)
+            | ContractExpression::BitwiseXor(left, right)
+            | ContractExpression::Index(left, right) => {
+                pending.extend([left.as_ref(), right.as_ref()])
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+pub(in crate::surface) fn contract_c_unary(
+    operand: ContractExpression,
+    lowered: CExpression,
+) -> ContractExpression {
+    if contract_expression_has_explicit_c_result_reference(&operand) {
+        ContractExpression::CUnary {
+            operand: Box::new(operand),
+            lowered,
+        }
+    } else {
+        ContractExpression::CFragment(lowered)
+    }
+}
+
+pub(in crate::surface) fn c_unary_with_operand(
+    lowered: &CExpression,
+    operand: CExpression,
+) -> CExpression {
+    let mut lowered = lowered.clone();
+    match &mut lowered {
+        CExpression::Cast { expression, .. }
+        | CExpression::AddressOf(expression)
+        | CExpression::Load(expression) => **expression = operand,
+        CExpression::PointerOffsetBytes { pointer, .. }
+        | CExpression::TypedLoad { pointer, .. } => **pointer = operand,
+        _ => unreachable!("CUnary stores a unary C operation"),
+    }
+    lowered
+}
+
+/// A projection rooted at an explicit C binding keeps that namespace even
+/// though its lowered C fragment no longer carries the surface wrapper.
+pub(in crate::surface) fn contract_expression_has_explicit_c_result_base(
+    mut expression: &ContractExpression,
+) -> bool {
+    loop {
+        match expression {
+            ContractExpression::CBinding(name) => return name == "result",
+            ContractExpression::CUnary { operand: base, .. }
+            | ContractExpression::Field { base, .. }
+            | ContractExpression::ArrayIndex { base, .. }
+            | ContractExpression::Index(base, _) => expression = base,
+            _ => return false,
+        }
+    }
+}
+
 pub(in crate::surface) fn substitute_contract_expression_in(
     expression: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
+        ContractExpression::CUnary { operand, lowered } => {
+            let operand = substitute_contract_expression_in(operand, substitutions)?;
+            let fragment = contract_expression_as_c_fragment(&operand)
+                .ok_or_else(|| "C unary operand is not a C expression".to_string())?;
+            Ok(ContractExpression::CUnary {
+                lowered: c_unary_with_operand(lowered, fragment),
+                operand: Box::new(operand),
+            })
+        }
+
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
         ContractExpression::ResourceField(_)
             if substitutions.body_fields_as_c_names
@@ -2738,14 +2933,25 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         ContractExpression::ArrayIndex {
             base,
             indexes,
+            dimensions,
             lowered,
         } => Ok(ContractExpression::ArrayIndex {
             base: Box::new(substitute_contract_expression_in(base, substitutions)?),
             indexes: indexes
                 .iter()
-                .map(|index| substitute_c_fragment_in(index, substitutions))
+                .map(|index| substitute_contract_expression_in(index, substitutions))
                 .collect::<Result<Vec<_>, _>>()?,
-            lowered: substitute_c_fragment_in(lowered, substitutions)?,
+            dimensions: dimensions.clone(),
+            lowered: if substitutions.is_contract_result_binding()
+                && (contract_expression_has_explicit_c_result_reference(base)
+                    || indexes
+                        .iter()
+                        .any(contract_expression_has_explicit_c_result_reference))
+            {
+                lowered.clone()
+            } else {
+                substitute_c_fragment_in(lowered, substitutions)?
+            },
         }),
         ContractExpression::ResourceWildcard => Ok(expression.clone()),
         ContractExpression::ResourceCount(resource) => {
@@ -2804,9 +3010,20 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         } => Ok(ContractExpression::Field {
             base: Box::new(substitute_contract_expression_in(base, substitutions)?),
             field: field.clone(),
-            lowered: substitute_c_fragment_in(lowered, substitutions)?,
+            lowered: if substitutions.is_contract_result_binding()
+                && contract_expression_has_explicit_c_result_base(base)
+            {
+                lowered.clone()
+            } else {
+                substitute_c_fragment_in(lowered, substitutions)?
+            },
             offset_bytes: *offset_bytes,
         }),
+        ContractExpression::Old(_) | ContractExpression::At { .. }
+            if substitutions.contract_result_only =>
+        {
+            Ok(expression.clone())
+        }
         ContractExpression::Old(expression) => Ok(ContractExpression::Old(Box::new(
             substitute_contract_expression_in(expression, substitutions)?,
         ))),
@@ -3337,6 +3554,10 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             lowered: expression,
             ..
         }
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::CFragment(expression) => Some(expression.clone()),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
@@ -3452,6 +3673,10 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
             lowered: expression,
             ..
         }
+        | ContractExpression::CUnary {
+            lowered: expression,
+            ..
+        }
         | ContractExpression::CFragment(expression) => Some(expression.clone()),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
@@ -3526,7 +3751,11 @@ mod tests {
         let target_base = ContractExpression::CFragment(CExpression::Variable("new".into()));
         let expression = ContractExpression::ArrayIndex {
             base: Box::new(source_base.clone()),
-            indexes: vec![CExpression::Value(int32(0)), CExpression::Value(int32(1))],
+            indexes: vec![
+                ContractExpression::CFragment(CExpression::Value(int32(0))),
+                ContractExpression::CFragment(CExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
             lowered: CExpression::Index(
                 Box::new(CExpression::Variable("old".into())),
                 Box::new(CExpression::Value(int32(1))),
@@ -3552,7 +3781,11 @@ mod tests {
         let source_base = ContractExpression::CFragment(CExpression::Variable("old".into()));
         let expression = ContractExpression::ArrayIndex {
             base: Box::new(source_base.clone()),
-            indexes: vec![CExpression::Value(int32(0)), CExpression::Value(int32(1))],
+            indexes: vec![
+                ContractExpression::CFragment(CExpression::Value(int32(0))),
+                ContractExpression::CFragment(CExpression::Value(int32(1))),
+            ],
+            dimensions: vec![2, 2],
             lowered: CExpression::Index(
                 Box::new(CExpression::Variable("old".into())),
                 Box::new(CExpression::Value(int32(1))),

@@ -13710,8 +13710,7 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
 }
 
 /// A composite resource whose body binds an existential witness. The witness
-/// has no surface spelling by design, so any certificate that has to name it
-/// cannot be written.
+/// has no declared source name, but the checked return value can name it.
 const WITNESS_RESOURCE_C: &str = r#"
 struct node {
     int32 value;
@@ -13744,12 +13743,7 @@ struct node* unpack(struct node* node) {
 "#;
 
 #[test]
-fn expansion_refuses_a_witness_it_cannot_spell_instead_of_emitting_unparseable_text() {
-    // `mdtests/resource_witness_unfold_fold.md` reduced: the closer's
-    // certificate cites the `where` fact of the witness, whose kernel value
-    // renders as the diagnostic `symbolic-pointer:...@0`. That is not Click,
-    // so the rewrite failed to parse and audit reported only `unexpected
-    // character @`. Naming the witness reports the language gap instead.
+fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
     let sources = [("unpack.c", WITNESS_RESOURCE_C)];
     verify_c0_sources(WITNESS_RESOURCE_CLICK, &sources)
         .expect("the witness fold/unfold proof should verify");
@@ -13758,17 +13752,19 @@ fn expansion_refuses_a_witness_it_cannot_spell_instead_of_emitting_unparseable_t
         .rfind("simp();")
         .expect("proof should contain the closer");
     let position = expansion::position_at_offset(WITNESS_RESOURCE_CLICK, closer);
-    let error = expand_c0_tactic_source_at(
+    let expanded = expand_c0_tactic_source_at(
         WITNESS_RESOURCE_CLICK,
         &sources,
         position.line,
         position.column,
     )
-    .expect_err("the expansion needs a name the language does not give it");
-    assert_eq!(
-        error.message(),
-        "the expansion needs a name for the witness `next` of `packed`, which has no surface spelling"
-    );
+    .expect("the checked return pointer should name the witness");
+    assert!(!expanded.contains('…'), "{expanded}");
+    verify_c0_sources(&expanded, &sources).expect("the named expansion must independently verify");
+    let changed_pointer = expanded.replace("((uint64)result)", "((uint64)node)");
+    assert_ne!(changed_pointer, expanded);
+    verify_c0_sources(&changed_pointer, &sources)
+        .expect_err("a different pointer cannot establish the witness premises");
 }
 
 #[test]

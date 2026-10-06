@@ -2095,10 +2095,11 @@ fn collect_current_contract_expression_variables(
             base,
             indexes,
             lowered,
+            ..
         } => {
             collect_current_contract_expression_variables(base, names);
             for index in indexes {
-                collect_c_expression_variables(index, names);
+                collect_current_contract_expression_variables(index, names);
             }
             collect_c_expression_variables(lowered, names);
         }
@@ -2114,7 +2115,7 @@ fn collect_current_contract_expression_variables(
         ContractExpression::BitwiseNot(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
-        ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_current_contract_expression_variables(inner, names);
         }
         ContractExpression::Add(left, right)
@@ -2270,6 +2271,11 @@ pub enum ContractExpression {
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C0 expression fragment appearing inside Surface Click.
     CFragment(CExpression),
+    /// A C unary operation whose operand retains explicit binding syntax.
+    CUnary {
+        operand: Box<ContractExpression>,
+        lowered: CExpression,
+    },
     /// A source-level struct field place paired with its lowered C expression.
     ///
     /// The source place is retained for certificates and diagnostics; only
@@ -2314,11 +2320,13 @@ pub enum ContractExpression {
     BitwiseNot(Box<ContractExpression>),
     Index(Box<ContractExpression>, Box<ContractExpression>),
     /// A multidimensional C array access. `lowered` carries the flattened
-    /// pointer access used by the kernel while `indexes` retain the source
-    /// rank for faithful proof expansion and reparsing.
+    /// pointer access used by the kernel while `indexes` retain their binding
+    /// syntax and source rank. Dimensions recover the row-major strides when
+    /// the source operands need separate namespace lowering.
     ArrayIndex {
         base: Box<ContractExpression>,
-        indexes: Vec<CExpression>,
+        indexes: Vec<ContractExpression>,
+        dimensions: Vec<u32>,
         lowered: CExpression,
     },
     If {
@@ -2829,11 +2837,8 @@ struct SpecElaborationContext {
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
     snapshot_state: Option<CState>,
-    /// The contract result is bound in this state under the name `result`,
-    /// as it is at function exit. The kernel's exit state stores the return
-    /// value as a local of that name, replacing any C parameter or local
-    /// spelled `result`, so `c(result)` cannot name that C binding here and
-    /// is refused rather than read as the return value.
+    /// Bare `result` names the internal contract-return binding here;
+    /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
 }
 
@@ -2924,7 +2929,9 @@ impl SpecElaborationContext {
             function_contract: false,
             at_function_entry: true,
             snapshot_state: None,
-            contract_result_in_scope: false,
+            // The return value is a logical proof binding, like `let`.
+            // Historical C reads still use their own entry bindings.
+            contract_result_in_scope: self.contract_result_in_scope,
         })
     }
 }
@@ -5841,6 +5848,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
         | ContractExpression::CFragment(_)
+        | ContractExpression::CUnary { .. }
         | ContractExpression::Field { .. }
         | ContractExpression::Index(_, _)
         | ContractExpression::ArrayIndex { .. }

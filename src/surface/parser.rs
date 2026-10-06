@@ -7587,7 +7587,11 @@ impl Parser {
                         .and_then(|object| object.struct_name.as_ref())
                 })
                 .cloned(),
-            ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            ContractExpression::CUnary {
+                lowered: CExpression::Cast { pointee_struct, .. },
+                ..
+            }
+            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             _ => None,
@@ -8435,7 +8439,11 @@ impl Parser {
     /// still reads the surrounding state.
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         match expression {
-            ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            ContractExpression::CUnary {
+                lowered: CExpression::Cast { pointee_struct, .. },
+                ..
+            }
+            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             ContractExpression::QualifiedC { name, .. } => self
@@ -8734,7 +8742,8 @@ impl Parser {
             self.check_unary_nesting_limit(depth)?;
             self.consume_struct_pointer_cast(&cast)?;
             let operand = self.parse_contract_unary_at_depth(depth + 1)?;
-            let Some(operand) = contract_expression_as_c_fragment(&operand) else {
+            let source_operand = operand;
+            let Some(operand) = contract_expression_as_c_fragment(&source_operand) else {
                 return Err(self.error(
                     "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
                 ));
@@ -8744,15 +8753,18 @@ impl Parser {
                 _ => None,
             };
             self.record_parameter_struct_cast(operand_name, &cast.struct_name)?;
-            return Ok(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(operand),
-                target_type: CType::Int32Pointer,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                pointee_struct: Some(cast.struct_name),
-                pointee_volatile: false,
-                pointee_constant: cast.pointee_constant,
-                explicit_qualification: false,
-            }));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_operand,
+                CExpression::Cast {
+                    expression: Box::new(operand),
+                    target_type: CType::Int32Pointer,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: Some(cast.struct_name),
+                    pointee_volatile: false,
+                    pointee_constant: cast.pointee_constant,
+                    explicit_qualification: false,
+                },
+            ));
         }
         if self.peek() == Some(&Token::LParen)
             && matches!(self.peek_next(), Some(Token::Ident(name)) if matches!(name.as_str(), "uint32" | "int32" | "uint64"))
@@ -8768,15 +8780,18 @@ impl Parser {
             let Some(expression) = contract_expression_as_c_fragment(&operand) else {
                 return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value"));
             };
-            return Ok(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(expression),
-                target_type,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                operand,
+                CExpression::Cast {
+                    expression: Box::new(expression),
+                    target_type,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            ));
         }
         if self.peek() == Some(&Token::Minus) {
             self.check_unary_nesting_limit(depth)?;
@@ -8796,14 +8811,16 @@ impl Parser {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let pointer = self.parse_contract_unary_at_depth(depth + 1)?;
+            let source_pointer = pointer.clone();
             let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
                 return Err(
                     self.error("pointer dereference is only supported on current C fragments")
                 );
             };
-            return Ok(ContractExpression::CFragment(CExpression::Load(Box::new(
-                pointer,
-            ))));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_pointer,
+                CExpression::Load(Box::new(pointer)),
+            ));
         }
         if self.peek() == Some(&Token::Amp) {
             self.check_unary_nesting_limit(depth)?;
@@ -8813,22 +8830,26 @@ impl Parser {
                 base, offset_bytes, ..
             } = &expression
             {
+                let source_base = (**base).clone();
                 let Some(base) = contract_expression_as_c_fragment(base) else {
                     return Err(self.error("address-of field requires a current C pointer base"));
                 };
-                return Ok(ContractExpression::CFragment(
+                return Ok(crate::surface::lowering::contract_c_unary(
+                    source_base,
                     CExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
                         bytes: *offset_bytes,
                     },
                 ));
             }
+            let source_expression = expression.clone();
             let Some(expression) = contract_expression_as_c_fragment(&expression) else {
                 return Err(self.error("address-of is only supported on current C expressions"));
             };
-            return Ok(ContractExpression::CFragment(CExpression::AddressOf(
-                Box::new(expression),
-            )));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_expression,
+                CExpression::AddressOf(Box::new(expression)),
+            ));
         }
 
         self.parse_contract_postfix()
@@ -8848,7 +8869,11 @@ impl Parser {
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
         let mut struct_name = match &expression {
-            ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
+            ContractExpression::CUnary {
+                lowered: CExpression::Cast { pointee_struct, .. },
+                ..
+            }
+            | ContractExpression::CFragment(CExpression::Cast { pointee_struct, .. }) => {
                 pointee_struct.clone()
             }
             ContractExpression::QualifiedC { name, .. } => self
@@ -8930,21 +8955,22 @@ impl Parser {
                                     "struct array indexing is only supported on current C fragments",
                                 )
                             })?;
+                        let source_index = index.clone();
                         let index = contract_expression_as_c_fragment(&index).ok_or_else(|| {
                             self.error("struct array indices must be current C expressions")
                         })?;
-                        let mut indexes = vec![index.clone()];
+                        let mut indexes = vec![source_index];
                         while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket)
                         {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            let next_index = contract_expression_as_c_fragment(&next_index)
-                                .ok_or_else(|| {
-                                    self.error("struct array indices must be current C expressions")
-                                })?;
+                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
+                                self.error("struct array indices must be current C expressions")
+                            })?;
                             indexes.push(next_index);
                         }
+                        let dimensions = struct_array_shape.clone().unwrap_or_else(|| vec![1]);
                         let offset = if let Some(shape) = struct_array_shape.take() {
                             if indexes.len() != shape.len() {
                                 return Err(self.error(format!(
@@ -8953,7 +8979,16 @@ impl Parser {
                                     indexes.len()
                                 )));
                             }
-                            flatten_array_indices(indexes.clone(), &shape)
+                            flatten_array_indices(
+                                indexes
+                                    .iter()
+                                    .map(|index| {
+                                        contract_expression_as_c_fragment(index)
+                                            .expect("validated C index")
+                                    })
+                                    .collect(),
+                                &shape,
+                            )
                         } else {
                             index
                         };
@@ -8967,29 +9002,25 @@ impl Parser {
                         expression = ContractExpression::ArrayIndex {
                             base: Box::new(expression),
                             indexes,
+                            dimensions,
                             lowered: CExpression::Add(Box::new(base), Box::new(stride)),
                         };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
-                        let mut indexes =
-                            vec![contract_expression_as_c_fragment(&index).ok_or_else(|| {
-                                self.error("struct array indices must be current C expressions")
-                            })?];
+                        contract_expression_as_c_fragment(&index).ok_or_else(|| {
+                            self.error("struct array indices must be current C expressions")
+                        })?;
+                        let mut indexes = vec![index.clone()];
                         while self.peek() == Some(&Token::LBracket)
                             && !self.contract_bracket_is_range()
                         {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            indexes.push(
-                                contract_expression_as_c_fragment(&next_index).ok_or_else(
-                                    || {
-                                        self.error(
-                                            "struct array indices must be current C expressions",
-                                        )
-                                    },
-                                )?,
-                            );
+                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
+                                self.error("struct array indices must be current C expressions")
+                            })?;
+                            indexes.push(next_index);
                         }
                         if indexes.len() != shape.len() {
                             return Err(self.error(format!(
@@ -8998,7 +9029,16 @@ impl Parser {
                                 indexes.len()
                             )));
                         }
-                        let offset = flatten_array_indices(indexes.clone(), &shape);
+                        let offset = flatten_array_indices(
+                            indexes
+                                .iter()
+                                .map(|index| {
+                                    contract_expression_as_c_fragment(index)
+                                        .expect("validated C index")
+                                })
+                                .collect(),
+                            &shape,
+                        );
                         // Keep the source rank of a multidimensional field
                         // access, as a global array access does: the
                         // flattened index alone prints as one subscript,
@@ -9008,40 +9048,62 @@ impl Parser {
                                 ContractExpression::ArrayIndex {
                                     base: Box::new(expression),
                                     indexes,
+                                    dimensions: shape.clone(),
                                     lowered: CExpression::Index(
                                         Box::new(lowered_base),
                                         Box::new(offset),
                                     ),
                                 }
                             }
-                            _ => ContractExpression::Index(
-                                Box::new(expression),
-                                Box::new(ContractExpression::CFragment(offset)),
-                            ),
+                            _ => {
+                                let offset = indexes
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(index, expression)| {
+                                        let stride = shape[index + 1..].iter().fold(
+                                            1u32,
+                                            |stride, dimension| {
+                                                stride
+                                                    .checked_mul(*dimension)
+                                                    .expect("validated array stride")
+                                            },
+                                        );
+                                        if stride == 1 {
+                                            expression
+                                        } else {
+                                            ContractExpression::Multiply(
+                                                Box::new(expression),
+                                                Box::new(ContractExpression::CFragment(
+                                                    CExpression::Value(int32(stride)),
+                                                )),
+                                            )
+                                        }
+                                    })
+                                    .reduce(|left, right| {
+                                        ContractExpression::Add(Box::new(left), Box::new(right))
+                                    })
+                                    .expect("array has indices");
+                                ContractExpression::Index(Box::new(expression), Box::new(offset))
+                            }
                         };
                         struct_name = None;
                         union_name = None;
                         struct_array_element_width = None;
                     } else if let Some(shape) = scalar_array_shape.take() {
-                        let mut indexes =
-                            vec![contract_expression_as_c_fragment(&index).ok_or_else(|| {
-                                self.error("global array indices must be current C expressions")
-                            })?];
+                        contract_expression_as_c_fragment(&index).ok_or_else(|| {
+                            self.error("global array indices must be current C expressions")
+                        })?;
+                        let mut indexes = vec![index.clone()];
                         while self.peek() == Some(&Token::LBracket)
                             && !self.contract_bracket_is_range()
                         {
                             self.position += 1;
                             let next_index = self.parse_contract_expression()?;
                             self.expect(Token::RBracket)?;
-                            indexes.push(
-                                contract_expression_as_c_fragment(&next_index).ok_or_else(
-                                    || {
-                                        self.error(
-                                            "global array indices must be current C expressions",
-                                        )
-                                    },
-                                )?,
-                            );
+                            contract_expression_as_c_fragment(&next_index).ok_or_else(|| {
+                                self.error("global array indices must be current C expressions")
+                            })?;
+                            indexes.push(next_index);
                         }
                         if indexes.len() != shape.len() {
                             return Err(self.error(format!(
@@ -9054,10 +9116,20 @@ impl Parser {
                             .ok_or_else(|| {
                                 self.error("global array base must be a current C expression")
                             })?;
-                        let offset = flatten_array_indices(indexes.clone(), &shape);
+                        let offset = flatten_array_indices(
+                            indexes
+                                .iter()
+                                .map(|index| {
+                                    contract_expression_as_c_fragment(index)
+                                        .expect("validated C index")
+                                })
+                                .collect(),
+                            &shape,
+                        );
                         expression = ContractExpression::ArrayIndex {
                             base: Box::new(expression),
                             indexes,
+                            dimensions: shape.clone(),
                             lowered: CExpression::Index(Box::new(lowered_base), Box::new(offset)),
                         };
                         struct_name = None;
@@ -9403,25 +9475,30 @@ impl Parser {
         if self.peek_ident() == Some("address") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
-            let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
+            let source_pointer = pointer;
+            let Some(pointer) = contract_expression_as_c_fragment(&source_pointer) else {
                 return Err(self.error("address expects a current C pointer expression"));
             };
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(pointer),
-                target_type: CType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_pointer,
+                CExpression::Cast {
+                    expression: Box::new(pointer),
+                    target_type: CType::UInt64,
+                    integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                },
+            ));
         }
 
         if self.peek_ident() == Some("byte_offset") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
-            let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
+            let source_pointer = pointer;
+            let Some(pointer) = contract_expression_as_c_fragment(&source_pointer) else {
                 return Err(self.error("byte offset expects a current C pointer expression"));
             };
             self.expect(Token::Comma)?;
@@ -9438,7 +9515,8 @@ impl Parser {
                 }
             };
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::CFragment(
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_pointer,
                 CExpression::PointerOffsetBytes {
                     pointer: Box::new(pointer),
                     bytes,
@@ -9453,16 +9531,20 @@ impl Parser {
             self.position += 2;
             let pointer = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
+            let source_pointer = pointer.clone();
             let Some(pointer) = contract_expression_as_c_fragment(&pointer) else {
                 return Err(self.error("typed load expects a current C pointer expression"));
             };
-            return Ok(ContractExpression::CFragment(CExpression::TypedLoad {
-                pointer: Box::new(pointer),
-                value_type,
-                volatile: false,
-                pointee_constant: false,
-                source: Default::default(),
-            }));
+            return Ok(crate::surface::lowering::contract_c_unary(
+                source_pointer,
+                CExpression::TypedLoad {
+                    pointer: Box::new(pointer),
+                    value_type,
+                    volatile: false,
+                    pointee_constant: false,
+                    source: Default::default(),
+                },
+            ));
         }
 
         // `count(resource(args))` is the declared-resource population operator.

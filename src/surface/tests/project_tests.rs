@@ -1031,6 +1031,61 @@ int32 bump(int32* p) {
 }
 
 #[test]
+fn verification_session_erases_exceptional_proofs_but_preserves_contracts() {
+    let source = r#"
+verifying "identity.c";
+int32 identity(int32 x) throws int32 {
+    ensures result == x;
+    exceptional ensures exception == 7;
+}
+"#;
+    let rewritten = source.replace(
+        "\n}\n",
+        "\n} by { step(); have result == x by { normalize(); } assumption(); }\n",
+    );
+    let position = expansion::position_at_offset(&rewritten, rewritten.find("step();").unwrap());
+    let (session, _) = C0VerificationSession::new(
+        source,
+        &[("identity.c", "int32 identity(int32 x) { return x; }")],
+    )
+    .expect("baseline should verify");
+    session
+        .verify_at(&rewritten, position.line, position.column)
+        .expect("normal and exceptional proof annotations belong to the selected proof unit");
+
+    let exceptional_rewritten = source.replace("exception == 7;", "exception == 7 by auto;");
+    let exceptional_position = expansion::position_at_offset(
+        &exceptional_rewritten,
+        exceptional_rewritten.find("auto;").unwrap(),
+    );
+    session
+        .verify_at(
+            &exceptional_rewritten,
+            exceptional_position.line,
+            exceptional_position.column,
+        )
+        .expect("an individual exceptional clause's proof may also change");
+
+    for changed in [
+        rewritten.replace("exception == 7", "exception == 8"),
+        rewritten
+            .replace(" throws int32", "")
+            .replace("    exceptional ensures exception == 7;\n", ""),
+    ] {
+        let changed_position =
+            expansion::position_at_offset(&changed, changed.find("step();").unwrap());
+        let error = session
+            .verify_at(&changed, changed_position.line, changed_position.column)
+            .expect_err("exceptional contracts and the throws channel must remain unchanged");
+        assert!(
+            error.message().contains("outside the selected proof unit"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
 fn verification_session_reuses_certified_dependencies_and_rechecks_target() {
     let callee_c = r#"
 int32 callee(int32 x) {

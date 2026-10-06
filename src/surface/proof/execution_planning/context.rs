@@ -374,61 +374,93 @@ fn merge_path_aligned_certificates_with_match_policy(
     paths: Vec<PathCertificate>,
     retain_common_match_cases: bool,
 ) -> Result<ProofCertificate, ClickError> {
-    pub(in crate::surface::proof) fn merge(
+    // Each cursor borrows the checked certificate and advances through its
+    // cases and steps. No recursive level converts or copies its suffix.
+    struct Cursor<'a> {
+        path: &'a PathCertificate,
+        case: usize,
+        step: usize,
+    }
+    impl Cursor<'_> {
+        fn choices(&self) -> &[ProofCaseChoice] {
+            &self.path.case_path[self.case..]
+        }
+        fn steps(&self) -> &[ProofStep] {
+            &self.path.certificate.steps()[self.step..]
+        }
+        fn offset(&self) -> Option<usize> {
+            self.path
+                .case_offsets
+                .as_ref()
+                .and_then(|offsets| offsets.get(self.case))
+                .copied()
+        }
+    }
+
+    fn merge(
         claim_label: &str,
-        mut paths: Vec<PathCertificate>,
+        mut paths: Vec<Cursor<'_>>,
         retain_common_match_cases: bool,
     ) -> Result<ProofCertificate, ClickError> {
-        let first = paths.first().ok_or_else(|| {
-            ClickError::new(format!(
-                "`{claim_label}` path-aligned certificate has no paths"
-            ))
-        })?;
-        // Equal certificates fold only when they took the same cases: a bare
-        // `step()` at a C `if` reads the same on both sides of a case split
-        // and is valid only inside its case, so distinct cases keep their
-        // `if` even when their steps coincide.
-        let leading_common_match = retain_common_match_cases
-            && first
-                .case_path
-                .first()
-                .is_some_and(|choice| choice.match_arm.is_some());
-        if !leading_common_match
-            && paths.iter().all(|path| {
-                path.certificate == first.certificate && path.case_path == first.case_path
-            })
-        {
-            return Ok(first.certificate.clone());
-        }
-        while paths.iter().all(|path| {
-            path.case_path.first() == paths.first().and_then(|first| first.case_path.first())
-        }) && paths
-            .first()
-            .is_some_and(|first| !first.case_path.is_empty())
-            && !(retain_common_match_cases && paths[0].case_path[0].match_arm.is_some())
-        {
-            for path in &mut paths {
-                path.case_path.remove(0);
-                if let Some(offsets) = &mut path.case_offsets
-                    && !offsets.is_empty()
-                {
-                    offsets.remove(0);
-                }
-            }
-        }
-        if paths.iter().any(|path| path.case_path.is_empty()) {
+        if paths.is_empty() {
             return Err(ClickError::new(format!(
-                "`{claim_label}` path-aligned certificates disagree after one proof path has already joined"
+                "`{claim_label}` path-aligned certificate has no paths"
             )));
         }
-        let condition = paths[0].case_path[0].condition.clone();
-        let match_header = paths[0].case_path[0]
-            .match_arm
-            .as_ref()
-            .map(|case| case.source.clone());
+        while let Some(first) = paths[0].choices().first() {
+            if retain_common_match_cases && first.match_arm.is_some() {
+                break;
+            }
+            crate::instrumentation::record_deterministic_work(paths.len());
+            if !paths
+                .iter()
+                .all(|path| path.choices().first() == Some(first))
+            {
+                break;
+            }
+            for path in &mut paths {
+                path.case += 1;
+            }
+        }
+        if paths.iter().any(|path| path.choices().is_empty()) {
+            if paths.iter().any(|path| !path.choices().is_empty()) {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` path-aligned certificates disagree after one proof path has already joined"
+                )));
+            }
+            // Duplicate paths meet here, instead of an all-pairs scan of
+            // their full case lists before merging. Their checked suffixes
+            // must agree, just as the original whole certificates did.
+            let first = &paths[0];
+            for path in paths.iter().skip(1) {
+                if std::ptr::eq(path.steps(), first.steps()) {
+                    crate::instrumentation::record_deterministic_work(1);
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(path.steps().len());
+                if path.steps() != first.steps() {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` produced different certificates for the same proof path"
+                    )));
+                }
+            }
+            if first.step == 0 {
+                crate::instrumentation::record_deterministic_work(1);
+                return Ok(first.path.certificate.clone());
+            }
+            crate::instrumentation::record_deterministic_work(first.steps().len());
+            return Ok(ProofCertificate::from_validated_steps(
+                first.steps().to_vec(),
+            ));
+        }
+
+        let choice = &paths[0].choices()[0];
+        let condition = choice.condition.clone();
+        let match_header = choice.match_arm.as_ref().map(|case| case.source.clone());
+        crate::instrumentation::record_deterministic_work(paths.len());
         if let Some(header) = &match_header {
             if paths.iter().any(|path| {
-                path.case_path[0]
+                path.choices()[0]
                     .match_arm
                     .as_ref()
                     .is_none_or(|case| &case.source != header)
@@ -438,70 +470,59 @@ fn merge_path_aligned_certificates_with_match_policy(
                 )));
             }
         } else if paths.iter().any(|path| {
-            path.case_path[0].condition != condition || path.case_path[0].match_arm.is_some()
+            path.choices()[0].condition != condition || path.choices()[0].match_arm.is_some()
         }) {
             return Err(ClickError::new(format!(
                 "`{claim_label}` path-aligned certificates have incompatible next branch conditions"
             )));
         }
-        // The case keeps its execution position when every path recorded it
-        // at the same offset: the tactics before it are one shared prefix.
-        let offset = paths
-            .iter()
-            .map(|path| {
-                path.case_offsets
-                    .as_ref()
-                    .and_then(|offsets| offsets.first().copied())
-            })
-            .collect::<Option<Vec<usize>>>()
-            .filter(|offsets| offsets.windows(2).all(|pair| pair[0] == pair[1]))
-            .and_then(|offsets| offsets.first().copied());
-        let mut prefix = Vec::new();
-        if let Some(offset) = offset {
-            let shared = paths[0]
-                .certificate
-                .to_proof_tactics()
-                .get(..offset)
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path-aligned certificate case offset exceeds its tactics"
-                    ))
-                })?
-                .to_vec();
-            if paths.iter().any(|path| {
-                path.certificate.to_proof_tactics().get(..offset) != Some(shared.as_slice())
-            }) {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` path-aligned certificates disagree before their next case `{}`",
-                    describe_click_proposition(&condition)
-                )));
+
+        let bad_offset = || {
+            ClickError::new(format!(
+                "`{claim_label}` path-aligned certificate case offset exceeds its tactics"
+            ))
+        };
+        // Recorded positions are applied only when every path agrees. A
+        // joined path may retain offsets from its pre-join certificate;
+        // differing records keep the original whole-certificate wrapper.
+        let mut offset = paths[0].offset();
+        crate::instrumentation::record_deterministic_work(paths.len());
+        for path in paths.iter().skip(1) {
+            if path.offset() != offset {
+                offset = None;
             }
-            for path in &mut paths {
-                let remaining = path.certificate.to_proof_tactics()[offset..].to_vec();
-                path.certificate =
-                    ProofCertificate::from_proof_tactics(&remaining).map_err(|error| {
-                        ClickError::new(format!(
-                            "`{claim_label}` split an invalid path-aligned certificate: {error:?}"
-                        ))
-                    })?;
-                if let Some(offsets) = &mut path.case_offsets {
-                    for recorded in offsets.iter_mut() {
-                        *recorded -= offset;
-                    }
-                }
-            }
-            prefix = shared;
         }
-        if let Some(header) = match_header {
-            let mut arm_paths: Vec<Vec<PathCertificate>> = vec![Vec::new(); header.arms.len()];
-            for mut path in paths {
-                let choice = path.case_path.remove(0);
-                if let Some(offsets) = &mut path.case_offsets
-                    && !offsets.is_empty()
-                {
-                    offsets.remove(0);
+        let mut prefix = Vec::new();
+        if let Some(recorded) = offset {
+            let offset = recorded.checked_sub(paths[0].step).ok_or_else(bad_offset)?;
+            let shared = paths[0].steps().get(..offset).ok_or_else(bad_offset)?;
+            for path in &paths {
+                crate::instrumentation::record_deterministic_work(offset);
+                if path.steps().get(..offset) != Some(shared) {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` path-aligned certificates disagree before their next case `{}`",
+                        describe_click_proposition(&condition)
+                    )));
                 }
-                let arm = choice.match_arm.expect("a match case names its arm").arm;
+            }
+            crate::instrumentation::record_deterministic_work(shared.len());
+            prefix.extend_from_slice(shared);
+            for path in &mut paths {
+                path.step += offset;
+            }
+        }
+
+        crate::instrumentation::record_deterministic_work(paths.len() + 1);
+        if let Some(header) = match_header {
+            let mut arm_paths: Vec<Vec<Cursor<'_>>> =
+                (0..header.arms.len()).map(|_| Vec::new()).collect();
+            for mut path in paths {
+                let arm = path.choices()[0]
+                    .match_arm
+                    .as_ref()
+                    .expect("a match case names its arm")
+                    .arm;
+                path.case += 1;
                 let Some(slot) = arm_paths.get_mut(arm) else {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path-aligned certificate names an unknown proof `match` arm"
@@ -509,75 +530,70 @@ fn merge_path_aligned_certificates_with_match_policy(
                 };
                 slot.push(path);
             }
-            let mut rebuilt = Arc::unwrap_or_clone(header);
-            for (arm, paths) in rebuilt.arms.iter_mut().zip(arm_paths) {
-                // An arm a checked `contradiction` closed produces no path;
-                // its written tactics are already the whole arm proof.
-                if paths.is_empty() {
-                    continue;
-                }
-                arm.tactics = merge(claim_label, paths, retain_common_match_cases)?
-                    .to_proof_tactics()
-                    .to_vec();
+            let mut arms = Vec::with_capacity(header.arms.len());
+            for (arm, paths) in header.arms.iter().zip(arm_paths) {
+                let proof = if paths.is_empty() {
+                    // No path means the written arm closed by contradiction;
+                    // admit its source tactics exactly as the old merger did.
+                    crate::instrumentation::record_deterministic_work(arm.tactics.len());
+                    ProofCertificate::from_proof_tactics(&arm.tactics).map_err(|error| {
+                        ClickError::new(format!(
+                            "`{claim_label}` merged an invalid path-aligned certificate: {error:?}"
+                        ))
+                    })?
+                } else {
+                    merge(claim_label, paths, retain_common_match_cases)?
+                };
+                arms.push(CertificateInductionArm {
+                    type_name: arm.type_name.clone(),
+                    variant: arm.variant.clone(),
+                    bindings: arm.bindings.clone(),
+                    proof: Box::new(proof),
+                });
             }
-            prefix.push(ProofTactic::Match(std::sync::Arc::new(rebuilt)));
-            return ProofCertificate::from_proof_tactics(&prefix).map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` merged an invalid path-aligned certificate: {error:?}"
-                ))
+            prefix.push(ProofStep::Match {
+                scrutinee: header.scrutinee.clone(),
+                arms,
             });
-        }
-        let mut then_paths = Vec::new();
-        let mut else_paths = Vec::new();
-        for mut path in paths {
-            let choice = path.case_path.remove(0);
-            if let Some(offsets) = &mut path.case_offsets
-                && !offsets.is_empty()
-            {
-                offsets.remove(0);
+        } else {
+            let (mut then_paths, mut else_paths) = (Vec::new(), Vec::new());
+            for mut path in paths {
+                let value = path.choices()[0].value;
+                path.case += 1;
+                if value {
+                    then_paths.push(path);
+                } else {
+                    else_paths.push(path);
+                }
             }
-            if choice.value {
-                then_paths.push(path);
-            } else {
-                else_paths.push(path);
-            }
-        }
-        if then_paths.is_empty() || else_paths.is_empty() {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` path-aligned certificate is missing one branch of `{}`",
-                describe_click_proposition(&condition)
-            )));
-        }
-        let then_certificate = merge(claim_label, then_paths, retain_common_match_cases)?;
-        let else_certificate = merge(claim_label, else_paths, retain_common_match_cases)?;
-        prefix.push(ProofTactic::If(ProofIf {
-            condition,
-            then_tactics: then_certificate.to_proof_tactics().to_vec(),
-            else_tactics: else_certificate.to_proof_tactics().to_vec(),
-        }));
-        ProofCertificate::from_proof_tactics(&prefix).map_err(|error| {
-            ClickError::new(format!(
-                "`{claim_label}` merged an invalid path-aligned certificate: {error:?}"
-            ))
-        })
-    }
-
-    let mut unique = Vec::<PathCertificate>::new();
-    for path in paths {
-        if let Some(existing) = unique
-            .iter()
-            .find(|existing| existing.case_path == path.case_path)
-        {
-            if existing.certificate != path.certificate {
+            if then_paths.is_empty() || else_paths.is_empty() {
                 return Err(ClickError::new(format!(
-                    "`{claim_label}` produced different certificates for the same proof path"
+                    "`{claim_label}` path-aligned certificate is missing one branch of `{}`",
+                    describe_click_proposition(&condition)
                 )));
             }
-        } else {
-            unique.push(path);
+            prefix.push(ProofStep::If {
+                condition,
+                then_proof: Box::new(merge(claim_label, then_paths, retain_common_match_cases)?),
+                else_proof: Box::new(merge(claim_label, else_paths, retain_common_match_cases)?),
+            });
         }
+        // Every prefix came from a checked certificate and every new control
+        // node contains checked children. Revalidating their whole subtrees
+        // at each parent would reintroduce the depth-dependent walk.
+        Ok(ProofCertificate::from_validated_steps(prefix))
     }
-    merge(claim_label, unique, retain_common_match_cases)
+
+    crate::instrumentation::record_deterministic_work(paths.len());
+    let cursors = paths
+        .iter()
+        .map(|path| Cursor {
+            path,
+            case: 0,
+            step: 0,
+        })
+        .collect();
+    merge(claim_label, cursors, retain_common_match_cases)
 }
 
 /// The certificate offsets at which a path took its proof-level cases, as the
@@ -1211,6 +1227,105 @@ pub(in crate::surface::proof) enum LoopPreservationSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn balanced_path_certificates(leaves: usize, tail: usize) -> Vec<PathCertificate> {
+        (0..leaves)
+            .map(|leaf| {
+                let (mut low, mut high) = (0, leaves);
+                let mut case_path = Vec::new();
+                let mut offsets = Vec::new();
+                let mut tactics = Vec::new();
+                while high - low > 1 {
+                    let middle = (low + high) / 2;
+                    tactics.push(ProofTactic::Mark(format!("prefix-{low}-{high}")));
+                    offsets.push(tactics.len());
+                    case_path.push(ProofCaseChoice {
+                        condition: ClickProposition::Comparison {
+                            left: ContractExpression::Binding("k".into()),
+                            operator: ComparisonOperator::LessThan,
+                            right: ContractExpression::IntegerLiteral(middle.to_string()),
+                        },
+                        value: leaf < middle,
+                        match_arm: None,
+                    });
+                    if leaf < middle {
+                        high = middle;
+                    } else {
+                        low = middle;
+                    }
+                }
+                for index in 0..tail {
+                    tactics.push(ProofTactic::Mark(format!("leaf-{leaf}-{index}")));
+                }
+                PathCertificate {
+                    case_path,
+                    case_offsets: Some(offsets),
+                    certificate: ProofCertificate::from_proof_tactics(&tactics).unwrap(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn path_certificate_merge_work_is_bounded_by_its_input_steps() {
+        let mut samples = Vec::new();
+        for leaves in [4usize, 64, 1024] {
+            let paths = balanced_path_certificates(leaves, 128);
+            let expected = paths.clone();
+            let input = paths
+                .iter()
+                .map(|path| path.case_path.len() + path.certificate.steps().len())
+                .sum::<usize>();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                merge_path_aligned_certificates("balanced", paths)
+            });
+            let certificate = result.expect("a complete balanced case tree must merge");
+            let tactics = certificate.to_proof_tactics();
+            assert!(
+                matches!(tactics.first(), Some(ProofTactic::Mark(name)) if name == &format!("prefix-0-{leaves}"))
+            );
+            assert!(matches!(tactics.get(1), Some(ProofTactic::If(_))));
+            for path in &expected {
+                let (selected, offsets) =
+                    certificate_leaf_for_case_path("balanced", &tactics, &path.case_path)
+                        .expect("every original branch must survive merging");
+                assert_eq!(selected, path.certificate);
+                assert_eq!(offsets, path.case_offsets);
+            }
+            samples.push((leaves, input, work));
+            assert!(
+                work > 0 && work <= input * 10,
+                "merge must charge its work once per input step: {samples:?}"
+            );
+        }
+        eprintln!("(leaves, input steps/cases, merge work): {samples:?}");
+    }
+
+    #[test]
+    fn path_certificate_merge_preserves_duplicates_and_rejects_disagreement() {
+        let paths = balanced_path_certificates(4, 2);
+        let expected = merge_path_aligned_certificates("duplicates", paths.clone()).unwrap();
+        let mut duplicated = paths.clone();
+        duplicated.extend(paths.clone());
+        assert_eq!(
+            merge_path_aligned_certificates("duplicates", duplicated).unwrap(),
+            expected
+        );
+        let mut conflicting = paths.clone();
+        let mut changed = paths[0].clone();
+        let mut tactics = changed.certificate.to_proof_tactics();
+        *tactics.last_mut().unwrap() = ProofTactic::Mark("different-leaf".into());
+        changed.certificate = ProofCertificate::from_proof_tactics(&tactics).unwrap();
+        conflicting.push(changed);
+        let error = merge_path_aligned_certificates("duplicates", conflicting).unwrap_err();
+        assert!(error.message().contains("same proof path"));
+
+        let mut bad_offset = paths;
+        for path in &mut bad_offset {
+            path.case_offsets.as_mut().unwrap()[0] = usize::MAX;
+        }
+        assert!(merge_path_aligned_certificates("offset", bad_offset).is_err());
+    }
 
     #[test]
     fn source_capability_walk_is_iterative_and_bounded() {

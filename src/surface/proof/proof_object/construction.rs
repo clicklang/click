@@ -60,7 +60,7 @@ impl<'a> Proof<'a> {
             arguments,
             entry,
             post,
-            post.locals().get("result"),
+            post.locals().get(crate::kernel::C_CONTRACT_RESULT_NAME),
             None,
             snapshots,
             surfaces,
