@@ -40,6 +40,24 @@ fn check_upstream_cpp(
     logical_source: &str,
     integer_header: &str,
 ) {
+    check_upstream_cpp_rounding_phase(selected, name, source, logical_source, integer_header, None);
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RoundingPhase {
+    Tools,
+    FullExpansion,
+    Rejections,
+}
+
+fn check_upstream_cpp_rounding_phase(
+    selected: &str,
+    name: &str,
+    source: &str,
+    logical_source: &str,
+    integer_header: &str,
+    phase: Option<RoundingPhase>,
+) {
     assert_eq!(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
@@ -219,12 +237,16 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         return;
     }
     let project = read_click_project(&sidecar, source).unwrap();
-    verify_program_prepared_project(&project, &import)
-        .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
-    if matches!(
-        selected,
-        "GetSizeOfCompactSize" | "FeeFrac::Mul" | "FeeFrac::Div"
-    ) {
+    if matches!(phase, None | Some(RoundingPhase::Tools)) {
+        verify_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+    }
+    if matches!(phase, None | Some(RoundingPhase::Tools))
+        && matches!(
+            selected,
+            "GetSizeOfCompactSize" | "FeeFrac::Mul" | "FeeFrac::Div"
+        )
+    {
         let sites = program_prepared_project_smart_tactic_source_sites(&project, &import).unwrap();
         let first = sites.first().unwrap();
         let position = program_prepared_project_tactic_source_position(
@@ -281,7 +303,7 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         );
     }
 
-    if name == "FeeFracDivBounded" {
+    if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::FullExpansion) {
         let expanded = expand_program_prepared_project_claim_source_by_label(
             &project,
             &import,
@@ -289,7 +311,25 @@ int64 FeeFrac_Div(int128 n, int32 d, bool round_down) {
         )
         .unwrap();
         verify_program_prepared_project(&project.with_entry_source(expanded), &import).unwrap();
+    }
+    if name == "FeeFracDivBounded" && phase == Some(RoundingPhase::Rejections) {
         for hostile in [
+            source.replace(
+                "round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n)",
+                "round_down != 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+            ),
+            source.replace(
+                "round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d)",
+                "round_down != 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+            ),
+            source.replace(
+                "round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d)",
+                "round_down == 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+            ),
+            source.replace(
+                "round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n)",
+                "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+            ),
             source.replace("requires -9223372036854775806 <= to_integer(n);", ""),
             source.replace("requires to_integer(n) <= 9223372036854775806;", ""),
             source.replace("requires d > 0;", ""),
@@ -828,9 +868,26 @@ fn pinned_upstream_compact_size_9_reexports_and_verifies() {
 
 #[test]
 fn upstream_fee_frac_div_bounded_native_correction_is_safe() {
-    check_upstream_fee_frac(
+    check_bounded_upstream_rounding(RoundingPhase::Tools);
+}
+
+#[test]
+fn upstream_fee_frac_div_bounded_full_expansion_reverifies() {
+    check_bounded_upstream_rounding(RoundingPhase::FullExpansion);
+}
+
+#[test]
+fn upstream_fee_frac_div_bounded_rejects_false_rounding_and_missing_guards() {
+    check_bounded_upstream_rounding(RoundingPhase::Rejections);
+}
+
+fn check_bounded_upstream_rounding(phase: RoundingPhase) {
+    check_upstream_cpp_rounding_phase(
         "FeeFrac::Div",
         "FeeFracDivBounded",
         include_str!("../integrations/bitcoin-core-money-range/FeeFracDivBounded.click"),
+        "bitcoin-src/src/util/feefrac.h",
+        "sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h",
+        Some(phase),
     );
 }

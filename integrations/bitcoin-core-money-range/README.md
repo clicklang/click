@@ -283,12 +283,24 @@ Full proof expansion reverifies; retained audit and hostile omitted input
 bounds, zero divisor, false result claims and swapped cast-certificate references
 have coverage. The standalone fixture retains the same correction pattern and
 verifies native output bounds and unrelated memory through a modular caller.
-These output bounds do not identify a mathematical floor/ceiling result.
+The sidecar also proves the exact corrected quotient in each remainder-sign
+case, including zero, and the defining mathematical product inequalities:
 
-The general `FeeFrac::Div` rounding theorem is not proved. Next connect the exact quotient/remainder observations and signed correction
-to a mathematical floor/ceiling specification, then admit wider numerators
-through bounds derived jointly from the caller and divisor. `EvaluateFeeDown/Up`
-remain open.
+- Floor (`round_down != 0`): `result * d <= n < (result + 1) * d`.
+- Ceiling (`round_down == 0`): `(result - 1) * d < n <= result * d`.
+
+These specifications use `to_integer` observations and Integer arithmetic, so
+their products and successor/predecessor expressions have no native overflow.
+The shared proof-backed `integer_floor_from_remainder` and
+`integer_ceiling_from_remainder` lemmas combine reconstruction, positive-divisor
+remainder bounds and exact correction values. Explicit Integer distributivity
+connects the corrected product; affine certificates keep complete nonlinear
+terms opaque. The modular caller exports the same four inequalities and frames
+untouched memory. Strict claims that fail on exact division are rejected.
+
+This completes mathematical rounding on the stated bounded profile. Next admit
+wider numerators through bounds derived jointly from the caller and divisor;
+the full 96/32 contract and `EvaluateFeeDown/Up` remain open.
 
 ## CompactSize encoded length
 

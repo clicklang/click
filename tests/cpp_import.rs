@@ -10138,7 +10138,7 @@ int64 relay(int128 a, int32* untouched) {
     }
 }
 
-fn check_fee_rounding_pattern(name: &str) {
+fn check_fee_rounding_pattern(name: &str, rejections: bool) {
     let project = Project::with_fixture(
         "round.cpp",
         name,
@@ -10164,24 +10164,50 @@ ensures round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) <
 ensures round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
 ensures round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
 ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+ensures round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n);
+ensures round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d);
+ensures round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d);
+ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n);
 } by { execute(); simp(); }
 "#,
         );
-        check_return_call_sidecar(&project, &import, &proof);
-    } else {
+        if !rejections {
+            check_return_call_sidecar(&project, &import, &proof);
+        }
+    } else if !rejections {
         check_arithmetic_sidecar(&project, &import, &proof);
     }
     let path = project.directory.join("complete.click");
     fs::write(&path, &proof).unwrap();
     let parsed = read_click_project(&path, &proof).unwrap();
-    let expanded = expand_program_prepared_project_claim_source_by_label(
-        &parsed,
-        &import,
-        "rounded.ensures_0",
-    )
-    .unwrap();
-    verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    if !rejections {
+        let expanded = expand_program_prepared_project_claim_source_by_label(
+            &parsed,
+            &import,
+            "rounded.ensures_0",
+        )
+        .unwrap();
+        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+        return;
+    }
     for hostile in [
+            proof.replace(
+                "round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n)",
+                "round_down != 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+            ),
+            proof.replace(
+                "round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d)",
+                "round_down != 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+            ),
+            proof.replace(
+                "round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d)",
+                "round_down == 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+            ),
+            proof.replace(
+                "round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n)",
+                "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+            ),
+
         proof.replace("requires -100 <= to_integer(n);", ""),
         proof.replace("requires to_integer(n) <= 100;", ""),
         proof.replace("requires d > 0;", ""),
@@ -10231,10 +10257,20 @@ ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <
 
 #[test]
 fn fee_rounding_pattern_has_checked_native_correction_bounds() {
-    check_fee_rounding_pattern("rounded");
+    check_fee_rounding_pattern("rounded", false);
 }
 
 #[test]
 fn fee_rounding_pattern_modular_caller_has_exact_rounding_values() {
-    check_fee_rounding_pattern("caller");
+    check_fee_rounding_pattern("caller", false);
+}
+
+#[test]
+fn fee_rounding_pattern_rejects_false_rounding_and_missing_guards() {
+    check_fee_rounding_pattern("rounded", true);
+}
+
+#[test]
+fn fee_rounding_pattern_caller_rejects_false_rounding_and_missing_guards() {
+    check_fee_rounding_pattern("caller", true);
 }

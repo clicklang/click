@@ -3284,3 +3284,15 @@ path = "reference/library/index.md#integer_nonpositive_dividend_remainder"
 [[item]]
 id = "stdlib.theorem.int32_less_than_to_integer"
 path = "reference/library/index.md#int32_less_than_to_integer"
+
+[[item]]
+id = "stdlib.theorem.integer_multiply_add"
+path = "reference/library/index.md#integer_multiply_add"
+
+[[item]]
+id = "stdlib.theorem.integer_floor_from_remainder"
+path = "reference/library/index.md#integer_floor_from_remainder"
+
+[[item]]
+id = "stdlib.theorem.integer_ceiling_from_remainder"
+path = "reference/library/index.md#integer_ceiling_from_remainder"

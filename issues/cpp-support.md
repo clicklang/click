@@ -652,13 +652,26 @@ while framing untouched memory. A proof-backed shared
 `int32_less_than_to_integer` lemma derives strict observation order from the
 existing non-strict reflection bridge; no C++-specific axiom is introduced.
 
-Next characterize those exact values by the defining floor/ceiling product
-inequalities, combining reconstruction and the positive-divisor remainder law.
-Admit wider int128 numerators through quotient/correction bounds derived jointly
-from the caller and divisor; the current interval profile does not cover the
-full 96/32 fee-division contract. The current exact-value formulas are not yet the wider fee-division
-contract. The
-selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
+The defining floor/ceiling product inequalities are now proved on this same
+bounded profile. Floor mode guarantees `result * d <= n < (result + 1) * d`;
+ceiling mode guarantees `(result - 1) * d < n <= result * d`. All operations in
+these specifications are mathematical Integer operations, and the modular
+caller exports the four mode-guarded inequalities while framing memory.
+Shared proof-backed `integer_floor_from_remainder` and
+`integer_ceiling_from_remainder` lemmas combine reconstruction, remainder bounds
+and exact correction values. Shared affine certificates treat complete symbolic
+products and truncating terms as opaque Integer atoms; they do not derive
+nonlinear laws. Exact `integer_multiply_add` distributivity uses the existing
+checked polynomial certificate behind a proof-backed library lemma. False
+inequalities, omitted reconstruction/remainder or correction premises, missing
+evaluation guards, expansion/reverification,
+retained audit and deterministic scaling have coverage.
+
+Next admit wider int128 numerators through quotient/correction bounds derived
+jointly from the caller and divisor; the current interval profile does not cover the
+full 96/32 fee-division contract. These exact values and product inequalities
+still require the bounded numerator profile. The selected source narrows `n / d`
+to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful
 shared lemmas; do not edit Bitcoin or infer unproved ranges. `Assume` remains

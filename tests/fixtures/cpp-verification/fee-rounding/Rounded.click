@@ -12,6 +12,10 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     ensures round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
     ensures round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
     ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+    ensures round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n);
+    ensures round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d);
+    ensures round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d);
+    ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n);
 } by {
     have 1 <= d by { arithmetic() using { d > 0; } }
     apply(int32_less_equal_to_integer(1, d));
@@ -110,6 +114,9 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     } }
     apply(int32_less_equal_of_to_integer(-100, mod));
     apply(int32_less_equal_of_to_integer(mod, 100));
+    have 0 < to_integer(d) by { arithmetic() using { 1 <= to_integer(d); } }
+    apply(integer_positive_divisor_remainder_lower(to_integer(n), to_integer(d)));
+    apply(integer_positive_divisor_remainder_upper(to_integer(n), to_integer(d)));
     apply(integer_truncation_identity(to_integer(n), to_integer(d)));
     have to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)) by { arithmetic_certificate special {
         premise 0: to_integer(quot) == to_integer(n / (int128)d) => to_integer(quot) == to_integer(n / (int128)d);
@@ -218,6 +225,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                 intro();
                 contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
             }
+            have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                intro();
+                assumption();
+            }
+            have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+            }
+            apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+            have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                intro();
+                contradiction(round_down == 0);
+            }
+            have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                intro();
+                contradiction(round_down == 0);
+            }
+            have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                intro();
+                assumption();
+            }
+            have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
+                intro();
+                assumption();
+            }
             simp();
         } else {
             execute();
@@ -241,6 +273,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
             have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
                 intro();
                 contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+            }
+            have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+            }
+            have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                assumption();
+            }
+            apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+            have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                intro();
+                assumption();
+            }
+            have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                intro();
+                assumption();
+            }
+            have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                intro();
+                contradiction(round_down == 0);
+            }
+            have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
+                intro();
+                contradiction(round_down == 0);
             }
             simp();
         }
@@ -286,6 +343,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                     intro();
                     assumption();
                 }
+                have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                    intro();
+                    assumption();
+                }
+                have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
+                    intro();
+                    assumption();
+                }
                 simp();
             } else {
                 execute();
@@ -307,6 +389,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                     contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
                 }
                 have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    assumption();
+                }
+                have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                    intro();
+                    assumption();
+                }
+                have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                    intro();
+                    assumption();
+                }
+                have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
                     intro();
                     contradiction(round_down == 0);
                 }
@@ -359,6 +466,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                     intro();
                     assumption();
                 }
+                have 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                apply(integer_ceiling_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                    intro();
+                    assumption();
+                }
+                have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
+                    intro();
+                    assumption();
+                }
                 simp();
             } else {
                 execute();
@@ -380,6 +512,31 @@ int64 rounded(int128 n, int32 d, bool round_down) {
                     contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
                 }
                 have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
+                have 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                apply(integer_floor_from_remainder(to_integer(n), to_integer(d), truncating_quotient(to_integer(n), to_integer(d)), truncating_remainder(to_integer(n), to_integer(d)), to_integer(result)));
+                have round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n) by {
+                    intro();
+                    assumption();
+                }
+                have round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d) by {
+                    intro();
+                    assumption();
+                }
+                have round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n) by {
                     intro();
                     contradiction(round_down == 0);
                 }
