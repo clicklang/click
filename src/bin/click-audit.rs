@@ -265,7 +265,6 @@ struct AuditSite {
 }
 
 struct ConciseClaimProgress {
-    key: (PathBuf, String),
     passed: usize,
     total: usize,
 }
@@ -677,6 +676,9 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let mut out_of_time = false;
     let mut cold_reverified_claims = std::collections::BTreeSet::new();
     let mut concise_progress: Option<ConciseClaimProgress> = None;
+    // Sites of the current claim whose rewrites await its one verification:
+    // each site's position in `selected` and its rewritten container.
+    let mut pending: Vec<(usize, String)> = Vec::new();
     let started = Instant::now();
     let deadline = started + arguments.time_limit;
 
@@ -773,9 +775,8 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 selected_claim_counts[&key],
             );
             concise_progress = Some(ConciseClaimProgress {
-                key,
                 passed: 0,
-                total: selected_claim_counts[&(site.click_path.clone(), site.claim.clone())],
+                total: selected_claim_counts[&key],
             });
         }
         std::io::stdout()
@@ -787,32 +788,19 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             .1;
         let cold_reverify =
             cold_reverified_claims.insert((site.click_path.clone(), site.claim.clone()));
-        match audit_site(site, current, &arguments.limits, cold_reverify, deadline) {
-            Ok(timings) => {
-                audited_sites += 1;
+        let next_is_same_claim = selected
+            .get(cursor + 1)
+            .is_some_and(|next| next.click_path == site.click_path && next.claim == site.claim);
+        let capped = arguments
+            .max_sites
+            .is_some_and(|limit| attempted_sites == limit);
+        let mut stop = false;
+        match audit_site_rewrite(site, current, &arguments.limits, cold_reverify, deadline) {
+            Ok(rewrite) => {
                 if arguments.verbose {
-                    println!("{}", render_site_timings(&timings));
-                } else if let Some(progress) = concise_progress.as_mut() {
-                    progress.passed += 1;
-                    let next_is_same_claim = selected.get(cursor + 1).is_some_and(|next| {
-                        progress.key == (next.click_path.clone(), next.claim.clone())
-                    });
-                    let capped_mid_claim = arguments
-                        .max_sites
-                        .is_some_and(|limit| attempted_sites == limit)
-                        && next_is_same_claim;
-                    if !next_is_same_claim {
-                        println!("ok ({} sites)", progress.passed);
-                        concise_progress = None;
-                    } else if capped_mid_claim {
-                        println!(
-                            "partial ({}/{} sites passed)",
-                            progress.passed, progress.total
-                        );
-                        concise_progress = None;
-                    }
+                    println!("{}", render_site_rewrite(&rewrite));
                 }
-                cursor += 1;
+                pending.push((cursor, rewrite.expanded));
             }
             Err(message) => {
                 if Instant::now() >= deadline || message == RUN_LIMIT_EXHAUSTED {
@@ -830,12 +818,89 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 println!("    {}", message.replace('\n', "\n    "));
                 print_resume(&arguments, site);
                 site_failures += 1;
-                if !arguments.keep_going {
-                    break;
-                }
-                cursor += 1;
+                stop = !arguments.keep_going;
             }
         }
+        // The claim's rewrites are verified together once its last selected
+        // site has been expanded.
+        if !pending.is_empty() && (!next_is_same_claim || capped || stop) {
+            if arguments.verbose {
+                print!(
+                    "CLAIM {} verify {} rewrite(s) ... ",
+                    site.claim,
+                    pending.len()
+                );
+                std::io::stdout()
+                    .flush()
+                    .map_err(|error| format!("failed to flush audit progress: {error}"))?;
+            }
+            let rewrites = pending
+                .iter()
+                .map(|(_, expanded)| expanded.as_str())
+                .collect::<Vec<_>>();
+            match verify_claim_rewrites(
+                current,
+                &site.claim,
+                &rewrites,
+                &arguments.limits,
+                deadline,
+            ) {
+                Ok(cost) => {
+                    audited_sites += pending.len();
+                    if arguments.verbose {
+                        println!("ok ({cost})");
+                    } else if let Some(progress) = concise_progress.as_mut() {
+                        progress.passed += pending.len();
+                        if !next_is_same_claim {
+                            println!("ok ({} sites)", progress.passed);
+                        } else {
+                            println!(
+                                "partial ({}/{} sites passed)",
+                                progress.passed, progress.total
+                            );
+                        }
+                        concise_progress = None;
+                    }
+                }
+                Err(failures) => {
+                    if Instant::now() >= deadline
+                        || failures
+                            .iter()
+                            .any(|(_, message)| message == RUN_LIMIT_EXHAUSTED)
+                    {
+                        println!("STOPPED");
+                        println!("    {RUN_LIMIT_EXHAUSTED}");
+                        out_of_time = true;
+                        break;
+                    }
+                    println!("FAIL");
+                    concise_progress = None;
+                    for (index, message) in &failures {
+                        let failed = &selected[pending[*index].0];
+                        println!(
+                            "  {} ({})",
+                            format_location(&site_location(failed)),
+                            failed.tactic_name
+                        );
+                        println!("    {}", message.replace('\n', "\n    "));
+                    }
+                    print_resume(&arguments, &selected[pending[failures[0].0].0]);
+                    audited_sites += pending.len() - failures.len();
+                    site_failures += failures.len();
+                    stop |= !arguments.keep_going;
+                }
+            }
+            pending.clear();
+        }
+        if stop {
+            break;
+        }
+        cursor += 1;
+    }
+    // Sites expanded but not yet verified with their claim were not audited;
+    // a resumed run starts from the first of them.
+    if let Some((first, _)) = pending.first() {
+        cursor = *first;
     }
 
     if let Some(progress) = concise_progress.take() {
@@ -1460,29 +1525,6 @@ fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
         .join(" ")
 }
 
-/// The cost of each check performed on one audited site.
-struct SiteTimings {
-    expansion: PhaseCost,
-    session_verification: PhaseCost,
-    cold_verification: Option<(PhaseCost, PhaseCost)>,
-    reexpansion: PhaseCost,
-}
-
-fn render_site_timings(timings: &SiteTimings) -> String {
-    if let Some((original, rewritten)) = timings.cold_verification {
-        format!(
-            "ok (expand {}, verify {}, cold original {original}, cold rewritten {rewritten}, \
-             reexpand {})",
-            timings.expansion, timings.session_verification, timings.reexpansion,
-        )
-    } else {
-        format!(
-            "ok (expand {}, verify {}, cold comparison not run, reexpand {})",
-            timings.expansion, timings.session_verification, timings.reexpansion,
-        )
-    }
-}
-
 fn remaining_phase_limit(deadline: Instant, configured: Duration) -> Result<Duration, String> {
     let remaining = deadline
         .checked_duration_since(Instant::now())
@@ -1491,6 +1533,17 @@ fn remaining_phase_limit(deadline: Instant, configured: Duration) -> Result<Dura
     Ok(configured.min(remaining))
 }
 
+/// The cost of each check of one site audited alone.
+#[cfg(test)]
+struct SiteTimings {
+    expansion: PhaseCost,
+    session_verification: PhaseCost,
+    cold_verification: Option<(PhaseCost, PhaseCost)>,
+    reexpansion: PhaseCost,
+}
+
+/// Audits one site alone, verifying its rewrite in the session by itself.
+#[cfg(test)]
 fn audit_site(
     site: &AuditSite,
     worker: &mut AuditSessionWorker,
@@ -1498,6 +1551,51 @@ fn audit_site(
     cold_reverify: bool,
     deadline: Instant,
 ) -> Result<SiteTimings, String> {
+    let rewrite = audit_site_rewrite(site, worker, limits, cold_reverify, deadline)?;
+    let session_verification =
+        verify_rewrite_in_session(worker, &site.claim, &rewrite.expanded, limits, deadline)?;
+    Ok(SiteTimings {
+        expansion: rewrite.expansion,
+        session_verification,
+        cold_verification: rewrite.cold_verification,
+        reexpansion: rewrite.reexpansion,
+    })
+}
+
+/// One site's checked rewrite. The caller verifies it in the retained
+/// session, together with the rest of its claim's.
+struct SiteRewrite {
+    /// The proof container with this one site expanded.
+    expanded: String,
+    expansion: PhaseCost,
+    cold_verification: Option<(PhaseCost, PhaseCost)>,
+    reexpansion: PhaseCost,
+}
+
+fn render_site_rewrite(rewrite: &SiteRewrite) -> String {
+    match rewrite.cold_verification {
+        Some((original, rewritten)) => format!(
+            "expanded (expand {}, cold original {original}, cold rewritten {rewritten}, \
+             reexpand {})",
+            rewrite.expansion, rewrite.reexpansion,
+        ),
+        None => format!(
+            "expanded (expand {}, cold comparison not run, reexpand {})",
+            rewrite.expansion, rewrite.reexpansion,
+        ),
+    }
+}
+
+/// Expands one site and checks everything about the rewrite that does not
+/// need the retained session: the cold comparison and the re-expansion fixed
+/// point.
+fn audit_site_rewrite(
+    site: &AuditSite,
+    worker: &mut AuditSessionWorker,
+    limits: &AuditLimits,
+    cold_reverify: bool,
+    deadline: Instant,
+) -> Result<SiteRewrite, String> {
     let location = format!(
         "{}:{}:{}",
         site.click_path.display(),
@@ -1513,21 +1611,14 @@ fn audit_site(
     }
     let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
         .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
-    let expanded_position =
-        claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
-
-    // Expansion can insert or remove lines at the selected tactic.  Resolve
-    // the proof unit again by claim instead of sending its now-stale source
-    // coordinate to the retained verification session.
-    let session_verification = worker.verify(
-        &expanded_click_source,
-        expanded_position,
-        limits.verification.within(deadline)?,
-    )?;
+    // The rewritten claim must still be found: expansion can insert or
+    // remove lines at the selected tactic, so later checks resolve the proof
+    // unit by claim rather than by its now-stale source coordinate.
+    claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
 
     // Checklist step 6: reverify the rewritten proof unit from normal
     // inputs by running the direct targeted entry point under
-    // the verification limits. The retained session already checked the
+    // the verification limits. The retained session checks the
     // rewrite changed nothing outside the audited proof unit, so the other
     // units' outcomes cannot change; a whole-file pass here would redo them
     // all per site, which made auditing a project cost sites x whole-file
@@ -1595,12 +1686,150 @@ fn audit_site(
     // internal branch/path states would reject valid explicit certificates and
     // is intentionally not an audit invariant.
 
-    Ok(SiteTimings {
+    Ok(SiteRewrite {
+        expanded,
         expansion,
-        session_verification,
         cold_verification,
         reexpansion,
     })
+}
+
+/// The single contiguous edit that turns `original` into `rewritten`.
+fn rewrite_edit<'a>(original: &str, rewritten: &'a str) -> (std::ops::Range<usize>, &'a str) {
+    let mut prefix = original
+        .bytes()
+        .zip(rewritten.bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while !original.is_char_boundary(prefix) || !rewritten.is_char_boundary(prefix) {
+        prefix -= 1;
+    }
+    let limit = original.len().min(rewritten.len()) - prefix;
+    let mut suffix = original
+        .bytes()
+        .rev()
+        .zip(rewritten.bytes().rev())
+        .take(limit)
+        .take_while(|(left, right)| left == right)
+        .count();
+    while !original.is_char_boundary(original.len() - suffix)
+        || !rewritten.is_char_boundary(rewritten.len() - suffix)
+    {
+        suffix -= 1;
+    }
+    (
+        prefix..original.len() - suffix,
+        &rewritten[prefix..rewritten.len() - suffix],
+    )
+}
+
+/// Applies every single-site rewrite of `original` to one copy of it.
+/// `None` when two rewrites touch the same text, so they cannot be applied
+/// independently.
+fn combine_rewrites(original: &str, rewrites: &[&str]) -> Option<String> {
+    let mut edits = rewrites
+        .iter()
+        .map(|rewritten| rewrite_edit(original, rewritten))
+        .collect::<Vec<_>>();
+    edits.sort_by_key(|(span, _)| (span.start, span.end));
+    if edits
+        .windows(2)
+        .any(|pair| pair[0].0.end > pair[1].0.start || pair[0].0 == pair[1].0)
+    {
+        return None;
+    }
+    let mut combined = String::with_capacity(original.len());
+    let mut cursor = 0;
+    for (span, replacement) in edits {
+        combined.push_str(&original[cursor..span.start]);
+        combined.push_str(replacement);
+        cursor = span.end;
+    }
+    combined.push_str(&original[cursor..]);
+    Some(combined)
+}
+
+fn verify_rewrite_in_session(
+    worker: &mut AuditSessionWorker,
+    claim: &str,
+    rewritten_container: &str,
+    limits: &AuditLimits,
+    deadline: Instant,
+) -> Result<PhaseCost, String> {
+    let click_source = rewritten_click_source(&worker.source, rewritten_container)
+        .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
+    let position = claim_source_position_for_source(&worker.source, &click_source, claim)?;
+    worker.verify(
+        &click_source,
+        position,
+        limits.verification.within(deadline)?,
+    )
+}
+
+/// Verifies the rewrites of one claim's sites in the retained session.
+///
+/// Verifying each site's rewrite alone runs the whole claim once per site.
+/// The rewrites of one claim are disjoint edits of one proof, so they are
+/// applied together and the claim is verified once. Only when that fails, or
+/// two edits overlap, is each rewrite verified alone, which names the site
+/// whose rewrite fails; `Err` carries the failing sites by position in
+/// `rewrites`.
+fn verify_claim_rewrites(
+    worker: &mut AuditSessionWorker,
+    claim: &str,
+    rewrites: &[&str],
+    limits: &AuditLimits,
+    deadline: Instant,
+) -> Result<PhaseCost, Vec<(usize, String)>> {
+    let original = worker.source.container_source.clone();
+    let combined_failure = match combine_rewrites(&original, rewrites) {
+        Some(combined) => {
+            match verify_rewrite_in_session(worker, claim, &combined, limits, deadline) {
+                Ok(cost) => return Ok(cost),
+                Err(message) if message == RUN_LIMIT_EXHAUSTED => return Err(vec![(0, message)]),
+                Err(message) => Some(message),
+            }
+        }
+        None => None,
+    };
+    if !worker.is_alive() {
+        return Err(vec![(
+            0,
+            combined_failure.unwrap_or_else(|| "the verification session stopped".to_string()),
+        )]);
+    }
+    let mut total = PhaseCost {
+        work: 0,
+        elapsed: Duration::ZERO,
+    };
+    let mut failures = Vec::new();
+    for (index, rewritten) in rewrites.iter().enumerate() {
+        match verify_rewrite_in_session(worker, claim, rewritten, limits, deadline) {
+            Ok(cost) => {
+                total.work += cost.work;
+                total.elapsed += cost.elapsed;
+            }
+            Err(message) => {
+                let stop = message == RUN_LIMIT_EXHAUSTED || !worker.is_alive();
+                failures.push((index, message));
+                if stop {
+                    break;
+                }
+            }
+        }
+    }
+    match (failures.is_empty(), combined_failure) {
+        (true, None) => Ok(total),
+        (true, Some(message)) => Err(vec![(
+            0,
+            format!(
+                "each of the claim's {} rewrites verifies alone, but they do not verify \
+                 together: {message}",
+                rewrites.len()
+            ),
+        )]),
+        (false, _) => Err(failures),
+    }
 }
 
 fn cold_verify(

@@ -950,13 +950,20 @@ It then walks those unique `file:line:column` locations in path and source
 order. A bounded verifier worker is started lazily when the cursor reaches a
 sidecar or mdtest, so resuming in a later file does not initialize earlier
 files. The resulting certified function environment stays alive while the
-audit handles that file. Each site gets these checks:
+audit handles that file. Each site gets the **expand**, **cold**, and
+**reexpand** checks, and each claim gets one **verify** check covering all of
+its sites:
 
 1. **expand** — run expansion directly for that location,
    require the emitted proof container to differ from the on-disk original,
    and require it to round-trip through the ordinary Surface Click parser
    (there is no separate generated or Kernel Click grammar);
-2. **verify** — verify the rewritten proof in the retained session. That
+2. **verify** — once the claim's last selected site has been expanded, apply
+   every site's rewrite to one copy of the proof and verify that in the
+   retained session. The rewrites of one claim are disjoint edits of one
+   proof, so the claim is verified once rather than once per site. Only when
+   that combined proof fails, or two edits overlap, is each site's rewrite
+   verified alone, which names the site whose rewrite fails. The session
    entry point additionally requires the location to resolve to the same proof
    unit as the baseline and the Click source to be identical outside that unit;
    it then reverifies just that proof unit while reusing certified dependencies.
@@ -988,7 +995,8 @@ audit target is narrowed to one sidecar. `--verbose` prints all per-site phase
 timings:
 
 ```text
-[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (auto) ... ok (expand 1107 units, 25ms, verify 1210 units, 17ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
+[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (auto) ... expanded (expand 1107 units, 25ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
+CLAIM scalar.arithmetic_result verify 1 rewrite(s) ... ok (1210 units, 17ms)
 ```
 
 ### Small-stack canary

@@ -8,30 +8,31 @@ A tool's cost must scale with the selected syntax and the output it produces
 cost of verifying that whole claim, twice over.
 
 For each site the audit expands the site, which runs the whole claim with
-capture, and then verifies the rewritten claim in its retained session, which
-runs the whole claim again. `__rb_insert.contract` in
+capture. `__rb_insert.contract` in
 `examples/rbtree-insert/rbtree_insert.click` has 190 smart sites and takes
 about 16 million work units to verify. Measured on a release build, every
 site costs the same whatever it is:
 
 | phase | work units | wall time |
 | --- | --- | --- |
-| expand one site | 17.2 million | 34 s |
-| verify the rewrite in the session | 15.2 million | 32 s |
+| expand one site | 17.2 million | 32 s |
 | re-expand | 1.6 million | 1 s |
 
-That is about 67 seconds a site, so about 3.5 hours for the claim, past the
-audit's own 110-minute run limit. The first site of a claim also runs two
-cold verifications, about 32 seconds each. The audit of this example has
-never been seen to complete.
+That is about 33 seconds a site, so about 105 minutes for the claim, at the
+edge of the audit's own 110-minute run limit. The first site of a claim also
+runs two cold verifications, about 32 seconds each. The audit of this example
+has never been seen to complete.
 
-Memory is no longer part of this. The retained session used to keep every
-check's kernel state, about 1.1 GB a site here, which exhausted a 31 GB
-machine. It now restores its baseline before each check and holds steady
-near 8 GB (`retained_session_checks_leave_no_kernel_state_behind`). An
-earlier version of this report blamed a single expansion allocating without
-bound; that was the session's 5 GB plus one expansion's 5.5 GB meeting an
-8 GB cap.
+The audit used to verify each site's rewrite in its retained session as
+well, another whole-claim run per site. It now applies a claim's rewrites
+together and verifies the claim once, so that part no longer scales with the
+sites. Expansion remains: the capture selects one source tactic per run, so
+expanding `n` sites of a claim still runs the claim `n` times.
+
+Memory is no longer part of this either. The retained session used to keep
+every check's kernel state, about 1.1 GB a site here; it now restores its
+baseline before each check
+(`retained_session_checks_leave_no_kernel_state_behind`).
 
 ## Reproduction
 
@@ -45,8 +46,8 @@ systemd-run --user --scope -q -p MemoryMax=14G -p MemorySwapMax=0 \
     rbtree-insert/rbtree_insert.click
 ```
 
-`LINE` is the line of `void __rb_insert(`. Each `ok` row prints the phase
-costs above.
+`LINE` is the line of `void __rb_insert(`. Each `expanded` row prints the
+phase costs above.
 
 ## Intended regression
 
