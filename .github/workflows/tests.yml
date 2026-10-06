@@ -55,7 +55,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -76,7 +76,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       # Persist Click's own incremental compilation state as well as deps.
       CARGO_INCREMENTAL: '1'
@@ -139,16 +139,24 @@ jobs:
     needs: [scope, prepare]
     if: needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { suite: unit, partition: '1/4' }
-          - { suite: unit, partition: '2/4' }
-          - { suite: unit, partition: '3/4' }
-          - { suite: unit, partition: '4/4' }
-          - { suite: mdtests, partition: '1/1' }
+          # The whole run has a ten-minute budget (docs/internals/testing.md).
+          # The build job takes about six of them, so a shard has to finish
+          # in under four, download and restore included. Add shards before
+          # any one of them gets there, or move slow tests to nightly.yml.
+          - { suite: unit, partition: '1/6' }
+          - { suite: unit, partition: '2/6' }
+          - { suite: unit, partition: '3/6' }
+          - { suite: unit, partition: '4/6' }
+          - { suite: unit, partition: '5/6' }
+          - { suite: unit, partition: '6/6' }
+          - { suite: mdtests, partition: '1/3' }
+          - { suite: mdtests, partition: '2/3' }
+          - { suite: mdtests, partition: '3/3' }
           - { suite: examples, partition: '1/1' }
     steps:
       - uses: actions/checkout@v4
@@ -171,39 +179,11 @@ jobs:
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
         run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" "${{ matrix.suite }}" "${{ matrix.partition }}"
 
-  charon_live:
-    needs: [scope, prepare]
-    if: needs.scope.outputs.docs_only != 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      CARGO_INCREMENTAL: '0'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-nextest
-          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/click/llvm
-          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
-      - uses: actions/download-artifact@v4
-        with:
-          name: compiled-tests
-          path: ${{ runner.temp }}/compiled-tests
-      - name: Restore pinned Charon runtime from the build artifact
-        run: scripts/charon-runtime.sh restore "$RUNNER_TEMP/compiled-tests/rust-runtime.tar.gz"
-      - name: Set up test runner
-        run: scripts/setup-environment.sh --test-runner
-      - name: Re-extract and check Rust fixtures
-        run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" charon-live
-
   docs:
     needs: scope
     if: needs.scope.outputs.docs_only == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -223,7 +203,7 @@ jobs:
     # Keep one stable required check named `test` while the test suite runs
     # in parallel and docs-only changes continue to use their focused gate.
     if: always()
-    needs: [scope, quality, prepare, test_shards, charon_live, docs]
+    needs: [scope, quality, prepare, test_shards, docs]
     runs-on: ubuntu-24.04
     steps:
       - name: Require the selected gate to pass
@@ -232,7 +212,6 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           QUALITY_RESULT: ${{ needs.quality.result }}
-          CHARON_RESULT: ${{ needs.charon_live.result }}
           SHARDS_RESULT: ${{ needs.test_shards.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
         run: |
@@ -245,6 +224,5 @@ jobs:
           else
             [[ "$QUALITY_RESULT" == success ]] || { echo "quality checks did not pass"; exit 1; }
             [[ "$PREPARE_RESULT" == success ]] || { echo "full-gate preparation did not pass"; exit 1; }
-            [[ "$CHARON_RESULT" == success ]] || { echo "live Charon gate did not pass"; exit 1; }
             [[ "$SHARDS_RESULT" == success ]] || { echo "one or more fixture partitions did not pass"; exit 1; }
           fi

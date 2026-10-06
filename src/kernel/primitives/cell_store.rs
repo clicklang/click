@@ -2501,6 +2501,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "nightly: 27 s, over the gate's per-test budget (2026-10-06)"]
     fn the_run_index_agrees_with_a_per_cell_model() {
         let global = PointerBlock::Concrete("cell-store-global".to_string());
         let other = PointerBlock::Concrete("cell-store-other".to_string());

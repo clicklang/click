@@ -221,8 +221,31 @@ the gate, and unsupported C++ does not fall back to the C parser.
 `scripts/check.sh` with no options is the single source of truth for "is this
 tree green". It checks formatting (including the Rust exporter), environment
 setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
-Rust exporters; then runs the unit/API/documentation tests followed by the
-mdtest, example, C compiler-import, C++ import, and Rust import fixtures.
+Rust exporters; then runs the unit, API, documentation, and import tests in
+parallel, followed by the mdtest and example harnesses one at a time, since
+each of those verifies a whole corpus on every core.
+
+### The gate has a ten-minute budget
+
+`scripts/check.sh` and a CI run each finish in under ten minutes. The script
+prints its elapsed time and warns past the budget. Measured 2026-10-06 on 20
+cores with a warm build: 5 minutes.
+
+The budget is kept by what the gate leaves out, not by a faster machine:
+
+- A test that takes more than about ten seconds is marked
+  `#[ignore = "nightly: <measurement>"]`.
+- An example that does is listed in `NIGHTLY` in `tests/examples.rs`.
+- `click audit` re-expands and re-verifies every site of a claim, tens of
+  seconds where `verify` takes under one. The import tests run it only under
+  `CLICK_NIGHTLY`.
+- The live Charon re-extraction is nightly.
+
+`scripts/check.sh --nightly` runs all of it, with no budget, and
+`.github/workflows/nightly.yml` runs that every night. When a new test would
+push the gate past ten minutes, put it in the nightly gate; do not raise the
+budget. Before 2026-10-06 the local gate had grown to 41 minutes and CI to 23
+in five days, almost all from tool rechecks in the Rust import tests.
 
 CI uses these internal modes for code-affecting changes:
 
@@ -231,24 +254,26 @@ CI uses these internal modes for code-affecting changes:
 - `--ci-prepare ARTIFACTS` builds both exporters and one archive containing
   all selected test binaries. It does not execute tests or quality checks.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
-  without compiling Click or either exporter. Four deterministic nextest
-  hash partitions cover the unit and compiler-import tests; mdtests and
-  examples each have their own runner and remain serial within that runner.
+  without compiling Click or either exporter. Six deterministic nextest
+  hash partitions cover the unit and import tests; mdtests run on three
+  runners, each taking every third file by `MDTEST_PARTITION`; examples have
+  one. The build job takes about six of the ten minutes, so a shard has to
+  finish in under four.
 
 - Canonical examples that select native Charon imports load their locked
   artifacts in the ordinary example suite, without starting a compiler. Other
-  compiler-backed examples keep their refresh checks. The separate required
-  live Charon gate supplies fresh extraction coverage for native Rust examples.
-- The `charon-live` archive suite re-extracts Rust checkpoints and the complete
+  compiler-backed examples keep their refresh checks. The nightly gate
+  supplies fresh extraction coverage for native Rust examples.
+- The live Charon tests re-extract Rust checkpoints and the complete
   fixed fixture parity inventory with pinned Charon and rustc, then checks
   every canonical contract through the shared verification engine. Replaced
   legacy sidecars have archived paths and SHA-256 digests in the inventory;
   the gate checks their recorded frozen outcomes independently. These ignored tests
-  run explicitly on a separate runner. The local counterpart is
-  `scripts/check.sh --charon-live`, which builds pinned Charon first.
+  run in the nightly gate. `scripts/check.sh --charon-live` runs them alone,
+  building pinned Charon first.
 
-The final required `test` check requires quality, preparation, every
-partition, and live Charon extraction to pass. A failed or cancelled quality job fails this gate even
+The final required `test` check requires quality, preparation, and every
+partition to pass. A failed or cancelled quality job fails this gate even
 when every test succeeds.
 
 `scripts/setup-environment.sh` installs pinned nextest release binaries and

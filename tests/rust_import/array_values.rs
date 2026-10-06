@@ -63,6 +63,7 @@ fn charon_array_reference_assignments_tools_recheck_expanded_certificates() {
 }
 
 #[test]
+#[ignore = "nightly: 20 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_array_values_unchanged_fixture_verifies_external_snapshots() {
     let p = Project::new("");
     let source = include_str!("../../design/charon-trial/array-values/arrays.rs");
@@ -200,6 +201,7 @@ fn external_project() -> Project {
 }
 
 #[test]
+#[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_external_array_copies_and_fills_verify_and_reject_false_bytes() {
     let p = external_project();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();

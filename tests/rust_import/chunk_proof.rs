@@ -22,6 +22,7 @@ fn project() -> Project {
     p
 }
 #[test]
+#[ignore = "nightly: 43 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_preserves_source_and_checks_obligations() {
     assert_eq!(
         include_str!("../../design/charon-trial/chunk-proof/chunks.rs"),
@@ -47,6 +48,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
     }
 }
 #[test]
+#[ignore = "nightly: 32 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_tools_agree() {
     let p = project();
     for command in ["verify", "profile"] {
@@ -60,6 +62,7 @@ fn charon_chunk_proof_tools_agree() {
     assert_cli(&p, &["audit", "--start-at", &cursor, "--max-sites", "1"]);
 }
 #[test]
+#[ignore = "nightly: 46 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunk_proof_expansion_rechecks() {
     let p = project();
     assert_cli(&p, &["verify"]);
