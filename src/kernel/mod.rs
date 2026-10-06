@@ -266,6 +266,21 @@ pub fn verification_session_generation() -> u64 {
     VERIFICATION_SESSION_GENERATION.with(std::cell::Cell::get)
 }
 
+/// The state a session's tables held at one moment, captured by
+/// [`VerificationSession::capture_state`] and reinstalled by
+/// [`VerificationSession::restore_state`].
+#[derive(Clone)]
+pub struct VerificationSessionState {
+    generation: u64,
+    arena: primitives::CMemoryArenaState,
+    loads: eval::LoadRegistryState,
+    model_fields: model_fields::ModelFieldRegistryState,
+    blocks: primitives::BlockRegistriesState,
+    pure_functions:
+        std::collections::BTreeMap<String, std::sync::Arc<pure_functions::CPureFunctionDefinition>>,
+    fold_reads: fold_read_summary::FoldReadSummariesState,
+}
+
 /// One verification's worth of kernel thread-local state.
 ///
 /// The kernel keeps per-thread tables that are correct only within one
@@ -323,6 +338,67 @@ impl VerificationSession {
     pub fn resume() -> Self {
         VERIFICATION_SESSION_DEPTH.with(|depth| depth.set(depth.get() + 1));
         Self { fresh: false }
+    }
+
+    /// Captures the state this thread's tables hold for the current
+    /// session: the memory arena and every registry a session entry clears.
+    /// Memo caches are not captured; they only remember answers.
+    ///
+    /// A reusable session captures this once its retained environment is
+    /// built, and restores it before each check. The capture shares storage
+    /// with the live tables, so it costs one handle per table entry.
+    pub fn capture_state() -> VerificationSessionState {
+        VerificationSessionState {
+            generation: verification_session_generation(),
+            arena: primitives::capture_c_memory_arena(),
+            loads: eval::capture_load_variable_registry(),
+            model_fields: model_fields::capture_model_field_registry(),
+            blocks: primitives::capture_block_registries(),
+            pure_functions: pure_functions::capture_pure_function_definitions(),
+            fold_reads: fold_read_summary::capture_fold_read_summaries(),
+        }
+    }
+
+    /// How many entries this thread's memory arena and load registries hold,
+    /// for regressions that a reusable session's checks leave nothing behind.
+    #[cfg(test)]
+    pub fn state_entry_count() -> usize {
+        primitives::c_memory_arena_entry_count() + eval::load_registry_entry_count()
+    }
+
+    /// Returns this thread's tables to a captured state and drops every memo
+    /// cache, so a check starts from exactly what the capture's holder built
+    /// and nothing an earlier check interned, named, or memoized remains.
+    ///
+    /// Without this, each check on a reusable session leaves its snapshots'
+    /// storage pinned, its load names registered, and its memo entries
+    /// cached, and the tables grow with every check. Anything created after
+    /// the capture is meaningless after a restore; the holder keeps only
+    /// state that existed when it captured.
+    ///
+    /// Returns `false`, changing nothing, when the tables belong to another
+    /// session generation: the capture's ids would name nothing there.
+    pub fn restore_state(state: &VerificationSessionState) -> bool {
+        if verification_session_generation() != state.generation {
+            return false;
+        }
+        primitives::restore_c_memory_arena(&state.arena);
+        eval::restore_load_variable_registry(&state.loads);
+        model_fields::restore_model_field_registry(&state.model_fields);
+        primitives::restore_block_registries(&state.blocks);
+        pure_functions::restore_pure_function_definitions(&state.pure_functions);
+        fold_read_summary::restore_fold_read_summaries(&state.fold_reads);
+        eval::clear_load_canonicalization_caches();
+        memory_provenance::clear_canonical_form_caches();
+        memory_provenance::clear_provenance_memos();
+        reasoning::memory_resolution::clear_canonical_memory_cache();
+        reasoning::memory_resolution::clear_memory_resolution_memos();
+        assumptions::clear_assumption_memos();
+        assumptions::clear_context_inconsistency_memos();
+        assumptions::clear_frame_expansion_memo();
+        api::clear_borrowed_input_root_memo();
+        reasoning::variable_collection::clear_shared_memory_variables();
+        true
     }
 
     /// Whether this entry started the session (and so cleared the kernel's

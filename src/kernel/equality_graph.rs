@@ -347,7 +347,7 @@ pub(in crate::kernel) struct EqualityGraph {
     logical_reads: std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct LogicalPointerReads {
     definitions: crate::persistent::PersistentMap<Pointer, (Pointer, Pointer)>,
     // Producer-retained read atoms used inside selected address expressions.
@@ -366,6 +366,32 @@ thread_local! {
     static LOGICAL_POINTER_READS: std::cell::RefCell<
         std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>
     > = std::cell::RefCell::new(std::sync::Arc::new(std::sync::Mutex::new(LogicalPointerReads::default())));
+}
+
+/// The logical pointer reads discovered so far, as a value a reusable
+/// session captures and restores.
+#[derive(Clone)]
+pub(in crate::kernel) struct LogicalPointerReadsState(LogicalPointerReads);
+
+pub(in crate::kernel) fn capture_logical_pointer_reads() -> LogicalPointerReadsState {
+    LOGICAL_POINTER_READS.with(|reads| {
+        LogicalPointerReadsState(
+            reads
+                .borrow()
+                .lock()
+                .expect("logical pointer reads are never poisoned")
+                .clone(),
+        )
+    })
+}
+
+/// Installs the captured reads as this thread's own table. A fresh table is
+/// installed rather than the shared one overwritten, so an evaluation that
+/// still holds the previous table keeps what it discovered.
+pub(in crate::kernel) fn restore_logical_pointer_reads(state: &LogicalPointerReadsState) {
+    LOGICAL_POINTER_READS.with(|reads| {
+        *reads.borrow_mut() = std::sync::Arc::new(std::sync::Mutex::new(state.0.clone()));
+    });
 }
 
 pub(in crate::kernel) fn clear_logical_pointer_reads() {

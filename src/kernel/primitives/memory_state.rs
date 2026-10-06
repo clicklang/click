@@ -7641,6 +7641,27 @@ pub(crate) fn registered_block_alignment_charged(
     })
 }
 
+/// The block-alignment registry and the never-address-taken locals, as one
+/// value a reusable session captures and restores.
+#[derive(Clone)]
+pub(crate) struct BlockRegistriesState {
+    alignment: BTreeMap<PointerBlock, u64>,
+    never_address_taken: BTreeSet<String>,
+}
+
+pub(crate) fn capture_block_registries() -> BlockRegistriesState {
+    BlockRegistriesState {
+        alignment: BLOCK_ALIGNMENT_REGISTRY.with(|registry| registry.borrow().clone()),
+        never_address_taken: NEVER_ADDRESS_TAKEN_LOCALS.with(|registry| registry.borrow().clone()),
+    }
+}
+
+pub(crate) fn restore_block_registries(state: &BlockRegistriesState) {
+    BLOCK_ALIGNMENT_REGISTRY.with(|registry| *registry.borrow_mut() = state.alignment.clone());
+    NEVER_ADDRESS_TAKEN_LOCALS
+        .with(|registry| *registry.borrow_mut() = state.never_address_taken.clone());
+}
+
 pub(crate) fn clear_block_alignment_registry() {
     BLOCK_ALIGNMENT_REGISTRY.with(|registry| registry.borrow_mut().clear());
 }

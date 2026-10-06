@@ -59,10 +59,11 @@ mod persistent_map;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
-    block_is_never_address_taken_local, clear_block_alignment_registry,
-    clear_never_address_taken_locals, register_aggregate_argument_source, register_block_alignment,
+    BlockRegistriesState, block_is_never_address_taken_local, capture_block_registries,
+    clear_block_alignment_registry, clear_never_address_taken_locals,
+    register_aggregate_argument_source, register_block_alignment,
     registered_aggregate_argument_source, registered_block_alignment,
-    registered_block_alignment_charged, set_never_address_taken_locals,
+    registered_block_alignment_charged, restore_block_registries, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
 };
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
@@ -5297,7 +5298,7 @@ impl CMemoryDerivation {
 
 static NEXT_MEMORY_ARENA_TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct CMemoryArena {
     identities: std::collections::HashMap<std::sync::Arc<CMemory>, (u32, u64)>,
     shallow_identities: std::collections::HashMap<CMemoryShallowIdentity, (u32, u64)>,
@@ -5354,6 +5355,39 @@ thread_local! {
 /// their derivations, so nothing recorded for an earlier verification can
 /// answer a DAG walk in a later one. Called by [`super::VerificationSession`]
 /// at the outermost verification entry; see its documentation.
+/// This thread's memory arena as one value: its token, every interned
+/// snapshot with its derivation, and the derivation generation. Clones share
+/// the snapshots' storage, so a capture costs one handle per arena entry.
+#[derive(Clone)]
+pub(super) struct CMemoryArenaState {
+    arena: (u32, CMemoryArena),
+    derivation_generation: u64,
+}
+
+/// How many entries the arena holds: interned snapshots and pinned roots.
+#[cfg(test)]
+pub(super) fn c_memory_arena_entry_count() -> usize {
+    C_MEMORY_ARENA.with(|arena| {
+        let arena = arena.borrow();
+        arena.1.memories.len() + arena.1.shallow_pins.len()
+    })
+}
+
+pub(super) fn capture_c_memory_arena() -> CMemoryArenaState {
+    CMemoryArenaState {
+        arena: C_MEMORY_ARENA.with(|arena| arena.borrow().clone()),
+        derivation_generation: C_MEMORY_DERIVATION_GENERATION.with(std::cell::Cell::get),
+    }
+}
+
+/// Reinstalls a captured arena under its own token, so every snapshot id the
+/// capture's holder kept still names the same snapshot and derivation, and
+/// nothing interned since remains.
+pub(super) fn restore_c_memory_arena(state: &CMemoryArenaState) {
+    C_MEMORY_ARENA.with(|arena| *arena.borrow_mut() = state.arena.clone());
+    C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(state.derivation_generation));
+}
+
 pub(super) fn start_fresh_c_memory_arena() {
     C_MEMORY_ARENA.with(|arena| {
         *arena.borrow_mut() = (

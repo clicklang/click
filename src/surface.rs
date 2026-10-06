@@ -6309,6 +6309,11 @@ pub struct C0VerificationSession {
     /// under. Its snapshots live in this thread's kernel tables, which the
     /// next fresh verification on the thread replaces.
     kernel_generation: u64,
+    /// The kernel tables as they stood once that environment was built. Each
+    /// check restores them first, so a check starts from exactly the
+    /// environment's own state and leaves nothing behind for the next: a
+    /// session's memory is bounded by its largest check, not their sum.
+    kernel_state: crate::kernel::VerificationSessionState,
 }
 
 impl ClickFile {

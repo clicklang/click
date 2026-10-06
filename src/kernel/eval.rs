@@ -58,6 +58,8 @@ pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
+#[cfg(test)]
+pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
@@ -78,7 +80,9 @@ pub(crate) use memory_loads::registered_load_origin_for_variable;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
 pub(crate) use memory_loads::viewed_as_memory_load;
 pub(crate) use memory_loads::{
-    begin_load_origin_epoch, clear_load_canonicalization_caches, clear_load_variable_registry,
+    LoadRegistryState, begin_load_origin_epoch, capture_load_variable_registry,
+    clear_load_canonicalization_caches, clear_load_variable_registry,
+    restore_load_variable_registry,
 };
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
