@@ -81,6 +81,29 @@ and reject a larger batch, missing bounds, false endpoints, altered product
 or quotient certificates, altered recurrence coefficients, reversed quotient-shift
 guards, and false A- or B-invariant steps.
 
+## Index derived from iterator state
+
+The [iterator bounds library](iterator-bounds.click) observes the existing
+signed remaining-byte state as
+`N(total, remaining) = truncating_quotient(to_integer(total) - to_integer(remaining), 4)`.
+For a batch of at most 22208 bytes, with `0 <= remaining <= total`, it proves
+`0 <= N <= 5552`. If at least four bytes remain, `N <= 5551`, the native
+`remaining - 4` operation is defined, and consuming four bytes advances N by
+exactly one. No processed-count local is introduced.
+
+The native lane-step lemmas now compose with this derived index. Under the
+A/B bounds at N and the byte bound, both addition guards hold and the updated
+native lane observations satisfy the A/B ceilings at
+`N(total, remaining - 4)`. Initial, empty, short-tail, small exact-multiple,
+and final full-batch indices have checked endpoints. The library has 14 theorem
+groups with 30 checked conclusions; verification, profiling, auditing, and
+expansion recheck them alongside the existing arithmetic dependencies.
+
+These implications match the adapter's stored remaining-byte state and
+four-byte `next` transition. They do not yet prove that the original nested
+loops establish and maintain the numeric bounds, lane bounds, and memory views.
+Full checksum correctness and whole-loop panic freedom remain unproved.
+
 ## Reproduce
 
 Build Click and pinned Charon with the normal repository setup. The frozen
@@ -89,6 +112,7 @@ artifact verifies without extracting again:
 ```sh
 target/debug/click verify design/charon-trial/adler2/helpers.click
 target/debug/click verify design/charon-trial/adler2/bounds.click
+target/debug/click verify design/charon-trial/adler2/iterator-bounds.click
 ```
 
 Refresh the entire selected crate through the production adapter:
@@ -109,8 +133,8 @@ cargo nextest run --test rust_import --run-ignored only \
 ## Remaining proof work
 
 Establish and preserve the lane invariants over the original chunks/remainder
-iterator states using the checked A- and B-bound recurrences and native u32
-observation bridges. Then use the helper contracts and byte accounting
+iterator states using the derived index, checked A/B recurrences, and native
+u32 observation bridges. Then use the helper contracts and byte accounting
 to connect the original computation to the common specification in the [checksum assessment](../../rust-checksum-assessment.md).
 Successful import and helper proofs alone do not establish checksum correctness
 or whole-loop panic freedom.

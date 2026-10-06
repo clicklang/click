@@ -955,3 +955,28 @@ argument rejection, and deterministic local-selection scaling are covered.
 Next establish these bounds over the original nested iterator states, then
 compose the helper calls and byte accounting with the Adler-32 specification.
 Whole-loop panic freedom and the checksum postcondition remain unproved.
+
+
+### Lane index derived from remaining-byte state
+
+The iterator bounds library defines the vector index from the existing native
+remaining-byte state, using Integer observations and division by four.
+Under `0 <= remaining <= total <= 22208`, the index lies in `0..5552`;
+when at least four bytes remain it is at most 5551. Checked native subtraction
+and nonnegative quotient-shift proofs establish that the four-byte transition
+advances the index by one. The native A/B step proofs now preserve the lane
+ceilings at the index observed after `remaining - 4`, and prove both native
+addition guards using the index at the iterator head. No runtime processed
+count is generated. The batch bound imposes no total input-length bound.
+
+The new library has 14 theorem groups and 30 conclusions. Regressions cover
+initial/empty input, short tails, exact multiples, full-batch endpoints,
+missing remaining/length/definedness guards, false stride and successor claims,
+and rejection of a larger batch. It imports the existing lane arithmetic;
+the module graph also verifies with the pinned original helper contracts.
+Tool checks retain all conclusions and recheck expanded certificates.
+
+Next instantiate these conditional numeric and lane invariants over the
+original nested Charon iterator loops, retaining shared byte views and proving
+the helper call prerequisites. The original loop invariants, whole-loop panic
+freedom, byte accounting, and checksum postcondition remain unproved.

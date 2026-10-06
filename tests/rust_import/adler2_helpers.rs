@@ -401,3 +401,142 @@ fn expand_bounds_claims(claims: &[(&str, usize)]) {
         30
     );
 }
+
+const ITERATOR_BOUNDS: &str =
+    include_str!("../../design/charon-trial/adler2/iterator-bounds.click");
+
+fn flat_iterator_bounds() -> String {
+    format!(
+        "{BOUNDS}\n{}",
+        ITERATOR_BOUNDS
+            .strip_prefix("import \"bounds.click\";\n")
+            .unwrap()
+    )
+}
+
+#[test]
+fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
+    use click::surface::verify_click_theorems;
+    let source = flat_iterator_bounds();
+    assert_eq!(verify_click_theorems(&source).unwrap().len(), 60);
+    for (before, after) in [
+        ("requires total <= 22208;", "requires total <= 22212;"),
+        ("requires remaining <= total;", ""),
+        ("requires 0 <= remaining;", ""),
+        ("requires 4 <= remaining;", ""),
+        ("requires defined(remaining - 4);", ""),
+        ("requires 0 <= consumed;", ""),
+        ("requires 0 <= increment;", ""),
+        ("+ 4 * increment", "+ 8 * increment"),
+        (
+            "ensures adler_lane_vectors_consumed(22208, 0) == 5552",
+            "ensures adler_lane_vectors_consumed(22208, 0) == 5551",
+        ),
+        (
+            "ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4))",
+            "ensures to_integer(b + (a + byte)) <= adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining))",
+        ),
+    ] {
+        let invalid = source.replace(before, after);
+        assert_ne!(source, invalid, "missing mutation: {before}");
+        assert!(
+            verify_click_theorems(&invalid).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
+fn iterator_bounds_project() -> Project {
+    let p = adler2_helpers_project();
+    fs::write(p.root.join("bounds.click"), BOUNDS).unwrap();
+    fs::write(p.root.join("iterator-bounds.click"), ITERATOR_BOUNDS).unwrap();
+    p
+}
+
+#[test]
+fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
+    let p = iterator_bounds_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let source = format!("{HELPERS}\nimport \"iterator-bounds.click\";\n");
+    let project = click::cli::read_click_project(&p.root.join("borrow.click"), &source).unwrap();
+    C0VerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
+}
+
+#[test]
+fn charon_adler2_iterator_bounds_tools_verify_profile_and_audit() {
+    let p = iterator_bounds_project();
+    for command in ["verify", "profile", "audit"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg(command)
+            .arg(p.root.join("iterator-bounds.click"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{command}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
+fn expand_iterator_bounds_claims(claims: &[(&str, usize)]) {
+    let p = iterator_bounds_project();
+    for &(name, ensures) in claims {
+        for index in 0..ensures {
+            let result = Command::new(env!("CARGO_BIN_EXE_click"))
+                .args([
+                    "expand",
+                    "--claim",
+                    &format!("{name}.ensures_{index}"),
+                    "--in-place",
+                ])
+                .arg(p.root.join("iterator-bounds.click"))
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{name}: {}\n{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+    }
+    let expanded = fs::read_to_string(p.root.join("iterator-bounds.click")).unwrap();
+    let source = format!(
+        "{BOUNDS}\n{}",
+        expanded.strip_prefix("import \"bounds.click\";\n").unwrap()
+    );
+    assert_eq!(
+        click::surface::verify_click_theorems(&source)
+            .unwrap()
+            .len(),
+        60
+    );
+}
+
+#[test]
+fn charon_adler2_iterator_bounds_tools_expand_index_certificates() {
+    expand_iterator_bounds_claims(&[
+        ("adler_lane_iterator_observations", 3),
+        ("adler_lane_iterator_consumed_bounds", 2),
+        ("adler_lane_iterator_count_bounds", 2),
+        ("adler_lane_iterator_index_bounds", 2),
+        ("adler_lane_iterator_initial", 1),
+        ("adler_lane_iterator_next_defined", 1),
+        ("adler_lane_iterator_count_before_next", 1),
+        ("adler_lane_iterator_index_before_next", 1),
+        ("adler_lane_iterator_quotient_shift", 1),
+        ("adler_lane_iterator_successor", 1),
+    ]);
+}
+
+#[test]
+fn charon_adler2_iterator_bounds_tools_expand_native_certificates() {
+    expand_iterator_bounds_claims(&[
+        ("adler_lane_iterator_native_step", 4),
+        ("adler_lane_iterator_successor_ceilings", 2),
+        ("adler_lane_iterator_native_preservation", 2),
+        ("adler_lane_iterator_boundaries", 7),
+    ]);
+}
