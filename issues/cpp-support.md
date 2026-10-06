@@ -544,8 +544,20 @@ missing wide division guards, and the unbounded narrow correction, even with a
 trivial postcondition. Neither library implementation is verified, and the
 general division/rounding theorem remains open.
 
-Next prove the native division guards and quotient/remainder observations,
-then both narrowing identities and the **narrow** correction bounds. The
+The arithmetic foundation now supplies shared explicit `integer_division_bounds`
+and `integer_relation_transport` certificates. Four operand endpoints bound a
+truncating quotient or remainder, with zero excluded from the divisor interval.
+A separate equality transport moves one whole bound/equality operand along a
+named equality, including nonlinear terms. Kernel oracle, malformed-certificate,
+large-value and budget tests, unused-fact and node-count scaling, pure fixtures,
+and C++ native quotient/remainder narrowing composition have coverage. Those
+narrowing proofs derive result bounds from operand intervals rather than taking
+result ranges as preconditions, and retain expansion/reverification and audit.
+No frontend schema or conversion semantics change.
+
+Next compose these certificates in the complete unchanged `FeeFrac::Div` proof:
+prove the native division guards and quotient/remainder observations, then both
+narrowing identities and the **narrow** correction bounds. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
 A positive narrow divisor fact currently does not automatically discharge its
 wide observer guards, and a zero numerator observer alone does not establish

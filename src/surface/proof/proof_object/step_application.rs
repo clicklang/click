@@ -1299,6 +1299,8 @@ impl<'a> Proof<'a> {
             matches!(
                 node,
                 SpecialArithmeticNode::IntegerProductBounds { .. }
+                    | SpecialArithmeticNode::IntegerDivisionBounds { .. }
+                    | SpecialArithmeticNode::IntegerRelationTransport { .. }
                     | SpecialArithmeticNode::IntegerCastIdentity { .. }
             )
         });
@@ -1353,6 +1355,30 @@ impl<'a> Proof<'a> {
                         result: self.lower_integer_surface_proposition(
                             result,
                             "integer product bound result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
+                    KernelNode::IntegerDivisionBounds {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer division bound result",
+                        )?,
+                    }
+                }
+                SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
+                    KernelNode::IntegerRelationTransport {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: self.lower_integer_surface_proposition(
+                            result,
+                            "integer relation transport bound result",
                         )?,
                     }
                 }
@@ -3093,6 +3119,12 @@ fn describe_special_arithmetic_check_error(
         ),
         Error::InvalidIntegerProductBounds(index) => format!(
             "node {index} requires four non-strict bounds with constant endpoints on the product operands, in left-lower/upper then right-lower/upper order"
+        ),
+        Error::InvalidIntegerDivisionBounds(index) => format!(
+            "node {index} requires four non-strict bounds with constant endpoints on the truncating quotient/remainder operands, in numerator-lower/upper then divisor-lower/upper order, with the divisor interval excluding zero"
+        ),
+        Error::InvalidIntegerRelationTransport(index) => format!(
+            "node {index} requires exactly an Integer equality and an equality or non-strict bound, then replaces one relation operand with its exact equal"
         ),
         Error::InvalidPremise(index) => format!("premise {index} is not a listed premise"),
         Error::InvalidNodeReference(index) => {

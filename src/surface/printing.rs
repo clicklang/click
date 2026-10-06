@@ -810,6 +810,24 @@ fn write_special_arithmetic_certificate(
                     .join(", "),
                 source_click_proposition(result)
             ),
+            SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => format!(
+                "integer_division_bounds bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
+            SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => format!(
+                "integer_relation_transport bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::PointerTranslation {
                 relation,
                 bounds,

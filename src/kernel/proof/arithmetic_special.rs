@@ -565,6 +565,14 @@ pub(crate) enum SpecialArithmeticNode {
         bounds: Vec<usize>,
         result: Proposition,
     },
+    IntegerDivisionBounds {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
+    IntegerRelationTransport {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     IntegerCastIdentity {
         bounds: Vec<usize>,
         result: Proposition,
@@ -629,6 +637,8 @@ pub(crate) struct SpecialArithmeticCertificate {
 #[allow(dead_code)]
 pub(crate) enum SpecialArithmeticCheckError {
     InvalidIntegerProductBounds(usize),
+    InvalidIntegerDivisionBounds(usize),
+    InvalidIntegerRelationTransport(usize),
     InvalidIntegerCastIdentity(usize),
     InvalidPremise(usize),
     InvalidNodeReference(usize),
@@ -688,6 +698,12 @@ impl SpecialArithmeticCertificate {
         match node {
             SpecialArithmeticNode::IntegerProductBounds { bounds, result } => {
                 super::integer_product_bounds::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerDivisionBounds { bounds, result } => {
+                super::integer_division_bounds::check(index, bounds, premises, result)
+            }
+            SpecialArithmeticNode::IntegerRelationTransport { bounds, result } => {
+                super::integer_relation_transport::check(index, bounds, premises, result)
             }
             SpecialArithmeticNode::IntegerCastIdentity { bounds, result } => {
                 super::integer_cast_identity::check(index, bounds, premises, result)
@@ -1079,6 +1095,8 @@ impl SpecialArithmeticNode {
         match self {
             Self::UnsignedSumBound { result, .. }
             | Self::IntegerProductBounds { result, .. }
+            | Self::IntegerDivisionBounds { result, .. }
+            | Self::IntegerRelationTransport { result, .. }
             | Self::IntegerCastIdentity { result, .. }
             | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }

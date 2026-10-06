@@ -9899,3 +9899,113 @@ fn literal_library_metadata_cannot_bypass_selected_source_constructor_verificati
     assert!(!project.artifact().exists());
     assert!(!project.lock().exists());
 }
+
+#[test]
+fn wide_division_operand_bounds_certify_native_narrowing() {
+    for (name, ty, op, pure, lo, hi) in [
+        (
+            "quotient",
+            "int64",
+            "/",
+            "truncating_quotient",
+            "-9223372036854775808",
+            "9223372036854775807",
+        ),
+        (
+            "remainder",
+            "int32",
+            "%",
+            "truncating_remainder",
+            "-2147483648",
+            "2147483647",
+        ),
+    ] {
+        let project = Project::with_fixture("narrow.cpp", name, WIDE_NARROWING_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        fs::remove_file(&project.exporter).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let certificate = |goal: &str| {
+            format!(
+                r#"arithmetic_certificate special {{
+            premise 0: -9223372036854775808 <= to_integer(a) => -9223372036854775808 <= to_integer(a);
+            premise 1: to_integer(a) <= 9223372036854775807 => to_integer(a) <= 9223372036854775807;
+            premise 2: 1 <= to_integer(b) => 1 <= to_integer(b);
+            premise 3: to_integer(b) <= 2147483647 => to_integer(b) <= 2147483647;
+            integer_division_bounds bounds [0, 1, 2, 3] => {goal};
+            conclusion 0;
+        }}"#
+            )
+        };
+        let expression = format!("{pure}(to_integer(a), to_integer(b))");
+        let observed = format!("to_integer(a {op} b)");
+        let lower = format!("{lo} <= {expression}");
+        let upper = format!("{expression} <= {hi}");
+        let lower_cert = certificate(&lower);
+        let upper_cert = certificate(&upper);
+        let cast_cert = cast_identity_certificate(&observed, lo, hi);
+        let proof = format!(
+            r#"verifying "narrow.cpp";
+{ty} {name}(int128 a, int128 b) {{
+    requires -9223372036854775808 <= to_integer(a);
+    requires to_integer(a) <= 9223372036854775807;
+    requires 1 <= to_integer(b);
+    requires to_integer(b) <= 2147483647;
+    requires to_integer(b) != 0;
+    requires to_integer(b) != -1;
+    ensures to_integer(result) == {expression};
+}} by {{
+    have {lower} by {{ {lower_cert} }}
+    have {upper} by {{ {upper_cert} }}
+    execute();
+    have {lo} <= {observed} by {{ arithmetic_certificate special {{
+        premise 0: {observed} == {expression} => {observed} == {expression};
+        premise 1: {lower} => {lower};
+        integer_relation_transport bounds [0, 1] => {lo} <= {observed}; conclusion 0;
+    }} }}
+    have {observed} <= {hi} by {{ arithmetic_certificate special {{
+        premise 0: {observed} == {expression} => {observed} == {expression};
+        premise 1: {upper} => {upper};
+        integer_relation_transport bounds [0, 1] => {observed} <= {hi}; conclusion 0;
+    }} }}
+    have to_integer(result) == {observed} by {{ {cast_cert} }}
+    have to_integer(result) == {expression} by {{ arithmetic_certificate special {{
+        premise 0: {observed} == {expression} => {observed} == {expression};
+        premise 1: to_integer(result) == {observed} => to_integer(result) == {observed};
+        integer_relation_transport bounds [0, 1] => to_integer(result) == {expression}; conclusion 0;
+    }} }}
+    simp();
+}}
+"#
+        );
+        check_arithmetic_sidecar(&project, &import, &proof);
+        for hostile in [
+            proof.replace(
+                "ensures to_integer(result) ==",
+                "ensures to_integer(result) !=",
+            ),
+            proof.replace("    requires to_integer(a) <= 9223372036854775807;", ""),
+            proof.replace("    requires 1 <= to_integer(b);", ""),
+            proof.replace("    requires to_integer(b) != 0;", ""),
+            proof.replace(
+                "integer_division_bounds bounds [0, 1, 2, 3]",
+                "integer_division_bounds bounds [0, 1, 3, 2]",
+            ),
+            proof.replace(
+                "integer_relation_transport bounds [0, 1]",
+                "integer_relation_transport bounds [1, 0]",
+            ),
+            proof.replace(
+                "integer_cast_identity bounds [0, 1]",
+                "integer_cast_identity bounds [0, 0]",
+            ),
+        ] {
+            let path = project.directory.join("false.click");
+            fs::write(&path, &hostile).unwrap();
+            let parsed = read_click_project(&path, &hostile).unwrap();
+            let error = verify_program_prepared_project(&parsed, &import).expect_err(
+                "false results, missing guards/bounds and forged certificate references must fail",
+            );
+            assert!(error.message().len() < 8000, "bounded refusal");
+        }
+    }
+}
