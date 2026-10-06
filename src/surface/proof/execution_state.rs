@@ -610,7 +610,10 @@ pub(super) fn append_surface_step_to_leaves(steps: &mut Vec<ProofStep>, step: Pr
     if matches!(steps.last(), Some(ProofStep::Contradiction(_))) {
         return;
     }
-    if let Some(ProofStep::Match { scrutinee, arms }) = steps.last_mut() {
+    if let Some(ProofStep::Match {
+        scrutinee, arms, ..
+    }) = steps.last_mut()
+    {
         // The terminal join retains a path selector for deferred operations.
         // Serialize those operations inside the original lexical constructor
         // arms, not after the match where field names escape.

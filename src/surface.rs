@@ -3714,6 +3714,7 @@ impl PartialEq for ProofCertificate {
 pub enum ProofStep {
     Match {
         scrutinee: ContractExpression,
+        ensuring: Option<Vec<ProofAssertion>>,
         arms: Vec<CertificateInductionArm>,
     },
     CloseInvariantsBy(Box<ProofCertificate>),
@@ -4083,6 +4084,7 @@ impl ProofStep {
             },
             ProofTactic::Match(proof_match) => Self::Match {
                 scrutinee: proof_match.scrutinee.clone(),
+                ensuring: proof_match.ensuring.clone(),
                 arms: proof_match
                     .arms
                     .iter()
@@ -4321,20 +4323,23 @@ impl ProofStep {
                 parameter: parameter.clone(),
                 hypothesis: hypothesis.clone(),
             },
-            Self::Match { scrutinee, arms } => {
-                ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-                    scrutinee: scrutinee.clone(),
-                    arms: arms
-                        .iter()
-                        .map(|arm| ProofInductionArm {
-                            type_name: arm.type_name.clone(),
-                            variant: arm.variant.clone(),
-                            bindings: arm.bindings.clone(),
-                            tactics: arm.proof.to_proof_tactics(),
-                        })
-                        .collect(),
-                }))
-            }
+            Self::Match {
+                scrutinee,
+                ensuring,
+                arms,
+            } => ProofTactic::Match(std::sync::Arc::new(ProofMatch {
+                scrutinee: scrutinee.clone(),
+                ensuring: ensuring.clone(),
+                arms: arms
+                    .iter()
+                    .map(|arm| ProofInductionArm {
+                        type_name: arm.type_name.clone(),
+                        variant: arm.variant.clone(),
+                        bindings: arm.bindings.clone(),
+                        tactics: arm.proof.to_proof_tactics(),
+                    })
+                    .collect(),
+            })),
             Self::StructuralInduct {
                 parameter,
                 hypothesis,
@@ -5152,6 +5157,8 @@ pub(crate) fn case_arms_disjunction(arms: &[ProofCaseArm]) -> ClickProposition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofMatch {
     scrutinee: ContractExpression,
+    /// What the rejoined proof keeps when the arms end in different states.
+    ensuring: Option<Vec<ProofAssertion>>,
     arms: Vec<ProofInductionArm>,
 }
 

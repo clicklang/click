@@ -286,14 +286,14 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &format!("induct({parameter}) as {hypothesis};"),
         ),
         ProofTactic::Match(proof_match) => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "match {} {{",
-                    describe_contract_expression(&proof_match.scrutinee)
-                ),
-            );
+            let scrutinee = describe_contract_expression(&proof_match.scrutinee);
+            if let Some(assertions) = &proof_match.ensuring {
+                line(output, &prefix, &format!("match {scrutinee} ensuring {{"));
+                write_join_interface(output, assertions, indent + 1);
+                line(output, &prefix, "} {");
+            } else {
+                line(output, &prefix, &format!("match {scrutinee} {{"));
+            }
             for arm in &proof_match.arms {
                 let arguments = if arm.bindings.is_empty() {
                     String::new()

@@ -2704,7 +2704,7 @@ fn advance_execution_match<'a>(
     // With tactics written after it, the `match` must rejoin its live arms:
     // they are checked once, from the one state every arm ends in. Without
     // any, each arm completes the function proof on its own.
-    let rejoins = !matches!(continuation, InternalProofNode::Done);
+    let rejoins = source.ensuring.is_some() || !matches!(continuation, InternalProofNode::Done);
     let proof = proof.begin_execution_match();
     let marker = proof.checkpoint();
     let mut plan = proof.plan_execution_match(source, |index| {
@@ -2781,6 +2781,7 @@ fn advance_execution_match<'a>(
         depth,
         0,
         rejoins,
+        source.ensuring.as_deref(),
     )?
     else {
         return decline();
@@ -2812,6 +2813,7 @@ fn advance_execution_match_group<'a>(
     depth: usize,
     split_depth: usize,
     rejoins: bool,
+    ensuring: Option<&[ProofAssertion]>,
 ) -> Result<Option<Proof<'a>>, ClickError> {
     if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
         return decline_region_depth();
@@ -2842,6 +2844,7 @@ fn advance_execution_match_group<'a>(
                 depth,
                 split_depth + 1,
                 rejoins,
+                ensuring,
             )?
             else {
                 return decline();
@@ -2849,8 +2852,22 @@ fn advance_execution_match_group<'a>(
             completed[side] = next.is_at_function_exit();
             proof = next;
         }
-        if completed == [true, true] {
+        if completed == [true, true] && ensuring.is_none() {
             return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        }
+        // With an interface, each split of the constructor family rejoins
+        // through it: the halves of a wider `match` are joined pairwise, and
+        // a half that was itself joined already holds the interface's state.
+        if let Some(assertions) = ensuring {
+            if completed != [false, false] {
+                return Err(ClickError::new(
+                    "an arm of this proof `match` reached function exit, so its `ensuring` interface has nothing to rejoin",
+                ));
+            }
+            return Ok(Some(proof.join_focused_execution_if_interface(
+                &record,
+                assertions.to_vec(),
+            )?));
         }
         let Some(joined) = proof.try_join_focused_execution_if(&record)? else {
             return Err(ClickError::new(

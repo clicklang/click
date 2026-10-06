@@ -5709,6 +5709,9 @@ impl Parser {
         }
         if name == "match" {
             let scrutinee = self.parse_contract_expression()?;
+            // Arms that end in different states name what the rejoined
+            // proof keeps, as a `branch` does.
+            let ensuring = self.parse_optional_join_interface()?;
             self.expect(Token::LBrace)?;
             let mut arms = Vec::new();
             while self.peek() != Some(&Token::RBrace) {
@@ -5768,6 +5771,7 @@ impl Parser {
             self.skip_redundant_semicolon();
             return Ok(ProofTactic::Match(std::sync::Arc::new(ProofMatch {
                 scrutinee,
+                ensuring,
                 arms,
             })));
         }

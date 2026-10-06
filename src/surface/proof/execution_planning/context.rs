@@ -553,6 +553,7 @@ fn merge_path_aligned_certificates_with_match_policy(
             }
             prefix.push(ProofStep::Match {
                 scrutinee: header.scrutinee.clone(),
+                ensuring: header.ensuring.clone(),
                 arms,
             });
         } else {

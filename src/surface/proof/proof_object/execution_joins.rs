@@ -2321,14 +2321,45 @@ impl<'a> Proof<'a> {
             return Ok(None);
         }
         let mut execution = parent_execution.clone();
-        let Ok((joined_facts, changed_execution)) = execution.core.record_proof_case_join(
+        // What every arm established holds after the join. The kernel checks
+        // exactly that of the facts it is handed.
+        let mut facts = parent_facts.clone();
+        let mut common_added_facts = Vec::new();
+        for fact in &arms[0].introduced_facts {
+            if !arms[1].facts.contains(fact) || facts.contains(fact) {
+                continue;
+            }
+            facts = facts.with_kernel_checked_fact(fact.clone());
+            common_added_facts.push(fact.clone());
+            for surface in arms[0]
+                .execution
+                .presentation
+                .surface_propositions
+                .surfaces(fact)
+            {
+                if arms[1]
+                    .execution
+                    .presentation
+                    .surface_propositions
+                    .surfaces(fact)
+                    .any(|candidate| candidate == surface)
+                {
+                    execution
+                        .presentation
+                        .surface_propositions
+                        .record_lowering(surface, fact)?;
+                }
+            }
+        }
+        let Ok(changed_execution) = execution.core.record_proof_case_join(
             &parent_execution.core,
             &[
-                Some((&arms[0].execution.core, arms[0].facts)),
-                Some((&arms[1].execution.core, arms[1].facts)),
+                (&arms[0].execution.core, arms[0].facts),
+                (&arms[1].execution.core, arms[1].facts),
             ],
             context.function,
             context.arguments,
+            &facts,
         ) else {
             return Ok(None);
         };
@@ -2387,36 +2418,6 @@ impl<'a> Proof<'a> {
             .map_err(|message| self.step_error(message))?;
         migrate_arm_metadata(&mut execution, &arms, true);
 
-        // The kernel decided which facts hold after the join. They are added
-        // to the parent's own fact set in the order the then arm found them.
-        let mut facts = parent_facts.clone();
-        let mut common_added_facts = Vec::new();
-        for fact in &arms[0].introduced_facts {
-            if !joined_facts.contains(fact) || facts.contains(fact) {
-                continue;
-            }
-            facts = facts.with_kernel_checked_fact(fact.clone());
-            common_added_facts.push(fact.clone());
-            for surface in arms[0]
-                .execution
-                .presentation
-                .surface_propositions
-                .surfaces(fact)
-            {
-                if arms[1]
-                    .execution
-                    .presentation
-                    .surface_propositions
-                    .surfaces(fact)
-                    .any(|candidate| candidate == surface)
-                {
-                    execution
-                        .presentation
-                        .surface_propositions
-                        .record_lowering(surface, fact)?;
-                }
-            }
-        }
         let mut unfolded_predicates = parent_unfolds.clone();
         for name in &arms[0].introduced_unfolds {
             if arms[1].introduced_unfolds.contains(name) {

@@ -1380,6 +1380,10 @@ fn expand_declared_resource_tactic_with_nested_proofs(
                     proof_match.scrutinee,
                     resource_definitions,
                 )?,
+                ensuring: expand_declared_join_interface(
+                    proof_match.ensuring,
+                    resource_definitions,
+                )?,
                 arms: proof_match
                     .arms
                     .into_iter()
