@@ -105,7 +105,7 @@ theorem unmarked_frame(
             }
             have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                simp() using { a[hi - 1] == b[hi - 1]; };
+                simp() using { a[hi - 1] == b[hi - 1]; }
             }
             have unmarked(a, lo, hi - 1)
                 + to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
@@ -174,8 +174,8 @@ theorem unmarked_point_update(
                     viewable(b[lo..n]);
                     forall (k: int32) { lo <= k and k < j implies a[k] == b[k] };
                 }
-                have a[hi - 1] == 0 by { simp() using { a[j] == 0; j == hi - 1; }; }
-                have b[hi - 1] != 0 by { simp() using { b[j] != 0; j == hi - 1; }; }
+                have a[hi - 1] == 0 by { simp() using { a[j] == 0; j == hi - 1; } }
+                have b[hi - 1] != 0 by { simp() using { b[j] != 0; j == hi - 1; } }
                 unfold(unmarked(a, lo, hi)) using {
                     lo <= hi - 1;
                     hi - 1 < 2147483647;
@@ -191,10 +191,10 @@ theorem unmarked_point_update(
                     normalize() using { b[hi - 1] != 0; }
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 }) == 1 by {
-                    simp() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; };
+                    simp() using { (if a[hi - 1] == 0 { 1 } else { 0 }) == 1; }
                 }
                 have to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) == 0 by {
-                    simp() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; };
+                    simp() using { (if b[hi - 1] == 0 { 1 } else { 0 }) == 0; }
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })
@@ -246,7 +246,7 @@ theorem unmarked_point_update(
                 }
                 have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                     == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                    simp() using { a[hi - 1] == b[hi - 1]; };
+                    simp() using { a[hi - 1] == b[hi - 1]; }
                 }
                 have unmarked(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 })

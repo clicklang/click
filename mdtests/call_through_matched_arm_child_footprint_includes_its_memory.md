@@ -91,7 +91,7 @@ int32 caller(struct node* p) {
         transport(
             at(before, p->value) == at(before, p->value),
             p->value == at(before, p->value)
-        ) using { };
+        ) using { }
     }
     step();
     let s = fold(slot_at(p), { model: Slot::Full(3) }, { rest: r2 });

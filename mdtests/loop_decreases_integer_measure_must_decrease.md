@@ -46,7 +46,7 @@ int32 drain(int32 n, int32 m) {
                 simp();
             }
             step();
-            close_invariants by { simp(); };
+            close_invariants by { simp(); }
         }
     }
     step();

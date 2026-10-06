@@ -93,7 +93,7 @@ int32 caller(struct cell* p) {
                         transport(
                             at(before, p->value) == at(before, p->value),
                             p->value == at(before, p->value)
-                        ) using { };
+                        ) using { }
                     }
                     have p->value == 0 by simp;
                     step();

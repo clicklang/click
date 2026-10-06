@@ -93,7 +93,7 @@ int32 count_run(int32 n) {
                             }
                             rewrite(run == 0);
                             rewrite(i == 2);
-                            normalize() using { i <= 2; };
+                            normalize() using { i <= 2; }
                         }
                         (2 <= i and 2 + run == i) => {
                             extract(2 + run == i);

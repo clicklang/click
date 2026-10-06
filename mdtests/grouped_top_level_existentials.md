@@ -17,9 +17,9 @@ int32 identity(int32 x) {
     requires exists (k: int32) { k == x };
     ensures exists (j: int32) { j == x };
 } by {
-    obtain (k: int32) { k == x };
+    obtain (k: int32) { k == x }
     execute();
-    witness { j: k };
+    witness { j: k }
     simp();
 }
 ```

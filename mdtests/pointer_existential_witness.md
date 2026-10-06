@@ -17,8 +17,8 @@ int32 pointer_existential_witness(int32* p) {
     requires exists (q: int32*) { q == p };
     ensures preserves_pointer: exists (r: int32*) { r == p } by {
         execute();
-        obtain (q: int32*) { q == p };
-        witness { r: q };
+        obtain (q: int32*) { q == p }
+        witness { r: q }
         simp();
     }
 }

@@ -26,7 +26,7 @@ void mark_global(int32 v[], int32 n) {
         forall (k: int32) { 0 <= k and k < n implies v[k] == old(v[k]) }
     ) using {
         forall (k: int32) { 0 <= k and k < n implies old(v[k]) == old(v[k]) };
-    };
+    }
     execute();
     simp();
 }
