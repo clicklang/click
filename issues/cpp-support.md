@@ -609,13 +609,25 @@ expansion/reverification and deterministic multi-size application coverage.
 These shared Integer laws apply independently of C++, C or Rust; they do not
 infer native safety or expose nonlinear terms to affine arithmetic.
 
-Next extend the shared Integer theorem-argument binding to accept native
-observations such as `to_integer(n)` at a fixed execution state, preserving
-operand definedness and using only explicitly referenced bindings. Its current
-specification-only path rejects this argument promptly. Then establish
-`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)` after both
-checked narrowing conversions, and connect these exact observations and the
-signed remainder correction to a functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
+Shared Integer theorem arguments now capture native observations at their
+fixed application state. Native evaluation and mathematical domain obligations
+remain checked even for reflexive callee claims. Capture uses indexed lookups of
+only referenced locals, arrays and snapshot names. Smart `apply` retains written
+argument guards in its explicit evidence and checks that evidence before
+returning a simple candidate; expansion cannot erase a required overflow guard.
+Current, entry, marked and result observations, multiple native widths, hostile
+types/domains, full expansion and multi-size capture/application scaling have
+coverage. The unchanged Bitcoin and synthetic proofs apply the shared
+reconstruction law to observed inputs and explicitly connect both narrowed
+locals to their mathematical quotient/remainder terms.
+
+Next add checked Integer equality rewriting or congruence inside compound
+expressions, especially the product and sum in
+`to_integer(n) == to_integer(quot) * to_integer(d) + to_integer(mod)`.
+The current `rewrite` tactic accepts native 32/64-bit equalities; explicit
+`integer_relation_transport` substitutes a whole relation operand. Then combine
+the reconstruction, remainder signs and native short-circuit correction into a
+functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
 Admit wider int128 numerators through quotient/correction bounds derived jointly
 from the caller and divisor; the current interval profile does not cover the
 full 96/32 fee-division contract. Output bounds are not yet a mathematical

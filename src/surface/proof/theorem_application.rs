@@ -787,26 +787,27 @@ pub(super) fn theorem_application_bindings(
     let mut integer_values = crate::persistent::PersistentMap::default();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
         if parameter.click_type() == &ClickType::Integer {
-            let value = crate::surface::lowering::lower_contract_integer_to_spec(
+            let value = match crate::surface::lowering::lower_contract_integer_to_spec(
                 argument,
                 context.integer_values,
-            )
-            .or_else(|_| {
-                capture_fixed_state_integer_expression(
-                    argument,
-                    context.integer_values,
-                    assumptions,
-                    context.values,
-                    context.array_refs,
-                    context.pre_state,
-                    context.post_state,
-                    context.result,
-                    context.recorded_snapshots,
-                    predicate_environment,
-                    click_function_environment,
-                )
-                .map(crate::kernel::SpecIntegerExpression::Term)
-            })?;
+            ) {
+                Ok(value) => value,
+                Err(_) => crate::kernel::SpecIntegerExpression::Term(
+                    capture_fixed_state_integer_expression(
+                        argument,
+                        context.integer_values,
+                        assumptions,
+                        context.values,
+                        context.array_refs,
+                        context.pre_state,
+                        context.post_state,
+                        context.result,
+                        context.recorded_snapshots,
+                        predicate_environment,
+                        click_function_environment,
+                    )?,
+                ),
+            };
             integer_values = integer_values.with_inserted(parameter.name().to_string(), value);
             continue;
         }
@@ -1107,4 +1108,208 @@ fn theorem_application_error(
         "`{claim_label}`{path} tactic {tactic_index}: `apply` failed: {}",
         message.into()
     ))
+}
+
+#[cfg(test)]
+mod observed_integer_argument_tests {
+    use super::*;
+
+    #[test]
+    fn integer_theorem_observed_arguments_preserve_types_guards_and_expansion() {
+        let prefix = "theorem reflexive(z: Integer) { ensures z == z by simp; } ";
+        for (ty, expression, guard) in [
+            ("int32", "x + 1", "defined(x + 1)"),
+            ("int64", "x + 1i64", "defined(x + 1i64)"),
+            ("int128", "x / (int128)3", "defined(x / (int128)3)"),
+        ] {
+            let source = format!(
+                "{prefix} theorem observed(x: {ty}) {{ requires {guard}; ensures to_integer({expression}) == to_integer({expression}) by {{ apply(reflexive(to_integer({expression}))); }} }}"
+            );
+            verify_c0_sources(&source, &[])
+                .unwrap_or_else(|error| panic!("{ty}: {}", error.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "observed.ensures_0").unwrap();
+            verify_c0_sources(&expanded, &[]).unwrap();
+            if ty != "int128" {
+                let apply_start = expanded.find("apply(reflexive(").unwrap();
+                let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
+                let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+                let erased = format!(
+                    "{}using {{}}{}",
+                    &expanded[..using_start],
+                    &expanded[using_end..]
+                );
+                assert!(
+                    verify_c0_sources(&erased, &[]).is_err(),
+                    "erased argument guard was accepted"
+                );
+                let missing = source.replace(&format!("requires {guard};"), "");
+                assert!(verify_c0_sources(&missing, &[]).is_err());
+            }
+        }
+        for argument in [
+            "to_integer(true)",
+            "true",
+            "to_integer(2147483647 + 1)",
+            "truncating_quotient(to_integer(x), 0)",
+            "to_integer(x / 0)",
+        ] {
+            let source = format!(
+                "{prefix} theorem refused(x: int32) {{ ensures x == x by {{ apply(reflexive({argument})); simp(); }} }}"
+            );
+            let Err(error) = verify_c0_sources(&source, &[]) else {
+                panic!("invalid argument accepted: {argument}");
+            };
+            assert!(error.message().len() < 8000);
+        }
+    }
+
+    #[test]
+    fn integer_theorem_arguments_capture_current_entry_snapshot_and_result_values() {
+        let parsed = crate::surface::parser::parse_file_items(
+            "theorem reflexive(z: Integer) { ensures z == z by simp; }",
+        )
+        .unwrap();
+        let theorem = &parsed.theorem_definitions()[0];
+        let pre_state = CState::new().with_local("x", int32(7u32));
+        let post_state = pre_state.clone().with_local("x", int32(9u32));
+        let values = BTreeMap::new();
+        let arrays = BTreeMap::new();
+        let algebraic = BTreeMap::new();
+        let integers = crate::persistent::PersistentMap::default();
+        let result = int32(11u32);
+        let mut snapshots = RecordedSnapshots::default();
+        snapshots.insert(SnapshotSelector::Mark("before".into()), pre_state.clone());
+        let context = TheoremApplicationContext {
+            values: &values,
+            array_refs: &arrays,
+            algebraic_values: &algebraic,
+            pre_state: &pre_state,
+            post_state: &post_state,
+            result: Some(&result),
+            recorded_snapshots: &snapshots,
+            integer_values: &integers,
+            pointer_element_widths: BTreeMap::new(),
+        };
+        let x = ContractExpression::Binding("x".into());
+        for (argument, expected) in [
+            (x.clone(), 9),
+            (ContractExpression::Old(Box::new(x.clone())), 7),
+            (
+                ContractExpression::At {
+                    selector: SnapshotSelector::Mark("before".into()),
+                    expression: Box::new(x),
+                },
+                7,
+            ),
+            (
+                ContractExpression::Binding(crate::kernel::C_CONTRACT_RESULT_NAME.into()),
+                11,
+            ),
+        ] {
+            let application = TheoremApplication {
+                name: "reflexive".into(),
+                arguments: vec![ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![argument],
+                }],
+            };
+            let (_, _, _, bound) = theorem_application_bindings(
+                theorem,
+                &application,
+                &context,
+                &PureFactContext::new(),
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            )
+            .unwrap();
+            assert_eq!(
+                bound.get("z"),
+                Some(&crate::kernel::SpecIntegerExpression::Term(
+                    crate::kernel::IntegerTerm::constant_i64(expected)
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn integer_theorem_argument_capture_scales_with_unused_bindings_and_applications() {
+        let mut work_samples = Vec::new();
+        for size in [4usize, 16, 64, 256] {
+            let source = "theorem reflexive(z: Integer) { ensures z == z by simp; }";
+            let parsed = crate::surface::parser::parse_file_items(source).unwrap();
+            let theorem = &parsed.theorem_definitions()[0];
+            let application = TheoremApplication {
+                name: "reflexive".into(),
+                arguments: vec![ContractExpression::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![ContractExpression::Binding("x".into())],
+                }],
+            };
+            let mut state = CState::new().with_local("x", int32(7u32));
+            let mut values = BTreeMap::new();
+            values.insert("x".into(), int32(7));
+            for i in 0..size {
+                let name = format!("unused_{i}");
+                state = state.with_local(name.clone(), int32(i as u32));
+                values.insert(name, int32(i as u32));
+            }
+            let array_refs = BTreeMap::new();
+            let algebraic_values = BTreeMap::new();
+            let integer_values = crate::persistent::PersistentMap::default();
+            let snapshots = RecordedSnapshots::default();
+            let context = TheoremApplicationContext {
+                values: &values,
+                array_refs: &array_refs,
+                algebraic_values: &algebraic_values,
+                pre_state: &state,
+                post_state: &state,
+                result: None,
+                recorded_snapshots: &snapshots,
+                integer_values: &integer_values,
+                pointer_element_widths: BTreeMap::new(),
+            };
+            let assumptions = PureFactContext::new();
+            let predicates = PredicateEnvironment::new(&[]);
+            let functions = ClickFunctionEnvironment::new(&[]);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                theorem_application_bindings(
+                    theorem,
+                    &application,
+                    &context,
+                    &assumptions,
+                    &predicates,
+                    &functions,
+                )
+            });
+            let (_, _, _, bound) = result.unwrap();
+            assert_eq!(
+                bound.get("z"),
+                Some(&crate::kernel::SpecIntegerExpression::Term(
+                    crate::kernel::IntegerTerm::constant_i64(7)
+                ))
+            );
+            work_samples.push(work);
+            let (result, repeated_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..size {
+                        theorem_application_bindings(
+                            theorem,
+                            &application,
+                            &context,
+                            &assumptions,
+                            &predicates,
+                            &functions,
+                        )?;
+                    }
+                    Ok::<_, String>(())
+                });
+            result.unwrap();
+            assert_eq!(repeated_work, size * work);
+        }
+        assert!(
+            work_samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "{work_samples:?}"
+        );
+    }
 }

@@ -750,6 +750,36 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<crate::kernel::IntegerTerm, String> {
+    capture_fixed_state_integer_expression_with_guards(
+        expression,
+        integer_values,
+        assumptions,
+        values,
+        array_refs,
+        pre_state,
+        state,
+        result,
+        recorded_snapshots,
+        predicate_environment,
+        click_function_environment,
+    )
+    .map(|(value, _)| value)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_guards(
+    expression: &ContractExpression,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    assumptions: &PureFactContext,
+    values: &BTreeMap<String, CValue>,
+    array_refs: &ClickArrayRefs,
+    pre_state: &CState,
+    state: &CState,
+    result: Option<&CValue>,
+    recorded_snapshots: &RecordedSnapshots,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
     let states = FixedStateLowering::for_expression(
         expression, values, array_refs, pre_state, state, result,
     );
@@ -769,10 +799,10 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
             BTreeSet::new(),
             BTreeMap::new(),
         )?;
-    crate::kernel::capture_spec_integer_value(
-        &states.lowering_state,
+    crate::kernel::capture_spec_integer_value_with_guards(
+        state,
         &spec,
-        Some(&states.entry_state),
+        Some(pre_state),
         assumptions,
     )
     .map_err(|refusal| {
