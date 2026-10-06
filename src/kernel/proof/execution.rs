@@ -2106,14 +2106,17 @@ impl CheckedResourceRewrite {
                     "instance definition is not registered on the function".to_string()
                 })?;
             // Ordinary named memory resources retain their existing checked
-            // definitional exchange. Population members and authority cannot
-            // be introduced through this path: those require ledger evidence.
+            // definitional exchange. Population members cannot be introduced
+            // through this path: those require ledger evidence. An exact owned
+            // authority may move into or out of a control instance; the
+            // creation-ledger equality below proves that no population changed.
             if before_state.uses_population_authority_semantics() {
                 let memory_only = |spec: &crate::kernel::CResourceSpec| {
                     matches!(
                         spec.term(),
                         crate::kernel::CResourceTerm::Memory(_)
                             | crate::kernel::CResourceTerm::Token { .. }
+                            | crate::kernel::CResourceTerm::PopulationAuthority { .. }
                     )
                 };
                 if !definition.children.is_empty()
