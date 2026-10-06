@@ -52,6 +52,13 @@ These laws preserve the value of a wrapping expression as evaluated; they do
 not make its observation equal an unbounded mathematical sum. Observation of
 an undefined expression still requires its definedness prerequisites.
 
+The proved `uint32_less_than_to_integer` theorem transfers strict unsigned
+order through the same exact observation. The checked
+`uint32_remainder_less_than_divisor` rule requires a nonzero native divisor and
+bounds `value % divisor` strictly below it for every u32 dividend. Combining
+these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
+without changing its unsigned meaning or defining division by zero.
+
 ## Exact operations and definedness
 
 Integer literals, unary negation, addition, subtraction, multiplication,

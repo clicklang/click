@@ -8540,6 +8540,27 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
     ))
 }
 
+/// An unsigned remainder is strictly below its nonzero divisor.
+/// No upper bound on the dividend is needed; zero division is excluded.
+pub fn prove_uint32_remainder_less_than_divisor(
+    value: Bitvector32Term,
+    divisor: Bitvector32Term,
+) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(divisor.clone(), Bitvector32Term::Constant(0)),
+            false,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(
+                Bitvector32Term::unsigned_remainder(value, divisor.clone()),
+                divisor,
+            ),
+            true,
+        )),
+    ))
+}
+
 /// Preserve native unsigned u32 order in exact mathematical observations.
 /// The unsigned interpretation includes values above the signed sign bit.
 pub fn prove_uint32_less_equal_to_integer(

@@ -250,6 +250,22 @@ mod tests {
     }
 
     #[test]
+    fn uint32_remainder_bound_expands_and_requires_a_nonzero_divisor() {
+        let source = "theorem bridge(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures to_integer(value % divisor) < to_integer(divisor) by { apply(uint32_remainder_less_than_divisor(value, divisor)); apply(uint32_less_than_to_integer(value % divisor, divisor)); } }";
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(source, &[], "bridge.ensures_0").unwrap();
+        verify_c0_sources(&expanded, &[]).unwrap();
+        for invalid in [
+            source.replace("requires divisor != 0u32;", ""),
+            source.replace("requires divisor != 0u32;", "requires value != 0u32;"),
+            source.replace("< to_integer(divisor) by", "< 65521 by"),
+            source.replace("< to_integer(divisor) by", ">= to_integer(divisor) by"),
+        ] {
+            assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn uint32_integer_bounds_do_not_distribute_wrapping_or_define_zero_division() {
         for invalid in [
             "theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(uint32_to_integer_bounds(value)); } }",

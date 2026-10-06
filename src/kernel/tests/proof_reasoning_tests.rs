@@ -9409,3 +9409,70 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
         }
     }
 }
+
+#[test]
+fn uint32_remainder_bound_agrees_with_full_width_models() {
+    fn machine(term: &Bitvector32Term, value: u32, divisor: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(920) => value,
+            Bitvector32Term::Variable(v) if *v == Variable(921) => divisor,
+            Bitvector32Term::Constant(v) => *v,
+            Bitvector32Term::BitwiseXor(a, b) => {
+                machine(a, value, divisor) ^ machine(b, value, divisor)
+            }
+            Bitvector32Term::UnsignedRemainder(a, b) => {
+                machine(a, value, divisor) % machine(b, value, divisor)
+            }
+            _ => panic!("unexpected unsigned remainder term {term:?}"),
+        }
+    }
+    let theorem = prove_uint32_remainder_less_than_divisor(
+        Bitvector32Term::Variable(Variable(920)),
+        Bitvector32Term::Variable(Variable(921)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing nonzero guard")
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(a, b), false) = premise.as_ref()
+    else {
+        panic!("wrong guard")
+    };
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(left, right), true) =
+        conclusion.as_ref()
+    else {
+        panic!("wrong unsigned order")
+    };
+    for value in [
+        0,
+        1,
+        65520,
+        65521,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        u32::MAX - 1,
+        u32::MAX,
+    ] {
+        for divisor in [
+            0,
+            1,
+            2,
+            4,
+            65521,
+            0x7fff_ffff,
+            0x8000_0000,
+            0x8000_0001,
+            u32::MAX,
+        ] {
+            let guarded = machine(a, value, divisor) != machine(b, value, divisor);
+            assert_eq!(guarded, divisor != 0);
+            if guarded {
+                assert!(u64::from(value) % u64::from(divisor) < u64::from(divisor));
+                assert!(
+                    (machine(left, value, divisor) as i32)
+                        < (machine(right, value, divisor) as i32)
+                );
+            }
+        }
+    }
+}

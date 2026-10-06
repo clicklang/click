@@ -51,7 +51,38 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     ensures self->_0[1] == old(self->_0[1]) % quotient;
     ensures self->_0[2] == old(self->_0[2]) % quotient;
     ensures self->_0[3] == old(self->_0[3]) % quotient;
-} by { execute(); simp(); }
+    ensures self->_0[0] < quotient;
+    ensures 0 <= to_integer(self->_0[0]);
+    ensures to_integer(self->_0[0]) < to_integer(quotient);
+    ensures self->_0[1] < quotient;
+    ensures 0 <= to_integer(self->_0[1]);
+    ensures to_integer(self->_0[1]) < to_integer(quotient);
+    ensures self->_0[2] < quotient;
+    ensures 0 <= to_integer(self->_0[2]);
+    ensures to_integer(self->_0[2]) < to_integer(quotient);
+    ensures self->_0[3] < quotient;
+    ensures 0 <= to_integer(self->_0[3]);
+    ensures to_integer(self->_0[3]) < to_integer(quotient);
+} by {
+    execute();
+    apply(uint32_remainder_less_than_divisor(old(self->_0[0]), quotient));
+    have self->_0[0] < quotient by { simp(); }
+    apply(uint32_to_integer_bounds(self->_0[0]));
+    apply(uint32_less_than_to_integer(self->_0[0], quotient));
+    apply(uint32_remainder_less_than_divisor(old(self->_0[1]), quotient));
+    have self->_0[1] < quotient by { simp(); }
+    apply(uint32_to_integer_bounds(self->_0[1]));
+    apply(uint32_less_than_to_integer(self->_0[1], quotient));
+    apply(uint32_remainder_less_than_divisor(old(self->_0[2]), quotient));
+    have self->_0[2] < quotient by { simp(); }
+    apply(uint32_to_integer_bounds(self->_0[2]));
+    apply(uint32_less_than_to_integer(self->_0[2], quotient));
+    apply(uint32_remainder_less_than_divisor(old(self->_0[3]), quotient));
+    have self->_0[3] < quotient by { simp(); }
+    apply(uint32_to_integer_bounds(self->_0[3]));
+    apply(uint32_less_than_to_integer(self->_0[3], quotient));
+    simp();
+}
 
 void __rust_q_I6_adler2_I4_algo_I5_U32X4_mul_assign_u32(struct __rust_q_I6_adler2_I4_algo_I5_U32X4* self, uint32 rhs) {
     requires rhs == 0u32 or self->_0[0] <= 4294967295u32 / rhs;

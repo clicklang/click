@@ -30,7 +30,7 @@ and native Charon artifact to prove every lane of these original helpers:
 | --- | --- |
 | `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
 | `AddAssign<Self>` | Each widened lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand |
-| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor |
+| `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, is below the divisor, and has an Integer observation in `0..divisor-1` |
 | `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |
 
 Mutating helpers require ownership of all four receiver lanes. Addition uses
@@ -45,6 +45,13 @@ Its proof applies checked unsigned-order bridges to the actual returned
 fields, making the byte bounds usable by the Integer lane-step lemmas. The
 bridges retain the full u32 range; signed reinterpretation would be unsound
 for accumulated B lanes above the sign bit.
+
+The remainder helper exports the strict native and Integer divisor bounds
+for all four lanes, along with nonnegative Integer observations. Its original
+`%=` body proves those guarantees for every nonzero u32 divisor. Specializing
+the call to `MOD = 65521` yields the `0..65520` range needed to reset both
+lane ceilings before a new batch. This does not establish the reset or
+preservation over the original outer loop yet.
 
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,

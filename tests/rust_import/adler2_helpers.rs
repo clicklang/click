@@ -180,6 +180,43 @@ fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     );
 }
 
+fn reject_helper_reduction_bounds(lane: usize) {
+    let native = format!("ensures self->_0[{lane}] < quotient;");
+    let false_native = format!("ensures self->_0[{lane}] < quotient - 1u32;");
+    let lower = format!("0 <= to_integer(self->_0[{lane}])");
+    let false_lower = format!("1 <= to_integer(self->_0[{lane}])");
+    let upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient)");
+    let false_upper = format!("to_integer(self->_0[{lane}]) < to_integer(quotient) - 1");
+    reject_helper_contracts(
+        2,
+        &[
+            (&native, &false_native),
+            (&lower, &false_lower),
+            (&upper, &false_upper),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_0() {
+    reject_helper_reduction_bounds(0);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_1() {
+    reject_helper_reduction_bounds(1);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_2() {
+    reject_helper_reduction_bounds(2);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_3() {
+    reject_helper_reduction_bounds(3);
+}
+
 #[test]
 fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(

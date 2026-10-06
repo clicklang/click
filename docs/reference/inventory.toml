@@ -3296,3 +3296,11 @@ path = "reference/library/index.md#integer_nonpositive_dividend_remainder"
 [[item]]
 id = "stdlib.theorem.int32_less_than_to_integer"
 path = "reference/library/index.md#int32_less_than_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_less_than_to_integer"
+path = "reference/library/index.md#uint32_less_than_to_integer"
+
+[[item]]
+id = "stdlib.theorem.uint32_remainder_less_than_divisor"
+path = "reference/library/index.md#uint32_remainder_less_than_divisor"

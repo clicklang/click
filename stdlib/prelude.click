@@ -964,12 +964,31 @@ theorem uint32_less_equal_of_to_integer(left: uint32, right: uint32) {
     ensures left <= right;
 }
 
+theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right) by {
+        if to_integer(right) <= to_integer(left) {
+            apply(uint32_less_equal_of_to_integer(right, left));
+            contradiction(left < right);
+        } else {
+            arithmetic() using { not (to_integer(right) <= to_integer(left)); }
+        }
+    }
+}
+
+theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
+    requires divisor != 0u32;
+    ensures value % divisor < divisor;
+}
+
 theorem uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by {
-        apply(uint32_less_equal_to_integer(0u32, value));
+        have 0u32 <= value by { simp(); }
+        apply(uint32_less_equal_to_integer(0u32, value)) using { 0u32 <= value; }
     }
     ensures to_integer(value) <= 4294967295 by {
-        apply(uint32_less_equal_to_integer(value, 4294967295u32));
+        have value <= 4294967295u32 by { simp(); }
+        apply(uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; }
     }
 }
 

@@ -1020,3 +1020,21 @@ constructor's guarantees to the numeric vocabulary used by the lane-step
 lemmas. Next instantiate the original nested-loop invariants and establish
 helper-call prerequisites from the stored iterator states. Whole-loop panic
 freedom, byte accounting, and checksum correctness remain unproved.
+
+### Original modulo-reduction lane ranges
+
+The unchanged `U32X4::rem_assign` contract now proves, for each of its four
+lanes, the exact original modulo result, native strict divisor bound, and
+nonnegative Integer observation strictly below the divisor. A checked unsigned
+remainder rule requires a nonzero divisor; a proved strict-order bridge uses
+the existing checked non-strict reflection rule. Boundary models include zero
+(excluded), one, MOD, the sign-bit transition, and u32::MAX. Regressions reject
+missing/wrong divisor guards, altered declarations/types, and false tightened
+native and Integer bounds for every lane. With MOD=65521 these guarantees give
+the `0..65520` range required by the next batch's initial lane ceilings.
+
+Original source, locked Charon artifact, and import profile remain unchanged.
+Next instantiate the numeric invariants and helper-call prerequisites over the
+original nested iterators, using the constructor's Integer byte bounds and
+these modulo-reduction guarantees. Original loop preservation, whole-loop
+panic freedom, byte accounting, and checksum correctness remain unproved.
