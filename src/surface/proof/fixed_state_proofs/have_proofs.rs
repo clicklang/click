@@ -749,14 +749,70 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<crate::kernel::IntegerTerm, String> {
-    let states = FixedStateLowering::new(values, array_refs, pre_state, state, result);
+    capture_fixed_state_integer_expression_with_guards(
+        expression,
+        integer_values,
+        assumptions,
+        values,
+        array_refs,
+        pre_state,
+        state,
+        result,
+        recorded_snapshots,
+        predicate_environment,
+        click_function_environment,
+    )
+    .map(|(value, _)| value)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_guards(
+    expression: &ContractExpression,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    assumptions: &PureFactContext,
+    values: &BTreeMap<String, CValue>,
+    array_refs: &ClickArrayRefs,
+    pre_state: &CState,
+    state: &CState,
+    result: Option<&CValue>,
+    recorded_snapshots: &RecordedSnapshots,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+) -> Result<(crate::kernel::IntegerTerm, Vec<Proposition>), String> {
+    // Captured expressions substitute only their explicit names. The kernel
+    // reads memory and deferred C fragments against the borrowed actual states;
+    // there is no need to copy or enumerate either frame or its history.
+    let mut entry_values = BTreeMap::new();
+    let mut current_values = BTreeMap::new();
+    let mut element_types = BTreeMap::new();
+    for name in contract_expression_referenced_names(expression) {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return Err("Integer argument capture exceeded its work limit".into());
+        }
+        for (source, destination) in [(pre_state, &mut entry_values), (state, &mut current_values)]
+        {
+            if let Some(value) = source.locals().get(&name) {
+                destination.insert(name.clone(), value.clone());
+            } else if let Some((value, element_type)) = source.locals().array_object_value(&name) {
+                destination.insert(name.clone(), value);
+                element_types.insert(name.clone(), element_type);
+            } else if !source.locals().contains_name(&name)
+                && let Some(value) = values.get(&name)
+            {
+                destination.insert(name.clone(), value.clone());
+            }
+        }
+        if let Some(array_ref) = array_refs.get(&name) {
+            element_types.entry(name).or_insert(array_ref.element_type);
+        }
+    }
     let spec =
         crate::surface::lowering::elaborate_fixed_state_integer_expression_with_integer_values(
             expression,
-            states.element_types,
-            &states.entry_state,
-            states.entry_values,
-            states.current_values,
+            element_types,
+            pre_state,
+            entry_values,
+            current_values,
             integer_values,
             result,
             recorded_snapshots,
@@ -766,10 +822,10 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
             BTreeSet::new(),
             BTreeMap::new(),
         )?;
-    crate::kernel::capture_spec_integer_value(
-        &states.lowering_state,
+    crate::kernel::capture_spec_integer_value_with_guards(
+        state,
         &spec,
-        Some(&states.entry_state),
+        Some(pre_state),
         assumptions,
     )
     .map_err(|refusal| {

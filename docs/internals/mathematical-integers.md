@@ -532,6 +532,39 @@ theorem check_truncation_identity(n: Integer, d: Integer) {
 ```
 
 
+## Capturing native observations as theorem arguments
+
+An Integer theorem parameter can receive a fixed-state native observation such
+as `to_integer(x + 1)`. The argument denotes the Integer value captured at the
+application site, and its native evaluation must be defined there, even when
+the theorem's conclusion is reflexive. Entry, marked and returned values retain
+the state named by their source expression. Capturing the expression reads only
+its explicitly referenced bindings; it does not enumerate other locals or
+copy the proof history.
+
+Smart `apply` proposes source evidence for argument evaluation as well as the
+callee's declared requirements. It rechecks capture using only that proposed
+evidence before emitting a simple `apply ... using` certificate. Removing a
+required guard makes expansion/reverification fail. A guard without a supported
+source spelling produces a bounded search refusal; explicit `using` evidence
+can supply it. Capturing an observation supplies no native range or narrowing
+identity automatically.
+
+<!-- verified-example: mdtests/integer_theorem_observed_arguments.md -->
+```click
+theorem integer_reflexive(z: Integer) {
+    ensures z == z by simp;
+}
+
+theorem observe64(x: int64) {
+    requires defined(x + 1i64);
+    ensures to_integer(x + 1i64) == to_integer(x + 1i64) by {
+        apply(integer_reflexive(to_integer(x + 1i64)));
+    }
+}
+```
+
+
 ## Full-width native comparisons
 
 All six native comparisons accept matching `Int128` or `UInt128` operands.
