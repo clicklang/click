@@ -2093,7 +2093,12 @@ impl<'a> Proof<'a> {
         {
             return Ok(Some(proof));
         }
-        if let Some(arithmetic) = self.try_execution_signed_arithmetic() {
+        if let Some(arithmetic) = crate::instrumentation::measure_operation(
+            "surface",
+            "simp closure",
+            "simp closure: indexed bounds",
+            || self.try_execution_signed_arithmetic(),
+        ) {
             return Ok(Some(arithmetic));
         }
         // The pure signed certificate already ran above on this same proof
@@ -2145,10 +2150,16 @@ impl<'a> Proof<'a> {
         self.try_indexed_signed_arithmetic(surfaces, anchor.as_ref())
     }
 
-    /// Each goal variable's bound bucket is an O(log n) lookup, and each
-    /// bound it lists costs one indexed fact membership test. A leaf conjunct
-    /// of a fact is itself an indexed fact, so a bound written inside a
-    /// conjunction needs no `extract`.
+    /// Selects the bounds reachable from the goal's variables: each goal
+    /// variable's bounds, then the bounds on the variables those bounds
+    /// name (`i < n` leads to `n`'s bounds), breadth-first in variable order,
+    /// visiting at most [`MAX_BOUND_VARIABLES`] variables. Each visited
+    /// variable costs one O(log n) bucket lookup and one indexed membership
+    /// test per bound it lists; a leaf conjunct of a fact is itself an
+    /// indexed fact, so a bound written inside a conjunction needs no
+    /// `extract`. The certificate is planned over the kernel facts before any
+    /// of them is spelled, so a goal the bounds do not decide is declined
+    /// without surface work.
     fn try_indexed_signed_arithmetic(
         &self,
         surfaces: &SurfacePropositionMap,
@@ -2158,7 +2169,17 @@ impl<'a> Proof<'a> {
         let surface_goal = self.surface_goal()?;
         let is_pure = matches!(self.context.as_ref(), ProofContext::Pure(_));
         let mut available = BTreeSet::new();
-        for variable in crate::kernel::proposition_variables(goal) {
+        let mut visited = BTreeSet::new();
+        let mut pending = crate::kernel::proposition_variables(goal)
+            .into_iter()
+            .collect::<std::collections::VecDeque<_>>();
+        while let Some(variable) = pending.pop_front() {
+            if visited.len() == MAX_BOUND_VARIABLES {
+                break;
+            }
+            if !visited.insert(variable) {
+                continue;
+            }
             for (endpoint, other, strict, forward) in self
                 .facts()
                 .assumptions()
@@ -2175,13 +2196,24 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Bitvector32SignedLessEqual(Box::new(left), Box::new(right))
                 };
                 let fact = Proposition::ConditionIs(condition, true);
+                let mut found = false;
                 for form in std::iter::once(fact.clone()).chain(condition_polarity_forms(&fact)) {
                     if self.facts().contains(&form) {
                         available.insert(form);
+                        found = true;
                     }
+                }
+                if found {
+                    pending.extend(
+                        crate::kernel::proposition_variables(&fact)
+                            .into_iter()
+                            .filter(|next| !visited.contains(next)),
+                    );
                 }
             }
         }
+        let available = available.into_iter().collect::<Vec<_>>();
+        plan_signed_arithmetic_certificate(goal, &available)?;
         let mut pairs = Vec::new();
         for fact in available {
             let source = self
@@ -7335,6 +7367,10 @@ impl<'a> Proof<'a> {
         }
     }
 }
+
+/// How many variables simp's bound selection visits from a goal's own
+/// variables before it stops following bounds to further variables.
+const MAX_BOUND_VARIABLES: usize = 8;
 
 thread_local! {
     static NAMED_PREMISE_CLOSURE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
