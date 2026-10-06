@@ -22,7 +22,6 @@ theorem guarded_universal() {
         intro();
         intro();
         intro();
-        extract(k >= 0);
         assumption();
     }
 }

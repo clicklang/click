@@ -67,8 +67,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
                 transport(
                     old(occupied[k]) == old(occupied[k]),
                     occupied[k] == old(occupied[k])
@@ -108,7 +106,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(start <= k);
                 extract(k < at(opened, i) + 1);
                 if k < at(opened, i) {
                     have k < m by simp;
@@ -156,8 +153,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
             } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < start);
                 have at(opened, occupied[k]) == old(occupied[k]) by {
                     instantiate(forall (j: int32) {
                         at(opened, 0) <= at(opened, j) and

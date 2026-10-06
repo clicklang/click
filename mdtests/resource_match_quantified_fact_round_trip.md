@@ -67,8 +67,6 @@ int32 write_zero(struct buffer* buffer) {
             } by {
                 intro();
                 intro();
-                extract(0 <= k);
-                extract(k < end);
                 have k < 1 by {
                     simp() using {
                         k < end;

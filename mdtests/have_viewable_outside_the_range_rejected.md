@@ -15,7 +15,6 @@ theorem range_not_inside_a_viewable_range(v: int32[], lo: int32, hi: int32, k: i
     requires lo <= k;
     requires hi >= 0 and viewable(v[lo..hi]);
     ensures viewable(v[lo..k]) by {
-        extract(viewable(v[lo..hi]));
         transport(viewable(v[lo..hi]), viewable(v[lo..k])) using {
             viewable(v[lo..hi]);
             lo <= k;

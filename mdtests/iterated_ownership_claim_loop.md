@@ -91,7 +91,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(i + 1 <= k);
-                extract(k < end);
                 apply(int32_increment_strictly_increases(i, end)) using {
                     i < end;
                 }
@@ -136,7 +135,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                 intro();
                 intro();
                 extract(at(opened, i) + 1 <= k);
-                extract(k < end);
                 have at(opened, occupied[k]) == 0 by {
                     instantiate(forall (k: int32) {
                         at(opened, i) + 1 <= k and k < end implies at(opened, occupied[k]) == 0

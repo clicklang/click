@@ -33,8 +33,6 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
     } by {
         intro();
         intro();
-        extract(0 <= k);
-        extract(k < n);
         have at(entry, next[k]) == at(entry, next[k]) by { normalize(); }
         transport(
             at(entry, next[k]) == at(entry, next[k]),
