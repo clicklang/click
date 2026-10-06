@@ -371,6 +371,7 @@ impl<'a> Proof<'a> {
                 .presentation
                 .branch_decisions
                 .push(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::new(),
                     condition: surface_condition.clone(),
                     value: take_then,
                 });
@@ -1306,6 +1307,10 @@ impl<'a> Proof<'a> {
                 ],
             )
         };
+        // A terminal case can return many paths. Fingerprint its source once,
+        // then retain that key as each path carries the shared case history.
+        let case_fingerprint =
+            proof_case_split.then(|| ExecutionBranchDecisions::key(&surface_condition));
         for (name, expected, arm) in [("then", true, &arms[0]), ("else", false, &arms[1])] {
             if !arm.execution.core.frontier.is_at_function_exit() {
                 return Err(self.step_error(format!(
@@ -1458,6 +1463,9 @@ impl<'a> Proof<'a> {
                             })?;
                         provenance.branch_decisions = prefix.clone();
                         provenance.branch_decisions.push(ExecutionBranchDecision {
+                            fingerprint: std::sync::OnceLock::from(
+                                case_fingerprint.expect("proof case fingerprint"),
+                            ),
                             condition: surface_condition.clone(),
                             value: arm_index == 0,
                         });

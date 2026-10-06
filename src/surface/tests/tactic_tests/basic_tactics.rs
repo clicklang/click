@@ -455,6 +455,7 @@ fn parses_resource_verb_function_clauses() {
         function.ensures(),
         &[
             EnsureClause {
+                proof_bindings: Vec::new(),
                 name: None,
                 ensure: Ensure::Resource(ResourceClause::OwnMemory(ContractSegment {
                     state: ContractSegmentState::Current,
@@ -472,6 +473,7 @@ fn parses_resource_verb_function_clauses() {
                 condition: None,
             },
             EnsureClause {
+                proof_bindings: Vec::new(),
                 name: None,
                 ensure: Ensure::Resource(ResourceClause::Declared {
                     type_schema: None,

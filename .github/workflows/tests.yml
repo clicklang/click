@@ -127,6 +127,17 @@ jobs:
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
         run: scripts/check.sh --ci-prepare "$RUNNER_TEMP/compiled-tests"
+      # Caches may be evicted between prepare and its consumers. Keep an
+      # immutable fallback from this same build, preserving executable modes.
+      - name: Archive pinned Rust exporter runtime
+        run: scripts/rust-exporter-runtime-archive.sh pack "$RUNNER_TEMP/rust-exporter-runtime.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-exporter-runtime
+          path: ${{ runner.temp }}/rust-exporter-runtime.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-tests
@@ -167,11 +178,20 @@ jobs:
           echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
           echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
+        id: rust_runtime_cache
         with:
           path: |
             ${{ steps.rust_runtime.outputs.path }}
             ${{ steps.rust_runtime.outputs.update_hash }}
           key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
+      - uses: actions/download-artifact@v4
+        if: steps.rust_runtime_cache.outputs.cache-hit != 'true'
+        with:
+          name: rust-exporter-runtime
+          path: ${{ runner.temp }}/rust-exporter-runtime
+      - name: Restore pinned runtime after cache miss
+        if: steps.rust_runtime_cache.outputs.cache-hit != 'true'
+        run: scripts/rust-exporter-runtime-archive.sh restore "$RUNNER_TEMP/rust-exporter-runtime/rust-exporter-runtime.tar.gz"
       - name: Set up test runner
         run: scripts/setup-environment.sh --test-runner
       - uses: actions/download-artifact@v4
@@ -205,11 +225,20 @@ jobs:
           echo "path=$RUST_EXPORTER_SYSROOT" >> "$GITHUB_OUTPUT"
           echo "update_hash=$RUST_EXPORTER_UPDATE_HASH" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
+        id: rust_runtime_cache
         with:
           path: |
             ${{ steps.rust_runtime.outputs.path }}
             ${{ steps.rust_runtime.outputs.update_hash }}
           key: ${{ runner.os }}-${{ runner.arch }}-click-rust-runtime-${{ hashFiles('scripts/rust-exporter-toolchain.sh') }}
+      - uses: actions/download-artifact@v4
+        if: steps.rust_runtime_cache.outputs.cache-hit != 'true'
+        with:
+          name: rust-exporter-runtime
+          path: ${{ runner.temp }}/rust-exporter-runtime
+      - name: Restore pinned runtime after cache miss
+        if: steps.rust_runtime_cache.outputs.cache-hit != 'true'
+        run: scripts/rust-exporter-runtime-archive.sh restore "$RUNNER_TEMP/rust-exporter-runtime/rust-exporter-runtime.tar.gz"
       - name: Set up test runner
         run: scripts/setup-environment.sh --test-runner
       - uses: actions/download-artifact@v4

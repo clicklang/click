@@ -2135,7 +2135,7 @@ impl C0FieldSource {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum C0Type {
     /// Plain char is distinct from unsigned char in C compatibility. The
     /// supported x86_64 Linux kernel target gives it unsigned byte semantics.
@@ -2688,7 +2688,7 @@ pub enum C0UpdateOperator {
     BitwiseXor,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum C0FloatClassification {
     Finite,
     Infinite,

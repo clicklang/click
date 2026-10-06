@@ -31,6 +31,7 @@ fn opposite_atomic_fact(fact: &Proposition) -> Proposition {
 
 fn pure_identity_fixture() -> PureTheoremContext {
     PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1050,6 +1051,7 @@ fn attempt_reports_deadline_failure_instead_of_a_rejection() {
 fn proof_failure_preserves_ancestor_and_selected_provenance() {
     let goal = indexed_fact(7);
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1094,6 +1096,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
     let fact = indexed_fact(7);
     let goal = Proposition::Implies(Box::new(fact.clone()), Box::new(fact));
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1163,6 +1166,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
     let fact = indexed_fact(7);
     let goal = Proposition::Implies(Box::new(fact.clone()), Box::new(fact));
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1236,6 +1240,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1329,6 +1334,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
     let theorem_context = Box::leak(Box::new(PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -1694,6 +1700,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -1915,6 +1922,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
         let requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let goal = indexed_fact(size - 1);
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: CMemory::new(),
             values: BTreeMap::new(),
@@ -2184,6 +2192,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         right: ContractExpression::CFragment(CExpression::Value(int32(7))),
     };
     let base_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::new(),
@@ -2210,6 +2219,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(predicate.clone());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             requires: requires.clone(),
             ..base_context.clone()
@@ -2726,6 +2736,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: CMemory::new(),
             values: BTreeMap::new(),
@@ -3276,6 +3287,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         ("w".to_string(), int32(3)),
     ]);
     let base_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values,
@@ -3298,6 +3310,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_equality.clone());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             requires: requires.clone(),
             ..base_context.clone()
@@ -3420,6 +3433,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         ),
     ]);
     let base_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values,
@@ -3463,6 +3477,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
             kernel_z_zero.clone(),
         ]);
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             requires: requires.clone(),
             surface_requirements: surface_requirements.clone(),
@@ -3620,6 +3635,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         right: ContractExpression::CFragment(CExpression::Value(int32(1))),
     };
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory: CMemory::new(),
         values: BTreeMap::from([(
@@ -5822,6 +5838,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.extend(premises.iter().cloned());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -5867,6 +5884,7 @@ fn pure_signed_order_simp_builds_its_theorem_path_with_logarithmic_local_updates
         let mut exact_requires = requires.clone();
         exact_requires.push(goal.clone());
         let exact_theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -5955,6 +5973,7 @@ fn pure_equality_refinement_simp_applies_one_rewrite_with_logarithmic_local_upda
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_equality.clone());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -6060,6 +6079,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             .record_lowering(&equality_surface, &equality_fact)
             .expect("the selected equality form should be indexed");
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -6169,6 +6189,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
                 .expect("the selected equality form should be indexed");
         }
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -7007,6 +7028,7 @@ fn fixed_state_single_premise_arithmetic_simps_retain_indexed_theorem_steps() {
             assert!(root.certificate().steps().is_empty());
 
             let theorem_context = PureTheoremContext {
+                declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
                 values: BTreeMap::new(),
@@ -7345,6 +7367,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             assert!(root.certificate().steps().is_empty());
 
             let theorem_context = PureTheoremContext {
+                declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
                 values: BTreeMap::new(),
@@ -7463,6 +7486,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         assert!(root.certificate().steps().is_empty());
 
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: state.memory().clone(),
             values: BTreeMap::new(),
@@ -7637,6 +7661,7 @@ fn le_and_not_lt_equality_simp_retains_one_indexed_theorem_application() {
         let mut pure_facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         pure_facts.extend(restricted_kernels.iter().cloned());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: state.memory().clone(),
             values: BTreeMap::new(),
@@ -8068,6 +8093,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             assert!(root.certificate().steps().is_empty());
 
             let theorem_context = PureTheoremContext {
+                declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
                 values: BTreeMap::new(),
@@ -8642,6 +8668,7 @@ fn predecessor_simps_retain_indexed_named_rule_premises() {
             assert!(root.certificate().steps().is_empty());
 
             let theorem_context = PureTheoremContext {
+                declaration_bindings: BTreeMap::new(),
                 integer_values: crate::persistent::PersistentMap::default(),
                 memory: state.memory().clone(),
                 values: BTreeMap::new(),
@@ -8769,6 +8796,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         let mut requires = (0..size).map(indexed_fact).collect::<Vec<_>>();
         requires.push(kernel_premise.clone());
         let theorem_context = PureTheoremContext {
+            declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
             memory: memory.clone(),
             values: BTreeMap::new(),
@@ -8950,6 +8978,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     )
     .expect("the theorem conclusion should lower");
     let theorem_context = PureTheoremContext {
+        declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
         memory,
         values: BTreeMap::new(),

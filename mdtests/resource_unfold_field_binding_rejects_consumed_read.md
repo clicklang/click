@@ -230,5 +230,5 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
 ```
 
 ```expect
-fail: `before.prefix` reads a field of `before`, which is not held here; when `unfold(before)` consumed it, name the field's folded value where the instance is unfolded with `let { prefix: name } = unfold(before);`
+fail: `before.prefix` reads a field of `before`, which is not held here; `unfold(before)` consumed it; name the field's folded value where the instance is unfolded with `let { prefix: name } = unfold(before);`
 ```
