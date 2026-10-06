@@ -642,13 +642,22 @@ Bitcoin sidecars also prove the exact mathematical values of `quot + 1i64` and
 observed quotient. False correction offsets are refused; ordinary verification,
 expansion/reverification, and retained audit exercise the proof sequence.
 
-Next combine
-the reconstruction, remainder signs and native short-circuit correction into a
-functional floor/ceiling theorem for the complete unchanged `FeeFrac::Div`.
+The bounded exact rounding value is now proved for the complete unchanged
+`FeeFrac::Div` and the synthetic regression. In floor mode, a negative
+truncating remainder yields `quotient + -1`; a nonnegative remainder yields
+`quotient`. In ceiling mode, a positive remainder yields `quotient + 1`; a
+nonpositive remainder yields `quotient`. The zero-remainder case is explicit
+in both modes, and the synthetic modular caller exports all four guarantees
+while framing untouched memory. A proof-backed shared
+`int32_less_than_to_integer` lemma derives strict observation order from the
+existing non-strict reflection bridge; no C++-specific axiom is introduced.
+
+Next characterize those exact values by the defining floor/ceiling product
+inequalities, combining reconstruction and the positive-divisor remainder law.
 Admit wider int128 numerators through quotient/correction bounds derived jointly
 from the caller and divisor; the current interval profile does not cover the
-full 96/32 fee-division contract. Output bounds are not yet a mathematical
-rounding theorem. The
+full 96/32 fee-division contract. The current exact-value formulas are not yet the wider fee-division
+contract. The
 selected source narrows `n / d` to int64 and `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed
 correction's bounds. Use explicit checked certificates and useful
@@ -657,8 +666,8 @@ an evaluated `inline_assertion_check<false>` call, separate from the unevaluated
 compiler builtin. Add wide addition/subtraction
 or negation only if selected source requires them. Keep mathematical Integer
 semantics separate, especially its planned Euclidean division. Automatic
-machine observer ranges, general range inference, and the complete rounding
-theorem remain open.
+machine observer ranges, general range inference, and the wider rounding
+profile remain open.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false

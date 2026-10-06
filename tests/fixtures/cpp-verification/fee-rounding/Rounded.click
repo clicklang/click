@@ -8,6 +8,10 @@ int64 rounded(int128 n, int32 d, bool round_down) {
     ensures to_integer(result) <= 101;
     ensures -101i64 <= result;
     ensures result <= 101i64;
+    ensures round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
+    ensures round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+    ensures round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
+    ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
 } by {
     have 1 <= d by { arithmetic() using { d > 0; } }
     apply(int32_less_equal_to_integer(1, d));
@@ -169,10 +173,218 @@ int64 rounded(int128 n, int32 d, bool round_down) {
         rewrite(to_integer(quot) == truncating_quotient(to_integer(n), to_integer(d)));
         simp();
     }
-    execute();
-    have -101 <= to_integer(result) by simp;
-    have to_integer(result) <= 101 by simp;
-    apply(int64_less_equal_of_to_integer(-101i64, result));
-    apply(int64_less_equal_of_to_integer(result, 101i64));
-    simp();
+    have to_integer(quot + 0i64) == truncating_quotient(to_integer(n), to_integer(d)) by {
+        rewrite(to_integer(quot + 0i64) == to_integer(quot) + 0);
+        assumption();
+    }
+    if 0 < mod {
+        apply(int32_less_than_to_integer(0, mod));
+        have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            arithmetic() using { 0 < to_integer(mod); }
+        }
+        have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            arithmetic() using { 0 < to_integer(mod); }
+        }
+        have 0 < truncating_remainder(to_integer(n), to_integer(d)) by {
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            arithmetic() using { 0 < to_integer(mod); }
+        }
+        have not (truncating_remainder(to_integer(n), to_integer(d)) <= 0) by {
+            rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+            arithmetic() using { 0 < to_integer(mod); }
+        }
+        if round_down == 0 {
+            execute();
+            have -101 <= to_integer(result) by simp;
+            have to_integer(result) <= 101 by simp;
+            apply(int64_less_equal_of_to_integer(-101i64, result));
+            apply(int64_less_equal_of_to_integer(result, 101i64));
+            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by simp;
+            have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+            }
+            have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                contradiction(round_down == 0);
+            }
+            have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                intro();
+                assumption();
+            }
+            have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+            }
+            simp();
+        } else {
+            execute();
+            have -101 <= to_integer(result) by simp;
+            have to_integer(result) <= 101 by simp;
+            apply(int64_less_equal_of_to_integer(-101i64, result));
+            apply(int64_less_equal_of_to_integer(result, 101i64));
+            have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+            have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+            }
+            have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                assumption();
+            }
+            have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                intro();
+                contradiction(round_down == 0);
+            }
+            have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                intro();
+                contradiction(truncating_remainder(to_integer(n), to_integer(d)) <= 0);
+            }
+            simp();
+        }
+    } else {
+        if mod < 0 {
+            apply(int32_less_than_to_integer(mod, 0));
+            have truncating_remainder(to_integer(n), to_integer(d)) < 0 by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { to_integer(mod) < 0; }
+            }
+            have not (0 <= truncating_remainder(to_integer(n), to_integer(d))) by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { to_integer(mod) < 0; }
+            }
+            have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { to_integer(mod) < 0; }
+            }
+            have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { to_integer(mod) < 0; }
+            }
+            if round_down == 0 {
+                execute();
+                have -101 <= to_integer(result) by simp;
+                have to_integer(result) <= 101 by simp;
+                apply(int64_less_equal_of_to_integer(-101i64, result));
+                apply(int64_less_equal_of_to_integer(result, 101i64));
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                simp();
+            } else {
+                execute();
+                have -101 <= to_integer(result) by simp;
+                have to_integer(result) <= 101 by simp;
+                apply(int64_less_equal_of_to_integer(-101i64, result));
+                apply(int64_less_equal_of_to_integer(result, 101i64));
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by simp;
+                have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    assumption();
+                }
+                have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(0 <= truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                simp();
+            }
+        } else {
+            apply(int32_not_lt_implies_ge(mod, 0));
+            apply(int32_ge_implies_reversed_le(mod, 0));
+            apply(int32_not_lt_implies_ge(0, mod));
+            apply(int32_ge_implies_reversed_le(0, mod));
+            apply(int32_le_and_not_lt_implies_eq(mod, 0));
+            apply(int32_less_equal_to_integer(0, mod));
+            apply(int32_less_equal_to_integer(mod, 0));
+            have not (truncating_remainder(to_integer(n), to_integer(d)) < 0) by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { 0 <= to_integer(mod); to_integer(mod) <= 0; }
+            }
+            have 0 <= truncating_remainder(to_integer(n), to_integer(d)) by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { 0 <= to_integer(mod); to_integer(mod) <= 0; }
+            }
+            have not (0 < truncating_remainder(to_integer(n), to_integer(d))) by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { 0 <= to_integer(mod); to_integer(mod) <= 0; }
+            }
+            have truncating_remainder(to_integer(n), to_integer(d)) <= 0 by {
+                rewrite(truncating_remainder(to_integer(n), to_integer(d)) == to_integer(mod));
+                arithmetic() using { 0 <= to_integer(mod); to_integer(mod) <= 0; }
+            }
+            if round_down == 0 {
+                execute();
+                have -101 <= to_integer(result) by simp;
+                have to_integer(result) <= 101 by simp;
+                apply(int64_less_equal_of_to_integer(-101i64, result));
+                apply(int64_less_equal_of_to_integer(result, 101i64));
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
+                have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                simp();
+            } else {
+                execute();
+                have -101 <= to_integer(result) by simp;
+                have to_integer(result) <= 101 by simp;
+                apply(int64_less_equal_of_to_integer(-101i64, result));
+                apply(int64_less_equal_of_to_integer(result, 101i64));
+                have to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by simp;
+                have round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1 by {
+                    intro();
+                    contradiction(truncating_remainder(to_integer(n), to_integer(d)) < 0);
+                }
+                have round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    assumption();
+                }
+                have round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1 by {
+                    intro();
+                    contradiction(0 < truncating_remainder(to_integer(n), to_integer(d)));
+                }
+                have round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) by {
+                    intro();
+                    contradiction(round_down == 0);
+                }
+                simp();
+            }
+        }
+    }
 }

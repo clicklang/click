@@ -797,3 +797,21 @@ theorem observed_quotient_correction(q: int64, quotient: Integer) {
     }
 }
 ```
+
+The proof-backed `int32_less_than_to_integer` lemma transfers a strict native
+comparison without asking native affine arithmetic to expand a narrowed wide
+operand. It follows from `int32_less_equal_of_to_integer`: if the mathematical
+order were reversed or equal, reflecting that non-strict order would contradict
+the strict native premise. No new kernel axiom or machine range assumption is
+needed.
+
+The unchanged Bitcoin and synthetic fee-division sidecars now use this lemma
+to relate native remainder cases to the mathematical truncating remainder.
+Within the established bounded numerator and positive-divisor profile, they
+prove all four exact result formulas. Floor mode returns the truncating quotient
+minus one precisely for a negative remainder; ceiling mode returns it plus one
+precisely for a positive remainder. A zero remainder leaves the quotient
+unchanged in both modes. The synthetic modular caller exports the same
+formulas while framing its untouched memory. These guarantees retain the
+nonzero divisor and narrowing/overflow evidence. Product-inequality
+characterizations and the wider 96/32 input profile remain separate work.

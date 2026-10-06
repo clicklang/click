@@ -964,6 +964,18 @@ theorem int32_less_equal_of_to_integer(left: int32, right: int32) {
     ensures left <= right;
 }
 
+theorem int32_less_than_to_integer(left: int32, right: int32) {
+    requires left < right;
+    ensures to_integer(left) < to_integer(right) by {
+        if to_integer(right) <= to_integer(left) {
+            apply(int32_less_equal_of_to_integer(right, left));
+            contradiction(left < right);
+        } else {
+            arithmetic() using { not (to_integer(right) <= to_integer(left)); }
+        }
+    }
+}
+
 theorem int64_less_equal_to_integer(left: int64, right: int64) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);

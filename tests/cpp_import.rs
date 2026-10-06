@@ -10138,77 +10138,103 @@ int64 relay(int128 a, int32* untouched) {
     }
 }
 
-#[test]
-fn fee_rounding_pattern_has_checked_native_correction_bounds() {
-    for name in ["rounded", "caller"] {
-        let project = Project::with_fixture(
-            "round.cpp",
-            name,
-            include_str!("fixtures/cpp-verification/fee-rounding/round.cpp"),
-        );
-        refresh_import(&project.config()).unwrap();
-        fs::remove_file(&project.exporter).unwrap();
-        let import = load_import(&project.config()).unwrap();
-        let mut proof =
-            include_str!("fixtures/cpp-verification/fee-rounding/Rounded.click").to_owned();
-        if name == "caller" {
-            proof.push_str(
-                r#"
+fn check_fee_rounding_pattern(name: &str) {
+    let project = Project::with_fixture(
+        "round.cpp",
+        name,
+        include_str!("fixtures/cpp-verification/fee-rounding/round.cpp"),
+    );
+    refresh_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let mut proof = include_str!("fixtures/cpp-verification/fee-rounding/Rounded.click").to_owned();
+    if name == "caller" {
+        proof.push_str(
+            r#"
 int64 caller(int128 n, int32 d, bool round_down, int32* untouched) {
-    requires -100 <= to_integer(n);
-    requires to_integer(n) <= 100;
-    requires d > 0;
-    requires d <= 100;
-    owns untouched[0..1];
-    ensures untouched[0] == old(untouched[0]);
-    ensures -101i64 <= result;
-    ensures result <= 101i64;
+requires -100 <= to_integer(n);
+requires to_integer(n) <= 100;
+requires d > 0;
+requires d <= 100;
+owns untouched[0..1];
+ensures untouched[0] == old(untouched[0]);
+ensures -101i64 <= result;
+ensures result <= 101i64;
+ensures round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
+ensures round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+ensures round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
+ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
 } by { execute(); simp(); }
 "#,
-            );
-            check_return_call_sidecar(&project, &import, &proof);
-        } else {
-            check_arithmetic_sidecar(&project, &import, &proof);
-        }
-        let path = project.directory.join("complete.click");
-        fs::write(&path, &proof).unwrap();
-        let parsed = read_click_project(&path, &proof).unwrap();
-        let expanded = expand_program_prepared_project_claim_source_by_label(
-            &parsed,
-            &import,
-            "rounded.ensures_0",
-        )
-        .unwrap();
-        verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
-        for hostile in [
-            proof.replace("requires -100 <= to_integer(n);", ""),
-            proof.replace("requires to_integer(n) <= 100;", ""),
-            proof.replace("requires d > 0;", ""),
-            proof.replace("requires d <= 100;", ""),
-            proof.replace("requires d > 0;", "requires d == 0;"),
-            proof.replace(
-                "ensures -101 <= to_integer(result);",
-                "ensures to_integer(result) == 1000;",
-            ),
-            proof.replace(
-                "integer_cast_identity bounds [0, 1]",
-                "integer_cast_identity bounds [1, 0]",
-            ),
-            proof.replace(
-                "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
-                "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 2",
-            ),
-            proof.replace(
-                "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
-                "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
-            ),
-        ] {
-            fs::write(&path, &hostile).unwrap();
-            let parsed = read_click_project(&path, &hostile).unwrap();
-            let Err(error) = verify_program_prepared_project(&parsed, &import) else {
-                panic!("hostile rounding claim must be refused");
-            };
-            assert!(error.message().len() < 8000);
-        }
+        );
+        check_return_call_sidecar(&project, &import, &proof);
+    } else {
+        check_arithmetic_sidecar(&project, &import, &proof);
     }
+    let path = project.directory.join("complete.click");
+    fs::write(&path, &proof).unwrap();
+    let parsed = read_click_project(&path, &proof).unwrap();
+    let expanded = expand_program_prepared_project_claim_source_by_label(
+        &parsed,
+        &import,
+        "rounded.ensures_0",
+    )
+    .unwrap();
+    verify_program_prepared_project(&parsed.with_entry_source(expanded), &import).unwrap();
+    for hostile in [
+        proof.replace("requires -100 <= to_integer(n);", ""),
+        proof.replace("requires to_integer(n) <= 100;", ""),
+        proof.replace("requires d > 0;", ""),
+        proof.replace("requires d <= 100;", ""),
+        proof.replace("requires d > 0;", "requires d == 0;"),
+        proof.replace(
+            "ensures -101 <= to_integer(result);",
+            "ensures to_integer(result) == 1000;",
+        ),
+        proof.replace(
+            "integer_cast_identity bounds [0, 1]",
+            "integer_cast_identity bounds [1, 0]",
+        ),
+        proof.replace(
+            "round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+            "round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+        ),
+        proof.replace(
+            "round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            "round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+        ),
+        proof.replace(
+            "round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
+            "round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+        ),
+        proof.replace(
+            "round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
+            "round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+        ),
+        proof.replace(
+            "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 2",
+        ),
+        proof.replace(
+            "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+            "have to_integer(quot + -1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+        ),
+    ] {
+        fs::write(&path, &hostile).unwrap();
+        let parsed = read_click_project(&path, &hostile).unwrap();
+        let Err(error) = verify_program_prepared_project(&parsed, &import) else {
+            panic!("hostile rounding claim must be refused");
+        };
+        assert!(error.message().len() < 8000);
+    }
+}
+
+#[test]
+fn fee_rounding_pattern_has_checked_native_correction_bounds() {
+    check_fee_rounding_pattern("rounded");
+}
+
+#[test]
+fn fee_rounding_pattern_modular_caller_has_exact_rounding_values() {
+    check_fee_rounding_pattern("caller");
 }
