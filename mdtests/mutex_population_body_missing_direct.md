@@ -7,14 +7,13 @@ unsigned int read_value(struct counter *p) { return p->value; }
 unsigned int read_without_lock(struct counter *p) { return read_value(p); }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_population_body_missing.c";
 abstract resource contribution(p: struct counter*);
 resource counter_state(p: struct counter*) {
     field value: uint32;
-    guarded_by p->mutex;
     owns p->value;
     fact p->value == value;
 }
