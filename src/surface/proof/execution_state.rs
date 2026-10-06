@@ -953,6 +953,11 @@ pub(super) fn append_surface_tactics_at_every_leaf(
         append_surface_tactics_at_every_leaf(&mut proof_if.else_tactics, suffix)?;
         return Ok(());
     }
+    if let Some(ProofTactic::CallOutcomes(outcomes)) = tactics.last_mut() {
+        append_surface_tactics_at_every_leaf(&mut outcomes.returned_tactics, suffix)?;
+        append_surface_tactics_at_every_leaf(&mut outcomes.threw_tactics, suffix)?;
+        return Ok(());
+    }
     if tactics.is_empty() {
         tactics.extend(suffix.iter().cloned());
         Ok(())
@@ -986,6 +991,21 @@ pub(super) fn append_surface_tactics_at_branch_path(
                     &mut proof_if.then_tactics
                 } else {
                     &mut proof_if.else_tactics
+                },
+                branch_path,
+                next_branch + 1,
+                suffix,
+            );
+        }
+        if let Some(ProofTactic::CallOutcomes(outcomes)) = tactics.last_mut() {
+            let returned = *branch_path.get(next_branch).ok_or_else(|| {
+                "surface call skeleton has more branches than its execution path".to_string()
+            })?;
+            return append(
+                if returned {
+                    &mut outcomes.returned_tactics
+                } else {
+                    &mut outcomes.threw_tactics
                 },
                 branch_path,
                 next_branch + 1,
@@ -1077,30 +1097,39 @@ pub(super) fn surface_branch_path_for_outcome(
     }
 }
 
-/// Keeps only the outermost surface `if` of an already-admitted certificate,
-/// recursively. Every step it retains came from a certificate that its own
-/// constructor admitted, so the skeleton needs no second admission check.
+/// Keeps the outermost surface case split of an already-admitted certificate,
+/// recursively. Every retained step came from an admitted certificate.
 pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {
-    let Some((condition, then_proof, else_proof)) =
-        steps.iter().rev().find_map(|step| match step {
-            ProofStep::If {
-                condition,
-                then_proof,
-                else_proof,
-            } => Some((condition, then_proof, else_proof)),
-            _ => None,
-        })
+    let Some(branch) = steps
+        .iter()
+        .rev()
+        .find(|step| matches!(step, ProofStep::If { .. } | ProofStep::CallOutcomes { .. }))
     else {
         return Vec::new();
     };
-    vec![ProofStep::If {
-        condition: condition.clone(),
-        then_proof: Box::new(ProofCertificate::from_validated_steps(
-            surface_branch_skeleton(then_proof.steps()),
-        )),
-        else_proof: Box::new(ProofCertificate::from_validated_steps(
-            surface_branch_skeleton(else_proof.steps()),
-        )),
+    let arm = |proof: &ProofCertificate| {
+        Box::new(ProofCertificate::from_validated_steps(
+            surface_branch_skeleton(proof.steps()),
+        ))
+    };
+    vec![match branch {
+        ProofStep::If {
+            condition,
+            then_proof,
+            else_proof,
+        } => ProofStep::If {
+            condition: condition.clone(),
+            then_proof: arm(then_proof),
+            else_proof: arm(else_proof),
+        },
+        ProofStep::CallOutcomes {
+            returned_proof,
+            threw_proof,
+        } => ProofStep::CallOutcomes {
+            returned_proof: arm(returned_proof),
+            threw_proof: arm(threw_proof),
+        },
+        _ => unreachable!(),
     }]
 }
 

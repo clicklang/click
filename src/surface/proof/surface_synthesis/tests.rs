@@ -59,9 +59,10 @@ fn qualified_multidimensional_cell(
             lowered: CExpression::Value(base.clone()),
         }),
         indexes: vec![
-            CExpression::Value(int32(row as u32)),
-            CExpression::Value(int32(column as u32)),
+            ContractExpression::CFragment(CExpression::Value(int32(row as u32))),
+            ContractExpression::CFragment(CExpression::Value(int32(column as u32))),
         ],
+        dimensions: vec![1, columns as u32],
         lowered: CExpression::Index(
             Box::new(CExpression::Value(base.clone())),
             Box::new(CExpression::Value(int32(flat_index as u32))),
@@ -298,7 +299,10 @@ fn multidimensional_array_definedness_tracks_local_roots_and_indexes() {
         base: Box::new(ContractExpression::CFragment(CExpression::Variable(
             "grid".into(),
         ))),
-        indexes: vec![CExpression::Variable("row".into())],
+        indexes: vec![ContractExpression::CFragment(CExpression::Variable(
+            "row".into(),
+        ))],
+        dimensions: vec![1],
         lowered: lowered.clone(),
     };
     assert!(contract_expression_mentions_c_local(
@@ -315,7 +319,8 @@ fn multidimensional_array_definedness_tracks_local_roots_and_indexes() {
             name: "static_local::f::grid".into(),
             lowered: CExpression::Value(int32(0)),
         }),
-        indexes: vec![CExpression::Value(int32(0))],
+        indexes: vec![ContractExpression::CFragment(CExpression::Value(int32(0)))],
+        dimensions: vec![1],
         lowered: CExpression::Index(
             Box::new(CExpression::Variable("global_grid".into())),
             Box::new(CExpression::Value(int32(0))),

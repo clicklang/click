@@ -908,13 +908,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 }
 
 #[test]
-fn audit_reports_a_witness_the_expansion_cannot_spell() {
-    // `mdtests/resource_witness_unfold_fold.md` reduced. The closer's
-    // certificate has to cite the `where` fact of the resource's existential
-    // witness, whose kernel value renders as the diagnostic
-    // `symbolic-pointer:...@0`. Audit used to report only the parse error
-    // that unparseable text produced (`unexpected character @`); the site now
-    // fails with the language gap it actually hit.
+fn audit_expands_an_unnamed_witness_with_a_checked_return_pointer() {
     let directory =
         std::env::temp_dir().join(format!("click-audit-witness-{}", std::process::id()));
     if directory.exists() {
@@ -963,16 +957,10 @@ struct node* unpack(struct node* node) {
         .iter()
         .find(|site| site.position.line == closer_line)
         .expect("the closer should be an auditable site");
-    let error = expand_location(&format_location(&site_location(site)))
-        .expect_err("the expansion needs a name the language does not give it");
-    assert!(
-        error.contains("the expansion needs a name for the witness `next` of `packed`"),
-        "{error}"
-    );
-    assert!(
-        !error.contains("unexpected character"),
-        "the refusal should replace the parse error, not report it: {error}"
-    );
+    let expanded = expand_location(&format_location(&site_location(site)))
+        .expect("the checked return pointer names the witness");
+    verify_c0_sources(&expanded, &[("unpack.c", c_source)])
+        .expect("the expansion must verify with fresh kernel state");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1453,6 +1441,129 @@ fn callers_with_seeded_array_requirements_audit_every_site() {
                     site.position.line, site.position.column, site.tactic_name
                 )
             });
+        }
+    }
+}
+
+#[test]
+fn resource_proof_expansions_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (relative, expected_sites) in [
+        ("mdtests/resource_witness_unfold_fold.md", 2),
+        ("mdtests/rb_parent_family.md", 18),
+        ("mdtests/population_count_states_its_transition.md", 2),
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert_eq!(sites.len(), expected_sites, "{relative}");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| {
+                panic!(
+                    "{relative}:{}:{}: {message}",
+                    site.position.line, site.position.column
+                )
+            });
+        }
+    }
+}
+
+#[test]
+fn nested_call_outcomes_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "mdtests/outcomes_routes_a_throw_that_leaves_the_function.md",
+        "mdtests/grouped_proof_closes_claims_across_two_throwing_calls.md",
+        "mdtests/execute_splits_a_throwing_call_inside_a_c_if.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(!sites.is_empty(), "{relative} must have tactic sites");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| {
+                panic!(
+                    "{relative}:{}:{}: {message}",
+                    site.position.line, site.position.column
+                )
+            });
+        }
+    }
+}
+
+#[test]
+fn exceptional_call_paths_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for (relative, expected_sites) in [
+        ("mdtests/exceptional_call_continuation.md", 2),
+        ("mdtests/exceptional_terminal_call.md", 2),
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert_eq!(
+            sites.len(),
+            expected_sites,
+            "{relative} must audit every helper and caller site"
+        );
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| panic!("{relative}: {message}"));
+        }
+    }
+}
+
+#[test]
+fn result_parameter_postconditions_audit_every_site() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for relative in [
+        "mdtests/result_parameter_old_value_certifies.md",
+        "mdtests/result_parameter_entry_snapshot_certifies.md",
+        "mdtests/result_parameter_current_binding_certifies.md",
+        "mdtests/result_parameter_resource_binding_certifies.md",
+        "mdtests/result_parameter_mutation_certifies.md",
+        "mdtests/result_parameter_field_binding_certifies.md",
+        "mdtests/result_parameter_cast_binding_certifies.md",
+        "mdtests/result_parameter_pointer_operations_certify.md",
+        "mdtests/result_parameter_array_indices_certify.md",
+    ] {
+        let path = root.join(relative);
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        assert!(!sites.is_empty(), "{relative} must have tactic sites");
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        for (index, site) in sites.iter().enumerate() {
+            audit_site(
+                site,
+                &mut worker,
+                &AuditLimits::default(),
+                index == 0,
+                deadline,
+            )
+            .unwrap_or_else(|message| panic!("{relative}: {message}"));
         }
     }
 }

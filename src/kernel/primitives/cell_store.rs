@@ -819,6 +819,8 @@ pub(crate) enum RuleAnswer {
     /// ladder, argued where the rule is defined: it keeps a superset of the
     /// cells that rule keeps, or decides from the byte arithmetic every slot
     /// shares what the ladder decides from a spelling.
+    /// A cache-forgetting rule may instead drop extra slots: every kept slot
+    /// must be sound, and the caller must record any extra lost knowledge.
     Sound,
 }
 

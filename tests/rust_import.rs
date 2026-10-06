@@ -578,6 +578,25 @@ fn charon_fields_project() -> Project {
     p
 }
 #[test]
+fn charon_shared_reference_signature_mismatch_displays_constness() {
+    let p = charon_fields_project();
+    let prepared = load_import(&p.config()).unwrap();
+    let missing_const =
+        CHARON_FIELDS_SIDECAR.replacen("const struct Lanes* state", "struct Lanes* state", 1);
+    let error = match C0VerificationSession::new_program_prepared(&missing_const, &prepared) {
+        Ok(_) => panic!("a Rust shared reference requires a const pointer"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .message()
+            .contains(".click has struct Lanes* state, C has const struct Lanes* state"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
 fn charon_array_fields_check_bounds_authority_and_frames() {
     let p = charon_fields_project();
     let prepared = load_import(&p.config()).unwrap();
