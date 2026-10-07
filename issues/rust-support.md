@@ -1130,7 +1130,37 @@ current. Minimal C and expansion regressions cover that repair.
 Missing length/view and empty-input rejection are ordinary checks. Complete
 single-byte verification, false checksum/input-preservation claims, and proof
 tool agreement run nightly. Original Rust sources, extraction locks, artifact,
-and import profile are unchanged. Next extend the serial-tail proof to two and
-three bytes, then establish the derived lane ceilings over the original stored
-nested iterators. General initial states, nonempty vector batches, whole-loop
+and import profile are unchanged. The serial-tail extension below covers two
+and three bytes; derived lane ceilings over the original stored nested
+iterators remain later work. General initial states, nonempty vector batches, whole-loop
 panic freedom, and the common full checksum specification remain unproved.
+
+
+### Original computation two- and three-byte tails
+
+The unchanged `Adler32::compute` body now has checked constructor-state
+contracts for arbitrary inputs of length two and three. Together with the
+existing empty and single-byte boundaries, this covers each possible serial
+remainder length before the first four-byte vector path. Each original read
+is tied to its input index, and explicit facts check the stored cursor and
+remaining count after every read. There are no new source locals, generated
+processed counts, or assumed loop invariants.
+
+The proofs establish the original A/B recurrences from the lane-recombination
+state `A = 1`, `B = 6 * MOD`, check both overflow guards on each pass, preserve
+every input byte, and prove both final native modulo expressions through the
+original `u16` stores. The A ceilings are 256, 511, and 766; the B ceilings are
+393382, 393893, and 394659. The canonical helper/getter contracts are reused
+and all seven bodies checked for each fragment.
+
+Ordinary regressions reject missing length/view, an incorrect extent, and
+an incorrect constructor state. Nightly tests check the complete positive
+proofs, false A/B outputs, false preservation of every byte, swapped byte
+weights in B, repeated preceding-byte reads, and verify/profile/audit/expansion
+agreement. Original Rust sources, artifacts, locks, and import profile are
+unchanged.
+
+Next prove the first nonempty four-byte vector path and establish/preserve the
+derived lane ceilings over the original stored nested iterators. General
+initial states, nonempty vector batches beyond that boundary, whole-loop panic
+freedom, and the common full checksum specification remain unproved.

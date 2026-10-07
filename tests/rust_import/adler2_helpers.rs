@@ -5,7 +5,12 @@ const HELPERS: &str = include_str!("../../design/charon-trial/adler2/helpers.cli
 const SINGLE_BYTE_COMPUTE: &str =
     include_str!("../../design/charon-trial/adler2/single-byte-compute.click");
 
-fn single_byte_proof(contract: &str) -> String {
+const TWO_BYTE_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/two-byte-compute.click");
+const THREE_BYTE_COMPUTE: &str =
+    include_str!("../../design/charon-trial/adler2/three-byte-compute.click");
+
+fn compute_proof(contract: &str) -> String {
     let computation = HELPERS.split_once("# Empty-input boundary").unwrap().1;
     let getters = &computation[computation.find("\nuint32 ").unwrap()..];
     // Function-contract imports are not admitted yet. Assemble one verification
@@ -14,31 +19,31 @@ fn single_byte_proof(contract: &str) -> String {
     format!("{}\n{contract}\n{getters}", helper_library())
 }
 
-fn single_byte_project() -> Project {
+fn compute_project(contract: &str) -> Project {
     let p = adler2_helpers_project();
-    fs::write(
-        p.root.join("borrow.click"),
-        single_byte_proof(SINGLE_BYTE_COMPUTE),
-    )
-    .unwrap();
+    fs::write(p.root.join("borrow.click"), compute_proof(contract)).unwrap();
     p
 }
 
-fn reject_single_byte_compute(before: &str, after: &str) {
+fn reject_compute(contract: &str, before: &str, after: &str) {
     let p = adler2_helpers_project();
     let prepared = load_import(&p.config()).unwrap();
-    let changed = SINGLE_BYTE_COMPUTE.replacen(before, after, 1);
-    assert_ne!(changed, SINGLE_BYTE_COMPUTE, "missing mutation: {before}");
-    let invalid = single_byte_proof(&changed);
+    let changed = contract.replacen(before, after, 1);
+    assert_ne!(changed, contract, "missing mutation: {before}");
+    let invalid = compute_proof(&changed);
     let offset = invalid.find("execute_until(assignment(b, 0))").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_program_prepared_sources_at(&invalid, &prepared, line, 2)
-        .expect_err("invalid single-byte computation contract was accepted");
+        .expect_err("invalid computation contract was accepted");
     assert!(
         !error.message().contains("budget exhausted"),
         "{}",
         error.message()
     );
+}
+
+fn reject_single_byte_compute(before: &str, after: &str) {
+    reject_compute(SINGLE_BYTE_COMPUTE, before, after);
 }
 
 fn adler2_helpers_project() -> Project {
@@ -804,9 +809,9 @@ fn charon_adler2_single_byte_compute_rejects_empty_input() {
 #[test]
 #[ignore = "nightly: original single-byte computation proof and false-output rejections"]
 fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outputs() {
-    let p = single_byte_project();
+    let p = compute_project(SINGLE_BYTE_COMPUTE);
     C0VerificationSession::new_program_prepared(
-        &single_byte_proof(SINGLE_BYTE_COMPUTE),
+        &compute_proof(SINGLE_BYTE_COMPUTE),
         &load_import(&p.config()).unwrap(),
     )
     .unwrap();
@@ -825,14 +830,21 @@ fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outp
 #[test]
 #[ignore = "nightly: original single-byte computation proof-tool agreement and expansion"]
 fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
-    let p = single_byte_project();
+    recheck_compute_tools(SINGLE_BYTE_COMPUTE, 1);
+}
+
+fn recheck_compute_tools(contract: &str, bytes: usize) {
+    let p = compute_project(contract);
     for command in ["verify", "profile"] {
         assert_cli(&p, &[command]);
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let offset = source
-        .find("execute_until(assignment(__rust_mir_144, 0))")
-        .unwrap();
+    let site = if bytes == 1 {
+        "execute_until(assignment(__rust_mir_144, 0))".to_owned()
+    } else {
+        format!("have __rust_mir_138_cursor == old(bytes) + {bytes}")
+    };
+    let offset = source.find(&site).unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -855,4 +867,90 @@ fn charon_adler2_single_byte_compute_tools_recheck_original_contract() {
         ],
     );
     assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
+    for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
+        reject_compute(contract, &format!("requires bytes_len == {bytes}u64;"), "");
+        reject_compute(contract, &format!("views bytes[0..{bytes}];"), "");
+    }
+}
+
+#[test]
+fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
+    for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
+        reject_compute(
+            contract,
+            &format!("requires bytes_len == {bytes}u64;"),
+            "requires bytes_len == 4u64;",
+        );
+        reject_compute(contract, "requires self->a == 1;", "requires self->a == 2;");
+    }
+}
+
+fn check_short_tail_compute(contract: &str, bytes: usize) {
+    let p = compute_project(contract);
+    C0VerificationSession::new_program_prepared(
+        &compute_proof(contract),
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for field in ["a", "b"] {
+        reject_compute(
+            contract,
+            &format!("ensures to_integer(self->{field}) == to_integer("),
+            &format!("ensures to_integer(self->{field}) == 1 + to_integer("),
+        );
+    }
+    for index in 0..bytes {
+        reject_compute(
+            contract,
+            &format!("ensures bytes[{index}] == old(bytes[{index}]);"),
+            &format!("ensures bytes[{index}] == old(bytes[{index}]) + 1;"),
+        );
+    }
+    // Swapping input bytes leaves A unchanged but changes the weighted B sum.
+    // Only mutate the promised B result; the proof and original Rust stay fixed.
+    let b_result = contract
+        .lines()
+        .find(|line| line.contains("ensures to_integer(self->b)"))
+        .unwrap();
+    let swapped = b_result
+        .replace("bytes[0]", "@first@")
+        .replace("bytes[1]", "bytes[0]")
+        .replace("@first@", "bytes[1]");
+    reject_compute(contract, b_result, &swapped);
+    // The second and third actual reads cannot repeat the preceding byte.
+    for index in 1..bytes {
+        reject_compute(
+            contract,
+            &format!("have byte == old(bytes[{index}])"),
+            &format!("have byte == old(bytes[{}])", index - 1),
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: original two-byte computation proof and false-result/read rejections"]
+fn charon_adler2_two_byte_compute_proves_original_body_and_rejects_false_outputs() {
+    check_short_tail_compute(TWO_BYTE_COMPUTE, 2);
+}
+
+#[test]
+#[ignore = "nightly: original three-byte computation proof and false-result/read rejections"]
+fn charon_adler2_three_byte_compute_proves_original_body_and_rejects_false_outputs() {
+    check_short_tail_compute(THREE_BYTE_COMPUTE, 3);
+}
+
+#[test]
+#[ignore = "nightly: original two-byte computation proof-tool agreement and expansion"]
+fn charon_adler2_two_byte_compute_tools_recheck_original_contract() {
+    recheck_compute_tools(TWO_BYTE_COMPUTE, 2);
+}
+
+#[test]
+#[ignore = "nightly: original three-byte computation proof-tool agreement and expansion"]
+fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
+    recheck_compute_tools(THREE_BYTE_COMPUTE, 3);
 }
