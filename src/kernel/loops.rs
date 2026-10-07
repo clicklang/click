@@ -464,6 +464,11 @@ pub(super) fn execute_c_call_assign_paths(
         && environment
             .get_verified_function_rule(function_name)
             .is_none()
+        && environment
+            .get_external_function_rule(function_name)
+            .is_some_and(|rule| {
+                super::functions::contract_reaches_population(rule.function.contract_interface())
+            })
         && !environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {
@@ -763,6 +768,11 @@ pub(super) fn execute_c_call_paths(
         && environment
             .get_verified_function_rule(function_name)
             .is_none()
+        && environment
+            .get_external_function_rule(function_name)
+            .is_some_and(|rule| {
+                super::functions::contract_reaches_population(rule.function.contract_interface())
+            })
         && !environment
             .get_external_function_rule(function_name)
             .is_some_and(|rule| {

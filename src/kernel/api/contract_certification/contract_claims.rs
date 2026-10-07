@@ -916,7 +916,20 @@ fn prepare_function_claim_path(
     capture_failure: bool,
     checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
 ) -> Result<CertifiedFunctionClaimPath, ContractPathPreparationFailure> {
-    let function = checked_transfer.map_or(function, |transfer| transfer.checked_function());
+    // The boundary transfer is captured from the proof's entry function,
+    // before loop annotations are attached. It depends only on the
+    // function's signature and contract, so it must agree on those; the path
+    // itself belongs to the annotated function.
+    if checked_transfer.is_some_and(|transfer| {
+        let checked = transfer.checked_function();
+        checked.name() != function.name()
+            || checked.parameters() != function.parameters()
+            || checked.contract_interface() != function.contract_interface()
+    }) {
+        return Err("the checked boundary transfer belongs to another function"
+            .to_string()
+            .into());
+    }
     let Some((caller_state, arguments, outcome, assumptions)) =
         certified_function_path_parts(function, path)
     else {
@@ -1046,7 +1059,7 @@ fn prepare_function_claim_path(
         let _ = error;
         match crate::kernel::functions::resolve_deferred_contract_exit(
             caller_state,
-            function,
+            checked_transfer.map_or(function, |transfer| transfer.checked_function()),
             arguments,
             deferred_body_outcome.as_ref().unwrap_or(outcome),
             checked_transfer,

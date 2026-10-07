@@ -1454,6 +1454,7 @@ impl CCompositeResourceDefinition {
             thread_confined: false,
             contains_mutex_authority: false,
             authorized: false,
+            reaches_population: false,
             owned_footprint_unnamed: false,
             facts_claim_liveness: false,
             contains,
@@ -1559,6 +1560,7 @@ impl CCompositeResourceDefinition {
             thread_confined,
             contains_mutex_authority: false,
             authorized: false,
+            reaches_population: false,
             owned_footprint_unnamed: false,
             facts_claim_liveness: false,
             contains,
@@ -1611,6 +1613,12 @@ impl CCompositeResourceDefinition {
     /// Whether the family was declared `authorized resource`.
     pub fn is_authorized(&self) -> bool {
         self.authorized
+    }
+
+    /// Whether folding, unfolding or moving this family can touch a
+    /// population: see the `reaches_population` field.
+    pub fn reaches_population(&self) -> bool {
+        self.reaches_population
     }
 
     pub fn is_thread_confined(&self) -> bool {

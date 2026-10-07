@@ -98,7 +98,7 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (18)
+## P2: after launch (19)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
@@ -118,6 +118,7 @@ C language coverage:
 - [Support multiple C compilers and target ABIs](multiple-compilers.md)
 - [Give private static storage sound ownership across helper calls](private-static-helper-ownership.md)
 - [Extend bounded control flow](control-flow.md)
+- [Close a loop body's `return` in its `preserve` arm, not by the tactics after the loop](loop-return-exit-is-closed-by-the-loops-tail.md)
 - [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 - [Model signed eight-bit integers](signed-byte-integers.md)
