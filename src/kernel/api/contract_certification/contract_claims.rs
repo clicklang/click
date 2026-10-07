@@ -1683,7 +1683,7 @@ fn function_claim_holds_on_prepared_path(
             let Ok(Ok(expected)) = expected_result else {
                 return false;
             };
-            expected.facts().iter().all(|fact| {
+            if !expected.facts().iter().all(|fact| {
                 resource_context_satisfies_definitional_fact(
                     exit_state.resources(),
                     fact,
@@ -1691,7 +1691,20 @@ fn function_claim_holds_on_prepared_path(
                     exit_state.memory(),
                     assumptions,
                 )
-            })
+            }) {
+                return false;
+            }
+            // Definitional validation answers each clause from the whole exit
+            // state. The prefix is one multiset: consume it jointly so one
+            // exclusive unit, or a folded composite and its own body child,
+            // cannot certify two clauses.
+            crate::kernel::functions::jointly_consume_returned_resource_units(
+                exit_state.resources(),
+                &expected,
+                exit_state,
+                function.contract_interface(),
+                assumptions,
+            )
         }
         CFunctionContractClaimTarget::Effect => {
             let Ok(Ok(projection)) =

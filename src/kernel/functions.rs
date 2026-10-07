@@ -27214,26 +27214,98 @@ pub(super) fn function_return_resources_definitionally_established(
     }) {
         return false;
     }
-    !claim_return_state.uses_population_authority_semantics()
-        || jointly_consume_returned_resource_units(
-            claim_return_state.resources(),
-            &expected,
-            &post_state,
-            function.contract_interface(),
-            &assumptions,
-        )
+    // Definitional validation answers each returned clause from the whole
+    // exit state and so cannot see one exclusive unit counted twice, such as
+    // a folded composite returned beside one of its own body children. The
+    // returned units are one multiset under both resource semantics: consume
+    // them jointly.
+    jointly_consume_returned_resource_units(
+        claim_return_state.resources(),
+        &expected,
+        &post_state,
+        function.contract_interface(),
+        &assumptions,
+    )
 }
 
 /// Definitional fact validation does not make exclusive units duplicable.
-/// Consume the explicit output frontier jointly; expansion is limited to a
-/// required unit's own body and never searches unrelated available heads.
-fn jointly_consume_returned_resource_units(
+/// Consume the explicit output frontier jointly. Under authority semantics
+/// expansion is limited to a required unit's own body and never searches
+/// unrelated available heads. Under legacy semantics a held folded composite
+/// may also be returned as its body: one held head is opened and replaced by
+/// its children, so it cannot additionally satisfy its own clause. Legacy
+/// counted populations are answered by their population rule, not consumed.
+pub(super) fn jointly_consume_returned_resource_units(
     available: &ResourceContext,
     required: &ResourceContext,
     state: &CState,
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
 ) -> bool {
+    /// Heads opened by one joint consumption; the bound keeps a recursive
+    /// definition from unfolding further than its memory decides.
+    const OPENED_HEAD_LIMIT: usize = 64;
+
+    fn open_available_head(
+        available: &ResourceContext,
+        required: &CResourceFact,
+        state: &CState,
+        interface: &CFunctionContractInterface,
+        assumptions: &PureFactContext,
+        active: &mut BTreeSet<CResourceFact>,
+        opened: &mut BTreeSet<CResourceFact>,
+    ) -> Option<ResourceContext> {
+        if state.uses_population_authority_semantics() {
+            return None;
+        }
+        let heads = available
+            .facts()
+            .iter()
+            .filter(|fact| {
+                fact.is_own()
+                    && matches!(fact.resource(), CResource::Composite { .. })
+                    && !opened.contains(*fact)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for head in heads {
+            if opened.len() >= OPENED_HEAD_LIMIT {
+                return None;
+            }
+            let Some(expanded) = expand_composite_resource_fact(
+                available,
+                &head,
+                interface.composite_resource_definitions(),
+                state.memory(),
+                assumptions,
+            ) else {
+                continue;
+            };
+            // An undecided guard keeps the head opaque: nothing was opened.
+            let held = |context: &ResourceContext| {
+                context.facts().iter().filter(|fact| **fact == head).count()
+            };
+            if held(&expanded) == held(available) {
+                continue;
+            }
+            // A head that did not supply this unit is not retried for it;
+            // on success it is gone from the remaining context anyway.
+            opened.insert(head);
+            if let Some(remaining) = consume(
+                expanded,
+                required,
+                state,
+                interface,
+                assumptions,
+                active,
+                opened,
+            ) {
+                return Some(remaining);
+            }
+        }
+        None
+    }
+
     fn consume(
         available: ResourceContext,
         required: &CResourceFact,
@@ -27241,6 +27313,7 @@ fn jointly_consume_returned_resource_units(
         interface: &CFunctionContractInterface,
         assumptions: &PureFactContext,
         active: &mut BTreeSet<CResourceFact>,
+        opened: &mut BTreeSet<CResourceFact>,
     ) -> Option<ResourceContext> {
         // Views are duplicable; the caller already checked their complete
         // definitional validity before entering this quantity check.
@@ -27253,11 +27326,26 @@ fn jointly_consume_returned_resource_units(
         {
             return Some(remaining);
         }
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = required
-        else {
-            return None;
+        let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = required else {
+            return open_available_head(
+                &available,
+                required,
+                state,
+                interface,
+                assumptions,
+                active,
+                opened,
+            );
         };
         let definition = interface.composite_resource_definition(name)?;
+        // A legacy counted population is not a set of linear units: its
+        // custody is the population count and one body is shared by every
+        // unit, so a unit the exit state does not hold exactly is answered
+        // by the population rule the transition applies, not consumed here.
+        // Authority populations hold ledger fragments and stay linear.
+        if !state.uses_population_authority_semantics() && definition.is_counted_population() {
+            return Some(available);
+        }
         let unit = quantity_condition_holds(
             assumptions,
             ConditionTerm::Bitvector32Equal(
@@ -27265,25 +27353,6 @@ fn jointly_consume_returned_resource_units(
                 Box::new(Bitvector32Term::Constant(1)),
             ),
         );
-        let legacy_shared = !state.uses_population_authority_semantics()
-            && definition.is_counted_population()
-            && state
-                .counted_population(name, arguments)
-                .is_some_and(|count| {
-                    quantity_condition_holds(
-                        assumptions,
-                        ConditionTerm::Bitvector32SignedGreaterEqual(
-                            quantity.clone(),
-                            Box::new(Bitvector32Term::Constant(0)),
-                        ),
-                    ) && quantity_condition_holds(
-                        assumptions,
-                        ConditionTerm::Bitvector32SignedGreaterEqual(
-                            Box::new(count.clone()),
-                            quantity.clone(),
-                        ),
-                    )
-                });
         if !active.insert(required.clone()) {
             return None;
         }
@@ -27297,28 +27366,61 @@ fn jointly_consume_returned_resource_units(
                 state.memory(),
                 assumptions,
             )?;
-            if !unit && !legacy_shared && expanded.facts().iter().any(CResourceFact::is_own) {
+            if !unit && expanded.facts().iter().any(CResourceFact::is_own) {
                 return None;
             }
-            // A protected empty member needs an actually held ledger fragment;
-            // the empty declaration cannot manufacture a missing unit.
-            if state.uses_population_authority_semantics() && expanded.facts().is_empty() {
+            // An empty expansion cannot manufacture a missing unit. Under
+            // authority semantics a protected empty member needs an actually
+            // held ledger fragment. Under both semantics a declaration with
+            // no body at all is a token that only a held copy supplies: two
+            // `Permit(x)` cannot come from one. A conditional body whose
+            // guard is false keeps the legacy rule.
+            if expanded.facts().is_empty()
+                && (state.uses_population_authority_semantics() || definition.contains().is_empty())
+            {
                 return None;
             }
-            let mut remaining = available;
+            let mut remaining = available.clone();
             for child in expanded.facts() {
-                remaining = consume(remaining, child, state, interface, assumptions, active)?;
+                remaining = consume(
+                    remaining,
+                    child,
+                    state,
+                    interface,
+                    assumptions,
+                    active,
+                    opened,
+                )?;
             }
             Some(remaining)
         })();
         active.remove(required);
-        result
+        if result.is_some() {
+            return result;
+        }
+        open_available_head(
+            &available,
+            required,
+            state,
+            interface,
+            assumptions,
+            active,
+            opened,
+        )
     }
     let mut remaining = available.clone();
     let mut active = BTreeSet::new();
+    let mut opened = BTreeSet::new();
     for fact in required.facts() {
-        let Some(next) = consume(remaining, fact, state, interface, assumptions, &mut active)
-        else {
+        let Some(next) = consume(
+            remaining,
+            fact,
+            state,
+            interface,
+            assumptions,
+            &mut active,
+            &mut opened,
+        ) else {
             return false;
         };
         remaining = next;
