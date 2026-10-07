@@ -14677,7 +14677,8 @@ mod population_authority_rewrite_tests {
                 c_int32_literal(1),
             ))],
             vec![],
-        );
+        )
+        .with_authorized(true);
         let function = c_function(
             CType::Void,
             "value",
