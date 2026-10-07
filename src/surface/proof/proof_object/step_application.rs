@@ -839,7 +839,8 @@ impl<'a> Proof<'a> {
             ProofStep::ArithmeticCertificate(certificate) => {
                 Some(self.apply_arithmetic_certificate(certificate))
             }
-            ProofStep::Intro => Some(self.apply_intro()),
+            ProofStep::Intro => Some(self.apply_intro(None)),
+            ProofStep::IntroAs(name) => Some(self.apply_intro(Some(name))),
             ProofStep::Enumerate => Some(self.apply_enumerate()),
             ProofStep::Contradiction(surface) => Some(self.apply_contradiction(surface)),
             ProofStep::Extract(proposition) => Some(self.apply_extract(proposition)),
@@ -2387,10 +2388,76 @@ impl<'a> Proof<'a> {
         }
     }
 
+    /// The focused universal goal with its binder respelled `name`, for
+    /// `intro() as name`. The name must be new here: nothing is shadowed.
+    fn universal_goal_renamed_for_intro(&self, name: &str) -> Result<ClickProposition, ClickError> {
+        if !matches!(self.goal(), Some(Proposition::ForAll { .. })) {
+            return Err(self.step_error(format!(
+                "`intro() as {name}` names the variable of a `forall` goal; this goal introduces a fact, which has no name, so write `intro();`"
+            )));
+        }
+        let Some(ClickProposition::ForAll {
+            click_type,
+            name: binder,
+            body,
+            ..
+        }) = self.surface_goal()
+        else {
+            return Err(self.step_error(format!(
+                "`intro() as {name}` requires a goal written as `forall (x: T) {{ ... }}`; write `intro();` to keep the name this goal's quantifier has"
+            )));
+        };
+        if binder == name {
+            return Ok(self.surface_goal().expect("matched above").clone());
+        }
+        let mut referenced = BTreeSet::new();
+        crate::surface::lowering::collect_click_proposition_referenced_names(body, &mut referenced);
+        let (names, _) = self.diagnostic_naming_tables();
+        let locals = self.state.locals();
+        let in_scope = referenced.contains(name)
+            || names.iter().any(|parameter| parameter.name() == name)
+            || locals.integer_values.get(name).is_some()
+            || locals.algebraic_values.get(name).is_some()
+            || self
+                .focused_obligation()
+                .is_some_and(|obligation| match obligation {
+                    Obligation::Proposition(goal) => goal.surface_bindings.get(name).is_some(),
+                    _ => false,
+                });
+        if in_scope {
+            return Err(self.step_error(format!(
+                "`intro() as {name}`: `{name}` is already in scope here; choose a name that is not"
+            )));
+        }
+        let replacement = if matches!(click_type, ClickType::C(_)) {
+            ContractExpression::CBinding(name.to_string())
+        } else {
+            ContractExpression::Binding(name.to_string())
+        };
+        let renaming = BTreeMap::from([(binder.clone(), replacement)]);
+        let body = crate::surface::lowering::substitute_click_proposition(body, &renaming)
+            .map_err(|message| self.step_error(message))?;
+        Ok(ClickProposition::ForAll {
+            click_type: click_type.clone(),
+            name: name.to_string(),
+            written_name: None,
+            body: Box::new(body),
+        })
+    }
+
     // Preserve the rule/dispatcher frame boundary described above; `intro`
     // owns several by-value proposition variants.
     #[inline(never)]
-    pub(super) fn apply_intro(&self) -> Result<KernelProofHandle, ClickError> {
+    pub(super) fn apply_intro(
+        &self,
+        rename: Option<&str>,
+    ) -> Result<KernelProofHandle, ClickError> {
+        // `intro() as name` respells the universal goal's binder before the
+        // ordinary introduction runs, so every binding below is made under
+        // the chosen name and the remaining goal is written in terms of it.
+        let renamed_surface = rename
+            .map(|name| self.universal_goal_renamed_for_intro(name))
+            .transpose()?;
         let mut integer_binding = None;
         let mut algebraic_binding = None;
         let state = self
@@ -2398,8 +2465,30 @@ impl<'a> Proof<'a> {
             .apply_intro(|current, introduction, introduced| {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
-                let recorded = current.introductions.head();
-                let introduced_name = match (&introduction, recorded, current.surface.as_deref()) {
+                let renamed_recorded = match (rename, current.introductions.head()) {
+                    (
+                        Some(name),
+                        Some(LoweringIntroduction::WrittenUniversal {
+                            variable,
+                            pointer,
+                            integer,
+                            ..
+                        }),
+                    ) => Some(LoweringIntroduction::WrittenUniversal {
+                        name: name.to_string(),
+                        variable: *variable,
+                        pointer: *pointer,
+                        integer: *integer,
+                    }),
+                    _ => None,
+                };
+                let recorded = renamed_recorded
+                    .as_ref()
+                    .or_else(|| current.introductions.head());
+                let current_surface = renamed_surface
+                    .as_ref()
+                    .or(current.surface.as_deref());
+                let introduced_name = match (&introduction, recorded, current_surface) {
                     (
                         PropositionIntroduction::Universal { .. },
                         Some(LoweringIntroduction::WrittenUniversal { name, .. }),
@@ -2451,7 +2540,7 @@ impl<'a> Proof<'a> {
                             surface_bindings.with_inserted(format!("outer.{name}"), previous);
                     }
                 }
-                let surface = match (recorded, introduction, current.surface.as_deref()) {
+                let surface = match (recorded, introduction, current_surface) {
                     // Lowering inserts implications that guard a body with a
                     // path fact it established or with a load obligation the
                     // state did not discharge. Neither has a Surface

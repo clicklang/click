@@ -1526,6 +1526,9 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
+id = "tactic-form.intro-as"
+path = "reference/tactics/index.md#proposition-reasoning"
+[[item]]
 id = "tactic-form.both"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]

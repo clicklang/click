@@ -6260,7 +6260,12 @@ impl Parser {
             }
             "intro" => {
                 self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Intro
+                if self.peek_ident() == Some("as") {
+                    self.position += 1;
+                    ProofTactic::IntroAs(self.expect_ident("name for the introduced variable")?)
+                } else {
+                    ProofTactic::Intro
+                }
             }
             "split" | "left" | "right" => {
                 return Err(self.error(format!(

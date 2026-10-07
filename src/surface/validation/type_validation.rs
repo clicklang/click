@@ -2011,6 +2011,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::ArithmeticCertificate(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
+            | ProofTactic::IntroAs(_)
             | ProofTactic::Enumerate
             | ProofTactic::Contradiction(_)
             | ProofTactic::Rewrite(_)
@@ -2133,7 +2134,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
-        ProofTactic::Intro => "intro",
+        ProofTactic::Intro | ProofTactic::IntroAs(_) => "intro",
         ProofTactic::Enumerate => "enumerate",
         ProofTactic::Contradiction(_) => "contradiction",
         ProofTactic::CloseInvariants => "close_invariants",

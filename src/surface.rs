@@ -3293,6 +3293,9 @@ pub enum ProofTactic {
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
+    /// `intro() as name`: introduce a universal goal's variable under a
+    /// name the proof chooses instead of the one the proposition wrote.
+    IntroAs(String),
     Enumerate,
     Contradiction(ClickProposition),
     CloseInvariants,
@@ -3721,6 +3724,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "intro-as",
+        syntax: "intro() as name",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "enumerate",
         syntax: "enumerate()",
         class: "simple",
@@ -3869,6 +3877,7 @@ pub enum ProofStep {
     ArithmeticUsing(Vec<ClickProposition>),
     ArithmeticCertificate(ArithmeticCertificate),
     Intro,
+    IntroAs(String),
     Enumerate,
     Contradiction(ClickProposition),
     Rewrite(ClickProposition),
@@ -4252,6 +4261,7 @@ impl ProofStep {
                 Self::ArithmeticCertificate(certificate.clone())
             }
             ProofTactic::Intro => Self::Intro,
+            ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
             ProofTactic::Enumerate => Self::Enumerate,
             ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::CloseInvariants => {
@@ -4480,6 +4490,7 @@ impl ProofStep {
                 ProofTactic::ArithmeticCertificate(certificate.clone())
             }
             Self::Intro => ProofTactic::Intro,
+            Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::Enumerate => ProofTactic::Enumerate,
             Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
             Self::Rewrite(proposition) => ProofTactic::Rewrite(proposition.clone()),
@@ -4677,7 +4688,7 @@ fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::ArithmeticUsing(_) => TacticClass::Smart(SmartTacticKind::Arithmetic),
         ProofStep::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
-        ProofStep::Intro => TacticClass::Simple(SimpleTactic::Intro),
+        ProofStep::Intro | ProofStep::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
@@ -5004,7 +5015,7 @@ impl ProofTactic {
             }
             Self::ArithmeticUsing(_) => TacticClass::Smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
-            Self::Intro => TacticClass::Simple(SimpleTactic::Intro),
+            Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
             Self::CloseInvariants => TacticClass::Smart(SmartTacticKind::CloseInvariants),
