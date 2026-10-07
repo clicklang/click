@@ -4334,7 +4334,7 @@ fn resource_array_extent_excludes_struct_padding() {
 }
 
 #[test]
-fn pointer_storage_views_require_and_preserve_address_of() {
+fn pointer_storage_views_name_the_field_alone() {
     let c_source =
         "struct packet { int32* data; }; int32 read(struct packet* p) { return p->data[0]; }";
     let click_source = r#"
@@ -4356,20 +4356,73 @@ fn pointer_storage_views_require_and_preserve_address_of() {
         super::diagnostics::describe_contract_segment(segment),
         "&p->data"
     );
-    let old_spelling = click_source.replace("views &p->data;", "views p->data;");
-    let error = parse_c0_click_file(&old_spelling, &[("pointer.c", c_source)]).unwrap_err();
-    assert!(
-        error
-            .message
-            .contains("explicit range for its contents or `&` for its storage")
+    // The field alone is the same storage: the slot that holds the pointer.
+    let bare = click_source.replace("views &p->data;", "views p->data;");
+    verify_c0_sources(&bare, &[("pointer.c", c_source)]).unwrap();
+    let bare_file = parse_c0_click_file(&bare, &[("pointer.c", c_source)]).unwrap();
+    let Requirement::Resource(ResourceClause::ViewMemory(bare_segment)) =
+        &bare_file.function_blocks()[0].requires()[0]
+    else {
+        panic!("expected a pointer storage view");
+    };
+    assert_eq!(
+        (&bare_segment.base, &bare_segment.start, &bare_segment.end),
+        (&segment.base, &segment.start, &segment.end)
     );
+}
+
+/// `*p` is the object behind a pointer, and a place written alone is its own
+/// storage: a global, an element, a field.
+#[test]
+fn a_resource_clause_names_a_place() {
+    let c_source = "struct cell { int32 value; int32 other; }; \
+        struct node { struct node* next; int32 v; }; \
+        struct cell g; int32 total; \
+        int32 read_g(void) { return g.other; } \
+        int32 read_total(void) { return total; } \
+        int32 read_p(struct cell* p) { return p->other; } \
+        int32 read_q(int32* q) { return q[1]; } \
+        int32 read_first(int32* q) { return q[0]; } \
+        int32 read_next(struct node* n) { return n->next->v; }";
+    for contract in [
+        "int32 read_g() { owns g; ensures result == g.other; }",
+        "int32 read_total() { owns total; ensures result == total; }",
+        "int32 read_p(struct cell* p) { owns *p; ensures result == p->other; }",
+        "int32 read_q(int32* q) { views q[1]; ensures result == q[1]; }",
+        "int32 read_first(int32* q) { views *q; ensures result == q[0]; }",
+        "int32 read_next(struct node* n) { views n->next; owns *n->next; }",
+    ] {
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        verify_c0_sources(&source, &[("place.c", c_source)])
+            .unwrap_or_else(|error| panic!("{contract}: {error:?}"));
+    }
+    for (contract, expected) in [
+        (
+            "int32 read_p(struct cell* p) { owns p; }",
+            "write `*p` for the object it points at",
+        ),
+        (
+            "int32 read_q(int32* q) { views q; }",
+            "write `*q` for the object it points at",
+        ),
+        (
+            "int32 read_p(struct cell* p) { owns *p[0..1]; }",
+            "`*` names one object and takes no range",
+        ),
+        ("int32 read_g() { owns *g; }", "`*` expects a pointer"),
+    ] {
+        let source = format!("verifying \"place.c\"; {contract} by {{ execute(); simp(); }}");
+        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+            .expect_err("the clause names no ownable place");
+        assert!(error.message.contains(expected), "{contract}: {error:?}");
+    }
 }
 
 #[test]
 fn whole_struct_view_requires_a_declared_resource() {
     let c_source =
         "struct packet { int32 data; }; int32 read(struct packet* p) { return p->data; }";
-    for target in ["p", "object(p)"] {
+    for target in ["*p", "object(p)"] {
         let source = format!(
             "verifying \"pointer.c\"; int32 read(struct packet* p) {{ views {target}; ensures result == p->data; }}"
         );
