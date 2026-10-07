@@ -869,47 +869,33 @@ impl SurfacePropositionMap {
                 storage.complete = storage.complete.with_value((surface_id, kernel_id));
             }
             if let ClickProposition::Comparison { left, right, .. } = surface {
-                let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
-                if let Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b),
-                    _,
-                ) = &resolved
-                {
-                    for (expression, term) in [(left, a), (right, b)] {
-                        let mut expression = expression;
-                        while let ContractExpression::At {
-                            expression: inner, ..
-                        }
-                        | ContractExpression::Old(inner) = expression
-                        {
-                            expression = inner;
-                        }
-                        // A qualified object reaches its cells through the
-                        // accessors the language writes on it: struct fields
-                        // and one index per array dimension. Strip both, so
-                        // `alpha::values[0]` and
-                        // `static_local::f::grid[0][1]` record their own cell
-                        // the same way a bare `alpha::value` does. The whole
-                        // accessor chain is what gets recorded, so the
-                        // spelling reads back the cell the pointer names.
-                        let mut base = expression;
-                        loop {
-                            base = match base {
-                                ContractExpression::Field { base: inner, .. } => inner,
-                                ContractExpression::Index(inner, _) => inner,
-                                ContractExpression::ArrayIndex { base: inner, .. } => inner,
-                                _ => break,
-                            };
-                        }
-                        if matches!(base, ContractExpression::QualifiedC { .. })
-                            && let Bitvector32Term::MemoryLoad(_, pointer, _) = term.as_ref()
-                            && !storage
-                                .qualified_load_sources
-                                .contains_key(pointer.as_ref())
-                        {
-                            storage.qualified_load_sources = storage
-                                .qualified_load_sources
-                                .with_inserted(pointer.as_ref().clone(), expression.clone());
+                // Only a side that names a qualified object records anything
+                // here, so the kernel form is resolved only for one. Resolving
+                // restores every load the form mentions, the cached values of
+                // any memory snapshot it carries included, and a statement's
+                // fact carries the whole memory: doing it for every recorded
+                // comparison made each `step()` cost the square of the cells
+                // the proof knew.
+                let qualified = [left, right].map(|side| qualified_object_access(side));
+                if qualified.iter().any(Option::is_some) {
+                    let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
+                    if let Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32Equal(a, b)
+                        | ConditionTerm::Bitvector64Equal(a, b),
+                        _,
+                    ) = &resolved
+                    {
+                        for (expression, term) in qualified.into_iter().zip([a, b]) {
+                            if let Some(expression) = expression
+                                && let Bitvector32Term::MemoryLoad(_, pointer, _) = term.as_ref()
+                                && !storage
+                                    .qualified_load_sources
+                                    .contains_key(pointer.as_ref())
+                            {
+                                storage.qualified_load_sources = storage
+                                    .qualified_load_sources
+                                    .with_inserted(pointer.as_ref().clone(), expression.clone());
+                            }
                         }
                     }
                 }
@@ -1214,4 +1200,35 @@ fn in_proposition_order<'a>(
     let mut propositions = nodes.map(KernelRef::get).collect::<Vec<_>>();
     propositions.sort();
     propositions.into_iter()
+}
+
+/// The access a comparison side makes to a qualified object, with any
+/// snapshot selector around it removed, or `None` when the side names
+/// something else.
+///
+/// A qualified object reaches its cells through the accessors the language
+/// writes on it: struct fields and one index per array dimension. Both are
+/// looked through, so `alpha::values[0]` and `static_local::f::grid[0][1]`
+/// are found the same way a bare `alpha::value` is. The whole accessor chain
+/// is what gets returned, so the spelling reads back the cell the pointer
+/// names.
+fn qualified_object_access(side: &ContractExpression) -> Option<&ContractExpression> {
+    let mut expression = side;
+    while let ContractExpression::At {
+        expression: inner, ..
+    }
+    | ContractExpression::Old(inner) = expression
+    {
+        expression = inner;
+    }
+    let mut base = expression;
+    loop {
+        base = match base {
+            ContractExpression::Field { base: inner, .. } => inner,
+            ContractExpression::Index(inner, _) => inner,
+            ContractExpression::ArrayIndex { base: inner, .. } => inner,
+            _ => break,
+        };
+    }
+    matches!(base, ContractExpression::QualifiedC { .. }).then_some(expression)
 }
