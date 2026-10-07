@@ -175,22 +175,19 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             tactics.extend(suffix);
             return true;
         }
-        // A disjunction closes the way `left`/`right` check closes it: the
-        // selected disjunct must be the same total boolean condition as an
+        // A disjunction closes the way `assumption` closes it: one
+        // disjunct must be the same total boolean condition as an
         // available fact up to polarity (`x > 0` from `not (x <= 0)`).
         // Construction mirrors exactly that rule, and commits only
         // when a disjunct closes, so nothing beyond the two children is
         // examined.
         if let Proposition::Or(left_child, right_child) = &current {
-            for (tactic, child) in [
-                (ProofTactic::Left, left_child.as_ref()),
-                (ProofTactic::Right, right_child.as_ref()),
-            ] {
+            for child in [left_child.as_ref(), right_child.as_ref()] {
                 if available
                     .iter()
                     .any(|fact| condition_polarity_equivalent(fact, child))
                 {
-                    tactics.push(tactic);
+                    tactics.push(ProofTactic::Assumption);
                     return true;
                 }
             }

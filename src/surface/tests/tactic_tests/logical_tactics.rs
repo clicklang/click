@@ -1472,7 +1472,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
         expanded_have.contains("witness { j: x }"),
         "{expanded_have}"
     );
-    assert!(expanded_have.contains("split();"), "{expanded_have}");
+    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("simp();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("witness_pair.c", c_source)])
         .expect("the expanded witness and structural proof should verify independently");
@@ -1754,10 +1754,10 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
             ensures x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        left();
+                        assumption();
                     }
                     x > 0 => {
-                        right();
+                        assumption();
                     }
                 }
             }
@@ -1774,9 +1774,9 @@ fn pure_if_certificate_uses_checked_proof_branches() {
         theorem equality_excluded_middle(x: int32) {
             ensures x == 0 or not (x == 0) by {
                 if x == 0 {
-                    left();
+                    assumption();
                 } else {
-                    right();
+                    assumption();
                 }
             }
         }
@@ -1966,7 +1966,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
                 extract(y == 0);
             }
             have x == 0 and y == 0 by {
-                split();
+                assumption();
             }
             have x == 0 implies x == 0 by {
                 intro();
@@ -1975,18 +1975,18 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        left();
+                        assumption();
                     }
                     x > 0 => {
-                        right();
+                        assumption();
                     }
                 }
             }
             have x == 0 or not (x == 0) by {
                 if x == 0 {
-                    left();
+                    assumption();
                 } else {
-                    right();
+                    assumption();
                 }
             }
             execute();
@@ -2004,7 +2004,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         .expanded_proof_tactics()
         .expect("the checked logical scopes should expose retained provenance");
     let expanded_debug = format!("{expanded:#?}");
-    for operation in ["Extract", "Split", "Intro", "Cases", "If"] {
+    for operation in ["Extract", "Assumption", "Intro", "Cases", "If"] {
         assert!(
             expanded_debug.contains(operation),
             "the expansion should retain {operation}: {expanded_debug}"
@@ -2020,21 +2020,6 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
     .expect("the checked logical scopes should serialize");
     verify_c0_sources(&rewritten, &[("logical_haves.c", c_source)])
         .expect("the serialized logical scopes should independently reverify");
-
-    let corrupted = rewritten.replacen("left();", "right();", 1);
-    assert_ne!(
-        corrupted, rewritten,
-        "the expansion should expose a checked branch selection"
-    );
-    let corrupted_result = { verify_c0_sources(&corrupted, &[("logical_haves.c", c_source)]) };
-    let error = corrupted_result
-        .expect_err("tampering with a logical branch selection must invalidate the proof");
-    assert!(
-        error
-            .message()
-            .contains("`right` requires its selected disjunct as an exact fact"),
-        "the checked Proof operation should reject the tamper directly: {error:?}"
-    );
 }
 
 #[test]
@@ -2182,14 +2167,14 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                left();
+                assumption();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                right();
+                assumption();
             }
         }
 
@@ -2251,10 +2236,10 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
             have x <= 0 or x > 0 by {
                 cases {
                     x <= 0 => {
-                        left();
+                        assumption();
                     }
                     x > 0 => {
-                        right();
+                        assumption();
                     }
                 }
             }
@@ -2277,14 +2262,14 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                left();
+                assumption();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                right();
+                assumption();
             }
         }
 
@@ -2490,13 +2475,13 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
                     step();
                     have selected == left or selected == right by {
                         have selected == left by { normalize(); }
-                        left();
+                        assumption();
                     }
                 } else {
                     step();
                     have selected == left or selected == right by {
                         have selected == right by { normalize(); }
-                        right();
+                        assumption();
                     }
                 }
                 step();
@@ -2613,28 +2598,25 @@ fn branching_pure_disjunction_lowers_to_left_right_certificate() {
 }
 
 #[test]
-fn left_right_reject_the_disjunct_the_branch_does_not_prove() {
-    // The then-branch assumes `x <= 0`, which proves the left disjunct only;
-    // an explicit `right()` there names a disjunct the branch context does
-    // not contain and must fail check.
+fn assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
+    // The then-branch assumes `x <= 3`, which is neither `x <= 0` nor
+    // `x > 5`; `assumption` looks the two sides up and derives nothing.
     let click_source = r#"
-        theorem int32_sign_split_swapped(x: int32) {
-            ensures x <= 0 or x > 0 by {
-                if x <= 0 {
-                    right();
+        theorem neither_side_is_a_fact(x: int32) {
+            ensures x <= 0 or x > 5 by {
+                if x <= 3 {
+                    assumption();
                 } else {
-                    left();
+                    assumption();
                 }
             }
         }
     "#;
 
     let error = verify_c0_sources(click_source, &[])
-        .expect_err("selecting the unproven disjunct must fail check");
+        .expect_err("a disjunction with no available side must fail check");
     assert!(
-        error
-            .message()
-            .contains("requires its selected disjunct as an exact fact"),
+        error.message().contains("is not available"),
         "unexpected error: {}",
         error.message()
     );

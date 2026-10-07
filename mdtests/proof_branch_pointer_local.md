@@ -36,13 +36,13 @@ int32 advance_selected_pointer(int32* left, int32* right, int32 choose_left) {
             step();
             have selected == left or selected == right by {
                 have selected == left by { normalize(); }
-                left();
+                assumption();
             }
         } else {
             step();
             have selected == left or selected == right by {
                 have selected == right by { normalize(); }
-                right();
+                assumption();
             }
         }
         step();

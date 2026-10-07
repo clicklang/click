@@ -197,7 +197,7 @@ control flow.
   explicit tactic vocabulary covers the selected proof, expansion fails
   locally instead of retaining a hidden search step.
 
-- `intro();`, `split();`, `left();`, `right();`, `contradiction(P);`: one
+- `intro();`, `contradiction(P);`: one
   structural logical rule each. `contradiction(P)` accepts either structural
   `not P` or the exact opposite polarity of the same lowered C condition. They are
   accepted only while a pure goal is active, typically inside `have ... by` or

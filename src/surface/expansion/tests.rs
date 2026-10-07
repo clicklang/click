@@ -2131,7 +2131,7 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     );
     assert!(selected.contains("x >= 0;"), "{selected}");
     assert!(selected.contains("extract(x >= 0);"), "{selected}");
-    assert!(selected.contains("split();"), "{selected}");
+    assert!(selected.contains("assumption();"), "{selected}");
     assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("simp();"), "{selected}");
     verify_click_theorems(&expanded)
@@ -2144,14 +2144,14 @@ fn pure_branch_local_apply_expands_the_retained_proof_object_paths() {
         theorem equality_case(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                left();
+                assumption();
             }
         }
 
         theorem inequality_case(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                right();
+                assumption();
             }
         }
 
@@ -2191,14 +2191,14 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
         theorem equality_case_nested(x: int32) {
             requires x == 0;
             ensures x == 0 or not (x == 0) by {
-                left();
+                assumption();
             }
         }
 
         theorem inequality_case_nested(x: int32) {
             requires not (x == 0);
             ensures x == 0 or not (x == 0) by {
-                right();
+                assumption();
             }
         }
 

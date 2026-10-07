@@ -628,9 +628,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_using_premises(output, "arithmetic()", premises, indent)
         }
         ProofTactic::Intro => line(output, &prefix, "intro();"),
-        ProofTactic::Split => line(output, &prefix, "split();"),
-        ProofTactic::Left => line(output, &prefix, "left();"),
-        ProofTactic::Right => line(output, &prefix, "right();"),
         ProofTactic::Enumerate => line(output, &prefix, "enumerate();"),
         ProofTactic::Contradiction(fact) => line(
             output,

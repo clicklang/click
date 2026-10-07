@@ -272,7 +272,7 @@ impl<'a> Proof<'a> {
     /// The bundle is a right-nested conjunction of members, and a tuple
     /// measure's decrease member is a right-nested disjunction over pivots.
     /// This planner therefore tries only checked structural operations over
-    /// the bundle's fixed shape (`both` and `intro`), `left`/`right` over a
+    /// the bundle's fixed shape (`both` and `intro`), `assumption` over a
     /// pivot disjunction, and at a member one `arithmetic() using` step over
     /// the named premises above or the ordinary smart closer. Every
     /// candidate advances this same `Proof`, so the retained certificate is
@@ -380,10 +380,7 @@ impl<'a> Proof<'a> {
                     false,
                 )
         {
-            for (surface, closer) in [
-                (surface_left, ProofStep::Left),
-                (surface_right, ProofStep::Right),
-            ] {
+            for surface in [surface_left, surface_right] {
                 let selected = (|| {
                     let Some(scope) = attempt::candidate_outcome(self.begin_have(surface))? else {
                         return Ok(None);
@@ -396,7 +393,7 @@ impl<'a> Proof<'a> {
                     let Some(joined) = attempt::candidate_outcome(scope.join())? else {
                         return Ok(None);
                     };
-                    attempt::candidate_outcome(joined.apply_step(closer))
+                    attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
                 })();
                 if let Some(selected) = selected? {
                     scope.succeed();

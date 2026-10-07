@@ -114,7 +114,7 @@ uint64 walk(const uint8* bytes, uint64 bytes_len) {
             normalize();
         }
         have 0 <= (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - iter_remaining) and (((int32)((uint32)(bytes_len - (bytes_len % 4u64)))) - iter_remaining) <= 1000 by {
-            split();
+            assumption();
         }
     }
     preserve by {

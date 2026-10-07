@@ -34,7 +34,7 @@ theorem a_wrapped_range_cannot_supply_it(v: int32[], n: int32) {
         have n >= 0 by { arithmetic() using { n == 1073741824; } }
         have n >= 0 and viewable(v[0..n]) by {
             have viewable(v[0..n]) by { simp(); }
-            split();
+            assumption();
         }
         apply(a_prefix_of_a_stated_range(v, 0, n)) using {
             0 <= 0;

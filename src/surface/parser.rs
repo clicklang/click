@@ -6255,17 +6255,10 @@ impl Parser {
                 self.expect_empty_tactic_args(&name)?;
                 ProofTactic::Intro
             }
-            "split" => {
-                self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Split
-            }
-            "left" => {
-                self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Left
-            }
-            "right" => {
-                self.expect_empty_tactic_args(&name)?;
-                ProofTactic::Right
+            "split" | "left" | "right" => {
+                return Err(self.error(format!(
+                    "`{name}()` is now `assumption()`, which closes a conjunction whose sides are facts and a disjunction with one side a fact"
+                )));
             }
             "enumerate" => {
                 self.expect_empty_tactic_args(&name)?;

@@ -2105,9 +2105,9 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
     ensures left == right by {
         have left < right or not (left < right) by {
             if left < right {
-                left();
+                assumption();
             } else {
-                right();
+                assumption();
             }
         }
         cases {
@@ -2123,9 +2123,9 @@ theorem cstr_readable_len_unique(bytes: uint8[], left: int32, right: int32) {
             not (left < right) => {
                 have right < left or not (right < left) by {
                     if right < left {
-                        left();
+                        assumption();
                     } else {
-                        right();
+                        assumption();
                     }
                 }
                 cases {

@@ -3300,10 +3300,7 @@ impl<'a> Proof<'a> {
         surface_right: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        for (surface, closer) in [
-            (surface_left, ProofStep::Left),
-            (surface_right, ProofStep::Right),
-        ] {
+        for surface in [surface_left, surface_right] {
             let selected = (|| {
                 let Some(scope) = attempt::candidate_outcome(self.begin_have(surface.clone()))?
                 else {
@@ -3315,7 +3312,7 @@ impl<'a> Proof<'a> {
                 let Some(joined) = attempt::candidate_outcome(scope.join())? else {
                     return Ok(None);
                 };
-                attempt::candidate_outcome(joined.apply_step(closer.clone()))
+                attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
             })();
             if let Some(selected) = selected? {
                 return Ok(Some(selected));
@@ -5074,18 +5071,14 @@ impl<'a> Proof<'a> {
                     .or_else(|| {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;
-                        let (selected_goal, closer) = if index == 0 {
-                            (goal_left, ProofStep::Left)
-                        } else {
-                            (goal_right, ProofStep::Right)
-                        };
+                        let selected_goal = if index == 0 { goal_left } else { goal_right };
                         let scope = focused_branch.begin_have(selected_goal).ok()?;
                         let rewritten = scope
                             .apply_step(ProofStep::Rewrite(assumed_surface.clone()))
                             .ok()?;
                         let closed = rewritten.try_direct_logical_closure().ok().flatten()?;
                         let joined = closed.join().ok()?;
-                        joined.apply_step(closer).ok()
+                        joined.apply_step(ProofStep::Assumption).ok()
                     });
                 let Some(selected) = selected else {
                     complete = false;
@@ -7719,26 +7712,18 @@ fn entry_anchored_constructor_equality(
 }
 
 /// The direct logical closing steps, in their fixed order, whose kernel rule
-/// can match the goal's outer connective. `split` closes only a conjunction,
-/// `left` and `right` only a disjunction, and `enumerate` only a universal;
-/// on any other goal each is refused before it reads a fact, so omitting it
-/// changes no outcome and saves rendering the goal into a refusal once per
-/// candidate at every `intro` level.
+/// can match the goal's outer connective. `assumption` closes a conjunction
+/// or disjunction from facts as well as a goal that is itself a fact, and
+/// `enumerate` closes only a universal; on any other goal it is refused
+/// before it reads a fact, so omitting it changes no outcome and saves
+/// rendering the goal into a refusal once per candidate at every `intro`
+/// level.
 fn direct_logical_candidates(goal: Option<&Proposition>) -> Vec<ProofStep> {
     let mut steps = vec![ProofStep::Normalize, ProofStep::Assumption];
-    match goal {
-        Some(Proposition::And(_, _)) => steps.push(ProofStep::Split),
-        Some(Proposition::Or(_, _)) => steps.extend([ProofStep::Left, ProofStep::Right]),
-        Some(Proposition::ForAll { .. }) => steps.push(ProofStep::Enumerate),
-        Some(_) => {}
-        // Without a proposition goal every candidate is refused alike; keep
-        // the complete list so the recorded refusals are unchanged.
-        None => steps.extend([
-            ProofStep::Split,
-            ProofStep::Left,
-            ProofStep::Right,
-            ProofStep::Enumerate,
-        ]),
+    // Without a proposition goal every candidate is refused alike; keep the
+    // complete list so the recorded refusals are unchanged.
+    if matches!(goal, Some(Proposition::ForAll { .. }) | None) {
+        steps.push(ProofStep::Enumerate);
     }
     steps
 }

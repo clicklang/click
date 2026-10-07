@@ -44,7 +44,7 @@ theorem decrement_is_decrease() {
         unfold(Decrease);
         intro();
         both {
-            split();
+            assumption();
         } and {
             intro();
             extract(*cell == (old(*cell) - 1));

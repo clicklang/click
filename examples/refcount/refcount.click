@@ -116,7 +116,7 @@ int32 refcount_pipeline(int32 amount) {
     step();
     have defined(obj->refs + amount) by {
         rewrite(obj->refs == 1);
-        split();
+        assumption();
     }
     fold(authority(reference(obj)));
     fold(reference(obj));

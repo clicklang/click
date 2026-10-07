@@ -1139,7 +1139,7 @@ int32 caller(int32 x) {
             .all(|theorem| theorem.function_block.signature().name() == "caller")
     );
 
-    let broken_target = expanded.replacen("assumption();", "left();", 1);
+    let broken_target = expanded.replacen("assumption();", "enumerate();", 1);
     session
         .verify_at(
             &broken_target,

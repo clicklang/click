@@ -269,7 +269,7 @@ void mark_run(struct region* region, int32 start, int32 end) {
                         intro();
                         assumption();
                     } and {
-                        split();
+                        assumption();
                     }
                 }
             }

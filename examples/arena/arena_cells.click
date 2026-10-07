@@ -342,7 +342,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         normalize();
     }
     have result == 0 or result == 1 by {
-        right();
+        assumption();
     }
     have forall (k: int32) {
         result == 1 and 0 <= k and k < arena->capacity implies
@@ -3135,7 +3135,7 @@ int32 arena_pipeline(
                     simp();
                 }
                 have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                    left();
+                    assumption();
                 }
                 have at(f1, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) {
@@ -3192,7 +3192,7 @@ int32 arena_pipeline(
                     simp();
                 }
                 have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                    right();
+                    assumption();
                 }
                 have at(f1, arena->occupied[k]) == 0 by {
                     instantiate(forall (j: int32) {
@@ -4120,7 +4120,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z2, second->start) or at(z2, second->end) <= k by {
-                left();
+                assumption();
             }
             have at(f2, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -4199,7 +4199,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z2, second->start) or at(z2, second->end) <= k by {
-                right();
+                assumption();
             }
             have at(f2, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -4365,7 +4365,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                left();
+                assumption();
             }
             have at(f3, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -4442,7 +4442,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z1, first->start) or at(z1, first->end) <= k by {
-                right();
+                assumption();
             }
             have at(f3, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -5154,7 +5154,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
-                left();
+                assumption();
             }
             have at(f4, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -5231,7 +5231,7 @@ int32 arena_pipeline(
                 }
             }
             have k < at(z3, combined->start) or at(z3, combined->end) <= k by {
-                right();
+                assumption();
             }
             have at(f4, arena->occupied[k]) == 0 by {
                 instantiate(forall (j: int32) {
@@ -5513,7 +5513,7 @@ int32 arena_reuse(struct region* middle, struct region* reused) {
                 }
             }
         }
-        split();
+        assumption();
     }
     step();
     simp();

@@ -1672,8 +1672,8 @@ theorem reflexive_implication(x: int32) {
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [
-        ("1 == 1 or 2 == 3", "left();"),
-        ("2 == 3 or 1 == 1", "right();"),
+        ("1 == 1 or 2 == 3", "assumption();"),
+        ("2 == 3 or 1 == 1", "assumption();"),
     ] {
         let source = format!(
             r#"
@@ -1692,13 +1692,6 @@ theorem choose_reflexive_arm() {{
         assert!(!expanded.contains("simp();"), "{expanded}");
         verify_c0_sources(&expanded, &[])
             .expect("expanded disjunction choice should independently recheck");
-        let wrong_choice = if choice == "left();" {
-            expanded.replacen("left();", "right();", 1)
-        } else {
-            expanded.replacen("right();", "left();", 1)
-        };
-        verify_c0_sources(&wrong_choice, &[])
-            .expect_err("changing the retained disjunct choice must invalidate the proof");
     }
 }
 
@@ -4597,9 +4590,9 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
         \x20   have x <= x by {\n\
         \x20       have x > 0 or not (x > 0) by {\n\
         \x20           if x > 0 {\n\
-        \x20               left();\n\
+        \x20               assumption();\n\
         \x20           } else {\n\
-        \x20               right();\n\
+        \x20               assumption();\n\
         \x20           }\n\
         \x20       }\n\
         \x20       cases {\n\
@@ -7583,7 +7576,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
         "{expanded_have}"
     );
     assert!(
-        expanded_have.contains("normalize();") || expanded_have.contains("split();"),
+        expanded_have.contains("normalize();") || expanded_have.contains("assumption();"),
         "{expanded_have}"
     );
     assert!(!expanded_have.contains("simp();"), "{expanded_have}");
@@ -8537,14 +8530,14 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                     step();
                     have value == old(p[0]) or value == 0 by {
                         have value == old(p[0]) by { normalize(); }
-                        left();
+                        assumption();
                     }
                 }
             } else {
                 step();
                 have value == old(p[0]) or value == 0 by {
                     have value == 0 by { normalize(); }
-                    right();
+                    assumption();
                 }
             }
             step();
@@ -8637,14 +8630,14 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                             step();
                             have value == old(p[0]) or value == 0 by {
                                 have value == old(p[0]) by { normalize(); }
-                                left();
+                                assumption();
                             }
                         }
                     } else {
                         step();
                         have value == old(p[0]) or value == 0 by {
                             have value == 0 by { normalize(); }
-                            right();
+                            assumption();
                         }
                     }
                 }
@@ -13022,8 +13015,8 @@ fn pure_branching_disjunction_simp_expands_to_left_right() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the branching disjunction proof should have an explicit certificate");
-    assert!(expanded.contains("left();"), "{expanded}");
-    assert!(expanded.contains("right();"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("simp()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded branching disjunction proof should check");
 }

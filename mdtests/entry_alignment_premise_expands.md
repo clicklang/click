@@ -299,7 +299,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         normalize();
     }
     have result == 0 or result == 1 by {
-        right();
+        assumption();
     }
     have forall (k: int32) {
         result == 1 and 0 <= k and k < arena->capacity implies

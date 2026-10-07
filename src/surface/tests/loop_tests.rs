@@ -150,11 +150,11 @@ fn borrowed_sources(sources: &[(String, String)]) -> Vec<(&str, &str)> {
 
 /// The lexicographic pivot is an arm choice, not a kernel search. Only the
 /// second component decreases on the `j > 0` path and only the first on the
-/// other, so the expansion must print `right()` on one path and `left()` on
-/// the other, the expansion must reverify through the ordinary entry point,
-/// and swapping either arm must be rejected.
+/// other, so the expansion proves the arm that holds in a `have`, closes the
+/// disjunction by `assumption()`, and reverifies through the ordinary entry
+/// point.
 #[test]
-fn lexicographic_ranking_bundle_prints_and_pins_its_pivot_arm() {
+fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_lexicographic_loop");
     let sources = borrowed_sources(&sources);
     let expanded = expand_c0_claim_source(&click, &sources, "phase_count", CProofClaim::Grouped)
@@ -164,12 +164,8 @@ fn lexicographic_ranking_bundle_prints_and_pins_its_pivot_arm() {
         .expect("the expansion keeps an explicit bundle closer");
     let closers = &expanded[closer..];
     assert!(
-        closers.contains("right();"),
-        "the second-component pivot must be printed: {expanded}"
-    );
-    assert!(
-        closers.contains("left();"),
-        "the first-component pivot must be printed: {expanded}"
+        closers.contains("assumption();"),
+        "each pivot is proved in a `have` and closed by `assumption`: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!(
@@ -177,19 +173,6 @@ fn lexicographic_ranking_bundle_prints_and_pins_its_pivot_arm() {
             error.message()
         )
     });
-
-    let wrong_first = expanded.replacen("right();", "left();", 1);
-    assert_ne!(wrong_first, expanded);
-    verify_c0_sources(&wrong_first, &sources)
-        .expect_err("the other pivot arm must be rejected on the `j > 0` path");
-
-    let last_left = expanded
-        .rfind("left();")
-        .expect("a printed first-component arm");
-    let mut wrong_last = expanded.clone();
-    wrong_last.replace_range(last_left..last_left + "left();".len(), "right();");
-    verify_c0_sources(&wrong_last, &sources)
-        .expect_err("the other pivot arm must be rejected on the second path");
 }
 
 /// Every bundle member is separately proved. Dropping the conjunct that
@@ -333,7 +316,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
     let expanded = expand_c0_claim_source(&click, &sources, "nested_count", CProofClaim::Grouped)
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
     assert!(
-        expanded.contains("left();"),
+        expanded.contains("assumption();"),
         "the chosen pivot arm must be printed: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -342,10 +325,6 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
             error.message()
         )
     });
-    let wrong_arm = expanded.replacen("left();", "right();", 1);
-    assert_ne!(wrong_arm, expanded);
-    verify_c0_sources(&wrong_arm, &sources)
-        .expect_err("the other pivot arm must be rejected on this back edge");
 }
 
 /// The closer's arithmetic candidates cite a named premise set: the loop
@@ -794,7 +773,7 @@ fn guarded_member_closure_expands_to_intro_inside_both() {
         .join(" ");
     assert!(
         explicit.starts_with(
-            "close_invariants by { both { intro(); assumption(); } and { split(); } }"
+            "close_invariants by { both { intro(); assumption(); } and { assumption(); } }"
         ),
         "{expanded}"
     );

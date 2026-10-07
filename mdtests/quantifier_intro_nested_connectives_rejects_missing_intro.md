@@ -25,7 +25,7 @@ theorem nested_universal_body(n: int32) {
             assumption();
         } and {
             have k < n by { assumption(); }
-            left();
+            assumption();
         }
     }
 }
