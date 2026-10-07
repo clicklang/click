@@ -352,3 +352,68 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
     .expect_err("divergent holders must not cross a loop backedge");
     assert!(error.contains("stable-view loan participant"));
 }
+
+/// Two arm states that share `known` cached cells and differ in one other
+/// cell, as the arms of an `if` that each store once leave them.
+fn arms_beside_known_cells(known: u32) -> (CMemory, [CState; 2]) {
+    let known_cell = |index: u32| Pointer {
+        block: "global:known".into(),
+        offset: PointerOffsetTerm::Constant(4 * i64::from(index)),
+    };
+    let written = Pointer {
+        block: "global:written".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut memory = CMemory::new()
+        .with_block("global:known", 4 * known)
+        .with_block("global:written", 4);
+    for index in 0..known {
+        memory = memory.store(known_cell(index), int32(index));
+    }
+    let arms = [1, 2].map(|value| {
+        CState::new().with_memory(memory.clone().store(written.clone(), int32(value)))
+    });
+    (memory, arms)
+}
+
+/// A join costs what its arms changed, not what the proof knows. The arms
+/// here differ in one cell beside `known` cells neither touched. Abstracting
+/// both and comparing the results, which is what the kernel's check of a
+/// join does, must not cost more as `known` grows: the cells the arms share
+/// are kept without being visited.
+#[test]
+fn interface_join_does_not_visit_cells_its_arms_share() {
+    let work_for = |known: u32| {
+        let (split, [then_state, else_state]) = arms_beside_known_cells(known);
+        let siblings = [&then_state, &else_state];
+        let stable = std::collections::BTreeMap::new();
+        let ((from_then, from_else), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                let abstract_arm = |state: &CState| {
+                    abstract_c_state_for_interface_join_across(state, &siblings, &stable, 0)
+                        .expect("the arms join")
+                };
+                let from_then = abstract_arm(&then_state);
+                let from_else = abstract_arm(&else_state);
+                assert!(
+                    from_then
+                        .state
+                        .eq_with_memories_from(&from_else.state, &split)
+                );
+                (from_then, from_else)
+            });
+        // The shared cells survive and the cell the arms disagree on does not.
+        assert_eq!(from_then.state.memory().cells.len(), known as usize);
+        assert_eq!(
+            from_then.next_kernel_variable,
+            from_else.next_kernel_variable
+        );
+        work
+    };
+    let small = work_for(64);
+    let large = work_for(4096);
+    assert!(
+        large <= small + 64,
+        "joining beside 4096 known cells cost {large} work units against {small} beside 64"
+    );
+}

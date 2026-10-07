@@ -929,7 +929,10 @@ impl<'a> Proof<'a> {
         let then_interface_vec = then_interface_facts.to_vec();
         let else_interface_vec = else_interface_facts.to_vec();
         if then_interface_vec != else_interface_vec
-            || *then_abstract.core.state != *else_abstract.core.state
+            || !then_abstract.core.state.eq_with_memories_from(
+                &else_abstract.core.state,
+                parent_execution.core.state.memory(),
+            )
         {
             // Say which part of the two abstractions disagrees: the arms
             // must agree on everything the interface does not abstract.

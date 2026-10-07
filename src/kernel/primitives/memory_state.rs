@@ -2261,6 +2261,56 @@ fn loan_preserving_havoc_keeps_run(
     }
 }
 
+/// The union of the arms' maps, built from the first arm's by the entries
+/// another arm adds to it. An entry two arms hold with different values is
+/// returned as the error. Only the entries on which an arm differs from the
+/// first are visited.
+fn union_of_arm_maps<'a, K, V>(
+    first: &SnapshotMap<K, V>,
+    others: impl Iterator<Item = &'a SnapshotMap<K, V>>,
+) -> Result<SnapshotMap<K, V>, K>
+where
+    K: Ord + Clone + std::hash::Hash + 'a,
+    V: Clone + PartialEq + std::hash::Hash + 'a,
+{
+    let mut union = first.clone();
+    for other in others {
+        for change in first.diff(other) {
+            match change {
+                SnapshotMapChange::Removed(_) => {}
+                SnapshotMapChange::Changed(key) => return Err(key.clone()),
+                SnapshotMapChange::Added(key) => {
+                    let value = other.get(key).expect("an added key is held").clone();
+                    if let Some(existing) = union.insert(key.clone(), value.clone())
+                        && existing != value
+                    {
+                        return Err(key.clone());
+                    }
+                }
+            }
+        }
+    }
+    Ok(union)
+}
+
+/// The union of the arms' sets, visiting only what an arm holds that the
+/// first does not, or the reverse.
+fn union_of_arm_sets<'a, K>(
+    first: &SnapshotSet<K>,
+    others: impl Iterator<Item = &'a SnapshotSet<K>>,
+) -> SnapshotSet<K>
+where
+    K: Ord + Clone + std::hash::Hash + 'a,
+{
+    let mut union = first.clone();
+    for other in others {
+        for key in first.symmetric_difference(other) {
+            union.insert(key.clone());
+        }
+    }
+    union
+}
+
 /// The widest typed overlay recorded at each address, so that the loan
 /// question above covers every byte the cell can be read as.
 fn union_overlay_widths(memory: &CMemory) -> BTreeMap<Pointer, u32> {
@@ -3191,46 +3241,36 @@ impl CMemory {
             return Err("an interface memory join has no sibling states".to_string());
         };
 
-        let mut blocks = SnapshotMap::new();
-        let mut ended_local_blocks = SnapshotSet::new();
-        for memory in sibling_memories {
-            for (block, contents) in memory.blocks.iter() {
-                if let Some(existing) = blocks.insert(block.clone(), contents.clone())
-                    && existing != *contents
-                {
-                    return Err(format!(
-                        "interface arms disagree on the size of memory block {block:?}"
-                    ));
-                }
-            }
-            ended_local_blocks.extend(memory.forgotten.ended_local_blocks.iter().cloned());
-        }
-
-        let mut live_allocations = SnapshotMap::new();
-        for memory in sibling_memories {
-            for (base, bytes) in &memory.heap.live_allocations {
-                if let Some(existing) = live_allocations.insert(base.clone(), bytes.clone())
-                    && existing != *bytes
-                {
-                    return Err(format!(
-                        "interface arms disagree on the size of heap allocation {base:?}"
-                    ));
-                }
-            }
-        }
-
-        let mut deallocated_allocations = SnapshotMap::new();
-        for memory in sibling_memories {
-            for (base, bytes) in &memory.heap.deallocated_allocations {
-                if let Some(existing) = deallocated_allocations.insert(base.clone(), bytes.clone())
-                    && existing != *bytes
-                {
-                    return Err(format!(
-                        "interface arms disagree on the size of freed heap allocation {base:?}"
-                    ));
-                }
-            }
-        }
+        // Every merge below starts from the first arm's collection and
+        // visits only the entries on which another arm differs from it. The
+        // arms share what neither touched, so the work is their changes.
+        let others = &sibling_memories[1..];
+        let blocks = union_of_arm_maps(&first.blocks, others.iter().map(|memory| &*memory.blocks))
+            .map_err(|block| {
+                format!("interface arms disagree on the size of memory block {block:?}")
+            })?;
+        let ended_local_blocks = union_of_arm_sets(
+            &first.forgotten.ended_local_blocks,
+            others
+                .iter()
+                .map(|memory| &memory.forgotten.ended_local_blocks),
+        );
+        let live_allocations = union_of_arm_maps(
+            &first.heap.live_allocations,
+            others.iter().map(|memory| &memory.heap.live_allocations),
+        )
+        .map_err(|base| {
+            format!("interface arms disagree on the size of heap allocation {base:?}")
+        })?;
+        let deallocated_allocations = union_of_arm_maps(
+            &first.heap.deallocated_allocations,
+            others
+                .iter()
+                .map(|memory| &memory.heap.deallocated_allocations),
+        )
+        .map_err(|base| {
+            format!("interface arms disagree on the size of freed heap allocation {base:?}")
+        })?;
 
         let pending_allocations = first.heap.pending_allocations.clone();
         if sibling_memories
@@ -3247,10 +3287,12 @@ impl CMemory {
             return Err("interface arms disagree on pending heap reallocations".to_string());
         }
 
-        let mut uninitialized_allocations = first.heap.uninitialized_allocations.clone();
-        for memory in sibling_memories {
-            uninitialized_allocations.extend(memory.heap.uninitialized_allocations.iter().cloned());
-        }
+        let uninitialized_allocations = union_of_arm_sets(
+            &first.heap.uninitialized_allocations,
+            others
+                .iter()
+                .map(|memory| &memory.heap.uninitialized_allocations),
+        );
 
         // A byte is definitely initialized at the join only when every
         // incoming arm initialized it: in the arm's record, or as an
@@ -3285,13 +3327,27 @@ impl CMemory {
         // every arm provides it. (The uninitialized marker above is instead
         // unioned because a possibly-uninitialized read must remain unsafe.)
         let mut zeroed_allocations = first.heap.zeroed_allocations.clone();
-        zeroed_allocations.retain(|base| {
-            sibling_memories
-                .iter()
-                .all(|memory| memory.heap.zeroed_allocations.contains(base))
-        });
+        for memory in others {
+            for base in first
+                .heap
+                .zeroed_allocations
+                .symmetric_difference(&memory.heap.zeroed_allocations)
+            {
+                zeroed_allocations.remove(base);
+            }
+        }
         let mut zeroed_prefix_allocations = SnapshotMap::new();
-        for base in live_allocations.keys() {
+        // An allocation gets a zeroed prefix only where some arm has less
+        // than the whole of it zeroed. When every arm has the same whole
+        // allocations zeroed and none has a prefix, there is none to find.
+        let arms_have_zeroed_prefixes = sibling_memories.iter().any(|memory| {
+            !memory.heap.zeroed_prefix_allocations.is_empty()
+                || memory.heap.zeroed_allocations != first.heap.zeroed_allocations
+        });
+        for base in live_allocations
+            .keys()
+            .filter(|_| arms_have_zeroed_prefixes)
+        {
             let prefixes = sibling_memories
                 .iter()
                 .map(|memory| {
@@ -3338,7 +3394,37 @@ impl CMemory {
         // nothing preserves and the arms do not agree on, cells and union
         // views alike. The heap it records along the way is replaced below
         // by the arms' join, which is the one that decides initialization.
-        self.forget_loan_unprotected_values(preserved_blocks, ledger, sibling_memories);
+        // With no typed union view in play, the cells are settled from the
+        // arms' differences alone. A union view is forgotten whatever the
+        // arms agree on, and a cell under one goes with it, so a snapshot
+        // that holds any takes the whole-map pass.
+        let by_difference = self.union_cells.is_empty()
+            && sibling_memories
+                .iter()
+                .all(|memory| memory.union_cells.is_empty());
+        let differing_blocks = if by_difference {
+            let other_cells = sibling_memories
+                .iter()
+                .map(|memory| &*memory.cells)
+                .collect::<Vec<_>>();
+            Some(
+                std::sync::Arc::make_mut(&mut self.cells).retain_agreed_with(
+                    &other_cells,
+                    |pointer, value| {
+                        loan_preserving_havoc_keeps_cell(
+                            pointer,
+                            value.byte_width(),
+                            preserved_blocks,
+                            ledger,
+                        )
+                    },
+                    |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
+                ),
+            )
+        } else {
+            self.forget_loan_unprotected_values(preserved_blocks, ledger, sibling_memories);
+            None
+        };
         // A zero reading is kept only where every arm has it, but an arm can
         // have it beside a value it wrote over the zeros, and that value is
         // forgotten here. So a reading goes wherever *any* arm caches a value
@@ -3378,10 +3464,16 @@ impl CMemory {
             crate::instrumentation::record_deterministic_work(visited);
             blocks
         };
-        let forgotten_blocks = sibling_memories
-            .iter()
-            .flat_map(|memory| forgotten_value_blocks(memory))
-            .collect::<BTreeSet<_>>();
+        let forgotten_blocks = match differing_blocks {
+            // The blocks in which some arm holds a value the join forgets
+            // are the blocks in which the arms differ.
+            Some(blocks) => blocks,
+            None => sibling_memories
+                .iter()
+                .flat_map(|memory| forgotten_value_blocks(memory))
+                .collect::<BTreeSet<_>>(),
+        };
+        let mut blocks = blocks;
         blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
         let forgotten = std::sync::Arc::make_mut(&mut self.forgotten);
@@ -5532,6 +5624,28 @@ impl CMemory {
         self.forgotten.ended_local_blocks.contains(block)
     }
 
+    /// Whether this memory and `other` are the same outside `blocks`: every
+    /// block, cell, run and typed view on which they differ lies in one of
+    /// `blocks`, and they agree on ended lifetimes, forget marks and the
+    /// heap. Only the entries on which the two differ are visited.
+    pub(in crate::kernel) fn differs_only_within(
+        &self,
+        other: &Self,
+        blocks: &BTreeSet<PointerBlock>,
+    ) -> bool {
+        self.forgotten == other.forgotten
+            && self.heap == other.heap
+            && self
+                .blocks
+                .diff(&other.blocks)
+                .all(|change| blocks.contains(change.key()))
+            && self.cells.differs_only_within(&other.cells, blocks)
+            && self
+                .union_cells
+                .diff(&other.union_cells)
+                .all(|change| blocks.contains(&change.key().0.block))
+    }
+
     /// The automatic objects whose lifetimes this memory records as ended.
     pub(in crate::kernel) fn ended_local_blocks(&self) -> impl Iterator<Item = &PointerBlock> {
         self.forgotten.ended_local_blocks.iter()
@@ -7172,6 +7286,23 @@ impl CState {
     /// Replace memory through the single checked-state transition hook.
     /// Keeping this beside `with_memory` prevents evaluator paths that already
     /// own a mutable state from bypassing resource-observation invalidation.
+    /// Whether `self == other`, for two states whose memories were each
+    /// derived from `base` by persistent updates, as the abstractions of two
+    /// arms are derived from the memory at their split. The memories are
+    /// compared by what each changed from `base`
+    /// ([`CMemory::eq_relative_to`]), so the cost is the arms' changes; the
+    /// answer is exact whatever the memories share.
+    pub(crate) fn eq_with_memories_from(&self, other: &Self, base: &CMemory) -> bool {
+        if !self.memory.eq_relative_to(&other.memory, base) {
+            return false;
+        }
+        // The memories are equal, so the rest is compared with one memory
+        // standing on both sides, where it is equal by identity.
+        let mut other = other.clone();
+        other.memory = self.memory.clone();
+        *self == other
+    }
+
     pub(crate) fn set_memory(&mut self, memory: CMemory) {
         self.set_memory_with_checked_stores(memory, false);
     }

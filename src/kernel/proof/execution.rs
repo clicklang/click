@@ -4261,7 +4261,13 @@ fn check_interface_abstraction(
         join_next_kernel_variable,
     )
     .map_err(|_| "the else interface state could not be abstracted")?;
-    if abstract_then != abstract_else {
+    // Both abstractions derive from the memory at the split, so they are
+    // compared by what each changed from it.
+    if abstract_then.next_kernel_variable != abstract_else.next_kernel_variable
+        || !abstract_then
+            .state
+            .eq_with_memories_from(&abstract_else.state, split_state.memory())
+    {
         return Err("the interface arms do not have one deterministic abstraction");
     }
     // The successor and the arm abstraction reach an empty resource
@@ -4270,10 +4276,10 @@ fn check_interface_abstraction(
     // authority explicitly. The shape comparison still covers the ledger
     // and the participant, because dropping a resource context does not
     // touch either.
-    if joined_state
+    if !joined_state
         .clone()
         .with_resource_context(ResourceContext::new())
-        != abstract_then.state
+        .eq_with_memories_from(&abstract_then.state, split_state.memory())
     {
         return Err("the interface successor is not the checked arm abstraction");
     }
