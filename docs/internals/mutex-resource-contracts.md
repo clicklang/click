@@ -103,11 +103,10 @@ produces lifetime: mutex_live(mu);
 The caller must actually own the folded state, with a schema matching its
 checked resource declaration. Initialization establishes the association from
 that input and the selected mutex, and gives it a fresh initialization identity.
-A resource definition or an association alone supplies no ownership.
-`guarded_by` is optional: legacy declarations that include it still constrain
-the mutex address, while an ordinary resource can be associated at initialization
-without any mutex-specific member. Typed use, acquisition, release, and helper
-calls retain and check that authenticated association.
+A resource definition or an association alone supplies no ownership. An
+ordinary resource needs no mutex-specific member to be associated. Typed use,
+acquisition, release, and helper calls retain and check that authenticated
+association.
 
 Consuming storage removes ordinary write authority over the initialized mutex
 representation. It does not consume ownership of the surrounding allocation
@@ -300,7 +299,7 @@ let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});
 ```
 
 An omitted state input initializes an empty mutex; it does not infer or deposit
-an owned resource from a nearby `guarded_by` declaration.
+an owned resource from any declaration.
 
 The kernel independently checks those maps and binds the output to the actual
 owned initialization. Named preserving `owns life: mutex_live(mu)` and

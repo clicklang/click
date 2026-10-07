@@ -1123,3 +1123,15 @@ stale-acquisition, stale-call, stale-payload, and unlocked-read refusals, and
 the six named-initialization contract refusals. The only remaining
 `guarded_by` fixtures are the two worker `mutex_population_*` fixtures.
 
+**Chunk 4, specification, documentation, and audit:**
+`docs/concepts/resources.md` now teaches association by initialization with a
+typed-use example. `docs/internals/mutex-resource-contracts.md`,
+`docs/internals/concurrency-contracts-and-diagnostics.md`,
+`docs/internals/resource-parameters.md`, and the concurrency design probe no
+longer present the annotation as a current mechanism. The trusted
+`src/languages/c/modeled_pthread_spec.md` states that initialization
+associates the protected resource. It keeps one sentence marking `guarded_by`
+deprecated, because the parser and kernel accept it until milestone 7. The
+discovery search otherwise finds the annotation only in migration records,
+the removal plan, and the two worker fixtures that move to milestone 6.
+

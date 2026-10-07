@@ -200,7 +200,7 @@ holds only the plan.
 | 2. Member identity and proof fields | Complete | Count identified members without erasing private proof state |
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
 | 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
-| 5. Retire `guarded_by` associations | Chunks 1–3 complete; 1 chunk | No active `guarded_by` consumer; associations come from checked initialization |
+| 5. Retire `guarded_by` associations | Complete, except two worker fixtures moved to milestone 6 | No active `guarded_by` consumer; associations come from checked initialization |
 | 6. Concurrent lifetime and worker accounting | Chunk 1 complete; 3 chunks | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
@@ -310,6 +310,11 @@ milestone 7; this milestone removes consumers, not the syntax.
    `docs/internals/concurrency-contracts-and-diagnostics.md`,
    `docs/internals/resource-parameters.md`, and the concurrency design probe.
    The discovery search then finds `guarded_by` only in migration records.
+   **Complete:** the teaching documents describe association by
+   initialization. The trusted specification keeps one sentence marking the
+   annotation deprecated, because the parser and kernel accept it until
+   milestone 7 removes them. The two worker `mutex_population_*` fixtures
+   still use it and migrate with milestone 6 chunk 3.
 
 **Exit gate:** No fixture, example, specification, or active document uses
 `guarded_by`. Wrong-association, stale-initialization, and missing-state

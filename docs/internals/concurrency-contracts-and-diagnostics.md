@@ -146,7 +146,7 @@ The surface status is:
 
 | Surface | Status in this proposal | What a reader should understand |
 | --- | --- | --- |
-| `guarded_by counter->mutex;` | Keep the existing spelling | This resource assertion is the one this mutex protects. |
+| `pthread_mutex_init(mu, 0)` with `{ state: s }` | Implemented | Initialization makes `s`'s resource assertion the one this mutex protects. |
 | `owns mutex_guard(mu)` in a resource body | Keep the existing spelling | This resource contains ownership of a current acquisition, not merely knowledge that the mutex is locked. |
 | Direct `owns mutex_guard(mu);` clauses | Implemented for preserving helpers | Receives and returns the entry acquisition; all mutex transitions remain prohibited. |
 | Direct named guard clauses, such as `owns g: mutex_guard(mu);` | Implemented for preserving helpers | The function receives and returns the same guard occurrence. |
@@ -895,10 +895,9 @@ added by this checkpoint.
 
 ## Checked protected-resource interfaces
 
-Runtime publication now uses a shared kernel check for the installed
-`guarded_by` declaration, its resource parameter, and the exact mutex field.
-The resulting interface records the resource family, parameters, field schema,
-and mutex address. It deliberately excludes the instance binder and observed
+Runtime publication now uses a shared kernel check for the selected resource's
+installed declaration and the initialized mutex. The resulting interface
+records the resource family, parameters, field schema, and mutex address. It deliberately excludes the instance binder and observed
 field values: two observations of the same protected assertion describe the
 same interface even when their values differ.
 
