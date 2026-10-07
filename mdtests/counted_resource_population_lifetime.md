@@ -26,7 +26,7 @@ void object_finish(struct object* obj) {
 ```
 
 ```click resource_semantics=authority
-resource object_ref(obj: struct object*) {}
+authorized resource object_ref(obj: struct object*) {}
 
 resource object_control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));

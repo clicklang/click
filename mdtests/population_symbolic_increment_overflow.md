@@ -6,7 +6,7 @@ void increment(int32* o, int32 n) { mint_n(o, n); mint_n(o, 1); }
 ```
 
 ```click resource_semantics=authority
-resource tok(o: int32*) {}
+authorized resource tok(o: int32*) {}
 verifying "population_symbolic_increment_overflow.c";
 void mint_n(int32* o, int32 n) {
     owns authority(tok(o));

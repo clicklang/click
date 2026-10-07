@@ -7146,7 +7146,7 @@ impl CState {
         );
         let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
         else {
-            return Err("Requires an exact pointer-anchored resource R(p)".into());
+            return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
         };
         let anchor = pointer.pointer();
         let imported_member_exchange =

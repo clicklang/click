@@ -81,7 +81,7 @@ ownership is still rejected.
 The supported contract shape uses only ordinary resource clauses:
 
 ```text
-resource reference(p: int32*) { owns p[0..1]; }
+authorized resource reference(p: int32*) { owns p[0..1]; }
 
 int32 acquire(int32* p) {
     owns authority(reference(p));

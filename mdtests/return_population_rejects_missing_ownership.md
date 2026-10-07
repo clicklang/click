@@ -11,7 +11,7 @@ struct object* retain(struct object* obj) { obj->refs += 1; return obj; }
 ```
 
 ```click resource_semantics=authority
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 verifying "retain.c";
 struct object* retain(struct object* obj) {
     requires count(reference(obj)) < 2147483647;

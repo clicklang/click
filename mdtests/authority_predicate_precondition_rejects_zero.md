@@ -11,7 +11,7 @@ void inspect(struct pool* pool) {}
 
 ```click resource_semantics=authority
 abstract resource available(object: int32);
-resource pool_object(pool: struct pool*, object: int32) {
+authorized resource pool_object(pool: struct pool*, object: int32) {
     owns available(object);
 }
 predicate valid_pool(pool: struct pool*) {

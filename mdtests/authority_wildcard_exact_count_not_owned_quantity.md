@@ -5,7 +5,7 @@ void inspect(int32* pool, int32* p) {}
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, p: int32*) {}
+authorized resource slot(pool: int32*, p: int32*) {}
 verifying "exact_count_not_owned.c";
 void inspect(int32* pool, int32* p) {
     owns authority(slot(pool, _));

@@ -815,6 +815,9 @@ pub struct ResourceDefinition {
     resource_parameters: Vec<ResourceClause>,
     composite_body: Option<CompositeResourceBody>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
+    /// Declared `authorized resource`: the family takes part in population
+    /// accounting, so `authority(...)` and `count(...)` may name it.
+    authorized: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6632,6 +6635,10 @@ impl ResourceDefinition {
 
     pub fn is_countable(&self) -> bool {
         self.fields().is_empty()
+    }
+
+    pub fn is_authorized(&self) -> bool {
+        self.authorized
     }
 
     pub fn name(&self) -> &str {

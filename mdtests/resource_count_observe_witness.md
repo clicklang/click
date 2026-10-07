@@ -23,7 +23,7 @@ void observe_many_permits(struct owner* owner, int32 amount) {
 ```
 
 ```click resource_semantics=authority
-resource permit(owner: struct owner*) {
+authorized resource permit(owner: struct owner*) {
 
 }
 

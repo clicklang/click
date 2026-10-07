@@ -5,7 +5,7 @@ void probe(int32* p) {}
 ```
 
 ```click resource_semantics=authority
-resource permit(p: int32*) {}
+authorized resource permit(p: int32*) {}
 verifying "observe_missing_authority.c";
 void probe(int32* p) {
     owns permit(p);

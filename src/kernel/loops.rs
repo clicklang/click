@@ -5024,8 +5024,33 @@ fn execute_c_while_exit_paths(
         });
     }
     let mut candidate_exit_entries = Vec::new();
+    let mut jump_exit_entries = std::collections::BTreeMap::<_, Vec<_>>::new();
     if initial_may_continue {
         for candidate in final_exit_candidates {
+            if let Some(target) = candidate.jump_target() {
+                let mut obligations = loop_check_obligations.clone();
+                if backedge_target.is_none() || natural_exit_target != Some(target) {
+                    obligations.push(
+                        ProofObligation::verification_condition(false_equals_true_proposition())
+                            .with_context("natural loop exit target"),
+                    );
+                }
+                // This body path already executed its forward goto. Its
+                // successor is the named label, independent of the synthetic
+                // loop guard, which never becomes false in a natural cycle.
+                jump_exit_entries.entry(target).or_default().push((
+                    head.restored_exit_state(candidate.state()),
+                    candidate
+                        .pure_facts()
+                        .iter()
+                        .cloned()
+                        .map(ExecutionPureFact::certified)
+                        .collect(),
+                    obligations,
+                    candidate.loan_evidence().clone(),
+                ));
+                continue;
+            }
             let candidate_assumptions =
                 assumptions_with_propositions(assumptions, candidate.pure_facts());
             let mut exits = Vec::new();
@@ -5241,6 +5266,26 @@ fn execute_c_while_exit_paths(
         // A guard that cannot be false, `while (true)`, has no guard-false
         // exit: the successor is the join of the `break` exits alone.
         paths.push(path);
+    }
+    // Several checked edges to one label have one successor. Preserve
+    // their disjunction and abstract differing states by the same checked
+    // join used for break exits, then retain the label on that successor.
+    for (target, exits) in jump_exit_entries {
+        if let Some(mut path) = join_loop_exits(
+            &head,
+            &Default::default(),
+            &binders,
+            exits,
+            assumptions,
+            variables,
+            budget,
+        ) {
+            let CStatementOutcome::Normal(state) = path.outcome else {
+                unreachable!("loop exit join returns a normal state")
+            };
+            path.outcome = CStatementOutcome::Jump { target, state };
+            paths.push(path);
+        }
     }
     if paths.is_empty() {
         let mut obligations = base_obligations;

@@ -5,7 +5,7 @@ void inspect(int32* pool) {}
 ```
 
 ```click resource_semantics=authority
-resource capacity(pool: int32*) {}
+authorized resource capacity(pool: int32*) {}
 verifying "unary_count_not_local.c";
 void inspect(int32* pool) {
     owns authority(capacity(pool));

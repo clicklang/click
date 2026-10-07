@@ -44,7 +44,7 @@ void two_inits(struct pool* a, struct pool* b) {
 ```
 
 ```click resource_semantics=authority
-resource pool_slot(pool: struct pool*) {
+authorized resource pool_slot(pool: struct pool*) {
 }
 
 predicate valid_pool(pool: struct pool*) {

@@ -11,7 +11,7 @@ void invoke(int32* source, int32* destination, int32* cell) {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, cell: int32*) { field label: int32; owns cell[0..1]; }
+authorized resource slot(pool: int32*, cell: int32*) { field label: int32; owns cell[0..1]; }
 verifying "transfer.c";
 void move(int32* source, int32* destination, int32* cell) {
     owns authority(slot(source, _));

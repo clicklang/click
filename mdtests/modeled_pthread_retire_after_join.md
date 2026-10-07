@@ -27,7 +27,7 @@ int run(void) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_retire_after_join.c";
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 void* worker(void* argument) {
     owns authority(reference((struct object*)argument));
 } by { execute(); simp(); }

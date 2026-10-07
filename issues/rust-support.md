@@ -1258,7 +1258,25 @@ source overwrites, with bounded work across four, 1024, and one million elements
 and increasing unrelated storage. The original Adler sources and import locks
 are unchanged; its complete four-byte computation remains unproved.
 
-Next prove the first nonempty four-byte vector path and establish/preserve the
-derived lane ceilings over the original stored nested iterators. General
+### Checked unsigned subtraction and lane recombination bounds
+
+The first nonempty vector-path investigation reached the original `MOD - a`
+recombination expressions. A checked `uint32_subtract_to_integer` rule now
+relates the native difference to exact Integer subtraction under the unsigned
+no-underflow guard. It includes the full u32 domain; defined wrapping
+subtraction does not satisfy its requirement.
+
+The Adler recombination library checks each original weighted lane expression,
+its exact Integer value, and its widened Rust addition guard. Under a reduced
+A lane and a B lane multiplied by four with ceiling 262080, the three output
+ceilings are 327601, 393122, and 458643. These conditional implications are
+verified alongside all original helper contracts. Boundary-model, executed-C,
+declaration, expansion, and false-bound/weight regressions cover the bridge and
+library. The unchanged four-byte computation is still unproved; the caller must
+establish these premises and connect the final lane sums to the checksum.
+
+Next apply the recombination bounds at the original call sites and prove both
+final lane sums and checksum stores for four-byte input. Then establish/preserve
+the derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic
 freedom, and the common full checksum specification remain unproved.

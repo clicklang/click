@@ -19,7 +19,7 @@ int32 lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
 verifying "wildcard_private_body_helper.c";
 int32 update(int32* pool, int32* p) {
     owns slot(pool, p);

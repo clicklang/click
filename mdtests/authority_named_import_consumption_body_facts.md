@@ -8,7 +8,7 @@ void retire(int32* pool) {}
 ```
 
 ```click resource_semantics=authority
-resource ticket(pool: int32*) { field serial: int32; fact serial == 7; }
+authorized resource ticket(pool: int32*) { field serial: int32; fact serial == 7; }
 verifying "named_retirement.c";
 void retire(int32* pool) {
     owns authority(ticket(pool));

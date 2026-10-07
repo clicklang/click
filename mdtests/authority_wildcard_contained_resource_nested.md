@@ -25,8 +25,8 @@ int32 lifecycle() {
 ```
 
 ```click resource_semantics=authority
-resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
-resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
+authorized resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
+authorized resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
 verifying "wildcard_contained_resource.c";
 void issue(int32* pool, int32* p) {
     owns authority(slot(pool, _));

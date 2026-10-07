@@ -19,7 +19,7 @@ predicate is_zero(cell: int32*) {
     cell[0] == 0
 }
 
-resource zero_cell(cell: int32*) {
+authorized resource zero_cell(cell: int32*) {
     owns cell[0..1];
     fact is_zero(cell);
 }

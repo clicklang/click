@@ -954,6 +954,12 @@ theorem uint32_add_to_integer(left: uint32, right: uint32) {
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);
 }
 
+# Exact unsigned subtraction needs the native no-underflow guard.
+theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
+    requires right <= left;
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+
 theorem uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
     ensures to_integer(left + right) == to_integer(left) + to_integer(right);

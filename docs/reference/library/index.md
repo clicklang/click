@@ -1157,6 +1157,19 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_subtract_to_integer`
+
+```click
+theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
+    requires right <= left;
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+}
+```
+
+Unsigned subtraction agrees with Integer subtraction under the native unsigned no-underflow guard. The rule covers the full `uint32` range. Native definedness alone permits wrapping, so it cannot replace the guard.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint32_mul_to_integer`
 
 ```click

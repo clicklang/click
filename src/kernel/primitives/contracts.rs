@@ -1453,6 +1453,7 @@ impl CCompositeResourceDefinition {
             counted_population: false,
             thread_confined: false,
             contains_mutex_authority: false,
+            authorized: false,
             owned_footprint_unnamed: false,
             facts_claim_liveness: false,
             contains,
@@ -1557,6 +1558,7 @@ impl CCompositeResourceDefinition {
             counted_population: true,
             thread_confined,
             contains_mutex_authority: false,
+            authorized: false,
             owned_footprint_unnamed: false,
             facts_claim_liveness: false,
             contains,
@@ -1599,6 +1601,16 @@ impl CCompositeResourceDefinition {
 
     pub fn is_counted_population(&self) -> bool {
         self.counted_population
+    }
+
+    pub fn with_authorized(mut self, authorized: bool) -> Self {
+        self.authorized = authorized;
+        self
+    }
+
+    /// Whether the family was declared `authorized resource`.
+    pub fn is_authorized(&self) -> bool {
+        self.authorized
     }
 
     pub fn is_thread_confined(&self) -> bool {

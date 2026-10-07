@@ -26,6 +26,7 @@ int32 count_down(int32 n) {
         invariant n >= 0;
         decreases n;
     }
+    execute();
     simp();
 }
 ```

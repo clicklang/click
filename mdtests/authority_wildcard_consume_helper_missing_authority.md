@@ -6,7 +6,7 @@ void caller(int32* pool, int32* member) { release(pool, member); }
 ```
 
 ```click resource_semantics=authority
-resource slot(pool: int32*, member: int32*) {}
+authorized resource slot(pool: int32*, member: int32*) {}
 verifying "wildcard_consume_missing_authority.c";
 void release(int32* pool, int32* member) {
     owns authority(slot(pool, _));

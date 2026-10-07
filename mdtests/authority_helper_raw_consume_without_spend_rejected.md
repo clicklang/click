@@ -11,7 +11,7 @@ int run(void *p) { drop(p); return 1; }
 
 ```click resource_semantics=authority
 verifying "authority_helper_raw_consume_without_spend_rejected.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 void drop(void* p) {
     owns authority(ticket(p));
     consumes ticket(p);

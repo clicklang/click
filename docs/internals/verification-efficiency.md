@@ -42,6 +42,29 @@ unfolding a resource with ten members costs at least ten operations. The
 violation is touching the other thousand facts, functions, snapshots, or
 resources that the tactic did not name.
 
+## Proof size and speed targets
+
+The complexity contract says how verification must scale. These working
+targets say what a finished example should look like. They are for judging a
+proof and deciding where to look when one is slow, not gates.
+
+- **Proof size:** at most about 20 lines of Click proof for each line of C it
+  proves. This will not always be reachable, and expanding smart tactics
+  moves a proof away from it, so treat it as tight.
+- **Verification speed:** 700 or more proof lines per second is good, and
+  about 300 is acceptable.
+
+Measure the size first. A proof far over the size target is slow because it
+is large, and the repair is in the proof or in a missing language feature,
+not in the checker: the first complete `__rb_insert` proof was about 100
+times its C and took 30 seconds at an acceptable rate per line. A proof near
+the size target that verifies well under 300 lines per second points at the
+verifier, and the complexity contract above applies.
+
+Report both numbers when delivering an example. As of 2026-10-07,
+`examples/rbtree-insert` is about 2,500 proof lines for 136 lines of C, 19
+times, and verifies in about 5.4 seconds, roughly 470 lines per second.
+
 ## Simple means locally checkable
 
 A simple tactic checks one selected proof operation deterministically, without

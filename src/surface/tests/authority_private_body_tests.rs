@@ -20,7 +20,7 @@ fn project(click_source: &str) -> ClickProject {
 fn authority_control_extra_payload_does_not_replace_counter_ownership() {
     let c_source = "struct object { int32 refs; int32 payload; }; void keep(struct object* obj) {}";
     let click_source = r#"
-        resource reference(obj: struct object*) {}
+        authorized resource reference(obj: struct object*) {}
         resource control(obj: struct object*) {
             owns obj->payload;
             owns authority(reference(obj));
@@ -50,7 +50,7 @@ fn authority_member_local_body_requires_explicit_ownership() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
+        authorized resource reference(p: int32*) {
             owns p[0..1];
         }
         verifying "private_body.c";
@@ -88,7 +88,7 @@ fn authority_member_private_heap_body_round_trip() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
+        authorized resource reference(p: int32*) {
             owns p[0..1];
         }
         verifying "private_body.c";
@@ -130,7 +130,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
+        authorized resource reference(p: int32*) {
             owns p[0..1];
         }
         verifying "private_body.c";
@@ -180,7 +180,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
+        authorized resource reference(p: int32*) {
             owns p[0..1];
             owns p[1..2];
         }
@@ -245,7 +245,7 @@ fn authority_creating_helper_requires_caller_private_body() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) { owns p[0..1]; }
+        authorized resource reference(p: int32*) { owns p[0..1]; }
         verifying "private_body.c";
         int32 acquire(int32* p) {
             owns authority(reference(p));
@@ -281,7 +281,7 @@ fn authority_creating_helper_requires_caller_private_body() {
 fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
     let c_source = r#"int32 release(int32* p) { return 7; }"#;
     let click_source = r#"
-        resource reference(p: int32*) { owns p[0..1]; }
+        authorized resource reference(p: int32*) { owns p[0..1]; }
         verifying "private_body.c";
         int32 release(int32* p) {
             owns authority(reference(p));
@@ -315,7 +315,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
+        authorized resource reference(p: int32*) {
             owns p[0..1];
         }
         verifying "private_body.c";
@@ -373,7 +373,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         resource control(p: int32*) {
             owns p[0..1];
             owns authority(reference(p));
@@ -418,7 +418,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         resource control(p: int32*) {
             owns p[0..1];
             owns authority(reference(p));
@@ -457,7 +457,7 @@ fn authority_control_wrapper_requires_its_contained_authority() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         resource control(p: int32*) {
             owns p[0..1];
             owns authority(reference(p));
@@ -490,7 +490,7 @@ fn authority_control_wrapper_requires_its_counter_memory() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) { owns p[0..1]; }
+        authorized resource reference(p: int32*) { owns p[0..1]; }
         resource control(p: int32*) {
             owns p[0..1];
             owns authority(reference(p));
@@ -533,7 +533,7 @@ fn authority_control_survives_balanced_helper_calls() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {}
+        authorized resource reference(p: int32*) {}
         resource control(p: int32*) {
             owns p[0..1];
             owns authority(reference(p));
@@ -608,7 +608,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
         }
     "#;
     let click_source = r#"
-        resource reference(obj: struct object*) {}
+        authorized resource reference(obj: struct object*) {}
         resource control(obj: struct object*) {
             contains allocation(obj, sizeof(struct object));
             owns object(obj);

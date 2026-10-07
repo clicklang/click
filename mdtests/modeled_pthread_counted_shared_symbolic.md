@@ -22,7 +22,7 @@ int run(void *p, void *q, int n) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_shared_symbolic.c";
-resource ticket(p: void*) {}
+authorized resource ticket(p: void*) {}
 void* worker(void* argument) {
     owns ticket(argument);
 } by { execute(); simp(); }

@@ -2455,7 +2455,8 @@ fn execute_step_from_frontier_position_selecting_path(
         }
     }
     // A summarized loop whose body may `return` has one continuing successor,
-    // the join of its guard-false and `break` exits, and one terminal
+    // the join of its guard-false and `break` exits or its natural forward
+    // jump, and one terminal
     // successor per returned path. The step follows the continuing one; each
     // returned path is retained as an already-completed path of this
     // execution and joins the function's exit paths at the boundary, where
@@ -2467,13 +2468,20 @@ fn execute_step_from_frontier_position_selecting_path(
         && transitions.len() > 1
         && transitions
             .iter()
-            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .filter(|transition| {
+                matches!(
+                    transition.outcome,
+                    CStatementOutcome::Normal(_) | CStatementOutcome::Jump { .. }
+                )
+            })
             .count()
             == 1
         && transitions.iter().all(|transition| {
             matches!(
                 transition.outcome,
-                CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                CStatementOutcome::Normal(_)
+                    | CStatementOutcome::Jump { .. }
+                    | CStatementOutcome::Return { .. }
             )
         })
     {

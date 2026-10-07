@@ -11,7 +11,7 @@ void object_retain(int32* obj) {
 ```
 
 ```click resource_semantics=authority
-resource object_ref(obj: int32*) {}
+authorized resource object_ref(obj: int32*) {}
 
 verifying "population_count_states_its_transition.c";
 

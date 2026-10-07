@@ -10,7 +10,7 @@ void retain(struct object* left, struct object* right) { left->refs += 1; }
 ```
 
 ```click resource_semantics=authority
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(reference(obj));
     owns obj->refs;

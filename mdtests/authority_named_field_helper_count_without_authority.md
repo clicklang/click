@@ -5,7 +5,7 @@ void observe(int32* pool) {}
 ```
 
 ```click resource_semantics=authority
-resource ticket(pool: int32*) { field serial: int32; }
+authorized resource ticket(pool: int32*) { field serial: int32; }
 verifying "helper.c";
 void observe(int32* pool) {
     owns member: ticket(pool);

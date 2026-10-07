@@ -7119,7 +7119,7 @@ impl<'a> Proof<'a> {
                     proof = proof.apply_step(step)?;
                 }
             }
-            // A written step that adds the goal under another spelling of
+            // A written step that checks the goal under another spelling of
             // the same order claim (`0 <= e` for the goal `e >= 0`) has
             // proved the goal. Close it with a recorded `assumption`, which
             // accepts that spelling, so the certificate re-runs on its own;
@@ -7136,7 +7136,7 @@ impl<'a> Proof<'a> {
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && !proof.focused_discharged()
-                && added_fact_spells_the_goal(&proof)
+                && checked_fact_spells_the_goal(&proof)
             {
                 proof = proof.apply_step(ProofStep::Assumption)?;
             }
@@ -8258,12 +8258,13 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
     })
 }
 
-/// Whether a fact the last step added is the focused goal under another
-/// spelling of the same order claim, and not the goal itself (that case the
-/// kernel already closed). One comparison per added fact of that step.
-fn added_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
+/// Whether a fact the last step checked is the focused goal under another
+/// spelling of the same order claim. A theorem may check an already-stated
+/// conclusion, so this uses its checked conclusions rather than only its new
+/// facts. One comparison per conclusion of that explicit step.
+fn checked_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
     proof.goal().is_some_and(|goal| {
-        proof.added_facts().iter().any(|fact| {
+        proof.checked_facts().iter().any(|fact| {
             fact != goal && crate::kernel::proof::fact_reasoning::order_claim_equivalent(fact, goal)
         })
     })

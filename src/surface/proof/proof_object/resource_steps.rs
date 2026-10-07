@@ -4,6 +4,29 @@ use super::*;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 
 impl<'a> Proof<'a> {
+    /// Whether `resource` names a declared family that is not an
+    /// `authorized resource`. Population accounting covers only authorized
+    /// families; every other family folds, unfolds and rewrites by its
+    /// ordinary definition law.
+    fn names_unauthorized_family(&self, resource: &ResourceClause) -> bool {
+        match resource {
+            ResourceClause::Quantified { resource, .. }
+            | ResourceClause::Conditional { resource, .. } => {
+                self.names_unauthorized_family(resource)
+            }
+            ResourceClause::Declared { name, .. } => {
+                let ProofContext::Execution(context) = self.context.as_ref() else {
+                    return false;
+                };
+                context
+                    .resource_environment
+                    .get(name)
+                    .is_some_and(|definition| !definition.is_authorized())
+            }
+            _ => false,
+        }
+    }
+
     fn is_authority_control_resource(&self, resource: &ResourceClause) -> bool {
         let ResourceClause::Declared { name, .. } = resource else {
             return false;
@@ -1962,6 +1985,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
             && !self.is_authority_transfer_wrapper(resource)
+            && !self.names_unauthorized_family(resource)
         {
             return self.apply_execution_population_member_exchange(resource, false);
         }
@@ -2042,6 +2066,7 @@ impl<'a> Proof<'a> {
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
             && !self.is_authority_transfer_wrapper(resource)
+            && !self.names_unauthorized_family(resource)
         {
             return self.apply_execution_population_member_exchange(resource, true);
         }
@@ -2134,6 +2159,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
+            && !self.names_unauthorized_family(resource)
         {
             return Err(self.step_error(
                 "resource unfold after function outcome is unavailable in authority mode",
@@ -2226,6 +2252,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !self.is_authority_transfer_wrapper(resource)
             && !matches!(resource, ResourceClause::Named { .. })
+            && !self.names_unauthorized_family(resource)
         {
             return Err(self.step_error(
                 "resource fold after function outcome is unavailable in authority mode",

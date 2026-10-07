@@ -5,7 +5,7 @@ population companion exercises the same final implication boundary with an
 explicit pointer anchor and arbitrary imported total constrained by the target.
 
 ```click resource_semantics=authority
-resource Permit(pool: int32*) {}
+authorized resource Permit(pool: int32*) {}
 contract void Raw(int32* pool) {
     owns authority(Permit(pool));
     owns Permit(pool);

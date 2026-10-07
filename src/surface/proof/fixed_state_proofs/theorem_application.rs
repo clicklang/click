@@ -86,6 +86,8 @@ fn nested_quantified_exact_fallback(left: &Proposition, right: &Proposition) -> 
 pub(in crate::surface::proof) struct CheckedFixedStateTheoremApplication {
     pub(in crate::surface::proof) facts: ProofFacts,
     pub(in crate::surface::proof) added_facts: Vec<Proposition>,
+    /// All conclusions this application checked, including already-stated ones.
+    pub(in crate::surface::proof) checked_facts: Vec<Proposition>,
 }
 
 /// Canonical checker for an explicit theorem application against one fixed
@@ -235,14 +237,18 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
 
     let mut facts = available.clone();
     let mut added_facts = Vec::new();
-    for conclusion in conclusions {
-        if !facts.contains_top_level(&conclusion) {
+    for conclusion in &conclusions {
+        if !facts.contains_top_level(conclusion) {
             added_facts.push(conclusion.clone());
         }
-        facts = facts.with_kernel_checked_fact(conclusion);
+        facts = facts.with_kernel_checked_fact(conclusion.clone());
     }
 
-    Ok(CheckedFixedStateTheoremApplication { facts, added_facts })
+    Ok(CheckedFixedStateTheoremApplication {
+        facts,
+        added_facts,
+        checked_facts: conclusions,
+    })
 }
 
 /// Lowers one application's requirements against an already-persistent

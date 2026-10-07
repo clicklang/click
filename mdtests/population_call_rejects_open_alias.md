@@ -10,7 +10,7 @@ void restored(struct object* obj, struct object* alias) { obj->refs = obj->refs;
 ```
 
 ```click resource_semantics=authority
-resource reference(obj: struct object*) {}
+authorized resource reference(obj: struct object*) {}
 resource control(obj: struct object*) {
     owns authority(reference(obj));
     owns obj->refs;

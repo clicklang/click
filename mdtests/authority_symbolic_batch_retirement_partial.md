@@ -11,7 +11,7 @@ void run(int32* o, int32 n, int32 m) { mint_pair(o, n, m); spend_n(o, n); }
 ```
 
 ```click resource_semantics=authority
-resource tok(o: int32*) {}
+authorized resource tok(o: int32*) {}
 verifying "symbolic_batch_retirement.c";
 void mint_pair(int32* o, int32 n, int32 m) {
     owns authority(tok(o));

@@ -1370,6 +1370,7 @@ fn resource_body_fields_as_parameters(
         parameters,
         composite_body: Some(view),
         field_schema: definition.field_schema.clone(),
+        authorized: definition.authorized,
     }))
 }
 
