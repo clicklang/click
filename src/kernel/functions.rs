@@ -2237,6 +2237,35 @@ pub(super) fn execute_c_function_verification_paths(
     Ok(paths)
 }
 
+/// Whether any resource the contract moves can touch a population: a
+/// population authority, a mutex protocol resource, an abstract token, or a
+/// family that reaches an authorized family. A contract over ordinary
+/// families and memory alone has no population effect.
+pub(super) fn contract_reaches_population(interface: &CFunctionContractInterface) -> bool {
+    interface
+        .resource_requires()
+        .iter()
+        .chain(interface.resource_ensures())
+        .chain(interface.resource_constructors())
+        .any(|spec| spec_reaches_population(interface, spec))
+}
+
+fn spec_reaches_population(interface: &CFunctionContractInterface, spec: &CResourceSpec) -> bool {
+    if matches!(
+        spec.family(),
+        ResourceFamily::MutexGuard | ResourceFamily::MutexLive | ResourceFamily::MutexUse
+    ) || matches!(spec.term(), CResourceTerm::PopulationAuthority { .. })
+    {
+        return true;
+    }
+    match spec.contained_definition_name() {
+        Some(name) => interface
+            .composite_resource_definition(name)
+            .is_none_or(|definition| definition.reaches_population()),
+        None => false,
+    }
+}
+
 /// Unadmitted calls cannot update an authority population. Verified effects
 /// and explicitly preserving assumed interfaces are checked at their own call
 /// boundaries; allocation/free use separate statement forms.
@@ -4591,6 +4620,7 @@ pub(super) fn execute_c_function_call_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     if let Some(error) = authority_mode_call_refusal(caller_state)
+        && contract_reaches_population(function.contract_interface())
         && environment
             .get_verified_function_rule(function.name())
             .is_none()
@@ -7632,6 +7662,7 @@ fn prepare_verified_function_call<'a>(
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
     if let Some(error) = authority_mode_call_refusal(caller_state)
+        && contract_reaches_population(contract_interface)
         && ((suspend_worker && application.evidence.is_none())
             || (application.evidence.is_none()
                 && !environment
@@ -7647,6 +7678,7 @@ fn prepare_verified_function_call<'a>(
         }));
     }
     if caller_state.uses_population_authority_semantics()
+        && contract_reaches_population(contract_interface)
         && !authority_mode_supports_resource_contract(contract_interface)
     {
         return Ok(Err(resource_call_failure(

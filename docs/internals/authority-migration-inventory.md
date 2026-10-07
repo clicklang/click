@@ -1314,3 +1314,32 @@ part of the declaration.
   authority-mode fixture, is now declared `authorized` across the mdtests,
   examples, unit-test sources and documentation; no claim, proof step or C
   source changed.
+
+#### Chunk 1a: ordinary families and calls under authority semantics
+
+A second trial switch, on top of chunk 0, still changed 715 outcomes. Three
+causes accounted for most of them; each is fixed under authority semantics
+without switching the default.
+
+- Each kernel family definition records `reaches_population`: it is
+  authorized, holds a population authority, or contains or names such a
+  family. The flag is computed once when definitions are installed, in the
+  same linear pass as thread confinement.
+- A named instance rewrite keeps the ordinary-memory-body restriction only
+  for a family that reaches a population. Regressions:
+  `authority_mode_ordinary_named_rewrite.md` and
+  `authority_mode_named_rewrite_reaching_member_refused.md`.
+- An unadmitted C call is refused only when its contract moves a resource
+  that reaches a population: a population authority, a mutex protocol
+  resource, an abstract token, or a family that reaches an authorized family.
+  A call with no assumed rule executes its checked body. The same reach test
+  gates the helper-contract shape check. Regressions:
+  `authority_mode_ordinary_external_call.md` and
+  `authority_mode_external_member_birth_refused.md`.
+- Contract certification used the boundary transfer's function, captured
+  before loop annotations, as the function the path belongs to, so every
+  loop proof failed to certify. It now keeps the annotated function and
+  requires the transfer's name, parameters and contract to agree with it.
+  Regression: `authority_mode_loop_contract_certifies.md`.
+
+With these, the trial switch changes 253 outcomes.

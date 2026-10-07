@@ -63,6 +63,38 @@ pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResource
             }
         }
     }
+    for definition in definitions.iter_mut() {
+        definition.reaches_population = definition.authorized
+            || definition
+                .contains
+                .iter()
+                .chain(
+                    definition
+                        .matched
+                        .iter()
+                        .flat_map(|body| body.arms.iter())
+                        .flat_map(|arm| arm.contains.iter()),
+                )
+                .any(|spec| {
+                    matches!(
+                        spec.term(),
+                        super::CResourceTerm::PopulationAuthority { .. }
+                    )
+                });
+    }
+    let mut reaching: VecDeque<_> = definitions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, definition)| definition.reaches_population.then_some(index))
+        .collect();
+    while let Some(child) = reaching.pop_front() {
+        for &parent in &dependents[child] {
+            if !definitions[parent].reaches_population {
+                definitions[parent].reaches_population = true;
+                reaching.push_back(parent);
+            }
+        }
+    }
     let mut pending: VecDeque<_> = definitions
         .iter()
         .enumerate()
