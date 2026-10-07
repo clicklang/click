@@ -44,6 +44,11 @@ Click currently models obligations for cases such as:
 
 The C0 subset reference has the full current list.
 
+For `int32` negation, `requires x != -2147483647 - 1` excludes the only
+overflowing value, `INT_MIN`. For `x / y` or `x % y`, excluding either
+`x == INT_MIN` or `y == -1` rules out signed overflow; the divisor must
+also be nonzero. See the [operand-exclusion regression](https://github.com/clicklang/click/blob/master/mdtests/int32_single_overflow_exclusions.md).
+
 ## Freed pointers are indeterminate
 
 When `free` ends an allocation's lifetime, C11 6.2.4p2 makes the value of

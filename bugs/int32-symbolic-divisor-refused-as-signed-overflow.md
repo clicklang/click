@@ -23,6 +23,12 @@ the cause. The diagnostic names a cause the preconditions exclude. Only
 
 ## Reproduction
 
+Follow-up: direct operand exclusions (`x != INT_MIN` or `y != -1`)
+now discharge the overflow check, including for remainder. They are covered
+by `mdtests/int32_single_overflow_exclusions.md`. The original observations
+below predate that fix; interval and disjunctive exclusions, and the requested
+operand-pair diagnostic, still need their own regression coverage.
+
 ```c filename=div.c
 int32 f(int32 x, int32 y) { return x / y; }
 ```
