@@ -313,8 +313,16 @@ The black-leaf case still has a black deficit. For a red-leaf successor,
 `rb_erase_red_successor_splice` instead proves a valid black-rooted whole tree
 without fixup, preserving parent consistency and removing the same in-order
 occurrence. Both use `rb_min_context_leaf` to transport the removed leaf
-color through descent. A successor with a nonempty right child still needs
-a separate child-recoloring theorem.
+color through descent. The shared `rb_min_context_child` also handles a
+nonempty replacement child.
+
+`rbtree_erase_child.click` proves that a nonempty minimum child has black
+height zero and is red, and that the removed minimum is black. Its
+`rb_minimum_child_blackens_without_deficit` theorem plugs the blackened,
+reparented child into the descent context and establishes a valid black-rooted
+whole tree. `successor_child_checks.click` checks immediate and deep examples.
+This is the balance exit fact; connecting that replacement to the complete
+successor-splice in-order and parent-consistency equations remains to do.
 
 `successor_splice_checks.click` verifies immediate and deep black successors
 (including a red right-subtree root), their context shapes, the missing black

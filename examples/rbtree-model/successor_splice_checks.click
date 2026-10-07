@@ -230,185 +230,172 @@ theorem other_successor_cases(successor: struct rb_node*, parent: struct rb_node
 }
 
 function splice_red_leaf(node: struct rb_node*, parent: struct rb_node*) -> RbTree {
-        RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)
+    RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)
 }
 
 theorem splice_red_leaf_facts(node: struct rb_node*, parent: struct rb_node*) {
-        ensures is_rb(splice_red_leaf(node, parent)) == 1 by {
-                unfold(splice_red_leaf(node, parent));
-                unfold(is_rb(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-                unfold(is_rb(RbTree::Empty));
-                unfold(rb_root_black(RbTree::Empty));
-                normalize();
-        }
+    ensures is_rb(splice_red_leaf(node, parent)) == 1 by {
+        unfold(splice_red_leaf(node, parent));
+        unfold(is_rb(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
+        unfold(is_rb(RbTree::Empty));
+        unfold(rb_root_black(RbTree::Empty));
+        normalize();
+    }
 
-        ensures black_height(splice_red_leaf(node, parent)) == Nat::Zero by {
-                unfold(splice_red_leaf(node, parent));
-                unfold(black_height(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-                unfold(black_height(RbTree::Empty));
-                normalize();
-        }
+    ensures black_height(splice_red_leaf(node, parent)) == Nat::Zero by {
+        unfold(splice_red_leaf(node, parent));
+        unfold(black_height(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
+        unfold(black_height(RbTree::Empty));
+        normalize();
+    }
 
-        ensures rb_root_black(splice_red_leaf(node, parent)) == 0 by {
-                unfold(splice_red_leaf(node, parent));
-                unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-                normalize();
-        }
+    ensures rb_root_black(splice_red_leaf(node, parent)) == 0 by {
+        unfold(splice_red_leaf(node, parent));
+        unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
+        normalize();
+    }
 
-        ensures rb_parent_consistent(splice_red_leaf(node, parent), parent) == 1 by {
-                unfold(splice_red_leaf(node, parent));
-                unfold(rb_parent_consistent(RbTree::Node(node, parent, Color::Red, RbTree::Empty,
-            RbTree::Empty),
-                        parent));
-                unfold(rb_parent_consistent(RbTree::Empty, node));
-                unfold(rb_node_is(parent, parent));
-                normalize();
-        }
+    ensures rb_parent_consistent(splice_red_leaf(node, parent), parent) == 1 by {
+        unfold(splice_red_leaf(node, parent));
+        unfold(rb_parent_consistent(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty),
+            parent));
+        unfold(rb_parent_consistent(RbTree::Empty, node));
+        unfold(rb_node_is(parent, parent));
+        normalize();
+    }
 }
 
 theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_node*, l: struct rb_node*,
-    above:
-        struct rb_node*) {
-        ensures is_rb_root(plug(Context::Top, rb_successor_splice(successor, above, Color::Black,
-                splice_red_leaf(l, erased), splice_red_leaf(successor, erased)))) == 1 by {
-                apply(splice_red_leaf_facts(l, erased));
-                apply(splice_red_leaf_facts(successor, erased));
-                have black_height(splice_red_leaf(l, erased)) == black_height(splice_red_leaf(successor,
-                        erased)) by {
-                        rewrite(black_height(splice_red_leaf(l, erased)) == Nat::Zero);
-                        rewrite(black_height(splice_red_leaf(successor, erased)) == Nat::Zero);
-                        normalize();
-                }
-                apply(is_rb_black_node(erased, above, splice_red_leaf(l, erased), splice_red_leaf(successor,
-                        erased)));
-                have ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
-                        splice_red_leaf(l, erased), splice_red_leaf(successor, erased))),
-                        rb_color(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l, erased),
-                        splice_red_leaf(successor, erased)))) == 1 by {
-                        unfold(rb_color(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l,
-                erased),
-                                splice_red_leaf(successor, erased))));
-                        unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
-                                splice_red_leaf(l, erased), splice_red_leaf(successor, erased))),
-                    Color::Black));
-                        unfold(color_black(Color::Black));
-                        normalize();
-                }
-                apply(rb_node_is_reflexive(above));
-                apply(rb_parent_consistent_node(erased, above, Color::Black, splice_red_leaf(l, erased),
-                        splice_red_leaf(successor, erased), above));
-                apply(ctx_consistent_top_frame(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l,
-                        erased), splice_red_leaf(successor, erased)), above));
-                have rb_minimum(splice_red_leaf(successor, erased)) == RbMinimum::Found(successor,
-            Color::Red,
-                        RbTree::Empty) by {
-                        unfold(splice_red_leaf(successor, erased));
-                        unfold(rb_minimum(RbTree::Node(successor, erased, Color::Red, RbTree::Empty,
-                RbTree::Empty)));
-                        normalize();
-                }
-                apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black,
-                        splice_red_leaf(l, erased), splice_red_leaf(successor, erased), Context::Top,
-                above));
-                assumption();
+    above: struct rb_node*) {
+    ensures is_rb_root(plug(Context::Top, rb_successor_splice(successor, above, Color::Black,
+        splice_red_leaf(l, erased), splice_red_leaf(successor, erased)))) == 1 by {
+        apply(splice_red_leaf_facts(l, erased));
+        apply(splice_red_leaf_facts(successor, erased));
+        have black_height(splice_red_leaf(l, erased)) == black_height(splice_red_leaf(successor, erased)) by
+            {
+            rewrite(black_height(splice_red_leaf(l, erased)) == Nat::Zero);
+            rewrite(black_height(splice_red_leaf(successor, erased)) == Nat::Zero);
+            normalize();
         }
+        apply(is_rb_black_node(erased, above, splice_red_leaf(l, erased), splice_red_leaf(successor,
+            erased)));
+        have ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l,
+            erased), splice_red_leaf(successor, erased))), rb_color(RbTree::Node(erased, above,
+            Color::Black, splice_red_leaf(l, erased), splice_red_leaf(successor, erased)))) == 1 by {
+            unfold(rb_color(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l, erased),
+                splice_red_leaf(successor, erased))));
+            unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
+                splice_red_leaf(l, erased), splice_red_leaf(successor, erased))), Color::Black));
+            unfold(color_black(Color::Black));
+            normalize();
+        }
+        apply(rb_node_is_reflexive(above));
+        apply(rb_parent_consistent_node(erased, above, Color::Black, splice_red_leaf(l, erased),
+            splice_red_leaf(successor, erased), above));
+        apply(ctx_consistent_top_frame(RbTree::Node(erased, above, Color::Black, splice_red_leaf(l, erased),
+            splice_red_leaf(successor, erased)), above));
+        have rb_minimum(splice_red_leaf(successor, erased)) == RbMinimum::Found(successor, Color::Red,
+            RbTree::Empty) by {
+            unfold(splice_red_leaf(successor, erased));
+            unfold(rb_minimum(RbTree::Node(successor, erased, Color::Red, RbTree::Empty, RbTree::Empty)));
+            normalize();
+        }
+        apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, splice_red_leaf(l,
+            erased), splice_red_leaf(successor, erased), Context::Top, above));
+        assumption();
+    }
 }
 
-theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*,
-                l: struct rb_node*, above: struct rb_node*, r: struct rb_node*) {
-        ensures is_rb_root(plug(Context::Top, rb_successor_splice(successor, above, Color::Black,
+theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, l: struct rb_node*, above:
+    struct rb_node*, r: struct rb_node*) {
+    ensures is_rb_root(plug(Context::Top, rb_successor_splice(successor, above, Color::Black,
         RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased,
         Color::Black, RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty),
         RbTree::Empty)))) == 1 by {
-                have is_rb(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
+        have is_rb(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
             RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
             Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))) == 1 by {
-                        unfold(is_rb(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
+            unfold(is_rb(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
+                RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black, RbTree::Node(successor,
+                r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
+            unfold(black_height(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
                 Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
                 RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
-                        unfold(black_height(RbTree::Node(erased, above, Color::Black, RbTree::Node(l,
-                erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
+            unfold(rb_root_black(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
+                Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
                 RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
-                        unfold(rb_root_black(RbTree::Node(erased, above, Color::Black, RbTree::Node(l,
-                erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
-                RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
-                        unfold(is_rb(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
+            unfold(is_rb(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
+                RbTree::Empty, RbTree::Empty), RbTree::Empty)));
+            unfold(black_height(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
+                RbTree::Empty, RbTree::Empty), RbTree::Empty)));
+            unfold(rb_root_black(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
                 Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)));
-                        unfold(black_height(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
-                Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)));
-                        unfold(rb_root_black(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor,
-                r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)));
-                        unfold(is_rb(RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty)));
-                        unfold(black_height(RbTree::Node(l, erased, Color::Black, RbTree::Empty,
-                RbTree::Empty)));
-                        unfold(rb_root_black(RbTree::Node(l, erased, Color::Black, RbTree::Empty,
-                RbTree::Empty)));
-                        unfold(is_rb(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
-                        unfold(black_height(RbTree::Node(successor, r, Color::Red, RbTree::Empty,
-                RbTree::Empty)));
-                        unfold(rb_root_black(RbTree::Node(successor, r, Color::Red, RbTree::Empty,
-                RbTree::Empty)));
-                        unfold(is_rb(RbTree::Empty));
-                        unfold(black_height(RbTree::Empty));
-                        unfold(rb_root_black(RbTree::Empty));
-                        normalize();
-                }
-                have rb_parent_consistent(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
+            unfold(is_rb(RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty)));
+            unfold(black_height(RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty)));
+            unfold(rb_root_black(RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty)));
+            unfold(is_rb(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
+            unfold(black_height(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
+            unfold(rb_root_black(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
+            unfold(is_rb(RbTree::Empty));
+            unfold(black_height(RbTree::Empty));
+            unfold(rb_root_black(RbTree::Empty));
+            normalize();
+        }
+        have rb_parent_consistent(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
             RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)), above) ==
-            1 by {
-                        unfold(rb_parent_consistent(RbTree::Node(erased, above, Color::Black,
-                RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased,
-                Color::Black, RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty),
-                RbTree::Empty)), above));
-                        unfold(rb_parent_consistent(RbTree::Node(r, erased, Color::Black,
-                RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty),
+        1 by {
+            unfold(rb_parent_consistent(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
+                Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
+                RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)),
+                above));
+            unfold(rb_parent_consistent(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
+                Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty), erased));
+            unfold(rb_parent_consistent(RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty),
                 erased));
-                        unfold(rb_parent_consistent(RbTree::Node(l, erased, Color::Black, RbTree::Empty,
-                RbTree::Empty), erased));
-                        unfold(rb_parent_consistent(RbTree::Node(successor, r, Color::Red, RbTree::Empty,
+            unfold(rb_parent_consistent(RbTree::Node(successor, r, Color::Red, RbTree::Empty,
                 RbTree::Empty), r));
-                        unfold(rb_parent_consistent(RbTree::Empty, r));
-                        unfold(rb_parent_consistent(RbTree::Empty, l));
-                        unfold(rb_parent_consistent(RbTree::Empty, successor));
-                        unfold(rb_node_is(r, r));
-                        unfold(rb_node_is(erased, erased));
-                        unfold(rb_node_is(above, above));
-                        normalize();
-                }
-                apply(ctx_consistent_top_frame(RbTree::Node(erased, above, Color::Black, RbTree::Node(l,
-            erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
-            RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)), above));
-                have ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
-            RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased,
-            Color::Black, RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty),
-            RbTree::Empty))), rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
+            unfold(rb_parent_consistent(RbTree::Empty, r));
+            unfold(rb_parent_consistent(RbTree::Empty, l));
+            unfold(rb_parent_consistent(RbTree::Empty, successor));
+            unfold(rb_node_is(r, r));
+            unfold(rb_node_is(erased, erased));
+            unfold(rb_node_is(above, above));
+            normalize();
+        }
+        apply(ctx_consistent_top_frame(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
-            RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)))) == 1 by
-            {
-                        unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
+            RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)), above));
+        have ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black, RbTree::Node(l,
+            erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
+            RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))),
+            rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
+            RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
+            Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)))) == 1 by
+        {
+            unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
                 RbTree::Node(l, erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased,
                 Color::Black, RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty),
                 RbTree::Empty))), rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
                 Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
                 RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)))));
-                        unfold(rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
-                Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
-                RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
-                        unfold(color_black(Color::Black)); normalize();
-                }
-                have rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
+            unfold(rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
+                RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black, RbTree::Node(successor,
+                r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
+            unfold(color_black(Color::Black)); normalize();
+        }
+        have rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
             RbTree::Empty, RbTree::Empty), RbTree::Empty)) == RbMinimum::Found(successor, Color::Red,
             RbTree::Empty) by {
-                        unfold(rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r,
-                Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty)));
-                        unfold(rb_minimum(RbTree::Node(successor, r, Color::Red, RbTree::Empty,
-                RbTree::Empty))); normalize();
-                }
-                apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, RbTree::Node(l,
-            erased, Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
+            unfold(rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
+                RbTree::Empty, RbTree::Empty), RbTree::Empty)));
+            unfold(rb_minimum(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
+                normalize();
+        }
+        apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, RbTree::Node(l, erased,
+            Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
             RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty),
             Context::Top, above));
-                assumption();
-        }
+        assumption();
+    }
 }

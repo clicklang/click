@@ -264,6 +264,26 @@ theorem rb_minimum_list(tree: RbTree, successor: struct rb_node*, color: Color, 
     }
 }
 
+theorem rb_minimum_child_empty_left(node: struct rb_node*, parent: struct rb_node*,
+        color: Color, left: RbTree, right: RbTree,
+        successor: struct rb_node*, min_color: Color, child: RbTree) {
+    requires left == RbTree::Empty;
+    requires rb_minimum(RbTree::Node(node, parent, color, left, right))
+        == RbMinimum::Found(successor, min_color, child);
+    ensures RbMinimum::Found(node, color, right)
+        == RbMinimum::Found(successor, min_color, child) by {
+        have rb_minimum(RbTree::Node(node, parent, color, left, right))
+            == RbMinimum::Found(node, color, right) by {
+            rewrite(left == RbTree::Empty);
+            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, right)));
+            normalize();
+        }
+        rewrite(RbMinimum::Found(node, color, right)
+            == rb_minimum(RbTree::Node(node, parent, color, left, right)));
+        assumption();
+    }
+}
+
 theorem rb_minimum_empty_left(node: struct rb_node*, parent: struct rb_node*,
         color: Color, left: RbTree, right: RbTree,
         successor: struct rb_node*, min_color: Color) {
@@ -334,8 +354,8 @@ theorem rb_min_context_cut_leaf(tree: RbTree, up: Context, successor: struct rb_
     }
 }
 
-theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node*, min_color: Color) {
-    requires rb_minimum(tree) == RbMinimum::Found(successor, min_color, RbTree::Empty);
+theorem rb_min_context_child(tree: RbTree, up: Context, successor: struct rb_node*, min_color: Color, child: RbTree) {
+    requires rb_minimum(tree) == RbMinimum::Found(successor, min_color, child);
     requires is_rb(tree) == 1;
     requires ctx_rb(up, black_height(tree), rb_color(tree)) == 1;
 
@@ -343,16 +363,16 @@ theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node
         induct(tree) as ih {
             RbTree::Empty => {
                 have not(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color,
-                    RbTree::Empty)) by {
+                    child)) by {
                     unfold(rb_minimum(RbTree::Empty));
                     normalize();
                 }
                 contradiction(rb_minimum(RbTree::Empty) == RbMinimum::Found(successor, min_color,
-                    RbTree::Empty));
+                    child));
             }
             RbTree::Node(node, parent, color, left, right) => {
                 if left == RbTree::Empty {
-                    apply(rb_minimum_empty_left(node, parent, color, left, right, successor, min_color));
+                    apply(rb_minimum_child_empty_left(node, parent, color, left, right, successor, min_color, child));
                     extract(color == min_color);
                     apply(black_height_node_frame(node, parent, color, left, right));
                     have black_height(RbTree::Node(node, parent, color, left, right))
@@ -379,7 +399,7 @@ theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node
                     assumption();
                 } else {
                     apply(rb_minimum_nonempty_left(node, parent, color, left, right));
-                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, RbTree::Empty) by {
+                    have rb_minimum(left) == RbMinimum::Found(successor, min_color, child) by {
                         rewrite(rb_minimum(left) == rb_minimum(RbTree::Node(node, parent, color, left,
                             right)));
                         assumption();
@@ -406,7 +426,7 @@ theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node
                     }
                     apply(ctx_rb_left_frame(node, parent, color, right, up, black_height(left),
                         rb_color(left)));
-                    apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color));
+                    apply(ih(left, Context::Left(node, parent, color, right, up), successor, min_color, child));
                     apply(rb_min_context_nonempty_left(node, parent, color, left, right, up));
                     rewrite(rb_min_context(RbTree::Node(node, parent, color, left, right), up)
                         == rb_min_context(left, Context::Left(node, parent, color, right, up)));
@@ -414,6 +434,16 @@ theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node
                 }
             }
         }
+    }
+}
+
+
+theorem rb_min_context_leaf(tree: RbTree, up: Context, successor: struct rb_node*, min_color: Color) {
+    requires rb_minimum(tree) == RbMinimum::Found(successor, min_color, RbTree::Empty);
+    requires is_rb(tree) == 1;
+    requires ctx_rb(up, black_height(tree), rb_color(tree)) == 1;
+    ensures ctx_rb(rb_min_context(tree, up), frame_black_height(min_color, Nat::Zero), min_color) == 1 by {
+        apply(rb_min_context_child(tree, up, successor, min_color, RbTree::Empty)); assumption();
     }
 }
 

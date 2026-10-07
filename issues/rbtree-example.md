@@ -24,7 +24,10 @@ in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
 successors. Chunk 11 now verifies the unchanged C for a root with zero or
 one child. The red-leaf successor now has a no-deficit model theorem, with
 immediate and deep concrete checks. Non-root C unlink and both C successor
-branches remain; nonempty replacement children still need their exit facts.
+branches remain. Nonempty replacement children now have a balance exit theorem
+and immediate/deep checks in `rbtree_erase_child.click` and
+`successor_child_checks.click`; the exact successor-splice sequence and
+parent-consistency connection for that branch remains.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
@@ -46,7 +49,10 @@ Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
 its loop semantics even when no loop was reached. Thus the unreachable
 successor loop does not demand a spurious ranking measure; reachable unranked
-loop summaries still fail termination checks.
+loop summaries still fail termination checks. The replacement-child checks
+also exposed a theorem planner bug: it omitted a proved constructor inequality
+from `apply using` even though the simple checker needed it. The planner now
+retains that evidence, with positive, negative, and expansion regressions.
 
 This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
@@ -953,11 +959,13 @@ permits a red root at the boundary inside the right subtree.
 `successor_splice_checks.click` covers an immediate successor and a deeper
 successor below a red right-subtree root, the exact context/parent shapes,
 rejection of zero as the required height, and exclusion of red successors or
-successors with a right child from the black-leaf theorem. The red-leaf successor now has a separate no-deficit theorem,
-`rb_erase_red_successor_splice`, establishing whole-tree validity, in-order
-removal, and parent consistency. The nonempty-child branch still needs its
-recoloring exit facts during chunk 11; do not apply
-this theorem to them or claim the spliced whole tree is already red-black.
+successors with a right child from the black-leaf theorem. The red-leaf
+successor now has a separate no-deficit theorem, `rb_erase_red_successor_splice`,
+establishing whole-tree validity, in-order removal, and parent consistency.
+`rb_minimum_child_blackens_without_deficit` proves the balance exit for a
+nonempty replacement child; its complete successor-splice sequence and
+parent-consistency equations remain. Keep these cases separate from the
+black-leaf theorem, whose whole spliced tree still needs fixup.
 
 **Chunk 11. `__rb_erase_augmented`: root zero/one-child cases written 2026-10-07.**
 The unchanged C now returns a red-black whole tree and the erased node's raw
