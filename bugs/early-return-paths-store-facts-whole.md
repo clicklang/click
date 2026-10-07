@@ -70,22 +70,24 @@ Fixed:
   closer misses, and spells none for a derivation that only selects a
   disjunct; `simp_premise_spelling_is_linear_in_early_returns` pins it.
 
-Remaining. The proof written with simple tactics only is near linear in
-the range it can be written: 6261, 10723, and 20159 units at 4, 8, and 16
-returns (`explicit_early_return_proof_is_near_linear_in_its_returns`). Its
-nested proof `if`s reach the checked drivers' region nesting bound soon
-after 16 returns, so it cannot be measured further.
+- simp's constant-equality dependency selection now selects at most two
+  premises from the exact constant index and checks an atomic derivation in
+  that small context before falling back to connected selection. Earlier
+  `a != j` guards are irrelevant to `result == a` when both terms are pinned
+  to the same constant. `indexed_simp_premises_reduce_whole_early_return_work`
+  measures the complete verification and bounds selection work at 4, 8,
+  16, 32, and 64 returns; a negative postcondition remains rejected. The
+  previous selection work at these sizes was 84, 232, 720, 2464, and 9024.
 
-What still grows quadratically is in the grouped `execute(); simp();` proof,
-by the work each source charged at 32 and then 64 returns on 2026-10-05:
+- Explicit early-return proof processing is now iterative, so
+  `explicit_early_return_proof_is_near_linear_in_its_returns` extends through
+  64 returns. The former region nesting limit no longer blocks that test.
 
-- simp's dependency selection. On path `k` the goal mentions `a`, so the
-  selection reads every fact connected to `a`, all `k` of the path's
-  `a != j` conditions, although only `a == k` is needed, and builds and keys
-  a restricted context from them. Charged at `proposition_search.rs:1874`
-  and `assumptions.rs:3617` (1056 then 4160 each), `assumptions.rs:5161`
-  (2387 then 7811), and `fact_keys.rs` `alpha_work_checkpoint` (4224 then
-  16640). This is a smart-search breadth question.
+Remaining. Checked paths still retain flat facts. The whole-verification
+context-rebuild count at 4, 8, 16, 32, and 64 returns is 69, 131, 303, 839,
+and 2679. The indexed selection change does not remove this quadratic work.
+The two remaining sources, measured at 32 and then 64 returns on 2026-10-05:
+
 - Each path's outcome goal re-adds the path's conditions to the root facts
   (`outcomes_and_focus.rs`, the `with_kernel_checked_fact` loop): 957 then
   2925. The arm that reached the return already held those facts.
