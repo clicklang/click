@@ -909,10 +909,37 @@ depth and sibling populations.
 
 The pinned unchanged `CFeeRate::GetFee` regression now reaches the unsupported
 `FeePerVSize` class template instance in `util/feefrac.h`, with a bounded
-diagnostic and no partial artifact. The wrapper is not verified yet. Next add
-projected method receivers and reference arguments using the same field-path
-representation, then a precise
-base-subobject representation for the actual inherited `FeePerVSize` field.
+diagnostic and no partial artifact. The wrapper is not verified yet.
+
+Projected method receivers and record/scalar reference arguments now use the
+same ordered field paths. Call validation resolves the projected nominal type
+through the shared index and propagates root constness to mutable reference
+binding. Lowering passes the exact subobject byte address into the existing
+contract-call machinery. Offline ordinary, expanded and retained proofs cover
+const methods, mutable child methods, record helpers, signed-32 field references
+and sibling frames. Shared permission indexing and joint consumption rejoin scalar bytes returned
+by a call with bytewise field padding over symbolic object pointers; C and
+kernel regressions cover the same boundary without changing ownership extents.
+Byte-endpoint regrouping is limited to selected memory suppliers; ambient
+normalization preserves borrowed clause boundaries. Authority wrapper folds
+consume and compose only their checked exchange, retaining unrelated memory
+and population units. Positive mixed-width frame and negative hidden-unit
+regressions cover this boundary alongside the full Markdown proof corpus.
+Post-return authority wrapper folds and unfolds now retain their checked
+resource exchange through contract certification. Certification prefers the
+entry paired with a jointly checked return context, preserving borrowed field
+identities across separate clause proofs. The unchanged mixed-width frame
+reproduction verifies, expands and rechecks in a retained session; hostile
+proofs and deterministic checks reject missing/duplicate child authority and
+removal of unrelated memory. The wrapper-unfold tooling blocker is resolved.
+Recomputed-digest artifacts reject forged targets and use
+spans, missing/reordered paths and const roots passed to mutable callees. Source
+checks retain C++ access, constness, temporary and pointer-root restrictions;
+wide mutable references remain outside the profile. Deterministic checks cover
+reference resolution at increasing path depth and sibling populations.
+
+Next support the actual class template instance identity and a precise
+base-subobject representation for the inherited `FeePerVSize` field.
 Preserve declaration identity, layout and field authority instead of flattening
 inheritance into matching field names. Automatic objects with embedded records,
 nontrivial embedded destruction and cross-header executable graphs remain
