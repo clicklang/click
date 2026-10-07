@@ -363,7 +363,7 @@ impl CreationEvents {
 
     /// A typed mutex acquisition in a standalone proof enters one population
     /// with an arbitrary total. Rechecking the same acquisition from the same
-    /// ledger reuses its import, so independent replays agree on its identity.
+    /// ledger reuses its import, so independent rechecks agree on its identity.
     pub(in crate::kernel) fn import_acquired_control_population(
         &self,
         description: &ResourceDescription,
