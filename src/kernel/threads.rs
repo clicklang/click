@@ -63,7 +63,7 @@ pub(super) struct WorkerCreation {
     pub(super) parent_after_create: super::population_authority::c_creation::CreationEvents,
     pub(super) worker: super::population_authority::c_creation::CreationEvents,
     pub(super) definitions: Vec<super::CCompositeResourceDefinition>,
-    pub(super) deferred: Option<DeferredMemberExchange>,
+    pub(super) deferred: Vec<DeferredMemberExchange>,
 }
 
 /// A locked worker's declared member change. Its authority stays in the
@@ -614,15 +614,12 @@ impl ThreadLedger {
     ) -> bool {
         self.storage.rights.iter().any(|(_, right)| {
             crate::instrumentation::record_deterministic_work(1);
-            right
-                .completion
-                .creation
-                .as_ref()
-                .and_then(|creation| creation.deferred.as_ref())
-                .is_some_and(|deferred| {
+            right.completion.creation.as_ref().is_some_and(|creation| {
+                creation.deferred.iter().any(|deferred| {
                     deferred.description.family() == description.family()
                         && deferred.description.arguments() == description.arguments()
                 })
+            })
         })
     }
 
@@ -1106,6 +1103,17 @@ impl ThreadContext {
         if self.parent.loan_participant() != Some(completion.plan.caller_participant()) {
             return Err("completion right belongs to a different parent");
         }
+        // The worker's preserved `mutex_use` inputs are loans of the parent's
+        // authority, not outputs. The sequential return strips them before
+        // loan recovery restores the lent source, and join does the same;
+        // otherwise the parent would hold the worker's use beside the
+        // `mutex_live` or retained share that recovery returns.
+        let mut outputs = completion.outputs.clone();
+        for fact in completion.plan.mutex_use_requirements.values() {
+            outputs = outputs
+                .without_fact_delaying_normalization(fact, assumptions)
+                .ok_or("worker did not return its mutex use")?;
+        }
         // Compose only this worker's checked output delta into today's frame.
         // No saved parent memory, ledger, bindings or resource frame is restored.
         let resources = self
@@ -1113,7 +1121,7 @@ impl ThreadContext {
             .resources()
             .clone()
             .try_compose_into_valid_context_delaying_normalization(
-                completion.outputs.facts().iter().cloned(),
+                outputs.facts().iter().cloned(),
                 assumptions,
             )
             .map_err(|_| "worker outputs conflict with the current parent frame")?;
@@ -1157,7 +1165,7 @@ impl ThreadContext {
                 .as_ref()
                 .ok_or("worker join lost the parent's creation history")?;
             let mut worker_events = current.return_to(&creation.worker);
-            if let Some(deferred) = &creation.deferred {
+            for deferred in &creation.deferred {
                 let lent = worker_events
                     .transfer_call_fact(current, &creation.worker, &deferred.description, true)
                     .map_err(|_| "a locked worker's population authority is not in its mutex")?;
@@ -1195,7 +1203,7 @@ impl ThreadContext {
                     .parent
                     .clone()
                     .with_resource_context(recovery.resources.clone()),
-                completion.outputs.facts().iter(),
+                outputs.facts().iter(),
                 &creation.definitions,
                 assumptions,
             )

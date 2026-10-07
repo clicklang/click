@@ -103,16 +103,16 @@ fn expanded_loop_phase_proofs_are_certificates() {
 }
 
 #[test]
-fn nested_conjunction_extraction_precedes_explicit_checked_loop_proof() {
+fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let (click, sources) = loop_fixture("arithmetic_conjunction_provenance");
     let sources = borrowed_sources(&sources);
     let expanded = expand_c0_claim_source(&click, &sources, "drain", CProofClaim::Grouped)
         .expect("nested conjunction provenance should expand");
     assert!(expanded.contains("extract(n >= 0);"), "{expanded}");
-    assert!(
-        expanded.contains("apply(int32_positive_predecessor_is_nonnegative(n)) using"),
-        "{expanded}"
-    );
+    // The extracted conjunct spells the goal under a mirrored order, which
+    // the closers now accept, so the certificate needs no arithmetic step
+    // after the extraction.
+    assert!(!expanded.contains("arithmetic_certificate"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c0_sources(&expanded, &sources)
     });

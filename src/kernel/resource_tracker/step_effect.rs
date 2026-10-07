@@ -108,6 +108,8 @@ pub(in crate::kernel) enum BlockSeparation {
     /// is proven distinct from this one, so this block keeps its contents,
     /// extent, liveness and heap status.
     ReleaseOfDistinctBlock,
+    /// Initialization status was extended only in a different object.
+    InitializationOfDistinctBlock,
     /// Every range the call or loop declared it may write lies in an object
     /// proven distinct from this one, and so does everything else the step
     /// forgets on that account.
@@ -216,6 +218,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. } => SeparationCheck::PointerDistinctness,
         },
@@ -231,6 +234,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. }
             | CMemoryDerivation::HeapFreed { .. }
@@ -257,6 +261,7 @@ pub(in crate::kernel) fn separation_check(
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. }
             | CMemoryDerivation::LocalLifetimeEnded { .. }
             | CMemoryDerivation::CallHavoc { .. }
@@ -325,6 +330,7 @@ fn cell_effect(
         | CMemoryDerivation::HeapAllocationPending { .. }
         | CMemoryDerivation::HeapAllocationFailed { .. }
         | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | CMemoryDerivation::ObjectInitializationRecorded { .. }
         | CMemoryDerivation::CellsForgotten { .. } => {
             if extended_dag_bridging_active() {
                 hop(MemoryDagHopJustification::IntrinsicNoWrite)
@@ -883,6 +889,13 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
         // It writes no bytes, but the claims it moves are what authorize a
         // read, and the edge names no allocation they could belong to.
         CMemoryDerivation::ContractAllocationClaimsChanged { .. } => stops(None),
+        CMemoryDerivation::ObjectInitializationRecorded { pointer, .. } => {
+            // Initialization status changes only in this object's block.
+            one_object(
+                &pointer.block,
+                BlockSeparation::InitializationOfDistinctBlock,
+            )
+        }
         // The state is the same but the cell map is not, and the edge names no
         // cell, so nothing says the dropped values were not this block's.
         CMemoryDerivation::CellsForgotten { .. } => stops(None),
@@ -967,6 +980,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. }
     ) {
         return separate(FootprintSeparation::WritesNothing);
@@ -1067,6 +1081,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
         | CMemoryDerivation::HeapAllocationPending { .. }
         | CMemoryDerivation::HeapAllocationFailed { .. }
         | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | CMemoryDerivation::ObjectInitializationRecorded { .. }
         | CMemoryDerivation::CellsForgotten { .. } => separate(FootprintSeparation::WritesNothing),
     }
 }

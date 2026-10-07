@@ -1221,8 +1221,51 @@ impl<'a> Proof<'a> {
             ),
         }
         .map_err(|message| {
+            // The kernel proves each interface fact in each arm from facts
+            // that are already there, the fact's side conditions included.
+            // The arm's own check above does not ask for those, so a fact
+            // an arm proved can still be refused here. Say which fact, in
+            // which arm, and what that arm does not hold.
+            let missing = (message
+                == "an interface fact is not established by both concrete arms")
+                .then(crate::kernel::proof::take_unestablished_interface_goal)
+                .flatten()
+                .map(|missing| {
+                    let fact = assertions
+                        .iter()
+                        .filter_map(|assertion| match assertion {
+                            ProofAssertion::Fact(fact) => Some(fact),
+                            ProofAssertion::Resource(_) => None,
+                        })
+                        .nth(missing.fact)
+                        .map_or_else(String::new, |fact| {
+                            format!(
+                                " `{}`",
+                                crate::surface::diagnostics::describe_click_proposition(fact)
+                            )
+                        });
+                    let arm = match (rejoins_cases, missing.arm) {
+                        (true, 0) => "first",
+                        (true, _) => "second",
+                        (false, 0) => "then",
+                        (false, _) => "else",
+                    };
+                    let goal = crate::surface::diagnostics::describe_required_pure_fact(
+                        &missing.goal,
+                        context.parsed_function.parameters(),
+                        context.arguments,
+                    );
+                    if missing.side_condition {
+                        format!(
+                            ": the {arm} arm holds the interface fact{fact} but not what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
+                        )
+                    } else {
+                        format!(": the {arm} arm does not hold the interface fact{fact}")
+                    }
+                })
+                .unwrap_or_default();
             self.step_error(format!(
-                "kernel rejected the checked `ensuring` interface: {message}"
+                "kernel rejected the checked `ensuring` interface: {message}{missing}"
             ))
         })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
@@ -1659,7 +1702,24 @@ impl<'a> Proof<'a> {
                     provenance.call_routes.insert(0, arm_index == 0);
                 }
                 let mut path_facts = path.execution_facts();
-                for proposition in &arm.introduced_facts {
+                // A returned path of a summarized loop carries what the arm
+                // had established when its loop was summarized, not what the
+                // arm went on to establish on the continuing path.
+                let introduced = match arm
+                    .execution
+                    .core
+                    .pending_loop_return_pure_facts(arm_path_index)
+                {
+                    Some(returned_facts) => {
+                        returned_facts.introduced_since(parent_facts).ok_or_else(|| {
+                            self.step_error(
+                                "a loop's returned path does not descend from the branch root's facts",
+                            )
+                        })?
+                    }
+                    None => arm.introduced_facts.clone(),
+                };
+                for proposition in &introduced {
                     let fact = ExecutionPureFact::new(proposition.clone());
                     if !path_facts.contains(&fact) {
                         path_facts.push(fact);
@@ -1772,6 +1832,9 @@ impl<'a> Proof<'a> {
             execution: outcomes,
         };
         execution.core.execution_evidence = execution_evidence.into();
+        // Each arm's completed paths, the returned loop paths it retained
+        // among them, are in the joined set above.
+        execution.core.clear_pending_loop_returns();
         execution.core.loan_evidence = crate::kernel::empty_checked_loan_evidence_sequence();
         execution.core.evidence_completed = true;
         execution.core.evidence_state = None;

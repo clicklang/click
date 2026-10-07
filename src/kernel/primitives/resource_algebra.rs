@@ -2346,6 +2346,26 @@ impl ResourceContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// The memory facts based in `block`, from the block index: the `owns`
+    /// and `views` ranges a pointer formed in that block can lie in. Memory
+    /// in other blocks, composite, iterated, token and instance facts are
+    /// never visited. Charges one work unit per fact. For
+    /// `ExternalArgument`, the block every pointer parameter shares, this is
+    /// every parameter's range.
+    pub(in crate::kernel) fn memory_facts_in_block<'a>(
+        &'a self,
+        block: &PointerBlock,
+    ) -> impl Iterator<Item = &'a CResourceFact> + use<'a> {
+        self.storage
+            .index
+            .memory_by_block
+            .get(block)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| self.fact(*entry))
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
     /// The iterated guarded-ownership facts whose element or guard cells lie
     /// in `block`, from the block index. Charges one work unit per fact.
     pub(in crate::kernel) fn iterated_facts_in_block<'a>(
@@ -3171,6 +3191,7 @@ impl ResourceContext {
                 | CMemoryDerivation::HeapAllocationPending { .. }
                 | CMemoryDerivation::HeapAllocationFailed { .. }
                 | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+                | CMemoryDerivation::ObjectInitializationRecorded { .. }
                 | CMemoryDerivation::CellsForgotten { .. } => {}
             }
             let base = derivation.base().clone();
@@ -3230,6 +3251,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocated { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. } => false,
         };
         if ambiguous_event {
@@ -3355,6 +3377,7 @@ impl ResourceContext {
             | CMemoryDerivation::HeapAllocationPending { .. }
             | CMemoryDerivation::HeapAllocationFailed { .. }
             | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | CMemoryDerivation::ObjectInitializationRecorded { .. }
             | CMemoryDerivation::CellsForgotten { .. } => {}
         }
         entries

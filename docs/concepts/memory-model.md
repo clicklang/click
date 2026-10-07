@@ -56,6 +56,39 @@ for the proposition.
 For `int32**` and `uint8**`, pointer arithmetic advances by the eight-byte
 ABI width of each pointer-valued cell.
 
+Pointer arithmetic stays inside the pointed-to object (C11 6.5.6p8): the
+result must designate an element of the object or the position one past its
+end. For a block whose extent the kernel records, a local array or a heap
+allocation, the displacement is checked against that extent. For a block
+whose extent it does not record, which is every pointer parameter and every
+symbolic or loaded pointer, the ranges the state holds in that block are the
+extent it knows: forming `p + k` owes that the result lies within an `owns`
+or `views` range of the object, one-past end included, or inside a `viewable`
+extent. A range the facts exclude the result from drops out; when they
+exclude it from every held range the formation is refused as pointer
+arithmetic that left the object, and when one range is left undecided its
+bounds are owed as an obligation on the path where they fail; the normal path
+does not assume them. Only a range based in the pointer's own object judges
+it, so a range of `p` neither bounds nor refutes `q + i` under an alias
+`p == q`. Displacing by zero owes nothing, and
+a pointer whose object has no held range owes nothing at formation: the access
+through it is what is refused then. Element coordinates are compared with
+the range's own element width, so a byte pointer into an `int32` range is
+not bounded by that range.
+
+Pointers into distinct objects compare unequal under `==` and `!=`, with one
+exception. C11 6.5.9p6 lets a pointer one past the end of an object equal
+the start of a different object when the implementation happens to place
+the second directly after the first, and the kernel does not model object
+placement. A comparison in which one operand may be one past the end of its
+object and the other may be the start of a different object is therefore
+refused, naming the one-past-the-end operand, rather than decided; when the
+facts leave the configuration open, the path in which it holds is owed as a
+refused path beside the comparison. Two objects' starts, two pointers into one
+object, and comparisons with null are decided as before. The kernel's
+objects are nonempty, so a pointer at its object's start is never taken for
+its end.
+
 ## Byte view of integer cells
 
 Known cells are typed: a store of an `unsigned int` records one four-byte

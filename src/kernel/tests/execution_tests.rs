@@ -1587,6 +1587,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
         true,
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     );
     assert!(loop_rule.is_some());
     assert!(after_proof.paths().iter().all(|path| {
@@ -1620,6 +1621,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
         CExecutionEnvironment::new(),
         true,
         false,
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     );

@@ -95,6 +95,7 @@ kinds:
 | `LoopHavoc` | A loop may have changed memory; verified whole-loop effects carry a checked write set. |
 | `CallHavoc` | A call may have changed the callee's owned ranges, and none of the memory its caller kept owning. |
 | `BlockDeclared` | A new non-havoc block entered the memory model. |
+| `ObjectInitializationRecorded` | Initialized-byte metadata was extended after writes already recorded in the DAG. Stored values are unchanged. |
 | `CellsForgotten` | Possibly aliasing cached cells were discarded on a write path, or cells the loaded pointer is separate from were discarded on a read path. |
 | `HeapAllocationPending` | An allocation request has an unresolved base and extent but no successful storage yet. |
 | `HeapAllocated` | A fresh allocation identity and extent became live. |

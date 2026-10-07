@@ -373,6 +373,18 @@ restrictions as runtime typed use apply: unconditional leaf resources with
 fixed memory footprints. These transfers are synchronous and stay on the same
 thread. They do not permit moving pthread guard ownership to a worker.
 
+A worker created with `pthread_create` under `runtime "modeled-pthread"`
+receives its preserved `mutex_use` the same way, as a loan split from the
+parent's `mutex_live` or retained use share, so the parent keeps a retained
+share and may lock while the worker is pending. `pthread_join` returns only
+that loan: it ends the worker's scope, rejoins the shares, and restores the
+parent's source, `mutex_live` once the last worker has joined. The worker's
+preserved use fact is a loan of that source and is not composed into the
+parent's frame, so after join the parent holds exactly what it held before
+the create, and a plain lock, a further create, or destroy proceeds with no
+use fact left behind. `mdtests/modeled_pthread_lock_after_join.md` is the
+regression.
+
 A releasing helper can modify the payload and deposit a replacement instance.
 Its summary must forget earlier field and memory observations consistently
 with that mutation. Acquiring again does not recover an old value merely
@@ -532,6 +544,10 @@ The regressions are `authority_mutex_locked_workers.md`,
 `authority_mutex_locked_workers_stale_rejected.md`, and
 `authority_mutex_locked_workers_destroy_before_join_rejected.md`.
 
-A locked retain that creates a member unconditionally still needs a bound
-that rules out counter overflow under the fresh total; it and worker transfer
-are later work in `issues/authority-migration.md`.
+A locked helper may declare one member effect per population whose control it
+acquires, such as a retain that consumes a `permit(obj)` and produces a
+`reference(obj)`. A proof that holds only a typed `mutex_use` share may call a
+locked helper: the call enters the escrowed populations into that proof with
+fresh totals, as a lock would, and the proof's exit check compares its own
+declared change with what the calls changed. `examples/shared-refcount` uses
+both, with a stated cap on references that bounds the retain's increment.

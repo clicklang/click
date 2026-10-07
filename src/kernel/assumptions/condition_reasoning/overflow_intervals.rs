@@ -138,17 +138,6 @@ impl PureFactContext {
     ) -> Option<bool> {
         match condition {
             ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
-                // Negation (0 - x) overflows only at INT_MIN. Consult the
-                // equality decision so a recorded exclusion is sufficient,
-                // rather than requiring it to be stated as an order bound.
-                if left.as_ref() == &Bitvector32Term::Constant(0)
-                    && let Some(overflows) = self.decide(&ConditionTerm::equal(
-                        right.as_ref().clone(),
-                        Bitvector32Term::Constant(i32::MIN as u32),
-                    ))
-                {
-                    return Some(overflows);
-                }
                 if self.decide(&ConditionTerm::equal(
                     left.as_ref().clone(),
                     right.as_ref().clone(),
@@ -203,11 +192,19 @@ impl PureFactContext {
                 // recorded on the difference itself first; those bound its
                 // wrapped value, and a wrapped difference of `5` (from
                 // `INT_MIN - (INT_MAX - 4)`) says nothing about overflow.
-                self.signed_interval_from_operands(&Bitvector32Term::Subtract(
-                    Box::new(left),
-                    Box::new(right),
-                ))
-                .map(|_| false)
+                //
+                // Each operand's range is first moved past the values exact
+                // disequalities on it exclude. Unary minus lowers to `0 - x`,
+                // which overflows at exactly one value of `x`, so the one
+                // fact `x != INT_MIN` decides it: `x` then ranges over
+                // `[INT_MIN + 1, INT_MAX]` and the difference fits. Each
+                // exclusion step is one keyed disequality lookup on the
+                // operand, never a scan.
+                let (left_lower, left_upper) = self.signed_interval_past_exclusions(&left)?;
+                let (right_lower, right_upper) = self.signed_interval_past_exclusions(&right)?;
+                let lower = i128::from(left_lower) - i128::from(right_upper);
+                let upper = i128::from(left_upper) - i128::from(right_lower);
+                (i128::from(i32::MIN) <= lower && upper <= i128::from(i32::MAX)).then_some(false)
             }
             ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
                 if right.as_ref() == &Bitvector32Term::Constant(1) {
@@ -341,25 +338,72 @@ impl PureFactContext {
             ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right) => {
                 self.signed_multiplication_interval_nonoverflow(left, right)
             }
+            ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
+                if right.as_ref() == &Bitvector32Term::Constant((-1i32) as u32) =>
+            {
+                let int_min = Bitvector32Term::Constant(i32::MIN as u32);
+                let left = left.as_ref().clone();
+                self.decide(&ConditionTerm::equal(left, int_min))
+            }
+            ConditionTerm::Bitvector32SignedDivideOverflows(left, right)
+                if left.as_ref() == &Bitvector32Term::Constant(i32::MIN as u32) =>
+            {
+                let minus_one = Bitvector32Term::Constant((-1i32) as u32);
+                let right = right.as_ref().clone();
+                self.decide(&ConditionTerm::equal(right, minus_one))
+            }
+            ConditionTerm::Bitvector32SignedDivideOverflows(_, right) if matches!(right.as_ref(), Bitvector32Term::Constant(value) if *value != (-1i32) as u32) => {
+                Some(false)
+            }
+            ConditionTerm::Bitvector32SignedDivideOverflows(left, _) if matches!(left.as_ref(), Bitvector32Term::Constant(value) if *value != i32::MIN as u32) => {
+                Some(false)
+            }
             ConditionTerm::Bitvector32SignedDivideOverflows(left, right) => {
-                // The only overflowing pair is INT_MIN / -1, including when
-                // both operands are symbolic. Either exclusion suffices.
-                let left_is_min = self.decide(&ConditionTerm::equal(
-                    left.as_ref().clone(),
-                    Bitvector32Term::Constant(i32::MIN as u32),
-                ));
-                if left_is_min == Some(false) {
+                // Both operands are symbolic here; the arms above decide every
+                // constant operand. The zero divisor is split off before this
+                // condition is asked (`apply_c_int32_division_nonzero`), and the
+                // condition is exactly `left == INT_MIN && right == -1`
+                // (`ConditionTerm::signed_divide_overflows`), so, as the int64
+                // arm decides from intervals, a divisor range without `-1` or
+                // a dividend range without `INT_MIN` says the division does
+                // not overflow. The ranges are each operand's own, moved past
+                // the values its exact disequalities exclude, and a recorded
+                // `right != -1` or `left != INT_MIN` is then read directly:
+                // `-1` lies inside a divisor range and no endpoint walk reaches
+                // it. Every read is keyed on the operand asked about.
+                let int_min = i64::from(i32::MIN);
+                let full_range = (int_min, i64::from(i32::MAX));
+                let (dividend_lower, dividend_upper) = self
+                    .signed_interval_past_exclusions(left)
+                    .unwrap_or(full_range);
+                let (divisor_lower, divisor_upper) = self
+                    .signed_interval_past_exclusions(right)
+                    .unwrap_or(full_range);
+                if dividend_lower > int_min || divisor_lower > -1 || divisor_upper < -1 {
                     return Some(false);
                 }
-                let right_is_minus_one = self.decide(&ConditionTerm::equal(
-                    right.as_ref().clone(),
-                    Bitvector32Term::Constant((-1i32) as u32),
-                ));
-                match (left_is_min, right_is_minus_one) {
-                    (_, Some(false)) => Some(false),
-                    (Some(true), Some(true)) => Some(true),
-                    _ => None,
+                if dividend_lower == dividend_upper && divisor_lower == divisor_upper {
+                    // Both operands are the one overflowing pair.
+                    return Some(true);
                 }
+                let dividend_excluded = self.has_condition_fact(
+                    ConditionTerm::equal(
+                        left.as_ref().clone(),
+                        Bitvector32Term::Constant(i32::MIN as u32),
+                    ),
+                    false,
+                );
+                let divisor_excluded = self.has_condition_fact(
+                    ConditionTerm::equal(
+                        right.as_ref().clone(),
+                        Bitvector32Term::Constant((-1i32) as u32),
+                    ),
+                    false,
+                );
+                (dividend_excluded
+                    || divisor_excluded
+                    || self.divide_overflow_excluded_by_disjunction(left, right))
+                .then_some(false)
             }
             ConditionTerm::Bitvector32SignedShiftLeftOverflows(left, _)
                 if left.as_ref() == &Bitvector32Term::Constant(0) =>
@@ -432,6 +476,34 @@ impl PureFactContext {
             }
             _ => None,
         }
+    }
+
+    /// Whether an exact disjunction fact excludes the one operand pair at
+    /// which `left / right` overflows: `left != INT_MIN or right != -1`, in
+    /// either arm order, as `requires` and `have` record it (each arm a
+    /// disequality, the disjunction kept whole as a proposition fact). Two
+    /// keyed lookups in the proposition-fact set; no case split and no scan.
+    fn divide_overflow_excluded_by_disjunction(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        let dividend_differs = Proposition::ConditionIs(
+            ConditionTerm::equal(left.clone(), Bitvector32Term::Constant(i32::MIN as u32)),
+            false,
+        );
+        let divisor_differs = Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant((-1i32) as u32)),
+            false,
+        );
+        crate::instrumentation::record_deterministic_work(2);
+        self.contains_proposition_fact(&Proposition::Or(
+            Box::new(dividend_differs.clone()),
+            Box::new(divisor_differs.clone()),
+        )) || self.contains_proposition_fact(&Proposition::Or(
+            Box::new(divisor_differs),
+            Box::new(dividend_differs),
+        ))
     }
 
     pub(in crate::kernel) fn exact_signed_intervals_equal(
@@ -1139,34 +1211,104 @@ mod tests {
     use super::*;
 
     #[test]
-    fn int32_single_overflow_exclusions_use_the_matching_operand() {
-        let x = Bitvector32Term::Variable(Variable(97_101));
-        let y = Bitvector32Term::Variable(Variable(97_102));
-        let min = Bitvector32Term::Constant(i32::MIN as u32);
-        let minus_one = Bitvector32Term::Constant((-1i32) as u32);
-        let negate =
-            ConditionTerm::signed_subtract_overflows(Bitvector32Term::Constant(0), x.clone());
+    fn int32_division_overflow_is_decided_from_operand_intervals_and_disequalities() {
+        let x = Bitvector32Term::Variable(Variable(95_201));
+        let y = Bitvector32Term::Variable(Variable(95_202));
+        let constant = |value: i32| Bitvector32Term::Constant(value as u32);
         let divide = ConditionTerm::signed_divide_overflows(x.clone(), y.clone());
-        let unknown = PureFactContext::new();
-        assert_eq!(unknown.decide(&negate), None);
-        assert_eq!(unknown.decide(&divide), None);
-        let excluded_min = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(x.clone(), min.clone()), false);
-        assert_eq!(excluded_min.decide(&negate), Some(false));
-        assert_eq!(excluded_min.decide(&divide), Some(false));
-        let excluded_minus_one = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(y.clone(), minus_one.clone()), false);
-        assert_eq!(excluded_minus_one.decide(&divide), Some(false));
-        assert_eq!(excluded_minus_one.decide(&negate), None);
-        let wrong_operand = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(y.clone(), min.clone()), false);
-        assert_eq!(wrong_operand.decide(&negate), None);
-        assert_eq!(wrong_operand.decide(&divide), None);
-        let overflowing = unknown
-            .assume_condition(ConditionTerm::equal(x, min), true)
-            .assume_condition(ConditionTerm::equal(y, minus_one), true);
-        assert_eq!(overflowing.decide(&negate), Some(true));
-        assert_eq!(overflowing.decide(&divide), Some(true));
+        assert_eq!(PureFactContext::new().decide(&divide), None);
+        // `y != 0` alone leaves `INT_MIN / -1` open.
+        let nonzero = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(y.clone(), constant(0)), false);
+        assert_eq!(nonzero.decide(&divide), None);
+        // A divisor range without `-1`, on either side of it.
+        let positive = nonzero.clone().assume_condition(
+            ConditionTerm::signed_greater_than(y.clone(), constant(0)),
+            true,
+        );
+        assert_eq!(positive.decide(&divide), Some(false));
+        let below = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_than(y.clone(), constant(-1)),
+            true,
+        );
+        assert_eq!(below.decide(&divide), Some(false));
+        // A dividend range without `INT_MIN`.
+        let nonnegative = nonzero.clone().assume_condition(
+            ConditionTerm::signed_greater_equal(x.clone(), constant(0)),
+            true,
+        );
+        assert_eq!(nonnegative.decide(&divide), Some(false));
+        // A disequality on either operand's one overflowing value.
+        let not_minus_one = nonzero
+            .clone()
+            .assume_condition(ConditionTerm::equal(y.clone(), constant(-1)), false);
+        assert_eq!(not_minus_one.decide(&divide), Some(false));
+        let not_int_min = nonzero
+            .clone()
+            .assume_condition(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false);
+        assert_eq!(not_int_min.decide(&divide), Some(false));
+        // The exact exclusion as one disjunction, in either arm order.
+        let dividend_differs =
+            Proposition::ConditionIs(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false);
+        let divisor_differs =
+            Proposition::ConditionIs(ConditionTerm::equal(y.clone(), constant(-1)), false);
+        let either = nonzero.clone().assume_proposition(Proposition::Or(
+            Box::new(dividend_differs.clone()),
+            Box::new(divisor_differs.clone()),
+        ));
+        assert_eq!(either.decide(&divide), Some(false));
+        let either_reversed = nonzero.clone().assume_proposition(Proposition::Or(
+            Box::new(divisor_differs),
+            Box::new(dividend_differs),
+        ));
+        assert_eq!(either_reversed.decide(&divide), Some(false));
+        // A bound that keeps `-1`, or a disequality elsewhere, leaves it open.
+        let wide = nonzero.clone().assume_condition(
+            ConditionTerm::signed_less_equal(y.clone(), constant(5)),
+            true,
+        );
+        assert_eq!(wide.decide(&divide), None);
+        let other_value =
+            nonzero.assume_condition(ConditionTerm::equal(x.clone(), constant(7)), false);
+        assert_eq!(other_value.decide(&divide), None);
+        // The overflowing pair itself is never decided defined.
+        let exceptional = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(x.clone(), constant(i32::MIN)), true)
+            .assume_condition(ConditionTerm::equal(y, constant(-1)), true);
+        assert_ne!(exceptional.decide(&divide), Some(false));
+    }
+
+    #[test]
+    fn int32_negation_overflow_is_excluded_by_a_disequality_at_int_min() {
+        let x = Bitvector32Term::Variable(Variable(95_301));
+        let constant = |value: i32| Bitvector32Term::Constant(value as u32);
+        // Unary minus lowers to `0 - x`.
+        let negate = ConditionTerm::signed_subtract_overflows(constant(0), x.clone());
+        assert_eq!(PureFactContext::new().decide(&negate), None);
+        let excluded = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false);
+        assert_eq!(excluded.decide(&negate), Some(false));
+        let above = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_greater_than(x.clone(), constant(i32::MIN)),
+            true,
+        );
+        assert_eq!(above.decide(&negate), Some(false));
+        // Excluding another value leaves `INT_MIN` open.
+        let other_value = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(x.clone(), constant(0)), false);
+        assert_eq!(other_value.decide(&negate), None);
+        // The exclusion moves the operand's range by one, no further.
+        assert_eq!(
+            excluded.decide(&ConditionTerm::signed_subtract_overflows(
+                x.clone(),
+                constant(1)
+            )),
+            Some(false)
+        );
+        assert_eq!(
+            excluded.decide(&ConditionTerm::signed_subtract_overflows(x, constant(2))),
+            None
+        );
     }
 
     #[test]

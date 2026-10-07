@@ -222,10 +222,11 @@ impl<'a> Proof<'a> {
                 {
                     return Ok(recorded.clone());
                 }
-                // Resolve both introduced goal binders and proof locals such
-                // as obtained machine witnesses. The theorem's parameter
-                // values contain neither; select only names in this input.
-                let surface = &self.substitute_fixed_state_locals_in_proposition(surface)?;
+                // A pure goal's universal binders are named only by this
+                // goal's retained bindings, and an `obtain`ed machine value
+                // only by this proof's locals; the theorem's parameter
+                // values mention neither.
+                let surface = &self.substitute_pure_proof_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
@@ -418,7 +419,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Proposition, ClickError> {
         match self.context.as_ref() {
             ProofContext::Pure(context) => {
-                let surface = &self.substitute_fixed_state_locals_in_proposition(surface)?;
+                let surface = &self.substitute_pure_proof_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let algebraic_values = algebraic_values_for_surface_proposition(
                     surface,
@@ -591,7 +592,7 @@ impl<'a> Proof<'a> {
                 {
                     return Ok((recorded.clone(), None));
                 }
-                let surface = self.substitute_fixed_state_locals_in_proposition(surface)?;
+                let surface = self.substitute_pure_proof_locals_in_proposition(surface)?;
                 let empty_algebraic_values = BTreeMap::new();
                 let mut integer_values = context.theorem_context.integer_values.clone();
                 for (name, value) in self.local_integer_values().iter() {
@@ -814,6 +815,46 @@ impl<'a> Proof<'a> {
             self.step_error(format!(
                 "could not substitute proposition-goal binders: {message}"
             ))
+        })
+    }
+
+    /// The scope a pure proof step's proposition is read in: this goal's
+    /// retained logical binders first, then the proof locals of the scoped
+    /// proof, which is where `obtain (k: int32) { ... }` binds its witness
+    /// (an `Integer` or algebraic witness is reached through the local
+    /// Integer and algebraic value maps instead, and a binder that stands
+    /// for itself needs no substitution). A name bound by neither stays as
+    /// written, so the kernel lowering still reports it unbound.
+    /// Fixed-state proofs read their locals through
+    /// [`Self::substitute_fixed_state_locals_in_proposition`]; the pure
+    /// lowering resolves theorem parameters and declaration bindings itself.
+    pub(super) fn substitute_pure_proof_locals_in_proposition(
+        &self,
+        proposition: &ClickProposition,
+    ) -> Result<ClickProposition, ClickError> {
+        let surface_bindings = self
+            .proposition_obligation()
+            .map(|goal| &goal.surface_bindings);
+        let mut names = BTreeSet::new();
+        collect_click_proposition_referenced_names(proposition, &mut names);
+        let substitutions = names
+            .into_iter()
+            .filter_map(|name| {
+                surface_bindings
+                    .and_then(|bindings| bindings.get(&name))
+                    .or_else(|| self.local_binding(&name))
+                    .filter(|value| {
+                        !matches!(value, ContractExpression::Binding(bound) if *bound == name)
+                    })
+                    .cloned()
+                    .map(|value| (name, value))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if substitutions.is_empty() {
+            return Ok(proposition.clone());
+        }
+        substitute_click_proposition(proposition, &substitutions).map_err(|message| {
+            self.step_error(format!("could not substitute proof locals: {message}"))
         })
     }
 

@@ -6,10 +6,16 @@ the final cell. It intentionally does not prove permutation.
 
 The invariant depends on whether the swap ran, so the two arms of the C `if`
 cannot be joined keeping only what they agree on, which is all the automatic
-loop closer does at an `if`. The body is written as the two paths instead: a
-proof `if` on the C condition whose arms each run to the back edge and prove
-the invariant from what that arm did. Nothing is written after the `if`, so
-nothing is checked twice.
+loop closer does at an `if`. The body is written out, and its `branch` says
+what both arms establish: after the `if`, `p[j] <= p[j + 1]`, and every
+earlier cell is at most `p[j + 1]`. Each arm proves both from what it did,
+and the rest of the iteration is checked once on the path that leaves the
+`if`.
+
+Each arm also proves `defined(j + 1)`. An interface fact holds in an arm
+only together with what its terms need to denote a value, and `p[j + 1]`
+needs `j + 1` not to overflow
+([`an_interface_fact_needs_its_terms_defined_in_each_arm.md`](an_interface_fact_needs_its_terms_defined_in_each_arm.md)).
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -53,28 +59,30 @@ int32 bubble_pass3(int32 p[3]) {
             simp();
         }
         preserve by {
-            unfold(all_le_range);
-            if p[j + 1] < p[j] {
+            branch ensuring {
+                fact p[j] <= p[j + 1];
+                fact all_le_range(p, 0, j, p[j + 1]);
+            } then {
                 step();
                 step();
                 step();
-                step();
-                step();
-                have all_le_range(p, 0, j, p[j]) by {
+                have defined(j + 1) by { simp(); }
+                have p[j] <= p[j + 1] by { simp(); }
+                have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
                     simp();
                 }
-                close_invariants();
             } else {
-                step();
-                step();
-                step();
-                have all_le_range(p, 0, j, p[j]) by {
+                have defined(j + 1) by { simp(); }
+                have p[j] <= p[j + 1] by { simp(); }
+                have all_le_range(p, 0, j, p[j + 1]) by {
                     unfold(all_le_range);
                     simp();
                 }
-                close_invariants();
             }
+            step();
+            unfold(all_le_range);
+            close_invariants();
         }
         owns p[0..3];
     }

@@ -497,6 +497,63 @@ impl CLoopBreakExit {
     }
 }
 
+/// One certified body path that left the loop, and its function, through
+/// `return`.
+///
+/// A `return` inside a summarized body is a function exit, not a back edge:
+/// the invariants are not closed on it and no measure is required to
+/// decrease. The proof layer supplies the returned value, the state the path
+/// reached and the facts retained there; the loop rule exports the path as a
+/// `Return` outcome of the loop statement, so the enclosing execution
+/// certifies the postcondition and the resource obligations on exactly that
+/// value and state instead of dropping the path. It is never offered to the
+/// loop guard: a guard that is never false, a natural cycle's `while (1)`,
+/// would otherwise swallow it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CLoopReturnExit {
+    value: CValue,
+    state: CState,
+    /// A checked exit is copied into the loop rule; its facts stay shared.
+    pure_facts: std::sync::Arc<[Proposition]>,
+    loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+}
+
+impl CLoopReturnExit {
+    pub(crate) fn new(value: CValue, state: CState, pure_facts: Vec<Proposition>) -> Self {
+        crate::instrumentation::record_deterministic_work(pure_facts.len());
+        Self {
+            value,
+            state,
+            pure_facts: pure_facts.into(),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+
+    pub(crate) fn with_loan_evidence(
+        mut self,
+        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    ) -> Self {
+        self.loan_evidence = loan_evidence;
+        self
+    }
+
+    pub(crate) fn value(&self) -> &CValue {
+        &self.value
+    }
+
+    pub(crate) fn state(&self) -> &CState {
+        &self.state
+    }
+
+    pub(crate) fn pure_facts(&self) -> &[Proposition] {
+        &self.pure_facts
+    }
+
+    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
+        &self.loan_evidence
+    }
+}
+
 #[cfg(test)]
 mod loop_exit_sharing_tests {
     use super::*;
@@ -1247,6 +1304,35 @@ fn abstract_c_state_for_join_across_with_policy(
             crate::instrumentation::record_deterministic_work(1);
             collect_c_value_bitvector_variables(value, &mut existing_variables);
         }
+    }
+    // The interface join takes that rule on trust. Debug builds, which
+    // the gate runs, check it: no identity an arm holds from the execution's
+    // range may lie at or above the mark the join counts from. A stale mark
+    // is how a join hands a fresh local an identity already in use; a loop
+    // tactic that did not move its proof's counter past its rule's
+    // identities did exactly that.
+    #[cfg(debug_assertions)]
+    if preserve_exact_common_memory {
+        crate::instrumentation::uncharged_debug_check(|| {
+            let mut held = BTreeSet::new();
+            for sibling in sibling_states {
+                collect_c_state_bitvector_variables(sibling, &mut held);
+            }
+            for value in stable_entry_locals.values() {
+                collect_c_value_bitvector_variables(value, &mut held);
+            }
+            let mark = ExecutionBudget::KERNEL_VARIABLE_BASE + next_kernel_variable;
+            let stale = held
+                .iter()
+                .filter(|variable| {
+                    variable.0 >= mark && variable.0 < ExecutionBudget::KERNEL_VARIABLE_CEILING
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                stale.is_empty(),
+                "an interface join counts fresh identities from {mark}, but its arms already hold {stale:?}"
+            );
+        });
     }
     // The abstraction allocates through an execution budget, which is the one
     // counter every kernel allocation under this execution uses. Starting it
@@ -2622,6 +2708,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         }
         ExecutionLimit::ResourceCountPendingWorker => {
             "count(...) requires joining its outstanding worker".to_string()
+        }
+        ExecutionLimit::ResourceCountPossiblyAliased => {
+            "count(...) of a population that may alias another tracked population of its family; state whether their arguments are equal or different".to_string()
         }
         ExecutionLimit::AuthorityCountNeedsExactPointer => {
             "authority-mode count(...) needs one exact base pointer".to_string()
@@ -4235,6 +4324,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
     preservation_proven: bool,
     final_exit_candidates: Vec<CLoopFinalExitCandidate>,
     break_exits: Vec<CLoopBreakExit>,
+    return_exits: Vec<CLoopReturnExit>,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
     let mut budget =
         ExecutionBudget::for_new_execution().with_c_statement_verification_cost(&statement);
@@ -4247,6 +4337,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
         preservation_proven,
         final_exit_candidates,
         break_exits,
+        return_exits,
         &mut budget,
     )
 }
@@ -4260,6 +4351,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
     preservation_proven: bool,
     final_exit_candidates: Vec<CLoopFinalExitCandidate>,
     break_exits: Vec<CLoopBreakExit>,
+    return_exits: Vec<CLoopReturnExit>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
     let CStatement::While {
@@ -4303,6 +4395,7 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
         preservation_proven,
         &final_exit_candidates,
         &break_exits,
+        &return_exits,
         budget,
         &mut variables,
         *do_while,
@@ -4337,11 +4430,18 @@ fn symbolic_c_statement_execution_with_loop_rule(
     paths: Vec<CStatementExecutionPath>,
     environment: &CExecutionEnvironment,
 ) -> (SymbolicCExecution, Option<CVerifiedLoopRule>) {
+    // A rule's paths are the loop statement's successors: the joined exit,
+    // a proven-divergent loop, and each `return` the body reaches. A returned
+    // path leaves the function from inside the loop; the rule carries it so
+    // the enclosing execution continues with it as a returned path instead of
+    // certifying the function on the exit path alone.
     let loop_rule = (matches!(statement, CStatement::While { .. })
         && paths.iter().all(|path| {
             matches!(
                 path.outcome,
-                CStatementOutcome::Normal(_) | CStatementOutcome::VerificationDiverges
+                CStatementOutcome::Normal(_)
+                    | CStatementOutcome::Return { .. }
+                    | CStatementOutcome::VerificationDiverges
             ) && path.obligations.iter().all(ProofObligation::is_assumable)
         }))
     .then(|| CVerifiedLoopRule {

@@ -850,9 +850,6 @@ impl ProofFacts {
     /// retained proof step before a later assumption may consume it.
     pub(crate) fn pure_assumption_available(&self, required: &Proposition) -> bool {
         self.materialization_available(required)
-            || condition_polarity_forms(required)
-                .iter()
-                .any(|form| self.exact.contains(form))
             || self.integer_alpha_fact_available(required)
             || self.quantified_fact_available(required)
     }

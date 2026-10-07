@@ -43,6 +43,10 @@ impl CppType {
 }
 
 impl CppSpan {
+    pub(super) fn validate_in(&self, sources: &BTreeSet<String>) -> Result<(), String> {
+        self.check_source(sources.contains(&self.file))
+    }
+
     pub(super) fn validate(&self, logical_source: &str) -> Result<(), String> {
         self.check_source(self.file == logical_source)
     }

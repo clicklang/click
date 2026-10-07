@@ -578,3 +578,54 @@ joint-bound profile remains a regression. The next integration slice is the
 unchanged `CFeeRate::GetFee` wrapper: inherited `FeePerVSize` field access,
 empty-rate behavior and its negative-fee minimum correction require their own
 contracts before composing these rounding proofs.
+
+
+## CFeeRate wrapper preparation
+
+The selected unchanged `CFeeRate::GetFee` implementation adds encapsulation,
+header-declared records, nested field access and inherited `FeePerVSize`
+receivers to the existing rounding proof. The first prerequisite now supports
+named standard-layout classes with the same signed scalar/pointer fields as
+structs. Private, protected and default-private fields retain Clang-resolved
+declaration identities, offsets and sizes. Clang checks source access control;
+proof sidecars use the ordinary field views and ownership required by the
+shared C memory model. Const reads do not grant write authority.
+
+The [`class-record` fixture](../../tests/fixtures/cpp-verification/class-record/class_record.cpp)
+checks const readers, mutable field updates, frames, expansion/reverification
+and retained verification. Hostile claims, omitted authority and writes through
+views are rejected, as are illegal C++ client access, unions, mixed-access
+non-standard layouts, inheritance and bit-fields.
+
+The pinned `CFeeRate::GetFee` import remains an explicit refusal regression:
+its nested `FeePerVSize` field in `policy/feerate.h` remains outside the scalar
+record-field profile. Header-declared records are now supported through the
+explicitly locked dependency mechanism described below. The exporter reports
+the actual header location and writes no partial artifact. Nested record places
+and inherited base-subobject authority are the next prerequisites; `GetFee`
+itself is not yet verified. Its empty-rate branch and negative-fee minimum
+correction will need contracts of their own when composing the Up proof.
+
+
+## Record declarations in locked headers
+
+The [`header-record` fixture](../../tests/fixtures/cpp-verification/header-record/header_record.cpp)
+keeps a class declaration in `state.h` and const/mutable method definitions in
+the selected `.cpp` source. Clang-resolved record and field declarations retain
+the header's relative path and source spans, alongside exact declaration IDs
+and physical layouts. The same declaration-source mechanism serves existing
+scalar aliases; every discovered header must match an explicitly configured,
+locked dependency. A field declaration must share its record's source.
+
+Function bodies and member-use spans remain in the selected source. This
+profile does not admit a cross-header function graph or import unrelated
+record declarations. Views and ownership, const receiver rules and the shared
+C memory model remain unchanged. Const reads and mutable updates verify
+offline after removing the exporter, including expansion/reverification and
+retained verification.
+
+Regressions reject missing header dependencies, changed locked header bytes,
+forged or mismatched record/field source spans, and executable spans relabeled
+as header declarations. Semantic validation is checked even when artifact
+file digests are recomputed. Deterministic inventory regressions cover both
+selected-source and header origins without expanding work limits.

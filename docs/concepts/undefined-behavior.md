@@ -39,15 +39,52 @@ Click currently models obligations for cases such as:
 - invalid shift counts,
 - invalid signed left shifts,
 - out-of-bounds memory access,
+- pointer arithmetic that leaves the pointed-to object, or an object whose
+  extent is known only through the ranges the state holds,
 - reads of uninitialized automatic storage,
 - loads, stores, and pointer operations through a freed allocation.
 
 The C0 subset reference has the full current list.
 
-For `int32` negation, `requires x != -2147483647 - 1` excludes the only
-overflowing value, `INT_MIN`. For `x / y` or `x % y`, excluding either
-`x == INT_MIN` or `y == -1` rules out signed overflow; the divisor must
-also be nonzero. See the [operand-exclusion regression](https://github.com/clicklang/click/blob/master/mdtests/int32_single_overflow_exclusions.md).
+## Pointer arithmetic stays inside the object
+
+C11 6.5.6p8 defines `p + k` only when the result points at an element of the
+array object `p` points into or one past its end. For a local array or a heap
+allocation Click checks the displacement against the object's size. A pointer
+parameter, or any symbolic or loaded pointer, has no recorded size; the
+`owns`, `views`, and `viewable` ranges the function holds for it are the only
+extent Click knows, so the result must lie in one of them, its one-past end
+included:
+
+<!-- verified-example: mdtests/pointer_arithmetic_past_a_viewed_range_is_refused.md -->
+```c
+int32 *q = p + 1000;
+```
+
+is refused under `views p[0..4]` as `pointer arithmetic left the pointed-to
+object`, while `p + 4`, `p + 0`, and `p + i` under
+`requires 0 <= i and i <= 4` verify
+(`mdtests/pointer_arithmetic_within_a_viewed_range_is_accepted.md`). When the
+facts leave the bound open, the formation owes it as an obligation, the way a
+local array's bound is owed. A pointer whose object has no held range owes
+nothing at formation; the access through it is what is refused.
+
+Equality across objects is decided from the objects alone, except for the
+one configuration C leaves to object placement: a pointer one past the end of
+one object compared with the start of another (C11 6.5.9p6). That comparison
+is refused, naming the one-past-the-end operand, rather than answered:
+
+<!-- verified-example: mdtests/a_one_past_the_end_pointer_is_not_compared_with_another_object.md -->
+```c
+int32 a[2];
+int32 b[2];
+return (a + 2) != b;
+```
+
+Comparing the starts of two objects, two pointers into one object, or a
+pointer with null is unaffected
+(`mdtests/pointers_into_distinct_objects_compare_unequal.md`). See the
+memory model's [Blocks and pointers](memory-model.md#blocks-and-pointers).
 
 ## Freed pointers are indeterminate
 
@@ -128,6 +165,8 @@ needs a safety fact:
 - division needs nonzero divisors,
 - shifts need valid counts and representable results,
 - memory access needs viewable ranges and index bounds.
+- pointer arithmetic on a parameter needs the result inside a held `owns`,
+  `views`, or `viewable` range, its one-past end included.
 - local reads need an assignment on every path that reaches them.
 - pointer comparisons, differences, truth tests, and integer conversions need
   the pointer's allocation to still be live.

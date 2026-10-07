@@ -198,7 +198,18 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                 arguments,
                 &abstract_state,
                 concrete_facts.assumptions(),
-            )?;
+            )
+            .map_err(|_| {
+                // The clause was read in this arm's own state above, so what
+                // fails here is reading it in the state the arms join in. A
+                // known cause is an argument that reads memory through a
+                // pointer bound from a model rather than through a C
+                // variable (`mdtests/an_interface_resource_argument_must_read_in_the_joined_state.md`).
+                ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: the `ensuring` interface names `{}`, which each arm holds, but its arguments cannot be read in the state the arms join in. A known cause is an argument that reads memory through a pointer bound from a model, such as a `match` binder, instead of through a C variable. Name the pointer by the C expression that holds it, or fold the resource that owns it inside each arm and name that owner in `ensuring` instead",
+                    crate::surface::validation::describe_resource_clause(resource),
+                ))
+            })?;
             exported_resources = exported_resources.unchecked_with_fact(fact);
             append_lowered_resource_clause_loadable_fact(
                 resource,
@@ -1932,6 +1943,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                     execution.core.loan_evidence().clone(),
                 ));
             }
+            append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             *available_pure_facts = transition.pure_facts.clone();
             let completed =
                 crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
@@ -2445,6 +2457,35 @@ fn execute_step_from_frontier_position_selecting_path(
                 .map_err(|message| ClickError::new(format!("{transition_label}: {message}")))?;
         }
     }
+    // A summarized loop whose body may `return` has one continuing successor,
+    // the join of its guard-false and `break` exits, and one terminal
+    // successor per returned path. The step follows the continuing one; each
+    // returned path is retained as an already-completed path of this
+    // execution and joins the function's exit paths at the boundary, where
+    // its postcondition and resource obligations are checked on the value
+    // and state it returned. A loop whose every successor returns completes
+    // the frontier below like any other terminal operation.
+    let mut loop_return_transitions = Vec::new();
+    if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
+        && transitions.len() > 1
+        && transitions
+            .iter()
+            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .count()
+            == 1
+        && transitions.iter().all(|transition| {
+            matches!(
+                transition.outcome,
+                CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+            )
+        })
+    {
+        let (returned, continuing): (Vec<_>, Vec<_>) = transitions
+            .into_iter()
+            .partition(|transition| matches!(transition.outcome, CStatementOutcome::Return { .. }));
+        transitions = continuing;
+        loop_return_transitions = returned;
+    }
     if transitions.len() > 1
         && transitions.iter().all(|transition| {
             matches!(
@@ -2504,6 +2545,17 @@ fn execute_step_from_frontier_position_selecting_path(
                 .presentation
                 .record_generated_load_bindings(&transition.generated_load_bindings);
         }
+        // A loop whose every successor returns leaves no continuing state
+        // to record its exit at; one returned state binds the iteration
+        // identities every returned path's facts are stated over.
+        let loop_return_exit_state = loop_index.and_then(|_| {
+            transitions
+                .iter()
+                .find_map(|transition| match &transition.outcome {
+                    CStatementOutcome::Return { state, .. } => Some((**state).clone()),
+                    _ => None,
+                })
+        });
         let mut completed_outcomes = Vec::new();
         for transition in transitions {
             let return_assumptions = assumptions_from_propositions(&transition.pure_facts);
@@ -2536,6 +2588,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 ));
             }
         }
+        append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut CState = &mut execution.core.state;
         let completed =
             crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
@@ -2545,6 +2598,19 @@ fn execute_step_from_frontier_position_selecting_path(
                 completed_outcomes,
             );
         execution.presentation.call_outcome_edges = call_outcome_edges;
+        if let (Some(loop_index), Some(exit_state)) = (loop_index, loop_return_exit_state) {
+            record_loop_program_snapshot_state(
+                &mut execution.presentation.recorded_snapshots,
+                function_block,
+                loop_index,
+                ProgramPointKind::Exit,
+                exit_state,
+            );
+            execution.presentation.surface_record.last_step_entry = Some(ProgramPointRef {
+                region: CodeRegionRef::Loop(loop_index),
+                kind: ProgramPointKind::Exit,
+            });
+        }
         let execution_state = execution_start_state.clone();
         set_function_exit_execution(
             &mut execution.core.frontier,
@@ -2759,6 +2825,9 @@ fn execute_step_from_frontier_position_selecting_path(
         .record_generated_load_bindings(&transition.generated_load_bindings);
     let generated_load_source_events = transition.generated_load_source_events.clone();
     let mut introduced_facts = transition.introduced_facts.clone();
+    // The returned paths fork from the trace as it is before the loop's
+    // continuing theorem is recorded on it.
+    let loop_return_parent = (!loop_return_transitions.is_empty()).then(|| execution.core.clone());
     if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
         && let Some(loop_index) = loop_index
         && matches!(transition.outcome, CStatementOutcome::Normal(_))
@@ -2792,6 +2861,55 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_evidence_refusal(&refusal, parameters, arguments)
             ))
         })?;
+    if let Some(parent) = loop_return_parent {
+        for returned in loop_return_transitions {
+            // The path's fact base: what was available at the loop, plus what
+            // the returned path itself states. Nothing the continuing path
+            // establishes after the loop is cited on it.
+            let mut returned_facts = ProofFacts::from_ordered(available_pure_facts);
+            for fact in returned.pure_facts.iter() {
+                if !returned_facts.contains(fact) {
+                    returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
+                }
+            }
+            let (outcome, obligations) = crate::kernel::c_function_outcome_from_statement_outcome(
+                &execution_start_state,
+                function,
+                returned.outcome.clone(),
+                returned.obligations.clone(),
+                returned_facts.assumptions(),
+            );
+            let mut completed_execution_facts = returned.execution_facts.clone();
+            append_execution_effect_facts(&mut completed_execution_facts, &parent.effect_facts);
+            let loan_evidence = crate::kernel::concat_checked_loan_evidence(
+                parent.loan_evidence(),
+                &returned.loan_evidence,
+            );
+            execution
+                .core
+                .record_pending_loop_return(
+                    &parent,
+                    function,
+                    arguments,
+                    &returned.theorem,
+                    &returned.context,
+                    &returned.execution_facts,
+                    &returned.obligations,
+                    outcome,
+                    completed_execution_facts,
+                    obligations,
+                    returned_facts,
+                    loan_evidence,
+                    loop_index,
+                )
+                .map_err(|refusal| {
+                    ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: `{tactic_name}` recorded a loop's returned path the proof object rejected: {}",
+                        describe_evidence_refusal(&refusal, parameters, arguments)
+                    ))
+                })?;
+        }
+    }
     // A direct memory-snapshot transport needs no surface `transport`
     // tactic, but its target still needs a stable source form for a
     // later proof step. Record that form during both planning and
@@ -3090,6 +3208,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         execution.core.loan_evidence().clone(),
                     ));
                 }
+                append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
                 let completed =
                     crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
                         execution_start_state.clone(),
@@ -3097,6 +3216,28 @@ fn execute_step_from_frontier_position_selecting_path(
                         arguments.to_vec(),
                         completed_outcomes,
                     );
+                // The returning statement's own successor facts are this
+                // path's, exactly as a continuing statement's are: a loop
+                // rule's `Return` path states the conditions the body took
+                // on the way to its `return` (`flag == 0` for a body that
+                // returns under `if (flag == 0)`), and the proof that closes
+                // the postcondition on the returned value folds through them
+                // only when they are its facts, not merely the candidate's.
+                // A plain `return x;` adds nothing here and loses nothing.
+                *available_pure_facts = successor_pure_facts;
+                if let Some(loop_index) = loop_index
+                    && matches!(outcome, CStatementOutcome::Return { .. })
+                {
+                    // Those facts are stated over the loop's iteration
+                    // identities. The loop's exit snapshot, recorded above
+                    // from this returned state, binds them; the statement's
+                    // entry snapshot, where premises are otherwise read,
+                    // predates the head's havoc and cannot spell them.
+                    execution.presentation.surface_record.last_step_entry = Some(ProgramPointRef {
+                        region: CodeRegionRef::Loop(loop_index),
+                        kind: ProgramPointKind::Exit,
+                    });
+                }
                 let execution_state = execution_start_state.clone();
                 set_function_exit_execution(
                     &mut execution.core.frontier,
@@ -3185,12 +3326,13 @@ fn execute_step_from_frontier_position_selecting_path(
                 &mut completed_execution_facts,
                 &execution.core.effect_facts,
             );
-            let completed_outcomes = vec![(
+            let mut completed_outcomes = vec![(
                 CFunctionOutcome::VerificationDiverges,
                 completed_execution_facts,
                 transition_obligations,
                 execution.core.loan_evidence().clone(),
             )];
+            append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             let completed =
                 crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
                     execution_start_state.clone(),
@@ -3525,6 +3667,29 @@ pub(super) fn sequence_from_statements(statements: &[CStatement]) -> Option<CSta
         level = next_level;
     }
     level.pop()
+}
+
+/// Appends the returned paths of summarized loops this execution retained to
+/// the outcomes it completes with. Each was certified where its loop was
+/// summarized; the function boundary is where it rejoins the path set, in
+/// the order the proof object appends their traces.
+fn append_pending_loop_returns(
+    core: &mut crate::kernel::proof::ExecutionProofCore,
+    completed_outcomes: &mut Vec<(
+        CFunctionOutcome,
+        Vec<ExecutionPureFact>,
+        Vec<ProofObligation>,
+        crate::kernel::CheckedLoanCallEvidenceSequence,
+    )>,
+) {
+    for pending in core.complete_pending_loop_returns() {
+        completed_outcomes.push((
+            pending.outcome,
+            pending.execution_facts,
+            pending.obligations,
+            pending.loan_evidence,
+        ));
+    }
 }
 
 fn set_function_exit_execution(

@@ -675,7 +675,7 @@ private:
       llvm::json::Object source_alias;
       source_alias["declaration_id"] = declaration_id(alias_declaration);
       source_alias["name"] = alias_declaration->getNameAsString();
-      source_alias["span"] = alias_span(alias_declaration->getSourceRange());
+      source_alias["span"] = declaration_span(alias_declaration->getSourceRange());
       if (!state_.error.empty()) {
         return std::nullopt;
       }
@@ -2626,14 +2626,15 @@ private:
            "C++ class template instances are unsupported");
       return false;
     }
-    if (!record->isStruct() || record->getName().empty()) {
+    if ((!record->isStruct() && !record->isClass()) || record->getName().empty()) {
       fail(record->getLocation(),
-           "the supported C++ record must be a named struct");
+           "the supported C++ record must be a named struct or class");
       return false;
     }
-    if (!is_in_logical_source(record->getLocation())) {
+    if (!is_in_logical_source(record->getLocation()) &&
+        !dependency_source(record->getLocation())) {
       fail(record->getLocation(),
-           "the supported C++ record must be declared in the selected file");
+           "the supported C++ record must be declared within the import root");
       return false;
     }
     if (!record->isStandardLayout() || record->getNumBases() != 0) {
@@ -2670,13 +2671,15 @@ private:
           !pointer->getPointeeType().hasQualifiers() &&
           context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
                                context_.IntTy);
-      if (field->getAccess() != clang::AS_public || field->isBitField() ||
+      // Access control is checked by Clang at each source use. It does not
+      // change the layout or memory authority of a resolved data field.
+      if (field->isBitField() ||
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
           (!mutable_int && !mutable_int_pointer)) {
         fail(
             field->getLocation(),
-            "the supported C++ record fields must be named public mutable int, "
+            "the supported C++ record fields must be named mutable int, "
             "signed 64-bit integer, or mutable int* fields without bit-fields");
         return false;
       }
@@ -2811,7 +2814,7 @@ private:
       lowered["value_type"] = std::move(*value_type);
       lowered["offset_bytes"] = static_cast<std::int64_t>(bit_offset / 8);
       lowered["size_bytes"] = static_cast<std::int64_t>(field_size);
-      lowered["span"] = span(field->getSourceRange());
+      lowered["span"] = declaration_span(field->getSourceRange());
       fields.push_back(std::move(lowered));
     }
     llvm::json::Object result;
@@ -2837,7 +2840,7 @@ private:
     } else {
       result["destructor"] = nullptr;
     }
-    result["span"] = span(record->getSourceRange());
+    result["span"] = declaration_span(record->getSourceRange());
     if (!state_.error.empty()) {
       return std::nullopt;
     }
@@ -3129,7 +3132,7 @@ private:
     return Json(std::move(result));
   }
 
-  Json alias_span(clang::SourceRange range) {
+  Json declaration_span(clang::SourceRange range) {
     clang::SourceLocation begin =
         source_manager_.getSpellingLoc(range.getBegin());
     clang::SourceLocation end = source_manager_.getSpellingLoc(range.getEnd());
@@ -3140,7 +3143,7 @@ private:
     auto end_dependency = dependency_source(end);
     if (!dependency || !end_dependency || *dependency != *end_dependency) {
       fail(begin,
-           "reachable C++ alias declarations must stay within one declared dependency source");
+           "reachable C++ declarations must stay within one declared dependency source");
       return Json(nullptr);
     }
     clang::SourceLocation after = clang::Lexer::getLocForEndOfToken(
@@ -3225,10 +3228,16 @@ private:
       return;
     }
     if (location.isValid()) {
+      const clang::SourceLocation diagnostic_location =
+          source_manager_.getExpansionLoc(location);
       const clang::PresumedLoc presumed =
-          source_manager_.getPresumedLoc(location);
+          source_manager_.getPresumedLoc(diagnostic_location);
       if (presumed.isValid()) {
-        state_.error = logical_source_ + ":" +
+        const std::string source = is_in_logical_source(diagnostic_location)
+                                       ? logical_source_
+                                       : dependency_source(diagnostic_location).value_or(
+                                             presumed.getFilename());
+        state_.error = source + ":" +
                        std::to_string(presumed.getLine()) + ":" +
                        std::to_string(presumed.getColumn()) +
                        ": error: " + std::move(message);

@@ -217,6 +217,7 @@ established.
 | `HeapAllocationPending` | separate under the extended-bridging gate | separate: a request with no address yet records nothing a read of a block consults | separate: it writes nothing |
 | `ContractAllocationClaimsChanged` | separate under the extended-bridging gate | **stops** | separate: it writes nothing |
 | `ContractAllocationRetired` | separate when the possibly released allocation misses the cell, or, on every path including naming, when the retiring call's own havoc covers the whole allocation | separate when the allocation's object is proven distinct | separate when its bytes miss every range |
+| `ObjectInitializationRecorded` | separate under the extended-bridging gate: it records metadata without writing bytes | separate when the initialized object is proven distinct; stops on that object because its initialization status changed | separate: it writes nothing |
 | `CellsForgotten` | separate under the extended-bridging gate | **stops**: the state is the same, the cell map is not | separate: it writes nothing |
 | `HeapAllocated` | separate under the extended-bridging gate when the block differs | separate when the fresh object is proven distinct | separate: a stated footprint names objects that already existed, so the fresh one's bytes are in no range of it |
 | `LocalLifetimeEnded` | separate under the extended-bridging gate, on general distinctness | separate when the retired object is proven distinct | separate when the retired object is proven distinct from the object every range is in |
