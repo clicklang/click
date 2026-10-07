@@ -70,6 +70,12 @@ The claim form expands every smart tactic in one named function claim and is
 useful when aggregate smart work matters even though no individual site is
 slow.
 
+Generated execution arms may retain logical proof operations after their last
+C step, such as unfolding a predicate on the returned state. Their checked
+entry and join still require the C path to finish; a logical operation cannot
+replace a missing C transition. `mdtests/sort3_sorted.md` covers whole-claim
+expansion with predicate unfolds after execution.
+
 Selection never changes how tactics are numbered: `click profile`, `click
 audit`, and tactic timing keep their flat per-claim source indices, and a
 tactic inside a `have` body is addressed by its enclosing `have`'s index plus

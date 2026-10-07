@@ -1,4 +1,4 @@
-# Whole-claim expansion fails on counted populations, a loop `branch`, `sort3` and `__rb_insert`
+# Whole-claim expansion fails on counted populations, a loop `branch` and `__rb_insert`
 
 ## Violated invariant
 
@@ -13,7 +13,7 @@ expanding each of the claim's smart sites by location
 ## Reproduction
 
 A whole-repository audit found 44 claims whose whole-claim expansion failed.
-Thirty-two have been fixed. These twelve remain; each verifies, and each fails
+Thirty-three have been fixed. These eleven remain; each verifies, and each fails
 with "expanded proof did not verify":
 
 ```sh
@@ -27,7 +27,6 @@ click expand --claim run.contract mdtests/modeled_pthread_counted_shared_retaine
 click expand --claim run.contract mdtests/modeled_pthread_counted_shared_symbolic.md
 click expand --claim run.contract mdtests/modeled_pthread_retire_after_join.md
 click expand --claim chain_countdown.contract mdtests/loop_preserve_branch_tactic.md
-click expand --claim sort3.sorted mdtests/sort3_sorted.md
 click expand --claim __rb_insert.contract examples/rbtree-insert/rbtree_insert.click
 ```
 
@@ -66,11 +65,6 @@ the expanded form does not hand each arm its own outcome.
 `chain_countdown` fails with "cannot fold or unfold resource `chain`: matched
 field `model` has no known constructor".
 
-### `sort3.sorted`
-
-Reports "expanded execution then arm does not end in a checked C step". It has
-no `branch` tactic.
-
 ### `__rb_insert`
 
 In the `Color::Red` arm of the match that starts at `match c.model` (source
@@ -107,6 +101,11 @@ Causes found with these reproductions and fixed, with regression tests in
 - after a C `if` with one reachable arm, the continuation's first statement
   was entered without recording its entry point, so the expanded branch that
   followed could not name it.
+- `sort3.sorted` ended generated execution arms with predicate unfolds after
+  their terminal C steps. A syntactic last-tactic restriction refused these
+  arms even though their checked entry and join validated the complete C path.
+  The expansion now cold rechecks, while missing C steps and false contracts
+  remain rejected.
 
 ## Effect on the audit
 

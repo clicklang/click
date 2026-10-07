@@ -2193,6 +2193,35 @@ int32 early(int32 x) {
 }
 
 #[test]
+fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
+    let (click, sources) = mdtest_sources("mdtests/sort3_sorted.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&click, &sources).expect("the original sorting proof verifies");
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "sort3.sorted")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("unfold(sorted_range);"), "{expanded}");
+    let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
+        verify_c0_sources(&expanded, &sources)
+    });
+    result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+    assert_eq!(
+        planning, 0,
+        "the expansion must cold recheck without planning"
+    );
+    let last_step = expanded.rfind("step();").expect("expanded C return step");
+    let mut incomplete = expanded.clone();
+    incomplete.replace_range(last_step..last_step + "step();".len(), "");
+    verify_c0_sources(&incomplete, &sources)
+        .expect_err("logical steps cannot replace an omitted C transition");
+    let false_contract = expanded.replace("p[i] <= p[j]", "p[i] > p[j]");
+    verify_c0_sources(&false_contract, &sources)
+        .expect_err("a false sorting postcondition must remain rejected");
+}
+
+#[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [
         ("1 == 1 or 2 == 3", "assumption();"),

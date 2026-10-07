@@ -3561,12 +3561,8 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if expanded {
-                if !matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })) {
-                    return Err(self.step_error(format!(
-                        "expanded execution {} arm does not end in a checked C step",
-                        if take_then { "then" } else { "else" },
-                    )));
-                }
+                // Proof operations may follow the last C step. Entry validation
+                // and the checked join enforce the arm's execution boundary.
                 advanced = advanced.apply_focused_expanded_execution_arm(
                     &arm_enclosing,
                     take_then,
