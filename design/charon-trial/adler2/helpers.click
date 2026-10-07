@@ -86,6 +86,10 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     ensures self->_0[3] < quotient;
     ensures 0 <= to_integer(self->_0[3]);
     ensures to_integer(self->_0[3]) < to_integer(quotient);
+    ensures old(self->_0[0]) < quotient implies self->_0[0] == old(self->_0[0]);
+    ensures old(self->_0[1]) < quotient implies self->_0[1] == old(self->_0[1]);
+    ensures old(self->_0[2]) < quotient implies self->_0[2] == old(self->_0[2]);
+    ensures old(self->_0[3]) < quotient implies self->_0[3] == old(self->_0[3]);
 } by {
     execute();
     apply(uint32_remainder_less_than_divisor(old(self->_0[0]), quotient));
@@ -104,6 +108,30 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_rem_assign_u32(struct __rust_q_I6_adler
     have self->_0[3] < quotient by { simp(); }
     apply(uint32_to_integer_bounds(self->_0[3]));
     apply(uint32_less_than_to_integer(self->_0[3], quotient));
+    have old(self->_0[0]) < quotient implies self->_0[0] == old(self->_0[0]) by {
+        if old(self->_0[0]) < quotient {
+            apply(uint32_remainder_of_lt(old(self->_0[0]), quotient));
+            simp();
+        } else { simp(); }
+    }
+    have old(self->_0[1]) < quotient implies self->_0[1] == old(self->_0[1]) by {
+        if old(self->_0[1]) < quotient {
+            apply(uint32_remainder_of_lt(old(self->_0[1]), quotient));
+            simp();
+        } else { simp(); }
+    }
+    have old(self->_0[2]) < quotient implies self->_0[2] == old(self->_0[2]) by {
+        if old(self->_0[2]) < quotient {
+            apply(uint32_remainder_of_lt(old(self->_0[2]), quotient));
+            simp();
+        } else { simp(); }
+    }
+    have old(self->_0[3]) < quotient implies self->_0[3] == old(self->_0[3]) by {
+        if old(self->_0[3]) < quotient {
+            apply(uint32_remainder_of_lt(old(self->_0[3]), quotient));
+            simp();
+        } else { simp(); }
+    }
     simp();
 }
 
@@ -117,7 +145,30 @@ void __rust_q_I6_adler2_I4_algo_I5_U32X4_mul_assign_u32(struct __rust_q_I6_adler
     ensures self->_0[1] == old(self->_0[1]) * rhs;
     ensures self->_0[2] == old(self->_0[2]) * rhs;
     ensures self->_0[3] == old(self->_0[3]) * rhs;
-} by { execute(); simp(); }
+    ensures to_integer(self->_0[0]) == to_integer(old(self->_0[0])) * to_integer(rhs);
+    ensures 0 <= to_integer(self->_0[0]);
+    ensures to_integer(self->_0[0]) <= 4294967295;
+    ensures to_integer(self->_0[1]) == to_integer(old(self->_0[1])) * to_integer(rhs);
+    ensures 0 <= to_integer(self->_0[1]);
+    ensures to_integer(self->_0[1]) <= 4294967295;
+    ensures to_integer(self->_0[2]) == to_integer(old(self->_0[2])) * to_integer(rhs);
+    ensures 0 <= to_integer(self->_0[2]);
+    ensures to_integer(self->_0[2]) <= 4294967295;
+    ensures to_integer(self->_0[3]) == to_integer(old(self->_0[3])) * to_integer(rhs);
+    ensures 0 <= to_integer(self->_0[3]);
+    ensures to_integer(self->_0[3]) <= 4294967295;
+} by {
+    execute();
+    apply(uint32_mul_to_integer(old(self->_0[0]), rhs));
+    apply(uint32_to_integer_bounds(self->_0[0]));
+    apply(uint32_mul_to_integer(old(self->_0[1]), rhs));
+    apply(uint32_to_integer_bounds(self->_0[1]));
+    apply(uint32_mul_to_integer(old(self->_0[2]), rhs));
+    apply(uint32_to_integer_bounds(self->_0[2]));
+    apply(uint32_mul_to_integer(old(self->_0[3]), rhs));
+    apply(uint32_to_integer_bounds(self->_0[3]));
+    simp();
+}
 
 # Empty-input boundary of the original, locked Adler32::compute body.
 # The preceding helper bodies and both constant getters are checked here too.

@@ -1227,3 +1227,26 @@ message.
 `click verify` and `click audit` pass on
 `modeled_pthread_counted_reverse_join.md` (11 sites) and
 `modeled_pthread_retire_after_join.md` (5 sites).
+
+**Locked workers (milestone 6 chunk 4 prerequisite):** A locked helper can run
+as a worker beside others of the same population. Create no longer lends the
+escrowed authority from the parent; the worker's declared member change is
+applied at its join, and until then the parent's count of that population is
+refused with a message naming the outstanding workers. Positive:
+`authority_mutex_locked_workers.md` and
+`authority_mutex_locked_workers_reverse_join.md` (two workers each release a
+reference under the mutex; both join orders and both create failures), and
+`authority_mutex_locked_workers_parent_lock.md` (the parent locks without
+opening the control while the workers run). Negative:
+`authority_mutex_locked_workers_pending_count_rejected.md` (the parent opens
+the control while workers are outstanding),
+`authority_mutex_locked_workers_stale_rejected.md` (the creation-time total
+after both joins), and
+`authority_mutex_locked_workers_destroy_before_join_rejected.md`.
+
+Two corrections landed with it. Worker create now removes a consumed or lent
+field-free member from the parent, as a sequential call does; before, the
+member stayed in the parent's resources, and only the creation ledger refused
+to let it be used. Unfolding a control whose count is unavailable because of a
+worker now reports that cause instead of `could not evaluate instance body
+fact`.

@@ -1179,6 +1179,70 @@ verification, profiling, expansion, and nightly audit. The original `adler2`
 sources, artifacts, locks, and import profile remain unchanged; its complete
 four-byte checksum contract is still unproved.
 
+### Exact observations of the original lane multiplication
+
+The unchanged `U32X4::mul_assign` body now proves exact Integer products for all
+four lanes, alongside its native products and unsigned observation bounds. The
+checked `uint32_mul_to_integer` bridge requires the original native quotient
+guard, including the zero multiplier case. It does not infer mathematical
+non-wrapping multiplication from native expression definedness.
+
+This supplies the missing observation interface for carrying derived lane
+ceilings through vector recombination. A checked surface theorem derives the
+262080 ceiling for a reduced lane multiplied by four. Kernel regressions compare
+the emitted guard and product observation with independent unsigned boundary
+models, including zero factors, values above the signed sign bit, and both sides
+of the last safe quotient. Original helper regressions reject false products,
+false lower/upper bounds, and missing overflow guards for each lane. Original
+Rust sources, artifacts, locks, and import profile remain unchanged; the complete
+four-byte computation contract is still unproved.
+
+Concrete zero-factor theorem applications also exposed eager evaluation of an
+unused right disjunct. If that right side cannot lower, the kernel now preserves
+an exactly known true left path with its facts and obligations. When both sides
+lower it retains the written disjunction, including its choice-certificate shape.
+Unknown or false left sides retain the existing lowering. Independent theorem
+regressions reject undefined right sides when needed and false conclusions;
+expansion independently rechecks the resulting certificates.
+
+The unsigned-bound certificate rendering bug found by the four-byte investigation
+is fixed. A final addition over sign-bit-flipped unsigned atoms now uses the
+goal's source comparison instead of wrapping machine sums; the unchanged checker
+requires that comparison to encode the exact child sum. Regressions verify and
+independently recheck expanded upper and lower bounds on both sides of the sign
+bit, and reject insufficient bounds, unlisted premises, and forged certificates.
+The observed-product identity rewrite bug from that investigation is also fixed.
+Checked Integer substitution now folds multiplication by zero and one just as
+lowering does, retaining the goal's independently checked source presentation.
+It preserves shared symbolic products instead of multiplying arbitrary-size
+literals. Regressions cover both operand orders, full-width unsigned
+observations, pure proofs, execution `have` scopes, and function outcomes;
+expanded certificates reject missing evidence and false or altered products.
+Deterministic rewrite visit counts remain linear across shared product depths.
+The checked symbolic zero-factor theorem now proves the product equals zero after
+the native multiplication bridge and Integer observation rewrites. The checked
+multiplication ceiling example uses arithmetic for its native quotient guard.
+Both arithmetic tooling bugs are resolved; the complete original four-byte
+computation remains unproved.
+
+### Exact preservation through lane reduction
+
+The checked `uint32_remainder_of_lt` rule now proves `value % divisor == value`
+from the strict native unsigned bound `value < divisor`. That bound excludes
+zero divisors and works across the full unsigned range, including values above
+the signed sign bit. Exact standard-library declarations and independently
+rechecked expansion reject missing or weakened guards and altered conclusions.
+A byte-lane execution fixture connects native reduction to exact Integer
+observations for values at most 255.
+
+The unchanged original `U32X4::rem_assign` contract now exports preservation for
+each lane when its incoming value is below the divisor. Its original nonzero
+divisor requirement and unconditional remainder/range guarantees remain in
+place. Per-lane regressions reject a non-strict guard, changed byte value, and
+cross-lane substitution. Rust source and the locked Charon artifact are unchanged.
+This supplies the exact lane identity needed after reduction on the first
+four-byte path; the complete original four-byte computation remains unproved.
+
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic

@@ -70,6 +70,17 @@ bound. The audit and its verifier workers exited. Keep this fixture’s C/Rust
 source and contracts unchanged; fix the repeated capture work rather than
 raising its time limit.
 
+## Status
+
+The audit now expands a wholly selected claim once, with all its sites, so a
+claim costs a fixed number of runs however many sites it has
+(`examples/bounded-pool`, 99 sites in 16 claims: 131 s before, 35 s after, on
+a debug build). What remains of this bug is the fallback: a claim whose
+whole-claim expansion fails, or a partial selection (`--start-at` inside a
+claim, `--max-sites`, `--changed-since`), is still audited a site at a time
+and still runs the claim once per site. The claims that take the fallback
+today are listed in `whole-claim-expansion-fails-on-proof-matches.md`.
+
 ## Intended regression
 
 A deterministic scaling regression that audits a claim with `n` independent

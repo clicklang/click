@@ -1230,16 +1230,19 @@ impl<'a> Proof<'a> {
         #[cfg(test)]
         CHECKED_EXECUTION_INTERFACE_JOINS.with(|count| count.set(count.get() + 1));
 
+        // An interface that states nothing is the join a bare split makes,
+        // and is written as one.
+        let written_ensuring = (!written_assertions.is_empty()).then_some(written_assertions);
         let [then_view, else_view] = arms;
         let step = match proof_case_condition {
             Some(condition) => ProofStep::If {
                 condition,
-                ensuring: Some(written_assertions),
+                ensuring: written_ensuring.clone(),
                 then_proof: Box::new(then_view.certificate),
                 else_proof: Box::new(else_view.certificate),
             },
             None => ProofStep::Branch {
-                ensuring: Some(written_assertions),
+                ensuring: written_ensuring.clone(),
                 then_proof: Box::new(then_view.certificate),
                 else_proof: Box::new(else_view.certificate),
             },
@@ -3817,9 +3820,31 @@ impl<'a> Proof<'a> {
             self.join_focused_execution_terminal(record)
         } else if empty {
             self.join_focused_execution_empty(record)
+        } else if self.split_arms_end_apart(record)? {
+            // Arms that end in different states join keeping what both
+            // agree on: the join an interface makes, with nothing stated.
+            // `ensuring { ... }` is what a proof adds to say more.
+            self.join_focused_execution_interface(record, Vec::new())
         } else {
             self.join_focused_execution_branch(record)
         }
+    }
+
+    /// Whether both arms of a C branch reached its continuation in
+    /// different states, where a join that can abstract them is available.
+    /// Costs the arms' own steps, which the join then partitions again.
+    pub(in crate::surface::proof) fn split_arms_end_apart(
+        &self,
+        record: &ExecutionSplit<'a>,
+    ) -> Result<bool, ClickError> {
+        if record.sole_feasible_arm().is_some()
+            || self.split_arms_at_function_exit(record)
+            || !record.supports_interface_branch()
+        {
+            return Ok(false);
+        }
+        let (_, arms) = self.sibling_execution_arm_views(record)?;
+        Ok(*arms[0].execution.core.state != *arms[1].execution.core.state)
     }
 
     pub(in crate::surface::proof) fn split_focused_execution_branch(

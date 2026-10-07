@@ -59,11 +59,22 @@ bounds `value % divisor` strictly below it for every u32 dividend. Combining
 these with `uint32_to_integer_bounds` bounds the remainder's Integer observation
 without changing its unsigned meaning or defining division by zero.
 
+`uint32_remainder_of_lt(value, divisor)` proves `value % divisor == value`
+under the strict native unsigned premise `value < divisor`. This premise also
+excludes a zero divisor. It preserves exact byte lane values through Adler32's
+reduction without a signed cast or a change to the Rust implementation.
+
 ## Exact operations and definedness
 
 Integer literals, unary negation, addition, subtraction, multiplication,
 equality, disequality, and order comparisons are supported. Exact Integer
 arithmetic does not overflow. Bitwise operations remain machine operations.
+
+Checked Integer equality rewriting preserves lowering's multiplication by zero
+and one identities. These folds only remove expression nodes; other products
+retain their shared symbolic structure. Rewritten native observations therefore
+keep a checked source spelling for arithmetic certificates, including unsigned
+values above the sign bit. See the [identity rewrite regression](https://github.com/clicklang/click/blob/master/mdtests/integer_observed_product_identity_rewrite.md).
 
 Division and remainder are deliberately deferred from the current supported
 surface, but their semantics are settled for a future implementation. They use

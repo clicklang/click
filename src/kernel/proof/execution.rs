@@ -4658,6 +4658,7 @@ impl CheckedExecutionBranch {
             split.continuation.clone(),
         );
         let mut checked_arms = Vec::with_capacity(2);
+        let mut memory_steps = Vec::with_capacity(2);
         for (index, arm) in arms.iter().enumerate() {
             let events = arm.execution_evidence[0]
                 .suffix_since(parent_trace)
@@ -4686,6 +4687,7 @@ impl CheckedExecutionBranch {
             ) {
                 return Err("an interface arm trace does not reach its recorded state");
             }
+            memory_steps.push(progress.memory_steps);
             checked_arms.push(CheckedExecutionBranchArm {
                 facts: arm_facts[index].clone(),
                 events,
@@ -4708,12 +4710,15 @@ impl CheckedExecutionBranch {
                 "a conditional heap deallocation must be represented by an arm-sensitive owned resource",
             );
         }
-        let interface_effect_facts = checked_interface_effect_facts(
+        // The walk above is each arm's memory history, so the effects are
+        // read off it and not chained by comparing memories.
+        let interface_effect_facts = checked_interface_effect_facts_along(
             &split.state,
             joined_state,
             arms,
             arm_facts,
             arm_effect_facts,
+            Some([&memory_steps[0], &memory_steps[1]]),
         )?;
         Ok(Self {
             split,

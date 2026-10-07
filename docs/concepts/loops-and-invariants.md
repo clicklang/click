@@ -228,6 +228,21 @@ executes one complete body iteration, and proves all invariants again. Either
 proof may be omitted; bounded automation owned by the `loop` keyword supplies
 an omitted phase. Expanding that keyword writes all omitted phases explicitly.
 
+An omitted `preserve` walks the body once. At a C `if` with more of the body
+after it, whose arms both fall through, it runs both arms and joins them
+where they meet, as a written `branch` with no `ensuring` does, so the rest of
+the body is not walked once per arm
+(`mdtests/an_automatically_closed_loop_joins_its_c_branches.md`).
+Arms that end in different states are joined keeping only what both agree
+on. A loop whose invariant needs what each arm established is therefore not
+closed automatically; the failure says so, and the body is written with
+`branch ensuring { ... }`, which states it
+(`mdtests/an_automatically_closed_loop_keeps_only_what_its_branches_agree_on.md`,
+`mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).
+Two kinds of `if` keep their arms as separate paths: one with an arm that
+leaves another way (a `break`, a `continue`, a `return`), and the body's last
+statement, which has nothing after it to walk twice.
+
 An invariant's side conditions are invariant content. These are what its
 terms need to denote a value: that `i + 1` does not overflow in
 `to_integer(i + 1)`, that an integer converted back to `int32` fits, or the
@@ -839,8 +854,8 @@ preserve by {
 }
 ```
 
-The arms of such a `match` do not rejoin. A preservation path never joins
-across the back edge, so each arm executes one complete iteration, restores
+With nothing written after it, the arms of such a `match` do not rejoin.
+Each arm executes one complete iteration, restores
 the loop binder, closes the invariants, and satisfies the structural descent
 on its own path, with the resource state that arm produced. An arm that
 unfolds the binder and never folds it again fails at the back edge by name
@@ -867,13 +882,26 @@ leaves the arm open and is refused by the proposition as written
 constructors survive: the region splits, each arm certifies its own path, and
 the preservation certificate is reassembled as the `match` that produced them.
 
-Write what the arms share once, after the `match`. An arm needs only the
-steps that depend on its constructor; the tactics after the `match` are the
-rest of every live arm's iteration and run on each arm's path, with that
-arm's facts and resources and with any name every arm bound
-(`mdtests/loop_body_proof_match_shared_continuation.md`). Repeating that
-tail inside each arm proves the same thing and multiplies the proof's length
-by the number of arms at every nested `match`.
+What follows a split is checked once. Tactics written after a `match` or a
+proof `if` in the body are never run once per arm, because every further
+split would double that again. So when two arms are both still live at the
+same program point, they have to become one path before those tactics run:
+
+- Arms that only reason, or that run the same statements and end holding the
+  same resources, rejoin on their own, as they do in a function body
+  (`mdtests/loop_preservation_case_after_step.md`).
+- Arms that end holding different things rejoin through an interface:
+  `match value ensuring { owns c: cell(node); } { ... }` names what the one
+  path that leaves the `match` holds
+  (`mdtests/loop_body_proof_match_ensuring_rejoins.md`).
+- Arms that do neither are refused, by the tactic they would both reach
+  (`mdtests/loop_body_proof_match_shared_continuation.md`). Give the `match`
+  an interface, or write the rest of the iteration inside each arm.
+
+Arms that reach those tactics at different program points are different paths
+of the C, one having stepped to a `break` and another to the body's end, say.
+Each is finished its own way and nothing is repeated. An arm closed by
+`contradiction` reaches nothing.
 
 The invariants and the loop condition are the head's premises, so they also
 refute arms. A premise that contradicts an arm's own binding-free fact says

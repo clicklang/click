@@ -250,6 +250,49 @@ fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
 }
 
 #[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_0() {
+    reject_helper_reduction_preservation(0);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_1() {
+    reject_helper_reduction_preservation(1);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_2() {
+    reject_helper_reduction_preservation(2);
+}
+
+#[test]
+fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
+    reject_helper_reduction_preservation(3);
+}
+
+fn reject_helper_reduction_preservation(lane: usize) {
+    let postcondition = format!(
+        "ensures old(self->_0[{lane}]) < quotient implies self->_0[{lane}] == old(self->_0[{lane}])"
+    );
+    reject_helper_contracts(
+        2,
+        &[
+            (
+                &postcondition,
+                &postcondition.replace(" < quotient", " <= quotient"),
+            ),
+            (&postcondition, &format!("{postcondition} + 1u32")),
+            (
+                &postcondition,
+                &postcondition.replace(
+                    &format!("== old(self->_0[{lane}])"),
+                    &format!("== old(self->_0[{}])", (lane + 1) % 4),
+                ),
+            ),
+        ],
+    );
+}
+
+#[test]
 fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     reject_helper_contracts(
         2,
@@ -311,6 +354,47 @@ fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
             ("owns self->_0[0..4];", "views self->_0[0..4];"),
         ],
     );
+}
+
+fn reject_helper_product_observations(lane: usize) {
+    let exact = format!(
+        "ensures to_integer(self->_0[{lane}]) == to_integer(old(self->_0[{lane}])) * to_integer(rhs);"
+    );
+    let wrong_product = exact.replace("== to_integer", "== 1 + to_integer");
+    let lower = format!("0 <= to_integer(self->_0[{lane}])");
+    let false_lower = format!("1 <= to_integer(self->_0[{lane}])");
+    let upper = format!("to_integer(self->_0[{lane}]) <= 4294967295");
+    let false_upper = format!("to_integer(self->_0[{lane}]) <= 4294967294");
+    let guard = format!("requires rhs == 0u32 or self->_0[{lane}] <= 4294967295u32 / rhs;");
+    reject_helper_contracts(
+        3,
+        &[
+            (&exact, &wrong_product),
+            (&lower, &false_lower),
+            (&upper, &false_upper),
+            (&guard, ""),
+        ],
+    );
+}
+
+#[test]
+fn charon_adler2_helpers_mul_rejects_false_observations_lane_0() {
+    reject_helper_product_observations(0);
+}
+
+#[test]
+fn charon_adler2_helpers_mul_rejects_false_observations_lane_1() {
+    reject_helper_product_observations(1);
+}
+
+#[test]
+fn charon_adler2_helpers_mul_rejects_false_observations_lane_2() {
+    reject_helper_product_observations(2);
+}
+
+#[test]
+fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
+    reject_helper_product_observations(3);
 }
 
 fn recheck_helper_tools(index: usize, commands: &[&str], expand: bool) {

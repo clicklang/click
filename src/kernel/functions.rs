@@ -6449,6 +6449,10 @@ fn execute_verified_function_applications_with_suspension(
                 }
             }
         }
+        // A suspended locked worker's change is applied at its join instead.
+        let defer_locked_exchange =
+            suspended.is_some() && authority_mode_mutex_member_helper_contract(interface);
+        let mut deferred_exchange = None;
         // Publish the checked population delta before lowering postcondition counts.
         if caller_state.uses_population_authority_semantics()
             && !authority_release_retires
@@ -6568,10 +6572,20 @@ fn execute_verified_function_applications_with_suspension(
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
                     continue 'arguments;
                 }
-                let exchange = if interface
+                let exclusive = interface
                     .composite_resource_definition(name)
-                    .is_some_and(CCompositeResourceDefinition::has_fixed_exclusive_memory)
-                {
+                    .is_some_and(CCompositeResourceDefinition::has_fixed_exclusive_memory);
+                if defer_locked_exchange {
+                    deferred_exchange = Some(super::threads::DeferredMemberExchange {
+                        block: anchor.block.clone(),
+                        description,
+                        produce,
+                        quantity: (**quantity).clone(),
+                        exclusive,
+                    });
+                    continue;
+                }
+                let exchange = if exclusive {
                     events.checked_exclusive_member_exchange_quantity(
                         &anchor.block,
                         &description,
@@ -6907,6 +6921,7 @@ fn execute_verified_function_applications_with_suspension(
                     parent_after_create: after.return_to(parent),
                     worker: worker.clone(),
                     definitions: interface.composite_resource_definitions().to_vec(),
+                    deferred: deferred_exchange.clone(),
                 })
             } else {
                 None
@@ -7783,7 +7798,7 @@ fn prepare_verified_function_call<'a>(
         }
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
     };
-    if caller_state.uses_population_authority_semantics() {
+    if caller_state.uses_population_authority_semantics() && !suspend_worker {
         let lent = match locked_helper_population(
             contract_interface,
             &transfer,
@@ -16864,6 +16879,11 @@ pub(in crate::kernel) fn bind_c_function_arguments(
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
+    // The caller's outstanding workers stay outstanding across the call. A
+    // callee cannot join them (each completion right names the caller's loan
+    // participant), and returning its ledger must not erase their rights or
+    // the population changes they defer to join.
+    callee_state.thread_ledger = caller_state.thread_ledger.clone();
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
@@ -17000,6 +17020,11 @@ fn bind_c_contract_arguments(
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
+    // The caller's outstanding workers stay outstanding across the call. A
+    // callee cannot join them (each completion right names the caller's loan
+    // participant), and returning its ledger must not erase their rights or
+    // the population changes they defer to join.
+    callee_state.thread_ledger = caller_state.thread_ledger.clone();
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
@@ -20918,6 +20943,15 @@ fn prepare_contract_resource_transfer(
         };
         return_resources = resources;
     }
+    // A suspended worker's create installs the plan's residual. It must lose
+    // the requirements consumed definitionally above, such as a field-free
+    // member, exactly as this call's own residual does.
+    let mut stable_view_plan = stable_view_plan;
+    if purpose == ResourceTransitionPurpose::SuspendedWorker
+        && let Some(plan) = stable_view_plan.as_mut()
+    {
+        plan.caller_resources_after_requirements = return_resources.clone();
+    }
     let borrowed_inputs = checked_required_resources
         .iter()
         .filter(|checked| checked.role == CResourceTransferRole::Borrow)
@@ -23519,6 +23553,13 @@ fn lower_selected_resource_body_clauses(
             // rather than suggest the fact cannot be evaluated at all.
             ExecutionLimit::Deadline => {
                 "evaluating an instance body fact exhausted the verification budget"
+            }
+            // A worker-held or worker-changed total is the cause, not the body.
+            ExecutionLimit::AuthorityCountPendingLockedWorker => {
+                "count(...) is unknown until pthread_join returns the workers that change this population under its mutex"
+            }
+            ExecutionLimit::AuthorityCountLentToWorker => {
+                "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join"
             }
             _ => "could not evaluate instance body fact",
         })?;

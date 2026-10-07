@@ -222,6 +222,25 @@ A worker contract is admitted by the sequential authority-mode rules, so a
 worker that consumes or produces authority, or keeps a member it cannot
 spend, is refused at create or in its own proof.
 
+### Workers that lock the population's control
+
+A worker can instead reach the authority through a mutex: its contract
+borrows a typed `mutex_use` share of an authority-bearing control and declares
+one consumed or produced member, as a locked helper does
+([mutex resource contracts](mutex-resource-contracts.md)). Its standalone proof
+opens the control under a fresh total and must make exactly the declared
+change. While the control is in the mutex, no thread holds the authority, so
+several such workers may be outstanding at once. Create therefore lends no
+authority and records no change; the worker may lock at any time before it
+finishes. Join is the first point at which the change is known to have
+happened: it lends the escrowed authority to the worker's call identity,
+applies the declared change, and takes the authority back, as a sequential
+locked call returns. Until every such worker has joined, a count of that
+population is refused with `count(...) is unknown until pthread_join returns
+the workers that change this population under its mutex`; the parent may
+still lock and unlock the mutex without opening the control. Destroying the
+mutex needs every use share back, so it follows the joins.
+
 ## Implementation chunks
 
 Milestone 6 chunk 2 implements this protocol for authority-mode

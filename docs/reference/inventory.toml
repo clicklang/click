@@ -3115,6 +3115,10 @@ id = "stdlib.theorem.uint32_add_to_integer"
 path = "reference/library/index.md#uint32_add_to_integer"
 
 [[item]]
+id = "stdlib.theorem.uint32_mul_to_integer"
+path = "reference/library/index.md#uint32_mul_to_integer"
+
+[[item]]
 id = "stdlib.theorem.uint64_add_to_integer"
 path = "reference/library/index.md#uint64_add_to_integer"
 
@@ -3305,6 +3309,10 @@ path = "reference/library/index.md#uint32_less_than_to_integer"
 [[item]]
 id = "stdlib.theorem.uint32_remainder_less_than_divisor"
 path = "reference/library/index.md#uint32_remainder_less_than_divisor"
+
+[[item]]
+id = "stdlib.theorem.uint32_remainder_of_lt"
+path = "reference/library/index.md#uint32_remainder_of_lt"
 
 [[item]]
 id = "stdlib.theorem.integer_multiply_add"

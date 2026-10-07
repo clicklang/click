@@ -5417,6 +5417,89 @@ fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
     }
 }
 
+/// A counting loop whose `preserve` proof makes `count` proof-level case
+/// splits in a row before closing the invariants. Both arms of each only
+/// reason.
+fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
+    let c_source = String::from(
+        "int32 spin(int32 n, int32 x) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n    return 0;\n}\n",
+    );
+    let mut click_source = String::from(
+        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by simp;\n        preserve by {\n            step();\n",
+    );
+    for index in 0..count {
+        click_source.push_str(&format!(
+            "            if x <= {index} {{\n                have x <= {index} or x > {index} by {{ simp(); }}\n            }} else {{\n                have x <= {index} or x > {index} by {{ simp(); }}\n            }}\n"
+        ));
+    }
+    click_source.push_str(
+        "            close_invariants();\n        }\n    }\n    step();\n    simp();\n}\n",
+    );
+    (c_source, click_source)
+}
+
+/// Proof-level splits in a loop body rejoin as they do in a function body,
+/// so the rest of the iteration is checked once. Each case used to run the
+/// rest of the body itself, to the back edge, and `n` splits in a row cost
+/// `2^n` runs of it; twenty would not finish.
+#[test]
+fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
+    let samples = [5, 10, 20, 40]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_body_reasoning_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("ifs.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("sequential proof-level ifs in a loop body", &samples);
+}
+
+/// A scanning loop whose body is `count` C `if`s in a row, each storing to
+/// a local when its guard holds, with no written `preserve` proof.
+fn loop_body_c_ifs_project(count: usize) -> (String, String) {
+    let ifs = (0..count)
+        .map(|index| {
+            format!(
+                "        if (a[{index}] == 7) {{\n            found = {};\n        }}\n",
+                index + 1
+            )
+        })
+        .collect::<String>();
+    let c_source = format!(
+        "int32 scan(int32* a, int32 n) {{\n    int32 i;\n    int32 found;\n    i = 0;\n    found = 0;\n    while (i < n) {{\n{ifs}        i = i + 1;\n    }}\n    return 0;\n}}\n"
+    );
+    let click_source = format!(
+        "verifying \"scan.c\";\n\nint32 scan(int32* a, int32 n) {{\n    views a[0..{count}];\n    requires 0 <= n;\n    requires n <= {count};\n    ensures result == 0;\n}} by {{\n    step();\n    step();\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n    }}\n    step();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// The automatic loop closer joins the arms of a C `if` that both fall
+/// through, so the rest of the body is walked once. It used to walk the
+/// rest once per arm: `n` such `if`s in a row cost `2^n` paths, and their
+/// expansion wrote all of them out.
+#[test]
+fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_body_c_ifs_project(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("scan.c", c_source.as_str())])
+            });
+            verified
+                .unwrap_or_else(|error| panic!("{size}-`if` fixture failed: {}", error.message()));
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("C ifs in an automatically closed loop body", &samples);
+}
+
 #[test]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
@@ -6121,12 +6204,13 @@ fn indexed_simp_premises_reduce_whole_early_return_work() {
 
 /// Contract preparation reuses completed contexts in both proof forms.
 /// Bound whole-transaction construction too for the grouped form. The explicit
-/// form has a separate existing context-build cost before certification, kept
+/// form has separate existing return-context and other costs, kept
 /// in the measurements and tracked in the early-return bug report.
 fn check_completed_early_return_context_reuse(explicit: bool) {
     let mut samples = Vec::new();
     let mut entries = Vec::new();
     let mut contract_entries = Vec::new();
+    let mut allocation_resolution = Vec::new();
     for returns in [4, 8, 16, 32, 64] {
         let c = early_return_fan_out(returns);
         let click = if explicit {
@@ -6154,6 +6238,13 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         contract_entries.push(
             crate::kernel::reasoning::path_facts::contract_path_context_entries() - contract_before,
         );
+        allocation_resolution.push(
+            sample
+                .named_work
+                .get("operation `branch allocation resolution`")
+                .copied()
+                .unwrap_or(0),
+        );
         samples.push(sample);
     }
     eprintln!(
@@ -6164,6 +6255,30 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
             .windows(2)
             .all(|pair| pair[1] <= pair[0] * 2 + 8),
         "contract preparation must reuse contexts: explicit={explicit}, {contract_entries:?}"
+    );
+    // Small explicit proofs may complete without the branch-step driver.
+    // Require the largest case to exercise it, so absent instrumentation
+    // cannot turn every measured cost into zero.
+    if explicit {
+        assert!(
+            samples
+                .last()
+                .unwrap()
+                .named_work
+                .contains_key("operation `branch allocation resolution`")
+        );
+    }
+    // Once malloc is resolved, later branches must not rebuild their growing
+    // local fact lists merely to ask allocation resolution to do nothing.
+    // Compare the largest sizes, after the explicit driver starts running;
+    // resolving the initial malloc has a fixed setup cost.
+    eprintln!("branch allocation resolution explicit={explicit}: {allocation_resolution:?}");
+    assert!(
+        allocation_resolution
+            .windows(2)
+            .skip(2)
+            .all(|pair| pair[1] <= pair[0] + 8),
+        "settled allocations must not rebuild branch contexts: {allocation_resolution:?}"
     );
     if !explicit {
         assert!(

@@ -45,7 +45,7 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
-fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
+fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_decreases_recursive_in_loop.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
@@ -60,11 +60,18 @@ fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
     let position =
         expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the shared closer expands with each branch's checked body");
-    assert!(!expanded.contains("close_invariants();"), "{expanded}");
+        .expect("the first arm's closer expands with that arm's checked body");
+    // Each arm of the proof `if` closes the invariants itself: the arms end
+    // in different states, so nothing after the `if` is shared. Expanding
+    // the first arm's closer leaves the other arm's as written.
+    assert_eq!(
+        expanded.matches("close_invariants();").count(),
+        1,
+        "{expanded}"
+    );
     assert_eq!(
         expanded.matches("close_invariants by").count(),
-        2,
+        1,
         "{expanded}"
     );
     assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
@@ -1926,6 +1933,28 @@ theorem one_tactic_proofs(x: int32) {
     let sites = inventory(without);
     assert!(!sites.is_empty(), "the proof has smart tactics to find");
     assert_eq!(sites, inventory(&with));
+}
+
+/// A user tactic's proof is checked with an ending the checker supplies: one
+/// step over the empty procedure's `return` and an `assumption` per claim.
+/// That ending cannot be written in a tactic's proof, so whole-claim
+/// expansion must leave it out; with it, the expanded proof is refused for
+/// using `step`.
+#[test]
+fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
+    let (click, sources) = mdtest_sources("mdtests/user_tactic_reshapes_owned_resources.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "divide.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    let tactic = &expanded[expanded.find("tactic divide(").unwrap()..];
+    let proof = &tactic[..tactic.find("\n}\n").unwrap()];
+    assert!(!proof.contains("step();"), "{proof}");
+    assert!(proof.contains("have y.tag == 7 by {"), "{proof}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
 #[test]
@@ -11194,6 +11223,27 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                 }
                 preserve by {
                     unfold(all_le_range);
+                    if p[j + 1] < p[j] {
+                        step();
+                        step();
+                        step();
+                        step();
+                        step();
+                        have all_le_range(p, 0, j, p[j]) by {
+                            unfold(all_le_range);
+                            simp();
+                        }
+                        close_invariants();
+                    } else {
+                        step();
+                        step();
+                        step();
+                        have all_le_range(p, 0, j, p[j]) by {
+                            unfold(all_le_range);
+                            simp();
+                        }
+                        close_invariants();
+                    }
                 }
             }
             step();
@@ -14143,17 +14193,13 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
-    // The automatic preservation the `loop` keyword owns walks four body
-    // paths here: two sibling C `if`s, each split into its own proof case.
-    // Merging aligns each case at the certificate offset its split recorded,
-    // and that offset is read back against the leaf's own `path_certificate`.
-    // The preservation driver runs sibling arms on one interleaved chain, so
-    // walking a leaf's lineage passes through the *other* arm's nested split
-    // marker; following that marker adopted the sibling arm's steps, and the
-    // recorded offset then pointed past the end of this path's own tactics
-    // ("case offset exceeds its tactics"). A split marker now records the
-    // goals it opened and is followed only when it opened the goal being
-    // walked.
+    // The automatic preservation the `loop` keyword owns walks this body
+    // once: each of the two sibling C `if`s has both arms fall through to
+    // more of the body, so its arms are joined as a `branch` and the rest is
+    // not walked once per arm. It used to split each `if` into its own proof
+    // case and walk four paths, which is what first exposed the
+    // certificate-offset bug this test was written for; the expansion is now
+    // two `branch` steps and must still reverify on its own.
     let c_source = r#"
         int32 two_ifs(int32 n) {
             int32 i = 0;
@@ -14204,9 +14250,14 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
+    assert_eq!(
+        expanded.matches("branch ").count(),
+        2,
+        "both sibling C `if`s should expand to joined branches: {expanded}"
+    );
     assert!(
-        expanded.contains("if x == 0") && expanded.contains("if y == 0"),
-        "both sibling C `if`s should expand to proof cases: {expanded}"
+        !expanded.contains("if x == 0") && !expanded.contains("if y == 0"),
+        "neither `if` should be walked as separate proof cases: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded preservation should independently reverify: {error:?}\n{expanded}")
@@ -15570,6 +15621,163 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
             )
         });
     }
+}
+
+#[test]
+fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/uint32_arithmetic_bound_weakening.md");
+    verify_c0_sources(&source, &[]).expect("unsigned weakened bounds should verify");
+    for name in [
+        "lane_ceiling",
+        "crossing_sign_bit",
+        "high_unsigned_ceiling",
+        "high_unsigned_floor",
+        "crossing_sign_bit_floor",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("unsigned weakening should expand");
+        assert!(expanded.contains("arithmetic_certificate signed_int32"));
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.expect("unsigned certificate should independently recheck");
+        assert_eq!(planning, 0, "explicit recheck must not plan");
+        if name == "lane_ceiling" {
+            let forged = expanded.replace("1073741823u32", "65519u32");
+            let error = verify_c0_sources(&forged, &[])
+                .expect_err("a strengthened conclusion must not encode the original child sum");
+            assert!(error.message().contains("does not encode the child sum"));
+        }
+    }
+    for (premise, goal) in [
+        ("lane <= 1073741823u32", "lane <= 65520u32"),
+        ("lane <= 2147483648u32", "lane <= 2147483647u32"),
+        ("2147483647u32 <= lane", "2147483648u32 <= lane"),
+        ("lane <= 65520u32", "1073741823u32 <= lane"),
+    ] {
+        let invalid = format!(
+            "theorem invalid(lane: uint32) {{ requires {premise}; \
+             ensures {goal} by {{ arithmetic() using {{ {premise}; }} }} }}"
+        );
+        verify_c0_sources(&invalid, &[]).expect_err("insufficient unsigned bounds must fail");
+    }
+    let missing = source.replacen(
+        "arithmetic() using { lane <= 65520u32; }",
+        "arithmetic() using {};",
+        1,
+    );
+    verify_c0_sources(&missing, &[]).expect_err("unlisted bounds must not prove the ceiling");
+}
+
+#[test]
+fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
+    let (guarded, _) =
+        mdtest_sources("mdtests/true_disjunction_skips_undefined_right_requirement.md");
+    let (products, _) = mdtest_sources("mdtests/integer_uint32_checked_product_observations.md");
+    let source = format!("{guarded}\n{products}");
+    verify_c0_sources(&source, &[]).expect("zero-factor and checked products should verify");
+    for claim in [
+        "zero_instance.ensures_0",
+        "known_zero_instance.ensures_0",
+        "zero_factor.ensures_0",
+        "known_zero_factor.ensures_0",
+        "reduced_lane_ceiling.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], claim)
+            .expect("checked multiplication/zero-factor proof should expand");
+        verify_c0_sources(&expanded, &[])
+            .expect("expanded multiplication/zero-factor certificate should recheck");
+    }
+    let (invalid, _) =
+        mdtest_sources("mdtests/false_disjunction_requires_defined_right_requirement.md");
+    verify_c0_sources(&invalid, &[])
+        .expect_err("a false left disjunct must not hide division by zero");
+    let forged = guarded.replace("ensures 1 == 1", "ensures 1 == 2");
+    verify_c0_sources(&forged, &[]).expect_err("a true guard must not prove a false conclusion");
+}
+
+#[test]
+fn integer_observed_product_identity_rewrites_expand_and_recheck() {
+    let (source, _) = mdtest_sources("mdtests/integer_observed_product_identity_rewrite.md");
+    verify_c0_sources(&source, &[]).expect("observed product identity rewrites should verify");
+    for name in [
+        "zero_product",
+        "zero_left_product",
+        "unit_product",
+        "unit_left_product",
+        "full_unsigned_zero",
+        "full_unsigned_unit",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("observed product identity rewrite should expand");
+        assert!(expanded.contains("arithmetic_certificate {"), "{expanded}");
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.expect("expanded product identity should independently recheck");
+        assert_eq!(planning, 0, "explicit identity certificate must not plan");
+        if name == "zero_product" {
+            let forged = expanded.replace(
+                "trivial => (to_integer(a) * 0) == 0;",
+                "trivial => (to_integer(a) * 0) == 1;",
+            );
+            assert_ne!(
+                forged, expanded,
+                "the expanded zero claim should be present"
+            );
+            verify_c0_sources(&forged, &[]).expect_err("a false trivial certificate must fail");
+        }
+        let missing = expanded
+            .replace("requires to_integer(b) == 0;", "")
+            .replace("requires to_integer(b) == 1;", "");
+        verify_c0_sources(&missing, &[]).expect_err("missing identity evidence must fail");
+    }
+    for invalid in [
+        source.replacen(
+            "ensures to_integer(a) * to_integer(b) == 0",
+            "ensures to_integer(a) * to_integer(b) == 1",
+            1,
+        ),
+        source.replacen(
+            "rewrite(to_integer(b) == 0)",
+            "rewrite(to_integer(a) == 0)",
+            1,
+        ),
+        source.replacen(
+            "ensures to_integer(a) * to_integer(b) == 0",
+            "ensures to_integer(a) * to_integer(a) == 0",
+            1,
+        ),
+        source.replace("== 4294967295 by", "== -1 by"),
+    ] {
+        verify_c0_sources(&invalid, &[])
+            .expect_err("false products and altered unsigned observations must fail");
+    }
+    let c_source = "uint32 identity(uint32 a, uint32 b) { return a; }";
+    let click_source = r#"
+verifying "identity.c";
+uint32 identity(uint32 a, uint32 b) {
+    requires to_integer(b) == 0;
+    ensures to_integer(result) * to_integer(b) == 0;
+} by {
+    have to_integer(a) * to_integer(b) == 0 by {
+        rewrite(to_integer(b) == 0);
+        arithmetic() using {};
+    }
+    execute();
+    rewrite(to_integer(b) == 0);
+    arithmetic() using {};
+}
+"#;
+    let inputs = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &inputs)
+        .expect("execution and outcome identity rewrites should verify");
+    let expanded =
+        expand_c0_claim_source_by_label(click_source, &inputs, "identity.ensures_0").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .expect("expanded outcome identity rewrite should recheck");
 }
 
 #[test]

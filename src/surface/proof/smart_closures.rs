@@ -1095,7 +1095,19 @@ impl<'a> Proof<'a> {
                     // `i < i + 1` for the cancellation claim `0 <= 0`).
                     let left_surface = surfaces.get(*left)?.as_ref()?;
                     let right_surface = surfaces.get(*right)?.as_ref()?;
-                    if result.terms.is_empty()
+                    if surfaces.len() == plan.conclusion
+                        && !result.terms.is_empty()
+                        && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
+                    {
+                        // An unsigned bound weakened by a constant slack is
+                        // affine in sign-bit-flipped atoms. Adding the source
+                        // operands instead would use wrapping uint32 sums,
+                        // and signed constant slack cannot form an unsigned
+                        // transitivity chain. The goal already spells the
+                        // conclusion; the Add checker independently requires
+                        // it to encode the exact child sum.
+                        Some(surface_goal.clone())
+                    } else if result.terms.is_empty()
                         && result.relation == SignedArithmeticRelation::LessEqual
                     {
                         integer_surface_zero_claim(left_surface, right_surface)

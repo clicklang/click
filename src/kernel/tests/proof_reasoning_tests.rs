@@ -9343,6 +9343,88 @@ fn uint32_add_bridges_agree_with_boundary_models() {
 }
 
 #[test]
+fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
+    fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
+        match term {
+            Bitvector32Term::Variable(v) if *v == Variable(910) => a,
+            Bitvector32Term::Variable(v) if *v == Variable(911) => b,
+            Bitvector32Term::Constant(v) => *v,
+            Bitvector32Term::Multiply(left, right) => {
+                machine(left, a, b).wrapping_mul(machine(right, a, b))
+            }
+            Bitvector32Term::UnsignedDivide(left, right) => {
+                machine(left, a, b) / machine(right, a, b)
+            }
+            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            _ => panic!("unexpected unsigned multiplication term {term:?}"),
+        }
+    }
+    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
+        match term {
+            IntegerTerm::Machine(value) => {
+                assert_eq!(value.ty(), MachineIntegerType::UInt32);
+                machine(value.value(), a, b).into()
+            }
+            IntegerTerm::Multiply(left, right) => integer(left, a, b) * integer(right, a, b),
+            _ => panic!("unexpected product observation {term:?}"),
+        }
+    }
+    fn holds(p: &Proposition, a: u32, b: u32) -> bool {
+        match p {
+            // Short-circuiting is essential for the zero-factor branch.
+            Proposition::Or(left, right) => holds(left, a, b) || holds(right, a, b),
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
+                machine(left, a, b) == machine(right, a, b)
+            }
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                true,
+            ) => (machine(left, a, b) as i32) <= (machine(right, a, b) as i32),
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+                integer(left, a, b) == integer(right, a, b)
+            }
+            _ => panic!("unexpected multiplication bridge proposition {p:?}"),
+        }
+    }
+    let theorem = prove_uint32_mul_to_integer(
+        Bitvector32Term::Variable(Variable(910)),
+        Bitvector32Term::Variable(Variable(911)),
+    );
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing no-wrap guard")
+    };
+    let samples = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        255,
+        65520,
+        65535,
+        65536,
+        0x7fff_ffff,
+        0x8000_0000,
+        u32::MAX,
+    ];
+    for a in samples {
+        for b in samples {
+            let safe = u64::from(a) * u64::from(b) <= u64::from(u32::MAX);
+            assert_eq!(holds(premise, a, b), safe, "guard for {a} * {b}");
+            assert_eq!(holds(conclusion, a, b), safe, "observation for {a} * {b}");
+        }
+    }
+    for b in samples.into_iter().filter(|b| *b > 1) {
+        let last_safe = u32::MAX / b;
+        for a in [last_safe, last_safe + 1] {
+            let safe = a == last_safe;
+            assert_eq!(holds(premise, a, b), safe, "quotient boundary {a} * {b}");
+            assert_eq!(holds(conclusion, a, b), safe, "product boundary {a} * {b}");
+        }
+    }
+}
+
+#[test]
 fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
     fn machine(term: &Bitvector32Term, a: u32, b: u32) -> u32 {
         match term {
@@ -9405,6 +9487,57 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
             ] {
                 assert_eq!(holds(premise, a, b), a <= b);
                 assert_eq!(holds(conclusion, a, b), a <= b);
+            }
+        }
+    }
+}
+
+#[test]
+fn uint32_small_remainder_agrees_with_full_width_models() {
+    let value = Bitvector32Term::Variable(Variable(920));
+    let divisor = Bitvector32Term::Variable(Variable(921));
+    let theorem = prove_uint32_remainder_of_lt(value.clone(), divisor.clone());
+    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+        panic!("missing strict unsigned guard")
+    };
+    assert_eq!(
+        premise.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+            true,
+        )
+    );
+    assert_eq!(
+        conclusion.as_ref(),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::unsigned_remainder(value, divisor),
+                Bitvector32Term::Variable(Variable(920)),
+            ),
+            true,
+        )
+    );
+    // Includes equality, zero divisors, and values on both sides of the sign bit.
+    let samples = [
+        0u32,
+        1,
+        2,
+        255,
+        65520,
+        65521,
+        0x7fff_ffff,
+        0x8000_0000,
+        u32::MAX - 1,
+        u32::MAX,
+    ];
+    for value in samples {
+        for divisor in samples {
+            if value < divisor {
+                assert_ne!(divisor, 0);
+                assert_eq!(value % divisor, value);
+            }
+            if value == divisor && divisor != 0 {
+                assert_ne!(value % divisor, value);
             }
         }
     }

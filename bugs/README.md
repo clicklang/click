@@ -11,3 +11,5 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [A natural `goto` cycle's forward `goto` exit is dropped, so the contract is vacuous](natural-goto-cycle-forward-exit-is-dropped.md)
+- [Arithmetic cannot render an observed product after a zero rewrite](arithmetic-cannot-render-observed-product-after-zero-rewrite.md)
+- [Whole-claim expansion fails on proofs with a proof `match`](whole-claim-expansion-fails-on-proof-matches.md)

@@ -32,7 +32,7 @@ and native Charon artifact to prove every lane of these original helpers:
 | `U32X4::from` | At least four bytes and a shared view of the first four; each returned lane equals its corresponding input byte and is at most 255; each unsigned Integer observation lies in `0..255` |
 | `AddAssign<Self>` | Each Integer lane sum fits u32; each output lane equals its old value plus the corresponding by-value operand, with exact Integer sum and nonnegative observation |
 | `RemAssign<u32>` | Nonzero divisor; each output lane equals its old value modulo the divisor, is below the divisor, and has an Integer observation in `0..divisor-1` |
-| `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier |
+| `MulAssign<u32>` | Zero multiplier or each lane fits the quotient bound; each output lane equals its old value times the multiplier, with exact Integer product and observation in `0..4294967295` |
 
 Mutating helpers require ownership of all four receiver lanes. Addition accepts
 Integer sum bounds and derives the widened `(int64)` Rust overflow guards;
@@ -53,6 +53,17 @@ for all four lanes, along with nonnegative Integer observations. Its original
 the call to `MOD = 65521` yields the `0..65520` range needed to reset both
 lane ceilings before a new batch. This does not establish the reset or
 preservation over the original outer loop yet.
+
+The multiplication helper also exports the exact Integer product for each lane.
+`uint32_mul_to_integer` uses the original native quotient guard, including its
+zero-factor branch, to justify the non-wrapping observation. This lets caller
+proofs carry numeric lane ceilings through the original `*=` body: for example,
+a reduced lane at most 65520, multiplied by four, has an Integer observation at
+most 262080. The theorem covers the full unsigned range; defined wrapping
+multiplication alone cannot justify an exact mathematical product. Kernel
+regressions check unsigned boundary values and both sides of the last safe
+quotient. Helper regressions reject false products/bounds and missing guards
+independently for every lane. The complete four-byte computation remains unproved.
 
 Frozen and live regressions check the original source hashes, prove all four
 helpers, and reject false lane claims, short reads, missing safety guards,

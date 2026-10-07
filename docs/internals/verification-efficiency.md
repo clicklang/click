@@ -309,8 +309,10 @@ charged to visible semantic output rather than hidden ambient state:
   propositions need merging, then adds only assumable obligations
   (`completed_early_return_contexts_are_reused_for_certification`). Legacy
   producers and paths with observable entry-resource facts retain the flat
-  rebuild. The explicit early-return proof also still constructs contexts
-  elsewhere in its transaction; the bug report records both proof forms.
+  rebuild. Decided C branches now build allocation-resolution assumptions
+  only while an allocation is pending; the same regression bounds that phase
+  in both proof forms. The explicit proof still constructs contexts elsewhere,
+  including return preparation; the bug report records both proof forms.
 
 ## Execution capacity follows selected syntax
 

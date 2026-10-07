@@ -4,6 +4,13 @@ This checks the first loop-invariant sorting step: one bubble-sort pass over
 three cells should establish that every earlier cell is less than or equal to
 the final cell. It intentionally does not prove permutation.
 
+The invariant depends on whether the swap ran, so the two arms of the C `if`
+cannot be joined keeping only what they agree on, which is all the automatic
+loop closer does at an `if`. The body is written as the two paths instead: a
+proof `if` on the C condition whose arms each run to the back edge and prove
+the invariant from what that arm did. Nothing is written after the `if`, so
+nothing is checked twice.
+
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
     int32 j;
@@ -47,6 +54,27 @@ int32 bubble_pass3(int32 p[3]) {
         }
         preserve by {
             unfold(all_le_range);
+            if p[j + 1] < p[j] {
+                step();
+                step();
+                step();
+                step();
+                step();
+                have all_le_range(p, 0, j, p[j]) by {
+                    unfold(all_le_range);
+                    simp();
+                }
+                close_invariants();
+            } else {
+                step();
+                step();
+                step();
+                have all_le_range(p, 0, j, p[j]) by {
+                    unfold(all_le_range);
+                    simp();
+                }
+                close_invariants();
+            }
         }
         owns p[0..3];
     }

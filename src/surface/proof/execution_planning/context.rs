@@ -641,19 +641,13 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                     let matched_case = case_path.get(*next_case).filter(|choice| {
                         choice.match_arm.is_none() && choice.condition == proof_if.condition
                     });
+                    //
+                    // The same holds for a proof `if` whose arms rejoined:
+                    // the path that leaves it took neither case, so it is
+                    // one step of that path and stays whole.
                     let Some(choice) = matched_case else {
-                        if proof_if.then_tactics.is_empty() || proof_if.else_tactics.is_empty() {
-                            selected.push(tactic.clone());
-                            continue;
-                        }
-                        if case_path.get(*next_case).is_none() {
-                            return Err(ClickError::new(format!(
-                                "`{claim_label}` surface certificate has more branches than its validation path"
-                            )));
-                        }
-                        return Err(ClickError::new(format!(
-                            "`{claim_label}` surface certificate branch condition does not match its validation path"
-                        )));
+                        selected.push(tactic.clone());
+                        continue;
                     };
                     offsets.push(selected.len());
                     *next_case += 1;
@@ -678,17 +672,23 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                     selected.push(tactic.clone());
                 }
                 ProofTactic::Match(proof_match) => {
-                    offsets.push(selected.len());
-                    let choice = case_path.get(*next_case).ok_or_else(|| {
-                        ClickError::new(format!(
-                            "`{claim_label}` surface certificate has more branches than its validation path"
-                        ))
-                    })?;
-                    let Some(arm_case) = choice.match_arm.as_ref() else {
-                        return Err(ClickError::new(format!(
-                            "`{claim_label}` surface certificate has a proof `match` its validation path does not take"
-                        )));
+                    // A `match` whose arms rejoined without an interface is
+                    // one step of the path that leaves it, like one that
+                    // rejoined through `ensuring`: the path took none of its
+                    // arms, so its next case, if any, belongs to a later
+                    // split.
+                    let Some(arm_case) = case_path
+                        .get(*next_case)
+                        .and_then(|choice| choice.match_arm.as_ref())
+                        .filter(|arm_case| {
+                            Arc::ptr_eq(&arm_case.source, proof_match)
+                                || arm_case.source == *proof_match
+                        })
+                    else {
+                        selected.push(tactic.clone());
+                        continue;
                     };
+                    offsets.push(selected.len());
                     let arm = proof_match.arms.get(arm_case.arm).ok_or_else(|| {
                         ClickError::new(format!(
                             "`{claim_label}` surface certificate proof `match` has no arm {}",

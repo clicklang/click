@@ -1137,7 +1137,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }
             Ok(paths)
         }
-        SpecProposition::Or(left, right) => lower_spec_binary_proposition_at_state_in(
+        SpecProposition::Or(left, right) => lower_spec_disjunction_at_state_in(
             state,
             left,
             right,
@@ -1145,7 +1145,6 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             assumptions,
             algebraic_bindings,
             budget,
-            |left, right| Proposition::Or(Box::new(left), Box::new(right)),
         ),
         SpecProposition::Not(body) => {
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -5456,7 +5455,7 @@ fn canonical_offset_sum(left: PointerOffsetTerm, right: PointerOffsetTerm) -> Po
     }
 }
 
-fn lower_spec_binary_proposition_at_state_in(
+fn lower_spec_disjunction_at_state_in(
     state: &CState,
     left: &SpecProposition,
     right: &SpecProposition,
@@ -5464,7 +5463,6 @@ fn lower_spec_binary_proposition_at_state_in(
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
-    combine: impl Fn(Proposition, Proposition) -> Proposition,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
     for left_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -5477,14 +5475,24 @@ fn lower_spec_binary_proposition_at_state_in(
     )? {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        let right_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
             state,
             right,
             loop_entry_state,
             &right_assumptions,
             algebraic_bindings,
             budget,
-        )? {
+        )?;
+        // Preserve the written disjunction whenever both sides lower, including
+        // the shape used by explicit choice/case certificates. An undefined
+        // unused right expression must not remove an exactly known true left
+        // path (for example a zero-factor quotient guard). Keep that path's
+        // facts/obligations; unknown or false left sides still require the right.
+        if right_paths.is_empty() && assumptions.proves_exact(&left_path.proposition) {
+            paths.push(left_path);
+            continue;
+        }
+        for right_path in right_paths {
             if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &left_path.facts,
                 &left_path.obligations,
@@ -5494,7 +5502,10 @@ fn lower_spec_binary_proposition_at_state_in(
             ) {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
-                    proposition: combine(left_path.proposition.clone(), right_path.proposition),
+                    proposition: Proposition::Or(
+                        Box::new(left_path.proposition.clone()),
+                        Box::new(right_path.proposition),
+                    ),
                     facts,
                     obligations,
                 });
@@ -6279,6 +6290,15 @@ fn evaluate_resource_count_paths(
                         facts,
                         obligations,
                     });
+                }
+                // An outstanding locked worker changes this population at an
+                // unknown time before its join, so no total is current.
+                if state
+                    .thread_ledger
+                    .as_ref()
+                    .is_some_and(|ledger| ledger.defers_population_change(&description))
+                {
+                    return Err(ExecutionLimit::AuthorityCountPendingLockedWorker);
                 }
                 let authority =
                     CResourceFact::own(CResource::PopulationAuthority(description.clone()));

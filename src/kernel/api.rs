@@ -1349,8 +1349,50 @@ fn abstract_c_state_for_join_across_with_policy(
     let mut abstract_objects = Vec::new();
     let mut preserved_blocks = BTreeSet::new();
 
+    // A local that some arm of an interface join left uninitialized is
+    // uninitialized after the join: the path through that arm never gave it
+    // a value, so reading it afterwards is as undefined as it was there. An
+    // arm that did initialize it must not keep a value for it, or the two
+    // arms' abstractions differ and the arms cannot be joined at all.
+    let mut uninitialized_in_an_arm = BTreeSet::new();
+    if preserve_exact_common_memory {
+        for sibling in sibling_states {
+            for (name, binding) in sibling.locals.bindings.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if matches!(binding, CLocalBinding::UninitializedObject { .. }) {
+                    uninitialized_in_an_arm.insert(name.as_str());
+                }
+            }
+        }
+    }
+    let mut left_uninitialized = Vec::new();
+
     for (name, binding) in state.locals.bindings.iter() {
         crate::instrumentation::record_deterministic_work(1);
+        if let CLocalBinding::Object {
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+            ..
+        } = binding
+            && uninitialized_in_an_arm.contains(name.as_str())
+        {
+            // Its block is not preserved, so the memory join below drops
+            // the value this arm stored and its initialization record.
+            left_uninitialized.push((
+                name.clone(),
+                *c_type,
+                slot.clone(),
+                *volatile,
+                *pointee_volatile,
+                *constant,
+                *pointee_constant,
+            ));
+            continue;
+        }
         let CLocalBinding::Object {
             value,
             c_type,
@@ -1491,6 +1533,19 @@ fn abstract_c_state_for_join_across_with_policy(
     for (name, value, c_type) in abstract_objects {
         sync_stack_local(&mut abstract_state, &name, &value);
         abstract_state.locals.set_typed(name, value, c_type);
+    }
+    for (name, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
+        left_uninitialized
+    {
+        abstract_state.locals.set_uninitialized_with_all_qualifiers(
+            name,
+            c_type,
+            slot,
+            volatile,
+            pointee_volatile,
+            constant,
+            pointee_constant,
+        );
     }
     // Drop the resource context through the rebasing setter, not by writing
     // the field. The occurrence-to-loan sidecar is keyed by the occurrences of
@@ -2637,6 +2692,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         }
         ExecutionLimit::AuthorityCountNeedsOwnership => {
             "count(...) requires owning authority for that population".to_string()
+        }
+        ExecutionLimit::AuthorityCountPendingLockedWorker => {
+            "count(...) is unknown until pthread_join returns the workers that change this population under its mutex".to_string()
         }
         ExecutionLimit::AuthorityCountLentToWorker => {
             "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
@@ -8659,6 +8717,41 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
     ))
 }
 
+/// Unsigned multiplication has its exact mathematical value under the native
+/// checked-multiplication guard. The zero factor branch does not divide by zero.
+/// Definedness of a wrapping u32 product alone is insufficient.
+pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let premise = Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                left.clone(),
+                Bitvector32Term::unsigned_divide(
+                    Bitvector32Term::Constant(u32::MAX),
+                    right.clone(),
+                ),
+            ),
+            true,
+        )),
+    );
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let product = observe(Bitvector32Term::multiply(left.clone(), right.clone()));
+    let exact = IntegerTerm::Multiply(observe(left).into(), observe(right).into());
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(product.into(), exact.into()),
+            true,
+        )),
+    ))
+}
+
 /// An unsigned remainder is strictly below its nonzero divisor.
 /// No upper bound on the dividend is needed; zero division is excluded.
 pub fn prove_uint32_remainder_less_than_divisor(
@@ -8674,6 +8767,24 @@ pub fn prove_uint32_remainder_less_than_divisor(
             ConditionTerm::unsigned_less_than(
                 Bitvector32Term::unsigned_remainder(value, divisor.clone()),
                 divisor,
+            ),
+            true,
+        )),
+    ))
+}
+
+/// A dividend strictly below an unsigned divisor is already its remainder.
+/// The strict unsigned premise also excludes division by zero.
+pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32Term) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::unsigned_remainder(value.clone(), divisor),
+                value,
             ),
             true,
         )),

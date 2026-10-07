@@ -43,13 +43,15 @@ int32 stuck_loop(int32 n) {
                 step();
                 step();
                 simp();
+                step();
+                close_invariants();
             } else {
                 step();
                 step();
                 simp();
+                step();
+                close_invariants();
             }
-            step();
-            close_invariants();
         }
     }
     step();

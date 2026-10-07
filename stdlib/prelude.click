@@ -991,6 +991,11 @@ theorem uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     ensures left <= right;
 }
 
+theorem uint32_mul_to_integer(left: uint32, right: uint32) {
+    requires right == 0u32 or left <= 4294967295u32 / right;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+}
+
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right);
@@ -1016,6 +1021,11 @@ theorem uint32_less_than_to_integer(left: uint32, right: uint32) {
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor;
+}
+
+theorem uint32_remainder_of_lt(value: uint32, divisor: uint32) {
+    requires value < divisor;
+    ensures value % divisor == value;
 }
 
 theorem uint32_to_integer_bounds(value: uint32) {
