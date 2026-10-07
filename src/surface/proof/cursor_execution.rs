@@ -3379,13 +3379,12 @@ pub(super) fn condition_path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &CState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<ClickProposition> {
+) -> Option<(ConditionTerm, ClickProposition)> {
     let cases = path_facts
         .iter()
         .map(|path_facts| PathCase { path_facts })
         .collect::<Vec<_>>();
     path_case_split_condition(&cases, available, state, proof_context)
-        .map(|(_, condition)| condition)
 }
 
 /// The condition a case split of `cases` splits on first: a distinguishing

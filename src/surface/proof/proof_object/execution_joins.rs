@@ -188,18 +188,58 @@ impl<'a> Proof<'a> {
         // arms, and one arm cannot stand for two paths with different facts.
         // Refuse here, naming the cases, rather than join an arm that covers
         // only one of them.
-        if let Some(value) = [true, false].into_iter().find(|value| {
+        let repeated_value = [true, false].into_iter().find(|value| {
             transitions
                 .iter()
                 .filter(|transition| transition.is_true == *value)
                 .count()
                 > 1
-        }) {
-            let parameters = context.parsed_function.parameters();
+        });
+        let source_condition = surface_c_condition(&condition);
+        let mut operand_condition = &source_condition;
+        while let ClickProposition::Not(inner) = operand_condition {
+            operand_condition = inner;
+        }
+        let short_circuit = matches!(
+            operand_condition,
+            ClickProposition::And(..) | ClickProposition::Or(..)
+        );
+        let selector = (repeated_value.is_some() || short_circuit)
+            .then(|| {
+                let path_facts = transitions
+                    .iter()
+                    .map(|transition| transition.path_facts.as_slice())
+                    .collect::<Vec<_>>();
+                super::super::cursor_execution::condition_path_case_split_condition(
+                    &path_facts,
+                    &|fact| self.facts().contains(fact),
+                    &current_state,
+                    context,
+                )
+                .and_then(|(kernel_condition, surface)| {
+                    let expected = Proposition::ConditionIs(kernel_condition, true);
+                    self.lower_surface_proposition(&surface, "execution path selector")
+                        .ok()
+                        .filter(|actual| actual == &expected)
+                        .map(|_| (expected, surface))
+                })
+            })
+            .flatten();
+        // A short-circuit selector must remain explicit even when only one
+        // path reaches each truth value. Assuming the negated whole condition
+        // does not supply the individual false operand to a simple `step`.
+        let operand_selector = short_circuit
+            && transitions.len() > 1
+            && selector.as_ref().is_none_or(|(expected, _)| {
+                self.lower_surface_proposition(&surface_condition, "C branch condition")
+                    .is_ok_and(|actual| actual != *expected)
+            });
+        if repeated_value.is_some() || operand_selector {
             let path_facts = transitions
                 .iter()
                 .map(|transition| transition.path_facts.as_slice())
                 .collect::<Vec<_>>();
+            let parameters = context.parsed_function.parameters();
             let cases = transitions
                 .iter()
                 .enumerate()
@@ -226,20 +266,20 @@ impl<'a> Proof<'a> {
                     )
                 })
                 .collect::<String>();
-            let split_condition =
-                super::super::cursor_execution::condition_path_case_split_condition(
-                    &path_facts,
-                    &|fact| self.facts().contains(fact),
-                    &current_state,
-                    context,
-                );
+            let split_condition = selector.map(|(_, surface)| surface);
+            let reason = match repeated_value {
+                Some(value) => format!(
+                    "its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value",
+                    crate::surface::diagnostics::describe_c_expression(&condition),
+                    transitions
+                        .iter()
+                        .filter(|transition| transition.is_true == value)
+                        .count(),
+                ),
+                None => "its short-circuit paths need an explicit operand selector".to_string(),
+            };
             let error = self.step_error(format!(
-                "`branch` cannot split the C `if` at statement({statement_index}): its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; in each case the condition has one path per arm. `execute()` makes this split itself.",
-                crate::surface::diagnostics::describe_c_expression(&condition),
-                transitions
-                    .iter()
-                    .filter(|transition| transition.is_true == value)
-                    .count(),
+                "`branch` cannot split the C `if` at statement({statement_index}): {reason}{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; `execute()` makes this split itself.",
             ));
             return Err(match split_condition {
                 Some(condition) => error.with_path_case_condition(condition),

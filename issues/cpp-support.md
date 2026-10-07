@@ -708,10 +708,25 @@ expansion/reverification, hostile field/size/amount/result claims and bounded
 work-scaling regressions. This is source admission and concrete fast-path
 coverage, not a symbolic caller proof.
 
-Next apply the joint bounds through the unchanged wide fallback and prove the
-unsigned fast paths for symbolic inputs, then cover the broader mode-specific
-result-fit precondition. The
-full 96/32 fee-division contract remains open; the current joint range ensures
+Symbolic traversal exposed and fixed a shared execution-tooling defect:
+64-bit field selectors retain their native width, automatic selectors must
+lower back to the exact kernel condition, and short-circuit operand selectors
+remain explicit even when each truth value has only one remaining path.
+A reduced unchanged field/conjunction fixture checks ordinary verification,
+expansion/reverification, retained audit, missing authority and false results;
+signed/unsigned wide loads also round-trip at nonzero offsets. Shared plain C
+regressions check negated conjunctions and disjunctions through expansion.
+This removes a
+stack-overflow retry loop and an unverifiable short-circuit expansion, without
+changing the Bitcoin source or increasing execution budgets.
+
+Next transport the joint product bounds through the unchanged wide fallback
+into the actual Mul result and captured Div arguments. A negative-fee caller
+now traverses the branch without crashing and reaches a bounded refusal of
+Div's scaled Integer precondition; it is not yet a verified caller contract.
+Then prove the unsigned fast paths for symbolic inputs and cover the broader
+mode-specific result-fit precondition. The full 96/32 fee-division contract
+remains open; the current joint range ensures
 both rounding modes fit. The selected source narrows `n / d` to int64 and
 `n % d` to int32 before correcting.
 A zero numerator observer alone still does not establish the narrowed

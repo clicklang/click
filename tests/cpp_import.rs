@@ -5114,8 +5114,12 @@ fn check_sidecar_tactic(
     )
     .unwrap();
     let rewritten = parsed.with_entry_source(expanded.clone());
-    verify_program_prepared_project(&rewritten, import)
-        .expect("expanded arithmetic certificate reverifies");
+    verify_program_prepared_project(&rewritten, import).unwrap_or_else(|error| {
+        panic!(
+            "expanded arithmetic certificate: {}\n{expanded}",
+            error.message()
+        )
+    });
     let (session, _) =
         C0VerificationSession::new_program_prepared_project(&parsed, import).unwrap();
     let sites = program_prepared_project_smart_tactic_source_sites(&rewritten, import).unwrap();
@@ -10379,4 +10383,38 @@ fn fee_rounding_pattern_rejects_false_rounding_and_missing_guards() {
 #[test]
 fn fee_rounding_pattern_caller_rejects_false_rounding_and_missing_guards() {
     check_fee_rounding_pattern("caller", true);
+}
+
+#[test]
+fn symbolic_wide_field_branch_paths_keep_their_selector_width() {
+    let cpp = include_str!("fixtures/cpp-verification/branch-paths/wide-field.cpp");
+    let project = Project::with_fixture("wide-field.cpp", "choose", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "wide-field.cpp";
+int32 choose(const struct Box* box) {
+ views box->fee;
+ ensures result == 1 or result == 2;
+ ensures box->fee == old(box->fee);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+    for (fee, result) in [("-1i64", 2), ("1i64", 1), ("8589934592i64", 2)] {
+        let precise = source
+            .replace(
+                "views box->fee;",
+                &format!("views box->fee;\n requires box->fee == {fee};"),
+            )
+            .replace("result == 1 or result == 2", &format!("result == {result}"));
+        check_arithmetic_sidecar(&project, &import, &precise);
+    }
+    for bad in [
+        source.replace("views box->fee;", ""),
+        source.replace("result == 1 or result == 2", "result == 1"),
+    ] {
+        let path = project.directory.join("bad.click");
+        fs::write(&path, &bad).unwrap();
+        let parsed = read_click_project(&path, &bad).unwrap();
+        assert!(verify_program_prepared_project(&parsed, &import).is_err());
+    }
 }
