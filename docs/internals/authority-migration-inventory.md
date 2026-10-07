@@ -1034,8 +1034,8 @@ of a population the helper never acquired),
 from before the call), `authority_mutex_locked_undeclared_birth_rejected.md`
 (a birth with no `produces`), and
 `authority_mutex_locked_reacquire_rejected.md` (a second acquisition in one
-proof). An unconditional locked retain remains open: creating a member under
-a fresh total needs a bound that rules out counter overflow.
+proof). A locked retain needs a bound that rules out counter overflow under
+the fresh total; milestone 6 chunk 4 supplies it with retain permits.
 
 **Chunk 3, protected bodies and local conservation:** Six fixtures leave the
 legacy path; each also drops `guarded_by`, since initialization supplies the
@@ -1250,3 +1250,41 @@ member stayed in the parent's resources, and only the creation ledger refused
 to let it be used. Unfolding a control whose count is unavailable because of a
 worker now reports that cause instead of `could not evaluate instance body
 fact`.
+
+**Chunk 4, shared-refcount acceptance example:** `examples/shared-refcount`
+verifies an owner and two user threads sharing one object. The owner retains
+a reference for each user under the mutex before creating it; each user
+releases its reference under the mutex; after both joins the owner releases
+its own reference, destroys the mutex, retires both populations, and frees
+the object. `run` and `run_reverse_join` cover both join orders and both
+create failures. The C is pinned in `tests/examples.rs`.
+
+The control owns the counter and the authorities of `reference(obj)` and
+`permit(obj)`, and states that references plus permits equal three. Retain
+turns a permit into a reference and release turns it back, so a retain holds
+unused capacity and its plain increment cannot overflow. That cap is the
+stated bound this example chooses: the proof carries it, and the C does not
+enforce it. `authority_mutex_locked_retain_without_cap_rejected.md` shows the
+increment refused without it, and
+`authority_mutex_locked_exchange_unspent_rejected.md` shows a retain that does
+not spend its permit failing to restore the control.
+
+The example needed three kernel extensions, none of them new syntax:
+
+- A locked helper may declare one member effect per acquired population, so
+  retain and release each exchange a permit and a reference.
+- A proof that holds only a typed `mutex_use` share may call a locked helper.
+  The call first enters the escrowed population into that proof with a fresh
+  total and the caller's members, as a lock would, and the proof's own exit
+  check compares its declared change with the calls' changes. A user thread
+  calls `object_release` this way.
+- `pthread_create` keeps the proof name of a parent's `mutex_live` on the use
+  share the parent retains, and join moves it back, so the owner can name its
+  share in helper calls between create and join.
+
+`click verify` takes about 0.3 seconds on the project, and `click audit`
+expands and reverifies all 41 smart sites. Milestone 6's exit gate holds:
+references and the mutex stay alive while users hold them, population updates
+go through checked exchanges under the owning authority, reclamation follows
+both joins and the final release exactly once, every count consumer has a
+replacement, and no rule is specific to refcounts.

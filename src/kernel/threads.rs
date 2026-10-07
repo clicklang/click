@@ -63,7 +63,7 @@ pub(super) struct WorkerCreation {
     pub(super) parent_after_create: super::population_authority::c_creation::CreationEvents,
     pub(super) worker: super::population_authority::c_creation::CreationEvents,
     pub(super) definitions: Vec<super::CCompositeResourceDefinition>,
-    pub(super) deferred: Option<DeferredMemberExchange>,
+    pub(super) deferred: Vec<DeferredMemberExchange>,
 }
 
 /// A locked worker's declared member change. Its authority stays in the
@@ -614,15 +614,12 @@ impl ThreadLedger {
     ) -> bool {
         self.storage.rights.iter().any(|(_, right)| {
             crate::instrumentation::record_deterministic_work(1);
-            right
-                .completion
-                .creation
-                .as_ref()
-                .and_then(|creation| creation.deferred.as_ref())
-                .is_some_and(|deferred| {
+            right.completion.creation.as_ref().is_some_and(|creation| {
+                creation.deferred.iter().any(|deferred| {
                     deferred.description.family() == description.family()
                         && deferred.description.arguments() == description.arguments()
                 })
+            })
         })
     }
 
@@ -1168,7 +1165,7 @@ impl ThreadContext {
                 .as_ref()
                 .ok_or("worker join lost the parent's creation history")?;
             let mut worker_events = current.return_to(&creation.worker);
-            if let Some(deferred) = &creation.deferred {
+            for deferred in &creation.deferred {
                 let lent = worker_events
                     .transfer_call_fact(current, &creation.worker, &deferred.description, true)
                     .map_err(|_| "a locked worker's population authority is not in its mutex")?;

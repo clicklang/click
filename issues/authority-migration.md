@@ -187,8 +187,9 @@ Milestones 1–4 are complete, building on the foundation that the earlier
 checkpoints 0–5 delivered. Authority semantics now cover sequential refcount,
 shared-parent ownership, the bounded pool, field-bearing named members,
 every sequential population consumer, and mutex-held authority controls.
-Milestone 6 chunks 1–3, the worker protocol and its implementation for
-abstract and shared worker populations, are also complete. The approved
+Milestone 6 is complete: the worker protocol, its implementation for
+abstract, shared, and locked worker populations, and the shared-refcount
+example. The approved
 [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md)
 governs establishment and retirement. The
 [consumer inventory](../docs/internals/authority-migration-inventory.md) lists
@@ -202,10 +203,10 @@ holds only the plan.
 | 3. Remaining sequential accounting | Complete | All sequential inventory groups use authority without fallback |
 | 4. Mutex-held authority controls | Complete | Ordinary protected controls replace counted-population mutex custody |
 | 5. Retire `guarded_by` associations | Complete; its two worker fixtures migrated in milestone 6 chunk 3 | No active `guarded_by` consumer; associations come from checked initialization |
-| 6. Concurrent lifetime and worker accounting | Chunks 1–3 complete; 1 chunk | Shared refcount and worker accounting verify through ordinary transfers |
+| 6. Concurrent lifetime and worker accounting | Complete | Shared refcount and worker accounting verify through ordinary transfers |
 | 7. Sole default and legacy removal | 4 chunks | One checked counting model remains; old machinery and `guarded_by` are deleted |
 
-The remaining plan is milestone 6 chunk 4 and milestone 7's four chunks.
+The remaining plan is milestone 7's four chunks.
 These are planning estimates, not promises. Tooling repairs may still add
 chunks.
 
@@ -264,9 +265,9 @@ stays until milestone 7. The inventory names every file.
    guard and control between the mutex and their caller, and for locked
    helpers that open the acquired control themselves, such as a locked
    release: each acquisition enters a fresh opaque population, and the caller
-   applies the helper's checked member delta. An unconditional locked retain
-   still needs a bound that rules out counter overflow under the fresh total;
-   milestone 6 chunk 4 depends on it.
+   applies the helper's checked member delta. A locked retain bounds its
+   increment with a stated cap carried by retain permits, as milestone 6
+   chunk 4's example shows.
 3. **Protected bodies and local conservation.** Migrate the six
    `mutex_population_*` fixtures and both `population_conservation_local_mutex*`
    fixtures. These also use `guarded_by`, so they migrate both concerns at
@@ -346,7 +347,8 @@ negatives retain their refusals through ordinary initialization and transfer.
 4. **Shared-refcount acceptance example.** Freeze and verify a small ordinary
    C program with two users, a retained owner reference, locked retain/release,
    and final reclamation after the users finish. Cover creation failure and
-   both completion/join orders.
+   both completion/join orders. **Complete:** `examples/shared-refcount`; the
+   inventory's milestone 6 record lists the evidence.
 
 **Exit gate:** References keep the object and mutex alive before acquisition;
 population updates preserve framed ownership; reclamation occurs exactly once

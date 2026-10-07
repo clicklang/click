@@ -544,6 +544,10 @@ The regressions are `authority_mutex_locked_workers.md`,
 `authority_mutex_locked_workers_stale_rejected.md`, and
 `authority_mutex_locked_workers_destroy_before_join_rejected.md`.
 
-A locked retain that creates a member unconditionally still needs a bound
-that rules out counter overflow under the fresh total; it and worker transfer
-are later work in `issues/authority-migration.md`.
+A locked helper may declare one member effect per population whose control it
+acquires, such as a retain that consumes a `permit(obj)` and produces a
+`reference(obj)`. A proof that holds only a typed `mutex_use` share may call a
+locked helper: the call enters the escrowed populations into that proof with
+fresh totals, as a lock would, and the proof's exit check compares its own
+declared change with what the calls changed. `examples/shared-refcount` uses
+both, with a stated cap on references that bounds the retain's increment.

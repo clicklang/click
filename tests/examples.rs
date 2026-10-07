@@ -302,6 +302,18 @@ fn concurrency_fork_join_source_is_frozen() {
 }
 
 #[test]
+fn shared_refcount_source_is_frozen() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/shared-refcount/shared_refcount.c");
+    let bytes = fs::read(&source).expect("the frozen shared refcount C source exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "ac5e6d927ada9341e3efb7ea77446785c364a8578e49d0a09f146b5037c5e025",
+        "the shared refcount proof must use the selected C source unchanged"
+    );
+}
+
+#[test]
 fn concurrency_mutex_counter_source_is_frozen() {
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-probes/mutex_counter.c");
