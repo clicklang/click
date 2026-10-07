@@ -14221,3 +14221,156 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
         assert!(error.message().len() < 8000);
     }
 }
+
+#[test]
+fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
+    let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
+    let value = Bitvector32Term::Variable(Variable(8_178_901));
+    let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
+    let kernel = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(Box::new(value), Box::new(Bitvector32Term::Constant(0))),
+        true,
+    );
+    let anchor = ProgramPointRef {
+        region: CodeRegionRef::Statement(1),
+        kind: ProgramPointKind::Entry,
+    };
+    for size in [16usize, 64, 256, 1024, 4096] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                CState::new(),
+            );
+        }
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::super::smart_closures::synthesize_surface_at_recorded_snapshots(
+                &kernel,
+                parameters.parameters(),
+                &arguments,
+                &snapshots,
+                &anchor,
+            )
+            .next()
+        });
+        let surface = surface.expect("the nearest snapshot should name the parameter");
+        assert!(proposition_contains_at_expression(&surface));
+        let state = CState::new();
+        let lowered = lower_fixed_state_proposition_with_assumptions(
+            &surface,
+            &PureFactContext::new(),
+            parameters.parameters(),
+            &arguments,
+            &state,
+            &state,
+            None,
+            &snapshots,
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        )
+        .expect("the candidate must lower against the selected snapshot");
+        assert_eq!(
+            lowered, kernel,
+            "snapshot spelling must preserve the exact premise"
+        );
+        let height = usize::BITS - size.leading_zeros();
+        assert!(
+            work <= 32 * height as usize + 128,
+            "size {size}: {work} synthesis work"
+        );
+        crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
+            assert!(
+                super::super::smart_closures::synthesize_surface_at_recorded_snapshots(
+                    &kernel,
+                    parameters.parameters(),
+                    &arguments,
+                    &snapshots,
+                    &anchor
+                )
+                .next()
+                .is_none()
+            );
+        });
+    }
+}
+
+#[test]
+fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
+    use crate::instrumentation::{TacticEvent, TacticWorkLimits, VerificationEvent};
+    let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
+    let value = Bitvector32Term::Variable(Variable(8_178_902));
+    let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
+    let kernel = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(Box::new(value), Box::new(Bitvector32Term::Constant(0))),
+        true,
+    );
+    let anchor = ProgramPointRef {
+        region: CodeRegionRef::Statement(0),
+        kind: ProgramPointKind::Entry,
+    };
+    for size in [16usize, 64, 256, 1024, 4096] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Statement(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                CState::new(),
+            );
+        }
+        let limit = 64;
+        let ((candidates, work), events) = crate::instrumentation::with_tactic_work_limits(
+            TacticWorkLimits {
+                simple: limit,
+                smart: limit,
+                control: limit,
+            },
+            || {
+                crate::instrumentation::collect(|| {
+                    let tactic = TacticEvent {
+                        claim: "snapshot budget".into(),
+                        tactic_index: 0,
+                        tactic_name: "simp".into(),
+                        class: "smart".into(),
+                        statement_index: 0,
+                        source_index: 0,
+                    };
+                    crate::instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
+                    let measured = crate::instrumentation::measure_deterministic_work(|| {
+                        let mut candidates =
+                            super::super::smart_closures::synthesize_surface_at_recorded_snapshots(
+                                &kernel,
+                                parameters.parameters(),
+                                &arguments,
+                                &snapshots,
+                                &anchor,
+                            );
+                        let count = candidates.by_ref().count();
+                        assert!(candidates.next().is_none());
+                        count
+                    });
+                    crate::instrumentation::emit(VerificationEvent::TacticFailed(tactic));
+                    measured
+                })
+            },
+        );
+        assert!(
+            candidates < size,
+            "exhaustion must prevent visiting the whole history"
+        );
+        assert!(
+            work <= limit + 16,
+            "size {size}: {work} work after limit {limit}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, VerificationEvent::TacticWorkBudgetExceeded { .. })),
+            "the work miss must retain its budget diagnosis"
+        );
+    }
+}

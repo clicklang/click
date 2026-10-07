@@ -1064,3 +1064,20 @@ Regressions cover missing/false/irrelevant premises, both return paths,
 grouped ownership and value guarantees, and independent expansion rechecks.
 This repairs proof tooling; it does not prove the original nested loops or
 checksum contract. Original Rust sources and extraction locks are unchanged.
+
+
+### Bounded snapshot premise reconstruction at the original loop frontier
+
+An empty-input `Adler32::compute` experiment reached the original lane-summing
+loops, but a smart `have b == 0u32` repeatedly reconstructed old premises after
+its deadline. Snapshot candidate lookup now seeks lazily in the persistent
+tree instead of collecting and sorting every recorded state. Traversal,
+candidate matching, and cross-snapshot operand reconstruction respect sticky
+work/deadline exhaustion; the enclosing closer reports that budget error
+before starting another fallback. Multi-size regressions cover ordering,
+tombstones, logarithmic near-anchor work, exact lowering, and cancellation.
+The original failing trial now unwinds at its enforced bound. This is a
+verifier repair, not an empty-input or nested-loop proof. Next decompose the
+original computation's scalar/modulo checkpoint into explicit checked steps,
+then establish the existing lane ceilings over the stored nested iterators.
+Original Rust sources, extraction locks, and the import profile are unchanged.

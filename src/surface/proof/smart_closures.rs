@@ -1902,6 +1902,7 @@ impl<'a> Proof<'a> {
                 .or_else(|| self.try_selected_forall_instantiation(&goal, premise_pairs))
                 .or_else(|| self.try_selected_disjunction_cases(premise_pairs))
         })();
+        check_verification_deadline()?;
         if let Some(atomic) = atomic {
             return Ok(Some(atomic));
         }
@@ -1951,6 +1952,9 @@ impl<'a> Proof<'a> {
         ) {
             return Ok(Some(rewritten));
         }
+        // Indexed rewrite planning uses Option for an ordinary candidate
+        // miss; preserve an exhausted budget before trying another closer.
+        check_verification_deadline()?;
         if allow_function_unfold
             && let Some(rewritten) =
                 self.try_introduced_equality_then_function_unfold_closure(introduced_surfaces)?
@@ -3616,8 +3620,14 @@ impl<'a> Proof<'a> {
             }
         };
         let resolve_premise = |premise: &Proposition, anchor: Option<&ProgramPointRef>| {
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
             if let Some(surface) = self.available_surface_fact(surface_facts, anchor, premise) {
                 return Some((premise.clone(), surface));
+            }
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
             }
             if let Some(surface) = introduced_surfaces.iter().find(|surface| {
                 self.lower_surface_proposition(surface, "introduced simp premise")
@@ -3661,7 +3671,7 @@ impl<'a> Proof<'a> {
                 premise_pairs = anchored_pairs;
             }
         }
-        Some(premise_pairs)
+        (!crate::instrumentation::deadline_exceeded()).then_some(premise_pairs)
     }
 
     /// Resolves one exact retained fact to a surface form that will lower
@@ -3729,6 +3739,11 @@ impl<'a> Proof<'a> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        // Option-based presentation misses must not restart work after a
+        // candidate exhausted the verifier's sticky budget/deadline.
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
+        }
         let _qualified_sources =
             super::surface_synthesis::QualifiedSynthesisScope::enter(surface_facts);
         // A refold moves a constructor equation: a proof `match` arm's case
@@ -3751,6 +3766,9 @@ impl<'a> Proof<'a> {
             )
         );
         let matches_kernel = |candidate: &ClickProposition| {
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
             let lower = |candidate: &ClickProposition| {
                 self.lower_surface_proposition_direct(candidate, "typed simp premise form")
                     .ok()
@@ -3912,6 +3930,9 @@ impl<'a> Proof<'a> {
             )
         {
             return Some(anchored);
+        }
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
         }
         // A checked branch interface can export a kernel fact whose arm-local
         // Surface recording does not survive as a common map entry. The
@@ -8148,11 +8169,11 @@ fn requirement_uses_planning_compatibility(
 /// operand. Callers must re-lower each candidate and accept it only when it
 /// denotes exactly `kernel`.
 ///
-/// The candidates are produced lazily, nearest point first, and each
-/// point's synthesis is charged one unit: a caller takes the first candidate
-/// whose lowering recovers the fact, so the points past it are never
-/// synthesized. Synthesizing every recorded point for every selected premise
-/// was a smart `have`'s largest uncharged cost in `examples/arena`.
+/// Seek lazily through the persistent snapshot tree, nearest point first.
+/// Both tree traversal and candidate synthesis check the verifier budget;
+/// a successful near-anchor candidate costs logarithmic work in history size.
+/// Exhaustion is sticky and stops this iterator before any further synthesis.
+/// The cross-snapshot equality fallback sees only the already visited points.
 pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
     kernel: &'a Proposition,
     parameters: &'a [syntax::C0Parameter],
@@ -8164,58 +8185,33 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
         CodeRegionRef::Statement(index) => *index,
         _ => usize::MAX,
     };
-    // Recorded statement entries: those at or before the anchor, nearest
-    // first, then any recorded later (a loop body's statements lie beyond
-    // the loop's own index).
-    let mut indices = recorded_snapshots
-        .keys()
-        .filter_map(|selector| match selector {
-            SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Statement(index),
-                kind: ProgramPointKind::Entry,
-            }) => Some(*index),
-            SnapshotSelector::ProgramPoint(_) | SnapshotSelector::Mark(_) => None,
-        })
-        .collect::<Vec<_>>();
-    indices.sort_unstable();
-    indices.dedup();
-    let (before, after): (Vec<usize>, Vec<usize>) = indices
-        .into_iter()
-        .partition(|index| *index <= anchor_index);
-    let points = before
-        .into_iter()
-        .rev()
-        .chain(after)
-        .filter_map(|index| {
-            let point = ProgramPointRef {
-                region: CodeRegionRef::Statement(index),
-                kind: ProgramPointKind::Entry,
-            };
-            let state = recorded_snapshots.get(&point)?;
-            Some((point, state))
-        })
-        .collect::<Vec<_>>();
-    let points = std::rc::Rc::new(points);
-    let across_points = points.clone();
-    (0..points.len())
-        .filter_map(move |position| {
-            let (point, state) = &points[position];
-            crate::instrumentation::record_deterministic_work(1);
-            let surface = synthesize_surface_proposition(kernel, parameters, arguments, state)?;
-            surface_at_snapshot(&surface, point).ok()
-        })
-        .chain(
-            std::iter::once_with(move || {
-                crate::instrumentation::record_deterministic_work(across_points.len());
-                synthesize_surface_equality_across_points(
-                    kernel,
-                    parameters,
-                    arguments,
-                    &across_points,
-                )
-            })
-            .flatten(),
-        )
+    let mut entries = recorded_snapshots.statement_entries_nearest(anchor_index);
+    let mut points = Vec::new();
+    let mut finished = false;
+    std::iter::from_fn(move || {
+        if finished || crate::instrumentation::deadline_exceeded() {
+            finished = true;
+            return None;
+        }
+        for (point, state) in entries.by_ref() {
+            if crate::instrumentation::deadline_exceeded() {
+                finished = true;
+                return None;
+            }
+            points.push((point.clone(), state));
+            if let Some(surface) =
+                synthesize_surface_proposition(kernel, parameters, arguments, state)
+                && let Ok(surface) = surface_at_snapshot(&surface, point)
+            {
+                return Some(surface);
+            }
+        }
+        finished = true;
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
+        }
+        synthesize_surface_equality_across_points(kernel, parameters, arguments, &points)
+    })
 }
 
 /// `b == a` for the fact `a == b`.
