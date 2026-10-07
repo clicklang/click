@@ -92,6 +92,14 @@ Fixed:
   phase for both grouped and explicit proofs, and whole-verification context
   construction for the grouped proof, through 64 returns.
 
+- Decided C branches now build allocation-resolution assumptions only while
+  an allocation is pending. Previously every later branch eagerly rebuilt
+  the statement-local context before asking a settled allocation to resolve
+  again. Temporary caller instrumentation identified this source in
+  `execute_branch_step_from_frontier_position`. The context-reuse regression
+  also bounds the named branch-allocation phase for both proof forms through
+  64 returns.
+
 Remaining. Checked paths still retain flat facts. Outcome goals still import
 those facts once per path. Legacy execution producers and paths with observable
 entry-resource propositions also keep the original certification rebuild to
@@ -111,11 +119,17 @@ and 64 returns:
 | explicit context entries, before | 64 | 122 | 396 | 1772 | 7596 |
 | explicit context entries, reused | 44 | 68 | 226 | 1178 | 5386 |
 
-The explicit proof's whole-verification curve is therefore also a remaining
-violation. Its existing scaling guard tolerates 3x growth per doubling and
-missed these counts. The completion/certification part is now shared in both
-proof forms; the explicit form still builds contexts elsewhere in the
-transaction. Investigate that construction with the C and proof unchanged.
+Measured against base `d4ded0835`, avoiding settled allocation resolution
+reduces the explicit context entries to 44, 68, 198, 718, and 2526, and total work to 6279, 10747, 20087, 43453,
+and 124221, with the C and proof unchanged. Grouped measurements are unchanged.
+The named branch-allocation phase costs 26 units at 16, 32, and 64 returns;
+smaller explicit proofs do not visit that driver.
+The branch fix removes 2860 rebuilt entries at 64 returns, but the explicit
+proof's whole-verification curve is still a remaining violation. Its existing
+scaling guard tolerates 3x growth per doubling and missed these counts. The completion/certification part is now shared in both
+proof forms; the explicit form still builds contexts elsewhere, including
+return preparation, and most total work is outside the named completion phases.
+Investigate that construction with the C and proof unchanged.
 
 ## Intended regression
 
