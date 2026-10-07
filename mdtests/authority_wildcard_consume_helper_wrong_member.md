@@ -14,5 +14,5 @@ void release(int32* pool, int32* member) {
 ```
 
 ```expect
-fail: Requires live base storage for R(p)
+fail: Requires owns slot(p)
 ```

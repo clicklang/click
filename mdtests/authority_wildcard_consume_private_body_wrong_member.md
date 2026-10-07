@@ -48,5 +48,5 @@ int32 lifecycle() { ensures result == 0 or result == 2; } by {
 ```
 
 ```expect
-fail: Requires live base storage for R(p)
+fail: Requires owns slot(p)
 ```

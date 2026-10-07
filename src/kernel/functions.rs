@@ -625,7 +625,7 @@ fn population_transfer_frontier<'a>(
 /// Mirror the checked owned contract partition in the population ledger.
 /// A composite outside a registered population follows ordinary resource
 /// transfer; authority itself must always name a registered population.
-fn transfer_population_call_facts<'a>(
+pub(super) fn transfer_population_call_facts<'a>(
     mut state: CState,
     from: &CState,
     to: &CState,
@@ -2928,13 +2928,38 @@ fn authority_mode_returned_control(
     Some(clause)
 }
 
+/// Every mutex resource in this contract is a borrowed typed `mutex_use`
+/// share, and the contract is no acquiring or releasing helper. A body that
+/// locks through such a share is checked at return by
+/// `check_acquired_control_member_effects`, so preserving its other
+/// resources changes no population the caller holds.
+fn authority_mode_borrows_only_mutex_uses(interface: &CFunctionContractInterface) -> bool {
+    matches!(
+        super::mutexes::helper_contracts::classify(interface),
+        Ok(None)
+    ) && interface
+        .resource_requires()
+        .iter()
+        .chain(interface.resource_ensures())
+        .filter(|spec| spec_contains_mutex_authority(interface, spec))
+        .all(|spec| {
+            spec.family() == ResourceFamily::MutexUse
+                && spec.role() == CResourceTransferRole::Borrow
+                && spec.access() == CResourceAccessMode::Own
+                && spec.quantity() == &CResourceQuantity::One
+                && spec.guard().is_none()
+                && !spec.is_view()
+        })
+}
+
 fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
-        || interface
+        || (interface
             .resource_requires()
             .iter()
             .chain(interface.resource_ensures())
             .any(|spec| spec_contains_mutex_authority(interface, spec))
+            && !authority_mode_borrows_only_mutex_uses(interface))
     {
         return false;
     }
@@ -3539,14 +3564,16 @@ fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterf
     {
         return true;
     }
-    if !interface.resource_constructors().is_empty()
-        || interface
-            .resource_requires()
-            .iter()
-            .chain(interface.resource_ensures())
-            .any(|spec| spec_contains_mutex_authority(interface, spec))
-    {
+    if !interface.resource_constructors().is_empty() {
         return false;
+    }
+    if interface
+        .resource_requires()
+        .iter()
+        .chain(interface.resource_ensures())
+        .any(|spec| spec_contains_mutex_authority(interface, spec))
+    {
+        return authority_mode_preserves_resource_contract(interface);
     }
     authority_mode_preserves_resource_contract(interface)
         || authority_mode_consumes_member_contract(interface)
@@ -6801,7 +6828,15 @@ fn execute_verified_function_applications_with_suspension(
                 .iter()
                 .chain(output_resources.facts())
                 .find_map(|fact| {
-                    if worker_mutex_uses.contains(fact) {
+                    // Authority mode transfers an exact authority through the
+                    // creation ledger below, as at a sequential call boundary.
+                    if worker_mutex_uses.contains(fact)
+                        || (caller_state.uses_population_authority_semantics()
+                            && matches!(
+                                fact,
+                                CResourceFact::Own(CResource::PopulationAuthority(_), _)
+                            ))
+                    {
                         None
                     } else {
                         confined_resource_name(fact, interface.composite_resource_definitions())
@@ -6857,6 +6892,25 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
+            let creation = if caller_state.uses_population_authority_semantics() {
+                let (Some(after), Some(parent), Some(worker)) = (
+                    post_state.population_effects.creation.as_ref(),
+                    caller_state.population_effects.creation.as_ref(),
+                    entry_state.population_effects.creation.as_ref(),
+                ) else {
+                    paths.push(resource_call_failure(
+                        "suspended worker lost its creation history",
+                    ));
+                    continue;
+                };
+                Some(super::threads::WorkerCreation {
+                    parent_after_create: after.return_to(parent),
+                    worker: worker.clone(),
+                    definitions: interface.composite_resource_definitions().to_vec(),
+                })
+            } else {
+                None
+            };
             completions.push(super::threads::WorkerCompletion::checked(
                 plan,
                 output_resources,
@@ -6865,6 +6919,7 @@ fn execute_verified_function_applications_with_suspension(
                 facts,
                 post_state.mutex_ledger.clone(),
                 population_transition.worker_counts,
+                creation,
             ));
             // The internal caller checks there is exactly one completion.
             // No worker guarantee or ownership is published as a call return.
@@ -7479,7 +7534,7 @@ fn prepare_verified_function_call<'a>(
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
     if let Some(error) = authority_mode_call_refusal(caller_state)
-        && (suspend_worker
+        && ((suspend_worker && application.evidence.is_none())
             || (application.evidence.is_none()
                 && !environment
                     .get_external_function_rule(application.name)
@@ -7723,6 +7778,9 @@ fn prepare_verified_function_call<'a>(
         &path_assumptions,
     ) {
         Ok(state) => state,
+        Err(CRuntimeError::FunctionContract(message)) => {
+            return Ok(Err(resource_call_failure(&message)));
+        }
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
     };
     if caller_state.uses_population_authority_semantics() {

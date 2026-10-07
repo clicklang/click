@@ -1,18 +1,18 @@
-# A member lent to a worker exposes no shared accounting
+# A worker that borrows only a member cannot read the counter
 
-Under authority semantics a member is no longer thread confined: lending it to
-a worker is an ordinary transfer. The protected property is that a member alone
-cannot expose the population's accounting. The creator keeps the authority and
-the counter; the worker borrows only one member, so its claim about the count
-is refused because it lacks the authority.
+The creator keeps the authority-bearing control that owns the counter and lends
+one member to a worker. The member grants no memory, so the worker's read of the
+counter is refused.
 
-```c filename=modeled_pthread_thread_confined_resource_rejected.c
+```c filename=modeled_pthread_member_counter_access_rejected.c
 #include <pthread.h>
 #include <stddef.h>
 
 struct cell { int refs; };
 
 void *worker(void *argument) {
+    struct cell *cell = argument;
+    int seen = cell->refs;
     return NULL;
 }
 
@@ -28,11 +28,10 @@ int run(struct cell *cell) {
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 resource reference(cell: struct cell*) {}
-verifying "modeled_pthread_thread_confined_resource_rejected.c";
+verifying "modeled_pthread_member_counter_access_rejected.c";
 
 void *worker(void *argument) {
     owns reference((struct cell *)argument);
-    ensures count(reference((struct cell *)argument)) >= 1;
 } by {
     execute();
     simp();
@@ -41,6 +40,7 @@ void *worker(void *argument) {
 int32 run(struct cell *cell) {
     owns authority(reference(cell));
     owns reference(cell);
+    owns cell->refs;
     ensures result == 0 or result == 1;
 } by {
     execute();
@@ -49,5 +49,5 @@ int32 run(struct cell *cell) {
 ```
 
 ```expect
-fail: count(...) requires owning authority for that population
+fail: views
 ```

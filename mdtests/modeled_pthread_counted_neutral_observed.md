@@ -1,6 +1,9 @@
-# Neutral worker contracts do not grant intermediate Count observations
+# A worker that borrows only a member leaves the count observable
 
-```c filename=modeled_pthread_counted_neutral_pending.c
+The worker borrows one member and no authority, so it cannot change the total.
+The parent keeps the authority and observes the exact count before join.
+
+```c filename=modeled_pthread_counted_neutral_observed.c
 #include <pthread.h>
 #include <stddef.h>
 void *worker(void *argument) { return NULL; }
@@ -15,10 +18,9 @@ int run(void *p) {
 ```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "modeled_pthread_counted_neutral_pending.c";
+verifying "modeled_pthread_counted_neutral_observed.c";
 resource ticket(p: void*) {}
 void* worker(void* argument) {
-    owns authority(ticket(argument));
     owns ticket(argument);
 } by { execute(); simp(); }
 int32 run(void* p) {
@@ -38,5 +40,5 @@ int32 run(void* p) {
 ```
 
 ```expect
-fail: which an outstanding worker holds until its pthread_join
+pass
 ```

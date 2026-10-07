@@ -46,22 +46,21 @@ int increment_twice(struct mutex_counter *counter) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "mutex_counter.c";
 
-abstract resource contribution(counter: struct mutex_counter*);
+resource contribution(counter: struct mutex_counter*) {}
 
 resource counter_state(counter: struct mutex_counter*) {
     field value: uint32;
-    guarded_by counter->mutex;
     owns counter->value;
     fact counter->value == value;
 }
 
 void* increment_counter(void* argument) {
-    consumes contribution((struct mutex_counter*)argument);
+    owns contribution((struct mutex_counter*)argument);
     owns access: mutex_use(
         &((struct mutex_counter*)argument)->mutex,
         counter_state((struct mutex_counter*)argument)
@@ -84,6 +83,7 @@ void* increment_counter(void* argument) {
 }
 
 int32 increment_twice(struct mutex_counter* counter) {
+    owns authority(contribution(counter));
     consumes 2 of contribution(counter);
     requires count(contribution(counter)) == 2;
     owns &counter->mutex;
@@ -97,10 +97,19 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     let state = fold(counter_state(counter), { value: counter->value });
     let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
-    branch then { have count(contribution(counter)) == 2 by { simp(); } unfold(state); step(); simp(); } else {}
+    branch then {
+        have count(contribution(counter)) == 2 by { simp(); }
+        unfold(contribution(counter));
+        unfold(contribution(counter));
+        unfold(state);
+        step();
+        simp();
+    } else {}
     step();
     branch then {
         have count(contribution(counter)) == 2 by { simp(); }
+        unfold(contribution(counter));
+        unfold(contribution(counter));
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
         unfold(state);
         step();
@@ -109,14 +118,19 @@ int32 increment_twice(struct mutex_counter* counter) {
     step();
     branch then {
         step();
-        have count(contribution(counter)) == 1 by { simp(); }
+        unfold(contribution(counter));
+        unfold(contribution(counter));
+        have count(contribution(counter)) == 0 by { simp(); }
         step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
         unfold(state);
         step();
         simp();
     } else {}
     step();
+    unfold(contribution(counter));
+    have count(contribution(counter)) == 1 by { simp(); }
     step();
+    unfold(contribution(counter));
     have count(contribution(counter)) == 0 by { simp(); }
     step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
     unfold(state);

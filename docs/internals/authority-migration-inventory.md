@@ -4,27 +4,13 @@ This is the consumer inventory and migration record for `issues/authority-migrat
 
 ## Current status
 
-Milestones 1–4 of the migration issue are complete. The sequential refcount project, the shared-parent design project, the bounded-pool project, every sequential mdtest population consumer, and every mutex count fixture without workers select authority semantics. The remaining legacy consumers are listed in the next section:
-
-- 21 count fixtures in the worker groups (milestone 6);
-- 2 `guarded_by` fixtures, both in the worker protected-memory group, which migrate in milestone 6;
-- `fold_negative_quantity_legacy_control.md`, a deliberate legacy control retired in milestone 7 against its authority replacement `fold_rejects_a_negative_quantity.md`.
+Milestones 1–5 and milestone 6 chunks 1–3 of the migration issue are complete. The sequential refcount project, the shared-parent design project, the bounded-pool project, every sequential mdtest population consumer, every mutex count fixture, and every worker fixture select authority semantics. No fixture uses `guarded_by`. The only remaining legacy consumer is `fold_negative_quantity_legacy_control.md`, a deliberate legacy control retired in milestone 7 against its authority replacement `fold_rejects_a_negative_quantity.md`.
 
 Remaining `count(` search hits outside these groups are C functions named `count` or the standard library's array `count(p, lo, hi, x)`; none observes a declared-resource population.
 
 ## Remaining legacy groups
 
-These fixtures use the legacy path. The two worker families are intentionally separate: ordinary abstract accounting does not prove a protected C counter equality. The issue assigns the `guarded_by` group to milestone 5 and the worker groups, including the two worker fixtures with protected memory, to milestone 6.
-
-| Group | Files and preserved behavior |
-| --- | --- |
-| Abstract workers and joins | `modeled_pthread_counted_join.md`, `modeled_pthread_counted_reverse_join.md`, `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`: worker transfer and join, failure to observe pending/stale counts, wildcard refusal, independent/reversed joins, and overlap/confinement rejection. The [worker authority protocol](worker-authority-protocol.md) maps each fixture to its replacement. |
-| Shared abstract worker population | `modeled_pthread_counted_shared_join.md`, `modeled_pthread_counted_shared_forward_join.md`, `modeled_pthread_counted_shared_partial_then_create.md`, `modeled_pthread_counted_shared_retained.md`, `modeled_pthread_counted_shared_symbolic.md`, `modeled_pthread_counted_shared_neutral.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`: shared worker-ticket accounting, create failure, either join order, retained units, and early/stale/missing-unit refusals. These no-lock workers follow the frozen [worker authority protocol](worker-authority-protocol.md): only one worker may hold the authority, others borrow members, and join cannot retroactively authorize a worker update. |
-| Count and protected memory with workers | `mutex_population_separate_body.md`, `mutex_population_missing_value_relation.md`: separation of contribution count from concrete counter value. Both count contributions that `pthread_create` workers consume, so they migrate with the shared worker population in milestone 6 chunk 3. The missing-value-relation case must continue to fail. |
-
-`guarded_by` also appears in `src/languages/c/modeled_pthread_spec.md` and the implementation paths named below. The plain mutex tests without the annotation remain neighboring controls for ordinary mutex transfer; they are not authorization to drop the guarded negative cases.
-
-For the explicitly named concurrent fixtures, the **fail** `expect` blocks are: `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_join_stale.md`, `modeled_pthread_counted_neutral_pending.md`, `modeled_pthread_counted_pending_helper.md`, `modeled_pthread_counted_pending_wildcard.md`, `modeled_pthread_counted_overlap_rejected.md`, `modeled_pthread_thread_confined_resource_rejected.md`, `modeled_pthread_counted_shared_early_count.md`, `modeled_pthread_counted_shared_missing_unit.md`, `modeled_pthread_counted_shared_observer.md`, `modeled_pthread_counted_shared_stale.md`, `population_conservation_local_mutex_bad_increment.md`, `population_mutex_cleanup_held.md`, `population_mutex_direct_read_unheld.md`, `population_mutex_helper_unheld.md`, `population_mutex_hidden_unit_at_release.md`, `population_mutex_incomplete_publication.md`, `population_mutex_second_custodian.md`, `mutex_population_body_missing.md`, `mutex_population_body_missing_direct.md`, `mutex_population_missing_value_relation.md`, `guarded_resource_unlock_unfolded_rejected.md`, `guarded_resource_wrong_mutex_rejected.md`, `modeled_pthread_mutex_early_destroy.md`, `modeled_pthread_mutex_parent_interference_rejects_stale.md`, `mutex_resource_quantity_requires_conservation.md`, and `mutex_unlock_missing_guard_and_invariant.md`. Every other individually named concurrent mdtest above has a success `expect` block. The `mutex_guard_*`, `mutex_use_*`, `mutex_helper_transfers*`, `mutex_lifetime_named*`, and `runtime_mutex_contract_*` families contain both passes and refusals; milestone 5 kept every checked-in outcome, as its migration record lists. The expected failures include unsuffixed `..._observer.md` and `..._cleanup_held.md`, so migration must not infer outcome from the filename.
+None. The worker groups that this section listed migrated in milestone 6 chunks 2 and 3; their record is below.
 
 When a group leaves legacy, record its fixtures or unchanged migrated source proof, positive claims, corresponding rejections, selected verification path, and verify/expand/audit evidence in the migration record below, then move its row to the migrated groups. The final switch must also inspect imported summaries, caches, and certificates; a successful new proof must never retry through legacy consumers.
 
@@ -1163,3 +1149,81 @@ deprecated, because the parser and kernel accept it until milestone 7. The
 discovery search otherwise finds the annotation only in migration records,
 the removal plan, and the two worker fixtures that move to milestone 6.
 
+### Milestone 6: concurrent lifetime and worker accounting
+
+**Chunks 2 and 3, worker authority transport and the worker fixtures:**
+Authority mode admits modeled `pthread_create` and `pthread_join`. Create
+applies the worker's verified contract under the worker's call identity in the
+creation ledger, exactly as a sequential call's entry and body do, and leaves
+the parent without the lent resources. Join returns the worker's outputs
+through the same ledger transfer and requires that the call retain nothing. A
+lent authority's count refusal names the outstanding worker. Every worker
+fixture keeps its C. Replacements declare `resource ticket(p: void*) {}`, and a
+spending worker or parent unfolds its member. Where a create fails, the parent
+spends the members it still holds before returning, because a declared
+consumption must be a checked spend.
+
+Abstract workers and joins:
+
+- `modeled_pthread_counted_join.md` and
+  `modeled_pthread_counted_reverse_join.md` (pass): each worker owns its
+  population's authority and spends its member; the parent observes fresh
+  totals after each join.
+- `modeled_pthread_counted_before_join.md`, `modeled_pthread_counted_neutral_pending.md`
+  (whose worker now also borrows the authority), and
+  `modeled_pthread_counted_pending_helper.md` (fail): the parent, or its
+  helper, needs the lent authority. The first two report the outstanding
+  worker; the helper call reports `Requires owns authority(ticket(...))`.
+- `modeled_pthread_counted_neutral_observed.md` (new, pass): a worker that
+  borrows only a member leaves the authority with the parent, which observes
+  the exact total before join.
+- `modeled_pthread_counted_join_stale.md` (fail): after join the fresh total is
+  zero.
+- `modeled_pthread_counted_pending_wildcard.md` (fail): `count(ticket(_))` on a
+  single-argument family names no anchor, so authority mode refuses the
+  observation with `authority-mode count requires R(anchor), R(anchor, _, ...),
+  or an exact member`.
+- `modeled_pthread_counted_overlap_rejected.md` (fail): the second worker
+  needs the authority the first holds.
+- `modeled_pthread_thread_confined_resource_rejected.md` (fail): replaced with
+  its C unchanged. A worker borrowing only a member cannot state a count fact.
+  The new `modeled_pthread_member_counter_access_rejected.md` (fail) adds the
+  counter read.
+
+New misuse regressions: `modeled_pthread_retire_while_lent_rejected.md` and
+`modeled_pthread_free_while_lent_rejected.md` (fail; retirement and
+reclamation need the lent authority), `modeled_pthread_retire_after_join.md`
+(pass), `modeled_pthread_worker_consumes_authority_rejected.md` (fail; the
+worker's own contract cannot consume authority), and
+`modeled_pthread_worker_relinquishes_member_rejected.md` (fail; a worker
+without authority cannot keep a member).
+
+Shared worker population: in each positive, both workers borrow members, and
+the parent spends each returned member after the join that returns it.
+`shared_join`, `shared_forward_join`, `shared_partial_then_create`,
+`shared_retained`, `shared_symbolic`, and `shared_neutral` pass. `shared_stale`
+(stale total), `shared_early_count` (spending a still-lent member: `Requires
+owns ticket(p)`), `shared_missing_unit` (the second create has no member:
+`population call transfer refused: MissingMembers`), and `shared_observer`
+(the observing worker holds the authority the spending consumer needs) fail.
+Each legacy `consumes ticket(q)` that was never spent becomes `owns
+ticket(q)`, an unrelated population whose total stays one.
+
+`mutex_population_separate_body.md` (pass) and
+`mutex_population_missing_value_relation.md` (fail on the unrelated value
+equation) keep their C and drop `guarded_by`. Workers borrow a contribution and
+reach the counter through a typed `mutex_use`; the parent spends contributions
+after the joins. Authority mode now admits a preserving contract whose only
+mutex resources are borrowed typed `mutex_use` shares.
+
+Two corrections landed with this chunk. A helper with separate `owns` and
+`consumes` clauses for one population now holds their summed members at entry
+(`authority_entry_separate_member_clauses.md`). Spending an imported member
+the proof does not hold now reports `Requires owns R(p)` instead of a storage
+refusal; `authority_wildcard_consume_helper_wrong_member.md` and
+`authority_wildcard_consume_private_body_wrong_member.md` now expect that
+message.
+
+`click verify` and `click audit` pass on
+`modeled_pthread_counted_reverse_join.md` (11 sites) and
+`modeled_pthread_retire_after_join.md` (5 sites).

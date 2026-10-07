@@ -18,16 +18,19 @@ int run(void *p, void *q) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_overlap_rejected.c";
-abstract resource ticket(p: void*);
+resource ticket(p: void*) {}
 void* worker(void* argument) {
+    owns authority(ticket(argument));
     owns ticket(argument);
     ensures count(ticket(argument)) >= 1;
 } by { execute(); simp(); }
 int32 run(void* p, void* q) {
+    owns authority(ticket(p));
+    owns authority(ticket(q));
     consumes 2 of ticket(p);
     consumes ticket(q);
     requires p != q;
@@ -56,5 +59,5 @@ int32 run(void* p, void* q) {
 ```
 
 ```expect
-fail: Requires joining the worker using ticket(...) before another population transfer
+fail: Requires owns authority(ticket(...))
 ```

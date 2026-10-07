@@ -414,8 +414,9 @@ fn assign_call_result(
 
 /// The modeled mutex operations transfer ordinary resources, including an
 /// authority-bearing control, and change no population. Thread creation and
-/// join still need the worker authority protocol before authority mode admits them.
-fn is_modeled_pthread_mutex_call(function_name: &str, environment: &CExecutionEnvironment) -> bool {
+/// join follow the worker authority protocol: create applies the worker's
+/// checked contract under the authority it transfers, and join returns it.
+fn is_modeled_pthread_call(function_name: &str, environment: &CExecutionEnvironment) -> bool {
     environment
         .modeled_pthread_binding
         .as_ref()
@@ -425,6 +426,8 @@ fn is_modeled_pthread_mutex_call(function_name: &str, environment: &CExecutionEn
                 binding.mutex_lock_name,
                 binding.mutex_unlock_name,
                 binding.mutex_destroy_name,
+                binding.create_name,
+                binding.join_name,
             ]
             .contains(&function_name)
         })
@@ -453,7 +456,7 @@ pub(super) fn execute_c_call_assign_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_mutex_call(function_name, environment)
+        && !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))
@@ -752,7 +755,7 @@ pub(super) fn execute_c_call_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     if state.uses_population_authority_semantics()
-        && !is_modeled_pthread_mutex_call(function_name, environment)
+        && !is_modeled_pthread_call(function_name, environment)
         && !matches!(
             state.locals.object_type(function_name),
             Some(CType::FunctionPointer(_))

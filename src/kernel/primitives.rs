@@ -4210,6 +4210,8 @@ pub enum ExecutionLimit {
     AuthorityCountNeedsResolvedMember,
     /// Both the visible authority fact and checked ledger custody are needed.
     AuthorityCountNeedsOwnership,
+    /// The population's authority is lent to an outstanding worker.
+    AuthorityCountLentToWorker,
     /// The exact population total cannot be represented as C int32.
     AuthorityCountOverflows,
 }
@@ -4256,6 +4258,9 @@ impl ExecutionLimit {
             }
             Self::AuthorityCountNeedsOwnership => {
                 "count(...) requires owning authority for that population".to_string()
+            }
+            Self::AuthorityCountLentToWorker => {
+                "count(...) requires owning authority for that population, which an outstanding worker holds until its pthread_join".to_string()
             }
             Self::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
             Self::ResourceFieldInstanceUnavailable => {

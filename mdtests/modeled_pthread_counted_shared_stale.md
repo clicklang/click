@@ -18,17 +18,19 @@ int run(void *p, void *q) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
 verifying "modeled_pthread_counted_shared_stale.c";
-abstract resource ticket(p: void*);
+resource ticket(p: void*) {}
 void* worker(void* argument) {
-    consumes ticket(argument);
+    owns ticket(argument);
 } by { execute(); simp(); }
 int32 run(void* p, void* q) {
+    owns authority(ticket(p));
+    owns authority(ticket(q));
     consumes 2 of ticket(p);
-    consumes ticket(q);
+    owns ticket(q);
     requires p != q;
     requires count(ticket(p)) == 2;
     requires count(ticket(q)) == 1;
@@ -37,19 +39,25 @@ int32 run(void* p, void* q) {
     step();
     step();
     step();
-    branch then { have count(ticket(p)) == 2 by { simp(); } step(); simp(); } else {}
+    branch then {
+        have count(ticket(p)) == 2 by { simp(); }
+        unfold(ticket(p));
+        unfold(ticket(p));
+        step(); simp();
+    } else {}
     step();
     branch then {
         step();
-        have count(ticket(p)) == 1 by { simp(); }
+        unfold(ticket(p));
+        unfold(ticket(p));
         have count(ticket(q)) == 1 by { simp(); }
         step(); simp();
     } else {}
     step();
-    have count(ticket(q)) == 1 by { simp(); }
+    unfold(ticket(p));
     step();
+    unfold(ticket(p));
     have count(ticket(p)) == 2 by { simp(); }
-    have count(ticket(q)) == 1 by { simp(); }
     step(); simp();
 }
 ```
