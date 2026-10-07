@@ -1100,8 +1100,8 @@ fn prepare_function_claim_path(
             .into());
     };
     entry_state = entry_state.with_resource_context(entry_resources.clone());
-    let execution_facts = path.execution_facts();
-    let assumptions = assumptions_with_propositions(&assumptions, &resource_facts);
+    #[cfg(test)]
+    let context_entries_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
     // A verification condition may be local to one symbolic path. Branch
     // guards and independently certified callee postconditions are evidence
     // on that path, just as assumable definedness obligations are; omitting
@@ -1109,8 +1109,25 @@ fn prepare_function_claim_path(
     // Non-assumable obligations are deliberately excluded by
     // `assumptions_with_path_context`, so this cannot prove a verification
     // condition by assuming the condition itself.
-    let assumptions =
-        assumptions_with_path_context(&assumptions, &execution_facts, path.obligations());
+    let assumptions = if resource_facts.is_empty()
+        && let Some(post_assumptions) = &path.post_assumptions
+    {
+        // Entry resources were evaluated above under entry premises only.
+        // The completion producer retained this persistent body context;
+        // extend it only by the assumable obligations, never the conditions
+        // whose truth certification still needs to establish.
+        assumptions_with_path_context(post_assumptions, &[], path.obligations())
+    } else {
+        // Keep the established resource-fact/path-fact precedence for legacy
+        // producers and paths with observable entry-resource propositions.
+        let execution_facts = path.execution_facts();
+        let assumptions = assumptions_with_propositions(&assumptions, &resource_facts);
+        assumptions_with_path_context(&assumptions, &execution_facts, path.obligations())
+    };
+    #[cfg(test)]
+    crate::kernel::reasoning::path_facts::record_contract_path_context_entries(
+        crate::kernel::reasoning::path_facts::context_rebuild_entries() - context_entries_before,
+    );
     let effect_facts = path.effect_facts.clone();
     if matches!(outcome, CFunctionOutcome::VerificationDiverges) {
         if let Some(obligation) = path.obligations().iter().find(|obligation| {
@@ -1666,7 +1683,7 @@ fn function_claim_holds_on_prepared_path(
             let Ok(Ok(expected)) = expected_result else {
                 return false;
             };
-            expected.facts().iter().all(|fact| {
+            if !expected.facts().iter().all(|fact| {
                 resource_context_satisfies_definitional_fact(
                     exit_state.resources(),
                     fact,
@@ -1674,7 +1691,20 @@ fn function_claim_holds_on_prepared_path(
                     exit_state.memory(),
                     assumptions,
                 )
-            })
+            }) {
+                return false;
+            }
+            // Definitional validation answers each clause from the whole exit
+            // state. The prefix is one multiset: consume it jointly so one
+            // exclusive unit, or a folded composite and its own body child,
+            // cannot certify two clauses.
+            crate::kernel::functions::jointly_consume_returned_resource_units(
+                exit_state.resources(),
+                &expected,
+                exit_state,
+                function.contract_interface(),
+                assumptions,
+            )
         }
         CFunctionContractClaimTarget::Effect => {
             let Ok(Ok(projection)) =
@@ -3065,6 +3095,7 @@ mod checked_proposition_index_tests {
         let path = SymbolicCExecutionPath {
             completion_origin: None,
             assumptions: PureFactContext::new(),
+            post_assumptions: Some(PureFactContext::new().assume_proposition(body_fact.clone())),
             facts: vec![fact.clone()],
             effect_facts: Vec::new(),
             obligations: Vec::new(),

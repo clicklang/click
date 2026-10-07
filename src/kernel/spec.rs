@@ -703,7 +703,14 @@ fn lower_spec_universal_chain_in(
 ) -> ExecutionResult<Option<Vec<SpecPropositionPath>>> {
     let mut binders = Vec::new();
     let mut body = proposition;
-    let mut quantified_state = None;
+    // A binder is bound by its `Variable` alone, here and in the quantifier
+    // arms of `lower_spec_proposition_at_state_with_algebraic_bindings_one_in`.
+    // The Surface resolves every bound occurrence to that variable before the
+    // kernel sees the body, so the body is lowered at `state` unchanged.
+    // Binding the source spelling as a local would shadow a C local of that
+    // spelling, such as a predicate argument substituted under a same-named
+    // binder, and read it as the bound variable (regression:
+    // `mdtests/an_unfolded_quantifier_does_not_capture_a_same_named_argument.md`).
     let mut quantified_assumptions = assumptions.clone();
 
     loop {
@@ -753,10 +760,6 @@ fn lower_spec_universal_chain_in(
                     SpecProposition::ForAllMachineInteger { integer_type, .. } => *integer_type,
                     _ => MachineIntegerType::Int32,
                 };
-                let quantified_state = quantified_state.get_or_insert_with(|| state.clone());
-                quantified_state
-                    .locals
-                    .set(name.clone(), integer_type.symbolic_value(*variable));
                 (
                     SpecUniversalBinder {
                         name: name.clone(),
@@ -773,27 +776,16 @@ fn lower_spec_universal_chain_in(
                 variable,
                 c_type,
                 body,
-            } => {
-                let quantified_state = quantified_state.get_or_insert_with(|| state.clone());
-                let value = if matches!(c_type, CType::FunctionPointer(_)) {
-                    CValue::typed_pointer(Pointer::symbolic_function(*variable), *c_type)
-                } else {
-                    CValue::typed_pointer(Pointer::symbolic(*variable), *c_type)
-                };
-                quantified_state
-                    .locals
-                    .set_typed(name.clone(), value, *c_type);
-                (
-                    SpecUniversalBinder {
-                        name: name.clone(),
-                        variable: *variable,
-                        sort: Sort::CPointer(*c_type),
-                        pointer: true,
-                        integer: false,
-                    },
-                    body.as_ref(),
-                )
-            }
+            } => (
+                SpecUniversalBinder {
+                    name: name.clone(),
+                    variable: *variable,
+                    sort: Sort::CPointer(*c_type),
+                    pointer: true,
+                    integer: false,
+                },
+                body.as_ref(),
+            ),
             _ => break,
         };
         for fact in machine_quantifier_range_facts(&binder.sort, binder.variable) {
@@ -808,9 +800,8 @@ fn lower_spec_universal_chain_in(
         return Ok(None);
     }
 
-    let body_state = quantified_state.as_ref().unwrap_or(state);
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-        body_state,
+        state,
         body,
         loop_entry_state,
         &quantified_assumptions,
@@ -1146,7 +1137,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             }
             Ok(paths)
         }
-        SpecProposition::Or(left, right) => lower_spec_binary_proposition_at_state_in(
+        SpecProposition::Or(left, right) => lower_spec_disjunction_at_state_in(
             state,
             left,
             right,
@@ -1154,7 +1145,6 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             assumptions,
             algebraic_bindings,
             budget,
-            |left, right| Proposition::Or(Box::new(left), Box::new(right)),
         ),
         SpecProposition::Not(body) => {
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -1362,12 +1352,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 quantified_assumptions =
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
-            let mut state = state.clone();
-            state
-                .locals
-                .set(name.clone(), integer_type.symbolic_value(*variable));
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                &state,
+                state,
                 body,
                 loop_entry_state,
                 &quantified_assumptions,
@@ -1420,57 +1406,48 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             variable,
             c_type,
             body,
-        } => {
-            let mut state = state.clone();
-            let value = if matches!(c_type, CType::FunctionPointer(_)) {
-                CValue::typed_pointer(Pointer::symbolic_function(*variable), *c_type)
-            } else {
-                CValue::typed_pointer(Pointer::symbolic(*variable), *c_type)
-            };
-            state.locals.set_typed(name.clone(), value, *c_type);
-            Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                &state,
-                body,
-                loop_entry_state,
-                assumptions,
-                algebraic_bindings,
-                budget,
-            )?
-            .into_iter()
-            .map(|path| {
-                let (body, guards) =
-                    wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
-                let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
-                    name: name.clone(),
-                    variable: *variable,
-                    pointer: true,
-                    integer: false,
-                }];
-                introductions.extend(guards);
-                introductions.extend(path.introductions);
-                SpecPropositionPath {
-                    proposition: Proposition::ForAll {
-                        var: *variable,
-                        sort: Sort::CPointer(*c_type),
-                        body: Box::new(body),
-                    },
-                    facts: Vec::new(),
-                    obligations: path
-                        .obligations
-                        .into_iter()
-                        .map(|obligation| {
-                            obligation.map_proposition(|proposition| Proposition::ForAll {
-                                var: *variable,
-                                sort: Sort::CPointer(*c_type),
-                                body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                            })
+        } => Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            state,
+            body,
+            loop_entry_state,
+            assumptions,
+            algebraic_bindings,
+            budget,
+        )?
+        .into_iter()
+        .map(|path| {
+            let (body, guards) =
+                wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
+            let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
+                name: name.clone(),
+                variable: *variable,
+                pointer: true,
+                integer: false,
+            }];
+            introductions.extend(guards);
+            introductions.extend(path.introductions);
+            SpecPropositionPath {
+                proposition: Proposition::ForAll {
+                    var: *variable,
+                    sort: Sort::CPointer(*c_type),
+                    body: Box::new(body),
+                },
+                facts: Vec::new(),
+                obligations: path
+                    .obligations
+                    .into_iter()
+                    .map(|obligation| {
+                        obligation.map_proposition(|proposition| Proposition::ForAll {
+                            var: *variable,
+                            sort: Sort::CPointer(*c_type),
+                            body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
                         })
-                        .collect(),
-                    introductions,
-                }
-            })
-            .collect())
-        }
+                    })
+                    .collect(),
+                introductions,
+            }
+        })
+        .collect()),
         SpecProposition::ExistsInteger {
             name,
             variable,
@@ -1566,12 +1543,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 quantified_assumptions =
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
-            let mut state = state.clone();
-            state
-                .locals
-                .set(name.clone(), integer_type.symbolic_value(*variable));
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                &state,
+                state,
                 body,
                 loop_entry_state,
                 &quantified_assumptions,
@@ -1623,15 +1596,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             c_type,
             body,
         } => {
-            let mut state = state.clone();
-            let value = if matches!(c_type, CType::FunctionPointer(_)) {
-                CValue::typed_pointer(Pointer::symbolic_function(*variable), *c_type)
-            } else {
-                CValue::typed_pointer(Pointer::symbolic(*variable), *c_type)
-            };
-            state.locals.set_typed(name.clone(), value, *c_type);
             Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                &state,
+                state,
                 body,
                 loop_entry_state,
                 assumptions,
@@ -5489,7 +5455,7 @@ fn canonical_offset_sum(left: PointerOffsetTerm, right: PointerOffsetTerm) -> Po
     }
 }
 
-fn lower_spec_binary_proposition_at_state_in(
+fn lower_spec_disjunction_at_state_in(
     state: &CState,
     left: &SpecProposition,
     right: &SpecProposition,
@@ -5497,7 +5463,6 @@ fn lower_spec_binary_proposition_at_state_in(
     assumptions: &PureFactContext,
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
-    combine: impl Fn(Proposition, Proposition) -> Proposition,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let mut paths = Vec::new();
     for left_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
@@ -5510,14 +5475,24 @@ fn lower_spec_binary_proposition_at_state_in(
     )? {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        let right_paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
             state,
             right,
             loop_entry_state,
             &right_assumptions,
             algebraic_bindings,
             budget,
-        )? {
+        )?;
+        // Preserve the written disjunction whenever both sides lower, including
+        // the shape used by explicit choice/case certificates. An undefined
+        // unused right expression must not remove an exactly known true left
+        // path (for example a zero-factor quotient guard). Keep that path's
+        // facts/obligations; unknown or false left sides still require the right.
+        if right_paths.is_empty() && assumptions.proves_exact(&left_path.proposition) {
+            paths.push(left_path);
+            continue;
+        }
+        for right_path in right_paths {
             if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &left_path.facts,
                 &left_path.obligations,
@@ -5527,7 +5502,10 @@ fn lower_spec_binary_proposition_at_state_in(
             ) {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
-                    proposition: combine(left_path.proposition.clone(), right_path.proposition),
+                    proposition: Proposition::Or(
+                        Box::new(left_path.proposition.clone()),
+                        Box::new(right_path.proposition),
+                    ),
                     facts,
                     obligations,
                 });
@@ -9557,8 +9535,11 @@ mod integer_budget_tests {
 mod lowering_provenance_tests {
     use super::*;
 
-    fn binder(name: &str) -> SpecExpression {
-        SpecExpression::CExpression(CExpression::Variable(name.to_string()))
+    /// A bound occurrence of the binder with this variable. The Surface
+    /// resolves every bound occurrence to the binder's variable; the kernel
+    /// never binds a quantifier by its source spelling.
+    fn bound(variable: Variable) -> SpecExpression {
+        SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
     }
 
     fn positive(expression: SpecExpression) -> SpecProposition {
@@ -9635,8 +9616,8 @@ mod lowering_provenance_tests {
     #[test]
     fn a_written_universal_over_a_written_implication_records_both() {
         let recorded = introductions(&universal(SpecProposition::Implies(
-            Box::new(positive(binder("k"))),
-            Box::new(positive(binder("k"))),
+            Box::new(positive(bound(Variable(41)))),
+            Box::new(positive(bound(Variable(41)))),
         )));
 
         assert_eq!(
@@ -9660,7 +9641,7 @@ mod lowering_provenance_tests {
         // that no spec, and therefore no Surface, connective wrote.
         let incremented = || {
             SpecExpression::Add(
-                Box::new(binder("k")),
+                Box::new(bound(Variable(41))),
                 Box::new(SpecExpression::Value(int32(1))),
             )
         };
@@ -9699,7 +9680,7 @@ mod lowering_provenance_tests {
     #[test]
     fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         let incremented = SpecExpression::Add(
-            Box::new(binder("len")),
+            Box::new(bound(Variable(41))),
             Box::new(SpecExpression::Value(int32(1))),
         );
         let (goal, facts, obligations, recorded) =
@@ -9753,7 +9734,7 @@ mod lowering_provenance_tests {
         let body = SpecProposition::ForAllInt32 {
             name: "k".to_string(),
             variable: Variable(42),
-            body: Box::new(positive(binder("k"))),
+            body: Box::new(positive(bound(Variable(42)))),
         };
         let proposition = SpecProposition::ExistsInteger {
             name: "z".to_string(),

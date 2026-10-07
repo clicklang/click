@@ -176,11 +176,12 @@ match c.model {
 }
 ```
 
-Where the arms end depends on the region. In a function proof each arm runs to
-function exit and the arms are joined there. In a loop's `preserve` body each
-arm runs to the loop's back edge and the arms are not joined at all, because a
-preservation path never joins across it; tactics written after the `match`
-there are the shared rest of every arm's iteration — see
+Where the arms end depends on what is written after the `match`. With
+nothing after it, each arm runs to the end of its region, function exit or
+the loop's back edge, on its own path. With tactics after it, those tactics
+are checked once: the live arms rejoin where they end, on their own when they
+end in one state and through `ensuring { ... }` when they do not, and arms
+that cannot rejoin are refused instead of each running the rest. See
 [Opening a binder's model inside the body](loops-and-invariants.md#opening-a-binders-model-inside-the-body).
 
 The constructor equation is an entry assumption of the whole function only when

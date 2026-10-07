@@ -214,6 +214,10 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         return None;
     }
     let mut hull = BTreeMap::<Variable, (i64, i64)>::new();
+    // The quantified variables each leaf mentions. A leaf that mentions none
+    // is the same proposition at every point of the domain, so it is not
+    // vacuous anywhere and a zero-member table would never check it.
+    let mut leaf_variables = Vec::new();
     for (antecedent, leaf) in leaves {
         let mut mentioned = BTreeSet::new();
         collect_proposition_bitvector_variables(leaf, &mut mentioned);
@@ -223,8 +227,10 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
             .copied()
             .collect::<Vec<_>>();
         if bounded.is_empty() {
+            leaf_variables.push(bounded);
             continue;
         }
+        leaf_variables.push(bounded.clone());
         let mut order_facts = Vec::new();
         collect_order_facts_from_assumed_proposition(antecedent, &mut order_facts);
         let ranges = antecedent_ranges(&variable_set, &order_facts)?;
@@ -242,13 +248,32 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         }
     }
 
+    let empty = hull
+        .iter()
+        .filter(|(_, (lower, upper))| lower > upper)
+        .map(|(variable, _)| *variable)
+        .collect::<BTreeSet<_>>();
+    if !empty.is_empty() {
+        if !allow_empty {
+            return None;
+        }
+        // A table with zero members checks no leaf, so it is evidence only
+        // when every leaf is vacuous there: each must be guarded by a range
+        // of some variable that no integer satisfies. A leaf mentioning no
+        // such variable, including one mentioning no quantified variable at
+        // all, still has to be checked, and this table cannot check it.
+        if leaf_variables
+            .iter()
+            .any(|bounded| !bounded.iter().any(|variable| empty.contains(variable)))
+        {
+            return None;
+        }
+    }
+
     variables
         .iter()
         .map(|variable| {
             let (lower, upper) = *hull.get(variable)?;
-            if lower > upper && !allow_empty {
-                return None;
-            }
             Some(FiniteForAllRange { lower, upper })
         })
         .collect()

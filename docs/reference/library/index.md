@@ -1157,6 +1157,19 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `uint32_mul_to_integer`
+
+```click
+theorem uint32_mul_to_integer(left: uint32, right: uint32) {
+    requires right == 0u32 or left <= 4294967295u32 / right;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+}
+```
+
+Unsigned multiplication agrees with Integer multiplication under the native no-overflow guard. A zero right operand satisfies the guard without division; other operands must fit the unsigned quotient ceiling. Native unsigned definedness alone permits wrapping.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `uint64_add_to_integer`
 
 ```click

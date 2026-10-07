@@ -80,22 +80,42 @@ Fixed:
   previous selection work at these sizes was 84, 232, 720, 2464, and 9024.
 
 - Explicit early-return proof processing is now iterative, so
-  `explicit_early_return_proof_is_near_linear_in_its_returns` extends through
+  `explicit_early_return_proof_completes_through_sixty_four_returns` extends through
   64 returns. The former region nesting limit no longer blocks that test.
 
-Remaining. Checked paths still retain flat facts. The whole-verification
-context-rebuild count at 4, 8, 16, 32, and 64 returns is 69, 131, 303, 839,
-and 2679. The indexed selection change does not remove this quadratic work.
-The two remaining sources, measured at 32 and then 64 returns on 2026-10-05:
+- Contract preparation now reuses the persistent body context retained by
+  the checked Proof completion producer for paths without observable entry
+  resource facts. Entry-dependent resources are still evaluated under entry
+  premises alone, and only assumable obligations are added afterwards. Typed
+  load bindings and private effect facts are retained with the body context.
+  `completed_early_return_contexts_are_reused_for_certification` bounds this
+  phase for both grouped and explicit proofs, and whole-verification context
+  construction for the grouped proof, through 64 returns.
 
-- Each path's outcome goal re-adds the path's conditions to the root facts
-  (`outcomes_and_focus.rs`, the `with_kernel_checked_fact` loop): 957 then
-  2925. The arm that reached the return already held those facts.
-- Kernel contract certification rebuilds each path's assumptions from its
-  flat fact list (`contract_claims.rs`, `assumptions_with_path_context`):
-  693 then 2405 context entries. This and the item above are the stored
-  path facts this bug was filed for; they need path facts shared across the
-  paths that share a prefix.
+Remaining. Checked paths still retain flat facts. Outcome goals still import
+those facts once per path. Legacy execution producers and paths with observable
+entry-resource propositions also keep the original certification rebuild to
+preserve resource-fact/path-fact precedence.
+
+Measurements on 2026-10-07, after indexed premise selection, at 4, 8, 16, 32,
+and 64 returns:
+
+| proof / metric | 4 | 8 | 16 | 32 | 64 |
+| --- | --- | --- | --- | --- | --- |
+| grouped total work, before context reuse | 6850 | 11836 | 21976 | 42848 | 86896 |
+| grouped total work, context reused | 6800 | 11728 | 21704 | 42056 | 84296 |
+| grouped context entries, before | 69 | 131 | 303 | 839 | 2679 |
+| grouped context entries, reused | 49 | 77 | 133 | 245 | 469 |
+| explicit total work, before | 6329 | 10855 | 20419 | 44865 | 130097 |
+| explicit total work, context reused | 6279 | 10747 | 20147 | 44073 | 127497 |
+| explicit context entries, before | 64 | 122 | 396 | 1772 | 7596 |
+| explicit context entries, reused | 44 | 68 | 226 | 1178 | 5386 |
+
+The explicit proof's whole-verification curve is therefore also a remaining
+violation. Its existing scaling guard tolerates 3x growth per doubling and
+missed these counts. The completion/certification part is now shared in both
+proof forms; the explicit form still builds contexts elsewhere in the
+transaction. Investigate that construction with the C and proof unchanged.
 
 ## Intended regression
 

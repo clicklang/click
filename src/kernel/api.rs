@@ -4037,6 +4037,7 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
             SymbolicCExecutionPath {
                 completion_origin: None,
                 assumptions: assumptions.clone(),
+                post_assumptions: None,
                 facts,
                 effect_facts,
                 obligations: path.obligations,
@@ -4321,6 +4322,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
             SymbolicCExecutionPath {
                 completion_origin: None,
                 assumptions: assumptions.clone(),
+                post_assumptions: None,
                 facts,
                 effect_facts,
                 obligations: path.obligations,
@@ -4552,6 +4554,7 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
             SymbolicCExecutionPath {
                 completion_origin: None,
                 assumptions: assumptions.clone(),
+                post_assumptions: None,
                 facts,
                 effect_facts,
                 obligations: path.obligations,
@@ -5808,6 +5811,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         paths.push(SymbolicCExecutionPath {
             completion_origin: None,
             assumptions: path.assumptions.clone(),
+            post_assumptions: path.post_assumptions.clone(),
             facts: path.facts.clone(),
             effect_facts: path.effect_facts.clone(),
             obligations: path.obligations.clone(),
@@ -8582,6 +8586,41 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
         Box::new(premise),
         Box::new(Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observed_sum.into(), exact.into()),
+            true,
+        )),
+    ))
+}
+
+/// Unsigned multiplication has its exact mathematical value under the native
+/// checked-multiplication guard. The zero factor branch does not divide by zero.
+/// Definedness of a wrapping u32 product alone is insufficient.
+pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let premise = Proposition::Or(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                left.clone(),
+                Bitvector32Term::unsigned_divide(
+                    Bitvector32Term::Constant(u32::MAX),
+                    right.clone(),
+                ),
+            ),
+            true,
+        )),
+    );
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
+            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
+    };
+    let product = observe(Bitvector32Term::multiply(left.clone(), right.clone()));
+    let exact = IntegerTerm::Multiply(observe(left).into(), observe(right).into());
+    Theorem::new(Proposition::Implies(
+        Box::new(premise),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(product.into(), exact.into()),
             true,
         )),
     ))

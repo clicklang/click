@@ -2507,11 +2507,22 @@ fn verify_c0_sources_in_context(
         // prefixes. None of those has a proof script to place an `unfold` in,
         // so the declared bodies are recorded once here, for this
         // verification's kernel session.
+        // A pure function application is a term over its argument values and
+        // the snapshots its array-ref arguments carry, and a predicate fact a
+        // term over its arguments; neither records the ambient memory. A body
+        // that read a C object by name would make one such term stand for the
+        // object's value before and after a store to it, so those bodies are
+        // refused before any body is lowered or recorded.
+        reject_pure_bodies_reading_c_objects(
+            &predicate_environment,
+            &click_function_environment,
+            &file_scope_object_names(click_source, c_sources, selected_target)?,
+        )?;
         register_kernel_pure_function_definitions(
             &predicate_environment,
             &click_function_environment,
             &resource_struct_layouts,
-        );
+        )?;
         register_kernel_fold_read_definitions(
             &predicate_environment,
             &click_function_environment,
@@ -4187,20 +4198,44 @@ pub struct CProjectSummary {
     pub external_dependencies: BTreeMap<String, Vec<String>>,
     /// Selected function proofs plus selected theorems.
     pub selected_proof_count: usize,
+    /// Every function the sidecar's `verifying` sources define, with the
+    /// source that defines it. A sibling sidecar of the same project may not
+    /// assume one of these through an `extern` declaration: each sidecar is
+    /// verified alone, so nothing would reconcile the assumed contract with
+    /// the verified one, and termination ranks only calls whose callee has a
+    /// body in the same sidecar.
+    pub defined_functions: BTreeMap<String, String>,
+    /// The `extern` functions this sidecar itself declares (the standard
+    /// library's declarations are not its assumptions to reconcile).
+    pub external_declarations: BTreeSet<String>,
 }
 
 fn c0_project_summary_file(
     file: &ClickFile,
     sources: &CSourceContext<'_>,
 ) -> Result<CProjectSummary, ClickError> {
+    // The summary reads function names and call graphs, never `main`'s
+    // program-entry storage, so it does not build it.
+    let parsed_sources =
+        parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(CProjectSummary {
-        external_dependencies: c0_external_dependencies_file(file, sources)?,
+        external_dependencies: c0_external_dependencies_parsed(file, &parsed_sources)?,
         selected_proof_count: file.function_blocks().len()
             + file
                 .theorem_definitions()
                 .iter()
                 .filter(|theorem| file.theorem_is_selected(theorem.name()))
                 .count(),
+        defined_functions: parsed_sources
+            .iter()
+            .map(|(name, (source_path, _))| (name.clone(), source_path.clone()))
+            .collect(),
+        external_declarations: file
+            .function_blocks()
+            .iter()
+            .filter(|function| function.is_external())
+            .map(|function| function.signature().name().to_string())
+            .collect(),
     })
 }
 
@@ -4283,6 +4318,13 @@ fn c0_external_dependencies_file(
     // program-entry storage, so it does not build it.
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
+    c0_external_dependencies_parsed(file, &parsed_sources)
+}
+
+fn c0_external_dependencies_parsed(
+    file: &ClickFile,
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
     let external_names = function_blocks
         .iter()
@@ -4296,7 +4338,7 @@ fn c0_external_dependencies_file(
         .filter(|function| !function.is_external())
     {
         let required = verification_required_functions_with_blocks(
-            &parsed_sources,
+            parsed_sources,
             function.signature().name(),
             &function_blocks,
             file.selected_thread_runtime(),
@@ -5365,6 +5407,101 @@ fn parse_c_source_unit(
         .borrow_mut()
         .insert(source_path.to_string(), Arc::new(unit.clone()));
     Ok(unit)
+}
+
+/// The source names of the file-scope C objects of every verified translation
+/// unit: scalars, arrays, aggregates and aggregate arrays. A bare name in an
+/// annotation that no parameter or binding shadows resolves to one of these.
+/// A compiler-prepared program has no translation units to list here; its
+/// objects are reached through qualified names, which need no list.
+fn file_scope_object_names(
+    click_source: &str,
+    c_sources: &CSourceContext<'_>,
+    target: CTarget,
+) -> Result<BTreeSet<String>, ClickError> {
+    let mut names = BTreeSet::new();
+    if c_sources.program_import.is_some() {
+        return Ok(names);
+    }
+    for source_path in super::verifying_source_paths(click_source)? {
+        // The frontend parsed every verifying unit into the cache, so this
+        // shares that unit rather than cloning or parsing it again.
+        let cached = c_sources.parsed_units.borrow().get(&source_path).cloned();
+        let unit = match cached {
+            Some(unit) => unit,
+            None => Arc::new(parse_c_source_unit(&source_path, c_sources, target)?),
+        };
+        names.extend(unit.globals.keys().cloned());
+        names.extend(unit.global_arrays.keys().cloned());
+        names.extend(unit.global_aggregates.keys().cloned());
+        names.extend(unit.global_aggregate_arrays.keys().cloned());
+    }
+    Ok(names)
+}
+
+/// Refuses a pure function or predicate whose body reads a C object by name:
+/// a file-scope object by its bare name, or any object by its qualified
+/// `unit::name` spelling.
+///
+/// An application is keyed on its argument values and the snapshots its
+/// array-ref arguments carry, and a predicate fact on its arguments; nothing
+/// in either records the ambient memory. A body that read `counter` would make
+/// `read_counter(0)` one term before and after a store to `counter`, and a
+/// `requires` fact about it would discharge a false `ensures` verbatim. The
+/// message carries the remedy: pass the object's value as an argument, and the
+/// application then names the value it was applied to.
+///
+/// The check is syntactic over the declared bodies and runs once per
+/// verification. A name a parameter shadows is the parameter; a name bound by
+/// a `let`, a fold or a quantifier is removed by the collection itself.
+fn reject_pure_bodies_reading_c_objects(
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+    file_scope_objects: &BTreeSet<String>,
+) -> Result<(), ClickError> {
+    fn read_object(
+        parameters: &[FunctionParameter],
+        referenced: BTreeSet<String>,
+        file_scope_objects: &BTreeSet<String>,
+    ) -> Option<String> {
+        referenced.into_iter().find(|name| {
+            parameters
+                .iter()
+                .all(|parameter| parameter.name() != name.as_str())
+                && (name.contains("::") || file_scope_objects.contains(name))
+        })
+    }
+    fn refusal(kind: &str, name: &str, object: &str) -> ClickError {
+        ClickError::new(format!(
+            "{kind} `{name}` reads the C object `{object}` by name; a {kind} body may read only its parameters, so pass the object's value as an argument"
+        ))
+        .with_kind(ClickErrorKind::Type)
+    }
+    for definition in click_function_environment.definitions.values() {
+        let mut referenced = BTreeSet::new();
+        super::lowering::collect_contract_expression_referenced_names(
+            definition.body(),
+            &mut referenced,
+        );
+        if let Some(object) = read_object(definition.parameters(), referenced, file_scope_objects) {
+            return Err(refusal(
+                "pure function",
+                generic_instance_source_name(definition.name()),
+                &object,
+            ));
+        }
+    }
+    for definition in predicate_environment.definitions.values() {
+        let mut referenced = BTreeSet::new();
+        super::lowering::collect_click_proposition_referenced_names(
+            definition.body(),
+            &mut referenced,
+        );
+        if let Some(object) = read_object(definition.parameters(), referenced, file_scope_objects) {
+            return Err(refusal("predicate", definition.name(), &object));
+        }
+    }
+    Ok(())
 }
 
 /// Looks up a C definition using the spelling visible to Click. Header-local

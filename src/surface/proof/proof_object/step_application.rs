@@ -756,7 +756,10 @@ impl<'a> Proof<'a> {
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
         // Diagnostics from this step, and from every scope it opens, name the
         // source occurrence the driver is checking rather than a tree depth.
+        // A generated tactic has no source occurrence (`usize::MAX`) and is
+        // addressed by nothing, so there is no site to move to for it.
         if let Some(origin) = origin
+            && origin.source_index != usize::MAX
             && !self.site().addresses_source_tactic(origin.source_index)
         {
             return self

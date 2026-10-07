@@ -46,5 +46,5 @@ int32 any_zero(int32 *a, int32 n) {
 ```
 
 ```expect
-fail: missing resource fact `views a[i..(i + 1)]`
+fail: the read requires `views a[i..(i + 1)]`, which is not available
 ```

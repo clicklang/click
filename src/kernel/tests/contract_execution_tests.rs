@@ -3114,6 +3114,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
     let path = SymbolicCExecutionPath {
         completion_origin: None,
         assumptions: PureFactContext::new(),
+        post_assumptions: None,
         facts: Vec::new(),
         effect_facts: Vec::new(),
         obligations: vec![obligation.clone()],
@@ -3195,6 +3196,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     let failing = SymbolicCExecutionPath {
         completion_origin: None,
         assumptions: PureFactContext::new(),
+        post_assumptions: Some(PureFactContext::new()),
         facts: Vec::new(),
         effect_facts: Vec::new(),
         obligations: vec![unproved.clone()],
@@ -3210,6 +3212,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     let clean = SymbolicCExecutionPath {
         completion_origin: None,
         assumptions: PureFactContext::new(),
+        post_assumptions: Some(PureFactContext::new()),
         facts: Vec::new(),
         effect_facts: Vec::new(),
         obligations: Vec::new(),
@@ -3302,6 +3305,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let path = SymbolicCExecutionPath {
         completion_origin: None,
         assumptions: PureFactContext::new(),
+        post_assumptions: None,
         facts: vec![fact.clone()],
         effect_facts: Vec::new(),
         obligations: vec![obligation.clone()],

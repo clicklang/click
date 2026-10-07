@@ -303,8 +303,14 @@ charged to visible semantic output rather than hidden ambient state:
   equality goals also select at most two indexed premises instead of every
   preceding guard about the same variable; the selected premises still undergo
   the ordinary atomic derivation check
-  (`indexed_simp_premises_reduce_whole_early_return_work`). Path context
-  rebuilding remains quadratic.
+  (`indexed_simp_premises_reduce_whole_early_return_work`). Proof completions
+  without required entry resources retain their persistent body context.
+  Certification reuses it after entry checks when no entry-resource
+  propositions need merging, then adds only assumable obligations
+  (`completed_early_return_contexts_are_reused_for_certification`). Legacy
+  producers and paths with observable entry-resource facts retain the flat
+  rebuild. The explicit early-return proof also still constructs contexts
+  elsewhere in its transaction; the bug report records both proof forms.
 
 ## Execution capacity follows selected syntax
 

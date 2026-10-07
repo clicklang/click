@@ -45,7 +45,7 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
-fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
+fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_decreases_recursive_in_loop.md");
     let markdown = std::fs::read_to_string(&path).unwrap();
@@ -60,11 +60,18 @@ fn shared_invariant_closer_keeps_distinct_checked_branch_bodies() {
     let position =
         expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
     let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the shared closer expands with each branch's checked body");
-    assert!(!expanded.contains("close_invariants();"), "{expanded}");
+        .expect("the first arm's closer expands with that arm's checked body");
+    // Each arm of the proof `if` closes the invariants itself: the arms end
+    // in different states, so nothing after the `if` is shared. Expanding
+    // the first arm's closer leaves the other arm's as written.
+    assert_eq!(
+        expanded.matches("close_invariants();").count(),
+        1,
+        "{expanded}"
+    );
     assert_eq!(
         expanded.matches("close_invariants by").count(),
-        2,
+        1,
         "{expanded}"
     );
     assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
@@ -14143,17 +14150,13 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
-    // The automatic preservation the `loop` keyword owns walks four body
-    // paths here: two sibling C `if`s, each split into its own proof case.
-    // Merging aligns each case at the certificate offset its split recorded,
-    // and that offset is read back against the leaf's own `path_certificate`.
-    // The preservation driver runs sibling arms on one interleaved chain, so
-    // walking a leaf's lineage passes through the *other* arm's nested split
-    // marker; following that marker adopted the sibling arm's steps, and the
-    // recorded offset then pointed past the end of this path's own tactics
-    // ("case offset exceeds its tactics"). A split marker now records the
-    // goals it opened and is followed only when it opened the goal being
-    // walked.
+    // The automatic preservation the `loop` keyword owns walks this body
+    // once: each of the two sibling C `if`s has both arms fall through to
+    // more of the body, so its arms are joined as a `branch` and the rest is
+    // not walked once per arm. It used to split each `if` into its own proof
+    // case and walk four paths, which is what first exposed the
+    // certificate-offset bug this test was written for; the expansion is now
+    // two `branch` steps and must still reverify on its own.
     let c_source = r#"
         int32 two_ifs(int32 n) {
             int32 i = 0;
@@ -14204,9 +14207,14 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
+    assert_eq!(
+        expanded.matches("branch ").count(),
+        2,
+        "both sibling C `if`s should expand to joined branches: {expanded}"
+    );
     assert!(
-        expanded.contains("if x == 0") && expanded.contains("if y == 0"),
-        "both sibling C `if`s should expand to proof cases: {expanded}"
+        !expanded.contains("if x == 0") && !expanded.contains("if y == 0"),
+        "neither `if` should be walked as separate proof cases: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded preservation should independently reverify: {error:?}\n{expanded}")
@@ -15570,6 +15578,80 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
             )
         });
     }
+}
+
+#[test]
+fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/uint32_arithmetic_bound_weakening.md");
+    verify_c0_sources(&source, &[]).expect("unsigned weakened bounds should verify");
+    for name in [
+        "lane_ceiling",
+        "crossing_sign_bit",
+        "high_unsigned_ceiling",
+        "high_unsigned_floor",
+        "crossing_sign_bit_floor",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], &format!("{name}.ensures_0"))
+            .expect("unsigned weakening should expand");
+        assert!(expanded.contains("arithmetic_certificate signed_int32"));
+        let (result, planning) =
+            crate::surface::proof::count_planning_statement_transitions(|| {
+                verify_c0_sources(&expanded, &[])
+            });
+        result.expect("unsigned certificate should independently recheck");
+        assert_eq!(planning, 0, "explicit recheck must not plan");
+        if name == "lane_ceiling" {
+            let forged = expanded.replace("1073741823u32", "65519u32");
+            let error = verify_c0_sources(&forged, &[])
+                .expect_err("a strengthened conclusion must not encode the original child sum");
+            assert!(error.message().contains("does not encode the child sum"));
+        }
+    }
+    for (premise, goal) in [
+        ("lane <= 1073741823u32", "lane <= 65520u32"),
+        ("lane <= 2147483648u32", "lane <= 2147483647u32"),
+        ("2147483647u32 <= lane", "2147483648u32 <= lane"),
+        ("lane <= 65520u32", "1073741823u32 <= lane"),
+    ] {
+        let invalid = format!(
+            "theorem invalid(lane: uint32) {{ requires {premise}; \
+             ensures {goal} by {{ arithmetic() using {{ {premise}; }} }} }}"
+        );
+        verify_c0_sources(&invalid, &[]).expect_err("insufficient unsigned bounds must fail");
+    }
+    let missing = source.replacen(
+        "arithmetic() using { lane <= 65520u32; }",
+        "arithmetic() using {};",
+        1,
+    );
+    verify_c0_sources(&missing, &[]).expect_err("unlisted bounds must not prove the ceiling");
+}
+
+#[test]
+fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
+    let (guarded, _) =
+        mdtest_sources("mdtests/true_disjunction_skips_undefined_right_requirement.md");
+    let (products, _) = mdtest_sources("mdtests/integer_uint32_checked_product_observations.md");
+    let source = format!("{guarded}\n{products}");
+    verify_c0_sources(&source, &[]).expect("zero-factor and checked products should verify");
+    for claim in [
+        "zero_instance.ensures_0",
+        "known_zero_instance.ensures_0",
+        "zero_factor.ensures_0",
+        "known_zero_factor.ensures_0",
+        "reduced_lane_ceiling.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], claim)
+            .expect("checked multiplication/zero-factor proof should expand");
+        verify_c0_sources(&expanded, &[])
+            .expect("expanded multiplication/zero-factor certificate should recheck");
+    }
+    let (invalid, _) =
+        mdtest_sources("mdtests/false_disjunction_requires_defined_right_requirement.md");
+    verify_c0_sources(&invalid, &[])
+        .expect_err("a false left disjunct must not hide division by zero");
+    let forged = guarded.replace("ensures 1 == 1", "ensures 1 == 2");
+    verify_c0_sources(&forged, &[]).expect_err("a true guard must not prove a false conclusion");
 }
 
 #[test]

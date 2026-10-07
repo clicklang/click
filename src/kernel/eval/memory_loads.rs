@@ -921,6 +921,7 @@ fn evaluate_c_memory_load_case(
         .flatten();
     if let Some((stored_pointer, stored_value)) = unresolved {
         let mut paths = Vec::new();
+        let stored_bytes = cell_access_byte_width(&stored_value);
         // General equality can resolve an indexed address that the narrower
         // memory resolver leaves open. A proven alias supplies this cell's
         // value; merely skipping its alias branch would lose an initialized
@@ -978,15 +979,56 @@ fn evaluate_c_memory_load_case(
         )
         .is_some()
         {
-            // The distinct case is this same load over the memory without
-            // that cell. The caller's loop evaluates it next, so a memory
-            // with many undecided cells costs one frame, not one per cell.
-            *distinct_case = Some(DistinctLoadCase {
-                memory: memory.without_cell(&stored_pointer),
-                facts: distinct_facts,
-                obligations,
-                assumptions: load_assumptions.clone(),
-            });
+            // Two different addresses clear each other's bytes only when the
+            // gap the inequality establishes is wide enough for both
+            // accesses: two `int32` slots of one array, not a byte cell at
+            // `p + 5` against the `int32` at `p + 4k`, which overlap at
+            // `k == 1` although the addresses differ. Dropping the cell
+            // would let a zeroed allocation answer that load as zero.
+            let bytes_clear = access_byte_overlap(
+                &stored_pointer,
+                stored_bytes,
+                &pointer,
+                value_type.byte_width(),
+                assumptions,
+            ) == AccessByteOverlap::Separate;
+            if bytes_clear {
+                // The distinct case is this same load over the memory without
+                // that cell. The caller's loop evaluates it next, so a memory
+                // with many undecided cells costs one frame, not one per cell.
+                *distinct_case = Some(DistinctLoadCase {
+                    memory: memory.without_cell(&stored_pointer),
+                    facts: distinct_facts,
+                    obligations,
+                    assumptions: load_assumptions.clone(),
+                });
+            } else {
+                // The cell may still hold some of the loaded bytes, so the
+                // load's value is its load over this snapshot, which keeps
+                // the cell, and no further case is split from it.
+                let outcome = match canonicalized_symbolic_load_value_with_identity(
+                    &memory,
+                    &pointer,
+                    value_type,
+                    &mut distinct_facts,
+                    assumptions,
+                    use_symbolic_pointer_identity,
+                    source,
+                    purpose,
+                ) {
+                    Some(value) => CExpressionOutcome::Value(value),
+                    None => CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
+                        pointer: pointer.clone(),
+                        value_type,
+                        stored: None,
+                    }),
+                };
+                paths.push(CExpressionPath {
+                    outcome,
+                    facts: distinct_facts,
+                    obligations,
+                });
+            }
         }
 
         return paths;

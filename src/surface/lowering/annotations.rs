@@ -500,11 +500,15 @@ type FunctionContractSummary = (
 /// parameter or result that is not a C or algebraic value, a memory-dependent
 /// body, or a body this lowering refuses simply is not recorded, and the
 /// refutation rule then has nothing to say about that function.
+///
+/// The kernel refuses to record a body that is not a function of its
+/// parameters alone. The classification above promises exactly that, so a
+/// refusal is reported as the declaration's error, in the kernel's words.
 pub(in crate::surface) fn register_kernel_pure_function_definitions(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
-) {
+) -> Result<(), ClickError> {
     for definition in click_function_environment.definitions.values() {
         if !definition.type_parameters().is_empty()
             || !click_function_environment.is_memory_independent(definition.name())
@@ -518,9 +522,16 @@ pub(in crate::surface) fn register_kernel_pure_function_definitions(
             click_function_environment,
             struct_layouts,
         ) {
-            crate::kernel::register_pure_function_definition(lowered);
+            crate::kernel::register_pure_function_definition(lowered).map_err(|openness| {
+                ClickError::new(format!(
+                    "pure function `{}` {openness}; a pure function body may read only its parameters",
+                    definition.name()
+                ))
+                .with_kind(crate::surface::ClickErrorKind::Type)
+            })?;
         }
     }
+    Ok(())
 }
 
 /// Records each declared `Integer`-valued function's body with the kernel,
