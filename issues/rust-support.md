@@ -1205,15 +1205,18 @@ Unknown or false left sides retain the existing lowering. Independent theorem
 regressions reject undefined right sides when needed and false conclusions;
 expansion independently rechecks the resulting certificates.
 
-The four-byte investigation separately reproduced
-`bugs/arithmetic-unsigned-bound-produces-invalid-add-certificate.md`: a smart
-unsigned bound proof emits an addition certificate that fails kernel checking.
+The unsigned-bound certificate rendering bug found by the four-byte investigation
+is fixed. A final addition over sign-bit-flipped unsigned atoms now uses the
+goal's source comparison instead of wrapping machine sums; the unchanged checker
+requires that comparison to encode the exact child sum. Regressions verify and
+independently recheck expanded upper and lower bounds on both sides of the sign
+bit, and reject insufficient bounds, unlisted premises, and forged certificates.
 The same investigation independently reduced
 `bugs/arithmetic-cannot-render-observed-product-after-zero-rewrite.md`: after a
 checked Integer observation rewrite to zero, arithmetic proves the product goal
-internally but cannot print its certificate. Both bugs are filed for the next
-tooling fixes. The checked multiplication ceiling
-example uses the existing explicit unsigned transitivity theorem; the original
+internally but cannot print its certificate. This remaining bug is the next
+tooling fix. The checked multiplication ceiling
+example now proves its native quotient guard with arithmetic; the original
 computation proof remains stopped at this tooling checkpoint.
 
 Next prove the first nonempty four-byte vector path and establish/preserve the
