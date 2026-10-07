@@ -245,6 +245,13 @@ cargo nextest run --test rust_import --run-ignored only \
 
 ## Remaining proof work
 
+The first nonempty vector path also exercises a by-value copy of `a_vec` after
+its checked addition helper. Initialized local arrays now copy from the current
+memory snapshot when that helper has discarded cached lane values. The reduced
+[copy-after-call regression](../copy-after-call/README.md) checks this prerequisite
+and independence from subsequent source writes. The complete four-byte checksum
+proof remains subsequent work.
+
 With constructor-state inputs of lengths zero through three checked, next prove
 the first nonempty four-byte vector path and establish and preserve the lane
 invariants over the original chunks/remainder

@@ -1160,6 +1160,25 @@ weights in B, repeated preceding-byte reads, and verify/profile/audit/expansion
 agreement. Original Rust sources, artifacts, locks, and import profile are
 unchanged.
 
+### Copying local scalar arrays after checked calls
+
+The first nonempty vector path exposed a kernel copy defect at the original
+`b_vec += a_vec` call: its by-value operand copies `a_vec` after a checked helper
+has updated it. Initialized local storage was rejected when that call had
+discarded cached lane values. Such copies now capture the current immutable
+memory snapshot for unknown lanes, preserving represented lanes and the existing
+initialization, type, alignment, bounds, and authority checks.
+
+`design/charon-trial/copy-after-call` contains a reduced, frozen Charon crate
+with both bodies checked: mutate a local array through a helper, copy it, mutate
+the source again, and return the independently captured post-call value. False
+pre-call/later values and insufficient or read-only authority are rejected.
+Kernel regressions cover partial havoc, invalid storage, and deterministic
+compact-copy scaling through a million elements. Proof-tool regressions recheck
+verification, profiling, expansion, and nightly audit. The original `adler2`
+sources, artifacts, locks, and import profile remain unchanged; its complete
+four-byte checksum contract is still unproved.
+
 Next prove the first nonempty four-byte vector path and establish/preserve the
 derived lane ceilings over the original stored nested iterators. General
 initial states, nonempty vector batches beyond that boundary, whole-loop panic
