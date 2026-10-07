@@ -944,7 +944,16 @@ pub(super) fn append_surface_tactics_flat(
     }
     let proof = ProofCertificate::from_proof_tactics(common)
         .map_err(|error| format!("path contained a non-simple tactic: {error:?}"))?;
-    steps.extend(proof.into_steps());
+    // A proof `match` is a branch choice whose arms bind names. The tactics
+    // that follow it were written inside an arm and may read those names, so
+    // they go back inside the arms the match left open, not after it.
+    if matches!(steps.last(), Some(ProofStep::Match { .. })) {
+        for step in proof.into_steps() {
+            append_surface_step_to_leaves(steps, step);
+        }
+    } else {
+        steps.extend(proof.into_steps());
+    }
     Ok(())
 }
 
