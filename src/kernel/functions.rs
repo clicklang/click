@@ -16879,6 +16879,11 @@ pub(in crate::kernel) fn bind_c_function_arguments(
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
+    // The caller's outstanding workers stay outstanding across the call. A
+    // callee cannot join them (each completion right names the caller's loan
+    // participant), and returning its ledger must not erase their rights or
+    // the population changes they defer to join.
+    callee_state.thread_ledger = caller_state.thread_ledger.clone();
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
@@ -17015,6 +17020,11 @@ fn bind_c_contract_arguments(
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
+    // The caller's outstanding workers stay outstanding across the call. A
+    // callee cannot join them (each completion right names the caller's loan
+    // participant), and returning its ledger must not erase their rights or
+    // the population changes they defer to join.
+    callee_state.thread_ledger = caller_state.thread_ledger.clone();
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
