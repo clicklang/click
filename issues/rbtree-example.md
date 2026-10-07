@@ -19,10 +19,13 @@ tree and produces another cannot state that without an abstract model.
 
 ## State, 2026-10-07: handoff
 
-Insert is finished and the next work is erase, starting at
-[chunk 10](#erase-d3-d4-d10). This section records what changed in the
-verifier since the insert proof was first written, and how to write the erase
-proofs so they do not need the same rework.
+Insert is finished. The black-successor splice's deficit-start model proof
+in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
+successors; next port the unlink in chunk 11 to the unchanged C. Its red
+successor and nonempty replacement-child branches still need their exit facts.
+This section records what changed in the verifier since the insert proof was
+first written, and how to write the erase proofs so they do not need the same
+rework.
 
 **Where insert stands.** `examples/rbtree-insert/rbtree_insert.click` is about
 2,500 proof lines for 136 lines of C (19 times) and verifies in about 5.4
@@ -896,25 +899,36 @@ the new context. Helpers: `rb_inorder_node_congruence`, `ctx_rb_black_focus`,
 `node_color_ok_black_children`, `ctx_erase_case2_left_sibling`. The model
 verifies and `click audit` of it passes.
 
-Still open in this chunk: the two-child splice in the form chunk 11 needs.
-`rb_erase_two_child_splice` and its parent-consistency twin state the in-order
-and link facts of replacing the erased node by its successor, but not where
-the black deficit lands when a black successor with no right child is
-removed. That is a position inside the right subtree's left spine, so stating
-it as a rebalancing start (`ctx_rb(..., Nat::Succ(Nat::Zero), Color::Black)`
-at the hole) needs a context for that spine joined to the context above the
-erased node. The context-composition infrastructure is now written:
-`ctx_concat(inner, outer)` and `plug_ctx_concat` prove
-`plug(ctx_concat(inner, outer), sub) == plug(outer, plug(inner, sub))`;
-`ctx_consistent_concat` transports the parent-link invariant.
-`ctx_rb_between(inner, bh, focus_color, boundary_bh, boundary_color)` describes
-a valid fragment ending at a subtree boundary, including a red boundary root.
-Its `top`, `left_frame`, and `right_frame` constructors and `ctx_rb_concat`
-join that fragment to `ctx_rb(outer, boundary_bh, boundary_color) == 1`.
-Do not use `ctx_rb(inner, ...)` for the fragment: its `Top` would incorrectly
-require this interior root to be black. Still needed: instantiate the fragment
-along the successor descent, account for the right root's reparenting, and
-prove the complete splice's deficit-start facts in the shape chunk 11 uses.
+**Black-successor splice model written 2026-10-07.**
+`examples/rbtree-model/rbtree_erase_splice.click` adds
+`rb_erase_black_successor_splice` for a black minimum with no right child.
+It proves all four facts needed before entering erase fixup: the exact
+`rb_successor_context` is valid at `Nat::Succ(Nat::Zero)` with a black focus;
+plugging its empty hole reconstructs the successor-spliced tree; that context
+has consistent parent links; and the local in-order sequence is
+`rb_inorder(left) ++ rb_inorder(right)`, dropping the erased root's occurrence.
+
+`rb_minimum` records `Found(identity, original_color, right_child)` without a
+parent payload, so reparenting the right subtree preserves the descriptor.
+`rb_min_context(tree, up)` follows the C successor descent: an immediate
+successor returns `up`; each deeper step pushes a `Left` frame. Reparent the
+right root onto the successor before descent, and start with
+`Right(successor, parent, erased_color, rb_reparent(left, successor), up)`.
+The immediate branch's fixup parent is therefore the successor; the deeper
+branch's is the innermost left frame's node. `rb_remove_min_reparent` accounts
+for that root-parent write, and `rb_min_context_cut_leaf` identifies the hole
+with `rb_remove_min` without assuming the removed leaf was black.
+
+The general context-composition API remains available: `ctx_concat`,
+`plug_ctx_concat`, `ctx_consistent_concat`, and `ctx_rb_between`/`ctx_rb_concat`.
+The descent theorem carries the outer context as an accumulator, so it also
+permits a red root at the boundary inside the right subtree.
+`successor_splice_checks.click` covers an immediate successor and a deeper
+successor below a red right-subtree root, the exact context/parent shapes,
+rejection of zero as the required height, and exclusion of red successors or
+successors with a right child from the black-leaf theorem. The latter two C
+branches need separate no-deficit exit facts during chunk 11; do not apply
+this theorem to them or claim the spliced whole tree is already red-black.
 
 **Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
 and two-child cases, contracted so the in-order sequence loses exactly the
