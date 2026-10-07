@@ -11,3 +11,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
 - [Auditing a large claim re-verifies the whole claim for every site](auditing-a-large-claim-reverifies-it-for-every-site.md)
 - [Whole-claim expansion fails on counted populations and `__rb_insert`](whole-claim-expansion-fails-on-proof-matches.md)
+- [Unfolding an authority wrapper fails beside borrowed struct fields](authority-wrapper-unfold-borrowed-memory-frame.md)

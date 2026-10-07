@@ -5262,7 +5262,7 @@ impl ResourceContext {
         for entry in entries {
             suppliers.insert_fact(self.fact(*entry).clone());
         }
-        Some(suppliers.normalized(assumptions))
+        Some(suppliers.normalized_with_byte_endpoints(assumptions, true))
     }
 
     fn without_fact_from_local_indexes(
@@ -5587,7 +5587,17 @@ impl ResourceContext {
         self
     }
 
-    pub(in crate::kernel) fn normalized(mut self, assumptions: &PureFactContext) -> Self {
+    pub(in crate::kernel) fn normalized(self, assumptions: &PureFactContext) -> Self {
+        self.normalized_with_byte_endpoints(assumptions, false)
+    }
+
+    // Bytewise regrouping belongs to explicitly selected memory suppliers.
+    // Ambient normalization preserves the representation of borrowed clauses.
+    fn normalized_with_byte_endpoints(
+        mut self,
+        assumptions: &PureFactContext,
+        byte_endpoints: bool,
+    ) -> Self {
         if !self.storage.supported_by.is_empty()
             || !self.storage.expansions_by_support_occurrence.is_empty()
         {
@@ -5634,7 +5644,7 @@ impl ResourceContext {
                 materialized: std::sync::OnceLock::new(),
             });
             return self
-                .normalized(assumptions)
+                .normalized_with_byte_endpoints(assumptions, byte_endpoints)
                 .restore_supported_projection_pairs(supported)
                 .restore_cached_support_expansions(expansions);
         }
@@ -5657,7 +5667,10 @@ impl ResourceContext {
             })
             .collect::<Vec<_>>();
         let mut slots = retained.iter().cloned().map(Some).collect::<Vec<_>>();
-        let mut index = ResourceNormalizationIndex::default();
+        let mut index = ResourceNormalizationIndex {
+            byte_endpoints,
+            ..Default::default()
+        };
         for (position, (_, fact)) in retained.iter().enumerate() {
             index.insert(position, fact);
         }
@@ -5907,11 +5920,12 @@ fn memory_normalization_relative_byte_position(
 
 #[derive(Default)]
 struct ResourceNormalizationIndex {
+    byte_endpoints: bool,
     positions: BTreeMap<ResourceNormalizationKey, BTreeSet<usize>>,
 }
 
 impl ResourceNormalizationIndex {
-    fn keys(fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
+    fn keys(&self, fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
         let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
         match fact.resource() {
             CResource::Instance(instance) => {
@@ -5923,8 +5937,9 @@ impl ResourceNormalizationIndex {
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
             CResource::Memory(range) => {
-                if let Some(start) =
-                    memory_normalization_relative_byte_position(range, range.start())
+                if self.byte_endpoints
+                    && let Some(start) =
+                        memory_normalization_relative_byte_position(range, range.start())
                 {
                     keys.push(ResourceNormalizationKey::MemoryByteStart(
                         memory_base_root(range.base()),
@@ -5932,7 +5947,10 @@ impl ResourceNormalizationIndex {
                         start,
                     ));
                 }
-                if let Some(end) = memory_normalization_relative_byte_position(range, range.end()) {
+                if self.byte_endpoints
+                    && let Some(end) =
+                        memory_normalization_relative_byte_position(range, range.end())
+                {
                     keys.push(ResourceNormalizationKey::MemoryByteEnd(
                         memory_base_root(range.base()),
                         fact.is_own(),
@@ -5978,13 +5996,13 @@ impl ResourceNormalizationIndex {
     }
 
     fn insert(&mut self, position: usize, fact: &CResourceFact) {
-        for key in Self::keys(fact) {
+        for key in self.keys(fact) {
             self.positions.entry(key).or_default().insert(position);
         }
     }
 
     fn remove(&mut self, position: usize, fact: &CResourceFact) {
-        for key in Self::keys(fact) {
+        for key in self.keys(fact) {
             if let Some(positions) = self.positions.get_mut(&key) {
                 positions.remove(&position);
             }
@@ -6032,8 +6050,9 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.start()))
                 {
                     for root in &roots {
-                        if let Some(byte) =
-                            memory_normalization_relative_byte_position(range, &start)
+                        if self.byte_endpoints
+                            && let Some(byte) =
+                                memory_normalization_relative_byte_position(range, &start)
                         {
                             keys.push(ResourceNormalizationKey::MemoryByteEnd(
                                 root.clone(),
@@ -6052,7 +6071,9 @@ impl ResourceNormalizationIndex {
                     .chain(assumptions.bitvector_equality_class(range.end()))
                 {
                     for root in &roots {
-                        if let Some(byte) = memory_normalization_relative_byte_position(range, &end)
+                        if self.byte_endpoints
+                            && let Some(byte) =
+                                memory_normalization_relative_byte_position(range, &end)
                         {
                             keys.push(ResourceNormalizationKey::MemoryByteStart(
                                 root.clone(),

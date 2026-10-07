@@ -920,6 +920,15 @@ const methods, mutable child methods, record helpers, signed-32 field references
 and sibling frames. Shared permission indexing and joint consumption rejoin scalar bytes returned
 by a call with bytewise field padding over symbolic object pointers; C and
 kernel regressions cover the same boundary without changing ownership extents.
+Byte-endpoint regrouping is limited to selected memory suppliers; ambient
+normalization preserves borrowed clause boundaries. Authority wrapper folds
+consume and compose only their checked exchange, retaining unrelated memory
+and population units. Positive mixed-width frame and negative hidden-unit
+regressions cover this boundary alongside the full Markdown proof corpus.
+A pre-existing return-certification failure when unfolding a wrapper beside
+borrowed struct fields is recorded in
+[the wrapper memory-frame bug](../bugs/authority-wrapper-unfold-borrowed-memory-frame.md).
+Repair that proof-tooling blocker before extending template instance support.
 Recomputed-digest artifacts reject forged targets and use
 spans, missing/reordered paths and const roots passed to mutable callees. Source
 checks retain C++ access, constness, temporary and pointer-root restrictions;

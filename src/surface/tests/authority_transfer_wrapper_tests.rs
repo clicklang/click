@@ -175,3 +175,25 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
         "{error:?}"
     );
 }
+
+#[test]
+fn authority_transfer_wrapper_preserves_adjacent_mixed_width_memory_frame() {
+    let source = r#"
+        authorized abstract resource member(object: int32);
+        authorized resource held(object: int32) { contains member(object); }
+        verifying "wrapper.c";
+        int32 package(int32 object, struct Frame* frame) {
+            consumes member(object);
+            owns member(object);
+            owns frame->wide;
+            owns frame->narrow;
+            produces held(object) by {
+                execute();
+                fold(held(object));
+            }
+        }
+    "#;
+    let c = "struct Frame { int64 wide; int32 narrow; }; int32 package(int32 object, struct Frame* frame) { return object; }";
+    verify_c0_project(&project(source), &[("wrapper.c", c)])
+        .expect("wrapping a member preserves the exact unrelated memory frame");
+}

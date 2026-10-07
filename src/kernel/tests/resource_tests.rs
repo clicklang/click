@@ -7309,15 +7309,18 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
             )));
         }
         let context = ResourceContext::new().unchecked_with_facts(pieces);
-        let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.normalized(&PureFactContext::new())
+        let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expected
+                .iter()
+                .all(|fact| context.satisfies_fact(fact, &PureFactContext::new()))
         });
-        // Joining may retain either input's element width or displaced base.
-        assert_eq!(normalized.facts().len(), expected.len());
+        assert!(accepted);
+        assert_eq!(
+            context.facts().len(),
+            2 * size,
+            "a query preserves the held representation"
+        );
         samples.push(work);
-        for fact in expected {
-            assert!(normalized.satisfies_fact(&fact, &PureFactContext::new()));
-        }
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= 5 * pair[0] + 32),
