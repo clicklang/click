@@ -21,17 +21,32 @@ tree and produces another cannot state that without an abstract model.
 
 Insert is finished. The black-successor splice's deficit-start model proof
 in [chunk 10](#erase-d3-d4-d10) is now written, including immediate and deep
-successors; next port the unlink in chunk 11 to the unchanged C. Its red
-successor and nonempty replacement-child branches still need their exit facts.
+successors. Chunk 11 now verifies the unchanged C for a root with zero or
+one child. The red-leaf successor now has a no-deficit model theorem, with
+immediate and deep concrete checks. Non-root C unlink and both C successor
+branches remain; nonempty replacement children still need their exit facts.
 The first C-port attempt exposed an imported-resource binder collision, now
 covered by a regression and fixed by scoping learned binders to each declaration.
 The insertion resources are shared in `examples/rbtree-model/rbtree_resources.click`.
 The loaded tagged-null conversion bug found in the root-leaf case is also
 fixed: explicit 64-bit casts now accept values proven zero by the current
 facts. `mdtests/tagged_pointer_null_word.md` covers loaded zero and masked
-loaded tag words, with a separate nonzero-load rejection fixture. The original
-C erase attempt now passes the parent cast; its ownership proof and the rest
-of chunk 11 remain unfinished.
+loaded tag words, with a separate nonzero-load rejection fixture.
+
+`examples/rbtree-erase/rbtree_erase.click` consumes the focused `rb_at(node)`
+and its `Context::Top` resource and returns the detached node's raw fields and
+a whole root resource. It handles leaf, right-child, and left-child root
+removal, proves null as the fixup parent, and establishes a black-rooted
+red-black result with in-order sequence `left ++ right`. The imported
+`rbtree_erase_root.click` proves those model facts separately. Mutation tests
+reject missing root replacement and either missing child parent/color write.
+The C's successor branches remain present but outside this contract's scope.
+
+Two proof-driver fixes support this increment: named folds after return inside
+`open` are deferred to the returned state, and exact checked execution retains
+its loop semantics even when no loop was reached. Thus the unreachable
+successor loop does not demand a spurious ranking measure; reachable unranked
+loop summaries still fail termination checks.
 
 This section records what changed in the verifier since the insert proof was
 first written, and how to write the erase proofs so they do not need the same
@@ -938,13 +953,17 @@ permits a red root at the boundary inside the right subtree.
 `successor_splice_checks.click` covers an immediate successor and a deeper
 successor below a red right-subtree root, the exact context/parent shapes,
 rejection of zero as the required height, and exclusion of red successors or
-successors with a right child from the black-leaf theorem. The latter two C
-branches need separate no-deficit exit facts during chunk 11; do not apply
+successors with a right child from the black-leaf theorem. The red-leaf successor now has a separate no-deficit theorem,
+`rb_erase_red_successor_splice`, establishing whole-tree validity, in-order
+removal, and parent consistency. The nonempty-child branch still needs its
+recoloring exit facts during chunk 11; do not apply
 this theorem to them or claim the spliced whole tree is already red-black.
 
-**Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
-and two-child cases, contracted so the in-order sequence loses exactly the
-designated node. Depends on 7 and 10.
+**Chunk 11. `__rb_erase_augmented`: root zero/one-child cases written 2026-10-07.**
+The unchanged C now returns a red-black whole tree and the erased node's raw
+ownership for root deletion with at most one child. Its exact model and
+in-order contract drops that root's occurrence. Non-root zero/one-child cases
+and the two-child successor splice remain. Depends on 7 and 10.
 
 **Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
 every continuing back edge. Depends on 11.

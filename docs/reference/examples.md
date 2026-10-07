@@ -639,6 +639,14 @@ sequence:
   `ctx_insert_root_exit` theorems restate every fixup branch as a step of that
   loop. The project has no C of its own; the proofs about verbatim Linux bodies
   that use this model are the `rb_*` mdtests below.
+- `examples/rbtree-erase/`: the unchanged Linux `__rb_erase_augmented` with a
+  contract for root deletion with zero or one child. The proof returns the
+  detached node's fields and a red-black whole tree whose in-order sequence
+  omits the deleted root. Left-child, right-child, and leaf cases are covered;
+  non-root and successor cases remain. The C implementation is pinned, and
+  mutations that skip root replacement or either child parent/color write
+  are rejected. It imports the shared ownership declarations and the
+  separately verified `rbtree_erase_root.click` model facts.
 - `examples/owned-vector/`: composite-resource example over vector metadata and
   dependent backing storage, including viewed reads, runtime-sized allocation,
   malloc-copy-free growth, and a resource-neutral in-capacity push shared by

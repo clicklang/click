@@ -290,6 +290,70 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
 }
 
 #[test]
+fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let bytes = fs::read(root.join("examples/rbtree-erase/rb_erase_augmented.c"))
+        .expect("the pinned erase C input exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "f861b937f0cb142104061ccccb9f6247c99ca4f6d0f4d6033b8720a86f967022"
+    );
+}
+
+fn erase_refuses_mutation(before: &str, after: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree-erase/rbtree_erase.click");
+    let source = fs::read_to_string(&path).expect("the erase sidecar exists");
+    let mut c_sources = read_verifying_sources(&path, &source).expect("the erase C bundle loads");
+    let (_, c) = c_sources
+        .iter_mut()
+        .find(|(name, _)| name.ends_with("rb_erase_augmented.c"))
+        .expect("the bundle contains the unlink implementation");
+    assert_eq!(
+        c.matches(before).count(),
+        1,
+        "mutation must identify exactly one statement"
+    );
+    *c = c.replace(before, after);
+    let project = read_click_project_at_root(&path, &source, &root.join("examples"))
+        .expect("the erase proof resolves its shared resources and model");
+    let error = limits::spawn(
+        "erase mutation verifier",
+        "click-erase-mutation".to_string(),
+        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .expect_err("the erase proof must refuse a missing link or parent/color write");
+    assert!(
+        error.message().contains("fold")
+            || error
+                .message()
+                .contains("selected child does not satisfy the proposed parent model")
+            || error.message().contains("contract certification"),
+        "unexpected refusal: {}",
+        error.message()
+    );
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
+    erase_refuses_mutation("\t\t\tchild->__rb_parent_color = pc;\n", "");
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
+    erase_refuses_mutation(
+        "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
+        "\t\tpc = node->__rb_parent_color;\n",
+    );
+}
+
+#[test]
+fn rbtree_erase_refuses_a_skipped_root_replacement() {
+    erase_refuses_mutation("\t\t__rb_change_child(node, child, parent, root);\n", "");
+}
+
+#[test]
 fn concurrency_fork_join_source_is_frozen() {
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/concurrency-fork-join/fork_join.c");

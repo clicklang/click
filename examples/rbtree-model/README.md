@@ -7,8 +7,9 @@ values and proofs, with no `verifying` line or C ownership.
 `rbtree_resources.click` is the shared declaration-only ownership layer:
 `rb_at(p)`, `ctx_at(child, root)`, and `rb_root_at(root)` attach the model to
 Linux node fields. It is imported by C sidecars, which supply the C layouts;
-it is not a standalone verification entry. The insertion sidecar uses these
-same resources, ready for the erase port to share.
+it is not a standalone verification entry. The insertion and erase sidecars share these resources.
+`rbtree_erase_root.click` proves the root zero/one-child replacement is
+red-black and preserves exactly the two old subtrees' in-order sequence.
 
 Run `cargo run --bin click -- verify examples/rbtree-model` from the repository
 root. The example is also checked by `scripts/check.sh`.
@@ -281,7 +282,7 @@ rejected with "returns List<...>, but its body is not algebraic". The append
 form is also stronger, because it fixes the removed element's position instead
 of relying on the identity's absence from the prefix.
 
-### Black successor and the rebalancing start
+### Successor exits and the rebalancing start
 
 Import `rbtree_erase_splice.click` for the successor descent and the
 black-successor/no-right-child splice. `RbMinimum::Found(identity, color,
@@ -308,11 +309,18 @@ subtree's minimum is `Found(successor, Black, Empty)`. It establishes:
 - the spliced subtree's in-order sequence is the original left sequence
   followed by the original right sequence, removing the erased root's occurrence.
 
-The whole spliced tree still has a black deficit. Red successors and successors
-with a nonempty right child take different C branches and are not covered by
-this theorem. `successor_splice_checks.click` verifies the immediate and deep
-cases (including a red right-subtree root), their context shapes, the missing
-black level, and the excluded successor states.
+The black-leaf case still has a black deficit. For a red-leaf successor,
+`rb_erase_red_successor_splice` instead proves a valid black-rooted whole tree
+without fixup, preserving parent consistency and removing the same in-order
+occurrence. Both use `rb_min_context_leaf` to transport the removed leaf
+color through descent. A successor with a nonempty right child still needs
+a separate child-recoloring theorem.
+
+`successor_splice_checks.click` verifies immediate and deep black successors
+(including a red right-subtree root), their context shapes, the missing black
+level, and excluded successor states. It also checks immediate and deep red
+leaf successors against the no-deficit theorem. These are model proofs; the
+C successor branches are not yet verified.
 
 ## Context and `plug`
 
