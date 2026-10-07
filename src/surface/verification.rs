@@ -833,7 +833,7 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             registry,
         );
     }
-    verify_concrete_theorem_definition(
+    verify_theorem_definition(
         theorem,
         &predicate_environment,
         &click_function_environment,

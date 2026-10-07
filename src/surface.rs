@@ -1104,11 +1104,12 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, "{}", diagnostics::describe_contract_expression(argument))?;
         }
         write!(f, ")")?;
-        if self.binders.is_empty() && (self.result.is_some() || !self.produced.is_empty()) {
-            // A let-bound call uses the explicit transport grammar even when
-            // it has no input resource binders. Keep its required empty map.
+        // The map is what makes this a call step: without it the same text
+        // is `step(Contract(...))`, a named-contract step. A call that lends
+        // no instance keeps its empty map.
+        if self.binders.is_empty() {
             write!(f, ", {{}}")?;
-        } else if !self.binders.is_empty() {
+        } else {
             write!(f, ", {{ ")?;
             for (index, binding) in self.binders.iter().enumerate() {
                 if index != 0 {
@@ -1117,10 +1118,6 @@ impl std::fmt::Display for CallBinderTransport {
                 write!(f, "{}: {}", binding.binder, binding.instance)?;
             }
             write!(f, " }}")?;
-        } else if !self.produced.is_empty() || self.result.is_some() {
-            // A `let` output binding is parsed only with a binder map, so a
-            // call that lends no instance keeps its empty map.
-            write!(f, ", {{}}")?;
         }
         write!(f, ")")
     }

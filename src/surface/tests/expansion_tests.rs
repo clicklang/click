@@ -2035,6 +2035,163 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
     );
 }
 
+/// A call step that lends no resource instance is written with an empty
+/// binder map. The map is what makes it a call step: printed without it,
+/// `step(inner(holder))` reads as a named-contract step and the expanded
+/// proof no longer parses.
+#[test]
+fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
+    let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    for claim in ["keep.contract", "run.contract"] {
+        let expanded = expand_c0_claim_source_by_label(&click, &sources, claim)
+            .unwrap_or_else(|error| panic!("expanding `{claim}`: {}", error.message()));
+        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!(
+                "expanded `{claim}` must recheck: {}\n{expanded}",
+                error.message()
+            )
+        });
+    }
+    let expanded = expand_c0_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("step(inner(holder), {});"), "{expanded}");
+}
+
+/// A theorem with a type parameter is checked at a rigid type standing for
+/// any type. Expanding one of its tactics verifies that theorem alone, and
+/// must check it the same way; without the rigid type the proof cannot be
+/// lowered at all.
+#[test]
+fn a_tactic_in_a_generic_theorem_expands() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples/modeled-binary-tree/modeled_binary_tree.click");
+    let source = std::fs::read_to_string(&path).unwrap();
+    let sources = crate::cli::read_verifying_sources(&path, &source).unwrap();
+    let c_sources = crate::cli::source_refs(&sources);
+    let theorem = source.find("theorem tree_mirror_twice<T>(").unwrap();
+    for needle in ["simp();", "apply(ih(left));"] {
+        let offset = theorem + source[theorem..].find(needle).unwrap();
+        let position = expansion::position_at_offset(&source, offset);
+        let expanded =
+            expand_c0_tactic_source_at(&source, &c_sources, position.line, position.column)
+                .unwrap_or_else(|error| panic!("expanding `{needle}`: {}", error.message()));
+        assert_ne!(expanded, source, "expanding `{needle}` changed nothing");
+    }
+}
+
+/// A proof `if` written after `execute()` in a claim's own proof must be in
+/// the whole-claim expansion: each arm closes the disjunction from its own
+/// case fact, and without the `if` neither side is a fact.
+#[test]
+fn whole_claim_expansion_keeps_a_proof_if_after_execution() {
+    let (click, sources) = mdtest_sources("mdtests/proof_if_cases.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&click, &sources, "sign_after_execution.ensures_0")
+            .unwrap_or_else(|error| panic!("{}", error.message()));
+    let function = &expanded[expanded
+        .find("int32 sign_after_execution(int32 x) {")
+        .unwrap()..];
+    let proof = &function[..function.find("\n}\n").unwrap()];
+    assert!(proof.contains("if result <= 0 {"), "{proof}");
+    assert!(!proof.contains("simp();"), "{proof}");
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
+/// After execution, `witness` or `intro` opens a claim's own proof and the
+/// closing `simp` continues it. A grouped proof's expansion must include what
+/// that `simp` added, or it stops at the tactic that opened the claim.
+#[test]
+fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
+    for (mdtest, claim, opener) in [
+        (
+            "grouped_top_level_existentials",
+            "identity.contract",
+            "witness { j: k }",
+        ),
+        (
+            "intro_as_in_a_function_proof",
+            "keep.contract",
+            "intro() as below;",
+        ),
+    ] {
+        let (click, sources) = mdtest_sources(&format!("mdtests/{mdtest}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source_by_label(&click, &sources, claim)
+            .unwrap_or_else(|error| panic!("expanding `{claim}`: {}", error.message()));
+        let after_opener = &expanded[expanded.find(opener).expect("the opening tactic")..];
+        let rest = &after_opener[opener.len()..after_opener.find("\n}").unwrap()];
+        assert!(
+            !rest.trim().is_empty(),
+            "the expanded proof of `{claim}` stops at `{opener}`:\n{expanded}"
+        );
+        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+            panic!(
+                "expanded `{claim}` must recheck: {}\n{expanded}",
+                error.message()
+            )
+        });
+    }
+}
+
+/// A C `if` with one reachable arm is expanded as a branch whose other arm is
+/// empty, and the proof continues after it. Entering the continuation there
+/// must record its first statement's entry as a step onto it would, because
+/// the expanded branch that follows names that point in its condition.
+#[test]
+fn whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm() {
+    let c_source = r#"
+int early(int x) {
+    if (x == 0) {
+        return 0;
+    }
+    if (x == 1) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let click = r#"
+verifying "early.c";
+
+int32 early(int32 x) {
+    requires x != 0;
+    ensures result == 0 or result == 1;
+} by {
+    branch then {
+        step();
+        simp();
+    } else {}
+    branch then {
+        step();
+        simp();
+    } else {}
+    step();
+    simp();
+}
+"#;
+    let sources = [("early.c", c_source)];
+    verify_c0_sources(click, &sources).expect("the proof with an unreachable arm verifies");
+    let expanded = expand_c0_claim_source_by_label(click, &sources, "early.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(
+        expanded.contains("if at(statement(3).entry, x) == at(statement(3).entry, 1) {"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
+}
+
 #[test]
 fn context_free_disjunction_simp_expands_choice_and_rechecks() {
     for (goal, choice) in [

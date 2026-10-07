@@ -73,44 +73,64 @@ pub(in crate::surface) fn verify_theorem_definitions(
             theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
             continue;
         }
-        {
-            let mut symbolic;
-            let checked = if theorem.type_parameters().is_empty() {
-                theorem
-            } else {
-                let substitution = theorem
-                    .type_parameters()
-                    .iter()
-                    .map(|name| {
-                        (
-                            name.clone(),
-                            ClickType::Algebraic(AlgebraicTypeApplication {
-                                rigid: true,
-                                name: name.clone(),
-                                arguments: Vec::new(),
-                            }),
-                        )
-                    })
-                    .collect();
-                symbolic = generics::instantiate_theorem(theorem, &substitution)
-                    .map_err(ClickError::new)?;
-                symbolic.name = theorem.name().to_string();
-                &symbolic
-            };
-            verified.extend(
-                verify_concrete_theorem_definition(
-                    checked,
-                    predicate_environment,
-                    click_function_environment,
-                    &theorem_environment,
-                    function_environment,
-                )
-                .map_err(ClickError::located_by_ambient_source)?,
-            );
-        }
+        verified.extend(
+            verify_theorem_definition(
+                theorem,
+                predicate_environment,
+                click_function_environment,
+                &theorem_environment,
+                function_environment,
+            )
+            .map_err(ClickError::located_by_ambient_source)?,
+        );
         theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
     }
     Ok(verified)
+}
+
+/// Verifies one theorem, generic or not. A theorem with type parameters is
+/// checked once at rigid types, each parameter standing for an arbitrary
+/// type; that is the form [`verify_concrete_theorem_definition`] takes.
+pub(in crate::surface) fn verify_theorem_definition(
+    theorem: &TheoremDefinition,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+    theorem_environment: &TheoremEnvironment,
+    function_environment: Option<&CExecutionEnvironment>,
+) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    if theorem.type_parameters().is_empty() {
+        return verify_concrete_theorem_definition(
+            theorem,
+            predicate_environment,
+            click_function_environment,
+            theorem_environment,
+            function_environment,
+        );
+    }
+    let substitution = theorem
+        .type_parameters()
+        .iter()
+        .map(|name| {
+            (
+                name.clone(),
+                ClickType::Algebraic(AlgebraicTypeApplication {
+                    rigid: true,
+                    name: name.clone(),
+                    arguments: Vec::new(),
+                }),
+            )
+        })
+        .collect();
+    let mut symbolic =
+        generics::instantiate_theorem(theorem, &substitution).map_err(ClickError::new)?;
+    symbolic.name = theorem.name().to_string();
+    verify_concrete_theorem_definition(
+        &symbolic,
+        predicate_environment,
+        click_function_environment,
+        theorem_environment,
+        function_environment,
+    )
 }
 
 pub(in crate::surface) fn verify_concrete_theorem_definition(
