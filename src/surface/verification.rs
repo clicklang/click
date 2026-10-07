@@ -7687,6 +7687,7 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_mutex_guard(guarded_by),
         );
     }
+    crate::kernel::propagate_population_reach(&mut definitions);
     Ok(definitions)
 }
 

@@ -33567,30 +33567,52 @@ mod population_creation_frame_tests {
     use super::*;
 
     #[test]
-    fn authority_mode_refuses_all_c_calls() {
+    fn authority_mode_refuses_calls_that_reach_a_population() {
         let legacy = CState::new();
         let authority = CState::new().with_population_creation_tracking();
         assert!(authority_mode_call_refusal(&legacy).is_none());
         assert!(authority_mode_call_refusal(&authority).is_some());
+        let call = |helper: &CFunction| {
+            execute_c_function_call_paths(
+                &authority,
+                helper,
+                &[],
+                &PureFactContext::new(),
+                &CExecutionEnvironment::new(),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        };
+        let refused = |paths: &[CFunctionPath]| {
+            matches!(
+                paths,
+                [CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                    ..
+                }] if message.contains("C calls are not yet supported")
+            )
+        };
 
-        let helper = c_function(CType::Void, "helper", vec![], CStatement::Skip);
-        let paths = execute_c_function_call_paths(
-            &authority,
-            &helper,
-            &[],
-            &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            &mut ExecutionBudget::new(),
-        )
-        .unwrap();
-        assert!(matches!(
-            paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
-                ..
-            }] if message.contains("C calls are not yet supported")
-        ));
+        // A helper whose contract moves no resource reaches no population.
+        let ordinary = c_function(CType::Void, "helper", vec![], CStatement::Skip);
+        assert!(!contract_reaches_population(ordinary.contract_interface()));
+        assert!(!refused(&call(&ordinary)));
+
+        // An abstract token may be an authorized member, so an unadmitted
+        // contract producing one is refused.
+        let minting = c_function(CType::Void, "mint", vec![], CStatement::Skip)
+            .with_resource_summary(
+                vec![],
+                vec![CResourceSpec::token(
+                    CResourceAccessMode::Own,
+                    "ticket".into(),
+                    vec![],
+                    vec![],
+                )],
+            );
+        assert!(contract_reaches_population(minting.contract_interface()));
+        assert!(refused(&call(&minting)));
     }
 
     #[test]
