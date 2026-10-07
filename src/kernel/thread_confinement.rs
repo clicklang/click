@@ -32,6 +32,76 @@ pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResource
             });
         definition.thread_confined |= definition.contains_mutex_authority;
     }
+    let dependents = definition_dependents(definitions);
+    propagate_population_reach_with(definitions, &dependents);
+    let mut pending: VecDeque<_> = definitions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, definition)| definition.thread_confined.then_some(index))
+        .collect();
+    while let Some(child) = pending.pop_front() {
+        for &parent in &dependents[child] {
+            if !definitions[parent].thread_confined
+                || (definitions[child].contains_mutex_authority
+                    && !definitions[parent].contains_mutex_authority)
+            {
+                definitions[parent].thread_confined = true;
+                definitions[parent].contains_mutex_authority |=
+                    definitions[child].contains_mutex_authority;
+                pending.push_back(parent);
+            }
+        }
+    }
+}
+
+/// Marks each definition that is authorized, holds a population authority,
+/// or contains or names such a definition. The surface's own definition list
+/// and the kernel-installed one must agree, so both run this pass.
+pub(crate) fn propagate_population_reach(definitions: &mut [CCompositeResourceDefinition]) {
+    let dependents = definition_dependents(definitions);
+    propagate_population_reach_with(definitions, &dependents);
+}
+
+fn propagate_population_reach_with(
+    definitions: &mut [CCompositeResourceDefinition],
+    dependents: &[Vec<usize>],
+) {
+    for definition in definitions.iter_mut() {
+        definition.reaches_population = definition.authorized
+            || definition
+                .contains
+                .iter()
+                .chain(
+                    definition
+                        .matched
+                        .iter()
+                        .flat_map(|body| body.arms.iter())
+                        .flat_map(|arm| arm.contains.iter()),
+                )
+                .any(|spec| {
+                    matches!(
+                        spec.term(),
+                        super::CResourceTerm::PopulationAuthority { .. }
+                    )
+                });
+    }
+    let mut reaching: VecDeque<_> = definitions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, definition)| definition.reaches_population.then_some(index))
+        .collect();
+    while let Some(child) = reaching.pop_front() {
+        for &parent in &dependents[child] {
+            if !definitions[parent].reaches_population {
+                definitions[parent].reaches_population = true;
+                reaching.push_back(parent);
+            }
+        }
+    }
+}
+
+/// For each definition, the definitions that contain or name it as a child.
+fn definition_dependents(definitions: &[CCompositeResourceDefinition]) -> Vec<Vec<usize>> {
     let by_name: BTreeMap<&str, usize> = definitions
         .iter()
         .enumerate()
@@ -63,24 +133,7 @@ pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResource
             }
         }
     }
-    let mut pending: VecDeque<_> = definitions
-        .iter()
-        .enumerate()
-        .filter_map(|(index, definition)| definition.thread_confined.then_some(index))
-        .collect();
-    while let Some(child) = pending.pop_front() {
-        for &parent in &dependents[child] {
-            if !definitions[parent].thread_confined
-                || (definitions[child].contains_mutex_authority
-                    && !definitions[parent].contains_mutex_authority)
-            {
-                definitions[parent].thread_confined = true;
-                definitions[parent].contains_mutex_authority |=
-                    definitions[child].contains_mutex_authority;
-                pending.push_back(parent);
-            }
-        }
-    }
+    dependents
 }
 
 pub(super) fn confined_resource_name<'a>(

@@ -40,6 +40,7 @@ pub(crate) use functions::{
     instantiate_private_member_body_facts,
 };
 pub use resource_description::{ResourceDescription, ResourceReference};
+pub(crate) use thread_confinement::propagate_population_reach;
 mod iterated;
 pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard_store};
 // V0-V6 of the stable-view migration build the checked semantic spine before
