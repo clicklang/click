@@ -6207,3 +6207,82 @@ fn list_position_simp_search_stays_bounded_beside_unrelated_facts() {
     assert!(counts.iter().all(|count| *count <= 8), "{counts:?}");
     assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
 }
+
+#[test]
+fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
+    let point = |index, kind| ProgramPointRef {
+        region: CodeRegionRef::Statement(index),
+        kind,
+    };
+    for size in [16usize, 64, 256, 1024, 4096] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(point(index, ProgramPointKind::Entry), CState::new());
+            snapshots.insert(point(index, ProgramPointKind::Exit), CState::new());
+        }
+        snapshots.insert(SnapshotSelector::Mark("unrelated".into()), CState::new());
+        let anchor = size / 2;
+        let (nearest, work) = crate::instrumentation::measure_deterministic_work(|| {
+            snapshots
+                .statement_entries_nearest(anchor)
+                .take(3)
+                .map(|(p, _)| p.clone())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            nearest,
+            (anchor - 2..=anchor)
+                .rev()
+                .map(|i| point(i, ProgramPointKind::Entry))
+                .collect::<Vec<_>>()
+        );
+        let height = usize::BITS - size.leading_zeros();
+        assert!(
+            work <= 16 * height as usize + 32,
+            "size {size}: {work} tree work"
+        );
+        let all = snapshots
+            .statement_entries_nearest(anchor)
+            .map(|(p, _)| p.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            all,
+            (0..=anchor)
+                .rev()
+                .chain(anchor + 1..size)
+                .map(|i| point(i, ProgramPointKind::Entry))
+                .collect::<Vec<_>>()
+        );
+        snapshots.remove(&point(anchor, ProgramPointKind::Entry));
+        assert_eq!(
+            snapshots
+                .statement_entries_nearest(anchor)
+                .next()
+                .unwrap()
+                .0,
+            &point(anchor - 1, ProgramPointKind::Entry)
+        );
+    }
+}
+
+#[test]
+fn nearest_statement_snapshots_stop_at_an_exhausted_deadline() {
+    let mut snapshots = RecordedSnapshots::new();
+    for index in 0..256 {
+        snapshots.insert(
+            ProgramPointRef {
+                region: CodeRegionRef::Statement(index),
+                kind: ProgramPointKind::Entry,
+            },
+            CState::new(),
+        );
+    }
+    let mut entries = snapshots.statement_entries_nearest(128);
+    crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
+        assert!(entries.next().is_none());
+    });
+    assert!(
+        entries.next().is_none(),
+        "a cancelled traversal must stay stopped"
+    );
+}

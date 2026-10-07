@@ -2433,6 +2433,84 @@ fn recorded_snapshot_node_allocations() -> usize {
     RECORDED_SNAPSHOT_NODE_ALLOCATIONS.with(std::cell::Cell::get)
 }
 
+/// A lazy bounded traversal of the persistent snapshot tree. Each visited
+/// node consumes work and checks cancellation, including tombstones/exits.
+struct RecordedSnapshotRange<'a> {
+    stack: Vec<&'a RecordedSnapshotNode>,
+    lower: SnapshotSelector,
+    upper: SnapshotSelector,
+    descending: bool,
+    stopped: bool,
+}
+
+impl<'a> RecordedSnapshotRange<'a> {
+    fn new(
+        root: Option<&'a RecordedSnapshotNode>,
+        lower: SnapshotSelector,
+        upper: SnapshotSelector,
+        descending: bool,
+    ) -> Self {
+        let mut result = Self {
+            stack: Vec::new(),
+            lower,
+            upper,
+            descending,
+            stopped: false,
+        };
+        result.seek(root);
+        result
+    }
+
+    fn seek(&mut self, mut node: Option<&'a RecordedSnapshotNode>) {
+        while let Some(current) = node {
+            if crate::instrumentation::deadline_exceeded() {
+                self.stopped = true;
+                self.stack.clear();
+                return;
+            }
+            if current.selector < self.lower {
+                node = current.right.as_deref();
+            } else if current.selector > self.upper {
+                node = current.left.as_deref();
+            } else {
+                self.stack.push(current);
+                node = if self.descending {
+                    current.right.as_deref()
+                } else {
+                    current.left.as_deref()
+                };
+            }
+        }
+    }
+}
+
+impl<'a> Iterator for RecordedSnapshotRange<'a> {
+    type Item = (&'a SnapshotSelector, &'a CState);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.stopped {
+            if crate::instrumentation::deadline_exceeded() {
+                self.stopped = true;
+                self.stack.clear();
+                return None;
+            }
+            let node = self.stack.pop()?;
+            self.seek(if self.descending {
+                node.left.as_deref()
+            } else {
+                node.right.as_deref()
+            });
+            if self.stopped {
+                return None;
+            }
+            if let Some(state) = &node.state {
+                return Some((&node.selector, state));
+            }
+        }
+        None
+    }
+}
+
 impl RecordedSnapshots {
     fn new() -> Self {
         Self::default()
@@ -2580,6 +2658,39 @@ impl RecordedSnapshots {
 
     fn keys(&self) -> impl DoubleEndedIterator<Item = &SnapshotSelector> {
         self.iter().map(|(selector, _)| selector)
+    }
+
+    /// Statement entries at/before the anchor in reverse order, then later
+    /// entries in forward order. Seek through the persistent tree rather than
+    /// materializing and sorting every snapshot before the first candidate.
+    fn statement_entries_nearest(
+        &self,
+        anchor: usize,
+    ) -> impl Iterator<Item = (&ProgramPointRef, &CState)> {
+        let selector = |index, kind| {
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Statement(index),
+                kind,
+            })
+        };
+        RecordedSnapshotRange::new(
+            self.version.root.as_deref(),
+            selector(0, ProgramPointKind::Entry),
+            selector(anchor, ProgramPointKind::Entry),
+            true,
+        )
+        .chain(RecordedSnapshotRange::new(
+            self.version.root.as_deref(),
+            selector(anchor, ProgramPointKind::Exit),
+            selector(usize::MAX, ProgramPointKind::Exit),
+            false,
+        ))
+        .filter_map(|(selector, state)| match selector {
+            SnapshotSelector::ProgramPoint(point) if point.kind == ProgramPointKind::Entry => {
+                Some((point, state))
+            }
+            _ => None,
+        })
     }
 
     /// Bounded, newest-first source points for diagnostic reconstruction.

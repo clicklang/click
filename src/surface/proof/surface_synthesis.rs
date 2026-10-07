@@ -2124,13 +2124,16 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
     };
     let bound_variables = BTreeMap::new();
     let anchored = |synthesize: &dyn Fn(&CState) -> Option<ContractExpression>| {
-        points.iter().find_map(|(point, state)| {
-            let expression = synthesize(state)?;
-            Some(ContractExpression::At {
-                selector: SnapshotSelector::ProgramPoint(point.clone()),
-                expression: Box::new(expression),
+        points
+            .iter()
+            .take_while(|_| !crate::instrumentation::deadline_exceeded())
+            .find_map(|(point, state)| {
+                let expression = synthesize(state)?;
+                Some(ContractExpression::At {
+                    selector: SnapshotSelector::ProgramPoint(point.clone()),
+                    expression: Box::new(expression),
+                })
             })
-        })
     };
     let (left, right) = match condition {
         ConditionTerm::Bitvector32Equal(left, right)

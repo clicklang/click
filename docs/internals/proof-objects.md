@@ -376,6 +376,15 @@ recorded `CState` is logically complete, but its memory, facts, and resources
 are immutable shared roots: recording or branching a snapshot copies only
 small roots and changed map paths rather than materializing the whole state.
 
+Premise reconstruction seeks statement entries in that persistent tree:
+entries at or before the selected anchor, nearest first, followed by later
+entries in forward order. It does not enumerate and sort the complete map
+before trying a nearby candidate. Tree traversal and synthesis check the
+active work budget and deadline; an exhausted search stops before trying
+further snapshots or presentation fallbacks. Every accepted spelling still
+has to lower to the exact selected kernel premise. Cross-snapshot equality
+reconstruction uses the visited entries and checks cancellation per operand.
+
 Lowering and fixed-state proofs read execution data through `ExecutionView`, a
 borrowed view of the frontier, recorded snapshots, surface
 spellings, execution facts, and the `old(...)` reference state. It is built from
