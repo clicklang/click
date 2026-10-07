@@ -6495,8 +6495,14 @@ fn rb_next_false_list_postconditions_fail_below_the_smart_budget() {
     let correct =
         "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), node, result) == 1;";
     assert_eq!(source.matches(correct).count(), 1);
+    // Each false claim must fail well inside the default smart budget of
+    // 2,000,000 units, not exhaust it. Measured 2026-10-07, the three
+    // failing searches cost between 530,000 and 560,000 units; before
+    // machine-integer quantifiers kept their types (#309) they cost between
+    // 425,000 and 500,000. The limit leaves room for that kind of change
+    // and still catches a search that doubles.
     let limits = crate::instrumentation::TacticWorkLimits {
-        smart: 500_000,
+        smart: 750_000,
         ..crate::instrumentation::TacticWorkLimits::default()
     };
     crate::instrumentation::with_tactic_work_limits(limits, || {
