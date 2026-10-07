@@ -1375,3 +1375,12 @@ compare equal when they differ only in creation ledgers that record nothing:
 no storage, member, authority, import, scope or batch. Regressions:
 `authority_mode_separate_claim_proofs_certify.md`,
 `authority_mode_rebased_execution_certifies.md` and a kernel unit test.
+
+#### Chunk 1d: iterated ownership
+
+`take`, `give`, `gather` and `scatter` regroup owned memory only: the kernel
+step replaces memory facts in the resource context and records no storage,
+member or authority event. Authority semantics no longer refuse them; the
+same guard and coverage checks apply. Regressions:
+`authority_mode_iterated_gather_scatter.md` and
+`authority_mode_iterated_take_false_guard_rejected.md`.

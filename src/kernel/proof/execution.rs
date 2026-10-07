@@ -9417,10 +9417,9 @@ impl ExecutionProofCore {
         if self.evidence_completed {
             return Err("an iterated ownership step was recorded after the trace completed".into());
         }
+        // An iterated step regroups owned memory only; it creates, moves or
+        // retires no population member, so authority semantics apply it as is.
         let before_state = self.reached_state().clone();
-        if before_state.uses_population_authority_semantics() {
-            return Err("iterated ownership is unavailable in authority mode".into());
-        }
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
         let checked = CheckedIteratedStep {
