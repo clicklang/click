@@ -1772,7 +1772,6 @@ impl CheckedResourceRewrite {
             _ => true,
         };
         if before_state.uses_population_authority_semantics()
-            && reaches_population
             && !matches!(selected.resource(), CResource::Instance(_))
         {
             if let CResource::Composite { name, .. } = selected.resource()
@@ -1813,7 +1812,7 @@ impl CheckedResourceRewrite {
                     )
                 })
             {
-                return Self::check_transfer_wrapper(
+                let checked = Self::check_transfer_wrapper(
                     before_state,
                     before_facts,
                     selected,
@@ -1823,6 +1822,11 @@ impl CheckedResourceRewrite {
                     definition,
                     selected_children,
                 );
+                // A wrapper that reaches no population and has a body this
+                // delta check does not model keeps its ordinary definition law.
+                if checked.is_ok() || reaches_population {
+                    return checked;
+                }
             }
             // Population accounting covers only `authorized resource`
             // families; any other family keeps its ordinary definition law.
