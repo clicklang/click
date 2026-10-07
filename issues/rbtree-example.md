@@ -43,7 +43,11 @@ removal, proves null as the fixup parent, and establishes a black-rooted
 red-black result with in-order sequence `left ++ right`. The imported
 `rbtree_erase_root.click` proves those model facts separately. Mutation tests
 reject missing root replacement and either missing child parent/color write.
-The C's successor branches remain present but outside this contract's scope.
+The C's successor branches remain present but outside this contract's scope. The next
+immediate-successor C prototype reaches the final ownership folds but exposed
+[loss of proved post-return facts during fold certification](../bugs/return-instance-fold-loses-post-return-proofs.md).
+The bug has a small standalone reproduction; fix that evidence path before
+resuming the C successor port.
 
 Two proof-driver fixes support this increment: named folds after return inside
 `open` are deferred to the returned state, and exact checked execution retains
